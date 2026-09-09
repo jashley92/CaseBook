@@ -1,0 +1,7 @@
+# Windows deployment scripts: keep CRLF so Windows PowerShell / sqlcmd never see
+# lone-LF surprises. (The scripts are ASCII-only, which is the real guard against
+# PowerShell 5.1's ANSI decoding of a UTF-8 file — see deploy/.)
+*.ps1  text eol=crlf
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+*.sql  text eol=crlf

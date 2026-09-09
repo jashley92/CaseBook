@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "incidentmanager-web",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/IncidentManager.Web", "--launch-profile", "http"],
+      "port": 5103
+    }
+  ]
+}

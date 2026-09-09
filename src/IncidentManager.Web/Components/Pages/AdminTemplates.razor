@@ -1,0 +1,272 @@
+@page "/admin/templates"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using IncidentManager.Application.Admin
+@using IncidentManager.Domain.Enums
+@inject CaseTemplateService Templates
+@inject ToastService Toasts
+@inject ISeverityLabels SevLabels
+
+<PageTitle>Case templates</PageTitle>
+
+<PageHeader Title="Case templates">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+<p class="text-muted">
+    Curated <strong>playbooks</strong> analysts can start a case from or apply to an open case. A template pre-fills
+    the New Case form (classification, severity, data types, a summary starter) and seeds an ordered
+    <strong>checklist</strong> as action items. Seeded items default to the case owner; each step's due date is
+    computed from when it's applied.
+</p>
+
+<div class="d-flex align-items-center justify-content-between mt-4 mb-2">
+    <h4 class="mb-0">Templates</h4>
+    <button class="btn btn-sm btn-primary" @onclick="BeginCreate" disabled="@(_edit is not null)">
+        <span class="bi bi-plus-circle me-1"></span>New template
+    </button>
+</div>
+
+@if (_edit is not null)
+{
+    <div class="card mb-3 border-primary">
+        <div class="card-header">@(_edit.IsNew ? "New template" : $"Edit template — {_edit.Name}")</div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <label class="form-label">Name <span class="text-danger">*</span></label>
+                    <input class="form-control" @bind="_edit.Name" @bind:event="oninput" placeholder="e.g. Phishing wave" />
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">Description</label>
+                    <input class="form-control" @bind="_edit.Description" @bind:event="oninput" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Sort order</label>
+                    <input type="number" class="form-control" @bind="_edit.SortOrder" />
+                </div>
+            </div>
+
+            <h6 class="text-uppercase small text-muted mt-4">Field defaults (quick-fill)</h6>
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Classification</label>
+                    <select class="form-select" @bind="_edit.DefaultClassification">
+                        <option value="">— leave blank —</option>
+                        @foreach (var c in Enum.GetValues<Classification>())
+                        {
+                            <option value="@c">@Ui.Label(c)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Severity</label>
+                    <select class="form-select" @bind="_edit.DefaultSeverity">
+                        <option value="">— leave blank —</option>
+                        @foreach (var s in Enum.GetValues<Severity>())
+                        {
+                            <option value="@s">@SevLabels.For(s)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Data types involved</label>
+                    <input class="form-control" @bind="_edit.DefaultDataTypes" @bind:event="oninput" placeholder="e.g. Credentials; potential NPI" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Summary starter</label>
+                    <textarea class="form-control" rows="2" @bind="_edit.SummaryBoilerplate"
+                              placeholder="Boilerplate scope statement pre-filled into the case summary."></textarea>
+                </div>
+            </div>
+
+            <h6 class="text-uppercase small text-muted mt-4">Playbook steps</h6>
+            <p class="small text-muted mb-2">Each step is seeded as an action item, in order. Owner is optional; blank
+            falls to the case owner. Due offset is in <strong>hours</strong> from when the template is applied
+            (24 = 1 day, 48 = 2 days); blank = no due date.</p>
+
+            @if (_edit.Steps.Count == 0)
+            {
+                <p class="text-muted small">No steps yet.</p>
+            }
+            else
+            {
+                <table class="table table-sm align-middle">
+                    <thead><tr><th style="width:2rem"></th><th>Title</th><th>Note</th><th style="width:9rem">Owner</th><th style="width:7rem">Due (hrs)</th><th style="width:5rem"></th></tr></thead>
+                    <tbody>
+                        @for (var i = 0; i < _edit.Steps.Count; i++)
+                        {
+                            var idx = i;
+                            var step = _edit.Steps[idx];
+                            <tr>
+                                <td class="text-muted small text-center">
+                                    <button class="btn btn-sm btn-link p-0 text-muted" title="Move up" disabled="@(idx == 0)" @onclick="() => MoveStep(idx, -1)"><span class="bi bi-arrow-up"></span></button>
+                                    <button class="btn btn-sm btn-link p-0 text-muted" title="Move down" disabled="@(idx == _edit.Steps.Count - 1)" @onclick="() => MoveStep(idx, 1)"><span class="bi bi-arrow-down"></span></button>
+                                </td>
+                                <td><input class="form-control form-control-sm" @bind="step.Title" @bind:event="oninput" placeholder="Step title" /></td>
+                                <td><input class="form-control form-control-sm" @bind="step.Description" @bind:event="oninput" /></td>
+                                <td><input class="form-control form-control-sm" @bind="step.OwnerHint" @bind:event="oninput" placeholder="(case owner)" /></td>
+                                <td><input type="number" min="0" class="form-control form-control-sm" @bind="step.DueOffsetHours" /></td>
+                                <td class="text-end"><button class="btn btn-sm btn-outline-danger py-0" @onclick="() => RemoveStep(idx)">Remove</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            <button class="btn btn-sm btn-outline-secondary" @onclick="AddStep"><span class="bi bi-plus-lg me-1"></span>Add step</button>
+
+            <div class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" id="tpl-active" @bind="_edit.IsActive" />
+                <label class="form-check-label" for="tpl-active">Active <span class="text-muted small">(shown in the New Case picker and Apply-playbook dialog)</span></label>
+            </div>
+        </div>
+        <div class="card-footer d-flex gap-2">
+            <button class="btn btn-sm btn-primary" @onclick="Save">Save</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => _edit = null">Cancel</button>
+        </div>
+    </div>
+}
+
+@if (_templates is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else if (_templates.Count == 0)
+{
+    <p class="text-muted">No templates yet. Create one to give analysts a quick-start playbook.</p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead><tr><th>Template</th><th>Defaults</th><th>Steps</th><th style="width:9rem"></th></tr></thead>
+        <tbody>
+            @foreach (var t in _templates)
+            {
+                <tr>
+                    <td>
+                        <span class="fw-semibold">@t.Name</span>
+                        @if (!t.IsActive) { <span class="im-badge im-b-neutral ms-1">Inactive</span> }
+                        <div class="small text-muted">@t.Description</div>
+                    </td>
+                    <td>
+                        @if (t.DefaultClassification is { } c) { <span class="@Ui.ClassificationBadge(c) me-1">@Ui.Label(c)</span> }
+                        @if (t.DefaultSeverity is { } s) { <span class="@Ui.SeverityBadge(s) me-1">@SevLabels.For(s)</span> }
+                        @if (t.DefaultClassification is null && t.DefaultSeverity is null && string.IsNullOrEmpty(t.DefaultDataTypes)) { <span class="text-muted">—</span> }
+                    </td>
+                    <td><span class="im-badge im-b-info">@t.Steps.Count</span></td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => BeginEdit(t)">Edit</button>
+                        <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => DeleteTemplate(t)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<TemplateView>? _templates;
+    private TemplateEdit? _edit;
+
+    private sealed class StepEdit
+    {
+        public string Title = "";
+        public string? Description;
+        public string? OwnerHint;
+        public int? DueOffsetHours;
+    }
+
+    private sealed class TemplateEdit
+    {
+        public Guid? Id;
+        public bool IsNew;
+        public string Name = "";
+        public string? Description;
+        public bool IsActive = true;
+        public int SortOrder;
+        public string DefaultClassification = "";
+        public string DefaultSeverity = "";
+        public string? DefaultDataTypes;
+        public string? SummaryBoilerplate;
+        public List<StepEdit> Steps = [];
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => _templates = await Templates.ListAllAsync();
+
+    private void BeginCreate() => _edit = new TemplateEdit { IsNew = true, SortOrder = (_templates?.Count ?? 0) + 1 };
+
+    private void BeginEdit(TemplateView t) => _edit = new TemplateEdit
+    {
+        Id = t.Id,
+        IsNew = false,
+        Name = t.Name,
+        Description = t.Description,
+        IsActive = t.IsActive,
+        SortOrder = t.SortOrder,
+        DefaultClassification = t.DefaultClassification?.ToString() ?? "",
+        DefaultSeverity = t.DefaultSeverity?.ToString() ?? "",
+        DefaultDataTypes = t.DefaultDataTypes,
+        SummaryBoilerplate = t.SummaryBoilerplate,
+        Steps = t.Steps.Select(s => new StepEdit
+        {
+            Title = s.Title, Description = s.Description, OwnerHint = s.OwnerHint, DueOffsetHours = s.DueOffsetHours
+        }).ToList()
+    };
+
+    private void AddStep() => _edit?.Steps.Add(new StepEdit());
+    private void RemoveStep(int i) => _edit?.Steps.RemoveAt(i);
+
+    private void MoveStep(int i, int delta)
+    {
+        if (_edit is null) return;
+        var j = i + delta;
+        if (j < 0 || j >= _edit.Steps.Count) return;
+        (_edit.Steps[i], _edit.Steps[j]) = (_edit.Steps[j], _edit.Steps[i]);
+    }
+
+    private async Task Save()
+    {
+        if (_edit is null) return;
+
+        var input = new TemplateInput(
+            _edit.Name,
+            _edit.Description,
+            _edit.IsActive,
+            _edit.SortOrder,
+            string.IsNullOrEmpty(_edit.DefaultClassification) ? null : Enum.Parse<Classification>(_edit.DefaultClassification),
+            string.IsNullOrEmpty(_edit.DefaultSeverity) ? null : Enum.Parse<Severity>(_edit.DefaultSeverity),
+            _edit.DefaultDataTypes,
+            _edit.SummaryBoilerplate,
+            _edit.Steps.Select(s => new TemplateStepInput(s.Title, s.Description, s.OwnerHint, s.DueOffsetHours)).ToList());
+
+        try
+        {
+            if (_edit.IsNew) await Templates.CreateAsync(input);
+            else await Templates.UpdateAsync(_edit.Id!.Value, input);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+
+        _edit = null;
+        await LoadAsync();
+        Toasts.Success("Template saved");
+    }
+
+    private async Task DeleteTemplate(TemplateView t)
+    {
+        try { await Templates.DeleteAsync(t.Id); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        await LoadAsync();
+        Toasts.Info($"Deleted template '{t.Name}'");
+    }
+}

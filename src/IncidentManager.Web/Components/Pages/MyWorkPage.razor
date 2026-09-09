@@ -1,0 +1,239 @@
+@page "/work"
+@page "/my"
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@inject MyWorkService Svc
+@inject IClock Clock
+@inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IAuthorizationService Authz
+@inject AuthenticationStateProvider AuthState
+@inject ISeverityLabels SevLabels
+
+<PageTitle>Work</PageTitle>
+
+<div class="mywork">
+    <PageHeader Title="Work">
+        <Actions>
+            @if (_activeTab == MyTab)
+            {
+                <a class="btn btn-sm btn-outline-secondary" href="cases?scope=mine">
+                    <span class="bi bi-inbox" aria-hidden="true"></span> Full queue
+                </a>
+            }
+        </Actions>
+    </PageHeader>
+
+    @* One tab bar for the whole "Work" surface — analysts see only their work (no tab bar); leadership
+       (ViewAllCases) gets the team view alongside it. Same nav-tabs idiom as the case workspace / admin. *@
+    @if (_canViewTeam)
+    {
+        <ul class="nav nav-tabs mb-3">
+            <li class="nav-item">
+                <button class="nav-link @(_activeTab == MyTab ? "active" : "")" @onclick="() => SetTab(MyTab)">
+                    <span class="bi bi-person-workspace me-1" aria-hidden="true"></span>My work
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link @(_activeTab == TeamTab ? "active" : "")" @onclick="() => SetTab(TeamTab)">
+                    <span class="bi bi-people-fill me-1" aria-hidden="true"></span>Team workload
+                </button>
+            </li>
+        </ul>
+    }
+
+    <div class="tabbody" @key="_activeTab">
+        @if (_activeTab == TeamTab && _canViewTeam)
+        {
+            <TeamWorkloadPanel />
+        }
+        else if (_work is null)
+        {
+            <span class="visually-hidden" role="status">Loading your work…</span>
+            <div class="im-tiles">
+                @for (var i = 0; i < 4; i++)
+                {
+                    <span class="skel" style="height:4.6rem;border-radius:0.7rem"></span>
+                }
+            </div>
+            <div class="mw-grid">
+                @for (var i = 0; i < 2; i++)
+                {
+                    <section class="im-card">
+                        <span class="skel skel-line" style="width:40%;display:block;margin-bottom:0.9rem"></span>
+                        <SkeletonTable Rows="4" Columns="4" TableClass="table-sm" />
+                    </section>
+                }
+            </div>
+        }
+        else
+        {
+            var overdueCount = _work.Tasks.Count(t => IsOverdue(t.DueAtUtc));
+            <div class="im-tiles">
+                <StatTile Icon="bi-folder2-open" Value="_work.OpenCases.Count" Label="Open cases" Tone="accent" Href="work#cases" />
+                <StatTile Icon="bi-list-check" Value="_work.Tasks.Count" Label="Open tasks" Tone="accent" Href="work#tasks" />
+                <StatTile Icon="bi-alarm" Value="overdueCount" Label="Overdue"
+                          Tone="@(overdueCount > 0 ? "danger" : "ok")" Href="work#tasks" />
+                <StatTile Icon="bi-arrow-up-right-circle" Value="_work.RecentEscalations.Count"
+                          Label="@($"Escalated ({MyWorkService.EscalationWindowDays}d)")"
+                          Tone="@(_work.RecentEscalations.Count > 0 ? "warn" : "accent")" Href="work#escalations" />
+            </div>
+
+            <div class="mw-grid">
+                <section class="im-card" id="cases">
+                    <div class="im-section-head">
+                        <span><span class="bi bi-folder2-open" aria-hidden="true"></span> My open cases</span>
+                        <span class="im-section-note">@_work.OpenCases.Count open</span>
+                    </div>
+                    @if (_work.OpenCases.Count == 0)
+                    {
+                        <div class="mw-empty">Nothing assigned to you right now.
+                            <a href="cases">Browse all cases</a>.</div>
+                    }
+                    else
+                    {
+                        <div class="mw-phasebar">
+                            @foreach (var g in _work.OpenCases.GroupBy(c => c.Phase).OrderBy(g => g.Key))
+                            {
+                                <a class="mw-chip" href="cases?scope=mine&phase=@g.Key" title="@g.Count() in @Ui.Label(g.Key)">
+                                    @Ui.Label(g.Key) <span class="mw-chip-n">@g.Count()</span>
+                                </a>
+                            }
+                        </div>
+                        <table class="table table-sm table-hover align-middle im-table mb-0">
+                            <thead>
+                                <tr><th>Case #</th><th>Title</th><th>Class.</th><th>Phase</th><th>Sev.</th><th>Age</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var c in _work.OpenCases)
+                                {
+                                    <tr>
+                                        <td><code>@c.CaseNumber</code>
+                                            @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
+                                        </td>
+                                        <td>@c.Title
+                                            @if (c.LegalReferred) { <span class="im-badge im-b-neutral ms-1">Legal</span> }
+                                        </td>
+                                        <td><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
+                                        <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
+                                        <td><span class="@Ui.SeverityBadge(c.Severity)">@SevLabels.For(c.Severity)</span></td>
+                                        <td class="text-muted small">@Ui.Age(c.CreatedAtUtc, Clock.UtcNow)</td>
+                                        <td><a class="btn btn-sm btn-outline-primary py-0" href="cases/@c.Id">Open</a></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </section>
+
+                <section class="im-card" id="tasks">
+                    <div class="im-section-head">
+                        <span><span class="bi bi-list-check" aria-hidden="true"></span> My after-action tasks</span>
+                        <span class="im-section-note">@_work.Tasks.Count open@(overdueCount > 0 ? $" · {overdueCount} overdue" : "")</span>
+                    </div>
+                    @if (_work.Tasks.Count == 0)
+                    {
+                        <div class="mw-empty">No open tasks assigned to you.</div>
+                    }
+                    else
+                    {
+                        <table class="table table-sm table-hover align-middle im-table mb-0">
+                            <thead>
+                                <tr><th>Case #</th><th>Task</th><th>Owner</th><th>Due</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var t in _work.Tasks)
+                                {
+                                    <tr>
+                                        <td><code>@t.CaseNumber</code></td>
+                                        <td>@t.Title</td>
+                                        <td class="small">
+                                            @if (t.OwnedByMe) { <span class="im-badge im-b-info">You</span> }
+                                            else { @Users.DisplayFor(t.Owner) }
+                                        </td>
+                                        <td>@DueBadge(t.DueAtUtc)</td>
+                                        <td><a class="btn btn-sm btn-outline-primary py-0" href="cases/@t.CaseId?tab=Tasks">Open</a></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </section>
+
+                <section class="im-card" id="escalations">
+                    <div class="im-section-head">
+                        <span><span class="bi bi-arrow-up-right-circle" aria-hidden="true"></span> Recently escalated</span>
+                        <span class="im-section-note">last @MyWorkService.EscalationWindowDays days</span>
+                    </div>
+                    @if (_work.RecentEscalations.Count == 0)
+                    {
+                        <div class="mw-empty">No escalations in the window.</div>
+                    }
+                    else
+                    {
+                        <ul class="mw-esc">
+                            @foreach (var e in _work.RecentEscalations)
+                            {
+                                <li>
+                                    <a class="mw-esc-case" href="cases/@e.CaseId"><code>@e.CaseNumber</code> @e.Title</a>
+                                    <span class="mw-esc-move">
+                                        <span class="@Ui.ClassificationBadge(e.From)">@Ui.Label(e.From)</span>
+                                        <span class="bi bi-arrow-right" aria-hidden="true"></span>
+                                        <span class="@Ui.ClassificationBadge(e.To)">@Ui.Label(e.To)</span>
+                                    </span>
+                                    <span class="mw-esc-meta text-muted small">@Ui.Age(e.ChangedAtUtc, Clock.UtcNow)</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </section>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private const string MyTab = "mywork";
+    private const string TeamTab = "team";
+
+    private MyWork? _work;
+    private bool _canViewTeam;
+    private string _activeTab = MyTab;
+
+    /// <summary>Deep-link into the team view (?tab=team), used by the /team redirect and the case-list back-link.</summary>
+    [SupplyParameterFromQuery(Name = "tab")] private string? Tab { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        _canViewTeam = (await Authz.AuthorizeAsync(auth.User, Policies.ViewAllCases)).Succeeded;
+        if (_canViewTeam && string.Equals(Tab, TeamTab, StringComparison.OrdinalIgnoreCase))
+            _activeTab = TeamTab;
+
+        _work = await Svc.GetAsync();
+    }
+
+    private void SetTab(string tab) => _activeTab = tab;
+
+    private bool IsOverdue(DateTimeOffset? due) => due is { } d && d < Clock.UtcNow;
+
+    /// <summary>Status badge for a task's due date: overdue (red), due-soon (amber), later (plain), or none.</summary>
+    private RenderFragment DueBadge(DateTimeOffset? due)
+    {
+        if (due is not { } d) return @<span class="text-muted small">no due date</span>;
+
+        var span = d - Clock.UtcNow;
+        if (span < TimeSpan.Zero)
+        {
+            var overdue = Clock.UtcNow - d;
+            var by = overdue.TotalDays >= 1 ? $"{(int)overdue.TotalDays}d" : $"{Math.Max(1, (int)overdue.TotalHours)}h";
+            return @<span class="im-badge im-b-danger" title="Due @TimeDisp.Short(d)">overdue @by</span>;
+        }
+        if (span.TotalDays < 3)
+        {
+            var inDays = (int)span.TotalDays;
+            var label = inDays >= 1 ? $"in {inDays}d" : $"in {Math.Max(1, (int)span.TotalHours)}h";
+            return @<span class="im-badge im-b-warn" title="Due @TimeDisp.Short(d)">due @label</span>;
+        }
+        return @<span class="small text-muted">@TimeDisp.Short(d)</span>;
+    }
+}

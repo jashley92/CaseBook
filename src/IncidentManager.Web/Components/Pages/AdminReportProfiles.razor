@@ -1,0 +1,231 @@
+@page "/admin/report-profiles"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using IncidentManager.Application.Admin
+@using IncidentManager.Application.Reporting
+@inject ReportProfileService Profiles
+@inject ToastService Toasts
+
+<PageTitle>Report profiles</PageTitle>
+
+<PageHeader Title="Report profiles">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+<p class="text-muted">
+    Reusable <strong>report section layouts</strong> (E-28) a case can be printed with, such as an
+    <em>Executive summary</em> for leadership or a <em>Full examiner pack</em> for a DFS exam. A case picks
+    a profile on its Report tab; that layout overrides the global default for the case's reports and the
+    in-app preview. The document title, branded header/footer and integrity stamp always appear.
+</p>
+
+<div class="d-flex align-items-center justify-content-between mt-4 mb-2">
+    <h4 class="mb-0">Profiles</h4>
+    <button class="btn btn-sm btn-primary" @onclick="BeginCreate" disabled="@(_edit is not null)">
+        <span class="bi bi-plus-circle me-1"></span>New profile
+    </button>
+</div>
+
+@if (_edit is not null)
+{
+    <div class="card mb-3 border-primary">
+        <div class="card-header">@(_edit.IsNew ? "New profile" : $"Edit profile — {_edit.Name}")</div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <label class="form-label">Name <span class="text-danger">*</span></label>
+                    <input class="form-control" @bind="_edit.Name" @bind:event="oninput" placeholder="e.g. Executive summary" />
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">Description</label>
+                    <input class="form-control" @bind="_edit.Description" @bind:event="oninput" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Sort order</label>
+                    <input type="number" class="form-control" @bind="_edit.SortOrder" />
+                </div>
+            </div>
+
+            <h6 class="text-uppercase small text-muted mt-4">Sections</h6>
+            <p class="small text-muted mb-2">Choose which body sections this profile includes and their order.</p>
+            <ol class="list-group">
+                @for (var i = 0; i < _edit.Layout.Count; i++)
+                {
+                    var idx = i;
+                    var st = _edit.Layout[idx];
+                    <li class="list-group-item d-flex align-items-center gap-2">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button class="btn btn-outline-secondary" title="Move up"
+                                    disabled="@(idx == 0)" @onclick="() => MoveSection(idx, -1)">
+                                <span class="bi bi-arrow-up"></span>
+                            </button>
+                            <button class="btn btn-outline-secondary" title="Move down"
+                                    disabled="@(idx == _edit.Layout.Count - 1)" @onclick="() => MoveSection(idx, 1)">
+                                <span class="bi bi-arrow-down"></span>
+                            </button>
+                        </div>
+                        <div class="form-check form-switch mb-0 flex-grow-1">
+                            <input class="form-check-input" type="checkbox" id="pf-sec-@st.Section"
+                                   checked="@st.Enabled" @onchange="e => ToggleSection(idx, (bool)(e.Value ?? false))" />
+                            <label class="form-check-label @(st.Enabled ? "" : "text-muted")" for="pf-sec-@st.Section">
+                                @SectionLabel(st.Section)
+                                @if (!st.Enabled) { <span class="im-badge im-b-neutral ms-1">Hidden</span> }
+                            </label>
+                        </div>
+                        <span class="text-muted small">@(idx + 1)</span>
+                    </li>
+                }
+            </ol>
+
+            <div class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" id="pf-active" @bind="_edit.IsActive" />
+                <label class="form-check-label" for="pf-active">Active <span class="text-muted small">(shown in the per-case profile picker)</span></label>
+            </div>
+        </div>
+        <div class="card-footer d-flex gap-2">
+            <button class="btn btn-sm btn-primary" @onclick="Save">Save</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => _edit = null">Cancel</button>
+        </div>
+    </div>
+}
+
+@if (_profiles is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else if (_profiles.Count == 0)
+{
+    <p class="text-muted">No report profiles yet. Create one to offer analysts a ready-made section layout.</p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead><tr><th>Profile</th><th>Sections</th><th style="width:9rem"></th></tr></thead>
+        <tbody>
+            @foreach (var p in _profiles)
+            {
+                <tr>
+                    <td>
+                        <span class="fw-semibold">@p.Name</span>
+                        @if (!p.IsActive) { <span class="im-badge im-b-neutral ms-1">Inactive</span> }
+                        <div class="small text-muted">@p.Description</div>
+                    </td>
+                    <td class="small">@SectionSummary(p.SectionLayout)</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => BeginEdit(p)">Edit</button>
+                        <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => Delete(p)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<ReportProfileView>? _profiles;
+    private ProfileEdit? _edit;
+
+    private sealed class ProfileEdit
+    {
+        public Guid? Id;
+        public bool IsNew;
+        public string Name = "";
+        public string? Description;
+        public bool IsActive = true;
+        public int SortOrder;
+        public List<ReportSectionState> Layout = [];
+    }
+
+    private static readonly Dictionary<ReportSection, string> SectionLabels = new()
+    {
+        [ReportSection.Summary] = "Summary",
+        [ReportSection.BusinessImpact] = "Business Impact",
+        [ReportSection.EventTimeline] = "Event Timeline",
+        [ReportSection.InvestigationTimeline] = "Investigation Timeline",
+        [ReportSection.SystemsReviewed] = "Systems Reviewed",
+        [ReportSection.Recommendations] = "Recommendations",
+        [ReportSection.Outcome] = "Outcome",
+        [ReportSection.Appendix] = "Appendix (full structured record)",
+    };
+
+    private static string SectionLabel(ReportSection s) => SectionLabels.GetValueOrDefault(s, s.ToString());
+
+    private static string SectionSummary(string? layout)
+    {
+        var enabled = ReportLayout.Resolve(layout);
+        return enabled.Count == 0 ? "(none)" : string.Join(", ", enabled.Select(s => SectionLabels.GetValueOrDefault(s, s.ToString())));
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => _profiles = await Profiles.ListAllAsync();
+
+    private void BeginCreate() => _edit = new ProfileEdit
+    {
+        IsNew = true,
+        SortOrder = (_profiles?.Count ?? 0) + 1,
+        Layout = ReportLayout.Parse(null).ToList() // all sections, enabled, default order
+    };
+
+    private void BeginEdit(ReportProfileView p) => _edit = new ProfileEdit
+    {
+        Id = p.Id,
+        IsNew = false,
+        Name = p.Name,
+        Description = p.Description,
+        IsActive = p.IsActive,
+        SortOrder = p.SortOrder,
+        Layout = ReportLayout.Parse(p.SectionLayout).ToList()
+    };
+
+    private void MoveSection(int index, int delta)
+    {
+        if (_edit is null) return;
+        var target = index + delta;
+        if (target < 0 || target >= _edit.Layout.Count) return;
+        (_edit.Layout[index], _edit.Layout[target]) = (_edit.Layout[target], _edit.Layout[index]);
+    }
+
+    private void ToggleSection(int index, bool enabled)
+    {
+        if (_edit is null) return;
+        _edit.Layout[index] = _edit.Layout[index] with { Enabled = enabled };
+    }
+
+    private async Task Save()
+    {
+        if (_edit is null) return;
+
+        var input = new ReportProfileInput(
+            _edit.Name, _edit.Description, _edit.IsActive, _edit.SortOrder,
+            ReportLayout.Serialize(_edit.Layout));
+
+        try
+        {
+            if (_edit.IsNew) await Profiles.CreateAsync(input);
+            else await Profiles.UpdateAsync(_edit.Id!.Value, input);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+
+        _edit = null;
+        await LoadAsync();
+        Toasts.Success("Report profile saved");
+    }
+
+    private async Task Delete(ReportProfileView p)
+    {
+        try { await Profiles.DeleteAsync(p.Id); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        await LoadAsync();
+        Toasts.Info($"Deleted report profile '{p.Name}'");
+    }
+}

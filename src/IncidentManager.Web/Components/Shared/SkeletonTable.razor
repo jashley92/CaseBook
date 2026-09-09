@@ -1,0 +1,26 @@
+@* Placeholder rows shown while a table's data loads (U-20). Pure-CSS shimmer, no JS.
+   Aria-hidden so screen readers hear the page's "Loading" status text instead of empty cells. *@
+<table class="table @TableClass skel-table" aria-hidden="true">
+    <tbody>
+        @for (var r = 0; r < Rows; r++)
+        {
+            <tr>
+                @for (var c = 0; c < Columns; c++)
+                {
+                    <td><span class="skel skel-cell" style="width:@Widths[c % Widths.Length]"></span></td>
+                }
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [Parameter] public int Rows { get; set; } = 5;
+    [Parameter] public int Columns { get; set; } = 5;
+
+    /// <summary>Extra classes for the table element (e.g. "table-sm align-middle").</summary>
+    [Parameter] public string TableClass { get; set; } = "";
+
+    // Varied cell widths read as text of different lengths rather than a uniform grid.
+    private static readonly string[] Widths = { "70%", "90%", "55%", "80%", "45%", "65%" };
+}

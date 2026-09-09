@@ -1,0 +1,216 @@
+@using IncidentManager.Application.Reporting
+
+@*
+    In-app HTML preview of a generated case report (U-37). Renders the same CaseReportModel the Word/PDF
+    generators consume, in the same section order (the case's chosen report profile / global layout), so an
+    analyst or approver can see what they're about to Generate / Approve without pulling the file. Read-only.
+    Timestamps render in UTC to match the forensic artifacts (the Word/PDF use UTC), not the per-user toggle.
+*@
+
+@if (Model is null)
+{
+    <p class="text-muted mb-0"><em>Nothing to preview.</em></p>
+}
+else
+{
+    <div class="im-report-preview border rounded p-4 bg-body">
+        <div class="text-center border-bottom pb-2 mb-3">
+            @if (Model.LogoBytes is { Length: > 0 })
+            {
+                <img class="mb-2" style="max-height:48px" src="@LogoDataUri(Model)" alt="Logo" />
+            }
+            <div class="fw-bold">@Org</div>
+            <div class="small text-muted">@Team</div>
+        </div>
+
+        <h4 class="mb-1">@Model.CaseNumber — @Model.Title</h4>
+        <div class="small text-muted mb-3">
+            Classification: @Model.Classification &nbsp;&middot;&nbsp; Phase: @Model.Phase &nbsp;&middot;&nbsp; Severity: @Model.Severity<br />
+            Origin: @Model.Origin@(Model.VendorName is null ? "" : $" ({Model.VendorName})")
+            @if (Model.DetectionCaseId is not null) { <text> &nbsp;&middot;&nbsp; Detection case: @Model.DetectionCaseId</text> }
+        </div>
+
+        @foreach (var section in Model.Sections)
+        {
+            <section class="mb-3">
+                <h6 class="text-uppercase border-bottom pb-1" style="color:#44546A">@Heading(section)</h6>
+                @switch (section)
+                {
+                    case ReportSection.Summary:
+                        <p class="mb-0 @Muted(Model.Summary)">@Prose(Model.Summary)</p>
+                        break;
+
+                    case ReportSection.BusinessImpact:
+                        @if (!HasImpact)
+                        {
+                            <p class="mb-0 text-muted fst-italic">(no impact assessment recorded)</p>
+                        }
+                        else
+                        {
+                            <ul class="mb-0 small">
+                                @if (Model.AffectedIndividualsCount is { } n) { <li>Affected individuals: @n.ToString("N0")</li> }
+                                @if (Model.DataElementsSummary is not null) { <li>Data elements: @Model.DataElementsSummary</li> }
+                                @if (Model.NotificationTriggersSummary is not null) { <li>Notification triggers: @Model.NotificationTriggersSummary</li> }
+                                @if (!string.IsNullOrWhiteSpace(Model.AffectedStates)) { <li>Affected jurisdictions: @Model.AffectedStates</li> }
+                                @if (!string.IsNullOrWhiteSpace(Model.ImpactedAssets)) { <li>Impacted assets: @Model.ImpactedAssets</li> }
+                                @if (Model.DataTypesInvolved is not null) { <li>Data types involved: @Model.DataTypesInvolved</li> }
+                                @if (Model.LegalReferred) { <li>Legal/Privacy referral recorded. @Model.LegalNote</li> }
+                            </ul>
+                        }
+                        break;
+
+                    case ReportSection.EventTimeline:
+                        <p class="small fst-italic text-muted mb-1">Reconstructed adversary activity: tactic(s), actor → target, technique.</p>
+                        @if (Model.AttackChain.Count == 0)
+                        {
+                            <p class="mb-0 text-muted fst-italic">(none)</p>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered small mb-0">
+                                    <thead><tr><th>#</th><th>When (UTC)</th><th>Tactic(s)</th><th>Actor → Target</th><th>Technique</th><th>What happened</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var x in Model.AttackChain)
+                                        {
+                                            <tr>
+                                                <td>@x.Order</td>
+                                                <td class="text-nowrap">@x.OccurredAtUtc.ToString("u")</td>
+                                                <td>@x.Tactics</td>
+                                                <td>@(string.IsNullOrEmpty(x.Actor) && string.IsNullOrEmpty(x.Target) ? "" : $"{x.Actor} → {x.Target}")</td>
+                                                <td>@x.TechniqueId</td>
+                                                <td>@x.Description</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        break;
+
+                    case ReportSection.InvestigationTimeline:
+                        <p class="small fst-italic text-muted mb-1">Analyst and team actions.</p>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered small mb-0">
+                                <thead><tr><th>When (UTC)</th><th>Type</th><th>Description</th><th>Source</th></tr></thead>
+                                <tbody>
+                                    @if (Model.InvestigationTimeline.Count == 0)
+                                    {
+                                        <tr><td colspan="4" class="text-muted">(none)</td></tr>
+                                    }
+                                    @foreach (var x in Model.InvestigationTimeline)
+                                    {
+                                        <tr><td class="text-nowrap">@x.OccurredAtUtc.ToString("u")</td><td>@x.Type</td><td>@x.Description</td><td>@x.Source</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        break;
+
+                    case ReportSection.SystemsReviewed:
+                        <p class="small fst-italic text-muted mb-1">Entities and indicators examined during the investigation.</p>
+                        @if (!string.IsNullOrWhiteSpace(Model.ImpactedAssets))
+                        {
+                            <p class="small mb-1">Impacted assets: @Model.ImpactedAssets</p>
+                        }
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered small mb-0">
+                                <thead><tr><th>Type</th><th>Value</th><th>Label</th><th>Disposition</th><th>Source</th></tr></thead>
+                                <tbody>
+                                    @if (Model.Entities.Count == 0)
+                                    {
+                                        <tr><td colspan="5" class="text-muted">(none)</td></tr>
+                                    }
+                                    @foreach (var x in Model.Entities)
+                                    {
+                                        <tr><td>@x.Type</td><td><code class="small">@x.Value</code></td><td>@x.Label</td><td>@x.Disposition</td><td>@x.Source</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        break;
+
+                    case ReportSection.Recommendations:
+                        <p class="small fst-italic text-muted mb-1">After-action items and follow-up tasks.</p>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered small mb-0">
+                                <thead><tr><th>Task</th><th>Owner</th><th>Due (UTC)</th><th>Status</th></tr></thead>
+                                <tbody>
+                                    @if (Model.ActionItems.Count == 0)
+                                    {
+                                        <tr><td colspan="4" class="text-muted">(none)</td></tr>
+                                    }
+                                    @foreach (var x in Model.ActionItems)
+                                    {
+                                        <tr><td>@x.Title</td><td>@x.Owner</td><td>@(x.DueAtUtc?.ToString("u"))</td><td>@x.Status</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        break;
+
+                    case ReportSection.Outcome:
+                        <ul class="mb-0 small">
+                            <li>Current phase: @Model.Phase. Classification: @Model.Classification. Severity: @Model.Severity.</li>
+                            @if (Model.DetectedAtUtc is { } d) { <li>Detected: @d.ToString("u")</li> }
+                            @if (Model.ContainedAtUtc is { } cn) { <li>Contained: @cn.ToString("u")</li> }
+                            @if (Model.ResolvedAtUtc is { } r) { <li>Resolved: @r.ToString("u")</li> }
+                            @if (Model.ClosedAtUtc is { } cl) { <li>Closed: @cl.ToString("u")</li> }
+                            @if (Model.LegalReferred) { <li>Referred to Legal/Privacy. @Model.LegalNote</li> }
+                        </ul>
+                        break;
+
+                    case ReportSection.Appendix:
+                        <p class="small fst-italic text-muted mb-1">Full structured record: assignments, relationships, ATT&amp;CK, history, evidence index, notes.</p>
+                        <ul class="small mb-0">
+                            <li>Assignments: @Model.Assignments.Count</li>
+                            <li>Entity relationships: @Model.Relationships.Count</li>
+                            <li>MITRE ATT&amp;CK techniques: @Model.Techniques.Count</li>
+                            <li>Classification changes: @Model.ClassificationHistory.Count &nbsp;·&nbsp; Severity changes: @Model.SeverityHistory.Count</li>
+                            <li>Evidence items: @Model.Evidence.Count</li>
+                            <li>Analyst notes: @Model.Notes.Count</li>
+                        </ul>
+                        break;
+                }
+            </section>
+        }
+
+        <div class="small fst-italic text-muted border-top pt-2 mt-3">
+            Generated by @Model.GeneratedBy at @Model.GeneratedAtUtc.ToString("u"). Case content hash: <code class="small">@Model.ContentHash</code>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>The projected report to render. Null shows an empty state.</summary>
+    [Parameter] public CaseReportModel? Model { get; set; }
+
+    private string Org => string.IsNullOrWhiteSpace(Model!.OrganizationName) ? "[Company Name]" : Model.OrganizationName!;
+    private string Team => string.IsNullOrWhiteSpace(Model!.TeamName) ? "[Team Name]" : Model.TeamName!;
+
+    private bool HasImpact => Model!.AffectedIndividualsCount is not null
+        || Model.DataElementsSummary is not null
+        || !string.IsNullOrWhiteSpace(Model.AffectedStates)
+        || !string.IsNullOrWhiteSpace(Model.ImpactedAssets)
+        || Model.DataTypesInvolved is not null
+        || Model.LegalReferred;
+
+    private static string Muted(string? text) => string.IsNullOrWhiteSpace(text) ? "text-muted fst-italic" : "";
+    private static string Prose(string? text) => string.IsNullOrWhiteSpace(text) ? "(not provided)" : text!;
+
+    private static string Heading(ReportSection s) => s switch
+    {
+        ReportSection.Summary => "Summary",
+        ReportSection.BusinessImpact => "Business Impact",
+        ReportSection.EventTimeline => "Event Timeline",
+        ReportSection.InvestigationTimeline => "Investigation Timeline",
+        ReportSection.SystemsReviewed => "Systems Reviewed",
+        ReportSection.Recommendations => "Recommendations",
+        ReportSection.Outcome => "Outcome",
+        ReportSection.Appendix => "Appendix",
+        _ => s.ToString()
+    };
+
+    private static string LogoDataUri(CaseReportModel m) =>
+        $"data:{(string.IsNullOrWhiteSpace(m.LogoContentType) ? "image/png" : m.LogoContentType)};base64,{Convert.ToBase64String(m.LogoBytes!)}";
+}

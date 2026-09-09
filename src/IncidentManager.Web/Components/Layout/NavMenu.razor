@@ -1,0 +1,73 @@
+@inject Microsoft.Extensions.Configuration.IConfiguration Config
+
+<div class="sidebar-brand">
+    <span class="bi bi-journal-bookmark-fill brand-mark" aria-hidden="true"></span>
+    <span class="brand-titles">
+        <span class="brand-text">Case<span class="brand-accent">Book</span></span>
+        @if (!string.IsNullOrWhiteSpace(_orgName))
+        {
+            <span class="brand-org" title="@_orgName">@_orgName</span>
+        }
+    </span>
+    @* Desktop-only collapse toggle in the header (convention: top of the sidebar). Wired CSP-safely by a
+       delegated handler in theme.js (window.imNav); state persists in localStorage, applied before paint. *@
+    <button type="button" id="nav-collapse-toggle" class="sidebar-collapse-btn"
+            title="Collapse or expand the sidebar" aria-label="Collapse or expand the sidebar">
+        <span class="bi bi-chevron-double-left" aria-hidden="true"></span>
+    </button>
+</div>
+
+@code {
+    // White-label identity (X-01): show the org's name under the product wordmark when configured.
+    private string? _orgName => Config["Reporting:OrganizationName"];
+}
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable">
+    @* title attributes double as tooltips when the sidebar is collapsed to icons (data-nav="collapsed"). *@
+    <nav class="flex-column">
+        <div class="nav-group-label">Workspace</div>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All" title="Dashboard">
+                <span class="bi bi-speedometer2" aria-hidden="true"></span><span class="nav-text">Dashboard</span>
+            </NavLink>
+        </div>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="work" Match="NavLinkMatch.All" title="Work">
+                <span class="bi bi-person-workspace" aria-hidden="true"></span><span class="nav-text">Work</span>
+            </NavLink>
+        </div>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="cases" Match="NavLinkMatch.All" title="Cases">
+                <span class="bi bi-folder2-open" aria-hidden="true"></span><span class="nav-text">Cases</span>
+            </NavLink>
+        </div>
+        <AuthorizeView Policy="@Policies.EditCases">
+            <div class="nav-item">
+                <NavLink class="nav-link" href="cases/new" title="New Case">
+                    <span class="bi bi-plus-circle" aria-hidden="true"></span><span class="nav-text">New Case</span>
+                </NavLink>
+            </div>
+        </AuthorizeView>
+
+        <div class="nav-group-label">Assurance</div>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="integrity" title="Integrity &amp; Audit">
+                <span class="bi bi-shield-lock" aria-hidden="true"></span><span class="nav-text">Integrity &amp; Audit</span>
+            </NavLink>
+        </div>
+
+        <AuthorizeView Policy="@Policies.Administer">
+            <div class="nav-group-label">Administration</div>
+            @* One entry into the admin hub; the hub's own left rail navigates its sections (Option B),
+               so the main sidebar no longer repeats every admin destination. Prefix match keeps this
+               highlighted across all admin/* routes. *@
+            <div class="nav-item">
+                <NavLink class="nav-link" href="admin" Match="NavLinkMatch.Prefix" title="Administration">
+                    <span class="bi bi-sliders" aria-hidden="true"></span><span class="nav-text">Administration</span>
+                </NavLink>
+            </div>
+        </AuthorizeView>
+    </nav>
+</div>

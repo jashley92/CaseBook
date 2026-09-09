@@ -1,0 +1,856 @@
+@page "/admin"
+@page "/admin/settings/{Section?}"
+@using Microsoft.EntityFrameworkCore
+@using IncidentManager.Application.Ops
+@using IncidentManager.Application.Reporting
+@using IncidentManager.Application.Abstractions
+@using IncidentManager.Application.Branding
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject AdminSettingsService Settings
+@inject IReportBrandingStore Branding
+@inject ToastService Toasts
+@inject IConfiguration Config
+@inject IWebHostEnvironment Env
+@inject Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext> DbFactory
+@inject IncidentManager.Application.Abstractions.ISealSigner Signer
+@inject IncidentManager.Application.Abstractions.IEmailSender Email
+@inject IncidentManager.Web.Ops.BackupHealthReader Backup
+@inject ISeverityLabels SevLabels
+@inject IJSRuntime JS
+
+<PageTitle>Administration</PageTitle>
+
+<PageHeader Title="@ActiveTitle"
+           Subtitle="@ActiveSubtitle">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+
+@{ var activeGroups = ActiveGroups; }
+
+@if (activeGroups is not null)
+{
+            @if (_effective is null)
+            {
+                <p><em>Loading&hellip;</em></p>
+            }
+            else
+            {
+                @foreach (var group in activeGroups)
+                {
+                    <div class="card mb-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span>@group</span>
+                            <button class="btn btn-sm btn-primary" @onclick="() => SaveGroup(group)">Save @group</button>
+                        </div>
+                        <div class="card-body">
+                            @foreach (var s in _effective.Where(e => e.Definition.Group == group && !e.Definition.CustomEditor))
+                            {
+                                var def = s.Definition;
+                                <div class="row mb-3 align-items-start">
+                                    <div class="col-md-4">
+                                        <label class="form-label mb-0 fw-semibold" for="@def.Key">@DisplayLabel(def)</label>
+                                        <div class="small text-muted">@def.Description</div>
+                                        <div class="mt-1">
+                                            @if (s.IsOverridden)
+                                            {
+                                                <span class="im-badge im-b-info">Database override</span>
+                                                <button class="btn btn-link btn-sm p-0 ms-2 align-baseline"
+                                                        @onclick="() => ResetOne(def.Key)">Reset to default</button>
+                                            }
+                                            else
+                                            {
+                                                <span class="im-badge im-b-neutral">Default</span>
+                                            }
+                                        </div>
+                                    </div>
+                                    <div class="col-md-8">
+                                        @switch (def.Kind)
+                                        {
+                                            case SettingKind.Bool:
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" id="@def.Key"
+                                                           checked="@IsTrue(def.Key)"
+                                                           @onchange="e => SetBool(def.Key, (bool)(e.Value ?? false))" />
+                                                    <label class="form-check-label" for="@def.Key">@(IsTrue(def.Key) ? "Enabled" : "Disabled")</label>
+                                                </div>
+                                                break;
+                                            case SettingKind.MultiText:
+                                                <textarea class="form-control font-monospace" id="@def.Key" rows="4"
+                                                          value="@_form[def.Key]"
+                                                          @oninput="e => _form[def.Key] = e.Value?.ToString()"></textarea>
+                                                break;
+                                            case SettingKind.Int:
+                                                <input class="form-control" id="@def.Key" type="number" min="0" style="max-width:12rem"
+                                                       value="@_form[def.Key]"
+                                                       @oninput="e => _form[def.Key] = e.Value?.ToString()" />
+                                                break;
+                                            default:
+                                                <input class="form-control" id="@def.Key" type="text"
+                                                       value="@_form[def.Key]"
+                                                       @oninput="e => _form[def.Key] = e.Value?.ToString()" />
+                                                break;
+                                        }
+                                        <div class="form-text"><code class="small">@def.Key</code></div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    @* Report logo + brand colours are part of the Organization profile, so they sit with it (X-01). *@
+                    @if (group == "Organization")
+                    {
+                        <div class="card mb-3">
+                            <div class="card-header"><span class="bi bi-image me-1"></span>Report logo</div>
+                            <div class="card-body">
+                                <p class="small text-muted">
+                                    Sits centred above the organisation and team names in the report header. PNG or JPEG,
+                                    up to 2&nbsp;MB; a wide (landscape) image reads best. Leave unset for a text-only header.
+                                </p>
+                                <div class="row g-3 align-items-center">
+                                    <div class="col-sm-5">
+                                        @if (_logoDataUri is not null)
+                                        {
+                                            <img src="@_logoDataUri" alt="Current report logo"
+                                                 style="max-height:64px;max-width:100%;background:#fff;border:1px solid var(--bs-border-color);border-radius:.25rem;padding:.25rem" />
+                                        }
+                                        else
+                                        {
+                                            <span class="im-badge im-b-neutral">No logo set</span>
+                                        }
+                                    </div>
+                                    <div class="col-sm-7">
+                                        <InputFile class="form-control form-control-sm mb-2" accept="image/png,image/jpeg" OnChange="OnLogoSelected" />
+                                        @if (_logoDataUri is not null)
+                                        {
+                                            <button class="btn btn-outline-danger btn-sm" @onclick="RemoveLogo">Remove logo</button>
+                                        }
+                                        @if (_logoError is not null)
+                                        {
+                                            <div class="text-danger small mt-1">@_logoError</div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card mb-3">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><span class="bi bi-palette me-1"></span>Brand colours</span>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-secondary me-2" @onclick="ResetBrand">Reset to defaults</button>
+                                    <button class="btn btn-sm btn-primary" @onclick="SaveBrand">Save brand colours</button>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <p class="small text-muted">
+                                    White-label the app's brand colours. The <strong>accent</strong> drives links, active states,
+                                    focus rings and highlights; the <strong>primary</strong> colour is used for primary buttons and
+                                    structural ink. A legible emphasis shade is derived automatically so links stay AA-contrast in
+                                    both light and dark. Severity, phase and status colours are fixed and never rebrand.
+                                </p>
+                                <div class="row g-3">
+                                    <div class="col-sm-6">
+                                        <label class="form-label mb-1 fw-semibold">Accent colour</label>
+                                        @if (IsOverridden("Branding:AccentColor")) { <span class="im-badge im-b-info ms-1">Custom</span> }
+                                        else { <span class="im-badge im-b-neutral ms-1">Default</span> }
+                                        <div class="d-flex align-items-center gap-2 mt-1">
+                                            <input type="color" class="form-control form-control-color" value="@AccentOrDefault"
+                                                   @oninput="e => OnAccentInput(e.Value?.ToString())" />
+                                            <input type="text" class="form-control font-monospace" style="max-width:9rem" placeholder="#ffcf31"
+                                                   value="@_accentColor" @oninput="e => OnAccentInput(e.Value?.ToString())" />
+                                        </div>
+                                        <div class="form-text">Blank uses the built-in gold.</div>
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label mb-1 fw-semibold">Primary action colour</label>
+                                        @if (IsOverridden("Branding:InkColor")) { <span class="im-badge im-b-info ms-1">Custom</span> }
+                                        else { <span class="im-badge im-b-neutral ms-1">Default</span> }
+                                        <div class="d-flex align-items-center gap-2 mt-1">
+                                            <input type="color" class="form-control form-control-color" value="@InkOrDefault"
+                                                   @oninput="e => OnInkInput(e.Value?.ToString())" />
+                                            <input type="text" class="form-control font-monospace" style="max-width:9rem" placeholder="#232a33"
+                                                   value="@_inkColor" @oninput="e => OnInkInput(e.Value?.ToString())" />
+                                        </div>
+                                        <div class="form-text">Blank uses the built-in charcoal.</div>
+                                    </div>
+                                </div>
+                                @if (_brandError is not null)
+                                {
+                                    <div class="text-danger small mt-2">@_brandError</div>
+                                }
+                                <div class="mt-3 d-flex align-items-center gap-2 flex-wrap">
+                                    <span class="small text-muted">Live preview:</span>
+                                    <button type="button" class="btn btn-primary btn-sm" disabled>Primary button</button>
+                                    <a href="admin" @onclick:preventDefault>Example link</a>
+                                    <span class="im-badge im-b-danger">Critical (fixed)</span>
+                                    <span class="im-badge im-b-ok">Resolved (fixed)</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @* The report-section designer belongs with the rest of the Reporting settings. *@
+                    @if (group == "Reporting")
+                    {
+                        <div class="card mb-3">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><span class="bi bi-list-ol me-1"></span>Report sections</span>
+                                <button class="btn btn-sm btn-primary" @onclick="SaveLayout">Save layout</button>
+                            </div>
+                            <div class="card-body">
+                                <p class="small text-muted">
+                                    Choose which body sections appear in generated Word/PDF reports and their order. The
+                                    document title, branded header/footer and the integrity stamp always appear.
+                                </p>
+                                <ol class="list-group">
+                                    @for (var i = 0; i < _layout.Count; i++)
+                                    {
+                                        var idx = i;
+                                        var st = _layout[idx];
+                                        <li class="list-group-item d-flex align-items-center gap-2">
+                                            <div class="btn-group btn-group-sm" role="group">
+                                                <button class="btn btn-outline-secondary" title="Move up"
+                                                        disabled="@(idx == 0)" @onclick="() => MoveSection(idx, -1)">
+                                                    <span class="bi bi-arrow-up"></span>
+                                                </button>
+                                                <button class="btn btn-outline-secondary" title="Move down"
+                                                        disabled="@(idx == _layout.Count - 1)" @onclick="() => MoveSection(idx, 1)">
+                                                    <span class="bi bi-arrow-down"></span>
+                                                </button>
+                                            </div>
+                                            <div class="form-check form-switch mb-0 flex-grow-1">
+                                                <input class="form-check-input" type="checkbox" id="sec-@st.Section"
+                                                       checked="@st.Enabled" @onchange="e => ToggleSection(idx, (bool)(e.Value ?? false))" />
+                                                <label class="form-check-label @(st.Enabled ? "" : "text-muted")" for="sec-@st.Section">
+                                                    @SectionLabel(st.Section)
+                                                    @if (!st.Enabled) { <span class="im-badge im-b-neutral ms-1">Hidden</span> }
+                                                </label>
+                                            </div>
+                                            <span class="text-muted small">@(idx + 1)</span>
+                                        </li>
+                                    }
+                                </ol>
+                            </div>
+                        </div>
+                    }
+
+                    @* Send-a-test-email sits with the notification settings it exercises. *@
+                    @if (group == "Notifications")
+                    {
+                        <div class="card mb-3">
+                            <div class="card-header">Test notifications</div>
+                            <div class="card-body">
+                                <div class="row g-2 align-items-end" style="max-width:38rem">
+                                    <div class="col-sm-8">
+                                        <label class="form-label mb-0">Send a test email to</label>
+                                        <input class="form-control" type="email" @bind="_testRecipient" @bind:event="oninput"
+                                               placeholder="you@insurer.example" />
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <button class="btn btn-outline-primary w-100" @onclick="SendTest">Send test</button>
+                                    </div>
+                                </div>
+                                <div class="form-text">
+                                    @(Config.GetValue<bool>("Email:Enabled")
+                                        ? "Email delivery is on. This sends through the configured relay."
+                                        : "Email delivery is off. The message is written to the log, not sent.")
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            }
+        }
+        else if (_activeId == "server")
+        {
+            <p class="text-muted">These settings are managed in server-side configuration (<code>appsettings.json</code> / environment)
+            and can only be changed on the host. Secrets are never displayed, only their status.</p>
+            <table class="table table-sm">
+                <thead><tr><th style="width:32%">Setting</th><th>Value / status</th></tr></thead>
+                <tbody>
+                    <tr><td>Authentication mode</td><td><code>@(Config["Auth:Mode"] ?? "(unset)")</code></td></tr>
+                    <tr><td>Database provider</td><td><code>@(Config["Database:Provider"] ?? "(unset)")</code></td></tr>
+                    <tr><td>Database connection</td><td>@StatusBadge(!string.IsNullOrWhiteSpace(Config.GetConnectionString("Default")), "Configured", "Not configured")</td></tr>
+                    <tr><td>Evidence store path</td><td><code>@(Config["EvidenceStore:RootPath"] ?? "(unset)")</code></td></tr>
+                    <tr><td>Report output path</td><td><code>@(Config["ReportOutput:RootPath"] ?? "(unset)")</code></td></tr>
+                    <tr>
+                        <td>Seal signing key</td>
+                        <td>
+                            <code>@(Config["Integrity:SigningKeyPath"] ?? "(unset)")</code>
+                            @StatusBadge(SigningKeyPresent(), "Key present", "Key missing")
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Seal signing key id</td>
+                        <td><code class="small">@Signer.KeyId</code> <span class="small text-muted ms-2">@Signer.Algorithm</span></td>
+                    </tr>
+                    <tr><td>AD group → role mapping</td><td><span class="im-badge im-b-neutral">DB-managed</span> <span class="small text-muted ms-2">edit under Roles &amp; access</span></td></tr>
+                    <tr>
+                        <td>SIEM stream — webhook</td>
+                        <td>
+                            @StatusBadge(Config.GetValue<bool>("Siem:Webhook:Enabled"), "Enabled", "Disabled")
+                            @if (Config.GetValue<bool>("Siem:Webhook:Enabled"))
+                            {
+                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Siem:Webhook:Url"]), "Endpoint configured", "No endpoint")</span>
+                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Siem:Webhook:Token"]), "Token set", "No token")</span>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>SIEM stream — syslog (CEF)</td>
+                        <td>
+                            @StatusBadge(Config.GetValue<bool>("Siem:Syslog:Enabled"), "Enabled", "Disabled")
+                            @if (Config.GetValue<bool>("Siem:Syslog:Enabled"))
+                            {
+                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Siem:Syslog:Host"]), "Collector configured", "No collector")</span>
+                                <code class="small ms-2">@(Config["Siem:Syslog:Protocol"] ?? "Udp")/@(Config["Siem:Syslog:Port"] ?? "514")</code>
+                            }
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <p class="small text-muted mt-2">Auto-seal is an editable operational setting (see <strong>Governance &amp; security</strong>).
+            Run an on-demand verify or seal from <a href="integrity">Integrity &amp; Audit</a>.</p>
+        }
+        else if (_activeId == "source")
+        {
+            <p class="text-muted">Where each setting's <strong>effective</strong> value resolves from right now. Database overrides
+            win over <code>appsettings.json</code> for the operational subset; everything else stays server-side. Secrets show status only.</p>
+
+            <h6 class="text-uppercase small text-muted mt-3">Operational (admin-editable)</h6>
+            <table class="table table-sm">
+                <thead><tr><th style="width:34%">Key</th><th>Effective value</th><th style="width:22%">Source</th></tr></thead>
+                <tbody>
+                    @foreach (var def in SettingsCatalog.Editable)
+                    {
+                        var (value, source) = OperationalResolution(def);
+                        <tr>
+                            <td><code class="small">@def.Key</code></td>
+                            <td>@(string.IsNullOrEmpty(value) ? EmptyDash : value)</td>
+                            <td>@SourceBadge(source)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <h6 class="text-uppercase small text-muted mt-4">Server-side (read-only)</h6>
+            <table class="table table-sm">
+                <thead><tr><th style="width:34%">Key</th><th>Effective value</th><th style="width:22%">Source</th></tr></thead>
+                <tbody>
+                    @foreach (var (label, key, secret) in ServerKeys)
+                    {
+                        var r = ConfigSource.Resolve(Config, key);
+                        <tr>
+                            <td>@label <code class="small text-muted d-block">@key</code></td>
+                            <td>
+                                @if (secret && !string.IsNullOrEmpty(r.Value)) { <span class="text-muted">•••• (set)</span> }
+                                else { @(string.IsNullOrEmpty(r.Value) ? EmptyDash : r.Value) }
+                            </td>
+                            <td>@SourceBadge(r.Source)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <table class="table table-sm">
+                <tbody>
+                    <tr><td style="width:32%">Application version</td><td><code>@AppVersion</code></td></tr>
+                    <tr><td>Environment</td><td><code>@Env.EnvironmentName</code></td></tr>
+                    <tr><td>Database provider</td><td><code>@_dbProvider</code></td></tr>
+                    <tr>
+                        <td>Schema migrations</td>
+                        <td>
+                            @if (_pendingMigrations is null) { <em>checking&hellip;</em> }
+                            else if (_pendingMigrations.Count == 0) { @StatusBadge(true, "Up to date", "") }
+                            else { <span class="im-badge im-b-warn">@_pendingMigrations.Count pending</span> }
+                        </td>
+                    </tr>
+                    <tr><td>Authentication mode</td><td><code>@(Config["Auth:Mode"] ?? "(unset)")</code></td></tr>
+                </tbody>
+            </table>
+
+            <h6 class="text-uppercase small text-muted mt-3">Health checks</h6>
+            <table class="table table-sm">
+                <tbody>
+                    @if (_health is null)
+                    {
+                        <tr><td><em>Running checks&hellip;</em></td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var h in _health)
+                        {
+                            <tr>
+                                <td style="width:32%">@h.Label</td>
+                                <td>@StatusBadge(h.Ok, "OK", "Problem") <span class="small text-muted ms-2">@h.Detail</span></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+
+            <h6 class="text-uppercase small text-muted mt-3">Backup &amp; restore health</h6>
+            @if (_backup is null)
+            {
+                <p class="small text-muted mb-2"><em>Reading status&hellip;</em></p>
+            }
+            else
+            {
+                <p class="small text-muted mb-2">
+                    Read from the out-of-band backup/restore status file
+                    (<code>@_backup.Source</code>). The app never writes it; the SQL Agent backup and the
+                    restore-verification job do (see <code>docs/OPERATIONS.md §1.3</code>).
+                </p>
+                <table class="table table-sm">
+                    <tbody>
+                        <tr>
+                            <td style="width:32%">Overall</td>
+                            <td>@BackupBadge(_backup.Overall)</td>
+                        </tr>
+                        @foreach (var item in _backup.Items)
+                        {
+                            <tr>
+                                <td>@item.Label</td>
+                                <td>@BackupBadge(item.State) <span class="small text-muted ms-2">@item.Detail</span></td>
+                            </tr>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_backup.Note))
+                        {
+                            <tr><td>Note</td><td class="small text-muted">@_backup.Note</td></tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            <h6 class="text-uppercase small text-muted mt-3">Feature flags</h6>
+            <table class="table table-sm">
+                <tbody>
+                    <tr><td style="width:32%">Email delivery</td><td>@StatusBadge(Config.GetValue<bool>("Email:Enabled"), "On", "Off (logged)")</td></tr>
+                    <tr><td>Auto-seal</td><td>@StatusBadge(Config.GetValue<bool>("Integrity:AutoSeal:Enabled"), "On", "Off") <span class="small text-muted ms-2">every @(Config["Integrity:AutoSeal:IntervalHours"] ?? "?") h</span></td></tr>
+                    <tr><td>Windows authentication</td><td>@StatusBadge(string.Equals(Config["Auth:Mode"], "Windows", StringComparison.OrdinalIgnoreCase), "Enabled", "Dev fallback")</td></tr>
+                </tbody>
+            </table>
+        }
+
+@code {
+    // This page renders the Configuration and System sections of the admin hub; the shared AdminLayout owns
+    // the index rail. The active section comes from the route: /admin is Identity & branding, and
+    // /admin/settings/{section} selects the rest. Settings sections carry the catalog Groups they render;
+    // System sections (Groups == null) render read-only / diagnostic views keyed by Id.
+    [Parameter] public string? Section { get; set; }
+
+    private sealed record AdminSection(string Id, string Title, string[]? Groups = null);
+
+    private string _activeId = "identity";
+
+    private static readonly AdminSection[] NamedSettingsSections =
+    [
+        new("identity", "Identity & branding", ["Organization"]),
+        new("notifications", "Notifications", ["Notifications"]),
+        new("integrations", "Integrations", ["Integrations"]),
+        new("sla", "Response & SLA", ["Response SLA", "Severity labels"]),
+        new("reporting", "Reporting", ["Reporting"]),
+        new("governance", "Governance & security", ["Retention", "Integrity", "Access logging", "Security"]),
+    ];
+
+    // Any catalog group not claimed by a named section still needs a home, so a newly added group never
+    // silently disappears from the console.
+    private static readonly AdminSection[] SettingsSections = BuildSettingsSections();
+
+    private static AdminSection[] BuildSettingsSections()
+    {
+        var claimed = NamedSettingsSections.SelectMany(s => s.Groups!).ToHashSet(StringComparer.Ordinal);
+        var orphans = SettingsCatalog.Groups.Where(g => !claimed.Contains(g)).ToArray();
+        return orphans.Length == 0
+            ? NamedSettingsSections
+            : [.. NamedSettingsSections, new AdminSection("other", "Other", orphans)];
+    }
+
+    private static readonly AdminSection[] SystemSections =
+    [
+        new("server", "Server configuration"),
+        new("source", "Configuration source"),
+        new("diagnostics", "Diagnostics"),
+    ];
+
+    private static IEnumerable<AdminSection> AllSections => SettingsSections.Concat(SystemSections);
+
+    // The route parameter picks the section; unknown/blank falls back to Identity & branding.
+    protected override void OnParametersSet()
+    {
+        var id = string.IsNullOrWhiteSpace(Section) ? "identity" : Section.Trim().ToLowerInvariant();
+        _activeId = AllSections.Any(s => s.Id == id) ? id : "identity";
+    }
+
+    private AdminSection ActiveSection => AllSections.FirstOrDefault(s => s.Id == _activeId) ?? SettingsSections[0];
+    private string ActiveTitle => ActiveSection.Title;
+    private string[]? ActiveGroups => ActiveSection.Groups;
+
+    // A one-line orientation on the two read-only System views; the Configuration sections are self-describing.
+    private string? ActiveSubtitle => _activeId switch
+    {
+        "server" => "Managed in server-side configuration and shown read-only; change these on the host.",
+        "source" => "Where each setting's effective value resolves from right now.",
+        _ => null,
+    };
+
+    private const string EmptyDash = "—";
+
+    // The per-severity SLA rows embed the severity's name in their label (e.g. "Containment — Critical
+    // (hours)"). Show the org's configured severity label instead, so a renamed level (e.g. Critical → SEV-1)
+    // stays consistent here too. Only Sla:{Clock}:{Severity} keys are affected.
+    private string DisplayLabel(SettingDefinition def)
+    {
+        var parts = def.Key.Split(':');
+        return parts is ["Sla", _, var sevName] && Enum.TryParse<Severity>(sevName, out var sev)
+            ? def.Label.Replace(sev.ToString(), SevLabels.For(sev))
+            : def.Label;
+    }
+
+    // Server-side keys surfaced in the config-source map (secrets shown as status only).
+    private static readonly (string Label, string Key, bool Secret)[] ServerKeys =
+    [
+        ("Authentication mode", "Auth:Mode", false),
+        ("Database provider", "Database:Provider", false),
+        ("Database connection", "ConnectionStrings:Default", true),
+        ("Evidence store path", "EvidenceStore:RootPath", false),
+        ("Report output path", "ReportOutput:RootPath", false),
+        ("Seal signing key path", "Integrity:SigningKeyPath", false),
+        ("Backup status file", "BackupStatus:FilePath", false),
+    ];
+
+    private (string? Value, string Source) OperationalResolution(SettingDefinition def)
+    {
+        if (def.Kind == SettingKind.MultiText)
+        {
+            var arr = Config.GetSection(def.Key).Get<string[]>() ?? [];
+            // A list binds to indexed children, so resolve the first element's provider for the source.
+            var source = arr.Length == 0 ? "Default (unset)" : ConfigSource.Resolve(Config, $"{def.Key}:0").Source;
+            return (arr.Length == 0 ? null : string.Join(", ", arr), source);
+        }
+        var r = ConfigSource.Resolve(Config, def.Key);
+        return (r.Value, r.Source);
+    }
+
+    private static RenderFragment SourceBadge(string source) => builder =>
+    {
+        var css = source.StartsWith("Database", StringComparison.Ordinal)
+            ? "im-badge im-b-info"
+            : source.StartsWith("Default", StringComparison.Ordinal)
+                ? "im-badge im-b-neutral"
+                : "im-badge im-b-neutral";
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", css);
+        builder.AddContent(2, source);
+        builder.CloseElement();
+    };
+
+    private IReadOnlyList<EffectiveSetting>? _effective;
+    private readonly Dictionary<string, string?> _form = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<string>? _pendingMigrations;
+    private IReadOnlyList<HealthCheck>? _health;
+    private BackupHealthReport? _backup;
+    private string? _testRecipient;
+
+    private async Task SendTest()
+    {
+        var to = _testRecipient?.Trim();
+        if (string.IsNullOrWhiteSpace(to)) { Toasts.Warning("Enter a recipient address."); return; }
+
+        await Email.SendAsync([to], "[CaseBook] Test notification",
+            "This is a test notification from CaseBook confirming the email configuration.");
+
+        Toasts.Success(Config.GetValue<bool>("Email:Enabled")
+            ? $"Test email dispatched to {to}."
+            : $"Email delivery is off; logged a test message for {to}.");
+    }
+
+    private sealed record HealthCheck(string Label, bool Ok, string Detail);
+
+    private static string AppVersion =>
+        System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "unknown";
+
+    // Diagnostics read the DB provider once per load; a short-lived context per operation (H-08) rather
+    // than a circuit-lived injected context.
+    private string? _dbProvider;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        await using (var db = await DbFactory.CreateDbContextAsync())
+        {
+            _dbProvider = db.Database.ProviderName;
+            _pendingMigrations = (await db.Database.GetPendingMigrationsAsync()).ToList();
+        }
+        _health = await RunHealthChecksAsync();
+        _backup = Backup.Read();
+    }
+
+    private async Task<List<HealthCheck>> RunHealthChecksAsync()
+    {
+        var checks = new List<HealthCheck>();
+
+        bool dbOk;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        try { dbOk = await db.Database.CanConnectAsync(); } catch { dbOk = false; }
+        checks.Add(new HealthCheck("Database connectivity", dbOk, dbOk ? db.Database.ProviderName ?? "" : "cannot connect"));
+
+        checks.Add(WritableCheck("Evidence store writable", Config["EvidenceStore:RootPath"]));
+        checks.Add(WritableCheck("Report output writable", Config["ReportOutput:RootPath"]));
+        checks.Add(new HealthCheck("Seal signing key present", SigningKeyPresent(),
+            SigningKeyPresent() ? Signer.KeyId : "missing; seals cannot be signed"));
+        checks.Add(new HealthCheck("Schema up to date", _pendingMigrations is { Count: 0 },
+            _pendingMigrations is { Count: > 0 } ? $"{_pendingMigrations.Count} pending" : "no pending migrations"));
+
+        return checks;
+    }
+
+    private HealthCheck WritableCheck(string label, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return new HealthCheck(label, false, "path not configured");
+        var full = Path.IsPathRooted(path) ? path : Path.Combine(Env.ContentRootPath, path);
+        try
+        {
+            Directory.CreateDirectory(full);
+            var probe = Path.Combine(full, $".health-{Guid.NewGuid():N}.tmp");
+            File.WriteAllText(probe, "ok");
+            File.Delete(probe);
+            return new HealthCheck(label, true, full);
+        }
+        catch (Exception ex)
+        {
+            return new HealthCheck(label, false, ex.GetType().Name);
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _effective = await Settings.GetEffectiveAsync();
+        _form.Clear();
+        foreach (var s in _effective)
+            _form[s.Definition.Key] = s.Value;
+
+        _accentColor = _effective.FirstOrDefault(e => e.Definition.Key == "Branding:AccentColor")?.Value;
+        _inkColor = _effective.FirstOrDefault(e => e.Definition.Key == "Branding:InkColor")?.Value;
+
+        var layoutRaw = _effective.FirstOrDefault(e => e.Definition.Key == "Reporting:SectionLayout")?.Value;
+        _layout = ReportLayout.Parse(layoutRaw).ToList();
+
+        var logo = await Branding.GetLogoAsync();
+        _logoDataUri = logo is null ? null : $"data:{logo.ContentType};base64,{Convert.ToBase64String(logo.Bytes)}";
+    }
+
+    // --- Report section layout designer (Reporting:SectionLayout) ---
+    private List<ReportSectionState> _layout = [];
+
+    private static readonly Dictionary<ReportSection, string> SectionLabels = new()
+    {
+        [ReportSection.Summary] = "Summary",
+        [ReportSection.BusinessImpact] = "Business Impact",
+        [ReportSection.EventTimeline] = "Event Timeline",
+        [ReportSection.InvestigationTimeline] = "Investigation Timeline",
+        [ReportSection.SystemsReviewed] = "Systems Reviewed",
+        [ReportSection.Recommendations] = "Recommendations",
+        [ReportSection.Outcome] = "Outcome",
+        [ReportSection.Appendix] = "Appendix (full structured record)",
+    };
+
+    private static string SectionLabel(ReportSection s) => SectionLabels.GetValueOrDefault(s, s.ToString());
+
+    private void MoveSection(int index, int delta)
+    {
+        var target = index + delta;
+        if (target < 0 || target >= _layout.Count) return;
+        (_layout[index], _layout[target]) = (_layout[target], _layout[index]);
+    }
+
+    private void ToggleSection(int index, bool enabled) =>
+        _layout[index] = _layout[index] with { Enabled = enabled };
+
+    private async Task SaveLayout()
+    {
+        await Settings.SetAsync("Reporting:SectionLayout", ReportLayout.Serialize(_layout));
+        await LoadAsync();
+        Toasts.Success("Saved report section layout.");
+    }
+
+    // --- Brand colours (X-08 white-label palette) ---
+    private string? _accentColor;
+    private string? _inkColor;
+    private string? _brandError;
+    private const string DefaultAccent = "#ffcf31";
+    private const string DefaultInk = "#232a33";
+
+    // Colour inputs need a concrete hex; fall back to the built-in default when unset/invalid.
+    private string AccentOrDefault => BrandPalette.IsValidHex(_accentColor) ? _accentColor!.Trim() : DefaultAccent;
+    private string InkOrDefault => BrandPalette.IsValidHex(_inkColor) ? _inkColor!.Trim() : DefaultInk;
+
+    private bool IsOverridden(string key) =>
+        _effective?.FirstOrDefault(e => e.Definition.Key == key)?.IsOverridden ?? false;
+
+    private static string? NullIfBlank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    // Live preview: push the pending palette into the current page without saving. Invalid/partial input
+    // derives to null → the built-in defaults show. Saved separately so a preview never persists on its own.
+    private Task OnAccentInput(string? value) { _accentColor = value; return PreviewBrand(); }
+    private Task OnInkInput(string? value) { _inkColor = value; return PreviewBrand(); }
+
+    private async Task PreviewBrand()
+    {
+        _brandError = null;
+        var css = BrandPalette.BuildCss(NullIfBlank(_accentColor), NullIfBlank(_inkColor)) ?? "";
+        await JS.InvokeVoidAsync("imBrand.apply", css);
+    }
+
+    private async Task SaveBrand()
+    {
+        _brandError = null;
+        var accent = NullIfBlank(_accentColor);
+        var ink = NullIfBlank(_inkColor);
+        if (accent is not null && !BrandPalette.IsValidHex(accent)) { _brandError = "Accent colour must be a hex value like #2563eb."; return; }
+        if (ink is not null && !BrandPalette.IsValidHex(ink)) { _brandError = "Primary colour must be a hex value like #232a33."; return; }
+
+        if (accent is null) await Settings.ResetAsync("Branding:AccentColor"); else await Settings.SetAsync("Branding:AccentColor", accent);
+        if (ink is null) await Settings.ResetAsync("Branding:InkColor"); else await Settings.SetAsync("Branding:InkColor", ink);
+
+        await LoadAsync();
+        await JS.InvokeVoidAsync("imBrand.apply", BrandPalette.BuildCss(accent, ink) ?? "");
+        Toasts.Success("Saved brand colours.");
+    }
+
+    private async Task ResetBrand()
+    {
+        await Settings.ResetAsync("Branding:AccentColor");
+        await Settings.ResetAsync("Branding:InkColor");
+        _accentColor = null;
+        _inkColor = null;
+        _brandError = null;
+        await LoadAsync();
+        await JS.InvokeVoidAsync("imBrand.apply", "");
+        Toasts.Info("Brand colours reset to defaults.");
+    }
+
+    // --- Report logo (IReportBrandingStore) ---
+    private string? _logoDataUri;
+    private string? _logoError;
+
+    private async Task OnLogoSelected(InputFileChangeEventArgs e)
+    {
+        _logoError = null;
+        var file = e.File;
+        if (file is null) return;
+
+        var ct = file.ContentType ?? "";
+        if (!ct.Contains("png", StringComparison.OrdinalIgnoreCase) && !ct.Contains("jpeg", StringComparison.OrdinalIgnoreCase))
+        {
+            _logoError = "Please choose a PNG or JPEG image.";
+            return;
+        }
+
+        try
+        {
+            const long maxBytes = 2 * 1024 * 1024;
+            await using var stream = file.OpenReadStream(maxBytes);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            await Branding.SaveLogoAsync(ms.ToArray(), ct);
+            await LoadAsync();
+            Toasts.Success("Report logo updated.");
+        }
+        catch (IOException)
+        {
+            _logoError = "That image is larger than the 2 MB limit.";
+        }
+        catch (Exception ex) when (ex is ArgumentException)
+        {
+            _logoError = ex.Message;
+        }
+    }
+
+    private async Task RemoveLogo()
+    {
+        await Branding.ClearLogoAsync();
+        await LoadAsync();
+        Toasts.Info("Report logo removed.");
+    }
+
+    private bool IsTrue(string key) =>
+        bool.TryParse(_form.GetValueOrDefault(key), out var b) && b;
+
+    private void SetBool(string key, bool on) => _form[key] = on ? "true" : "false";
+
+    private async Task SaveGroup(string group)
+    {
+        if (_effective is null) return;
+
+        var changed = 0;
+        try
+        {
+            foreach (var s in _effective.Where(e => e.Definition.Group == group))
+            {
+                var key = s.Definition.Key;
+                var current = s.Value ?? "";
+                var next = _form.GetValueOrDefault(key) ?? "";
+                if (!string.Equals(current, next, StringComparison.Ordinal))
+                {
+                    await Settings.SetAsync(key, _form.GetValueOrDefault(key));
+                    changed++;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+
+        await LoadAsync();
+        Toasts.Success(changed == 0 ? $"No changes in {group}." : $"Saved {changed} {group} setting(s).");
+    }
+
+    private async Task ResetOne(string key)
+    {
+        await Settings.ResetAsync(key);
+        await LoadAsync();
+        Toasts.Info("Reverted to default.");
+    }
+
+    private bool SigningKeyPresent()
+    {
+        var path = Config["Integrity:SigningKeyPath"];
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        var full = Path.IsPathRooted(path) ? path : Path.Combine(Env.ContentRootPath, path);
+        return File.Exists(full);
+    }
+
+    private static RenderFragment StatusBadge(bool ok, string yes, string no) => builder =>
+    {
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", ok ? "im-badge im-b-ok"
+                                             : "im-badge im-b-danger");
+        builder.AddContent(2, ok ? yes : no);
+        builder.CloseElement();
+    };
+
+    private static RenderFragment BackupBadge(BackupHealthState state) => builder =>
+    {
+        var (css, text) = state switch
+        {
+            BackupHealthState.Ok => ("im-badge im-b-ok", "Fresh"),
+            BackupHealthState.Stale => ("im-badge im-b-warn", "Stale"),
+            BackupHealthState.Missing => ("im-badge im-b-danger", "Missing"),
+            _ => ("im-badge im-b-neutral", "Not configured"),
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", css);
+        builder.AddContent(2, text);
+        builder.CloseElement();
+    };
+}

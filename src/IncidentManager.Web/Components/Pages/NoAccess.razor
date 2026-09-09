@@ -1,0 +1,12 @@
+@* U-28: friendly landing for authenticated-but-unprovisioned users. A page's [Authorize(Policy)]
+   is enforced at the Blazor endpoint, so a no-role user gets a raw 403 before any component renders
+   (the <NotAuthorized> in Routes.razor never runs for endpoint-level denials). A 403 status-code page
+   redirects here. This route only requires an authenticated user (the fallback policy), which a
+   no-role user satisfies, so it always renders. *@
+@page "/access-denied"
+@attribute [Authorize]
+@using IncidentManager.Web.Components.Shared
+
+<PageTitle>No access — CaseBook</PageTitle>
+
+<AccessDenied />

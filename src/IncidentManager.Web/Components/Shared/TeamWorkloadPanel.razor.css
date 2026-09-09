@@ -1,0 +1,31 @@
+/* Team-workload panel graphics (E-25). Tiles/cards/table headers now come from the shared im-* system
+   (app.css); this file keeps only the panel's bespoke graphical bits — the per-analyst avatar, the
+   stacked severity bar, and the stale/SLA chips. Colours derive from the global --im-* tokens. */
+
+.wl-open { font-size: 1.15rem; font-weight: 700; color: var(--im-text); }
+
+.wl-avatar {
+    display: inline-grid; place-items: center;
+    width: 30px; height: 30px; border-radius: 50%;
+    color: #fff; font-size: .72rem; font-weight: 700; vertical-align: middle;
+}
+.wl-avatar-none { background: var(--im-text-muted); }
+
+.wl-unassigned { background: rgba(217, 152, 43, .07); }
+.wl-unassigned .wl-open { color: var(--im-warn); }
+[data-bs-theme="dark"] .wl-unassigned { background: rgba(224, 168, 59, .10); }
+
+.wl-sev { min-width: 160px; }
+.wl-bar {
+    display: flex; height: 8px; border-radius: 5px; overflow: hidden;
+    background: var(--im-border); gap: 1px; margin-bottom: 6px; max-width: 220px;
+}
+.wl-seg { display: block; min-width: 3px; }
+.wl-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.wl-chip { font-size: .74rem; color: var(--im-text-muted); display: inline-flex; align-items: center; }
+.wl-chip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 4px; }
+
+.wl-stale {
+    display: inline-block; min-width: 22px; padding: 1px 7px; border-radius: 999px;
+    background: var(--im-warn-bg); color: var(--im-warn); font-size: .78rem; font-weight: 600;
+}

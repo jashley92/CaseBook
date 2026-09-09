@@ -1,0 +1,49 @@
+/* New-case form: a single narrow column of design-system cards. */
+.nc-form {
+    max-width: 760px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.nc-card { padding: 20px; }
+
+/* Optional template quick-start: a subtle dashed callout above the form proper. */
+.nc-template {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border: 1px dashed var(--im-border-strong);
+    border-radius: 12px;
+    background: var(--im-surface-2);
+}
+.nc-template-ic { color: var(--im-accent-text); font-size: 1.1rem; margin-top: 2px; }
+.nc-template-body { flex: 1; min-width: 0; }
+
+/* Progressive disclosure for the rarely-used custom case number. */
+.nc-advanced {
+    margin-top: 16px;
+    border-top: 1px solid var(--im-border);
+    padding-top: 12px;
+}
+.nc-advanced > summary {
+    cursor: pointer;
+    font-size: .85rem;
+    font-weight: 600;
+    color: var(--im-text-muted);
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.nc-advanced > summary::before {
+    content: "\203A";               /* › rotates when open */
+    display: inline-block;
+    transition: transform .12s ease;
+}
+.nc-advanced[open] > summary::before { transform: rotate(90deg); }
+.nc-advanced > summary:hover { color: var(--im-text); }
+.nc-advanced-body { max-width: 360px; }
+
+.nc-actions { display: flex; gap: 8px; }

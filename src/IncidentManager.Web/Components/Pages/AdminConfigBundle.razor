@@ -1,0 +1,194 @@
+@page "/admin/config-bundle"
+@using IncidentManager.Application.Config
+@using Microsoft.AspNetCore.Components.Forms
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject ConfigBundleService Config
+@inject ToastService Toasts
+
+<PageTitle>Configuration bundle</PageTitle>
+
+<PageHeader Title="Configuration bundle">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+<p class="text-muted">
+    Export this instance's <strong>editable configuration</strong> as a single signed, versioned file — the
+    "seed pack". Use it to <strong>snapshot</strong> the current setup, <strong>diff</strong> it against an IRP
+    revision, <strong>promote</strong> config from a test instance to production, or <strong>stand up a new
+    white-label instance</strong> from a known baseline. The file is plain JSON, so it reviews and diffs like
+    code, and it carries a signature (with the public key) so its authenticity can be checked offline.
+</p>
+<p class="text-muted small">
+    <span class="bi bi-info-circle me-1"></span>The bundle covers operational &amp; taxonomy <strong>settings</strong>,
+    <strong>roles</strong> &amp; AD mappings, <strong>case templates</strong>, <strong>stage gates</strong>,
+    <strong>report profiles</strong>, and <strong>data elements</strong>. It deliberately excludes cases,
+    evidence and the audit trail (records, not configuration) and server-side security/infrastructure config
+    (connection strings, auth mode, signing keys, the SIEM endpoint) — those never leave the server.
+</p>
+
+<div class="card mb-3">
+    <div class="card-header"><span class="bi bi-box-arrow-down me-1"></span>Export</div>
+    <div class="card-body">
+        @if (_bundle is null)
+        {
+            <p><em>Loading&hellip;</em></p>
+        }
+        else
+        {
+            <p class="small text-muted mb-2">This instance's bundle currently contains:</p>
+            <ul class="mb-3">
+                <li>@_bundle.Settings.Count setting(s)</li>
+                <li>@_bundle.Roles.Count role(s) and @_bundle.RoleMappings.Count AD mapping(s)</li>
+                <li>@_bundle.CaseTemplates.Count case template(s)</li>
+                <li>@_bundle.StageGates.Count stage gate(s)</li>
+                <li>@_bundle.ReportProfiles.Count report profile(s)</li>
+                <li>@_bundle.DataElements.Count data element(s)</li>
+            </ul>
+            <a class="btn btn-sm btn-primary" href="/export/config-bundle.json" download
+               title="Download the signed configuration bundle">
+                <span class="bi bi-download me-1"></span>Download configuration bundle
+            </a>
+            <p class="small text-muted mt-2 mb-0">The download is recorded in the audit trail.</p>
+        }
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header"><span class="bi bi-box-arrow-in-up me-1"></span>Import</div>
+    <div class="card-body">
+        <p class="small text-muted">
+            Upload a bundle to apply it here. The signature is verified first; then you get a <strong>preview</strong> of
+            exactly what would change before anything is written. Import is <strong>additive</strong> — existing items are
+            updated in place and new ones are added, but nothing is ever deleted. Every change is audited.
+        </p>
+        <div class="alert alert-warning small py-2">
+            <span class="bi bi-exclamation-triangle me-1"></span>Importing <strong>roles</strong> and <strong>AD mappings</strong>
+            changes who can access this instance. Review the preview carefully — AD group names are organization-specific.
+        </div>
+
+        <InputFile OnChange="OnFileSelected" accept=".json" class="form-control form-control-sm" style="max-width:28rem" />
+
+        @if (_verification is not null)
+        {
+            <div class="mt-3">
+                @if (!_verification.SignatureValid)
+                {
+                    <div class="alert alert-danger py-2 mb-2">
+                        <span class="bi bi-shield-x me-1"></span><strong>Signature invalid.</strong> This bundle was altered
+                        after it was signed, or is corrupt. It cannot be imported.
+                    </div>
+                }
+                else
+                {
+                    <div class="alert @(_verification.SignedByThisInstance ? "alert-success" : "alert-info") py-2 mb-2">
+                        <span class="bi bi-shield-check me-1"></span>Signature valid —
+                        @(_verification.SignedByThisInstance ? "signed by this instance" : "signed by another instance")
+                        (key <code>@Trunc(_verification.KeyId)</code>). Exported by <strong>@_verification.ExportedBy</strong>
+                        from <strong>@_verification.SourceHost</strong> on @_verification.ExportedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
+                    </div>
+                }
+
+                @if (_diff is not null)
+                {
+                    <p class="mb-1">
+                        <span class="im-badge im-b-success">@_diff.Added to add</span>
+                        <span class="im-badge im-b-info ms-1">@_diff.Updated to update</span>
+                        <span class="im-badge im-b-neutral ms-1">@_diff.Unchanged unchanged</span>
+                    </p>
+                    @if (_diff.HasChanges)
+                    {
+                        <div class="table-responsive" style="max-height:16rem;overflow:auto">
+                            <table class="table table-sm mb-2">
+                                <thead><tr><th style="width:9rem"></th><th style="width:8rem">Section</th><th>Item</th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in _diff.Changes)
+                                    {
+                                        <tr>
+                                            <td>
+                                                @if (c.Change == ConfigChange.Add) { <span class="im-badge im-b-success">Add</span> }
+                                                else { <span class="im-badge im-b-info">Update</span> }
+                                            </td>
+                                            <td class="small text-muted">@c.Section</td>
+                                            <td>@c.Name</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <button class="btn btn-sm btn-primary" @onclick="Apply" disabled="@(!_verification.SignatureValid || _applying)">
+                            <span class="bi bi-check2-circle me-1"></span>Apply import (@_diff.Changes.Count change(s))
+                        </button>
+                    }
+                    else
+                    {
+                        <p class="text-muted mb-0">This bundle matches the live configuration — nothing to apply.</p>
+                    }
+                    <button class="btn btn-sm btn-outline-secondary ms-1" @onclick="ClearUpload" disabled="@_applying">Cancel</button>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private ConfigBundle? _bundle;
+    private ConfigBundle? _incoming;
+    private ConfigVerification? _verification;
+    private ConfigDiff? _diff;
+    private bool _applying;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => _bundle = await Config.BuildBundleAsync();
+
+    private static string Trunc(string s) => s.Length <= 12 ? s : s[..12] + "…";
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        ClearUpload();
+        try
+        {
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(maxAllowedSize: 8 * 1024 * 1024).CopyToAsync(ms);
+            var (envelope, verification) = Config.ParseAndVerify(ms.ToArray());
+            _incoming = envelope.Bundle;
+            _verification = verification;
+            _diff = await Config.PreviewAsync(envelope.Bundle);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            ClearUpload();
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private void ClearUpload()
+    {
+        _incoming = null;
+        _verification = null;
+        _diff = null;
+    }
+
+    private async Task Apply()
+    {
+        if (_incoming is null || _verification is not { SignatureValid: true }) return;
+        _applying = true;
+        try
+        {
+            var result = await Config.ImportAsync(_incoming);
+            Toasts.Success($"Import applied — {result.Added} added, {result.Updated} updated.");
+            ClearUpload();
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally
+        {
+            _applying = false;
+        }
+    }
+}

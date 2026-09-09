@@ -1,0 +1,21 @@
+@* Shared page header — title (+ optional subtitle) on the left, an optional actions slot on the right.
+   One header vocabulary across every top-level page. Renders the page's single <h1>. *@
+<div class="im-page-head">
+    <div>
+        <h1 class="im-page-title">@Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Subtitle))
+        {
+            <p class="im-page-sub">@Subtitle</p>
+        }
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="im-page-actions">@Actions</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+}

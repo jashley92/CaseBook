@@ -1,0 +1,50 @@
+/* Style-guide gallery layout. Uses the global --im-* tokens for its own chrome so the page
+   itself is a conformance example. */
+.sg-tok-group { margin-bottom: 14px; }
+.sg-tok-group:last-child { margin-bottom: 0; }
+
+.sg-tok-label {
+    font-size: .72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    color: var(--im-text-muted);
+    margin-bottom: 6px;
+}
+
+.sg-swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 8px;
+}
+
+.sg-swatch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: .8rem;
+}
+
+.sg-chip {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid var(--im-border);
+    flex: 0 0 auto;
+}
+
+.sg-badge-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 0;
+    border-top: 1px solid var(--im-border);
+}
+.sg-badge-row:first-of-type { border-top: none; }
+
+/* The row's leading label sits full-width above its samples on narrow screens. */
+.sg-badge-row .sg-tok-label { margin-bottom: 0; flex: 0 0 100%; }
+@media (min-width: 720px) {
+    .sg-badge-row .sg-tok-label { flex: 0 0 240px; }
+}

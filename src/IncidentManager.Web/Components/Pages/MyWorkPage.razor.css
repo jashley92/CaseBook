@@ -1,0 +1,57 @@
+/* Work landing — "My work" tab (U-25). Tiles, cards, section headers and the page header now come from
+   the shared im-* system (app.css); this file keeps only the tab's bespoke bits: the two-column card
+   grid, the phase chips, and the escalation list. Colours alias the global --im-* tokens. */
+.mywork {
+    --border: var(--im-border);
+    --text: var(--im-text);
+    --muted: var(--im-text-muted);
+    --accent: var(--im-accent-strong);
+}
+
+[data-bs-theme="dark"] .mywork {
+    --accent: var(--im-accent);
+}
+
+/* Two-column card grid; sections stack on narrow screens */
+.mw-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    align-items: start;
+}
+@media (max-width: 980px) { .mw-grid { grid-template-columns: 1fr; } }
+
+.mw-empty { color: var(--muted); font-size: .85rem; padding: 6px 0 14px; }
+
+/* Phase chips */
+.mw-phasebar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.mw-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: .76rem;
+    color: var(--muted);
+    text-decoration: none;
+}
+.mw-chip:hover { border-color: var(--accent); color: var(--text); }
+.mw-chip-n { font-weight: 700; color: var(--accent); }
+
+/* Escalation list */
+.mw-esc { list-style: none; margin: 0; padding: 0; }
+.mw-esc li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 7px 0;
+    border-top: 1px solid var(--border);
+}
+.mw-esc li:first-child { border-top: none; }
+.mw-esc-case { text-decoration: none; color: var(--text); flex: 1 1 auto; min-width: 0; }
+.mw-esc-case:hover { color: var(--accent); }
+.mw-esc-move { display: inline-flex; align-items: center; gap: 5px; }
+.mw-esc-move .bi { color: var(--muted); }
+.mw-esc-meta { white-space: nowrap; }

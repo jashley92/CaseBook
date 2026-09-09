@@ -1,0 +1,153 @@
+@using IncidentManager.Application.Activity
+@implements IDisposable
+@inject ActivityFeedService Feed
+@inject IncidentManager.Application.Abstractions.ICaseChangeNotifier Notifier
+@inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject TimeDisplay TimeDisp
+
+<div class="notif">
+    <button type="button" class="notif-btn" @onclick="Toggle"
+            title="Recent activity" aria-label="@($"Recent activity{(_unread > 0 ? $", {_unread} new" : "")}")">
+        <span class="bi @(_unread > 0 ? "bi-bell-fill" : "bi-bell")" aria-hidden="true"></span>
+        @if (_unread > 0)
+        {
+            <span class="notif-badge im-bump" @key="_unread">@(_unread > 9 ? "9+" : _unread.ToString())</span>
+        }
+    </button>
+
+    @if (_open)
+    {
+        <div class="notif-backdrop" @onclick="Close"></div>
+        <div class="notif-panel" role="dialog" aria-label="Recent activity">
+            <div class="notif-head">
+                <span class="fw-semibold">Recent activity</span>
+                <span class="text-muted small">Across your cases</span>
+            </div>
+            @if (_items.Count == 0)
+            {
+                <div class="notif-empty text-muted">No recent activity.</div>
+            }
+            else
+            {
+                <ul class="notif-list">
+                    @foreach (var it in _items)
+                    {
+                        var isNew = IsUnread(it);
+                        <li class="notif-item @(isNew ? "is-new" : "")">
+                            <div class="notif-line">
+                                @if (isNew)
+                                {
+                                    <span class="notif-dot" aria-hidden="true"></span>
+                                }
+                                <span class="notif-actor">@ActorLabel(it)</span>
+                                <span class="notif-summary">@it.Summary</span>
+                            </div>
+                            <div class="notif-meta">
+                                @if (it.CaseId is { } id)
+                                {
+                                    <a class="notif-caselink" href="cases/@id" @onclick="() => GoTo(id)" @onclick:preventDefault>
+                                        @it.CaseNumber
+                                    </a>
+                                    <span class="notif-sep">·</span>
+                                }
+                                <span class="notif-time" title="@TimeDisp.Long(it.AtUtc)">@Relative(it.AtUtc)</span>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _open;
+    private int _unread;
+    private string? _seenIso;
+    private bool _seenLoaded;
+    private IReadOnlyList<ActivityItem> _items = Array.Empty<ActivityItem>();
+    private IDisposable? _sub;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        _sub = Notifier.SubscribeAll(OnAnyChange);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        _seenIso = await JS.InvokeAsync<string?>("imActivity.getSeen");
+        if (string.IsNullOrEmpty(_seenIso))
+        {
+            // First use on this browser: treat everything so far as seen, so the badge only
+            // lights up for activity that happens from now on.
+            _seenIso = DateTimeOffset.UtcNow.ToString("o");
+            await JS.InvokeVoidAsync("imActivity.setSeen", _seenIso);
+        }
+        _seenLoaded = true;
+        Recount();
+        StateHasChanged();
+    }
+
+    private async Task Load() => _items = await Feed.RecentAsync(20);
+
+    private Task OnAnyChange(Guid _, string __) => InvokeAsync(async () =>
+    {
+        await Load();
+        Recount();
+        StateHasChanged();
+    });
+
+    private void Recount()
+    {
+        if (!_seenLoaded) { _unread = 0; return; }
+        _unread = _items.Count(IsUnread);
+    }
+
+    // Unread = newer than the last time this browser opened the panel, and done by someone else.
+    private bool IsUnread(ActivityItem it)
+    {
+        if (!_seenLoaded) return false;
+        if (string.Equals(it.Actor, CurrentUser.UserId, StringComparison.OrdinalIgnoreCase)) return false;
+        return DateTimeOffset.TryParse(_seenIso, out var seen) && it.AtUtc > seen;
+    }
+
+    private async Task Toggle()
+    {
+        _open = !_open;
+        if (_open)
+        {
+            // Opening the panel marks everything currently shown as seen.
+            _seenIso = DateTimeOffset.UtcNow.ToString("o");
+            await JS.InvokeVoidAsync("imActivity.setSeen", _seenIso);
+            _unread = 0;
+        }
+    }
+
+    private void Close() => _open = false;
+
+    private void GoTo(Guid caseId)
+    {
+        _open = false;
+        Nav.NavigateTo($"cases/{caseId}");
+    }
+
+    private string ActorLabel(ActivityItem it) =>
+        string.Equals(it.Actor, CurrentUser.UserId, StringComparison.OrdinalIgnoreCase) ? "You" : it.ActorDisplay;
+
+    private string Relative(DateTimeOffset at)
+    {
+        var d = DateTimeOffset.UtcNow - at;
+        if (d < TimeSpan.FromMinutes(1)) return "just now";
+        if (d < TimeSpan.FromHours(1)) return $"{(int)d.TotalMinutes}m ago";
+        if (d < TimeSpan.FromDays(1)) return $"{(int)d.TotalHours}h ago";
+        if (d < TimeSpan.FromDays(7)) return $"{(int)d.TotalDays}d ago";
+        return TimeDisp.DateOnly(at);
+    }
+
+    public void Dispose() => _sub?.Dispose();
+}

@@ -1,0 +1,13 @@
+@page "/team"
+@attribute [Authorize(Policy = Policies.ViewAllCases)]
+@inject NavigationManager Nav
+
+@* Team workload was folded into the consolidated Work landing (it renders there under a ViewAllCases
+   gate). This route is kept as a permanent redirect so existing bookmarks / deep links still land on
+   the team tab. *@
+<PageTitle>Team workload</PageTitle>
+<p class="p-4 text-muted">Taking you to <a href="work?tab=team">Work → Team workload</a>…</p>
+
+@code {
+    protected override void OnInitialized() => Nav.NavigateTo("work?tab=team", replace: true);
+}

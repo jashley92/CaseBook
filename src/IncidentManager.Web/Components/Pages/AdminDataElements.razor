@@ -1,0 +1,191 @@
+@page "/admin/data-elements"
+@using IncidentManager.Application.Admin
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject DataElementService DataElements
+@inject ToastService Toasts
+
+<PageTitle>Data elements</PageTitle>
+
+<PageHeader Title="Data elements">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+<p class="text-muted">
+    The categories of personal / non-public information an impact assessment can record. Tailor them to your
+    organization without a release: <strong>add</strong> your own, <strong>rename</strong>, <strong>reorder</strong>,
+    or <strong>archive</strong> ones you no longer use. Archiving (including a built-in) removes an element from new
+    selection but keeps it on any case that already recorded it — its stable identity is preserved, so historical
+    records and their tamper-evident hashes stay intact. A mistake that no case uses yet can be deleted outright.
+    Changes are audited.
+</p>
+
+@if (_active is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><span class="bi bi-collection me-1"></span>Active elements</span>
+            <button class="btn btn-sm btn-primary" @onclick="Save">Save changes</button>
+        </div>
+        <div class="card-body">
+            @if (_active.Count == 0)
+            {
+                <p class="text-muted small">No active elements. Add one, or restore an archived element below.</p>
+            }
+            else
+            {
+                <ol class="list-group mb-3">
+                    @for (var i = 0; i < _active.Count; i++)
+                    {
+                        var idx = i;
+                        var r = _active[idx];
+                        <li class="list-group-item d-flex align-items-center gap-2">
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button class="btn btn-outline-secondary" title="Move up"
+                                        disabled="@(idx == 0)" @onclick="() => Move(idx, -1)"><span class="bi bi-arrow-up"></span></button>
+                                <button class="btn btn-outline-secondary" title="Move down"
+                                        disabled="@(idx == _active.Count - 1)" @onclick="() => Move(idx, 1)"><span class="bi bi-arrow-down"></span></button>
+                            </div>
+                            <div style="min-width:6.5rem">
+                                @if (r.IsNew) { <span class="im-badge im-b-info">New</span> }
+                                else if (r.IsSystem) { <span class="im-badge im-b-neutral">Built-in</span> }
+                                else { <span class="im-badge im-b-info">Custom</span> }
+                            </div>
+                            <input class="form-control form-control-sm" style="max-width:18rem" type="text" maxlength="200"
+                                   placeholder="Label" @bind="r.Label" @bind:event="oninput" />
+                            <input class="form-control form-control-sm flex-grow-1" type="text" maxlength="400"
+                                   placeholder="Notifies (e.g. US, NY) — optional" @bind="r.NotificationJurisdictions" @bind:event="oninput"
+                                   title="Jurisdiction codes whose breach-notification law this element triggers (report grouping)." />
+                            @if (r.IsNew)
+                            {
+                                <button class="btn btn-sm btn-outline-danger" title="Discard this new row" @onclick="() => _active.RemoveAt(idx)"><span class="bi bi-x-lg"></span></button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-outline-secondary" title="Archive (remove from the picker; kept on existing cases)" @onclick="() => Archive(r.Id!.Value)">Archive</button>
+                            }
+                        </li>
+                    }
+                </ol>
+            }
+            <button class="btn btn-sm btn-outline-secondary" @onclick="AddRow"><span class="bi bi-plus-lg me-1"></span>Add element</button>
+        </div>
+    </div>
+
+    @if (_archived.Count > 0)
+    {
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><span class="bi bi-archive me-1"></span>Archived (@_archived.Count)</span>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => _showArchived = !_showArchived">
+                    @(_showArchived ? "Hide" : "Show")
+                </button>
+            </div>
+            @if (_showArchived)
+            {
+                <div class="card-body">
+                    <p class="small text-muted">Archived elements don't appear in the impact picker but still label the cases
+                    that recorded them. Restore one to offer it again, or delete one that no case uses.</p>
+                    <table class="table table-sm align-middle mb-0">
+                        <tbody>
+                            @foreach (var a in _archived)
+                            {
+                                <tr>
+                                    <td>
+                                        @a.Label
+                                        @if (a.IsSystem) { <span class="im-badge im-b-neutral ms-1">Built-in</span> }
+                                        @if (a.IsReferenced) { <span class="im-badge im-b-neutral ms-1" title="Recorded on one or more cases">In use</span> }
+                                    </td>
+                                    <td class="text-end" style="width:12rem">
+                                        <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => Restore(a.Id)">Restore</button>
+                                        @if (a.IsDeletable)
+                                        {
+                                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => Delete(a.Id)">Delete</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private sealed class Row
+    {
+        public Guid? Id { get; init; }
+        public bool IsSystem { get; init; }
+        public string Label { get; set; } = "";
+        public string? NotificationJurisdictions { get; set; }
+        public bool IsNew => Id is null;
+    }
+
+    private List<Row>? _active;
+    private List<DataElementView> _archived = new();
+    private bool _showArchived;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var all = await DataElements.ListAllAsync();
+        _active = all.Where(e => e.IsActive)
+            .Select(e => new Row { Id = e.Id, IsSystem = e.IsSystem, Label = e.Label, NotificationJurisdictions = e.NotificationJurisdictions })
+            .ToList();
+        _archived = all.Where(e => !e.IsActive).ToList();
+    }
+
+    private void AddRow() => _active?.Add(new Row());
+
+    private void Move(int index, int delta)
+    {
+        if (_active is null) return;
+        var target = index + delta;
+        if (target < 0 || target >= _active.Count) return;
+        (_active[index], _active[target]) = (_active[target], _active[index]);
+    }
+
+    private async Task Save()
+    {
+        if (_active is null) return;
+        var payload = _active.Select(r => new DataElementRow(r.Id, r.Label, r.NotificationJurisdictions)).ToList();
+        try
+        {
+            await DataElements.SaveAsync(payload);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        await LoadAsync();
+        Toasts.Success("Data elements saved");
+    }
+
+    private async Task Archive(Guid id) => await Lifecycle(() => DataElements.SetArchivedAsync(id, true), "Element archived");
+    private async Task Restore(Guid id) => await Lifecycle(() => DataElements.SetArchivedAsync(id, false), "Element restored");
+    private async Task Delete(Guid id) => await Lifecycle(() => DataElements.DeleteAsync(id), "Element deleted");
+
+    private async Task Lifecycle(Func<Task> action, string ok)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        await LoadAsync();
+        Toasts.Info(ok);
+    }
+}

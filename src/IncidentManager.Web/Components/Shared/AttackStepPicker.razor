@@ -1,0 +1,192 @@
+@* One box for a timeline step's ATT&CK: type to search (techniques *and* tactics) or open the matrix.
+   Picking a technique fills its tactic; picking a tactic (a type-ahead tactic hit or a matrix column
+   header) records a tactic-only step. The current choice shows as a single chip. Free text is kept for
+   a technique ID that isn't in the catalogue. Binds TechniqueId + a single Tactic. *@
+
+@using IncidentManager.Application.Mitre
+
+<div class="atk-field position-relative">
+    <div class="input-group input-group-sm">
+        <input class="form-control form-control-sm" value="@_query" @oninput="OnInput" @onfocus="Reopen"
+               placeholder="ATT&CK technique or tactic (type to search)" autocomplete="off" aria-label="ATT&CK technique or tactic" />
+        <button type="button" class="btn btn-outline-secondary" @onclick="() => _matrix = true" title="Browse the ATT&CK matrix">
+            <span class="bi bi-diagram-3" aria-hidden="true"></span>
+        </button>
+    </div>
+
+    @if (_open && (_techResults.Count > 0 || _tacResults.Count > 0 || _customId is not null))
+    {
+        <div class="atk-menu" role="listbox">
+            @if (_tacResults.Count > 0)
+            {
+                <div class="atk-group">Tactics</div>
+                @foreach (var tc in _tacResults)
+                {
+                    <button type="button" class="atk-item" @onclick="() => PickTactic(tc)">
+                        <span class="atk-item-id"><span class="bi @Ui.TacticGlyph(tc)" style="color:@Ui.TacticColor(tc)" aria-hidden="true"></span></span>
+                        <span class="atk-item-name">@Ui.Label(tc)</span>
+                        <span class="atk-item-tacs"><span class="im-chip-role">@Ui.TacticId(tc)</span></span>
+                    </button>
+                }
+            }
+            @if (_techResults.Count > 0)
+            {
+                <div class="atk-group">Techniques</div>
+                @foreach (var r in _techResults)
+                {
+                    <button type="button" class="atk-item" @onclick="() => PickTechnique(r)">
+                        <span class="atk-item-id"><code>@r.Id</code></span>
+                        <span class="atk-item-name">@r.Name</span>
+                        <span class="atk-item-tacs">@foreach (var tc in r.Tactics) { <span class="im-chip-role">@Ui.Label(tc)</span> }</span>
+                    </button>
+                }
+            }
+            @if (_customId is { } cid)
+            {
+                <button type="button" class="atk-item" @onclick="() => PickCustom(cid)">
+                    <span class="atk-item-id"><code>@cid</code></span>
+                    <span class="atk-item-name text-muted">Use as a custom technique (not in @AttackCatalog.Version)</span>
+                    <span class="atk-item-tacs"></span>
+                </button>
+            }
+        </div>
+    }
+
+    <div class="mt-1 small">
+        @if (!string.IsNullOrWhiteSpace(TechniqueId))
+        {
+            <span class="im-chip im-chip-tac" style="--tac:@Ui.TacticColor(Tactic)">
+                <a href="https://attack.mitre.org/techniques/@(TechniqueId.Replace('.', '/'))/" target="_blank" rel="noopener noreferrer"><code>@TechniqueId</code></a>
+                @if (!string.IsNullOrWhiteSpace(_techName)) { <span class="im-chip-name">@_techName</span> }
+                @if (Tactic != MitreTactic.Unspecified) { <span class="im-chip-role">@Ui.Label(Tactic)</span> }
+                <button type="button" class="im-chip-x" aria-label="Clear" @onclick="Clear">×</button>
+            </span>
+        }
+        else if (Tactic != MitreTactic.Unspecified)
+        {
+            <span class="im-chip im-chip-tac" style="--tac:@Ui.TacticColor(Tactic)">
+                <span class="bi @Ui.TacticGlyph(Tactic)" style="color:@Ui.TacticColor(Tactic)" aria-hidden="true"></span>
+                <span class="im-chip-name">@Ui.Label(Tactic)</span>
+                <span class="im-chip-role">tactic only</span>
+                <button type="button" class="im-chip-x" aria-label="Clear" @onclick="Clear">×</button>
+            </span>
+        }
+        else
+        {
+            <span class="text-muted">No technique or tactic yet.</span>
+        }
+    </div>
+</div>
+
+@if (_matrix)
+{
+    <AttackMatrixPicker SingleSelect="true" AllowTacticOnly="true" Current="CurrentOne()"
+                        OnPick="OnMatrixPick" OnCancel="() => _matrix = false" />
+}
+
+@code {
+    [Parameter] public string TechniqueId { get; set; } = "";
+    [Parameter] public EventCallback<string> TechniqueIdChanged { get; set; }
+    [Parameter] public MitreTactic Tactic { get; set; } = MitreTactic.Unspecified;
+    [Parameter] public EventCallback<MitreTactic> TacticChanged { get; set; }
+
+    private string _query = "";
+    private bool _open, _matrix;
+    private string? _techName;
+    private string? _customId;
+    private IReadOnlyList<AttackTechnique> _techResults = Array.Empty<AttackTechnique>();
+    private IReadOnlyList<MitreTactic> _tacResults = Array.Empty<MitreTactic>();
+
+    private static readonly MitreTactic[] AllTactics =
+        Enum.GetValues<MitreTactic>().Where(t => t != MitreTactic.Unspecified).OrderBy(Ui.TacticRank).ToArray();
+
+    protected override void OnParametersSet()
+        => _techName = string.IsNullOrWhiteSpace(TechniqueId) ? null : AttackCatalog.Find(TechniqueId)?.Name;
+
+    private IReadOnlyDictionary<string, MitreTactic> CurrentOne()
+    {
+        var d = new Dictionary<string, MitreTactic>(StringComparer.OrdinalIgnoreCase);
+        if (AttackCatalog.Find(TechniqueId) is { } t) d[t.Id] = Tactic == MitreTactic.Unspecified ? t.PrimaryTactic : Tactic;
+        return d;
+    }
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+        Refresh();
+    }
+
+    private void Reopen()
+    {
+        if (_query.Length == 0) return;
+        Refresh();
+    }
+
+    private void Refresh()
+    {
+        var q = _query.Trim();
+        _techResults = q.Length == 0 ? Array.Empty<AttackTechnique>() : AttackCatalog.Search(q, 8);
+        _tacResults = q.Length == 0
+            ? Array.Empty<MitreTactic>()
+            : AllTactics.Where(t => Ui.Label(t).Contains(q, StringComparison.OrdinalIgnoreCase)
+                                    || Ui.TacticId(t).Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+        _customId = System.Text.RegularExpressions.Regex.IsMatch(q, @"^[Tt]\d{4}(\.\d{3})?$") && AttackCatalog.Find(q) is null
+            ? q.ToUpperInvariant() : null;
+        _open = _techResults.Count > 0 || _tacResults.Count > 0 || _customId is not null;
+    }
+
+    private async Task PickTechnique(AttackTechnique t)
+    {
+        Close();
+        _techName = t.Name;
+        await SetTechnique(t.Id);
+        await SetTactic(t.PrimaryTactic);
+    }
+
+    private async Task PickTactic(MitreTactic tc)
+    {
+        Close();
+        // Choosing a tactic means a tactic-only step — clear any technique so the two never mismatch.
+        // (To tag a technique under a specific tactic, pick the technique in that matrix column instead.)
+        _techName = null;
+        await SetTechnique("");
+        await SetTactic(tc);
+    }
+
+    private async Task PickCustom(string id)
+    {
+        Close();
+        _techName = null;
+        await SetTechnique(id);
+    }
+
+    private async Task OnMatrixPick((string? Id, MitreTactic Tactic) pick)
+    {
+        _matrix = false;
+        // A technique cell → technique + that column's tactic; a tactic header → tactic-only (clear technique).
+        _techName = pick.Id is { } id ? AttackCatalog.Find(id)?.Name : null;
+        await SetTechnique(pick.Id ?? "");
+        await SetTactic(pick.Tactic);
+    }
+
+    private async Task Clear()
+    {
+        _techName = null;
+        await SetTechnique("");
+        await SetTactic(MitreTactic.Unspecified);
+    }
+
+    private void Close() { _open = false; _query = ""; }
+
+    private async Task SetTechnique(string v)
+    {
+        TechniqueId = v;
+        await TechniqueIdChanged.InvokeAsync(v);
+    }
+
+    private async Task SetTactic(MitreTactic t)
+    {
+        Tactic = t;
+        await TacticChanged.InvokeAsync(t);
+    }
+}

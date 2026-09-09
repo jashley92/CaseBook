@@ -1,0 +1,96 @@
+@inherits LayoutComponentBase
+@inject TimeDisplay TimeDisp
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <AuthorizeView Policy="@Policies.Administer">
+            <IntegrityAlertBanner />
+        </AuthorizeView>
+        <div class="top-row px-4 d-flex justify-content-between align-items-center gap-3">
+            <AuthorizeView>
+                <Authorized>
+                    <PaletteSearchButton />
+                </Authorized>
+                <NotAuthorized>
+                    <span></span>
+                </NotAuthorized>
+            </AuthorizeView>
+            <div class="d-flex align-items-center gap-2">
+                <AuthorizeView>
+                    <Authorized>
+                        <NotificationBell />
+                        <ProfileMenu />
+                    </Authorized>
+                    <NotAuthorized>
+                        <button id="theme-toggle" type="button" class="btn btn-sm btn-outline-secondary"
+                                title="Toggle light or dark theme" aria-label="Toggle light or dark theme">◐</button>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </div>
+
+        @* U-29: @key bumps on every time-mode change, forcing Blazor to rebuild the routed page subtree
+           so every timestamp re-renders in the new zone (a layout StateHasChanged alone does not reach
+           into @Body, and CascadingValue only reaches components that declare the parameter). *@
+        <article class="content px-4" @key="_timeVersion">
+            @Body
+        </article>
+    </main>
+</div>
+
+<ToastHost />
+
+<AuthorizeView>
+    <Authorized>
+        <CommandPalette />
+        <IdleGuard />
+    </Authorized>
+</AuthorizeView>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    // U-29: the layout owns the on-screen time-zone re-render. Once the circuit becomes interactive we
+    // read the browser's zone + stored UTC/local preference and push them into the scoped TimeDisplay;
+    // it raises Changed, and because the layout is the ancestor of every timestamp (the top bar and
+    // @Body), re-rendering here re-renders them all. The toggle in the profile menu flows through the
+    // same Changed event.
+    private int _timeVersion;
+
+    protected override void OnInitialized() => TimeDisp.Changed += OnTimeChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || TimeDisp.Initialized) return;
+        try
+        {
+            var zone = await JS.InvokeAsync<string>("imTime.zone");
+            var mode = await JS.InvokeAsync<string>("imTime.mode");
+            TimeDisp.Configure(zone, string.Equals(mode, "local", StringComparison.OrdinalIgnoreCase)
+                ? TimeDisplayMode.Local : TimeDisplayMode.Utc);
+        }
+        catch
+        {
+            // Interop unavailable — stay on the UTC default.
+            TimeDisp.Configure(null, TimeDisplayMode.Utc);
+        }
+    }
+
+    private void OnTimeChanged() => InvokeAsync(() =>
+    {
+        _timeVersion++;   // bump the cascade so @Body (every visible timestamp) re-renders
+        StateHasChanged();
+    });
+
+    public void Dispose() => TimeDisp.Changed -= OnTimeChanged;
+}

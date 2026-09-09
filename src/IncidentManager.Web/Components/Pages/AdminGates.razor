@@ -1,0 +1,324 @@
+@page "/admin/gates"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using IncidentManager.Application.Admin
+@using IncidentManager.Application.StageGates
+@using IncidentManager.Domain.Enums
+@inject StageGateService Gates
+@inject ToastService Toasts
+
+<PageTitle>Stage gates</PageTitle>
+
+<PageHeader Title="Stage gates">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+<p class="text-muted">
+    Completeness <strong>gates</strong> enforced when a case is promoted onto the ladder, escalated to Incident or
+    Breach, or closed (C-07). Each gate lists <strong>requirements</strong>: <em>automatic checks</em> against
+    the case's data, or <em>analyst attestations</em> ticked at the transition. Blocking requirements stop the
+    transition unless overridden with a recorded justification. One <strong>active</strong> gate governs each
+    transition.
+</p>
+
+<div class="d-flex align-items-center justify-content-between mt-4 mb-2">
+    <h4 class="mb-0">Gates</h4>
+    <button class="btn btn-sm btn-primary" @onclick="BeginCreate" disabled="@(_edit is not null)">
+        <span class="bi bi-plus-circle me-1"></span>New gate
+    </button>
+</div>
+
+@if (_edit is not null)
+{
+    <div class="card mb-3 border-primary">
+        <div class="card-header">@(_edit.IsNew ? "New gate" : $"Edit gate — {_edit.Name}")</div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Transition <span class="text-danger">*</span></label>
+                    <select class="form-select" @bind="_edit.Trigger">
+                        @foreach (var t in Enum.GetValues<StageGateTrigger>())
+                        {
+                            <option value="@t">@StageGateTriggers.Label(t)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Name <span class="text-danger">*</span></label>
+                    <input class="form-control" @bind="_edit.Name" @bind:event="oninput" placeholder="e.g. Breach readiness" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Description</label>
+                    <input class="form-control" @bind="_edit.Description" @bind:event="oninput" />
+                </div>
+            </div>
+
+            <h6 class="text-uppercase small text-muted mt-4">Requirements</h6>
+            <p class="small text-muted mb-2">An <strong>automatic check</strong> is evaluated against the case's data;
+            an <strong>attestation</strong> is a statement the analyst confirms at the transition. Reword an automatic
+            check's <strong>description</strong> to match your IRP — the underlying check is unchanged and blank keeps
+            the built-in wording. <strong>Blocking</strong> requirements stop the transition (overridable with a
+            justification); non-blocking ones are advisory.</p>
+
+            @if (_edit.Requirements.Count == 0)
+            {
+                <p class="text-muted small">No requirements yet. An empty gate never blocks anything.</p>
+            }
+            else
+            {
+                <table class="table table-sm align-middle">
+                    <thead><tr><th style="width:2rem"></th><th style="width:11rem">Kind</th><th>Check / statement</th><th style="width:6rem">Blocking</th><th style="width:5rem"></th></tr></thead>
+                    <tbody>
+                        @for (var i = 0; i < _edit.Requirements.Count; i++)
+                        {
+                            var idx = i;
+                            var req = _edit.Requirements[idx];
+                            <tr>
+                                <td class="text-muted small text-center">
+                                    <button class="btn btn-sm btn-link p-0 text-muted" title="Move up" disabled="@(idx == 0)" @onclick="() => MoveReq(idx, -1)"><span class="bi bi-arrow-up"></span></button>
+                                    <button class="btn btn-sm btn-link p-0 text-muted" title="Move down" disabled="@(idx == _edit.Requirements.Count - 1)" @onclick="() => MoveReq(idx, 1)"><span class="bi bi-arrow-down"></span></button>
+                                </td>
+                                <td>
+                                    <select class="form-select form-select-sm" @bind="req.Kind">
+                                        <option value="@GateRequirementKind.MachineCheck">Automatic check</option>
+                                        <option value="@GateRequirementKind.Attestation">Analyst attestation</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    @if (req.Kind == GateRequirementKind.MachineCheck)
+                                    {
+                                        <select class="form-select form-select-sm" value="@req.Check"
+                                                @onchange="e => OnCheckChanged(req, e.Value?.ToString())">
+                                            <option value="">— pick a check —</option>
+                                            @foreach (var chk in GateCheckRegistry.All)
+                                            {
+                                                <option value="@chk.Key">@chk.LabelFor(null)</option>
+                                            }
+                                        </select>
+                                        @if (GateCheckRegistry.Param(req.Check) is { } spec)
+                                        {
+                                            <div class="input-group input-group-sm mt-1" style="max-width:16rem">
+                                                <span class="input-group-text">@spec.Label</span>
+                                                <input class="form-control" type="number" min="@spec.Min" step="1"
+                                                       value="@(req.Param ?? spec.Default)"
+                                                       @onchange="e => OnParamChanged(req, e.Value?.ToString())"
+                                                       title="The threshold this check requires (admin data; the check itself is code-defined)." />
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(req.Check))
+                                        {
+                                            <input class="form-control form-control-sm mt-1" @bind="req.Label" @bind:event="oninput"
+                                                   placeholder="@DefaultCheckLabel(req.Check, req.Param)"
+                                                   title="Wording shown to the analyst at this gate — reword to match your IRP; blank uses the default." />
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <input class="form-control form-control-sm" @bind="req.Label" @bind:event="oninput" placeholder="e.g. Evidence preserved and chain of custody complete" />
+                                    }
+                                </td>
+                                <td class="text-center"><input class="form-check-input" type="checkbox" @bind="req.IsBlocking" /></td>
+                                <td class="text-end"><button class="btn btn-sm btn-outline-danger py-0" @onclick="() => RemoveReq(idx)">Remove</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => AddReq(GateRequirementKind.MachineCheck)"><span class="bi bi-plus-lg me-1"></span>Add check</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => AddReq(GateRequirementKind.Attestation)"><span class="bi bi-plus-lg me-1"></span>Add attestation</button>
+            </div>
+
+            <div class="mt-4" style="max-width:30rem">
+                <label class="form-label mb-1">Required rationale length</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text">Minimum characters</span>
+                    <input class="form-control" type="number" min="0" step="1" @bind="_edit.CommentaryMinLength" />
+                </div>
+                <div class="form-text">0 = no minimum. Above 0, the analyst's <strong>reason</strong> for the transition must be at least this many characters — and when the gate is overridden, its <strong>override justification</strong> must be too. The reason is kept on the tamper-evident gate passage.</div>
+            </div>
+
+            <div class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" id="gate-active" @bind="_edit.IsActive" />
+                <label class="form-check-label" for="gate-active">Active <span class="text-muted small">(enforced on this transition; only one active gate per transition)</span></label>
+            </div>
+        </div>
+        <div class="card-footer d-flex gap-2">
+            <button class="btn btn-sm btn-primary" @onclick="Save">Save</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => _edit = null">Cancel</button>
+        </div>
+    </div>
+}
+
+@if (_gates is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else if (_gates.Count == 0)
+{
+    <p class="text-muted">No gates defined. Create one to enforce completeness on a transition.</p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead><tr><th>Transition</th><th>Gate</th><th>Requirements</th><th style="width:9rem"></th></tr></thead>
+        <tbody>
+            @foreach (var g in _gates)
+            {
+                <tr>
+                    <td><span class="fw-semibold">@StageGateTriggers.Label(g.Trigger)</span></td>
+                    <td>
+                        @g.Name
+                        @if (!g.IsActive) { <span class="im-badge im-b-neutral ms-1">Inactive</span> }
+                        <div class="small text-muted">@g.Description</div>
+                    </td>
+                    <td>
+                        <span class="im-badge im-b-info">@g.Requirements.Count(r => r.IsBlocking) blocking</span>
+                        @{ var advisory = g.Requirements.Count(r => !r.IsBlocking); }
+                        @if (advisory > 0) { <span class="im-badge im-b-neutral ms-1">@advisory advisory</span> }
+                    </td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => BeginEdit(g)">Edit</button>
+                        <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => DeleteGate(g)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<StageGateView>? _gates;
+    private GateEdit? _edit;
+
+    private sealed class ReqEdit
+    {
+        public GateRequirementKind Kind = GateRequirementKind.MachineCheck;
+        public string Check = "";   // machine-check registry key, or "" when unpicked
+        public int? Param;          // threshold for a parameterized check; null otherwise
+        public string Label = "";
+        public bool IsBlocking = true;
+    }
+
+    private sealed class GateEdit
+    {
+        public Guid? Id;
+        public bool IsNew;
+        public StageGateTrigger Trigger = StageGateTrigger.EscalateToBreach;
+        public string Name = "";
+        public string? Description;
+        public bool IsActive = true;
+        public int CommentaryMinLength;
+        public List<ReqEdit> Requirements = [];
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => _gates = await Gates.ListAllAsync();
+
+    private void BeginCreate() => _edit = new GateEdit { IsNew = true };
+
+    private void BeginEdit(StageGateView g) => _edit = new GateEdit
+    {
+        Id = g.Id,
+        IsNew = false,
+        Trigger = g.Trigger,
+        Name = g.Name,
+        Description = g.Description,
+        IsActive = g.IsActive,
+        CommentaryMinLength = g.CommentaryMinLength,
+        Requirements = g.Requirements.Select(r => new ReqEdit
+        {
+            Kind = r.Kind,
+            Check = r.CheckKey ?? "",
+            Param = r.CheckParam,
+            // A machine-check label is stored as a snapshot of the default; show a customised one, but blank a
+            // still-default one so it reads as "default" (placeholder) and a blank save keeps re-defaulting it.
+            Label = r.Kind == GateRequirementKind.MachineCheck && r.CheckKey is { } k && r.Label == GateCheckRegistry.Label(k, r.CheckParam) ? "" : r.Label,
+            IsBlocking = r.IsBlocking
+        }).ToList()
+    };
+
+    private void AddReq(GateRequirementKind kind) => _edit?.Requirements.Add(new ReqEdit { Kind = kind });
+    private void RemoveReq(int i) => _edit?.Requirements.RemoveAt(i);
+
+    // The built-in wording for a check key + threshold (the placeholder / blank-save default).
+    private static string DefaultCheckLabel(string checkKey, int? param) =>
+        GateCheckRegistry.IsKnown(checkKey) ? GateCheckRegistry.Label(checkKey, param) : "";
+
+    // A label is "default" when it matches some registry check's wording at some plausible threshold — so
+    // switching checks or nudging the threshold keeps re-defaulting rather than freezing a stale label.
+    private static bool IsDefaultCheckLabel(string? label) =>
+        !string.IsNullOrWhiteSpace(label) && GateCheckRegistry.All.Any(c =>
+            c.LabelFor(null) == label || (c.Param is { } p && (c.LabelFor(p.Default) == label || c.LabelFor(p.Default + 1) == label)));
+
+    // Picking a check fills the wording with that check's default — unless the author has typed a custom one,
+    // which is preserved. Blank or a recognised default is treated as "follow the check". A parameterized
+    // check seeds its threshold to the spec default; a parameterless one clears it.
+    private void OnCheckChanged(ReqEdit req, string? value)
+    {
+        var wasDefault = string.IsNullOrWhiteSpace(req.Label) || IsDefaultCheckLabel(req.Label);
+        req.Check = value ?? "";
+        req.Param = GateCheckRegistry.Param(req.Check)?.Default;
+        if (wasDefault)
+            req.Label = "";   // show the new check's default via the placeholder; Save re-defaults it
+    }
+
+    // Nudging the threshold re-defaults a still-default label so the placeholder tracks the new value.
+    private void OnParamChanged(ReqEdit req, string? value)
+    {
+        var wasDefault = string.IsNullOrWhiteSpace(req.Label) || IsDefaultCheckLabel(req.Label);
+        req.Param = int.TryParse(value, out var n) ? n : req.Param;
+        if (wasDefault) req.Label = "";
+    }
+
+    private void MoveReq(int i, int delta)
+    {
+        if (_edit is null) return;
+        var j = i + delta;
+        if (j < 0 || j >= _edit.Requirements.Count) return;
+        (_edit.Requirements[i], _edit.Requirements[j]) = (_edit.Requirements[j], _edit.Requirements[i]);
+    }
+
+    private async Task Save()
+    {
+        if (_edit is null) return;
+
+        var reqs = _edit.Requirements.Select(r => new GateRequirementInput(
+            r.Kind,
+            r.Kind == GateRequirementKind.MachineCheck && !string.IsNullOrEmpty(r.Check) ? r.Check : null,
+            r.Kind == GateRequirementKind.MachineCheck ? r.Param : null,
+            r.Label,
+            r.IsBlocking)).ToList();
+
+        var input = new StageGateInput(_edit.Trigger, _edit.Name, _edit.Description, _edit.IsActive, reqs, _edit.CommentaryMinLength);
+
+        try
+        {
+            if (_edit.IsNew) await Gates.CreateAsync(input);
+            else await Gates.UpdateAsync(_edit.Id!.Value, input);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+
+        _edit = null;
+        await LoadAsync();
+        Toasts.Success("Gate saved");
+    }
+
+    private async Task DeleteGate(StageGateView g)
+    {
+        try { await Gates.DeleteAsync(g.Id); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        await LoadAsync();
+        Toasts.Info($"Deleted gate '{g.Name}'");
+    }
+}

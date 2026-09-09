@@ -1,0 +1,184 @@
+@page "/integrity"
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@inject IntegrityService IntegritySvc
+
+<PageTitle>Integrity &amp; Audit</PageTitle>
+
+<PageHeader Title="Integrity & Audit"
+           Subtitle="The audit trail is an append-only, hash-chained record. Verification recomputes the entire chain and flags any altered, inserted, or deleted entry." />
+
+@* The persistent tamper banner is rendered app-wide for admins from MainLayout, so it already
+   appears above this page — no page-level copy needed. The card below shows on-demand results. *@
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">Audit entries</div>
+            <div class="card-body"><span class="fs-3 fw-bold">@_count</span></div>
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Chain verification</span>
+                <div>
+                    <button class="btn btn-sm btn-primary" @onclick="Verify">Verify now</button>
+                    <AuthorizeView Policy="@Policies.Administer">
+                        <button class="btn btn-sm btn-outline-dark" @onclick="Seal">Seal chain head</button>
+                    </AuthorizeView>
+                </div>
+            </div>
+            <div class="card-body">
+                @if (_result is null)
+                {
+                    <span class="text-muted">Not verified this session.</span>
+                }
+                else if (_result.IsValid)
+                {
+                    <span class="im-badge im-b-ok">VALID</span>
+                    <span class="ms-2">The audit chain is intact.</span>
+                }
+                else
+                {
+                    <span class="im-badge im-b-danger">BROKEN</span>
+                    <span class="ms-2">First break at sequence @_result.FirstBrokenSequence — @_result.Detail</span>
+                }
+                @if (_sealMessage is not null) { <div class="small text-muted mt-2">@_sealMessage</div> }
+            </div>
+        </div>
+    </div>
+</div>
+
+<AuthorizeView Policy="@Policies.Administer">
+    <div class="card mb-4">
+        <div class="card-header">Compliance evidence bundle</div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                A single downloadable package for a NYDFS §500.17(b) certification file or a DFS examination
+                request: the audit-chain segment for a date range, a whole-chain integrity verification, and
+                the signed seals covering it, plus the public key and instructions to verify it independently.
+                Generating a bundle is itself recorded in the audit trail.
+            </p>
+            <div class="row g-2 align-items-end">
+                <div class="col-6 col-sm-4 col-md-3">
+                    <label class="form-label small mb-1" for="bundleFrom">From (UTC)</label>
+                    <input id="bundleFrom" type="date" class="form-control form-control-sm" @bind="_bundleFrom" />
+                </div>
+                <div class="col-6 col-sm-4 col-md-3">
+                    <label class="form-label small mb-1" for="bundleTo">To (UTC)</label>
+                    <input id="bundleTo" type="date" class="form-control form-control-sm" @bind="_bundleTo" />
+                </div>
+                <div class="col-12 col-sm-4 col-md-3">
+                    <a class="btn btn-sm btn-primary" href="@BundleHref" download
+                       title="Download the compliance evidence bundle for the selected date range">
+                        <span class="bi bi-file-earmark-zip" aria-hidden="true"></span> Download bundle
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</AuthorizeView>
+
+<h4>Integrity seals</h4>
+<p class="text-muted small">Each seal is an RSA-signed snapshot of the chain head, also exported outside the
+database. Verifying a seal confirms its signature is authentic and that history at that point is unchanged.</p>
+@if (_seals is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else if (_seals.Count == 0)
+{
+    <p class="text-muted">No seals recorded yet.</p>
+}
+else
+{
+    <table class="table table-sm">
+        <thead><tr><th>Sealed (UTC)</th><th>Up to #</th><th>Algorithm</th><th>Key</th><th>By</th><th>Verify</th></tr></thead>
+        <tbody>
+            @foreach (var s in _seals)
+            {
+                <tr>
+                    <td class="small">@s.SealedAtUtc.ToString("u")</td>
+                    <td>@s.UpToSequence</td>
+                    <td class="small">@s.Algorithm</td>
+                    <td><code class="small">@s.KeyId</code></td>
+                    <td class="small">@s.SealedBy</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => VerifySeal(s.Id)">Verify</button>
+                        @if (_sealResults.TryGetValue(s.Id, out var r))
+                        {
+                            <span class="im-badge @(r.IsValid ? "im-b-ok" : "im-b-danger") ms-1">@(r.IsValid ? "VALID" : "BROKEN")</span>
+                            <span class="small ms-1">@r.Detail</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<h4>Recent audit trail</h4>
+@if (_recent is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else
+{
+    <table class="table table-sm">
+        <thead><tr><th>#</th><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>Case</th><th>Entry hash</th></tr></thead>
+        <tbody>
+            @foreach (var a in _recent)
+            {
+                <tr>
+                    <td>@a.Sequence</td>
+                    <td class="small">@a.AtUtc.ToString("u")</td>
+                    <td>@a.Actor</td>
+                    <td>@a.Action</td>
+                    <td>@a.EntityType</td>
+                    <td class="small">@a.CaseNumber</td>
+                    <td><code class="small">@a.EntryHash[..12]…</code></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private int _count;
+    private ChainVerificationResult? _result;
+    private List<AuditLogEntry>? _recent;
+    private List<IntegritySeal>? _seals;
+    private readonly Dictionary<Guid, SealVerificationResult> _sealResults = new();
+    private string? _sealMessage;
+
+    // Compliance evidence bundle range (UTC). Defaults to year-to-date — the natural §500.17(b) window.
+    private DateOnly _bundleFrom = new(DateTime.UtcNow.Year, 1, 1);
+    private DateOnly _bundleTo = DateOnly.FromDateTime(DateTime.UtcNow);
+    private string BundleHref =>
+        $"export/compliance-bundle.zip?from={_bundleFrom:yyyy-MM-dd}&to={_bundleTo:yyyy-MM-dd}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _count = await IntegritySvc.AuditCountAsync();
+        _recent = await IntegritySvc.RecentAsync(null, 100);
+        _seals = await IntegritySvc.RecentSealsAsync();
+    }
+
+    // Track the result so the app-wide banner + monitor reflect this manual check and a break here
+    // raises the same alarm (email + SIEM) as the background monitor — de-duplicated per episode.
+    private async Task Verify() => _result = await IntegritySvc.VerifyAndTrackAsync();
+
+    private async Task VerifySeal(Guid sealId) =>
+        _sealResults[sealId] = await IntegritySvc.VerifySealAsync(sealId);
+
+    private async Task Seal()
+    {
+        var seal = await IntegritySvc.SealAsync();
+        _sealMessage = seal is null
+            ? "Nothing to seal yet."
+            : $"Sealed through sequence {seal.UpToSequence} at {seal.SealedAtUtc:u} (key {seal.KeyId}).";
+        _count = await IntegritySvc.AuditCountAsync();
+        _recent = await IntegritySvc.RecentAsync(null, 100);
+        _seals = await IntegritySvc.RecentSealsAsync();
+    }
+}

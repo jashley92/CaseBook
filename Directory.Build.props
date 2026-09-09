@@ -1,0 +1,23 @@
+<Project>
+  <!-- Common build settings for all IncidentManager projects -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Must stay false: Microsoft.Data.SqlClient (prod SQL Server) resolves cultures (e.g. en-US) when
+         opening a connection and throws CultureNotFoundException under globalization-invariant mode.
+         Dev/SQLite doesn't hit this, so invariant mode was silently fine locally but broke on SQL Server. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- Security-conscious defaults -->
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <!-- Suppress low-value style/perf/naming analyzer noise so the meaningful warnings (CS nullability,
+         CA1416 platform, CA1305 culture) stay visible on publish. These are non-correctness suggestions:
+         CA1725 param-name mirroring; CA1861 static-readonly vs const array args; CA1848 LoggerMessage
+         delegates; CA1716 'Shared' reserved-word namespace (C#-only app); CA1859 concrete-type perf;
+         CA1711/CA1720 identifier naming guidelines. -->
+    <NoWarn>$(NoWarn);CA1725;CA1861;CA1848;CA1716;CA1859;CA1711;CA1720</NoWarn>
+  </PropertyGroup>
+</Project>

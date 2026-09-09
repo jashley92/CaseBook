@@ -1,0 +1,15 @@
+@inject IncidentManager.Web.Services.CommandPaletteController Palette
+
+@* Visible, mouse-reachable entry point to the command palette (which is otherwise keyboard-only via
+   Ctrl/⌘ K and "/"). It is a button, not an input: clicking opens the same palette, so there is one
+   search surface. Lives in the MainLayout top bar. *@
+<button type="button" class="palette-trigger" @onclick="Open"
+        aria-label="Search cases and jump to a page" aria-keyshortcuts="Control+K">
+    <span class="bi bi-search palette-trigger-ic" aria-hidden="true"></span>
+    <span class="palette-trigger-label">Search cases, jump to a page&hellip;</span>
+    <span class="palette-trigger-kbd" aria-hidden="true"><kbd>Ctrl</kbd><kbd>K</kbd></span>
+</button>
+
+@code {
+    private void Open() => Palette.Open();
+}

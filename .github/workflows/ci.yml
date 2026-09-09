@@ -1,0 +1,103 @@
+name: CI
+
+# Skip runs for documentation-only changes to conserve Actions minutes.
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+
+# Only keep the latest run per ref; cancel superseded in-progress runs.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    # Linux runner (1x Actions-minute rate). PDF report generation bundles its own fonts via
+    # EmbeddedFontResolver, so it no longer depends on OS-installed fonts and passes here.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Test
+        run: dotnet test --no-build -c Release --verbosity minimal
+
+      # H-05: fail the build on any known-vulnerable NuGet package (direct or transitive), so a
+      # supply-chain advisory can't land silently. Deprecated packages are reported but not fatal.
+      - name: Vulnerable package scan (H-05)
+        run: |
+          echo "Scanning for vulnerable packages (including transitive)…"
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee vulnerable.log
+          if grep -q "has the following vulnerable packages" vulnerable.log; then
+            echo "::error::Vulnerable NuGet packages detected — see the scan output above."
+            exit 1
+          fi
+          echo "No vulnerable packages."
+
+      - name: Deprecated package report (informational)
+        if: always()
+        run: dotnet list package --deprecated 2>&1 | tee deprecated.log || true
+
+  # H-05: CodeQL static analysis for C#. Uploading results needs code scanning, which is free on
+  # PUBLIC repos but requires GitHub Advanced Security on private ones — so this job is guarded to
+  # public repositories to avoid a perpetually-failing upload. It auto-activates if the repo is made
+  # public (or enable GHAS + drop this guard to run it privately). Static analysis still runs on every
+  # build via the .NET analyzers (AnalysisLevel=latest-recommended in Directory.Build.props), and the
+  # vulnerable-package gate above runs unconditionally.
+  codeql:
+    name: CodeQL
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+          queries: security-and-quality
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:csharp"

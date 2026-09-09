@@ -1,0 +1,149 @@
+@inject TeamWorkloadService Workload
+
+@* Team-workload panel (E-25): per-analyst open-case distribution + the unassigned queue, for rebalancing.
+   Extracted from the former /team page so it can be embedded in the consolidated Work landing under a
+   ViewAllCases gate. Carries no <h1>/PageTitle — the host page owns the page heading. *@
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <p class="text-muted mb-0">Open cases by analyst, plus the unassigned queue.</p>
+    <a class="btn btn-sm btn-outline-secondary" href="cases?sla=true" title="Open cases at or past their response-time target">
+        <span class="bi bi-clock-history" aria-hidden="true"></span> SLA at-risk cases
+    </a>
+</div>
+
+@if (_w is null)
+{
+    <span class="visually-hidden" role="status">Loading team workload…</span>
+    <SkeletonTable Rows="5" Columns="5" />
+}
+else
+{
+    <div class="im-tiles">
+        <StatTile Icon="bi-folder2-open" Value="_w.TotalOpen" Label="Open cases" Tone="accent" />
+        <StatTile Icon="bi-people" Value="_w.AnalystCount" Label="Analysts working" Tone="accent" />
+        <StatTile Icon="bi-inbox" Value="_w.Unassigned.Open" Label="Unassigned"
+                  Tone="@(_w.Unassigned.Open > 0 ? "warn" : "ok")" />
+        <StatTile Icon="bi-clock-history"
+                  Value="@(_w.Analysts.Sum(a => a.SlaAtRisk + a.SlaBreached) + _w.Unassigned.SlaAtRisk + _w.Unassigned.SlaBreached)"
+                  Label="SLA at risk / overdue"
+                  Tone="@(_sumBreached > 0 ? "danger" : (_sumAtRisk > 0 ? "warn" : "ok"))" />
+    </div>
+
+    @if (_w.TotalOpen == 0)
+    {
+        <div class="empty-state">
+            <span class="bi bi-inbox empty-state-icon" aria-hidden="true"></span>
+            <div class="empty-state-title">No open cases</div>
+            <div class="empty-state-msg">When cases are opened and assigned, the team's caseload will appear here.</div>
+        </div>
+    }
+    else
+    {
+        <div class="im-card">
+        <div class="table-responsive">
+            <table class="table align-middle wl-table im-table mb-0">
+                <thead>
+                    <tr>
+                        <th>Analyst</th>
+                        <th class="text-center">Open</th>
+                        <th>Severity mix</th>
+                        <th>SLA</th>
+                        <th class="text-center" title="Open cases with no activity in @TeamWorkloadBuilder.StaleDays days">Stale</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_w.Unassigned.Open > 0)
+                    {
+                        var u = _w.Unassigned;
+                        <tr class="wl-unassigned">
+                            <td>
+                                <span class="wl-avatar wl-avatar-none"><span class="bi bi-inbox" aria-hidden="true"></span></span>
+                                <a class="fw-semibold ms-2 link-body-emphasis text-decoration-none case-title" href="cases?assignee=none">Unassigned queue</a>
+                                <div class="small text-muted ms-2 ps-4">Nobody actively working these</div>
+                            </td>
+                            <td class="text-center"><a class="wl-open text-decoration-none" href="cases?assignee=none">@u.Open</a></td>
+                            <td>@SevBar(u.Critical, u.High, u.Medium, u.Low, u.Informational)</td>
+                            <td>@SlaCell(u.SlaAtRisk, u.SlaBreached)</td>
+                            <td class="text-center">@StaleCell(u.Stale)</td>
+                        </tr>
+                    }
+                    @foreach (var a in _w.Analysts)
+                    {
+                        <tr>
+                            <td>
+                                <span class="wl-avatar" style="background:hsl(@Ui.AvatarHue(a.UserId) 55% 42%)">@Ui.Initials(a.DisplayName)</span>
+                                <a class="fw-semibold ms-2 link-body-emphasis text-decoration-none case-title" href="@AssigneeHref(a)" title="View @a.DisplayName's open cases">@a.DisplayName</a>
+                                @if (a.AsIncidentCommander > 0)
+                                {
+                                    <div class="small text-muted ms-2 ps-4">IC on @a.AsIncidentCommander case@(a.AsIncidentCommander == 1 ? "" : "s")</div>
+                                }
+                            </td>
+                            <td class="text-center"><a class="wl-open text-decoration-none" href="@AssigneeHref(a)">@a.Open</a></td>
+                            <td>@SevBar(a.Critical, a.High, a.Medium, a.Low, a.Informational)</td>
+                            <td>@SlaCell(a.SlaAtRisk, a.SlaBreached)</td>
+                            <td class="text-center">@StaleCell(a.Stale)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="text-muted small mb-0 mt-3">
+            A case counts toward each incident commander and analyst assigned to it (observers excluded).
+            Severity mix and SLA reuse the same data as the case list. Scoped to the cases you're allowed to see.
+        </p>
+        </div>
+    }
+}
+
+@code {
+    private TeamWorkload? _w;
+    private int _sumAtRisk, _sumBreached;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _w = await Workload.GetAsync();
+        _sumAtRisk = _w.Analysts.Sum(a => a.SlaAtRisk) + _w.Unassigned.SlaAtRisk;
+        _sumBreached = _w.Analysts.Sum(a => a.SlaBreached) + _w.Unassigned.SlaBreached;
+    }
+
+    private static string AssigneeHref(AnalystLoad a) =>
+        $"cases?assignee={Uri.EscapeDataString(a.UserId)}&assigneeName={Uri.EscapeDataString(a.DisplayName)}";
+
+    // A compact stacked severity bar plus per-severity counts, so balance reads at a glance.
+    private RenderFragment SevBar(int crit, int high, int med, int low, int info) =>
+        @<div class="wl-sev">
+            <div class="wl-bar" role="img" aria-label="Severity distribution">
+                @Seg(crit, Severity.Critical)
+                @Seg(high, Severity.High)
+                @Seg(med, Severity.Medium)
+                @Seg(low, Severity.Low)
+                @Seg(info, Severity.Informational)
+            </div>
+            <div class="wl-chips">
+                @Chip(crit, Severity.Critical, "C")
+                @Chip(high, Severity.High, "H")
+                @Chip(med, Severity.Medium, "M")
+                @Chip(low, Severity.Low, "L")
+                @Chip(info, Severity.Informational, "I")
+            </div>
+        </div>;
+
+    private RenderFragment Seg(int n, Severity s) => n <= 0
+        ? @<text></text>
+        : @<span class="wl-seg" style="flex:@n;background:@Ui.SeverityColor(s)" title="@n @s"></span>;
+
+    private RenderFragment Chip(int n, Severity s, string letter) => n <= 0
+        ? @<text></text>
+        : @<span class="wl-chip" title="@n @s"><i style="background:@Ui.SeverityColor(s)"></i>@letter&nbsp;@n</span>;
+
+    private RenderFragment SlaCell(int atRisk, int breached) => (atRisk == 0 && breached == 0)
+        ? @<span class="text-muted small">—</span>
+        : @<span class="d-inline-flex gap-1 flex-wrap">
+            @if (breached > 0) { <span class="im-badge im-sla-breached">@breached overdue</span> }
+            @if (atRisk > 0) { <span class="im-badge im-sla-atrisk">@atRisk at risk</span> }
+        </span>;
+
+    private RenderFragment StaleCell(int stale) => stale <= 0
+        ? @<span class="text-muted small">—</span>
+        : @<span class="wl-stale" title="@stale open case@(stale == 1 ? "" : "s") with no activity in @TeamWorkloadBuilder.StaleDays days">@stale</span>;
+}

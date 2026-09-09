@@ -1,0 +1,19 @@
+@* Persistent tamper-alarm banner (F-16). Reads the app-wide integrity status (populated by the
+   background monitor at startup and each cycle, and by the manual "Verify now"). Shows only while the
+   chain is currently broken — it is not dismissible, because you can't wave off a tamper alarm; it
+   clears on its own when verification returns intact again. Rendered for Administer users from
+   MainLayout, and at the top of the Integrity page. *@
+@inject IncidentManager.Application.Integrity.IIntegrityMonitor Monitor
+
+@if (Monitor.Current is { IsValid: false } status)
+{
+    <div class="integrity-alert" role="alert">
+        <span class="bi bi-shield-exclamation integrity-alert-icon" aria-hidden="true"></span>
+        <div class="integrity-alert-text">
+            <strong>Audit-chain integrity failure.</strong>
+            The tamper-evident audit log failed verification at sequence @status.FirstBrokenSequence
+            (checked @status.CheckedAtUtc.ToString("u")). It may have been altered, truncated, or reordered. Investigate immediately.
+        </div>
+        <a class="btn btn-sm btn-light integrity-alert-cta" href="integrity">Open Integrity &amp; Audit</a>
+    </div>
+}
