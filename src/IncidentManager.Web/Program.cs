@@ -31,8 +31,14 @@ var dp = builder.Services.AddDataProtection().SetApplicationName("CaseBook");
 var dpKeyPath = builder.Configuration["DataProtection:KeyPath"];
 if (!string.IsNullOrWhiteSpace(dpKeyPath))
 {
-    Directory.CreateDirectory(dpKeyPath);
-    dp.PersistKeysToFileSystem(new DirectoryInfo(dpKeyPath));
+    // KeyPath is operator-supplied deployment config (not request input). Require an absolute path so a
+    // misconfigured relative value can't silently place the keyring under the working directory, and so
+    // the directory we create and persist to is canonical.
+    if (!Path.IsPathRooted(dpKeyPath))
+        throw new InvalidOperationException($"DataProtection:KeyPath must be an absolute path; got '{dpKeyPath}'.");
+    var keyDir = Path.GetFullPath(dpKeyPath);
+    Directory.CreateDirectory(keyDir);
+    dp.PersistKeysToFileSystem(new DirectoryInfo(keyDir));
     // Machine-scope DPAPI works for a gMSA/app-pool identity with no loaded user profile. For stronger
     // separation (or a scaled-out farm) swap for ProtectKeysWithCertificate.
     if (OperatingSystem.IsWindows())
