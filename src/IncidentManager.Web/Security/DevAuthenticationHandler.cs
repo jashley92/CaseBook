@@ -55,8 +55,11 @@ public sealed class DevAuthenticationHandler : AuthenticationHandler<Authenticat
         const string cookieName = "dev_as";
         var asName = Context.Request.Query["as"].ToString();
         if (!string.IsNullOrWhiteSpace(asName))
+            // Secure=true is safe even though dev runs over http://localhost: browsers treat localhost as
+            // a secure context and still send the cookie. This handler is dev-only (Production forbids it),
+            // so it never sees a non-localhost HTTP origin.
             Context.Response.Cookies.Append(cookieName, asName.Trim(),
-                new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Lax, IsEssential = true });
+                new CookieOptions { HttpOnly = true, Secure = true, SameSite = SameSiteMode.Lax, IsEssential = true });
         else
             asName = Context.Request.Cookies[cookieName] ?? "";
 
