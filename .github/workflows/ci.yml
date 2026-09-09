@@ -26,6 +26,8 @@ jobs:
     # Linux runner (1x Actions-minute rate). PDF report generation bundles its own fonts via
     # EmbeddedFontResolver, so it no longer depends on OS-installed fonts and passes here.
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
