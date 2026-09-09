@@ -1,0 +1,119 @@
+@* Idle-session watchdog (F-15). Rendered once per authenticated circuit (from MainLayout). The browser
+   watches for inactivity (idle-timeout.js) and calls back at two moments: a warning countdown, then the
+   hard deadline. On expiry we force a full navigation to /session-expired, which tears the circuit down —
+   dropping all in-memory case state and blanking sensitive data behind a neutral page. With Windows auth
+   the OS/AD screen-lock provides the actual credential re-entry; this complements it by killing the live
+   privileged session rather than leaving it open on an unattended workstation. Enabled/duration are
+   administered (Security:IdleTimeoutMinutes); 0 disables it. CSP-safe (self-hosted JS, no eval). *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject Microsoft.Extensions.Options.IOptionsSnapshot<IncidentManager.Web.Security.IdleTimeoutOptions> Opts
+
+@if (_warning && !_expired)
+{
+    <div class="idle-modal" role="alertdialog" aria-modal="true" aria-live="assertive" aria-labelledby="idle-title">
+        <div class="idle-card">
+            <div class="idle-icon" aria-hidden="true"><span class="bi bi-clock-history"></span></div>
+            <h2 id="idle-title" class="idle-title">Still there?</h2>
+            <p class="idle-text">
+                You&rsquo;ve been inactive. For security, this session will lock in
+                <strong>@_remaining second@(_remaining == 1 ? "" : "s")</strong> and you&rsquo;ll need to resume.
+            </p>
+            <div class="idle-actions">
+                <button type="button" class="btn btn-primary btn-sm" @onclick="StaySignedInAsync">Stay signed in</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="ExpireAsync">Lock now</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IdleTimeoutPlan _plan = IdleTimeoutPlan.Disabled;
+    private DotNetObjectReference<IdleGuard>? _ref;
+    private CancellationTokenSource? _countdownCts;
+    private bool _warning;
+    private bool _expired;
+    private int _remaining;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        _plan = IdleTimeoutPolicy.Compute(Opts.Value.IdleTimeoutMinutes);
+        if (!_plan.Enabled) return;
+
+        _ref = DotNetObjectReference.Create(this);
+        try
+        {
+            await JS.InvokeVoidAsync("imIdle.start", _ref, _plan.IdleMs, _plan.WarnMs);
+        }
+        catch (JSDisconnectedException) { /* circuit already gone */ }
+    }
+
+    /// <summary>Called by idle-timeout.js when the warning window is reached.</summary>
+    [JSInvokable]
+    public Task OnIdleWarning()
+    {
+        return InvokeAsync(() =>
+        {
+            if (_expired || _warning) return;
+            _warning = true;
+            _remaining = Math.Max(1, _plan.WarnMs / 1000);
+            _countdownCts = new CancellationTokenSource();
+            _ = CountdownAsync(_countdownCts.Token);
+            StateHasChanged();
+        });
+    }
+
+    /// <summary>Called by idle-timeout.js at the hard deadline (secondary to the server-side countdown).</summary>
+    [JSInvokable]
+    public Task OnIdleTimeout() => InvokeAsync(ExpireAsync);
+
+    // Server-side countdown: reliable even when a backgrounded tab throttles the client timer. When it
+    // reaches zero it expires the session itself; ExpireAsync is idempotent so racing with JS is harmless.
+    private async Task CountdownAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (_remaining > 0 && !ct.IsCancellationRequested)
+            {
+                await Task.Delay(1000, ct);
+                _remaining--;
+                await InvokeAsync(StateHasChanged);
+            }
+            if (!ct.IsCancellationRequested)
+                await InvokeAsync(ExpireAsync);
+        }
+        catch (OperationCanceledException) { /* user stayed, or component disposed */ }
+    }
+
+    private async Task StaySignedInAsync()
+    {
+        _warning = false;
+        _countdownCts?.Cancel();
+        try { await JS.InvokeVoidAsync("imIdle.reset"); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task ExpireAsync()
+    {
+        if (_expired) return;
+        _expired = true;
+        _countdownCts?.Cancel();
+        try { await JS.InvokeVoidAsync("imIdle.stop"); }
+        catch (JSDisconnectedException) { }
+        // Full-page navigation tears down this circuit and everything it held in memory.
+        Nav.NavigateTo("session-expired", forceLoad: true);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _countdownCts?.Cancel();
+        _countdownCts?.Dispose();
+        try { await JS.InvokeVoidAsync("imIdle.stop"); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { /* prerender: no JS */ }
+        _ref?.Dispose();
+    }
+}

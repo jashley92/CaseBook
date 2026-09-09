@@ -1,0 +1,153 @@
+@page "/admin/style"
+@page "/style"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using IncidentManager.Application.Sla
+@using IncidentManager.Domain.Enums
+@inject ISeverityLabels SevLabels
+
+<PageTitle>Style guide</PageTitle>
+
+<PageHeader Title="Style guide"
+           Subtitle="Live reference for the CaseBook design system. Written rules and the conformance checklist live in docs/STYLE-GUIDE.md.">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+
+@* Color tokens *@
+<div class="im-card mb-3">
+    <div class="im-section-head"><span>🎨 Color tokens</span><span class="im-section-note">var(--im-*) · themed light + dark</span></div>
+    <p class="text-muted small">Every color comes from a token. Never hardcode hex or use Bootstrap semantic colors. Both themes are defined; toggle the theme in the profile menu to check contrast.</p>
+    @foreach (var group in TokenGroups)
+    {
+        <div class="sg-tok-group">
+            <div class="sg-tok-label">@group.Name</div>
+            <div class="sg-swatches">
+                @foreach (var t in group.Tokens)
+                {
+                    <div class="sg-swatch">
+                        <span class="sg-chip" style="background: var(--@t)"></span>
+                        <code>--@t</code>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@* Badges *@
+<div class="im-card mb-3">
+    <div class="im-section-head"><span>🏷️ Badges</span><span class="im-section-note">im-badge base + variants</span></div>
+    <p class="text-muted small">Never use raw <code>badge bg-*</code>. Use a <code>Ui.*Badge()</code> helper for domain concepts, or the generic <code>im-b-*</code> tones for state, status and counts.</p>
+
+    <div class="sg-badge-row">
+        <div class="sg-tok-label">Generic status <code>im-b-*</code></div>
+        <span class="im-badge im-b-neutral">neutral</span>
+        <span class="im-badge im-b-info">info</span>
+        <span class="im-badge im-b-ok">ok</span>
+        <span class="im-badge im-b-warn">warn</span>
+        <span class="im-badge im-b-danger">danger</span>
+    </div>
+
+    <div class="sg-badge-row">
+        <div class="sg-tok-label">Classification <code>Ui.ClassificationBadge</code></div>
+        <span class="@Ui.ClassificationBadge(null)">@Ui.Label((Classification?)null)</span>
+        @foreach (var c in Enum.GetValues<Classification>())
+        {
+            <span class="@Ui.ClassificationBadge(c)">@Ui.Label(c)</span>
+        }
+    </div>
+
+    <div class="sg-badge-row">
+        <div class="sg-tok-label">Severity <code>Ui.SeverityBadge</code></div>
+        @foreach (var s in Enum.GetValues<Severity>())
+        {
+            <span class="@Ui.SeverityBadge(s)">@SevLabels.For(s)</span>
+        }
+    </div>
+
+    <div class="sg-badge-row">
+        <div class="sg-tok-label">Phase <code>Ui.PhaseBadge</code></div>
+        @foreach (var p in Enum.GetValues<CasePhase>())
+        {
+            <span class="@Ui.PhaseBadge(p)">@Ui.Label(p)</span>
+        }
+    </div>
+
+    <div class="sg-badge-row">
+        <div class="sg-tok-label">SLA state <code>Ui.SlaBadge</code></div>
+        @foreach (var s in Enum.GetValues<SlaState>())
+        {
+            <span class="@Ui.SlaBadge(s)">@Ui.SlaLabel(s)</span>
+        }
+    </div>
+
+    <div class="sg-badge-row">
+        <div class="sg-tok-label">Disposition <code>Ui.DispositionBadge</code></div>
+        @foreach (var d in Enum.GetValues<EntityDisposition>())
+        {
+            <span class="@Ui.DispositionBadge(d)">@Ui.Label(d)</span>
+        }
+    </div>
+</div>
+
+@* Stat tiles *@
+<div class="im-card mb-3">
+    <div class="im-section-head"><span>📊 Stat tiles</span><span class="im-section-note">&lt;StatTile&gt; · im-tone-*</span></div>
+    <p class="text-muted small">Summary metrics use <code>im-tiles</code> + <code>&lt;StatTile&gt;</code>. Pass <code>Href</code> to make a tile a drill-in link.</p>
+    <div class="im-tiles">
+        <StatTile Icon="bi-folder2-open" Value="12" Label="Open cases" Tone="accent" Href="cases" />
+        <StatTile Icon="bi-shield-exclamation" Value="3" Label="Open breaches" Tone="danger" />
+        <StatTile Icon="bi-clock-history" Value="5" Label="SLA at risk" Tone="warn" />
+        <StatTile Icon="bi-check2-circle" Value="0" Label="Overdue tasks" Tone="ok" />
+    </div>
+</div>
+
+@* Page + card structure *@
+<div class="im-card mb-3">
+    <div class="im-section-head"><span>🧱 Page structure</span><span class="im-section-note">PageHeader · im-card · im-table</span></div>
+    <p class="text-muted small">Every page opens with <code>&lt;PageHeader&gt;</code>. Content sits in <code>im-card</code> panels headed by <code>im-section-head</code>. Tables carry <code>im-table</code>.</p>
+    <div class="table-responsive">
+        <table class="table table-sm im-table mb-0">
+            <thead><tr><th>Case</th><th>Classification</th><th>Severity</th><th>SLA</th></tr></thead>
+            <tbody>
+                <tr><td>2026-05_FS_01</td><td><span class="@Ui.ClassificationBadge(Classification.Breach)">@Ui.Label(Classification.Breach)</span></td><td><span class="@Ui.SeverityBadge(Severity.Critical)">Critical</span></td><td><span class="@Ui.SlaBadge(SlaState.Breached)">@Ui.SlaLabel(SlaState.Breached)</span></td></tr>
+                <tr><td>2026-06_Payroll</td><td><span class="@Ui.ClassificationBadge(Classification.AdverseEvent)">@Ui.Label(Classification.AdverseEvent)</span></td><td><span class="@Ui.SeverityBadge(Severity.Medium)">Medium</span></td><td><span class="@Ui.SlaBadge(SlaState.Met)">@Ui.SlaLabel(SlaState.Met)</span></td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@* Buttons *@
+<div class="im-card mb-3">
+    <div class="im-section-head"><span>🔘 Buttons</span><span class="im-section-note">Bootstrap btn, retinted via tokens</span></div>
+    <div class="sg-badge-row">
+        <button class="btn btn-sm btn-primary">Primary</button>
+        <button class="btn btn-sm btn-outline-primary">Outline primary</button>
+        <button class="btn btn-sm btn-outline-secondary">Outline secondary</button>
+        <button class="btn btn-sm btn-outline-danger">Outline danger</button>
+        <a class="btn btn-sm btn-link">Link</a>
+    </div>
+</div>
+
+@* Typography *@
+<div class="im-card">
+    <div class="im-section-head"><span>🔤 Typography</span></div>
+    <div class="im-page-title">Page title · im-page-title</div>
+    <div class="im-page-sub">Page subtitle · im-page-sub</div>
+    <p class="mb-1 mt-2">Body text in the default surface color.</p>
+    <p class="text-muted small mb-0">Muted helper text · text-muted small. Terse and functional, no em-dashes in prose.</p>
+</div>
+
+@code {
+    private sealed record TokenGroup(string Name, string[] Tokens);
+
+    private static readonly TokenGroup[] TokenGroups =
+    [
+        new("Brand (gold + charcoal ink)", ["im-gold", "im-gold-strong", "im-ink", "im-ink-hover"]),
+        new("Surface & text", ["im-bg", "im-surface", "im-surface-2", "im-border", "im-border-strong", "im-text", "im-text-muted"]),
+        new("Accent roles", ["im-accent", "im-accent-strong", "im-accent-text", "im-accent-bg", "im-focus"]),
+        new("Status", ["im-danger", "im-danger-bg", "im-warn", "im-warn-bg", "im-ok", "im-ok-bg", "im-neutral", "im-neutral-bg"]),
+    ];
+}

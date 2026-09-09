@@ -1,0 +1,306 @@
+@* Visual MITRE ATT&CK matrix picker. Tactics are columns; techniques stack beneath the tactic(s)
+   they belong to, so choosing a technique in a column *is* choosing its tactic. Sub-techniques are
+   collapsed under their parent. Multi-select with add + remove: the grid reflects what's already
+   tagged, and Apply syncs the difference. Off-catalogue tags (not in ATT&CK v19.1) are preserved and
+   shown in a separate "custom" strip so they aren't silently dropped. Backs the Overview technique tag. *@
+
+@using IncidentManager.Application.Mitre
+
+<div class="atkm-backdrop" @onclick="Cancel"></div>
+<div class="atkm-panel" role="dialog" aria-modal="true" aria-label="Select ATT&CK techniques" @onclick:stopPropagation="true">
+    <div class="atkm-head">
+        <div class="atkm-title">
+            <span class="bi bi-diagram-3 me-2" aria-hidden="true"></span>
+            <span>@(SingleSelect ? "Choose a technique" : "Select ATT&CK techniques") <span class="text-muted small">@AttackCatalog.Version</span></span>
+        </div>
+        <div class="atkm-search">
+            <span class="bi bi-search" aria-hidden="true"></span>
+            <input class="form-control form-control-sm" placeholder="Filter by ID or name…"
+                   value="@_filter" @oninput="OnFilter" aria-label="Filter techniques" />
+            @if (_filter.Length > 0)
+            {
+                <button type="button" class="btn btn-sm btn-link p-0 ms-1" @onclick="ClearFilter" title="Clear filter">clear</button>
+            }
+        </div>
+        <button type="button" class="btn-close" aria-label="Close" @onclick="Cancel"></button>
+    </div>
+
+    <div class="atkm-grid">
+        @foreach (var col in Matrix)
+        {
+            var rows = VisibleRows(col);
+            <div class="atkm-col">
+                <div class="atkm-colhead @(TacticPickable ? "atkm-colhead-btn" : "")" style="--tac:@Ui.TacticColor(col.Tactic)"
+                     title="@(TacticPickable ? $"Pick {Ui.Label(col.Tactic)} as a tactic-only step" : Ui.TacticId(col.Tactic))"
+                     role="@(TacticPickable ? "button" : null)" @onclick="() => PickTacticHeader(col.Tactic)">
+                    <span class="bi @Ui.TacticGlyph(col.Tactic)" aria-hidden="true"></span>
+                    <span class="atkm-colname">@Ui.Label(col.Tactic)</span>
+                    @{ var selN = rows.Count(r => IsSel(r.Parent.Id, col.Tactic) || r.Subs.Any(s => IsSel(s.Id, col.Tactic))); }
+                    @if (selN > 0) { <span class="atkm-colcount">@selN</span> }
+                </div>
+                <div class="atkm-cells">
+                    @foreach (var row in rows)
+                    {
+                        var pid = row.Parent.Id;
+                        var expanded = _expanded.Contains(pid) || (_filter.Length > 0 && row.Subs.Any(s => Matches(s)));
+                        <div class="atkm-row">
+                            <div class="atkm-cell @CellClass(pid, col.Tactic, row.ParentInTactic)"
+                                 @onclick="() => ToggleParent(row, col.Tactic)">
+                                @if (row.Subs.Count > 0)
+                                {
+                                    <button type="button" class="atkm-exp" @onclick="() => ToggleExpand(pid)" @onclick:stopPropagation="true"
+                                            aria-label="@(expanded ? "Collapse" : "Expand") sub-techniques">
+                                        <span class="bi @(expanded ? "bi-caret-down-fill" : "bi-caret-right-fill")" aria-hidden="true"></span>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="atkm-exp-spacer"></span>
+                                }
+                                <span class="atkm-tid"><code>@pid</code></span>
+                                <span class="atkm-tname">@row.Parent.Name</span>
+                                @if (row.Subs.Count > 0) { <span class="atkm-subn">@row.Subs.Count</span> }
+                                @if (IsSel(pid, col.Tactic)) { <span class="bi bi-check2 atkm-tick" aria-hidden="true"></span> }
+                                else if (IsSelElsewhere(pid, col.Tactic)) { <span class="atkm-elsew" title="Tagged under @Ui.Label(_selected[pid])">•</span> }
+                            </div>
+                            @if (expanded)
+                            {
+                                @foreach (var sub in row.Subs)
+                                {
+                                    <div class="atkm-cell atkm-subcell @CellClass(sub.Id, col.Tactic, true)"
+                                         @onclick="() => ToggleTechnique(sub.Id, col.Tactic)">
+                                        <span class="atkm-tid"><code>@sub.Id</code></span>
+                                        <span class="atkm-tname">@sub.Name</span>
+                                        @if (IsSel(sub.Id, col.Tactic)) { <span class="bi bi-check2 atkm-tick" aria-hidden="true"></span> }
+                                        else if (IsSelElsewhere(sub.Id, col.Tactic)) { <span class="atkm-elsew" title="Tagged under @Ui.Label(_selected[sub.Id])">•</span> }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                    @if (rows.Count == 0) { <div class="atkm-empty">—</div> }
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (!SingleSelect && (_customTags.Count > 0 || _customOpen))
+    {
+        <div class="atkm-custom">
+            <span class="text-muted small me-1">Off-catalogue:</span>
+            @foreach (var c in _customTags)
+            {
+                <span class="im-chip"><code>@c.Key</code> <span class="im-chip-role">@Ui.Label(c.Value)</span>
+                    <button type="button" class="im-chip-x" aria-label="Remove @c.Key" @onclick="() => RemoveCustom(c.Key)">×</button>
+                </span>
+            }
+            @if (_customOpen)
+            {
+                <input class="form-control form-control-sm atkm-custom-in" placeholder="T1234[.001]" value="@_customId" @oninput="e => _customId = e.Value?.ToString() ?? string.Empty" />
+                <select class="form-select form-select-sm atkm-custom-in" @bind="_customTactic">
+                    @foreach (var t in Enum.GetValues<MitreTactic>().Where(t => t != MitreTactic.Unspecified).OrderBy(Ui.TacticRank))
+                    {
+                        <option value="@t">@Ui.Label(t)</option>
+                    }
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="AddCustom">Add</button>
+                @if (_customError is not null) { <span class="small text-danger ms-1">@_customError</span> }
+            }
+            else
+            {
+                <button type="button" class="im-chip-add" @onclick="() => _customOpen = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> Custom</button>
+            }
+        </div>
+    }
+
+    <div class="atkm-foot">
+        @if (SingleSelect)
+        {
+            <div class="atkm-summary small text-muted">Click a technique in the tactic column you mean@(AllowTacticOnly ? ", or a tactic header for a tactic-only step." : ".")</div>
+            <button type="button" class="btn btn-outline-secondary" @onclick="Cancel">Cancel</button>
+        }
+        else
+        {
+            <div class="atkm-summary small text-muted">
+                @Delta() selected@(ChangeCount() > 0 ? $" · +{AddedCount()} / −{RemovedCount()}{(RetaggedCount() > 0 ? $" / ~{RetaggedCount()}" : "")} on apply" : "")
+            </div>
+            @if (!_customOpen && _customTags.Count == 0)
+            {
+                <button type="button" class="btn btn-sm btn-outline-secondary me-auto" @onclick="() => _customOpen = true">
+                    <span class="bi bi-plus-lg me-1" aria-hidden="true"></span>Not in the matrix?
+                </button>
+            }
+            <button type="button" class="btn btn-outline-secondary" @onclick="Cancel">Cancel</button>
+            <button type="button" class="btn btn-primary" @onclick="Apply">Apply</button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyDictionary<string, MitreTactic> Current { get; set; } = new Dictionary<string, MitreTactic>();
+    [Parameter] public EventCallback<IReadOnlyDictionary<string, MitreTactic>> OnApply { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    /// <summary>Single-select mode (e.g. picking the ATT&amp;CK for one timeline step): clicking a cell
+    /// immediately returns via <see cref="OnPick"/> and there is no add/remove.</summary>
+    [Parameter] public bool SingleSelect { get; set; }
+
+    /// <summary>In single-select mode, also let a tactic column header be picked (tactic-only, no
+    /// technique) — <see cref="OnPick"/> then reports a null Id.</summary>
+    [Parameter] public bool AllowTacticOnly { get; set; }
+
+    /// <summary>Single-select result: the chosen technique id (null for a tactic-only header pick) + tactic.</summary>
+    [Parameter] public EventCallback<(string? Id, MitreTactic Tactic)> OnPick { get; set; }
+
+    private bool TacticPickable => SingleSelect && AllowTacticOnly;
+
+    private readonly Dictionary<string, MitreTactic> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
+    private string _filter = "";
+    private bool _initialized;
+
+    private bool _customOpen;
+    private string _customId = "";
+    private MitreTactic _customTactic = MitreTactic.Execution;
+    private string? _customError;
+
+    protected override void OnParametersSet()
+    {
+        if (_initialized) return;
+        _selected.Clear();
+        foreach (var kv in Current) _selected[kv.Key.Trim().ToUpperInvariant()] = kv.Value;
+        // Expand any parent that already has a tagged sub-technique, so current selections are visible.
+        foreach (var id in _selected.Keys)
+        {
+            var dot = id.IndexOf('.');
+            if (dot > 0) _expanded.Add(id[..dot]);
+        }
+        _initialized = true;
+    }
+
+    // --- matrix structure (catalogue-derived, built once) ---
+    private sealed record Row(AttackTechnique Parent, bool ParentInTactic, IReadOnlyList<AttackTechnique> Subs);
+    private sealed record Col(MitreTactic Tactic, IReadOnlyList<Row> Rows);
+    private static IReadOnlyList<Col>? _matrix;
+    private static IReadOnlyList<Col> Matrix => _matrix ??= Build();
+
+    private static IReadOnlyList<Col> Build()
+    {
+        var all = AttackCatalog.All;
+        var parents = all.Where(t => !t.IsSubtechnique).ToDictionary(t => t.Id, StringComparer.OrdinalIgnoreCase);
+        var subsByParent = all.Where(t => t.IsSubtechnique)
+            .GroupBy(t => t.ParentId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase).ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var cols = new List<Col>();
+        foreach (var tac in Enum.GetValues<MitreTactic>().Where(t => t != MitreTactic.Unspecified).OrderBy(Ui.TacticRank))
+        {
+            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in parents.Values) if (p.Tactics.Contains(tac)) ids.Add(p.Id);
+            foreach (var kv in subsByParent) if (kv.Value.Any(s => s.Tactics.Contains(tac))) ids.Add(kv.Key);
+
+            var rows = ids.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .Where(parents.ContainsKey)
+                .Select(pid =>
+                {
+                    var parent = parents[pid];
+                    var subs = subsByParent.TryGetValue(pid, out var sl)
+                        ? sl.Where(s => s.Tactics.Contains(tac)).ToList()
+                        : new List<AttackTechnique>();
+                    return new Row(parent, parent.Tactics.Contains(tac), subs);
+                })
+                .ToList();
+            cols.Add(new Col(tac, rows));
+        }
+        return cols;
+    }
+
+    // --- filtering ---
+    private bool Matches(AttackTechnique t) =>
+        _filter.Length == 0
+        || t.Id.Contains(_filter, StringComparison.OrdinalIgnoreCase)
+        || t.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase);
+
+    private List<Row> VisibleRows(Col col)
+    {
+        if (_filter.Length == 0) return col.Rows.ToList();
+        return col.Rows.Where(r => Matches(r.Parent) || r.Subs.Any(Matches)).ToList();
+    }
+
+    private void OnFilter(ChangeEventArgs e) => _filter = e.Value?.ToString() ?? "";
+    private void ClearFilter() => _filter = "";
+
+    // --- selection ---
+    private bool IsSel(string id, MitreTactic tac) => _selected.TryGetValue(id, out var t) && t == tac;
+    private bool IsSelElsewhere(string id, MitreTactic tac) => _selected.TryGetValue(id, out var t) && t != tac;
+
+    private string CellClass(string id, MitreTactic tac, bool selectable)
+    {
+        if (!selectable) return "atkm-header";
+        if (IsSel(id, tac)) return "atkm-on";
+        if (IsSelElsewhere(id, tac)) return "atkm-elsewhere";
+        return "";
+    }
+
+    private async Task ToggleParent(Row row, MitreTactic tac)
+    {
+        if (!row.ParentInTactic) { ToggleExpand(row.Parent.Id); return; } // header-only row: click expands
+        await ToggleTechnique(row.Parent.Id, tac);
+    }
+
+    private async Task ToggleTechnique(string id, MitreTactic tac)
+    {
+        var key = id.ToUpperInvariant();
+        if (SingleSelect) { await OnPick.InvokeAsync((key, tac)); return; }
+        if (_selected.TryGetValue(key, out var cur) && cur == tac) _selected.Remove(key);
+        else _selected[key] = tac;
+    }
+
+    private async Task PickTacticHeader(MitreTactic tac)
+    {
+        if (TacticPickable) await OnPick.InvokeAsync((null, tac));
+    }
+
+    private void ToggleExpand(string parentId)
+    {
+        if (!_expanded.Add(parentId)) _expanded.Remove(parentId);
+    }
+
+    // --- off-catalogue (custom) tags ---
+    private IReadOnlyList<KeyValuePair<string, MitreTactic>> _customTags =>
+        _selected.Where(kv => AttackCatalog.Find(kv.Key) is null)
+            .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).ToList();
+
+    private void AddCustom()
+    {
+        _customError = null;
+        var id = (_customId ?? "").Trim().ToUpperInvariant();
+        if (!System.Text.RegularExpressions.Regex.IsMatch(id, @"^T\d{4}(\.\d{3})?$"))
+        {
+            _customError = "Expected e.g. T1234 or T1234.001.";
+            return;
+        }
+        _selected[id] = _customTactic;
+        _customId = "";
+    }
+
+    private void RemoveCustom(string id) => _selected.Remove(id);
+
+    // --- summary + apply ---
+    private int Delta() => _selected.Count;
+    private int AddedCount() => _selected.Keys.Count(k => !HasCurrent(k));
+    private int RemovedCount() => Current.Keys.Count(k => !_selected.ContainsKey(k.ToUpperInvariant()));
+    private int RetaggedCount() => _selected.Count(kv => TryCurrent(kv.Key, out var cur) && cur != kv.Value);
+    private int ChangeCount() => AddedCount() + RemovedCount() + RetaggedCount();
+
+    private bool HasCurrent(string key) => Current.Keys.Any(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase));
+    private bool TryCurrent(string key, out MitreTactic tactic)
+    {
+        foreach (var kv in Current)
+            if (string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase)) { tactic = kv.Value; return true; }
+        tactic = MitreTactic.Unspecified; return false;
+    }
+
+    private async Task Apply() => await OnApply.InvokeAsync(new Dictionary<string, MitreTactic>(_selected, StringComparer.OrdinalIgnoreCase));
+    private async Task Cancel() => await OnCancel.InvokeAsync();
+}

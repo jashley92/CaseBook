@@ -1,0 +1,104 @@
+/* Shared admin hub: an index rail on the left, the routed admin page on the right. One navigation for the
+   whole admin area, so the main sidebar no longer repeats the admin destinations. NavLink renders the rail
+   anchors, so their styling is reached through ::deep (the anchor is a child component, like NavMenu). */
+.admin-shell {
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.admin-rail {
+    position: sticky;
+    top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0.5rem;
+    background: var(--im-surface, #fff);
+    border: 1px solid var(--im-border, #e5e7eb);
+    border-radius: 12px;
+}
+
+.admin-rail-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem 0.5rem;
+    font-weight: 650;
+    color: var(--im-text);
+}
+
+.admin-rail-head .bi {
+    color: var(--im-accent);
+}
+
+.admin-rail-label {
+    padding: 0.75rem 0.75rem 0.35rem;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--im-text-muted, #6b7280);
+}
+
+.admin-rail-item ::deep .admin-rail-link {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 0.9rem;
+    color: var(--im-text, #1f2937);
+    transition: background-color .12s ease, color .12s ease;
+}
+
+.admin-rail-item ::deep .admin-rail-link .bi {
+    width: 1.2rem;
+    text-align: center;
+    opacity: .8;
+    flex: 0 0 auto;
+}
+
+.admin-rail-item ::deep .admin-rail-link:hover {
+    background: var(--im-accent-bg, rgba(0, 0, 0, .04));
+}
+
+.admin-rail-item ::deep a.active {
+    background: var(--im-accent-bg, rgba(0, 0, 0, .06));
+    font-weight: 600;
+    box-shadow: inset 3px 0 0 var(--im-accent);
+}
+
+.admin-rail-item ::deep a.active .bi {
+    color: var(--im-accent);
+    opacity: 1;
+}
+
+.admin-pane {
+    min-width: 0;
+}
+
+/* Stack the rail above the routed page on narrow viewports; the rail becomes a horizontal wrap of chips. */
+@media (max-width: 720px) {
+    .admin-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-rail {
+        position: static;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .admin-rail-head,
+    .admin-rail-label {
+        width: 100%;
+    }
+
+    .admin-rail-item ::deep .admin-rail-link {
+        width: auto;
+    }
+}

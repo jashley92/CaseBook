@@ -1,0 +1,25 @@
+@* Shared stat tile — one horizontal icon-chip vocabulary across Dashboard / Work / Team / Cases.
+   Static (no Href) or a drill-in link. Colour comes from Tone (accent/danger/warn/ok/neutral). *@
+@if (Href is null)
+{
+    <div class="im-stat im-tone-@Tone">
+        <div class="im-stat-ic"><span class="bi @Icon" aria-hidden="true"></span></div>
+        <div><div class="im-stat-value">@Value</div><div class="im-stat-label">@Label</div></div>
+    </div>
+}
+else
+{
+    <a class="im-stat im-tone-@Tone" href="@Href" title="@(TitleText ?? $"View {Label}")">
+        <div class="im-stat-ic"><span class="bi @Icon" aria-hidden="true"></span></div>
+        <div><div class="im-stat-value">@Value</div><div class="im-stat-label">@Label</div></div>
+    </a>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Icon { get; set; } = "";
+    [Parameter, EditorRequired] public object? Value { get; set; }
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string Tone { get; set; } = "accent";
+    [Parameter] public string? Href { get; set; }
+    [Parameter] public string? TitleText { get; set; }
+}

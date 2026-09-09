@@ -1,0 +1,49 @@
+@* Stage-gate readiness checklist (C-07). Machine checks render as met/unmet; attestations render as
+   checkboxes the analyst must consciously tick. Used in the reclassify and close confirm modals, and
+   read-only on the Overview readiness card (Interactive=false hides the checkboxes' effect). *@
+
+<div class="gate-panel">
+    <div class="gate-panel-title"><span class="bi bi-shield-check me-1" aria-hidden="true"></span>@Eval.GateName</div>
+    @foreach (var r in Eval.Requirements)
+    {
+        @if (r.Kind == GateRequirementKind.Attestation)
+        {
+            <label class="gate-req d-flex align-items-start gap-2">
+                <input type="checkbox" class="form-check-input mt-1" disabled="@(!Interactive)"
+                       checked="@Attested.Contains(r.RequirementId)"
+                       @onchange="e => Toggle(r.RequirementId, (bool)(e.Value ?? false))" />
+                <span>
+                    <span class="bi bi-pen me-1 text-muted" aria-hidden="true"></span>@r.Label
+                    @if (!r.IsBlocking) { <span class="text-muted">(optional)</span> }
+                </span>
+            </label>
+        }
+        else
+        {
+            var ok = r.MachineSatisfied;
+            <div class="gate-req @(ok ? "gate-ok" : (r.IsBlocking ? "gate-bad" : "gate-warn"))">
+                <span class="bi @(ok ? "bi-check-circle-fill" : (r.IsBlocking ? "bi-x-circle-fill" : "bi-exclamation-circle")) me-1" aria-hidden="true"></span>
+                @r.Label
+                @if (!r.IsBlocking) { <span class="text-muted">(optional)</span> }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public GateEvaluation Eval { get; set; } = default!;
+    [Parameter, EditorRequired] public HashSet<Guid> Attested { get; set; } = default!;
+
+    /// <summary>When false the checklist is display-only (attestations can't be ticked).</summary>
+    [Parameter] public bool Interactive { get; set; } = true;
+
+    /// <summary>Raised after an attestation toggles, so the host can recompute blocking/override state.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private async Task Toggle(Guid id, bool on)
+    {
+        if (!Interactive) return;
+        if (on) Attested.Add(id); else Attested.Remove(id);
+        await OnChanged.InvokeAsync();
+    }
+}

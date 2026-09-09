@@ -1,0 +1,311 @@
+@page "/cases/new"
+@attribute [Authorize(Policy = Policies.EditCases)]
+@using IncidentManager.Application.Admin
+@inject CaseService Cases
+@inject CaseTemplateService Templates
+@inject NavigationManager Nav
+@inject IConfiguration Config
+@inject ISeverityLabels SevLabels
+
+<PageTitle>New Case</PageTitle>
+
+<PageHeader Title="New case"
+           Subtitle="For items that have escalated to an Adverse Event, Incident, or Breach." />
+
+<EditForm Model="_request" OnValidSubmit="Submit" FormName="createCase">
+    <div class="nc-form">
+        @* Optional quick-start from a curated playbook. *@
+        @if (_templates is { Count: > 0 })
+        {
+            <div class="nc-template">
+                <span class="bi bi-clipboard-check nc-template-ic" aria-hidden="true"></span>
+                <div class="nc-template-body">
+                    <label class="form-label small mb-1">Start from a template <span class="text-muted">(optional)</span></label>
+                    <select class="form-select form-select-sm" @onchange="OnTemplateChanged" value="@(_selectedTemplate?.Id.ToString() ?? "")">
+                        <option value="">No template</option>
+                        @foreach (var t in _templates)
+                        {
+                            <option value="@t.Id">@t.Name@(t.Steps.Count > 0 ? $" ({t.Steps.Count} steps)" : "")</option>
+                        }
+                    </select>
+                    @if (_selectedTemplate is not null)
+                    {
+                        <div class="small text-muted mt-1">
+                            @_selectedTemplate.Description@if (_selectedTemplate.Steps.Count > 0) { <text> · @_selectedTemplate.Steps.Count action item(s) added on create.</text> }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @* Case details *@
+        <div class="im-card nc-card">
+            <div class="mb-3">
+                <label class="form-label">Title <span class="text-danger">*</span></label>
+                <InputText class="form-control form-control-lg" @bind-Value="_request.Title" @bind-Value:after="SyncSlug"
+                           placeholder="e.g. Credential-phishing wave targeting Finance" />
+                <div class="form-text">Case number <code>@PreviewNumber</code> is assigned automatically.</div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Classification</label>
+                    <InputSelect class="form-select" @bind-Value="_request.Classification">
+                        <option value="">Complex Event</option>
+                        @foreach (var c in Enum.GetValues<Classification>())
+                        {
+                            <option value="@c">@Ui.Label(c)</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Severity</label>
+                    <InputSelect class="form-select" @bind-Value="_request.Severity">
+                        @foreach (var s in Enum.GetValues<Severity>())
+                        {
+                            <option value="@s">@SevLabels.For(s)</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Origin</label>
+                    <InputSelect class="form-select" @bind-Value="_request.Origin">
+                        <option value="@CaseOrigin.InternalDetection">Internal detection</option>
+                        <option value="@CaseOrigin.ThirdParty">Third-party / vendor</option>
+                    </InputSelect>
+                </div>
+
+                @if (_request.Origin == CaseOrigin.ThirdParty)
+                {
+                    <div class="col-md-4">
+                        <label class="form-label">Vendor name <span class="text-danger">*</span></label>
+                        <InputText class="form-control" @bind-Value="_request.VendorName" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Vendor contact</label>
+                        <InputText class="form-control" @bind-Value="_request.VendorContact" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Vendor reference</label>
+                        <InputText class="form-control" @bind-Value="_request.VendorReference" />
+                    </div>
+                }
+
+                <div class="col-md-6">
+                    <label class="form-label">@DetectionLabel Case ID <span class="text-muted">(optional)</span></label>
+                    <InputText class="form-control" @bind-Value="_request.DetectionCaseId" placeholder="@($"e.g. {DetectionLabel}-40122")" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Data types involved</label>
+                    <InputText class="form-control" @bind-Value="_request.DataTypesInvolved" placeholder="e.g. PII, PHI, credentials" />
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">Summary</label>
+                    <InputTextArea class="form-control" rows="3" @bind-Value="_request.Summary"
+                                   placeholder="What happened, current status, and immediate impact." />
+                </div>
+            </div>
+
+            @* Power-user override of the auto-assigned number; hidden by default. *@
+            <details class="nc-advanced">
+                <summary>Advanced</summary>
+                <div class="mt-2 nc-advanced-body">
+                    <label class="form-label">Case number <span class="text-muted">(optional)</span></label>
+                    <InputText class="form-control" @bind-Value="_request.CaseNumber" placeholder="@PreviewNumber" />
+                    <div class="form-text">Leave blank to auto-generate. Must be unique.</div>
+                </div>
+            </details>
+        </div>
+
+        @* Indicators + duplicate / campaign detection (E-23) *@
+        <div class="im-card nc-card">
+            <label class="form-label">Indicators / IOCs <span class="text-muted">(optional, one per line)</span></label>
+            <textarea class="form-control" rows="3" @bind="_indicators" @bind:event="oninput"
+                      placeholder="One indicator per line, e.g. 1.2.3.4, evil.example.com, hxxp://bad[.]site/x, or a file hash"
+                      @onblur="CheckOverlaps"></textarea>
+            <div class="form-text">
+                Checked against open cases for duplicates, and added as entities on create (defanged notation is refanged; types auto-detected).
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="CheckOverlaps" disabled="@_checking">Check now</button>
+            </div>
+
+            @if (_checking)
+            {
+                <div class="mt-2"><span class="spinner-border spinner-border-sm text-muted" role="status"></span> <span class="text-muted small">Checking open cases…</span></div>
+            }
+            else if (ShowNoMatches)
+            {
+                <div class="alert alert-success py-2 mt-2 mb-0">
+                    <span class="bi bi-check2-circle me-1" aria-hidden="true"></span>
+                    No open cases reference these indicators. This looks like a new matter.
+                </div>
+            }
+            else if (_matches.Count > 0)
+            {
+                <div class="alert alert-warning mt-2 mb-0">
+                    <div class="fw-semibold mb-2">
+                        <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>
+                        @_matches.Count open case(s) already reference these indicators. Relate one to avoid fragmenting a campaign:
+                    </div>
+                    @foreach (var m in _matches)
+                    {
+                        <div class="d-flex flex-wrap align-items-center gap-2 mb-2 pb-2 border-bottom">
+                            <a href="cases/@m.CaseId" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
+                                <code>@m.CaseNumber</code> @m.Title
+                            </a>
+                            <span class="@Ui.PhaseBadge(m.Phase)">@Ui.Label(m.Phase)</span>
+                            <span class="small text-muted">shared: @string.Join(", ", m.Indicators)</span>
+                            <div class="ms-auto">
+                                <select class="form-select form-select-sm d-inline-block w-auto"
+                                        @onchange="e => SetLink(m.CaseId, e.Value?.ToString())">
+                                    <option value="">Don't link</option>
+                                    <option value="@CaseLinkType.RelatedTo">Related to</option>
+                                    <option value="@CaseLinkType.DuplicateOf">Duplicate of</option>
+                                    <option value="@CaseLinkType.PartOfCampaign">Part of campaign</option>
+                                </select>
+                            </div>
+                        </div>
+                    }
+                    <div class="small text-muted">Relationships are applied when you create the case; filing is never blocked.</div>
+                </div>
+            }
+        </div>
+
+        @if (_error is not null)
+        {
+            <div class="alert alert-danger mb-0">@_error</div>
+        }
+
+        <div class="nc-actions">
+            <button type="submit" class="btn btn-primary" disabled="@_saving">Create case</button>
+            <a class="btn btn-outline-secondary" href="cases">Cancel</a>
+        </div>
+    </div>
+</EditForm>
+
+@code {
+    private readonly CreateCaseRequest _request = new();
+    private bool _saving;
+    private string? _error;
+
+    private List<TemplateView>? _templates;
+    private TemplateView? _selectedTemplate;
+
+    // E-23: creation-time IOC entry + duplicate/related-case detection.
+    private string? _indicators;
+    private List<CaseIocMatch> _matches = new();
+    private bool _checking;
+    private string? _checkedInput; // the indicator text last checked — so "no matches" feedback clears once it's edited
+    private readonly Dictionary<Guid, CaseLinkType?> _linkChoice = new();
+
+    private static IEnumerable<string> IndicatorLines(string? raw) =>
+        (raw ?? "").Replace("\r", "").Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0);
+
+    // Show the "no matches" note only after a check whose input still matches what's in the box.
+    private bool ShowNoMatches =>
+        !_checking && _matches.Count == 0 && _checkedInput == _indicators && IndicatorLines(_indicators).Any();
+
+    private void SetLink(Guid caseId, string? raw)
+        => _linkChoice[caseId] = Enum.TryParse<CaseLinkType>(raw, out var t) ? t : (CaseLinkType?)null;
+
+    private async Task CheckOverlaps()
+    {
+        var lines = IndicatorLines(_indicators).ToList();
+        _checkedInput = _indicators;
+        if (lines.Count == 0) { _matches = new(); return; }
+        _checking = true;
+        try { _matches = (await Cases.FindOpenCaseMatchesForIocsAsync(lines)).ToList(); }
+        finally { _checking = false; }
+        // Drop choices for cases that are no longer matched (indicators edited).
+        foreach (var id in _linkChoice.Keys.Where(k => _matches.All(m => m.CaseId != k)).ToList())
+            _linkChoice.Remove(id);
+    }
+
+    protected override async Task OnInitializedAsync() => _templates = await Templates.ListActiveAsync();
+
+    private void OnTemplateChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        _selectedTemplate = Guid.TryParse(raw, out var id) ? _templates?.FirstOrDefault(t => t.Id == id) : null;
+        if (_selectedTemplate is null) return;
+
+        // Quick-fill the form from the template's field defaults (never clobber values the analyst already typed).
+        if (_selectedTemplate.DefaultClassification is { } c) _request.Classification = c;
+        if (_selectedTemplate.DefaultSeverity is { } s) _request.Severity = s;
+        if (!string.IsNullOrWhiteSpace(_selectedTemplate.DefaultDataTypes) && string.IsNullOrWhiteSpace(_request.DataTypesInvolved))
+            _request.DataTypesInvolved = _selectedTemplate.DefaultDataTypes;
+        if (!string.IsNullOrWhiteSpace(_selectedTemplate.SummaryBoilerplate) && string.IsNullOrWhiteSpace(_request.Summary))
+            _request.Summary = _selectedTemplate.SummaryBoilerplate;
+    }
+
+    // U-42: one Title field drives the case-number slug. Keep the (validator-required) DescriptiveName in
+    // sync with a compacted slug source so the auto number stays short instead of echoing the full title.
+    private void SyncSlug() => _request.DescriptiveName = SlugSource(_request.Title);
+
+    private static string SlugSource(string? title)
+    {
+        var t = (title ?? "").Trim();
+        if (t.Length == 0) return "";
+        var s = string.Join(' ', t.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6));
+        return s.Length <= 42 ? s : s[..42].TrimEnd();
+    }
+
+    // Reflects the scheme the auto-number would use. The per-year sequence is only known at save time, so
+    // show a neutral NN placeholder rather than implying a specific number (U-43). Complex Event numbers are
+    // date-based, so their preview is exact.
+    private string PreviewNumber
+    {
+        get
+        {
+            var now = DateTimeOffset.UtcNow;
+            var slug = Case.Slug(SlugSource(_request.Title));
+            return _request.Classification is null
+                ? Case.FormatComplexEventNumber(now, slug)
+                : $"{now.Year}-NN_{slug}";
+        }
+    }
+
+    /// <summary>Configurable display label for the detection source; defaults to "SIEM".</summary>
+    private string DetectionLabel
+    {
+        get
+        {
+            var label = Config["ExternalLinks:DetectionSourceLabel"];
+            return string.IsNullOrWhiteSpace(label) ? "SIEM" : label;
+        }
+    }
+
+    private async Task Submit()
+    {
+        _saving = true;
+        _error = null;
+        try
+        {
+            var created = await Cases.CreateAsync(_request);
+            // E-23: seed entered indicators as entities (best-effort typed; correctable on the Entities tab).
+            foreach (var raw in IndicatorLines(_indicators))
+                await Cases.AddEntityAsync(created.Id, IocObservable.DetectType(raw), raw, null,
+                    EntityDisposition.Unknown, null, "Filed at case creation");
+            // Apply the analyst's chosen relationships to the matched open cases (E-14).
+            foreach (var (relatedCaseId, choice) in _linkChoice)
+                if (choice is { } type)
+                    await Cases.LinkCaseAsync(created.Id, relatedCaseId, type, "Linked at case creation (shared indicator)");
+            // Seed the template's playbook steps as action items on the fresh case.
+            if (_selectedTemplate is { Steps.Count: > 0 })
+                await Cases.ApplyTemplateAsync(created.Id, _selectedTemplate.Id);
+            Nav.NavigateTo($"cases/{created.Id}");
+        }
+        catch (FluentValidation.ValidationException ex)
+        {
+            _error = string.Join(" ", ex.Errors.Select(e => e.ErrorMessage));
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

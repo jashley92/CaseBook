@@ -1,0 +1,99 @@
+@* Reusable MITRE ATT&CK tactic picker (U-08c). A popup that lets the analyst choose one or more
+   tactics from the framework — used everywhere a tactic is added. CSP-safe (no JS): backdrop + panel
+   mirroring the other in-app modals. Set Single="true" to constrain to a single tactic. *@
+
+<div class="tactic-picker">
+    <div class="d-flex flex-wrap align-items-center gap-1">
+        @if (Selected.Count == 0)
+        {
+            <span class="text-muted small">No @(Single ? "tactic" : "tactics") selected</span>
+        }
+        else
+        {
+            @foreach (var t in Selected.OrderBy(x => (int)x))
+            {
+                <span class="tactic-chip" style="--tac:@Ui.TacticColor(t)">
+                    <span class="bi @Ui.TacticGlyph(t)" aria-hidden="true"></span> @Ui.Label(t)
+                </span>
+            }
+        }
+        @if (!Disabled)
+        {
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Open">
+                <span class="bi bi-diagram-3" aria-hidden="true"></span>
+                @(Selected.Count == 0 ? (Single ? "Choose tactic" : "Choose tactics") : "Edit")
+            </button>
+        }
+    </div>
+
+    @if (_open)
+    {
+        <div class="tactic-modal-backdrop" @onclick="Cancel"></div>
+        <div class="tactic-modal" role="dialog" aria-modal="true" aria-label="Select MITRE ATT&CK tactics">
+            <div class="tactic-modal-head">
+                <span><span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>Select ATT&amp;CK @(Single ? "tactic" : "tactics")</span>
+                <button type="button" class="btn-close" aria-label="Close" @onclick="Cancel"></button>
+            </div>
+            <div class="tactic-modal-body">
+                @foreach (var t in AllTactics)
+                {
+                    var on = _draft.Contains(t);
+                    <button type="button" class="tactic-option @(on ? "on" : "")" style="--tac:@Ui.TacticColor(t)" @onclick="() => Toggle(t)">
+                        <span class="tactic-option-icon bi @Ui.TacticGlyph(t)" aria-hidden="true"></span>
+                        <span class="tactic-option-text">
+                            <span class="tactic-option-name">@Ui.Label(t) <span class="tactic-id">@Ui.TacticId(t)</span></span>
+                            <span class="tactic-option-desc">@Ui.TacticDescription(t)</span>
+                        </span>
+                        <span class="tactic-option-check bi @(on ? "bi-check-circle-fill" : "bi-circle")" aria-hidden="true"></span>
+                    </button>
+                }
+            </div>
+            <div class="tactic-modal-foot">
+                <span class="text-muted small me-auto">@_draft.Count selected</span>
+                <button type="button" class="btn btn-sm btn-link text-decoration-none" @onclick="Cancel">Cancel</button>
+                <button type="button" class="btn btn-sm btn-primary" @onclick="Confirm">Done</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlySet<MitreTactic> Selected { get; set; } = new HashSet<MitreTactic>();
+    [Parameter] public EventCallback<IReadOnlySet<MitreTactic>> SelectedChanged { get; set; }
+
+    /// <summary>Constrain the picker to a single tactic (e.g. tagging a technique's tactic).</summary>
+    [Parameter] public bool Single { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private bool _open;
+    private HashSet<MitreTactic> _draft = new();
+
+    // The Enterprise tactics in ATT&CK matrix order (Unspecified is not a real tactic). Ordered by
+    // Ui.TacticRank rather than enum value, since v19 tactics are appended out of matrix order.
+    private static readonly MitreTactic[] AllTactics =
+        Enum.GetValues<MitreTactic>().Where(t => t != MitreTactic.Unspecified).OrderBy(Ui.TacticRank).ToArray();
+
+    private void Open()
+    {
+        _draft = new HashSet<MitreTactic>(Selected);
+        _open = true;
+    }
+
+    private void Cancel() => _open = false;
+
+    private void Toggle(MitreTactic t)
+    {
+        if (Single)
+        {
+            _draft = new HashSet<MitreTactic> { t };
+            return;
+        }
+        if (!_draft.Add(t)) _draft.Remove(t);
+    }
+
+    private async Task Confirm()
+    {
+        _open = false;
+        await SelectedChanged.InvokeAsync(_draft);
+    }
+}

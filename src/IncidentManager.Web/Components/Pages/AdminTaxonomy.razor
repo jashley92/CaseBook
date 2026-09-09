@@ -1,0 +1,185 @@
+@page "/admin/taxonomy"
+@using IncidentManager.Application.Admin
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject TaxonomyAdminService Taxonomy
+@inject ToastService Toasts
+
+<PageTitle>Taxonomy labels</PageTitle>
+
+<PageHeader Title="Taxonomy labels">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+<p class="text-muted">
+    Adapt the fixed taxonomies to your incident-response plan without a release: <strong>rename</strong> how any
+    value reads, and for the entity/timeline pick-lists <strong>hide</strong> options you don't use or
+    <strong>reorder</strong> them. This is display-only — the underlying values, the classification ladder,
+    phase order and SLA milestones are unchanged, hiding never rewrites a value already recorded on a case, and
+    reports use these names too. Changes are audited and take effect without a restart.
+</p>
+
+@if (_kinds is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else
+{
+    @foreach (var kind in _kinds)
+    {
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><span class="bi bi-tag me-1"></span>@kind.Title</span>
+                <button class="btn btn-sm btn-primary" @onclick="() => SaveKind(kind.Id)">Save @kind.Title</button>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">@kind.Description</p>
+
+                @if (kind.AllowVisibilityOrder)
+                {
+                    <ol class="list-group">
+                        @for (var i = 0; i < kind.Members.Count; i++)
+                        {
+                            var idx = i;
+                            var m = kind.Members[idx];
+                            <li class="list-group-item d-flex align-items-center gap-2">
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <button class="btn btn-outline-secondary" title="Move up"
+                                            disabled="@(idx == 0)" @onclick="() => Move(kind, idx, -1)">
+                                        <span class="bi bi-arrow-up"></span>
+                                    </button>
+                                    <button class="btn btn-outline-secondary" title="Move down"
+                                            disabled="@(idx == kind.Members.Count - 1)" @onclick="() => Move(kind, idx, 1)">
+                                        <span class="bi bi-arrow-down"></span>
+                                    </button>
+                                </div>
+                                <div class="form-check form-switch mb-0" title="Show this option in the picker">
+                                    <input class="form-check-input" type="checkbox" checked="@(!m.Hidden)"
+                                           @onchange="e => m.Hidden = !(bool)(e.Value ?? false)" />
+                                </div>
+                                <div style="min-width:11rem">
+                                    <span class="fw-semibold @(m.Hidden ? "text-muted" : "")">@m.DefaultLabel</span>
+                                    @if (m.Hidden) { <span class="im-badge im-b-neutral ms-1">Hidden</span> }
+                                    else if (IsCustom(m)) { <span class="im-badge im-b-info ms-1">Custom</span> }
+                                    <div class="small text-muted"><code>@m.Value</code></div>
+                                </div>
+                                <input class="form-control form-control-sm flex-grow-1" type="text" maxlength="60"
+                                       placeholder="@m.DefaultLabel" @bind="m.Label" @bind:event="oninput" />
+                            </li>
+                        }
+                    </ol>
+                }
+                else
+                {
+                    @foreach (var m in kind.Members)
+                    {
+                        <div class="row mb-2 align-items-center">
+                            <div class="col-sm-4">
+                                <span class="fw-semibold">@m.DefaultLabel</span>
+                                @if (IsCustom(m)) { <span class="im-badge im-b-info ms-1">Custom</span> }
+                                else { <span class="im-badge im-b-neutral ms-1">Default</span> }
+                                <div class="small text-muted"><code>@m.Value</code></div>
+                            </div>
+                            <div class="col-sm-8">
+                                <input class="form-control" type="text" maxlength="60"
+                                       placeholder="@m.DefaultLabel" @bind="m.Label" @bind:event="oninput" />
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    // Editable view-model: mirrors the effective taxonomy, mutated in place by the reorder/hide/label controls
+    // and diffed against the originals on save.
+    private sealed class MemberEdit
+    {
+        public required string Value { get; init; }
+        public required string DefaultLabel { get; init; }
+        public string? Label { get; set; }          // current input; blank/default => no override
+        public bool Hidden { get; set; }
+        public string? OriginalOverride { get; init; }
+        public bool OriginalHidden { get; init; }
+    }
+
+    private sealed class KindEdit
+    {
+        public required string Id { get; init; }
+        public required string Title { get; init; }
+        public required string Description { get; init; }
+        public required bool AllowVisibilityOrder { get; init; }
+        public required List<MemberEdit> Members { get; init; }
+    }
+
+    private List<KindEdit>? _kinds;
+
+    private static bool IsCustom(MemberEdit m) =>
+        !string.IsNullOrWhiteSpace(m.Label) && m.Label!.Trim() != m.DefaultLabel;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var kinds = await Taxonomy.GetEffectiveAsync();
+        _kinds = kinds.Select(k => new KindEdit
+        {
+            Id = k.Id,
+            Title = k.Title,
+            Description = k.Description,
+            AllowVisibilityOrder = k.AllowVisibilityOrder,
+            Members = k.Members.Select(m => new MemberEdit
+            {
+                Value = m.Value,
+                DefaultLabel = m.DefaultLabel,
+                Label = m.Override,               // blank field when unset (default shown as placeholder)
+                Hidden = m.Hidden,
+                OriginalOverride = m.Override,
+                OriginalHidden = m.Hidden,
+            }).ToList()
+        }).ToList();
+    }
+
+    private void Move(KindEdit kind, int index, int delta)
+    {
+        var target = index + delta;
+        if (target < 0 || target >= kind.Members.Count) return;
+        (kind.Members[index], kind.Members[target]) = (kind.Members[target], kind.Members[index]);
+    }
+
+    private async Task SaveKind(string kindId)
+    {
+        if (_kinds is null) return;
+        var kind = _kinds.FirstOrDefault(k => k.Id == kindId);
+        if (kind is null) return;
+
+        try
+        {
+            if (kind.AllowVisibilityOrder)
+            {
+                var ordered = kind.Members.Select(m => m.Value).ToList();
+                var hidden = kind.Members.Where(m => m.Hidden).Select(m => m.Value).ToList();
+                await Taxonomy.SetVisibilityOrderAsync(kindId, ordered, hidden);
+            }
+
+            foreach (var m in kind.Members)
+            {
+                var next = m.Label?.Trim() ?? "";
+                var current = m.OriginalOverride ?? "";
+                if (!string.Equals(next, current, StringComparison.Ordinal))
+                    await Taxonomy.SetLabelAsync(kindId, m.Value, next);
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+
+        await LoadAsync();
+        Toasts.Success($"Saved {kind.Title}.");
+    }
+}

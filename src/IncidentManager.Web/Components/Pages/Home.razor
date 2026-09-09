@@ -1,0 +1,254 @@
+@page "/"
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@inject DashboardService Dashboard
+@inject TimeDisplay TimeDisp
+
+<PageTitle>Dashboard</PageTitle>
+
+<div class="dash">
+<PageHeader Title="Leadership Dashboard"
+           Subtitle="@(_asOf is null ? null : $"As of {_asOf}")">
+    <Actions>
+        <a class="btn btn-sm btn-outline-secondary" href="export/metrics.csv" download
+           title="Download current metrics and 12-month trend as CSV for a board / regulatory pack">
+            <span class="bi bi-download" aria-hidden="true"></span> Export metrics (CSV)
+        </a>
+    </Actions>
+</PageHeader>
+
+@if (_metrics is null)
+{
+    <span class="visually-hidden" role="status">Loading dashboard…</span>
+    <div class="dash-grid">
+        <div class="skel" style="grid-row:span 2;min-height:12rem;border-radius:0.7rem"></div>
+        @for (var i = 0; i < 4; i++)
+        {
+            <div class="skel" style="min-height:5.5rem;border-radius:0.7rem"></div>
+        }
+    </div>
+    <div class="dash-grid2">
+        <div class="skel" style="min-height:10rem;border-radius:0.7rem"></div>
+        <div class="skel" style="min-height:10rem;border-radius:0.7rem"></div>
+    </div>
+}
+else
+{
+    var m = _metrics;
+    var compTotal = m.Breaches + m.Incidents + m.AdverseEvents;
+
+    @if (m.Breaches > 0 || m.OverdueActionItems > 0 || m.SlaBreached > 0)
+    {
+        <div class="dash-attn">
+            <span class="dash-dot danger"></span>
+            <strong>Needs attention:</strong>&nbsp;
+            @{ var bits = new List<string>();
+               if (m.Breaches > 0) bits.Add($"{m.Breaches} open breach{(m.Breaches == 1 ? "" : "es")}");
+               if (m.SlaBreached > 0) bits.Add($"{m.SlaBreached} SLA breach{(m.SlaBreached == 1 ? "" : "es")}");
+               if (m.OverdueActionItems > 0) bits.Add($"{m.OverdueActionItems} overdue task{(m.OverdueActionItems == 1 ? "" : "s")}"); }
+            @string.Join(" · ", bits)
+        </div>
+    }
+
+    <div class="dash-grid">
+        <div class="dash-card dash-hero">
+            <a class="hero-open dash-link" href="cases" title="View all open cases">
+                <div class="k-label">Open items</div>
+                <div class="k-row">
+                    <span class="k-value">@m.OpenCount</span>
+                    @if (_openDelta != 0)
+                    {
+                        <span class="k-delta @(_openDelta > 0 ? "up" : "down")">
+                            @(_openDelta > 0 ? "▲" : "▼") @Math.Abs(_openDelta) <span class="k-delta-note">vs last month</span>
+                        </span>
+                    }
+                </div>
+            </a>
+            <div class="compo" role="img" aria-label="Classification mix of open items">
+                @if (compTotal == 0)
+                {
+                    <span class="seg empty" style="flex:1"></span>
+                }
+                else
+                {
+                    <span class="seg danger" style="flex:@Flex(m.Breaches)" title="Breaches"></span>
+                    <span class="seg amber" style="flex:@Flex(m.Incidents)" title="Incidents"></span>
+                    <span class="seg low" style="flex:@Flex(m.AdverseEvents)" title="Adverse events"></span>
+                }
+            </div>
+            <div class="legend">
+                <a class="dash-link" href="cases?classification=Breach"><i class="sw danger"></i>@m.Breaches Breaches</a>
+                <a class="dash-link" href="cases?classification=Incident"><i class="sw amber"></i>@m.Incidents Incidents</a>
+                <a class="dash-link" href="cases?classification=AdverseEvent"><i class="sw low"></i>@m.AdverseEvents Adverse</a>
+            </div>
+            <div class="hero-spark">
+                <span class="spark-cap">Open items, last 12 months</span>
+                @Spark(_openSeries, "accent")
+            </div>
+        </div>
+
+        <StatTile Icon="bi-shield-exclamation" Value="m.Breaches" Label="Breaches"
+                  Tone="@(m.Breaches > 0 ? "danger" : "accent")" Href="cases?classification=Breach" />
+        <StatTile Icon="bi-diagram-2" Value="m.ThirdPartyOrigin" Label="Third-party" Tone="accent" Href="cases?origin=ThirdParty" />
+        <StatTile Icon="bi-hdd-network" Value="m.InternalOrigin" Label="Internal" Tone="accent" Href="cases?origin=InternalDetection" />
+        <StatTile Icon="bi-list-check" Value="m.OverdueActionItems" Label="Overdue tasks"
+                  Tone="@(m.OverdueActionItems > 0 ? "danger" : "ok")"
+                  Href="@(m.OverdueActionItems > 0 ? "cases?overdue=true&closed=true" : null)" />
+    </div>
+
+    <div class="dash-grid2">
+        <div class="dash-card">
+            <div class="c-head">Open items by phase</div>
+            @{ var maxPhase = Math.Max(1, m.ByPhase.Count == 0 ? 1 : m.ByPhase.Max(p => p.Count)); }
+            <div class="pipe">
+                @foreach (var phase in OpenPhases)
+                {
+                    var count = m.ByPhase.FirstOrDefault(p => p.Phase == phase)?.Count ?? 0;
+                    <a class="prow dash-link @(count == 0 ? "off" : "")" href="cases?phase=@phase" title="View cases in @Ui.Label(phase)">
+                        <span class="pl">@Ui.Label(phase)</span>
+                        <span class="track">@if (count > 0) { <span class="fill" style="width:@(count * 100 / maxPhase)%"></span> }</span>
+                        <span class="pc">@count</span>
+                    </a>
+                }
+            </div>
+        </div>
+
+        <div class="dash-card">
+            <div class="c-head">Response times <span class="c-note">vs target</span></div>
+            @ResponseRow("Mean time to contain", m.MeanHoursToContain, ContainTargetHours)
+            @ResponseRow("Mean time to resolve", m.MeanHoursToResolve, ResolveTargetHours)
+            @if (m.SlaBreached > 0 || m.SlaAtRisk > 0)
+            {
+                <a class="sla-line breached dash-link" href="cases?sla=true"
+                   title="View open cases at or past their per-severity response-time target">
+                    <span class="bi bi-clock-history" aria-hidden="true"></span>
+                    <span><strong>@m.SlaBreached</strong> overdue · <strong>@m.SlaAtRisk</strong> at risk</span>
+                    <span class="sla-go">View →</span>
+                </a>
+            }
+            else
+            {
+                <div class="sla-line ok">
+                    <span class="bi bi-check-circle" aria-hidden="true"></span>
+                    <span>All open cases within SLA</span>
+                </div>
+            }
+            <div class="rt-foot">Averages over cases that reached each milestone; SLA flags each open case against its per-severity target.</div>
+        </div>
+    </div>
+
+    <div class="dash-card dash-trend">
+        <div class="c-head">
+            <span>Case activity, last 12 months
+                <span class="c-note">@_openedTotal opened · @_closedTotal closed</span></span>
+            <span class="bc-legend">
+                <span><i class="lg accent"></i>Opened</span>
+                <span><i class="lg ok"></i>Closed</span>
+            </span>
+        </div>
+        <div class="barchart">
+            <span class="bc-ymax">@_trendMax</span>
+            <div class="bars">
+                @foreach (var b in _bars)
+                {
+                    @if (b.Opened > 0 || b.Closed > 0)
+                    {
+                        <a class="bargroup dash-link" href="cases?opened=@b.Key&closed=true"
+                           title="Cases opened in @b.Label (@b.Opened opened, @b.Closed closed)">
+                            <span class="bar opened" style="height:@BarPct(b.Opened)%"></span>
+                            <span class="bar closed" style="height:@BarPct(b.Closed)%"></span>
+                        </a>
+                    }
+                    else
+                    {
+                        <div class="bargroup" title="@b.Label — no activity"></div>
+                    }
+                }
+            </div>
+            <div class="bc-x">
+                @foreach (var b in _bars) { <span>@b.Short</span> }
+            </div>
+        </div>
+    </div>
+}
+</div>
+
+@code {
+    private const double ContainTargetHours = 24;
+    private const double ResolveTargetHours = 72;
+
+    private DashboardMetrics? _metrics;
+    private string? _asOf;
+
+    private IReadOnlyList<int> _openSeries = [];
+    private IReadOnlyList<BarPoint> _bars = [];
+    private int _openDelta, _openedTotal, _closedTotal, _trendMax;
+
+    private sealed record BarPoint(string Key, string Label, string Short, int Opened, int Closed);
+
+    // Lifecycle phases shown in the open-items pipeline (everything except Closed).
+    private static readonly CasePhase[] OpenPhases =
+        Enum.GetValues<CasePhase>().Where(p => p != CasePhase.Closed).ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _metrics = await Dashboard.GetAsync();
+        _asOf = TimeDisp.TimeOnly(DateTimeOffset.UtcNow);
+
+        var t = _metrics.Trend;
+        _openSeries = t.Select(x => x.OpenAtEnd).ToList();
+        _openedTotal = t.Sum(x => x.Opened);
+        _closedTotal = t.Sum(x => x.Closed);
+        _openDelta = t.Count >= 2 ? t[^1].OpenAtEnd - t[^2].OpenAtEnd : 0;
+        _trendMax = Math.Max(1, t.Count == 0 ? 1 : t.Max(x => Math.Max(x.Opened, x.Closed)));
+        _bars = t.Select(x =>
+        {
+            var d = new DateTime(x.Year, x.Month, 1);
+            return new BarPoint(d.ToString("yyyy-MM"), d.ToString("MMM yyyy"), d.ToString("MMM"), x.Opened, x.Closed);
+        }).ToList();
+    }
+
+    // Non-zero counts get a small minimum height so a value of 1 is still visible against a tall max.
+    private int BarPct(int value) => value == 0 ? 0 : Math.Max(6, value * 100 / _trendMax);
+
+    private static string Flex(int n) => Math.Max(0.0001, n).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private RenderFragment ResponseRow(string label, double? hours, double target) => @<div class="rt">
+        <div class="rt-label">@label</div>
+        <div class="rt-row">
+            <span class="rt-val @(hours is null ? "muted" : "")">@(hours is { } h ? $"{h:0.#}" : "—")<span class="u">@(hours is null ? "" : "h")</span></span>
+            <span class="track">
+                @if (hours is { } hv)
+                {
+                    <span class="fill accentfill" style="width:@(Math.Min(100, hv / target * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></span>
+                }
+                <span class="tgt"></span>
+            </span>
+            <span class="rt-tgt">tgt @(target)h</span>
+        </div>
+    </div>;
+
+    /// <summary>A minimal inline-SVG sparkline (no JS). Trusted, app-authored markup.</summary>
+    private MarkupString Spark(IReadOnlyList<int> values, string tone)
+    {
+        if (values.Count == 0) return (MarkupString)"";
+        const int w = 200, h = 40, pad = 4;
+        var max = Math.Max(1, values.Max());
+        string X(int i) => (pad + (values.Count == 1 ? 0 : (double)i / (values.Count - 1) * (w - 2 * pad)))
+            .ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+        string Y(int v) => (h - pad - (double)v / max * (h - 2 * pad))
+            .ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+        // Inline styles (not scoped CSS) because Blazor CSS isolation does not tag markup injected
+        // via MarkupString. The CSS variables still inherit from the .dash wrapper, so theming holds.
+        var col = $"var(--{tone})";
+        var pts = string.Join(" ", values.Select((v, i) => $"{X(i)},{Y(v)}"));
+        var area = $"{pad},{h - pad} {pts} {X(values.Count - 1)},{h - pad}";
+        var svg =
+            $"<svg viewBox='0 0 {w} {h}' preserveAspectRatio='none' width='100%' height='40' " +
+            $"style='display:block;overflow:visible' role='img' aria-hidden='true'>" +
+            $"<polygon points='{area}' style='fill:{col};opacity:.13;stroke:none'/>" +
+            $"<polyline points='{pts}' style='fill:none;stroke:{col};stroke-width:1.6;vector-effect:non-scaling-stroke'/>" +
+            $"<circle cx='{X(values.Count - 1)}' cy='{Y(values[^1])}' r='2.5' style='fill:{col};stroke:none'/></svg>";
+        return (MarkupString)svg;
+    }
+}

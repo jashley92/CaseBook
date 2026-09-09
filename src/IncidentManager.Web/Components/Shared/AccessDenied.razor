@@ -1,0 +1,58 @@
+@* U-28: friendly "authenticated but no role assigned" page.
+   Windows auth lets a user sign in, but until an administrator maps one of their AD groups to a
+   CaseBook role they hold no permissions and every page's policy fails. The bare framework
+   "Not authorized" text left them with no idea who they were signed in as or what to do; this shows
+   both. Static markup only (CSP-safe). *@
+@using IncidentManager.Application.Abstractions
+@inject ICurrentUser CurrentUser
+
+<div class="access-denied">
+    <div class="card access-denied-card">
+        <div class="card-body empty-state">
+            <span class="bi bi-shield-lock empty-state-icon" aria-hidden="true"></span>
+
+            @if (CurrentUser.IsAuthenticated)
+            {
+                <div class="empty-state-title">No access assigned yet</div>
+                <div class="empty-state-msg">
+                    You're signed in as <strong>@CurrentUser.DisplayName</strong>@_identityHint, but your
+                    account hasn't been granted a role in CaseBook yet, so there's nothing here you can
+                    open.
+                </div>
+                <div class="empty-state-msg text-muted">
+                    Access is granted through your Active Directory group membership. Ask a CaseBook
+                    administrator to add you to the appropriate security group for your team, then sign out
+                    and back in for it to take effect.
+                </div>
+            }
+            else
+            {
+                <div class="empty-state-title">Not signed in</div>
+                <div class="empty-state-msg">
+                    Your session isn't authenticated. Close and reopen the browser, or contact a CaseBook
+                    administrator if this persists.
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    // A muted parenthetical to help an admin identify the exact account — the UPN when Windows auth
+    // supplies one, otherwise the stable id. Suppressed when it would just repeat the display name.
+    private MarkupString _identityHint;
+
+    protected override void OnInitialized()
+    {
+        var hint = CurrentUser.UserPrincipalName;
+        if (string.IsNullOrWhiteSpace(hint) &&
+            !string.Equals(CurrentUser.UserId, CurrentUser.DisplayName, StringComparison.Ordinal))
+        {
+            hint = CurrentUser.UserId;
+        }
+
+        _identityHint = string.IsNullOrWhiteSpace(hint)
+            ? default
+            : (MarkupString)$" <span class=\"text-muted\">({System.Net.WebUtility.HtmlEncode(hint)})</span>";
+    }
+}

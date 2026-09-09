@@ -1,0 +1,399 @@
+@page "/cases"
+@page "/cases/mine"
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@inject CaseService CaseSvc
+@inject DashboardService Dashboard
+@inject IClock Clock
+@inject ISlaTargetsProvider SlaProvider
+@inject ISeverityLabels SevLabels
+@inject NavigationManager Nav
+
+<PageTitle>Cases</PageTitle>
+
+<PageHeader Title="Cases">
+    <Actions>
+        <div class="btn-group btn-group-sm" role="group" aria-label="Case scope">
+            <button type="button" class="btn @(_onlyMine ? "btn-primary" : "btn-outline-secondary")"
+                    @onclick="() => SetScope(true)" aria-pressed="@_onlyMine" title="Only cases I own or am assigned to">Mine</button>
+            <button type="button" class="btn @(!_onlyMine ? "btn-primary" : "btn-outline-secondary")"
+                    @onclick="() => SetScope(false)" aria-pressed="@(!_onlyMine)" title="All cases I'm allowed to see">All</button>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary" href="export/iocs.csv" download
+           title="Download confirmed-malicious IOCs across your visible cases as a CSV blocklist for SIEM / firewalls / EDR">
+            <span class="bi bi-shield-exclamation" aria-hidden="true"></span> Export IOC feed (CSV)
+        </a>
+        <AuthorizeView Policy="@Policies.EditCases">
+            <a class="btn btn-sm btn-primary" href="cases/new">
+                <span class="bi bi-plus-square" aria-hidden="true"></span> New Case
+            </a>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
+
+@* Summary of the caller's open caseload — same figures as the dashboard, so the two stay in step.
+   Each tile deep-links into the matching filtered list below. *@
+@if (_dash is { } d)
+{
+    <div class="im-tiles">
+        <StatTile Icon="bi-folder2-open" Value="d.OpenCount" Label="Open cases" Tone="accent" Href="cases" />
+        <StatTile Icon="bi-shield-exclamation" Value="d.Breaches" Label="Open breaches"
+                  Tone="@(d.Breaches > 0 ? "danger" : "accent")" Href="cases?classification=Breach" />
+        <StatTile Icon="bi-clock-history" Value="@(d.SlaBreached + d.SlaAtRisk)" Label="SLA at risk / overdue"
+                  Tone="@(d.SlaBreached > 0 ? "danger" : (d.SlaAtRisk > 0 ? "warn" : "ok"))" Href="cases?sla=true" />
+        <StatTile Icon="bi-list-check" Value="d.OverdueActionItems" Label="Overdue tasks"
+                  Tone="@(d.OverdueActionItems > 0 ? "danger" : "ok")"
+                  Href="@(d.OverdueActionItems > 0 ? "cases?overdue=true&closed=true" : null)" />
+    </div>
+}
+
+<div class="row g-2 align-items-end my-3">
+    <div class="col-auto">
+        <label class="form-label small mb-0">Classification</label>
+        <select class="form-select form-select-sm" @bind="_classification" @bind:after="ApplyFilters">
+            <option value="">All</option>
+            @foreach (var c in Enum.GetValues<Classification>())
+            {
+                <option value="@c">@Ui.Label(c)</option>
+            }
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label small mb-0">Phase</label>
+        <select class="form-select form-select-sm" @bind="_phase" @bind:after="ApplyFilters">
+            <option value="">All</option>
+            @foreach (var p in Enum.GetValues<CasePhase>())
+            {
+                <option value="@p">@Ui.Label(p)</option>
+            }
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label small mb-0">Min severity</label>
+        <select class="form-select form-select-sm" @bind="_minSeverity" @bind:after="ApplyFilters">
+            <option value="">Any</option>
+            @foreach (var s in Enum.GetValues<Severity>())
+            {
+                <option value="@s">@SevLabels.For(s)</option>
+            }
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label small mb-0">Origin</label>
+        <select class="form-select form-select-sm" @bind="_origin" @bind:after="ApplyFilters">
+            <option value="">All</option>
+            <option value="@nameof(CaseOrigin.InternalDetection)">Internal</option>
+            <option value="@nameof(CaseOrigin.ThirdParty)">Third-party</option>
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label small mb-0">Search</label>
+        <input class="form-control form-control-sm" placeholder="Number, title, note, or IOC"
+               @bind="_search" @bind:after="ApplyFilters" />
+    </div>
+    <div class="col-auto">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="closed" @bind="_includeClosed" @bind:after="ApplyFilters" />
+            <label class="form-check-label small" for="closed">Include closed</label>
+        </div>
+    </div>
+    <div class="col-auto">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="overdue" @bind="_overdueOnly" @bind:after="ApplyFilters" />
+            <label class="form-check-label small" for="overdue">Overdue only</label>
+        </div>
+    </div>
+    <div class="col-auto">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="sla" @bind="_slaAtRiskOnly" @bind:after="ApplyFilters" />
+            <label class="form-check-label small" for="sla" title="Open cases approaching or past their response-time target">SLA at risk</label>
+        </div>
+    </div>
+    @if (_hasActiveFilter)
+    {
+        <div class="col-auto">
+            <button class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">Clear</button>
+        </div>
+    }
+</div>
+
+@if (_assignee is not null)
+{
+    <div class="mb-2">
+        <span class="im-badge im-b-info">
+            <span class="bi bi-person-badge" aria-hidden="true"></span>
+            @(_assignee == "none" ? "Unassigned queue" : $"Assigned to {(_assigneeName ?? "this analyst")}")
+        </span>
+        <a class="btn btn-sm btn-link p-0 ms-1 align-baseline" href="work?tab=team">← Team workload</a>
+    </div>
+}
+
+@if (_openedLabel is not null)
+{
+    <div class="mb-2">
+        <span class="im-badge im-b-info">Opened @_openedLabel</span>
+    </div>
+}
+
+@if (_page is null)
+{
+    <span class="visually-hidden" role="status">Loading cases…</span>
+    <SkeletonTable Rows="6" Columns="9" />
+}
+else if (_page.Total == 0)
+{
+    @if (_hasActiveFilter)
+    {
+        <div class="empty-state">
+            <span class="bi bi-funnel empty-state-icon" aria-hidden="true"></span>
+            <div class="empty-state-title">No cases match your filters</div>
+            <div class="empty-state-msg">Try widening or clearing the filters to see more.</div>
+            <div class="empty-state-actions">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">Clear filters</button>
+            </div>
+        </div>
+    }
+    else if (_onlyMine)
+    {
+        <div class="empty-state">
+            <span class="bi bi-inbox empty-state-icon" aria-hidden="true"></span>
+            <div class="empty-state-title">Nothing is assigned to you</div>
+            <div class="empty-state-msg">Cases you own or are assigned to will appear here. Switch to <strong>All</strong> to see the team's cases.</div>
+            <div class="empty-state-actions">
+                <button class="btn btn-sm btn-primary" @onclick="() => SetScope(false)">View all cases</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="empty-state">
+            <span class="bi bi-folder2-open empty-state-icon" aria-hidden="true"></span>
+            <div class="empty-state-title">No cases yet</div>
+            <div class="empty-state-msg">When an adverse event, incident or breach is opened, it will show up here.</div>
+            <AuthorizeView Policy="@Policies.EditCases">
+                <div class="empty-state-actions">
+                    <a class="btn btn-sm btn-primary" href="cases/new">
+                        <span class="bi bi-plus-square" aria-hidden="true"></span> Create the first case
+                    </a>
+                </div>
+            </AuthorizeView>
+        </div>
+    }
+}
+else
+{
+    <div class="im-card">
+    <div class="im-section-head">
+        <span><span class="bi bi-folder2-open" aria-hidden="true"></span> Case list</span>
+        <span class="im-section-note">@_page.Total case@(_page.Total == 1 ? "" : "s")@(_hasActiveFilter ? " · filtered" : "")</span>
+    </div>
+    <table class="table table-hover align-middle im-table">
+        <thead>
+            <tr>
+                <th>Case #</th>
+                <th>Title</th>
+                <th>Classification</th>
+                <th>Phase</th>
+                <th>Severity</th>
+                <th>SLA</th>
+                <th>Origin</th>
+                <th>Opened</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var c in _page.Items)
+            {
+                <tr>
+                    <td><code>@c.CaseNumber</code>
+                        @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
+                    </td>
+                    <td>
+                        <a href="cases/@c.Id" class="link-body-emphasis text-decoration-none fw-medium case-title">@c.Title</a>
+                        @if (c.LegalReferred) { <span class="im-badge im-b-neutral ms-1">Legal</span> }
+                    </td>
+                    <td><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
+                    <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
+                    <td><span class="@Ui.SeverityBadge(c.Severity)">@SevLabels.For(c.Severity)</span></td>
+                    <td>
+                        @{
+                            var sla = SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, _targets, Clock.UtcNow);
+                        }
+                        @if (sla.State == SlaState.NoTarget)
+                        {
+                            <span class="text-muted small">—</span>
+                        }
+                        else
+                        {
+                            <span class="@Ui.SlaBadge(sla.State)" title="@SlaTitle(sla)">
+                                <span class="bi @Ui.SlaGlyph(sla.State)" aria-hidden="true"></span> @Ui.SlaLabel(sla.State)
+                            </span>
+                        }
+                    </td>
+                    <td>@(c.Origin == CaseOrigin.ThirdParty ? "Third-party" : "Internal")</td>
+                    <td class="text-muted small">@Ui.Age(c.CreatedAtUtc, Clock.UtcNow)</td>
+                    <td><a class="btn btn-sm btn-outline-primary" href="cases/@c.Id">Open</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (_page.TotalPages > 1)
+    {
+        <nav class="d-flex justify-content-between align-items-center mt-2">
+            <span class="text-muted small">Page @_page.Page of @_page.TotalPages</span>
+            <div class="btn-group">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="PrevPage" disabled="@(_page.Page <= 1)">← Prev</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="NextPage" disabled="@(_page.Page >= _page.TotalPages)">Next →</button>
+            </div>
+        </nav>
+    }
+    </div>
+}
+
+@code {
+    // Filters live in the URL so views are bookmarkable and the dashboard can deep-link into them.
+    [SupplyParameterFromQuery(Name = "classification")] public string? QClassification { get; set; }
+    [SupplyParameterFromQuery(Name = "phase")] public string? QPhase { get; set; }
+    [SupplyParameterFromQuery(Name = "sev")] public string? QSeverity { get; set; }
+    [SupplyParameterFromQuery(Name = "origin")] public string? QOrigin { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? QSearch { get; set; }
+    [SupplyParameterFromQuery(Name = "closed")] public bool QClosed { get; set; }
+    [SupplyParameterFromQuery(Name = "overdue")] public bool QOverdue { get; set; }
+    [SupplyParameterFromQuery(Name = "sla")] public bool QSla { get; set; }
+    [SupplyParameterFromQuery(Name = "opened")] public string? QOpened { get; set; }
+    [SupplyParameterFromQuery(Name = "scope")] public string? QScope { get; set; }
+    [SupplyParameterFromQuery(Name = "assignee")] public string? QAssignee { get; set; }
+    [SupplyParameterFromQuery(Name = "assigneeName")] public string? QAssigneeName { get; set; }
+
+    private CasePage? _page;
+    private DashboardMetrics? _dash; // caseload summary tiles (same figures as the dashboard)
+    private readonly CaseFilter _filter = new();
+    private bool _onlyMine; // the Mine/All scope toggle, driven by ?scope=mine
+
+    private string _classification = "";
+    private string _phase = "";
+    private string _minSeverity = "";
+    private string _origin = "";
+    private string _search = "";
+    private bool _includeClosed;
+    private bool _overdueOnly;
+    private bool _slaAtRiskOnly;
+    private string? _openedLabel; // "MMM yyyy" when an opened-month drill-in is active
+    private string? _assignee;    // assignee drill-in from team workload: a user id, or "none" for unassigned
+    private string? _assigneeName;
+
+    // The administered SLA targets, refreshed each reload so an admin change is reflected on next load.
+    private SlaTargets _targets = SlaTargets.Empty;
+
+    private bool _hasActiveFilter => !(string.IsNullOrEmpty(_classification) && string.IsNullOrEmpty(_phase)
+        && string.IsNullOrEmpty(_minSeverity) && string.IsNullOrEmpty(_origin)
+        && string.IsNullOrEmpty(_search) && !_includeClosed && !_overdueOnly && !_slaAtRiskOnly
+        && _openedLabel is null && _assignee is null);
+
+    // The caseload-summary tiles are a stable overview, so load them once (not on every filter change).
+    protected override async Task OnInitializedAsync() => _dash = await Dashboard.GetAsync();
+
+    // Runs on initial load and on every query-string change (e.g. a dashboard drill-in).
+    protected override async Task OnParametersSetAsync()
+    {
+        // Scope is driven by ?scope=mine; the legacy /cases/mine route is honoured as an alias so old
+        // links and bookmarks still land on the user's own caseload.
+        var relative = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].TrimEnd('/');
+        _onlyMine = string.Equals(QScope, "mine", StringComparison.OrdinalIgnoreCase)
+            || relative.Equals("cases/mine", StringComparison.OrdinalIgnoreCase);
+        _filter.OnlyMine = _onlyMine;
+
+        _classification = QClassification ?? "";
+        _phase = QPhase ?? "";
+        _minSeverity = QSeverity ?? "";
+        _origin = QOrigin ?? "";
+        _search = QSearch ?? "";
+        _includeClosed = QClosed;
+        _overdueOnly = QOverdue;
+        _slaAtRiskOnly = QSla;
+        _assignee = string.IsNullOrWhiteSpace(QAssignee) ? null : QAssignee;
+        _assigneeName = QAssigneeName;
+
+        // opened=YYYY-MM narrows to cases opened that month (activity-bar drill-in).
+        _filter.OpenedYear = null;
+        _filter.OpenedMonth = null;
+        _openedLabel = null;
+        if (!string.IsNullOrWhiteSpace(QOpened) && DateTime.TryParse($"{QOpened}-01", out var mo))
+        {
+            _filter.OpenedYear = mo.Year;
+            _filter.OpenedMonth = mo.Month;
+            _openedLabel = mo.ToString("MMM yyyy");
+        }
+
+        _filter.Page = 1; // a filter change always starts at the first page
+        await Reload();
+    }
+
+    // A select/search change rewrites the query string; OnParametersSetAsync then reloads. We always
+    // target the /cases base so scope lives in one place (?scope=mine), normalising the /cases/mine alias.
+    private void ApplyFilters()
+    {
+        var target = Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(), new Dictionary<string, object?>
+        {
+            ["scope"] = _onlyMine ? "mine" : null,
+            ["classification"] = Blank(_classification),
+            ["phase"] = Blank(_phase),
+            ["sev"] = Blank(_minSeverity),
+            ["origin"] = Blank(_origin),
+            ["q"] = Blank(_search),
+            ["closed"] = _includeClosed ? "true" : null,
+            ["overdue"] = _overdueOnly ? "true" : null,
+            ["sla"] = _slaAtRiskOnly ? "true" : null,
+            ["assignee"] = _assignee,
+            ["assigneeName"] = _assignee is null or "none" ? null : Blank(_assigneeName ?? ""),
+        });
+        Nav.NavigateTo(target);
+    }
+
+    // The Mine/All toggle. Keeps the active filters, just flips scope.
+    private void SetScope(bool mine)
+    {
+        if (_onlyMine == mine) return;
+        _onlyMine = mine;
+        ApplyFilters();
+    }
+
+    private void ClearFilters() => Nav.NavigateTo(_onlyMine ? "cases?scope=mine" : "cases");
+
+    private static string? Blank(string v) => string.IsNullOrEmpty(v) ? null : v;
+
+    private async Task PrevPage()
+    {
+        if (_filter.Page > 1) { _filter.Page--; await Reload(); }
+    }
+
+    private async Task NextPage()
+    {
+        if (_page is not null && _filter.Page < _page.TotalPages) { _filter.Page++; await Reload(); }
+    }
+
+    private async Task Reload()
+    {
+        _filter.Classification = Enum.TryParse<Classification>(_classification, out var c) ? c : null;
+        _filter.Phase = Enum.TryParse<CasePhase>(_phase, out var p) ? p : null;
+        _filter.MinSeverity = Enum.TryParse<Severity>(_minSeverity, out var sev) ? sev : null;
+        _filter.Origin = Enum.TryParse<CaseOrigin>(_origin, out var o) ? o : null;
+        _filter.Search = _search;
+        _filter.IncludeClosed = _includeClosed;
+        _filter.OverdueOnly = _overdueOnly;
+        _filter.SlaAtRiskOnly = _slaAtRiskOnly;
+        _filter.UnassignedOnly = _assignee == "none";
+        _filter.AssigneeUserId = _assignee == "none" ? null : _assignee;
+        _targets = SlaProvider.Current;
+        _page = await CaseSvc.ListAsync(_filter);
+    }
+
+    // Tooltip for an SLA badge: the clock, its target, and time left / overshoot.
+    private static string SlaTitle(SlaStatus st)
+    {
+        var clock = st.Clock is { } c ? Ui.SlaClockLabel(c) : "SLA";
+        var timing = Ui.SlaTiming(st);
+        var target = st.TargetHours is { } h ? $" · target {h}h" : "";
+        return string.IsNullOrEmpty(timing) ? $"{clock}{target}" : $"{clock} · {timing}{target}";
+    }
+}

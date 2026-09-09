@@ -1,0 +1,1701 @@
+html, body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+a, .btn-link {
+    color: var(--im-accent-text);
+}
+
+[data-bs-theme="dark"] a, [data-bs-theme="dark"] .btn-link {
+    color: var(--im-accent-text);
+}
+
+/* Primary action = the brand's charcoal "ink" in light; the brand gold pops on dark. */
+.btn-primary {
+    color: #fff;
+    background-color: var(--im-ink);
+    border-color: var(--im-ink);
+}
+.btn-primary:hover, .btn-primary:focus, .btn-primary:active {
+    color: #fff;
+    background-color: var(--im-ink-hover);
+    border-color: var(--im-ink-hover);
+}
+[data-bs-theme="dark"] .btn-primary,
+[data-bs-theme="dark"] .btn-primary:hover,
+[data-bs-theme="dark"] .btn-primary:focus,
+[data-bs-theme="dark"] .btn-primary:active {
+    color: #1a1a1a;
+    background-color: var(--im-gold);
+    border-color: var(--im-gold);
+}
+[data-bs-theme="dark"] .btn-primary:hover {
+    background-color: var(--im-gold-strong);
+    border-color: var(--im-gold-strong);
+}
+
+.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
+  box-shadow: 0 0 0 0.2rem var(--im-focus);
+}
+.form-check-input:checked {
+  background-color: var(--im-ink);
+  border-color: var(--im-ink);
+}
+[data-bs-theme="dark"] .form-check-input:checked {
+  background-color: var(--im-gold);
+  border-color: var(--im-gold);
+}
+
+.content {
+    padding-top: 1.1rem;
+}
+
+h1:focus {
+    outline: none;
+}
+
+.valid.modified:not([type=checkbox]) {
+    outline: 1px solid #26b050;
+}
+
+.invalid {
+    outline: 1px solid #e50000;
+}
+
+.validation-message {
+    color: #e50000;
+}
+
+.blazor-error-boundary {
+    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjkwLjE4NSA5Mi4xODMxIDI5MC41NDUgOTIuNzk1IDI5MC42NTYgOTIuOTk2QzI5MC44NzcgOTMuNTEzIDI5MSA5NC4wODE1IDI5MSA5NC42NzgyIDI5MSA5Ny4wNjUxIDI4OS4wMzggOTkgMjg2LjYxNyA5OUwyNDAuMzgzIDk5QzIzNy45NjMgOTkgMjM2IDk3LjA2NTEgMjM2IDk0LjY3ODIgMjM2IDk0LjM3OTkgMjM2LjAzMSA5NC4wODg2IDIzNi4wODkgOTMuODA3MkwyMzYuMzM4IDkzLjAxNjIgMjM2Ljg1OCA5Mi4xMzE0IDI1OS40NzMgNTMuNjI5NCAyNTkuOTYxIDUyLjc5ODUgMjYwLjQwNyA1Mi4yNjU4QzI2MS4yIDUxLjQ4MzcgMjYyLjI5NiA1MSAyNjMuNTA2IDUxWk0yNjMuNTg2IDY2LjAxODNDMjYwLjczNyA2Ni4wMTgzIDI1OS4zMTMgNjcuMTI0NSAyNTkuMzEzIDY5LjMzNyAyNTkuMzEzIDY5LjYxMDIgMjU5LjMzMiA2OS44NjA4IDI1OS4zNzEgNzAuMDg4N0wyNjEuNzk1IDg0LjAxNjEgMjY1LjM4IDg0LjAxNjEgMjY3LjgyMSA2OS43NDc1QzI2Ny44NiA2OS43MzA5IDI2Ny44NzkgNjkuNTg3NyAyNjcuODc5IDY5LjMxNzkgMjY3Ljg3OSA2Ny4xMTgyIDI2Ni40NDggNjYuMDE4MyAyNjMuNTg2IDY2LjAxODNaTTI2My41NzYgODYuMDU0N0MyNjEuMDQ5IDg2LjA1NDcgMjU5Ljc4NiA4Ny4zMDA1IDI1OS43ODYgODkuNzkyMSAyNTkuNzg2IDkyLjI4MzcgMjYxLjA0OSA5My41Mjk1IDI2My41NzYgOTMuNTI5NSAyNjYuMTE2IDkzLjUyOTUgMjY3LjM4NyA5Mi4yODM3IDI2Ny4zODcgODkuNzkyMSAyNjcuMzg3IDg3LjMwMDUgMjY2LjExNiA4Ni4wNTQ3IDI2My41NzYgODYuMDU0N1oiIGZpbGw9IiNGRkU1MDAiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvZz48L3N2Zz4=) no-repeat 1rem/1.8rem, #b32121;
+    padding: 1rem 1rem 1rem 3.7rem;
+    color: white;
+}
+
+    .blazor-error-boundary::after {
+        content: "An error has occurred."
+    }
+
+.darker-border-checkbox.form-check-input {
+    border-color: #929292;
+}
+
+/* ============================================================================
+   Design system tokens (U-18)
+   Brand identity: charcoal + gold. Gold is the single accent (active states,
+   links, focus, key highlights); charcoal/ink carries structure and primary
+   actions. Semantic severity/classification/phase colors are soft tints with a
+   deepened same-hue foreground for AA-legible text. Light values on :root;
+   dark values overridden under [data-bs-theme="dark"].
+   ============================================================================ */
+:root {
+    /* Brand */
+    --im-gold: #ffcf31;
+    --im-gold-strong: #e0af12;
+    --im-ink: #232a33;
+    --im-ink-hover: #313a45;
+
+    /* Surfaces & text (light) */
+    --im-bg: #f5f6f8;
+    --im-surface: #ffffff;
+    --im-surface-2: #fafbfc;
+    --im-border: #e4e7ec;
+    --im-border-strong: #d3d8df;
+    --im-text: #1f2733;
+    --im-text-muted: #66717f;
+
+    /* Accent roles */
+    --im-accent: #ffcf31;          /* brand fill / active indicator */
+    --im-accent-strong: #e0af12;   /* deeper gold for data-ink, borders, hover */
+    --im-accent-text: #8a6a00;     /* AA-legible gold for links / emphasis on light */
+    --im-accent-bg: rgba(224, 175, 18, .12);
+    --im-focus: rgba(224, 175, 18, 0.45);
+
+    /* Status roles — [fg / soft bg] shared by stat tiles, callouts and chips. */
+    --im-danger: #dc4a34; --im-danger-bg: rgba(220, 74, 52, .10);
+    --im-warn:   #b9791b; --im-warn-bg:   rgba(217, 152, 43, .12);
+    --im-ok:     #1f9d57; --im-ok-bg:     rgba(31, 157, 87, .12);
+    --im-neutral:#64748b; --im-neutral-bg:rgba(100, 116, 139, .12);
+
+    /* Severity tints — [bg / fg / border] */
+    --im-sev-info-bg: #eef1f5; --im-sev-info-fg: #3f4b5a; --im-sev-info-bd: #dde2e9;
+    --im-sev-low-bg:  #e7f0fb; --im-sev-low-fg:  #17518f; --im-sev-low-bd:  #cddff5;
+    --im-sev-med-bg:  #fbeecb; --im-sev-med-fg:  #7a4f00; --im-sev-med-bd:  #f0dba6;
+    --im-sev-high-bg: #fbe3d2; --im-sev-high-fg: #8f3a0c; --im-sev-high-bd: #f4cba9;
+    --im-sev-crit-bg: #fadcdc; --im-sev-crit-fg: #8f1a1a; --im-sev-crit-bd: #f2bcbc;
+
+    /* Phase */
+    --im-phase-open-bg:   #e7eefb; --im-phase-open-fg:   #265fbf; --im-phase-open-bd:   #cfddf5;
+    --im-phase-active-bg: #eef1f5; --im-phase-active-fg: #3f4b5a; --im-phase-active-bd: #dde2e9;
+    --im-phase-recovery-bg: #d7f1ec; --im-phase-recovery-fg: #0e6b64; --im-phase-recovery-bd: #b3e4dc;
+    --im-phase-closed-bg: #e4f3e7; --im-phase-closed-fg: #1f7a37; --im-phase-closed-bd: #c6e6cd;
+
+    /* Bootstrap bridge: retint global components without repainting each element.
+       Primary stays charcoal (the brand's "black"); links pick up the gold. */
+    --bs-primary: #232a33;
+    --bs-primary-rgb: 35, 42, 51;
+    --bs-link-color: var(--im-accent-text);
+    --bs-link-hover-color: #6e5500;
+    --bs-border-radius: 0.5rem;
+}
+
+[data-bs-theme="dark"] {
+    --im-bg: #12171e;
+    --im-surface: #1a212a;
+    --im-surface-2: #202a34;
+    --im-border: #2a333f;
+    --im-border-strong: #384250;
+    --im-text: #e6edf5;
+    --im-text-muted: #93a1b2;
+
+    --im-accent: #ffcf31;
+    --im-accent-strong: #ffd94f;
+    --im-accent-text: #f2cf5a;
+    --im-accent-bg: rgba(255, 207, 49, .14);
+    --im-focus: rgba(255, 207, 49, 0.5);
+
+    --im-danger: #f4614e; --im-danger-bg: rgba(244, 97, 78, .14);
+    --im-warn:   #e0a83b; --im-warn-bg:   rgba(224, 168, 59, .16);
+    --im-ok:     #37c26f; --im-ok-bg:     rgba(55, 194, 111, .14);
+    --im-neutral:#7c8aa5; --im-neutral-bg:rgba(124, 138, 165, .16);
+
+    --im-sev-info-bg: #262c34; --im-sev-info-fg: #9aa7b6; --im-sev-info-bd: #333c47;
+    --im-sev-low-bg:  #17293d; --im-sev-low-fg:  #74b3f2; --im-sev-low-bd:  #26405c;
+    --im-sev-med-bg:  #33280f; --im-sev-med-fg:  #e6b24d; --im-sev-med-bd:  #4a3a16;
+    --im-sev-high-bg: #3a230f; --im-sev-high-fg: #f0955a; --im-sev-high-bd: #543319;
+    --im-sev-crit-bg: #3a1a1a; --im-sev-crit-fg: #f07070; --im-sev-crit-bd: #542626;
+
+    --im-phase-open-bg:   #182742; --im-phase-open-fg:   #6fa8f5; --im-phase-open-bd:   #26405c;
+    --im-phase-active-bg: #262c34; --im-phase-active-fg: #9aa7b6; --im-phase-active-bd: #333c47;
+    --im-phase-recovery-bg: #0f2b28; --im-phase-recovery-fg: #4fcabd; --im-phase-recovery-bd: #1d423d;
+    --im-phase-closed-bg: #16301c; --im-phase-closed-fg: #6cc281; --im-phase-closed-bd: #23492c;
+
+    --bs-link-color: var(--im-accent-text);
+    --bs-link-hover-color: #ffd94f;
+}
+
+/* Soft tinted status badges — one base + semantic modifiers, token-driven. */
+.im-badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.4;
+    padding: 0.15rem 0.5rem;
+    border-radius: 0.4rem;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+.im-sev-informational { background: var(--im-sev-info-bg); color: var(--im-sev-info-fg); border-color: var(--im-sev-info-bd); }
+.im-sev-low           { background: var(--im-sev-low-bg);  color: var(--im-sev-low-fg);  border-color: var(--im-sev-low-bd); }
+.im-sev-medium        { background: var(--im-sev-med-bg);  color: var(--im-sev-med-fg);  border-color: var(--im-sev-med-bd); }
+.im-sev-high          { background: var(--im-sev-high-bg); color: var(--im-sev-high-fg); border-color: var(--im-sev-high-bd); }
+.im-sev-critical      { background: var(--im-sev-crit-bg); color: var(--im-sev-crit-fg); border-color: var(--im-sev-crit-bd); }
+/* Classification tints climb the same ramp as severity: adverse = low (blue), incident = medium
+   (amber), breach = critical (red). Complex Event sits off the ladder as neutral grey (below). */
+.im-cls-adverse       { background: var(--im-sev-low-bg);  color: var(--im-sev-low-fg);  border-color: var(--im-sev-low-bd); }
+.im-cls-incident      { background: var(--im-sev-med-bg);  color: var(--im-sev-med-fg);  border-color: var(--im-sev-med-bd); }
+.im-cls-breach        { background: var(--im-sev-crit-bg); color: var(--im-sev-crit-fg); border-color: var(--im-sev-crit-bd); }
+/* Complex Event (pre-triage intake) — neutral grey with a dashed border, deliberately off the ladder. */
+.im-cls-intake        { background: var(--im-sev-info-bg); color: var(--im-sev-info-fg); border-color: var(--im-sev-info-bd); border-style: dashed; }
+
+/* U-13: compact People / ATT&CK chips on the Overview left column — a low-chrome alternative to
+   list rows. Each chip carries an always-visible but subtle "×" remove; a dashed "+" chip opens the
+   matching add modal (consistent with the Actions modal pattern). Token-driven, theme-aware. */
+.im-chips { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.im-chip {
+    display: inline-flex; align-items: center; gap: .3rem; max-width: 100%;
+    font-size: .78rem; line-height: 1.3;
+    padding: .2rem .3rem .2rem .55rem;
+    border-radius: 999px;
+    background: var(--bs-tertiary-bg);
+    border: 1px solid var(--bs-border-color);
+    color: var(--bs-body-color);
+}
+.im-chip > .im-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.im-chip code { font-size: .78rem; }
+.im-chip-role { font-size: .66rem; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--bs-secondary-color); }
+.im-chip-x {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.05rem; height: 1.05rem; padding: 0; margin-left: .05rem;
+    border: 0; border-radius: 999px; background: transparent;
+    color: var(--bs-secondary-color); line-height: 1; font-size: 1rem; cursor: pointer; opacity: .5;
+}
+.im-chip-x:hover, .im-chip-x:focus-visible { opacity: 1; color: var(--bs-danger); background: var(--bs-danger-bg-subtle); }
+.im-chip-add {
+    display: inline-flex; align-items: center; gap: .25rem;
+    font-size: .78rem; line-height: 1.3;
+    padding: .2rem .6rem;
+    border-radius: 999px; cursor: pointer;
+    background: transparent;
+    border: 1px dashed var(--bs-border-color);
+    color: var(--bs-secondary-color);
+}
+.im-chip-add:hover, .im-chip-add:focus-visible { border-color: var(--bs-primary); color: var(--bs-primary); background: var(--bs-primary-bg-subtle); }
+/* Tactic-tinted chip (technique/tactic pills) — background + border take the tactic accent (--tac),
+   matching the .tactic-chip treatment; text stays legible. */
+.im-chip-tac {
+    border-color: color-mix(in srgb, var(--tac, var(--bs-border-color)) 55%, transparent);
+    background: color-mix(in srgb, var(--tac, var(--bs-border-color)) 15%, var(--bs-body-bg));
+}
+.im-chip-tac .im-chip-role { color: color-mix(in srgb, var(--tac, var(--bs-secondary-color)) 75%, var(--bs-secondary-color)); }
+
+/* Overview restructure: a full-width "vitals" strip carries the at-a-glance scan (response SLA,
+   lifecycle timestamps, dwell, counts) at the top of the pane; cells flex to fill and wrap. Below it,
+   the right rail uses low-chrome sections (heading + content, no card border) so context reads lighter
+   than the primary Details card. Token-driven, theme-aware. */
+.im-vitals { display: flex; flex-wrap: wrap; gap: .5rem; }
+.im-vital {
+    flex: 1 1 150px; min-width: 140px;
+    padding: .5rem .65rem;
+    border-radius: var(--bs-border-radius);
+    background: var(--bs-secondary-bg);
+}
+.im-sec { margin-bottom: 1.25rem; }
+.im-sec-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .45rem; }
+.im-sec-head h3 {
+    margin: 0; font-size: .72rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .04em;
+    color: var(--bs-secondary-color);
+}
+
+/* MITRE ATT&CK technique picker (AttackTechniquePicker) — type-ahead dropdown over the embedded
+   v19.1 catalogue. Panel + rows are token-driven so they read in both themes and over a modal. */
+.atk-menu {
+    position: absolute; z-index: 1080; top: calc(100% + 2px); left: 0; right: 0;
+    max-height: 17rem; overflow-y: auto;
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: .375rem;
+    box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .2);
+    padding: .25rem;
+}
+.atk-item {
+    display: grid; grid-template-columns: 5.5rem 1fr auto; align-items: baseline; gap: .5rem;
+    width: 100%; text-align: left;
+    padding: .35rem .5rem; border: 0; border-radius: .3rem;
+    background: transparent; color: var(--bs-body-color); cursor: pointer;
+}
+.atk-item:hover, .atk-item:focus-visible { background: var(--bs-tertiary-bg); }
+.atk-item-id code { font-size: .8rem; }
+.atk-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atk-item-tacs { display: inline-flex; flex-wrap: wrap; gap: .25rem; justify-content: flex-end; }
+.atk-hint { padding: .35rem .5rem; font-size: .78rem; color: var(--bs-secondary-color); }
+
+/* Visual ATT&CK matrix picker (AttackMatrixPicker) — tactics as columns, techniques beneath, subs
+   collapsible; near-fullscreen over the workspace. Token-driven + per-column tactic accent (--tac). */
+.atkm-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 1085; }
+.atkm-panel {
+    position: fixed; inset: 3vh 2vw; z-index: 1086;
+    display: flex; flex-direction: column;
+    background: var(--bs-body-bg); color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color); border-radius: .6rem;
+    box-shadow: 0 1rem 3rem rgba(0,0,0,.35); overflow: hidden;
+}
+.atkm-head { display: flex; align-items: center; gap: 1rem; padding: .7rem 1rem; border-bottom: 1px solid var(--bs-border-color); }
+.atkm-title { font-weight: 600; flex: 0 0 auto; }
+.atkm-search { display: flex; align-items: center; gap: .4rem; margin-left: auto; color: var(--bs-secondary-color); }
+.atkm-search input { min-width: 16rem; }
+
+.atkm-grid { flex: 1 1 auto; display: flex; gap: .5rem; overflow: auto; padding: .75rem; align-items: flex-start; }
+.atkm-col { flex: 0 0 15rem; display: flex; flex-direction: column; border: 1px solid var(--bs-border-color); border-radius: .4rem; overflow: hidden; background: var(--bs-body-bg); }
+.atkm-colhead {
+    position: sticky; top: 0; z-index: 2;
+    display: flex; align-items: center; gap: .4rem;
+    padding: .4rem .5rem; font-size: .78rem; font-weight: 600;
+    background: color-mix(in srgb, var(--tac) 16%, var(--bs-body-bg));
+    border-bottom: 2px solid var(--tac); color: var(--bs-body-color);
+}
+.atkm-colname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atkm-colhead-btn { cursor: pointer; }
+.atkm-colhead-btn:hover { background: color-mix(in srgb, var(--tac) 30%, var(--bs-body-bg)); }
+.atk-group { padding: .25rem .5rem 0; font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--bs-secondary-color); }
+.atkm-colcount { margin-left: auto; font-size: .7rem; background: var(--tac); color: #fff; border-radius: 999px; padding: 0 .4rem; }
+.atkm-cells { display: flex; flex-direction: column; padding: .25rem; gap: .15rem; }
+.atkm-empty { color: var(--bs-secondary-color); text-align: center; padding: .5rem; }
+
+.atkm-cell {
+    display: flex; align-items: center; gap: .3rem;
+    padding: .2rem .3rem; border-radius: .3rem; cursor: pointer;
+    font-size: .76rem; line-height: 1.25; border: 1px solid transparent;
+}
+.atkm-cell:hover { background: var(--bs-tertiary-bg); }
+.atkm-on { background: var(--bs-primary-bg-subtle); border-color: var(--bs-primary); }
+.atkm-elsewhere { opacity: .7; }
+.atkm-header { cursor: default; color: var(--bs-secondary-color); font-style: italic; }
+.atkm-header:hover { background: transparent; }
+.atkm-subcell { margin-left: 1.1rem; }
+.atkm-exp { border: 0; background: transparent; color: var(--bs-secondary-color); padding: 0; width: 1rem; cursor: pointer; flex: 0 0 auto; font-size: .7rem; }
+.atkm-exp-spacer { width: 1rem; flex: 0 0 auto; }
+.atkm-tid { flex: 0 0 auto; }
+.atkm-tid code { font-size: .74rem; }
+.atkm-tname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
+.atkm-subn { flex: 0 0 auto; font-size: .64rem; color: var(--bs-secondary-color); background: var(--bs-secondary-bg); border-radius: 999px; padding: 0 .35rem; }
+.atkm-tick { flex: 0 0 auto; color: var(--bs-primary); font-weight: 700; }
+.atkm-elsew { flex: 0 0 auto; color: var(--bs-secondary-color); }
+
+.atkm-custom { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; padding: .5rem 1rem; border-top: 1px solid var(--bs-border-color); }
+.atkm-custom-in { width: auto; display: inline-block; }
+.atkm-foot { display: flex; align-items: center; gap: .5rem; padding: .6rem 1rem; border-top: 1px solid var(--bs-border-color); }
+.atkm-summary { flex: 0 0 auto; }
+
+/* Stage-gate readiness checklist (C-07) — shown in the reclassify/close modals and the Overview card. */
+.gate-panel        { border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: .6rem .75rem; background: var(--bs-tertiary-bg); }
+.gate-panel-title  { font-size: .8rem; font-weight: 600; margin-bottom: .4rem; }
+.gate-req          { font-size: .8rem; margin-bottom: .25rem; }
+.gate-req:last-child { margin-bottom: 0; }
+.gate-ok           { color: var(--bs-success); }
+.gate-bad          { color: var(--bs-danger); }
+.gate-warn         { color: var(--bs-warning-text-emphasis, #997404); }
+/* Lifecycle phase arc: intake (open, blue) → active response (amber, reusing the severity-medium
+   tint) → recovery/review (teal) → closed (green). im-phase-active (neutral) is kept for reuse. */
+.im-phase-open        { background: var(--im-phase-open-bg);     color: var(--im-phase-open-fg);     border-color: var(--im-phase-open-bd); }
+.im-phase-active      { background: var(--im-phase-active-bg);   color: var(--im-phase-active-fg);   border-color: var(--im-phase-active-bd); }
+.im-phase-response    { background: var(--im-sev-med-bg);        color: var(--im-sev-med-fg);        border-color: var(--im-sev-med-bd); }
+.im-phase-recovery    { background: var(--im-phase-recovery-bg); color: var(--im-phase-recovery-fg); border-color: var(--im-phase-recovery-bd); }
+.im-phase-closed      { background: var(--im-phase-closed-bg);   color: var(--im-phase-closed-fg);   border-color: var(--im-phase-closed-bd); }
+
+/* Case-list title link — reads as text until hovered (the row also has an explicit Open button). */
+.case-title:hover { text-decoration: underline !important; }
+
+/* Response-time SLA flags (E-16) — reuse the severity/phase tint tokens so they stay theme-aware. */
+.im-sla-ontrack       { background: var(--im-phase-closed-bg); color: var(--im-phase-closed-fg); border-color: var(--im-phase-closed-bd); }
+.im-sla-atrisk        { background: var(--im-sev-high-bg);     color: var(--im-sev-high-fg);     border-color: var(--im-sev-high-bd); }
+.im-sla-breached      { background: var(--im-sev-crit-bg);     color: var(--im-sev-crit-fg);     border-color: var(--im-sev-crit-bd); }
+.im-sla-met           { background: var(--im-phase-closed-bg); color: var(--im-phase-closed-fg); border-color: var(--im-phase-closed-bd); }
+.im-sla-missed        { background: var(--im-sev-crit-bg);     color: var(--im-sev-crit-fg);     border-color: var(--im-sev-crit-bd); }
+.im-sla-none          { background: var(--im-sev-info-bg);     color: var(--im-sev-info-fg);     border-color: var(--im-sev-info-bd); }
+
+/* Generic status badges (im-badge base) for state/status/count chips — reuse the classification,
+   phase and severity tint tokens so admin and workspace status colors match the rest of the app
+   instead of raw Bootstrap `badge bg-*`. Tone → meaning: neutral (state/label/count), info (blue,
+   informational), ok (green, healthy/complete), warn (amber, attention), danger (red, problem). */
+.im-b-neutral { background: var(--im-sev-info-bg);     color: var(--im-sev-info-fg);     border-color: var(--im-sev-info-bd); }
+.im-b-info    { background: var(--im-phase-open-bg);   color: var(--im-phase-open-fg);   border-color: var(--im-phase-open-bd); }
+.im-b-ok      { background: var(--im-phase-closed-bg); color: var(--im-phase-closed-fg); border-color: var(--im-phase-closed-bd); }
+.im-b-warn    { background: var(--im-sev-med-bg);      color: var(--im-sev-med-fg);      border-color: var(--im-sev-med-bd); }
+.im-b-danger  { background: var(--im-sev-crit-bg);     color: var(--im-sev-crit-fg);     border-color: var(--im-sev-crit-bd); }
+
+/* --- Toast notifications (U-05) — CSP-safe, theme-aware, no JS --- */
+.toast-host {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    z-index: 1080;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: min(24rem, calc(100vw - 2rem));
+    pointer-events: none;
+}
+
+.toast-item {
+    pointer-events: auto;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.5rem;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+    border-left: 4px solid var(--bs-secondary);
+    box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.18);
+    font-size: 0.9rem;
+    animation: toast-in 160ms ease-out;
+}
+
+@keyframes toast-in {
+    from { opacity: 0; transform: translateY(0.5rem); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.toast-glyph {
+    flex: 0 0 auto;
+    width: 1.25rem;
+    height: 1.25rem;
+    line-height: 1.25rem;
+    text-align: center;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #fff;
+    background: var(--bs-secondary);
+}
+
+.toast-msg { flex: 1 1 auto; }
+
+.toast-close {
+    flex: 0 0 auto;
+    border: 0;
+    background: transparent;
+    color: var(--bs-secondary-color, inherit);
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0 0.15rem;
+    cursor: pointer;
+}
+.toast-close:hover { color: var(--bs-body-color); }
+
+.toast-success { border-left-color: var(--bs-success); }
+.toast-success .toast-glyph { background: var(--bs-success); }
+.toast-info { border-left-color: var(--bs-info); }
+.toast-info .toast-glyph { background: var(--bs-info); }
+.toast-warning { border-left-color: var(--bs-warning); }
+.toast-warning .toast-glyph { background: var(--bs-warning); color: #212529; }
+.toast-error { border-left-color: var(--bs-danger); }
+.toast-error .toast-glyph { background: var(--bs-danger); }
+
+/* --- Notification bell / activity feed (U-17) — CSP-safe, theme-aware --- */
+.notif { position: relative; display: inline-flex; }
+
+.notif-btn {
+    position: relative;
+    border: 0;
+    background: transparent;
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: 1.15rem;
+    line-height: 1;
+    padding: 0.3rem 0.4rem;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.notif-btn:hover { color: var(--bs-body-color); background: var(--bs-secondary-bg); }
+
+.notif-badge {
+    position: absolute;
+    top: -0.15rem;
+    right: -0.15rem;
+    min-width: 1.05rem;
+    height: 1.05rem;
+    padding: 0 0.25rem;
+    border-radius: 999px;
+    background: var(--bs-danger);
+    color: #fff;
+    font-size: 0.66rem;
+    font-weight: 700;
+    line-height: 1.05rem;
+    text-align: center;
+    box-shadow: 0 0 0 2px var(--bs-body-bg);
+}
+
+.notif-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1090;
+}
+
+.notif-panel {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    z-index: 1091;
+    width: min(22rem, calc(100vw - 1.5rem));
+    max-height: 26rem;
+    overflow-y: auto;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.6rem;
+    box-shadow: 0 0.6rem 1.6rem rgba(0, 0, 0, 0.22);
+}
+
+.notif-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.7rem 0.85rem;
+    border-bottom: 1px solid var(--bs-border-color);
+    position: sticky;
+    top: 0;
+    background: var(--bs-body-bg);
+}
+
+.notif-empty { padding: 1.25rem 0.85rem; text-align: center; font-size: 0.9rem; }
+
+.notif-list { list-style: none; margin: 0; padding: 0; }
+
+.notif-item { padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--bs-border-color); font-size: 0.86rem; }
+.notif-item:last-child { border-bottom: 0; }
+.notif-item.is-new { background: color-mix(in srgb, var(--im-accent, #4f8cff) 10%, transparent); }
+
+.notif-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.3rem; }
+.notif-dot { width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--im-accent, #4f8cff); flex: 0 0 auto; align-self: center; }
+.notif-actor { font-weight: 600; }
+.notif-summary { color: var(--bs-body-color); }
+
+.notif-meta { margin-top: 0.15rem; font-size: 0.78rem; color: var(--bs-secondary-color, #6c757d); }
+.notif-caselink { text-decoration: none; color: var(--im-accent, #4f8cff); font-weight: 600; }
+.notif-caselink:hover { text-decoration: underline; }
+.notif-sep { margin: 0 0.35rem; }
+
+/* --- Profile / account menu (U-21) — CSP-safe, theme-aware --- */
+.profile { position: relative; display: inline-flex; }
+
+.profile-btn {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    border-radius: 999px;
+    cursor: pointer;
+    line-height: 0;
+}
+.profile-btn:hover .profile-avatar { box-shadow: 0 0 0 3px color-mix(in srgb, var(--im-accent) 30%, transparent); }
+.profile-btn:focus-visible { outline: 2px solid var(--im-accent); outline-offset: 2px; }
+
+.profile-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--im-accent) 0%, var(--im-accent-strong) 100%);
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    user-select: none;
+    transition: box-shadow 0.12s ease;
+}
+.profile-avatar-lg { width: 2.6rem; height: 2.6rem; font-size: 0.95rem; flex: 0 0 auto; }
+
+/* U-01b — live case-presence avatars ("who else is viewing this case"). Overlapping circles with a
+   per-person hue; the ring uses the surface colour so it reads on both themes. */
+.presence { display: inline-flex; align-items: center; padding-left: 0.4rem; }
+.presence-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    margin-left: -0.4rem;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    border: 2px solid var(--bs-body-bg);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    user-select: none;
+    cursor: default;
+}
+.presence-dot:first-child { margin-left: 0; }
+.presence-more { background: var(--bs-secondary, #6c757d); }
+/* The avatar ring pulses as a one-shot effect when a viewer joins or makes a change (keyed remount in
+   CasePresence.razor replays it): two quick pulses, then rest. Honours prefers-reduced-motion below. */
+.presence-ring { animation: presence-pulse 1.5s ease-out 2; }
+@keyframes presence-pulse {
+    0%   { box-shadow: 0 1px 2px rgba(0,0,0,.25), 0 0 0 0 rgba(13,110,253,.55); }
+    70%  { box-shadow: 0 1px 2px rgba(0,0,0,.25), 0 0 0 6px rgba(13,110,253,0); }
+    100% { box-shadow: 0 1px 2px rgba(0,0,0,.25), 0 0 0 0 rgba(13,110,253,0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .presence-ring { animation: none; }
+}
+
+.profile-backdrop { position: fixed; inset: 0; z-index: 1090; }
+
+.profile-panel {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    z-index: 1091;
+    width: min(19rem, calc(100vw - 1.5rem));
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.6rem;
+    box-shadow: 0 0.6rem 1.6rem rgba(0, 0, 0, 0.22);
+    padding: 0.4rem;
+    overflow: hidden;
+}
+
+.profile-id { display: flex; align-items: center; gap: 0.7rem; padding: 0.5rem 0.55rem 0.6rem; }
+.profile-id-text { min-width: 0; }
+.profile-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.profile-sub { font-size: 0.78rem; color: var(--bs-secondary-color, #6c757d); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.profile-roles { display: flex; flex-wrap: wrap; gap: 0.3rem; padding: 0 0.55rem 0.5rem; }
+.profile-role {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--im-accent) 14%, transparent);
+    color: var(--im-accent);
+    border: 1px solid color-mix(in srgb, var(--im-accent) 30%, transparent);
+}
+/* The "+N" overflow pill: muted/neutral so the primary role chip stays the focal point. */
+.profile-role-more {
+    background: color-mix(in srgb, var(--bs-secondary-color, #6c757d) 12%, transparent);
+    color: var(--bs-secondary-color, #6c757d);
+    border-color: color-mix(in srgb, var(--bs-secondary-color, #6c757d) 26%, transparent);
+    cursor: default;
+}
+
+.profile-sep { height: 1px; background: var(--bs-border-color); margin: 0.25rem 0.15rem; }
+
+.profile-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--bs-body-color);
+    text-align: left;
+    text-decoration: none;
+    padding: 0.5rem 0.55rem;
+    border-radius: 0.4rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+.profile-item:hover { background: var(--bs-secondary-bg); }
+.profile-item .bi { font-size: 1rem; width: 1.2rem; text-align: center; color: var(--bs-secondary-color, #6c757d); }
+.profile-item-caret { margin-left: auto; font-size: 0.75rem !important; }
+/* Segmented view-mode toggles in the profile menu (theme, on-screen time zone): a labelled row whose
+   control shows both options with the active one highlighted, optionally followed by a muted clarifier. */
+.profile-seg-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.55rem 0.35rem;
+    font-size: 0.9rem;
+}
+.profile-seg-row > .bi { font-size: 1rem; width: 1.2rem; text-align: center; color: var(--bs-secondary-color, #6c757d); }
+.profile-seg-label { flex: 1 1 auto; }
+.seg {
+    display: inline-flex;
+    flex: none;
+    border: 1px solid var(--im-border, var(--bs-border-color));
+    border-radius: 0.45rem;
+    overflow: hidden;
+}
+.seg-opt {
+    border: 0;
+    background: transparent;
+    color: var(--bs-secondary-color, #6c757d);
+    font: inherit;
+    font-size: 0.76rem;
+    line-height: 1.2;
+    padding: 0.22rem 0.7rem;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+}
+.seg-opt + .seg-opt { border-left: 1px solid var(--im-border, var(--bs-border-color)); }
+.seg-opt:hover { background: var(--bs-secondary-bg); }
+.seg-opt.on {
+    background: color-mix(in srgb, var(--im-accent) 16%, transparent);
+    color: var(--im-accent-text, var(--im-accent));
+    font-weight: 600;
+}
+[data-bs-theme="dark"] .seg-opt.on { color: var(--im-gold); }
+.profile-seg-hint {
+    padding: 0 0.6rem 0.45rem 2.15rem;
+    font-size: 0.72rem;
+    line-height: 1.35;
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.profile-about { padding: 0.35rem 0.6rem 0.55rem; font-size: 0.8rem; color: var(--bs-secondary-color, #6c757d); }
+.profile-about-name { font-weight: 600; color: var(--bs-body-color); margin-bottom: 0.15rem; }
+.profile-about-line { line-height: 1.35; }
+
+/* --- Skeleton loaders (U-20) — pure CSS shimmer, theme-aware --- */
+.skel {
+    --skel-base: rgba(0, 0, 0, 0.07);
+    --skel-hi: rgba(0, 0, 0, 0.12);
+    background-color: var(--skel-base);
+    background-image: linear-gradient(90deg, transparent 0%, var(--skel-hi) 50%, transparent 100%);
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    border-radius: 0.35rem;
+    animation: skel-shimmer 1.3s ease-in-out infinite;
+}
+[data-bs-theme="dark"] .skel { --skel-base: rgba(255, 255, 255, 0.06); --skel-hi: rgba(255, 255, 255, 0.13); }
+
+@keyframes skel-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .skel { animation: none; }
+}
+
+.skel-line { height: 0.8rem; }
+.skel-cell { height: 0.85rem; width: 100%; }
+.skel-table td { padding: 0.6rem 0.5rem; }
+.skel-card { height: 6.5rem; border-radius: 0.6rem; }
+
+/* --- Empty states (U-20) --- */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.35rem;
+    padding: 2.5rem 1rem;
+    color: var(--bs-secondary-color, #6c757d);
+}
+.empty-state-icon { font-size: 2rem; color: var(--im-accent); opacity: 0.8; margin-bottom: 0.2rem; }
+.empty-state-title { font-weight: 600; color: var(--bs-body-color); font-size: 1.02rem; }
+.empty-state-msg { max-width: 32rem; }
+.empty-state-actions { margin-top: 0.6rem; display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+
+/* --- Access-denied / no-role landing (U-28) --- */
+.access-denied { display: flex; justify-content: center; padding: 2rem 1rem; }
+.access-denied-card { width: 100%; max-width: 34rem; }
+.access-denied-card .empty-state { padding: 2rem 1.5rem; gap: 0.5rem; }
+
+/* --- Blazor circuit-disconnect / reconnect modal (U-10) — theme-aware, CSP-safe --- */
+/* Hidden until the framework toggles a state class onto #components-reconnect-modal. */
+#components-reconnect-modal { display: none; }
+
+#components-reconnect-modal.components-reconnect-show,
+#components-reconnect-modal.components-reconnect-failed,
+#components-reconnect-modal.components-reconnect-rejected {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(8, 15, 30, 0.55);
+    /* No backdrop-filter here: this overlay stays up indefinitely while the server is offline, and the
+       reconnect spinner animates forever on top of it. A backdrop-filter re-blurs the whole viewport on
+       every spinner frame, pegging a CPU core the entire time we're disconnected. The opaque scrim alone
+       gives the modal separation without that cost. */
+}
+
+.reconnect-card {
+    width: min(24rem, calc(100vw - 2rem));
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.7rem;
+    box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.4);
+    padding: 1.6rem 1.5rem;
+    text-align: center;
+}
+
+/* Only the section matching the current state is shown. */
+.reconnect-body { display: none; }
+#components-reconnect-modal.components-reconnect-show .reconnect-when-show { display: block; }
+#components-reconnect-modal.components-reconnect-failed .reconnect-when-failed { display: block; }
+#components-reconnect-modal.components-reconnect-rejected .reconnect-when-rejected { display: block; }
+
+.reconnect-title { font-size: 1.15rem; font-weight: 600; margin: 0.6rem 0 0.35rem; }
+.reconnect-text { font-size: 0.9rem; color: var(--bs-secondary-color, #6c757d); margin-bottom: 1rem; line-height: 1.4; }
+.reconnect-text span { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--bs-body-color); }
+
+.reconnect-icon { font-size: 2.2rem; line-height: 1; color: var(--bs-warning, #f0ad4e); }
+
+.reconnect-spinner {
+    width: 2.4rem;
+    height: 2.4rem;
+    margin: 0 auto;
+    border-radius: 50%;
+    border: 3px solid color-mix(in srgb, var(--im-accent) 25%, transparent);
+    border-top-color: var(--im-accent);
+    animation: reconnect-spin 0.8s linear infinite;
+}
+
+@keyframes reconnect-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .reconnect-spinner { animation-duration: 2s; }
+}
+
+/* --- Idle-session warning modal + locked page (F-15) --- */
+.idle-modal {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 2100;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(8, 15, 30, 0.55);
+    backdrop-filter: blur(2px);
+}
+.idle-card {
+    width: min(24rem, calc(100vw - 2rem));
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.7rem;
+    box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.4);
+    padding: 1.6rem 1.5rem;
+    text-align: center;
+}
+.idle-icon { font-size: 2.2rem; line-height: 1; color: var(--bs-warning, #f0ad4e); }
+.idle-title { font-size: 1.15rem; font-weight: 600; margin: 0.6rem 0 0.35rem; }
+.idle-text { font-size: 0.9rem; color: var(--bs-secondary-color, #6c757d); margin-bottom: 1rem; line-height: 1.4; }
+.idle-text strong { font-variant-numeric: tabular-nums; color: var(--bs-body-color); }
+.idle-actions { display: flex; gap: 0.5rem; justify-content: center; }
+
+/* --- Audit-chain tamper alarm banner (F-16) --- */
+.integrity-alert {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0.75rem 1.5rem 0;
+    padding: 0.7rem 1rem;
+    border-radius: 0.5rem;
+    background: var(--bs-danger, #dc3545);
+    color: #fff;
+    box-shadow: 0 0.25rem 0.75rem rgba(220, 53, 69, 0.35);
+}
+.integrity-alert-icon { font-size: 1.4rem; line-height: 1; flex: 0 0 auto; }
+.integrity-alert-text { flex: 1 1 auto; font-size: 0.9rem; line-height: 1.35; }
+.integrity-alert-cta { flex: 0 0 auto; white-space: nowrap; font-weight: 600; }
+
+/* Chromeless page shell (BlankLayout) + the idle-lock landing. */
+.blank-layout { min-height: 100vh; display: flex; }
+.session-locked {
+    flex: 1;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: var(--bs-body-bg);
+}
+.session-locked-card {
+    width: min(30rem, 100%);
+    text-align: center;
+    padding: 2rem 1.75rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.8rem;
+    background: var(--bs-body-bg);
+    box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.12);
+}
+.session-locked-icon { font-size: 2.6rem; line-height: 1; color: var(--im-accent); margin-bottom: 0.5rem; }
+.session-locked-title { font-size: 1.4rem; font-weight: 700; margin: 0.25rem 0 0.75rem; }
+.session-locked-text { font-size: 0.95rem; color: var(--bs-secondary-color, #6c757d); line-height: 1.5; margin-bottom: 0.75rem; }
+.session-locked-muted { font-size: 0.85rem; }
+.session-locked-card .btn { margin-top: 0.5rem; }
+
+/* --- Timeline rail (U-08) — the "hero" chronological view, theme-aware --- */
+.tl {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 0.25rem;
+    position: relative;
+}
+.tl-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1.75rem 1fr;
+    column-gap: 0.85rem;
+    padding-bottom: 1.15rem;
+}
+/* The continuous spine: a line down the centre of the dot column, drawn behind the dots. */
+.tl-item::before {
+    content: "";
+    position: absolute;
+    left: calc(0.875rem - 1px);
+    top: 1.75rem;
+    bottom: -0.1rem;
+    width: 2px;
+    background: var(--bs-border-color, #dee2e6);
+}
+.tl-item:last-child { padding-bottom: 0.25rem; }
+.tl-item:last-child::before { display: none; }
+
+.tl-dot {
+    position: relative;
+    z-index: 1;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    color: var(--tl-color, #6c757d);
+    background: var(--bs-body-bg, #fff);
+    border: 2px solid var(--tl-color, #6c757d);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--tl-color, #6c757d) 12%, transparent);
+}
+
+/* Merged-timeline KIND coding. In the unified view we interleave the attack narrative (what the
+   adversary did) with the investigation log (what we did). One coherent, LABELLED colour per kind makes
+   the two scannable: warm rose = adversary activity (Event), cool teal = our response (Investigation).
+   The dot, left lane, faint subsection wash and the text label all share --kind, so the colour explains
+   itself; the tactic/type stay on their own chips as secondary detail. */
+.tl-kind-event { --kind: #e35d6a; }  /* adversary / attack narrative — warm */
+.tl-kind-inv   { --kind: #2fb8c9; }  /* our response / investigation — cool */
+
+/* EVENT dots are FILLED (adversary actions pop); INVESTIGATION dots stay hollow (quieter). Both in --kind. */
+.tl-kind-event .tl-dot {
+    color: #fff;
+    background: var(--kind);
+    border-color: var(--kind);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--kind) 22%, transparent);
+}
+.tl-kind-inv .tl-dot {
+    color: var(--kind);
+    background: var(--bs-body-bg, #fff);
+    border-color: var(--kind);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--kind) 12%, transparent);
+}
+/* Left lane + a very faint wash tie the whole subsection to its kind. */
+.tl-kind-event .tl-body, .tl-kind-inv .tl-body {
+    border-left: 2px solid color-mix(in srgb, var(--kind) 55%, transparent);
+    background: color-mix(in srgb, var(--kind) 5%, transparent);
+    padding-left: 0.65rem;
+    margin-left: -0.2rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+}
+/* The labelled kind pill — names the colour so the lane reads at a glance ("EVENT" is rose, etc.). */
+.tl-kind-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--kind);
+    background: color-mix(in srgb, var(--kind) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--kind) 35%, transparent);
+    border-radius: 1rem;
+    padding: 0.02rem 0.5rem;
+    white-space: nowrap;
+}
+
+.tl-body {
+    min-width: 0;
+    padding-top: 0.1rem;
+}
+.tl-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.tl-type {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--tl-color, #6c757d);
+}
+.tl-time {
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color, #6c757d);
+    cursor: help;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+}
+/* Exact timestamp is the primary, always-visible label (forensic precision); relative is secondary. */
+.tl-time-abs {
+    font-variant-numeric: tabular-nums;
+}
+.tl-time-rel {
+    font-size: 0.75rem;
+    opacity: 0.75;
+}
+.tl-time-rel::before {
+    content: "·";
+    margin-right: 0.4rem;
+}
+.tl-desc {
+    margin-top: 0.1rem;
+    color: var(--bs-body-color);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.tl-meta {
+    margin-top: 0.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color, #6c757d);
+}
+.tl-source .bi { opacity: 0.7; margin-right: 0.15rem; }
+
+/* Inline edit / history affordances on timeline rail items (record editing). */
+.tl-edit { font-size: 0.8rem; vertical-align: baseline; }
+.tl-edit .bi { margin-right: 0.15rem; }
+.tl-history {
+    border-left: 2px solid var(--bs-border-color, #dee2e6);
+    padding-left: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.tl-history-item {
+    background: var(--bs-tertiary-bg, rgba(0,0,0,0.03));
+    border-radius: .375rem;
+    padding: 0.4rem 0.6rem;
+}
+
+/* --- Rendered Markdown body (Investigation timeline notes, U-08b) --- */
+/* Rendered markdown is real HTML — let it flow normally. The container (e.g. .tl-desc) uses
+   white-space: pre-wrap to preserve line breaks in *plain-text* descriptions, but that would otherwise
+   render the newlines the markdown emits between block tags (</li>\n<li>) as blank gaps. */
+.md-body { white-space: normal; }
+.md-body > *:first-child { margin-top: 0; }
+.md-body > *:last-child { margin-bottom: 0; }
+.md-body p { margin: 0 0 0.5rem; }
+.md-body ul, .md-body ol { margin: 0 0 0.5rem 1.25rem; padding: 0; }
+.md-body li { margin-bottom: 0.15rem; }
+.md-body h1, .md-body h2, .md-body h3, .md-body h4 {
+    margin: 0.6rem 0 0.35rem;
+    font-weight: 600;
+    line-height: 1.25;
+}
+.md-body h1 { font-size: 1.15rem; }
+.md-body h2 { font-size: 1.08rem; }
+.md-body h3 { font-size: 1rem; }
+.md-body h4 { font-size: 0.92rem; }
+.md-body code {
+    background: var(--bs-secondary-bg, #e9ecef);
+    padding: 0.05rem 0.3rem;
+    border-radius: 0.25rem;
+    font-size: 0.88em;
+}
+.md-body pre {
+    background: var(--bs-secondary-bg, #e9ecef);
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.375rem;
+    overflow-x: auto;
+}
+.md-body pre code { background: none; padding: 0; }
+.md-body blockquote {
+    margin: 0 0 0.5rem;
+    padding-left: 0.75rem;
+    border-left: 3px solid var(--bs-border-color);
+    color: var(--bs-secondary-color);
+}
+.md-body a { color: var(--im-accent); }
+.md-body table { border-collapse: collapse; margin-bottom: 0.5rem; }
+.md-body th, .md-body td { border: 1px solid var(--bs-border-color); padding: 0.2rem 0.45rem; }
+
+/* --- EasyMDE Markdown editor: make the vendored (light-only) editor theme-aware & on-brand --- */
+.EasyMDEContainer .CodeMirror {
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0 0 0.375rem 0.375rem;
+}
+.EasyMDEContainer .CodeMirror-cursor { border-left-color: var(--bs-body-color); }
+.EasyMDEContainer .editor-toolbar {
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-bottom: none;
+    border-radius: 0.375rem 0.375rem 0 0;
+    opacity: 1;
+}
+.EasyMDEContainer .editor-toolbar button { color: var(--bs-body-color); }
+.EasyMDEContainer .editor-toolbar button:hover,
+.EasyMDEContainer .editor-toolbar button.active {
+    background: var(--bs-secondary-bg);
+    border-color: var(--bs-border-color);
+}
+/* Toolbar glyphs are Bootstrap Icons (FontAwesome auto-download disabled) — size them consistently. */
+.EasyMDEContainer .editor-toolbar button.bi::before { font-size: 1rem; line-height: 1; }
+.EasyMDEContainer .editor-preview,
+.EasyMDEContainer .editor-preview-side {
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+}
+.EasyMDEContainer .editor-preview { padding: 0.75rem; }
+.EasyMDEContainer .cm-s-easymde .cm-header { color: var(--bs-body-color); }
+.EasyMDEContainer .CodeMirror-selected { background: var(--bs-secondary-bg) !important; }
+
+/* --- ATT&CK tactic picker + chips (U-08c) --- */
+.tactic-picker { position: relative; }
+.tactic-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.1rem 0.5rem;
+    border-radius: 1rem;
+    color: var(--tac, #6c757d);
+    border: 1px solid color-mix(in srgb, var(--tac, #6c757d) 45%, transparent);
+    background: color-mix(in srgb, var(--tac, #6c757d) 12%, transparent);
+    white-space: nowrap;
+}
+.tactic-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1080;
+    background: rgba(8, 15, 30, 0.5);
+}
+.tactic-modal {
+    position: fixed;
+    z-index: 1081;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(38rem, calc(100vw - 2rem));
+    max-height: min(80vh, 40rem);
+    display: flex;
+    flex-direction: column;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.6rem;
+    box-shadow: 0 1.5rem 3rem rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+}
+.tactic-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+.tactic-modal-body {
+    padding: 0.5rem;
+    overflow-y: auto;
+    display: grid;
+    gap: 0.35rem;
+}
+.tactic-option {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.45rem;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    cursor: pointer;
+}
+.tactic-option:hover { background: var(--bs-secondary-bg); }
+.tactic-option.on {
+    border-color: var(--tac, #6c757d);
+    background: color-mix(in srgb, var(--tac, #6c757d) 12%, transparent);
+}
+.tactic-option-icon {
+    font-size: 1.05rem;
+    color: var(--tac, #6c757d);
+    width: 1.4rem;
+    text-align: center;
+    flex: none;
+}
+.tactic-option-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.tactic-option-name { font-weight: 600; font-size: 0.9rem; }
+.tactic-option-name .tactic-id { font-weight: 400; font-size: 0.72rem; color: var(--bs-secondary-color); margin-left: 0.25rem; }
+.tactic-option-desc { font-size: 0.78rem; color: var(--bs-secondary-color); }
+.tactic-option-check { font-size: 1.1rem; color: var(--tac, #6c757d); flex: none; }
+.tactic-option:not(.on) .tactic-option-check { color: var(--bs-border-color); }
+.tactic-modal-foot {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1rem;
+    border-top: 1px solid var(--bs-border-color);
+}
+
+/* Actor → target attribution chips on Event-timeline steps */
+.tl-attrib { display: inline-flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.tl-ent {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.78rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 0.3rem;
+    background: var(--bs-secondary-bg);
+    border: 1px solid var(--bs-border-color);
+}
+.tl-arrow { color: var(--bs-secondary-color); font-weight: 600; }
+.tl-tactics { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; }
+
+/* --- Kill-chain "attack chain" strip (U-08d) — horizontal ordered flow of event steps --- */
+.killchain-wrap {
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--bs-tertiary-bg, var(--bs-body-bg));
+}
+.killchain {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    overflow-x: auto;
+    padding-bottom: 0.35rem;
+}
+.killchain-node {
+    flex: 0 0 auto;
+    width: 13rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--bs-border-color);
+    border-top: 3px solid var(--tl-color, #6c757d);
+    border-radius: 0.45rem;
+    background: var(--bs-body-bg);
+}
+.killchain-node-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--tl-color, #6c757d);
+}
+.killchain-idx {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.3rem;
+    height: 1.3rem;
+    border-radius: 50%;
+    background: var(--tl-color, #6c757d);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    flex: none;
+}
+.killchain-time { margin-left: auto; font-size: 0.72rem; color: var(--bs-secondary-color); }
+.killchain-tactics { display: flex; flex-wrap: wrap; gap: 0.2rem; }
+.killchain-attrib { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; font-size: 0.76rem; }
+.killchain-desc {
+    font-size: 0.8rem;
+    color: var(--bs-body-color);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.killchain-arrow {
+    flex: 0 0 auto;
+    align-self: center;
+    color: var(--bs-secondary-color);
+    font-size: 1.1rem;
+    padding: 0 0.35rem;
+}
+
+/* ============================================================================
+   Command palette + keyboard-first layer (U-22 / U-14 light chords)
+   ============================================================================ */
+.cmdk-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    background: rgba(15, 23, 42, 0.38);
+    animation: cmdk-fade 120ms ease-out;
+}
+[data-bs-theme="dark"] .cmdk-backdrop { background: rgba(0, 0, 0, 0.55); }
+
+.cmdk {
+    position: fixed;
+    z-index: 1201;
+    top: 12vh;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(40rem, calc(100vw - 2rem));
+    max-height: 72vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--im-border-strong, var(--bs-border-color));
+    border-radius: 0.85rem;
+    box-shadow: 0 1.4rem 3rem rgba(0, 0, 0, 0.32);
+    overflow: hidden;
+    animation: cmdk-pop 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cmdk-search {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+.cmdk-search-ic { color: var(--im-text-muted, var(--bs-secondary-color)); font-size: 1rem; flex: none; }
+.cmdk-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--bs-body-color);
+    font-size: 1.02rem;
+    line-height: 1.4;
+    padding: 0;
+}
+.cmdk-input::placeholder { color: var(--im-text-muted, var(--bs-secondary-color)); }
+
+.cmdk kbd {
+    display: inline-block;
+    font-family: inherit;
+    font-size: 0.68rem;
+    line-height: 1;
+    padding: 0.2rem 0.35rem;
+    color: var(--im-text-muted, var(--bs-secondary-color));
+    background: var(--im-surface-2, rgba(127, 127, 127, 0.12));
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.3rem;
+    min-width: 1.25rem;
+    text-align: center;
+}
+.cmdk-esc { flex: none; }
+
+/* Top-bar search pill (opens the command palette). A quiet, flat control that reads as "search"
+   without competing with the page below; the Ctrl K hint makes the shortcut discoverable. */
+.palette-trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    max-width: 22rem;
+    padding: 0.42rem 0.7rem;
+    font: inherit;
+    color: var(--im-text-muted, var(--bs-secondary-color));
+    background: var(--im-surface-2, rgba(127, 127, 127, 0.08));
+    border: 1px solid var(--im-border, var(--bs-border-color));
+    border-radius: 0.5rem;
+    cursor: text;
+    transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+.palette-trigger:hover {
+    border-color: var(--im-border-strong, var(--bs-border-color));
+    background: var(--im-surface, var(--bs-body-bg));
+}
+.palette-trigger:focus-visible {
+    outline: none;
+    border-color: var(--im-accent-strong, var(--im-accent));
+    box-shadow: 0 0 0 0.2rem var(--im-focus);
+}
+.palette-trigger-ic { flex: none; font-size: 0.95rem; }
+.palette-trigger-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    font-size: 0.9rem;
+}
+.palette-trigger-kbd { flex: none; display: inline-flex; gap: 0.2rem; }
+.palette-trigger-kbd kbd {
+    font-family: inherit;
+    font-size: 0.68rem;
+    line-height: 1;
+    padding: 0.2rem 0.35rem;
+    color: var(--im-text-muted, var(--bs-secondary-color));
+    background: var(--im-surface, rgba(127, 127, 127, 0.12));
+    border: 1px solid var(--im-border, var(--bs-border-color));
+    border-radius: 0.3rem;
+    min-width: 1.4rem;
+    text-align: center;
+}
+/* On narrow viewports the pill collapses to just the search glyph so it never crowds the top bar. */
+@media (max-width: 640px) {
+    .palette-trigger { max-width: none; width: auto; }
+    .palette-trigger-label, .palette-trigger-kbd { display: none; }
+}
+
+.cmdk-results { overflow-y: auto; padding: 0.4rem; flex: 1 1 auto; }
+.cmdk-empty { padding: 1.4rem 1rem; text-align: center; color: var(--im-text-muted, var(--bs-secondary-color)); font-size: 0.9rem; }
+
+.cmdk-group {
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--im-text-muted, var(--bs-secondary-color));
+    padding: 0.6rem 0.65rem 0.3rem;
+}
+
+.cmdk-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.5rem 0.65rem;
+    border: 0;
+    border-left: 2px solid transparent;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--bs-body-color);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.1s ease, color 0.1s ease;
+}
+.cmdk-item.sel {
+    background: var(--im-accent-bg, rgba(255, 207, 49, 0.14));
+    border-left-color: var(--im-accent, #ffcf31);
+}
+.cmdk-item-ic { flex: none; width: 1.1rem; text-align: center; color: var(--im-text-muted, var(--bs-secondary-color)); }
+.cmdk-item.sel .cmdk-item-ic { color: var(--im-accent-text, var(--im-accent)); }
+.cmdk-item-label { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
+.cmdk-item-sub {
+    margin-left: auto;
+    padding-left: 0.75rem;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.74rem;
+    color: var(--im-text-muted, var(--bs-secondary-color));
+}
+
+.cmdk-foot {
+    display: flex;
+    gap: 1.1rem;
+    padding: 0.5rem 0.85rem;
+    border-top: 1px solid var(--bs-border-color);
+    font-size: 0.72rem;
+    color: var(--im-text-muted, var(--bs-secondary-color));
+    background: var(--im-surface-2, transparent);
+}
+.cmdk-foot kbd { margin-right: 0.15rem; }
+
+/* Shortcuts cheatsheet (? overlay) */
+.cmdk-help {
+    position: fixed;
+    z-index: 1203;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(26rem, calc(100vw - 2rem));
+    max-height: 80vh;
+    overflow-y: auto;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--im-border-strong, var(--bs-border-color));
+    border-radius: 0.85rem;
+    box-shadow: 0 1.4rem 3rem rgba(0, 0, 0, 0.32);
+    animation: cmdk-pop 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cmdk-help-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.8rem 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+.cmdk-help-x {
+    border: 0;
+    background: transparent;
+    color: var(--im-text-muted, var(--bs-secondary-color));
+    cursor: pointer;
+    padding: 0.15rem 0.35rem;
+    border-radius: 0.35rem;
+    transition: color 0.1s ease, background-color 0.1s ease;
+}
+.cmdk-help-x:hover { color: var(--bs-body-color); background: var(--im-surface-2, rgba(127, 127, 127, 0.12)); }
+.cmdk-help-list { list-style: none; margin: 0; padding: 0.4rem 0.5rem 0.6rem; }
+.cmdk-help-list li {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.85rem;
+}
+.cmdk-help-list li + li { border-top: 1px solid var(--bs-border-color); }
+.cmdk-keys { flex: 0 0 6.5rem; display: flex; align-items: center; gap: 0.2rem; }
+.cmdk-help kbd {
+    display: inline-block;
+    font-family: inherit;
+    font-size: 0.68rem;
+    line-height: 1;
+    padding: 0.2rem 0.4rem;
+    color: var(--bs-body-color);
+    background: var(--im-surface-2, rgba(127, 127, 127, 0.12));
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.3rem;
+}
+
+@keyframes cmdk-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cmdk-pop {
+    from { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.98); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+/* The help card is centred with translate(-50%,-50%), so it needs its own keyframe. */
+.cmdk-help { animation-name: cmdk-pop-center; }
+@keyframes cmdk-pop-center {
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.98); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* ============================================================================
+   Micro-interactions (U-22): subtle entrances so tab / modal / panel changes
+   don't snap. All honour prefers-reduced-motion below.
+   ============================================================================ */
+.tabbody { animation: im-rise 150ms ease-out; }
+.modal.d-block .modal-content { animation: im-pop 150ms cubic-bezier(0.16, 1, 0.3, 1); }
+.notif-panel, .profile-panel { animation: im-rise 130ms ease-out; }
+
+@keyframes im-rise {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes im-pop {
+    from { opacity: 0; transform: translateY(-6px) scale(0.99); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cmdk, .cmdk-help, .cmdk-backdrop,
+    .tabbody, .modal.d-block .modal-content, .notif-panel, .profile-panel {
+        animation: none;
+    }
+}
+
+/* ============================================================================
+   Live-collaboration motion (U-30): when another analyst adds an item to a case
+   you're viewing, the new row/card flashes in the adder's presence colour and
+   fades, and the tab it landed on pulses a dot. --flash-hue is set inline per
+   item (same hue as the U-01b presence avatars). Uses an inset box-shadow tint
+   overlay so the element's own background is never replaced (no end-of-fade
+   flicker), and works on table rows via > td. Honours prefers-reduced-motion.
+   ============================================================================ */
+.im-flash { animation: im-flash 3.6s ease-out; border-radius: 4px; }
+.im-flash > td { animation: im-flash 3.6s ease-out; }
+@keyframes im-flash {
+    0% {
+        box-shadow: inset 3px 0 0 0 hsl(var(--flash-hue, 210) 80% 50%),
+                    inset 0 0 0 2000px hsla(var(--flash-hue, 210), 85%, 55%, 0.28);
+    }
+    100% {
+        box-shadow: inset 0 0 0 0 transparent, inset 0 0 0 0 transparent;
+    }
+}
+
+.tab-newdot {
+    display: inline-block; width: 0.5rem; height: 0.5rem; margin-left: 0.35rem;
+    border-radius: 50%; background: var(--bs-primary); vertical-align: middle;
+    animation: im-newdot 1.5s ease-in-out infinite;
+}
+@keyframes im-newdot {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50%      { transform: scale(1.55); opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    /* Keep the information (a stepped colour fade + a static dot), drop the movement. */
+    .im-flash, .im-flash > td { animation: im-flash 3.6s steps(4, end); }
+    .tab-newdot { animation: none; }
+}
+
+/* U-32: floating "jump to what just arrived" pill on the timeline. */
+.tl-newpill {
+    position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+    z-index: 1030; display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.4rem 0.9rem; border: 0; border-radius: 999px;
+    background: var(--bs-primary); color: #fff; font-size: 0.82rem; font-weight: 600;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28); cursor: pointer;
+    animation: tl-newpill-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tl-newpill:hover { filter: brightness(1.08); }
+.tl-newpill .bi { font-size: 0.95rem; }
+@keyframes tl-newpill-in {
+    from { opacity: 0; transform: translate(-50%, 10px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .tl-newpill { animation: none; } }
+
+/* ============================================================================
+   U-33: micro-motion polish. Items fade/slide in the moment they first appear
+   (keyed by id, so the entrance plays once — your own adds animate too, not just
+   collaborators'). A tab count that changes gives a quick "bump". Reduced-motion
+   safe. When a brand-new item both enters and flashes (a collaborator's add),
+   the two animations run together.
+   ============================================================================ */
+.im-enter { animation: im-enter 420ms cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes im-enter {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+}
+.im-enter.im-flash { animation: im-enter 420ms cubic-bezier(0.16, 1, 0.3, 1), im-flash 3.6s ease-out; }
+
+.im-bump { display: inline-block; animation: im-bump 420ms ease; }
+@keyframes im-bump {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.35); }
+    100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .im-enter { animation: none; }
+    .im-enter.im-flash { animation: im-flash 3.6s steps(4, end); }
+    .im-bump { animation: none; }
+}
+
+/* U-39: drag-over affordance on the Evidence tab drop zone. A dashed accent outline + subtle tint while
+   files are being dragged over the tab; toggled by wwwroot/js/paste-drop.js. */
+#evidence-dropzone { position: relative; border-radius: .5rem; transition: box-shadow 120ms ease, background-color 120ms ease; }
+#evidence-dropzone.im-dropping {
+    outline: 2px dashed var(--bs-primary);
+    outline-offset: 4px;
+    background-color: color-mix(in srgb, var(--bs-primary) 6%, transparent);
+}
+#evidence-dropzone.im-dropping::after {
+    content: "Drop files to attach as evidence";
+    position: absolute; inset: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; color: var(--bs-primary);
+    background-color: color-mix(in srgb, var(--bs-body-bg) 70%, transparent);
+    border-radius: .5rem; pointer-events: none;
+}
+
+/* ============================================================================
+   Shared page design system (im-*) — ONE vocabulary for page headers, stat
+   tiles, cards and section headers across Dashboard / Work / Team / Cases.
+   Token-driven off the global --im-* palette so every surface shares the gold
+   accent + status colours and light/dark both hold. Consolidates the former
+   per-page dash-* / mw-* / wl-* sets so the app reads as one system.
+   ============================================================================ */
+
+/* Page header: title (+ optional subtitle) on the left, actions on the right. */
+.im-page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.im-page-title { font-size: 1.6rem; font-weight: 700; letter-spacing: -.01em; margin: 0; color: var(--im-text); }
+.im-page-sub { color: var(--im-text-muted); font-size: .82rem; margin: 2px 0 0; }
+.im-page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Card / panel. */
+.im-card { background: var(--im-surface); border: 1px solid var(--im-border); border-radius: 12px; padding: 16px; color: var(--im-text); }
+
+/* Section header inside a card. */
+.im-section-head { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; color: var(--im-text); margin-bottom: 12px; }
+.im-section-head > span > .bi, .im-section-head > .bi { color: var(--im-accent-text); margin-right: 4px; }
+.im-section-note { color: var(--im-text-muted); font-size: .78rem; font-weight: 400; }
+
+/* Stat-tile row. */
+.im-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+@media (max-width: 720px) { .im-tiles { grid-template-columns: repeat(2, 1fr); } }
+
+/* One stat tile: a rounded icon chip + value/label. Link variant lifts on hover. */
+.im-stat { display: flex; align-items: center; gap: 12px; background: var(--im-surface); border: 1px solid var(--im-border); border-radius: 12px; padding: 14px 16px; color: var(--im-text); text-decoration: none; }
+a.im-stat { transition: border-color .12s ease, transform .12s ease; }
+a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-1px); }
+.im-stat-ic { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; font-size: 1.05rem; flex: 0 0 auto; }
+.im-stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+.im-stat-label { color: var(--im-text-muted); font-size: .78rem; margin-top: 3px; }
+
+/* Tile tones — the icon chip carries the colour; the value stays ink. */
+.im-tone-accent  .im-stat-ic { background: var(--im-accent-bg);  color: var(--im-accent-text); }
+.im-tone-danger  .im-stat-ic { background: var(--im-danger-bg);  color: var(--im-danger); }
+.im-tone-warn    .im-stat-ic { background: var(--im-warn-bg);    color: var(--im-warn); }
+.im-tone-ok      .im-stat-ic { background: var(--im-ok-bg);      color: var(--im-ok); }
+.im-tone-neutral .im-stat-ic { background: var(--im-neutral-bg); color: var(--im-neutral); }
+[data-bs-theme="dark"] .im-tone-accent .im-stat-ic { color: var(--im-accent); }
+
+/* Table convention: uppercase muted headers + app-token colours, shared by the case/work/team lists.
+   Bootstrap's dark .table otherwise paints its own surface (#212529) and light-grey borders (#495057),
+   which clash with the im-card surface (a panel-in-panel look) — so bind its vars to the im-* tokens:
+   transparent cells (show the card/page beneath), token text and a subtle token border. */
+.im-table {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--im-text);
+    --bs-table-border-color: var(--im-border);
+    --bs-table-hover-color: var(--im-text);
+}
+.im-table th { font-weight: 600; color: var(--im-text-muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .02em; }

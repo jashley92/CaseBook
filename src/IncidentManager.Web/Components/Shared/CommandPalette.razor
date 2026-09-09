@@ -1,0 +1,331 @@
+@implements IDisposable
+@inject NavigationManager Nav
+@inject CaseService Cases
+@inject ICurrentUser CurrentUser
+@inject IJSRuntime JS
+@inject IncidentManager.Web.Services.CommandPaletteController Palette
+
+@* Command palette + keyboard-first layer (U-22, with the light chords from U-14). Hosted once in
+   MainLayout. All shortcut behaviour funnels through OnHotkey, invoked by the CSP-safe global
+   dispatcher in wwwroot/js/hotkeys.js. The palette itself reuses the app's backdrop+panel pattern
+   (NotificationBell / ProfileMenu), so no new modal machinery. *@
+
+@if (_open)
+{
+    <div class="cmdk-backdrop" @onclick="ClosePalette"></div>
+    <div class="cmdk" role="dialog" aria-modal="true" aria-label="Command palette">
+        <div class="cmdk-search">
+            <span class="bi bi-search cmdk-search-ic" aria-hidden="true"></span>
+            <input @ref="_input" class="cmdk-input" type="text" autocomplete="off" spellcheck="false"
+                   placeholder="Search cases, jump to a page, run an action…"
+                   value="@_query" @oninput="OnInput" @onkeydown="OnKeyDown"
+                   aria-label="Command palette search" aria-controls="cmdk-list" />
+            <kbd class="cmdk-esc">Esc</kbd>
+        </div>
+        <div class="cmdk-results" id="cmdk-list" role="listbox">
+            @if (_results.Count == 0)
+            {
+                <div class="cmdk-empty">No matches for &ldquo;@_query&rdquo;.</div>
+            }
+            else
+            {
+                string? grp = null;
+                @for (var i = 0; i < _results.Count; i++)
+                {
+                    var idx = i;
+                    var c = _results[idx];
+                    if (c.Group != grp)
+                    {
+                        grp = c.Group;
+                        <div class="cmdk-group">@c.Group</div>
+                    }
+                    <button type="button" role="option" aria-selected="@(idx == _selected)"
+                            class="cmdk-item @(idx == _selected ? "sel" : "")"
+                            @onclick="() => Activate(idx)" @onmouseenter="() => _selected = idx">
+                        <span class="bi @c.Icon cmdk-item-ic" aria-hidden="true"></span>
+                        <span class="cmdk-item-label">@c.Label</span>
+                        @if (!string.IsNullOrEmpty(c.Sub))
+                        {
+                            <span class="cmdk-item-sub">@c.Sub</span>
+                        }
+                    </button>
+                }
+            }
+        </div>
+        <div class="cmdk-foot">
+            <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate</span>
+            <span><kbd>&crarr;</kbd> open</span>
+            <span><kbd>?</kbd> shortcuts</span>
+        </div>
+    </div>
+}
+
+@if (_help)
+{
+    <div class="cmdk-backdrop" @onclick="CloseHelp"></div>
+    <div class="cmdk-help" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+        <div class="cmdk-help-head">
+            <span class="fw-semibold">Keyboard shortcuts</span>
+            <button type="button" class="cmdk-help-x" @onclick="CloseHelp" aria-label="Close">
+                <span class="bi bi-x-lg" aria-hidden="true"></span>
+            </button>
+        </div>
+        <ul class="cmdk-help-list">
+            <li><span class="cmdk-keys"><kbd>Ctrl</kbd>&thinsp;/&thinsp;<kbd>&#8984;</kbd><kbd>K</kbd></span><span>Open the command palette</span></li>
+            <li><span class="cmdk-keys"><kbd>/</kbd></span><span>Search cases &amp; jump</span></li>
+            <li><span class="cmdk-keys"><kbd>g</kbd><kbd>d</kbd></span><span>Go to Dashboard</span></li>
+            <li><span class="cmdk-keys"><kbd>g</kbd><kbd>m</kbd></span><span>Go to My Work</span></li>
+            <li><span class="cmdk-keys"><kbd>g</kbd><kbd>c</kbd></span><span>Go to Cases</span></li>
+            @if (CurrentUser.Has(Permission.EditCases))
+            {
+                <li><span class="cmdk-keys"><kbd>g</kbd><kbd>n</kbd></span><span>New case</span></li>
+            }
+            <li><span class="cmdk-keys"><kbd>g</kbd><kbd>i</kbd></span><span>Go to Integrity &amp; Audit</span></li>
+            <li><span class="cmdk-keys"><kbd>?</kbd></span><span>Show this help</span></li>
+            <li><span class="cmdk-keys"><kbd>Esc</kbd></span><span>Close any overlay</span></li>
+        </ul>
+    </div>
+}
+
+@code {
+    private static readonly string[] CaseTabs =
+        ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Tasks", "Report", "Audit"];
+
+    private bool _open;
+    private bool _help;
+    private string _query = "";
+    private int _selected;
+    private bool _needFocus;
+    private int _searchSeq;
+    private ElementReference _input;
+    private DotNetObjectReference<CommandPalette>? _ref;
+    private IReadOnlyList<Cmd> _results = Array.Empty<Cmd>();
+
+    private sealed record Cmd(string Group, string Icon, string Label, string? Sub, Func<Task> Run);
+
+    protected override void OnInitialized() => Palette.OpenRequested += OnOpenRequested;
+
+    // Raised by the top-bar search pill (CommandPaletteController). Marshal onto the circuit and open the
+    // same palette the Ctrl/⌘ K and "/" hotkeys open, so there is a single search surface.
+    private void OnOpenRequested() => InvokeAsync(async () =>
+    {
+        await OpenPalette();
+        StateHasChanged();
+    });
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _ref = DotNetObjectReference.Create(this);
+            try { await JS.InvokeVoidAsync("imHotkeys.register", _ref); } catch { /* interop not ready */ }
+        }
+        if (_needFocus && _open)
+        {
+            _needFocus = false;
+            try { await _input.FocusAsync(); } catch { /* element gone */ }
+        }
+    }
+
+    // Entry point for every shortcut, invoked from hotkeys.js.
+    [JSInvokable]
+    public Task OnHotkey(string cmd) => InvokeAsync(async () =>
+    {
+        if (cmd == "palette") await OpenPalette();
+        else if (cmd == "help") OpenHelp();
+        else if (cmd == "escape") Escape();
+        else if (cmd.StartsWith("go:", StringComparison.Ordinal)) await Go(cmd[3..]);
+        StateHasChanged();
+    });
+
+    private async Task OpenPalette()
+    {
+        _help = false;
+        _open = true;
+        _query = "";
+        _selected = 0;
+        _needFocus = true;
+        await Refresh();
+    }
+
+    private void OpenHelp() { _open = false; _query = ""; _help = true; }
+    private void CloseHelp() => _help = false;
+    private void ClosePalette() { _open = false; _query = ""; _results = Array.Empty<Cmd>(); }
+
+    private void Escape()
+    {
+        if (_help) _help = false;
+        else if (_open) ClosePalette();
+    }
+
+    private Task Go(string k) => k switch
+    {
+        "d" => GoTo(""),
+        "m" => GoTo("my"),
+        "c" => GoTo("cases"),
+        "n" => CurrentUser.Has(Permission.EditCases) ? GoTo("cases/new") : Task.CompletedTask,
+        "i" => GoTo("integrity"),
+        _ => Task.CompletedTask
+    };
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+        _selected = 0;
+        await Refresh();
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" when _results.Count > 0:
+                _selected = (_selected + 1) % _results.Count;
+                break;
+            case "ArrowUp" when _results.Count > 0:
+                _selected = (_selected - 1 + _results.Count) % _results.Count;
+                break;
+            case "Enter":
+                await Activate(_selected);
+                break;
+            case "Escape":
+                ClosePalette();
+                break;
+        }
+    }
+
+    private async Task Activate(int index)
+    {
+        if (index < 0 || index >= _results.Count) return;
+        await _results[index].Run();
+    }
+
+    // Rebuilds the result list: static/contextual commands filtered by the query, plus a scoped
+    // case search once the analyst starts typing (need-to-know is enforced by CaseService.ListAsync).
+    private async Task Refresh()
+    {
+        var q = _query.Trim();
+        var items = new List<Cmd>();
+        foreach (var c in StaticCommands())
+        {
+            if (q.Length == 0
+                || c.Label.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || c.Group.Contains(q, StringComparison.OrdinalIgnoreCase))
+            {
+                items.Add(c);
+            }
+        }
+
+        if (q.Length >= 1)
+        {
+            var seq = ++_searchSeq;
+            try
+            {
+                var page = await Cases.ListAsync(new CaseFilter
+                {
+                    Search = q,
+                    IncludeClosed = true,
+                    Page = 1,
+                    PageSize = 7
+                });
+                if (seq != _searchSeq) return; // a newer keystroke already superseded this search
+                foreach (var it in page.Items)
+                {
+                    var caseId = it.Id;
+                    items.Add(new Cmd("Cases", "bi-folder2-open",
+                        $"{it.CaseNumber} · {it.Title}",
+                        $"{Ui.Label(it.Classification)} · {it.Severity} · {Ui.Label(it.Phase)}",
+                        () => GoTo($"cases/{caseId}")));
+                }
+            }
+            catch { /* transient — keep the static matches already gathered */ }
+        }
+
+        _results = items;
+        if (_selected >= _results.Count) _selected = _results.Count - 1;
+        if (_selected < 0) _selected = 0;
+        StateHasChanged();
+    }
+
+    private IEnumerable<Cmd> StaticCommands()
+    {
+        yield return new Cmd("Navigate", "bi-speedometer2", "Dashboard", null, () => GoTo(""));
+        yield return new Cmd("Navigate", "bi-person-workspace", "My Work", null, () => GoTo("my"));
+        yield return new Cmd("Navigate", "bi-folder2-open", "Cases", null, () => GoTo("cases"));
+        if (CurrentUser.Has(Permission.EditCases))
+        {
+            yield return new Cmd("Navigate", "bi-plus-circle", "New Case", null, () => GoTo("cases/new"));
+        }
+        yield return new Cmd("Navigate", "bi-shield-lock", "Integrity & Audit", null, () => GoTo("integrity"));
+        if (CurrentUser.Has(Permission.Administer))
+        {
+            yield return new Cmd("Navigate", "bi-sliders", "Administration", null, () => GoTo("admin"));
+            yield return new Cmd("Navigate", "bi-people", "Roles & access", null, () => GoTo("admin/roles"));
+            yield return new Cmd("Navigate", "bi-clipboard-check", "Case templates", null, () => GoTo("admin/templates"));
+        }
+
+        // Contextual: when a case is open, offer a jump to each of its tabs.
+        if (CurrentCaseId() is { } cid)
+        {
+            foreach (var t in CaseTabs)
+            {
+                yield return new Cmd("This case", TabIcon(t), $"Go to {t}", null, () => GoTo($"cases/{cid}?tab={t}"));
+            }
+        }
+
+        yield return new Cmd("Actions", "bi-circle-half", "Toggle light / dark theme", null, ToggleTheme);
+        yield return new Cmd("Actions", "bi-keyboard", "Keyboard shortcuts", null, () =>
+        {
+            OpenHelp();
+            return Task.CompletedTask;
+        });
+    }
+
+    private Task GoTo(string url)
+    {
+        _open = false;
+        _help = false;
+        _query = "";
+        Nav.NavigateTo(url);
+        return Task.CompletedTask;
+    }
+
+    private async Task ToggleTheme()
+    {
+        _open = false;
+        try { await JS.InvokeVoidAsync("imTheme.toggle"); } catch { /* no-op */ }
+    }
+
+    // Parses a case id out of the current URL (…/cases/{guid}) so tab jumps are only offered on a case.
+    private Guid? CurrentCaseId()
+    {
+        var rel = Nav.ToBaseRelativePath(Nav.Uri);
+        var path = rel.Split('?')[0].TrimEnd('/');
+        var parts = path.Split('/');
+        return parts.Length == 2
+            && parts[0].Equals("cases", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(parts[1], out var g)
+            ? g
+            : null;
+    }
+
+    private static string TabIcon(string tab) => tab switch
+    {
+        "Overview" => "bi-clipboard-data",
+        "Timeline" => "bi-clock-history",
+        "Entities" => "bi-diagram-3",
+        "Evidence" => "bi-paperclip",
+        "Notes" => "bi-journal-text",
+        "Tasks" => "bi-check2-square",
+        "Report" => "bi-file-earmark-text",
+        "Audit" => "bi-shield-check",
+        _ => "bi-dot"
+    };
+
+    public void Dispose()
+    {
+        Palette.OpenRequested -= OnOpenRequested;
+        try { JS.InvokeVoidAsync("imHotkeys.unregister"); } catch { /* circuit already gone */ }
+        _ref?.Dispose();
+    }
+}

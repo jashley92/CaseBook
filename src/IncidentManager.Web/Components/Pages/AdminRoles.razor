@@ -1,0 +1,343 @@
+@page "/admin/roles"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject RoleService Roles
+@inject AccessReviewService AccessReview
+@inject ToastService Toasts
+
+<PageTitle>Roles &amp; access</PageTitle>
+
+<PageHeader Title="Roles & access">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+<p class="text-muted">
+    Bundles of code-enforced <strong>permissions</strong>. Built-in <em>system</em> roles are locked; add
+    <strong>custom roles</strong> that compose the same permissions and map any role to AD security groups.
+    Changes take effect at the next sign-in.
+</p>
+
+@* ---------- Roles ---------- *@
+<div class="d-flex align-items-center justify-content-between mt-4 mb-2">
+    <h4 class="mb-0">Roles</h4>
+    <button class="btn btn-sm btn-primary" @onclick="BeginCreate" disabled="@(_editing is not null)">
+        <span class="bi bi-plus-circle me-1"></span>New role
+    </button>
+</div>
+
+@if (_editing is not null)
+{
+    <div class="card mb-3 border-primary">
+        <div class="card-header">@(_editing.IsNew ? "New custom role" : $"Edit role — {_editing.Name}")</div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Name</label>
+                    <input class="form-control" @bind="_editing.Name" @bind:event="oninput"
+                           disabled="@(!_editing.IsNew)" placeholder="e.g. Auditor" />
+                    @if (!_editing.IsNew) { <div class="form-text">A role's name is its identity and can't be changed.</div> }
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Description</label>
+                    <input class="form-control" @bind="_editing.Description" @bind:event="oninput" />
+                </div>
+            </div>
+
+            <label class="form-label mt-3">Permissions</label>
+            <div class="row">
+                @foreach (var (perm, desc) in AllPermissions)
+                {
+                    <div class="col-md-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="perm-@perm"
+                                   checked="@_editing.Permissions.Contains(perm)"
+                                   @onchange="e => TogglePerm(perm, (bool)(e.Value ?? false))" />
+                            <label class="form-check-label" for="perm-@perm">
+                                <code class="small">@perm</code>
+                                <span class="text-muted small d-block">@desc</span>
+                            </label>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @if (_editing.Permissions.Contains(Permission.Administer))
+            {
+                <div class="alert alert-warning py-2 mt-2 mb-0">
+                    <span class="bi bi-exclamation-triangle me-1"></span>
+                    This role grants <strong>full administrative access</strong> (settings, roles, integrity). Assign it sparingly.
+                </div>
+            }
+        </div>
+        <div class="card-footer d-flex gap-2">
+            <button class="btn btn-sm btn-primary" @onclick="SaveRole">Save</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => _editing = null">Cancel</button>
+        </div>
+    </div>
+}
+
+@if (_roles is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead><tr><th>Role</th><th>Permissions</th><th style="width:9rem"></th></tr></thead>
+        <tbody>
+            @foreach (var r in _roles)
+            {
+                <tr>
+                    <td>
+                        <span class="fw-semibold">@r.Name</span>
+                        @if (r.IsSystem) { <span class="im-badge im-b-neutral ms-1">System</span> }
+                        <div class="small text-muted">@r.Description</div>
+                    </td>
+                    <td>
+                        @foreach (var p in r.GetPermissions().OrderBy(x => x.ToString()))
+                        {
+                            <span class="im-badge im-b-info me-1 mb-1">@p</span>
+                        }
+                        @if (r.GetPermissions().Count == 0) { <span class="text-muted">—</span> }
+                    </td>
+                    <td class="text-end">
+                        @if (!r.IsSystem)
+                        {
+                            <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => BeginEdit(r)">Edit</button>
+                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => DeleteRole(r)">Delete</button>
+                        }
+                        else
+                        {
+                            <span class="text-muted small">locked</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@* ---------- AD group → role mapping ---------- *@
+<h4 class="mt-4 mb-2">AD group → role mapping</h4>
+<p class="text-muted small">Members of an AD security group receive the mapped role's permissions. Seeded from
+<code>appsettings.json</code> on first run; edited here thereafter.</p>
+
+@if (_roles is not null)
+{
+    <div class="row g-2 align-items-end mb-3" style="max-width:44rem">
+        <div class="col-sm-6">
+            <label class="form-label small mb-0">AD security group</label>
+            <input class="form-control form-control-sm" @bind="_newGroup" @bind:event="oninput" placeholder="e.g. SOC-Auditors" />
+        </div>
+        <div class="col-sm-4">
+            <label class="form-label small mb-0">Role</label>
+            <select class="form-select form-select-sm" @bind="_newRole">
+                @foreach (var r in _roles) { <option value="@r.Name">@r.Name</option> }
+            </select>
+        </div>
+        <div class="col-sm-2">
+            <button class="btn btn-sm btn-primary w-100" @onclick="AddMapping">Add</button>
+        </div>
+    </div>
+}
+
+@if (_mappings is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else if (_mappings.Count == 0)
+{
+    <p class="text-muted">No mappings configured.</p>
+}
+else
+{
+    <table class="table table-sm align-middle" style="max-width:44rem">
+        <thead><tr><th>AD group</th><th>Role</th><th style="width:6rem"></th></tr></thead>
+        <tbody>
+            @foreach (var m in _mappings)
+            {
+                <tr>
+                    <td><code class="small">@m.AdGroup</code></td>
+                    <td>@m.RoleName</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => RemoveMapping(m)">Remove</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@* ---------- Restricted-case access review ---------- *@
+<h4 class="mt-4 mb-2">Restricted-case access review</h4>
+<p class="text-muted small">Need-to-know review for audits: who can currently see restricted cases and why.
+Broad access comes from roles (and their AD groups); case-specific access is the incident commander and assignees.</p>
+
+@if (_review is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else
+{
+    <h6 class="text-uppercase small text-muted">Broad access (across cases)</h6>
+    <table class="table table-sm align-middle" style="max-width:52rem">
+        <thead><tr><th>Role</th><th>Grants</th><th>Via AD groups</th></tr></thead>
+        <tbody>
+            @foreach (var b in _review.Broad)
+            {
+                <tr>
+                    <td class="fw-semibold">@b.RoleName</td>
+                    <td>
+                        @if (b.ViewAllCases) { <span class="im-badge im-b-warn me-1">All cases</span> }
+                        @if (b.ViewRestricted) { <span class="im-badge im-b-info">Restricted</span> }
+                    </td>
+                    <td>
+                        @if (b.Groups.Count == 0) { <span class="text-muted small">no AD group mapped</span> }
+                        else { @foreach (var g in b.Groups) { <code class="small me-1">@g</code> } }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <h6 class="text-uppercase small text-muted mt-3">Restricted cases</h6>
+    @if (_review.RestrictedCases.Count == 0)
+    {
+        <p class="text-muted">No restricted cases.</p>
+    }
+    else
+    {
+        <table class="table table-sm align-middle">
+            <thead><tr><th>Case</th><th>Incident commander</th><th>Assignees</th></tr></thead>
+            <tbody>
+                @foreach (var c in _review.RestrictedCases)
+                {
+                    <tr>
+                        <td><code class="small">@c.CaseNumber</code><div class="small text-muted">@c.Title</div></td>
+                        <td>@(string.IsNullOrWhiteSpace(c.IncidentCommander) ? "—" : c.IncidentCommander)</td>
+                        <td>
+                            @if (c.Assignees.Count == 0) { <span class="text-muted">—</span> }
+                            else { @string.Join(", ", c.Assignees) }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="small text-muted">Plus anyone whose role grants <strong>All cases</strong> above.</p>
+    }
+}
+
+@code {
+    private List<Role>? _roles;
+    private List<AdGroupRoleMapping>? _mappings;
+    private AccessReview? _review;
+    private RoleEdit? _editing;
+    private string _newGroup = "";
+    private string _newRole = "";
+
+    private static readonly (Permission Perm, string Desc)[] AllPermissions =
+    [
+        (Permission.ViewCases, "See cases within need-to-know scope"),
+        (Permission.ViewAllCases, "See every case (overrides need-to-know)"),
+        (Permission.EditCases, "Create and edit case content"),
+        (Permission.ChangeClassification, "Change Adverse Event / Incident / Breach"),
+        (Permission.ApproveReports, "Approve and finalize reports"),
+        (Permission.ViewRestricted, "Open restricted (need-to-know) cases"),
+        (Permission.ManageLegal, "Manage Legal/Privacy referral workflow"),
+        (Permission.Administer, "Administer the app (settings, roles, integrity)"),
+    ];
+
+    private sealed class RoleEdit
+    {
+        public Guid? Id;
+        public string Name = "";
+        public string? Description;
+        public HashSet<Permission> Permissions = [];
+        public bool IsNew;
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _roles = await Roles.ListRolesAsync();
+        _mappings = await Roles.ListMappingsAsync();
+        _review = await AccessReview.BuildAsync();
+        if (string.IsNullOrEmpty(_newRole) && _roles.Count > 0) _newRole = _roles[0].Name;
+    }
+
+    private void BeginCreate() => _editing = new RoleEdit { IsNew = true };
+
+    private void BeginEdit(Role r) => _editing = new RoleEdit
+    {
+        Id = r.Id,
+        Name = r.Name,
+        Description = r.Description,
+        Permissions = [.. r.GetPermissions()],
+        IsNew = false
+    };
+
+    private void TogglePerm(Permission p, bool on)
+    {
+        if (_editing is null) return;
+        if (on) _editing.Permissions.Add(p); else _editing.Permissions.Remove(p);
+    }
+
+    private async Task SaveRole()
+    {
+        if (_editing is null) return;
+        try
+        {
+            if (_editing.IsNew)
+                await Roles.CreateRoleAsync(_editing.Name, _editing.Description, _editing.Permissions);
+            else
+                await Roles.UpdateRoleAsync(_editing.Id!.Value, _editing.Description, _editing.Permissions);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        _editing = null;
+        await LoadAsync();
+        Toasts.Success("Role saved");
+    }
+
+    private async Task DeleteRole(Role r)
+    {
+        try { await Roles.DeleteRoleAsync(r.Id); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        await LoadAsync();
+        Toasts.Info($"Deleted role '{r.Name}'");
+    }
+
+    private async Task AddMapping()
+    {
+        try { await Roles.AddMappingAsync(_newGroup, _newRole); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        _newGroup = "";
+        await LoadAsync();
+        Toasts.Success("Mapping added");
+    }
+
+    private async Task RemoveMapping(AdGroupRoleMapping m)
+    {
+        try { await Roles.RemoveMappingAsync(m.Id); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        await LoadAsync();
+        Toasts.Info("Mapping removed");
+    }
+}

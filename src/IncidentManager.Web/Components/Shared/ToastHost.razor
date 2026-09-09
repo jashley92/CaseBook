@@ -1,0 +1,63 @@
+@using IncidentManager.Web.Services
+@implements IDisposable
+@inject ToastService Toasts
+
+<div class="toast-host" aria-live="polite" aria-atomic="true">
+    @foreach (var t in Toasts.Toasts)
+    {
+        <div class="toast-item @CssFor(t.Level)" role="@RoleFor(t.Level)">
+            <span class="toast-glyph" aria-hidden="true">@GlyphFor(t.Level)</span>
+            <span class="toast-msg">@t.Message</span>
+            <button type="button" class="toast-close" aria-label="Dismiss notification"
+                    @onclick="() => Toasts.Dismiss(t.Id)">×</button>
+        </div>
+    }
+</div>
+
+@code {
+    private const int AutoDismissMs = 4500;
+    private readonly HashSet<Guid> _scheduled = new();
+
+    protected override void OnInitialized() => Toasts.OnChange += HandleChange;
+
+    private void HandleChange() => _ = InvokeAsync(async () =>
+    {
+        // Schedule auto-dismiss for any toast we haven't seen yet.
+        foreach (var t in Toasts.Toasts.ToArray())
+        {
+            if (_scheduled.Add(t.Id))
+            {
+                var id = t.Id;
+                _ = Task.Delay(AutoDismissMs).ContinueWith(_ =>
+                    InvokeAsync(() =>
+                    {
+                        Toasts.Dismiss(id);
+                        _scheduled.Remove(id);
+                    }));
+            }
+        }
+        StateHasChanged();
+        await Task.CompletedTask;
+    });
+
+    private static string CssFor(ToastLevel l) => l switch
+    {
+        ToastLevel.Success => "toast-success",
+        ToastLevel.Warning => "toast-warning",
+        ToastLevel.Error => "toast-error",
+        _ => "toast-info"
+    };
+
+    private static string GlyphFor(ToastLevel l) => l switch
+    {
+        ToastLevel.Success => "✓",
+        ToastLevel.Warning => "!",
+        ToastLevel.Error => "✕",
+        _ => "i"
+    };
+
+    private static string RoleFor(ToastLevel l) =>
+        l is ToastLevel.Error or ToastLevel.Warning ? "alert" : "status";
+
+    public void Dispose() => Toasts.OnChange -= HandleChange;
+}

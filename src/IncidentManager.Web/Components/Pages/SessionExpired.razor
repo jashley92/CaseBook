@@ -1,0 +1,25 @@
+@* Idle-lock landing (F-15). IdleGuard force-navigates here at the inactivity deadline, which tears down
+   the working circuit — so all in-memory case data is gone and this neutral page is all that remains on
+   an unattended screen. AllowAnonymous + the chromeless layout mean it always renders and shows nothing
+   sensitive. "Resume" is a full-page link back to the app, which re-authenticates (silently under
+   Windows auth) and starts a fresh session. *@
+@page "/session-expired"
+@layout Layout.BlankLayout
+@attribute [AllowAnonymous]
+
+<PageTitle>Session locked — CaseBook</PageTitle>
+
+<div class="session-locked">
+    <div class="session-locked-card">
+        <div class="session-locked-icon" aria-hidden="true"><span class="bi bi-lock-fill"></span></div>
+        <h1 class="session-locked-title">Session locked</h1>
+        <p class="session-locked-text">
+            You were signed out here because of inactivity. Anything you saved is safe; an edit you were still
+            typing when the session locked may need to be redone.
+        </p>
+        <p class="session-locked-text session-locked-muted">
+            This is a security measure for unattended workstations. Please also lock your computer when you step away.
+        </p>
+        <a href="/" class="btn btn-primary">Resume session</a>
+    </div>
+</div>

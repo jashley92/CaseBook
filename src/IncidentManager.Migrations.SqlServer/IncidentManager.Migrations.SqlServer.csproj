@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Holds the SQL Server (production) EF Core migrations set, kept in its own assembly so it can
+    coexist with the SQLite (development) migrations that live in IncidentManager.Infrastructure.
+    A single DbContext model can only carry one migrations set per assembly (one ModelSnapshot),
+    so the two providers are separated by assembly. Selected at runtime via MigrationsAssembly in
+    IncidentManager.Infrastructure/DependencyInjection.cs, and at design time via the
+    IM_MIGRATIONS_PROVIDER env var honoured by AppDbContextFactory.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IncidentManager.Infrastructure\IncidentManager.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.*" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.*">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,3694 @@
+@page "/cases/{Id:guid}"
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@implements IAsyncDisposable
+@inject CaseService Cases
+@inject EvidenceService Evidence
+@inject IntegrityService Integrity
+@inject ReportService Reports
+@inject IClock Clock
+@inject IJSRuntime JS
+@inject IAuthorizationService AuthZ
+@inject IncidentManager.Application.Abstractions.ICaseChangeNotifier Notifier
+@inject AuthenticationStateProvider AuthState
+@inject IConfiguration Config
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@inject ISeverityLabels SevLabels
+@inject ToastService Toasts
+@inject IncidentManager.Application.Admin.CaseTemplateService Templates
+@inject IncidentManager.Application.Admin.ReportProfileService ReportProfiles
+@inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
+@inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
+@inject IncidentManager.Application.Access.IAccessLogService AccessLog
+
+<PageTitle>@(_case?.CaseNumber ?? "Case")</PageTitle>
+
+@if (_notFound)
+{
+    <h1>Case not found</h1>
+    <p>The case does not exist or you don't have access to it. <a href="cases">Back to cases</a>.</p>
+}
+else if (_case is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-start">
+        <div>
+            <h1 class="mb-1">
+                <code>@_case.CaseNumber</code>
+                @if (_canEdit && !_renumbering)
+                {
+                    <button class="btn btn-sm btn-link p-0 ms-1 align-baseline" title="Change case number" @onclick="StartRenumber">
+                        <span class="bi bi-pencil" aria-hidden="true"></span>
+                    </button>
+                }
+            </h1>
+            @if (_renumbering)
+            {
+                <div class="d-flex align-items-center gap-2 mb-2" style="max-width:32rem">
+                    <input class="form-control form-control-sm font-monospace" @bind="_editNumber" @bind:event="oninput"
+                           placeholder="Case number" aria-label="Case number" />
+                    <button class="btn btn-sm btn-primary" @onclick="SaveRenumber" disabled="@_savingNumber">Save</button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="CancelRenumber">Cancel</button>
+                </div>
+            }
+            @if (_renumberError is not null)
+            {
+                <div class="text-danger small mb-2">@_renumberError</div>
+            }
+            <div class="mb-2">@_case.Title</div>
+            <div>
+                <span class="@Ui.ClassificationBadge(_case.Classification)">@Ui.Label(_case.Classification)</span>
+                <span class="@Ui.SeverityBadge(_case.Severity)">@SevLabels.For(_case.Severity)</span>
+                @{
+                    var slaHead = SlaPolicy.Evaluate(_case.Severity, _case.Phase, _case.DetectedAtUtc,
+                        _case.ContainedAtUtc, _case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow);
+                    var slaHeadClock = slaHead.Clock is { } hc ? Ui.SlaClockLabel(hc) : "SLA";
+                    var slaHeadTiming = Ui.SlaTiming(slaHead);
+                    var slaHeadTitle = slaHeadTiming.Length > 0 ? $"{slaHeadClock} · {slaHeadTiming}" : slaHeadClock;
+                }
+                @if (slaHead.State != SlaState.NoTarget)
+                {
+                    <span class="@Ui.SlaBadge(slaHead.State)" title="@slaHeadTitle">
+                        <span class="bi @Ui.SlaGlyph(slaHead.State)" aria-hidden="true"></span> SLA: @Ui.SlaLabel(slaHead.State)
+                    </span>
+                }
+                @if (_case.LegalReferral.IsReferred) { <span class="im-badge im-b-neutral">Legal referred</span> }
+                @if (_case.IsRestricted) { <span class="im-badge im-b-warn">Restricted</span> }
+                @if (_case.LegalHold) { <span class="im-badge im-b-danger">Legal hold</span> }
+                @if (_case.IsArchived) { <span class="im-badge im-b-neutral">Archived</span> }
+            </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <CasePresence CaseId="_case.Id" />
+            @if (_canAnyAction)
+            {
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-primary dropdown-toggle" @onclick="() => _actionsOpen = !_actionsOpen">Actions</button>
+                    <div class="dropdown-menu dropdown-menu-end @(_actionsOpen ? "show" : "")">
+                        @if (_canReclassify) { <button class="dropdown-item" @onclick='() => OpenModal("reclass")'>@(_case?.Classification is null ? "Promote to ladder…" : "Reclassify…")</button> }
+                        @if (_canEdit)
+                        {
+                            <button class="dropdown-item" @onclick='() => OpenModal("severity")'>Change severity…</button>
+                            <button class="dropdown-item" @onclick='() => OpenModal("status")'>Change status…</button>
+                            <button class="dropdown-item" @onclick='() => OpenModal("legal")'>Refer to Legal / Privacy…</button>
+                        }
+                        @if (_canManageLegal)
+                        {
+                            <button class="dropdown-item" @onclick="() => SetLegalHold(!_case.LegalHold)">@(_case.LegalHold ? "Release legal hold" : "Place legal hold")</button>
+                        }
+                        @if (_canAdmin)
+                        {
+                            <div class="dropdown-divider"></div>
+                            @if (_case.IsArchived)
+                            {
+                                <button class="dropdown-item" @onclick="() => SetArchived(false)">Restore from archive</button>
+                            }
+                            else
+                            {
+                                <button class="dropdown-item text-danger" @onclick='() => OpenModal("archive")'>Archive case…</button>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+            <a class="btn btn-sm btn-outline-secondary" href="cases">← All cases</a>
+        </div>
+    </div>
+
+    <div class="d-flex align-items-center flex-wrap gap-1 my-3">
+        @{ var _phases = Enum.GetValues<CasePhase>(); var _curIdx = Array.IndexOf(_phases, _case.Phase); }
+        @for (var i = 0; i < _phases.Length; i++)
+        {
+            var isDone = i < _curIdx;
+            var isCur = i == _curIdx;
+            <span class="im-badge rounded-pill @(isCur ? "im-b-info" : isDone ? "im-b-ok" : "im-b-neutral")">@Ui.Label(_phases[i])</span>
+            @if (i < _phases.Length - 1) { <span class="text-muted small">›</span> }
+        }
+        @if (_canEdit && NextPhase() is { } np)
+        {
+            <button class="btn btn-sm btn-primary ms-2" @onclick="() => AdvanceTo(np)">Advance to @Ui.Label(np) →</button>
+        }
+    </div>
+
+    <ul class="nav nav-tabs mb-3">
+        @foreach (var tab in _tabs)
+        {
+            <li class="nav-item">
+                <button class="nav-link @(_activeTab == tab ? "active" : "")" @onclick="() => SetTab(tab)">
+                    @tab@{ var _tc = TabCount(tab); }@if (_tc is { } cnt) { <span class="im-badge im-b-neutral ms-1 im-bump" @key="@($"{tab}:{cnt}")">@cnt</span> }@if (TabHasNew(tab)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }
+                </button>
+            </li>
+        }
+    </ul>
+
+    @if (_confirm is not null)
+    {
+        <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,.5)" @onclick="CancelConfirm">
+            <div class="modal-dialog" @onclick:stopPropagation="true">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Please confirm</h5>
+                        <button type="button" class="btn-close" aria-label="Close" @onclick="CancelConfirm"></button>
+                    </div>
+                    <div class="modal-body"><p class="mb-0">@_confirm.Value.Message</p></div>
+                    <div class="modal-footer">
+                        <button class="btn btn-outline-secondary" @onclick="CancelConfirm">Cancel</button>
+                        <button class="btn btn-danger" @onclick="RunConfirm">Remove</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* U-40: screenshot lightbox — preview an attached screenshot in place instead of forcing a download. *@
+    @if (_previewShotId is { } previewId)
+    {
+        <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,.65)" @onclick="CloseShot">
+            <div class="modal-dialog modal-xl modal-dialog-centered" @onclick:stopPropagation="true">
+                <div class="modal-content">
+                    <div class="modal-header py-2">
+                        <h5 class="modal-title"><span class="bi bi-image me-2" aria-hidden="true"></span>Screenshot</h5>
+                        <button type="button" class="btn-close" aria-label="Close" @onclick="CloseShot"></button>
+                    </div>
+                    <div class="modal-body text-center bg-body-tertiary" style="max-height:75vh;overflow:auto">
+                        <img src="evidence/@previewId/inline" alt="attached screenshot"
+                             style="max-width:100%;height:auto;border-radius:.375rem" />
+                    </div>
+                    <div class="modal-footer py-2">
+                        <a class="btn btn-outline-primary" href="evidence/@previewId" target="_blank" rel="noopener noreferrer">
+                            <span class="bi bi-download me-1" aria-hidden="true"></span>Download
+                        </a>
+                        <button class="btn btn-outline-secondary" @onclick="CloseShot">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* Keyed by the active tab so the subtree is rebuilt on a tab switch, replaying the .tabbody
+       fade-in (U-22 motion). The key doesn't change on case/id navigation, so switching cases
+       doesn't force an extra remount. *@
+    <div class="tabbody" @key="_activeTab">
+    @if (_activeTab == "Overview")
+    {
+        var (slaContain, slaResolve) = SlaPolicy.Breakdown(_case.Severity, _case.Phase,
+            _case.DetectedAtUtc, _case.ContainedAtUtc, _case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow);
+        var hasSla = slaContain.State != SlaState.NoTarget || slaResolve.State != SlaState.NoTarget;
+        var openTasks = _case.ActionItems.Count(a => a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled);
+
+        if (_retentionMsg is not null)
+        {
+            <div class="alert alert-danger py-2 small">@_retentionMsg</div>
+        }
+
+        @* Vitals strip — the at-a-glance row (response SLA, lifecycle timestamps, dwell, counts) spanning
+           the full width, so the "how's this case doing" scan is the first thing on the pane, not the last. *@
+        <div class="im-vitals mb-4">
+            @if (hasSla)
+            {
+                @SlaVital(slaContain)
+                @SlaVital(slaResolve)
+            }
+            <div class="im-vital"><div class="small text-muted">Detected</div><div class="fw-semibold">@TimeDisp.Long(_case.DetectedAtUtc)</div></div>
+            <div class="im-vital"><div class="small text-muted">Contained</div><div class="fw-semibold">@TimeDisp.Long(_case.ContainedAtUtc)</div></div>
+            <div class="im-vital"><div class="small text-muted">Resolved</div><div class="fw-semibold">@TimeDisp.Long(_case.ResolvedAtUtc)</div></div>
+            @if (_case.OccurredAtUtc is { } occ && _case.DetectedAtUtc is { } det)
+            {
+                <div class="im-vital"><div class="small text-muted">Dwell</div><div class="fw-semibold">@DwellLabel(det - occ)</div><div class="small text-muted">before detection</div></div>
+            }
+            <div class="im-vital"><div class="small text-muted">Evidence · open tasks</div><div class="fw-semibold">@_case.Evidence.Count · @openTasks</div></div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-7">
+                @* Case narrative — details and impact assessment folded into one card. *@
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Details</span>
+                        <AuthorizeView Policy="@Policies.EditCases" Context="ed">
+                            @if (!_editingDetails)
+                            {
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="BeginEditDetails">Edit</button>
+                            }
+                        </AuthorizeView>
+                    </div>
+                    <div class="card-body">
+                        @if (_editingDetails)
+                        {
+                            <div class="mb-2">
+                                <label class="form-label small mb-0">Title</label>
+                                <input class="form-control form-control-sm" @bind="_edTitle" @bind:event="oninput" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small mb-0">@DetectionLabel Case ID</label>
+                                <input class="form-control form-control-sm" @bind="_edDetection" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small mb-0">Data types involved</label>
+                                <input class="form-control form-control-sm" @bind="_edDataTypes" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small mb-0">Impacted assets</label>
+                                <input class="form-control form-control-sm" @bind="_edImpacted" />
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-sm-6">
+                                    <label class="form-label small mb-0">Detected (@TimeDisp.Label)</label>
+                                    <input type="datetime-local" class="form-control form-control-sm" @bind="_edDetected"
+                                           title="When the matter was first detected or reported. Drives the response-SLA clock and dwell metrics. Set it to the real detection time, not when the case was filed. Entered in @TimeDisp.Label." />
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="form-label small mb-0">Initial activity <span class="text-muted">(optional)</span></label>
+                                    <input type="datetime-local" class="form-control form-control-sm" @bind="_edOccurred"
+                                           title="When adversary activity actually began (initial access / first malicious activity), if known. Detected minus this is the dwell time. Entered in @TimeDisp.Label." />
+                                </div>
+                            </div>
+                            @if (_detailsError is { } derr)
+                            {
+                                <div class="alert alert-warning py-1 px-2 small mb-2">@derr</div>
+                            }
+                            <div class="mb-2">
+                                <label class="form-label small mb-0">Summary <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links</span></label>
+                                @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Save. *@
+                                <textarea id="@SummaryEditorId" class="form-control"></textarea>
+                            </div>
+                            <button class="btn btn-sm btn-primary" @onclick="SaveDetails" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => _editingDetails = false)">Cancel</button>
+                        }
+                        else
+                        {
+                            <dl class="row mb-0">
+                                <dt class="col-sm-4">Origin</dt>
+                                <dd class="col-sm-8">@(_case.Origin == CaseOrigin.ThirdParty ? "Third-party / vendor" : "Internal detection")</dd>
+                                @if (_case.ThirdParty is not null)
+                                {
+                                    <dt class="col-sm-4">Vendor</dt>
+                                    <dd class="col-sm-8">@_case.ThirdParty.VendorName
+                                        @if (!string.IsNullOrWhiteSpace(_case.ThirdParty.VendorContact)) { <text>(@_case.ThirdParty.VendorContact)</text> }
+                                    </dd>
+                                }
+                                <dt class="col-sm-4">@DetectionLabel Case</dt>
+                                <dd class="col-sm-8">@(_case.DetectionCaseId ?? "—")
+                                    @{ var detectionUrl = DetectionCaseUrl(); }
+                                    @if (detectionUrl is not null)
+                                    {
+                                        <a class="btn btn-sm btn-outline-secondary py-0 ms-2" href="@detectionUrl" target="_blank" rel="noopener noreferrer">Open in @DetectionLabel</a>
+                                    }
+                                </dd>
+                                <dt class="col-sm-4">Data types</dt>
+                                <dd class="col-sm-8">@(_case.DataTypesInvolved ?? "—")</dd>
+                                <dt class="col-sm-4">Impacted assets</dt>
+                                <dd class="col-sm-8">@(_case.ImpactedAssets ?? "—")</dd>
+                                <dt class="col-sm-4">Opened</dt>
+                                <dd class="col-sm-8">@TimeDisp.Long(_case.CreatedAtUtc) by @Users.DisplayFor(_case.CreatedBy)</dd>
+                                <dt class="col-sm-4">Summary</dt>
+                                <dd class="col-sm-8">
+                                    @if (string.IsNullOrWhiteSpace(_case.Summary))
+                                    {
+                                        <text>—</text>
+                                    }
+                                    else
+                                    {
+                                        <div class="md-body">@((MarkupString)Md.ToHtml(_case.Summary))</div>
+                                    }
+                                </dd>
+                            </dl>
+                        }
+
+                        <hr class="my-3" />
+
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h3 class="h6 mb-0">Impact assessment</h3>
+                            <AuthorizeView Policy="@Policies.EditCases" Context="ie">
+                                @if (!_editingImpact)
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="BeginEditImpact">Edit</button>
+                                }
+                            </AuthorizeView>
+                        </div>
+                        @if (_editingImpact)
+                        {
+                            <div class="mb-2">
+                                <label class="form-label small mb-0">Affected individuals (estimate)</label>
+                                <input type="number" min="0" class="form-control form-control-sm" @bind="_impCount" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small mb-1 d-block">Data elements involved</label>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (var el in _dataElements)
+                                    {
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="de-@el.Key"
+                                                   checked="@_impElementKeys.Contains(el.Key)"
+                                                   @onchange="e => ToggleElement(el.Key, (bool)(e.Value ?? false))" />
+                                            <label class="form-check-label small" for="de-@el.Key">@el.Label</label>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small mb-0">Affected jurisdictions (state codes, comma-separated)</label>
+                                <input class="form-control form-control-sm" placeholder="e.g. NY, NJ, CT" @bind="_impStates" />
+                            </div>
+                            <button class="btn btn-sm btn-primary" @onclick="SaveImpact">Save</button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => _editingImpact = false">Cancel</button>
+                        }
+                        else if (_case.AffectedIndividualsCount is null && _case.DataElements.Count == 0 && string.IsNullOrWhiteSpace(_case.AffectedStates))
+                        {
+                            <p class="text-muted small mb-0">Not yet assessed. This captures the structured facts (affected count, data elements, jurisdictions) for the Legal / regulatory handoff.</p>
+                        }
+                        else
+                        {
+                            <dl class="row mb-0">
+                                <dt class="col-sm-4">Affected individuals</dt>
+                                <dd class="col-sm-8">@(_case.AffectedIndividualsCount?.ToString("N0") ?? "—")</dd>
+                                <dt class="col-sm-4">Data elements</dt>
+                                <dd class="col-sm-8">
+                                    @if (_case.DataElements.Count == 0)
+                                    {
+                                        <text>—</text>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var key in SelectedElementKeysOrdered())
+                                        {
+                                            <span class="im-badge im-b-neutral me-1 mb-1">@DataElementLabel(key)</span>
+                                        }
+                                    }
+                                </dd>
+                                <dt class="col-sm-4">Jurisdictions</dt>
+                                <dd class="col-sm-8">@(_case.AffectedStates ?? "—")</dd>
+                            </dl>
+                        }
+                    </div>
+                </div>
+
+                @if (_readinessEval is { } rg)
+                {
+                    <div class="im-sec mt-3">
+                        <div class="im-sec-head">
+                            <h3>Stage readiness</h3>
+                            <div class="d-flex align-items-center gap-2">
+                                @if (ReadinessMachineOutstanding == 0)
+                                {
+                                    <span class="im-badge im-b-ok">Data complete</span>
+                                }
+                                else
+                                {
+                                    <span class="im-badge im-b-warn">@ReadinessMachineOutstanding outstanding</span>
+                                }
+                                <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => _showReadiness = !_showReadiness" aria-label="Toggle stage readiness">
+                                    <span class="bi @(_showReadiness ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>
+                                </button>
+                            </div>
+                        </div>
+                        @if (_showReadiness)
+                        {
+                            <p class="text-muted small mb-2">Completeness required to <strong>@StageGateTriggers.Label(rg.Trigger).ToLowerInvariant()</strong>. Enforced when you make the transition, and overridable with a recorded justification.</p>
+                            <GateChecklist Eval="rg" Attested="_readinessAttested" Interactive="false" />
+                        }
+                    </div>
+                }
+
+                <div class="im-sec mt-3">
+                    <div class="im-sec-head"><h3>Assignments</h3></div>
+                    <div class="im-chips">
+                        @if (_case.Assignments.Count == 0)
+                        {
+                            <span class="text-muted small">No one assigned yet.</span>
+                        }
+                        @foreach (var a in _case.Assignments.OrderBy(x => x.Role))
+                        {
+                            <span class="im-chip" title="@a.UserDisplayName · @a.Role">
+                                <span class="bi bi-person" aria-hidden="true"></span>
+                                <span class="im-chip-name">@a.UserDisplayName</span>
+                                <span class="im-chip-role">@a.Role</span>
+                                <AuthorizeView Policy="@Policies.EditCases" Context="rm">
+                                    <button type="button" class="im-chip-x" aria-label="Remove @a.UserDisplayName"
+                                            @onclick='() => AskConfirm($"Remove {a.UserDisplayName} from this case?", () => DoUnassign(a.UserId))'>×</button>
+                                </AuthorizeView>
+                            </span>
+                        }
+                        <AuthorizeView Policy="@Policies.EditCases" Context="asg">
+                            <button type="button" class="im-chip-add" @onclick='() => OpenModal("assign")'>
+                                <span class="bi bi-plus-lg" aria-hidden="true"></span> Assign
+                            </button>
+                        </AuthorizeView>
+                    </div>
+                </div>
+
+                <div class="im-sec mt-3">
+                    <div class="im-sec-head"><h3>MITRE ATT&CK</h3></div>
+                    <div class="im-chips">
+                        @if (_case.Techniques.Count == 0)
+                        {
+                            <span class="text-muted small">No techniques tagged.</span>
+                        }
+                        @foreach (var t in _case.Techniques.OrderBy(x => x.Tactic).ThenBy(x => x.TechniqueId))
+                        {
+                            <span class="im-chip im-chip-tac" style="--tac:@Ui.TacticColor(t.Tactic)" title="@(t.TechniqueId + (string.IsNullOrWhiteSpace(t.Name) ? "" : " — " + t.Name) + " · " + Ui.Label(t.Tactic))">
+                                <a href="https://attack.mitre.org/techniques/@(t.TechniqueId.Replace('.', '/'))/" target="_blank" rel="noopener noreferrer"><code>@t.TechniqueId</code></a>
+                                @if (t.Tactic != MitreTactic.Unspecified) { <span class="im-chip-role">@Ui.Label(t.Tactic)</span> }
+                                <AuthorizeView Policy="@Policies.EditCases" Context="tq">
+                                    <button type="button" class="im-chip-x" aria-label="Remove @t.TechniqueId"
+                                            @onclick='() => AskConfirm($"Remove technique {t.TechniqueId}?", () => RemoveTechnique(t.Id))'>×</button>
+                                </AuthorizeView>
+                            </span>
+                        }
+                        <AuthorizeView Policy="@Policies.EditCases" Context="tqadd">
+                            <button type="button" class="im-chip-add" @onclick="OpenTechMatrix">
+                                <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span> Techniques
+                            </button>
+                        </AuthorizeView>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                @* Context rail — related cases and the change log. *@
+                <div class="im-sec">
+                    <div class="im-sec-head">
+                        <h3>Related cases</h3>
+                        <div class="d-flex align-items-center gap-2">
+                            @if (_links.Count > 0) { <span class="im-badge im-b-neutral">@_links.Count</span> }
+                            <AuthorizeView Policy="@Policies.EditCases" Context="lk">
+                                @if (!_addingLink)
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="BeginAddLink">Link a case</button>
+                                }
+                            </AuthorizeView>
+                        </div>
+                    </div>
+                    @if (_addingLink)
+                    {
+                        <div class="mb-2">
+                            <label class="form-label small mb-0">Relationship</label>
+                            <select class="form-select form-select-sm" @bind="_linkType">
+                                @foreach (var t in Enum.GetValues<CaseLinkType>())
+                                {
+                                    <option value="@t">@Ui.CaseLinkLabel(t, true)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-0">Case</label>
+                            @if (_linkTargetId is not null)
+                            {
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="im-badge im-b-info">@_linkTargetLabel</span>
+                                    <button class="btn btn-sm btn-link p-0" @onclick="ClearLinkTarget">change</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <input class="form-control form-control-sm" placeholder="Search by number or title"
+                                       @bind="_linkQuery" @bind:event="oninput" @bind:after="SearchLinkTargets" />
+                                @if (_linkResults.Count > 0)
+                                {
+                                    <ul class="list-group mt-1">
+                                        @foreach (var r in _linkResults)
+                                        {
+                                            <li class="list-group-item list-group-item-action py-1 small" role="button" @onclick="() => SelectLinkTarget(r)">
+                                                <strong>@r.CaseNumber</strong> — @r.Title
+                                                <span class="@Ui.ClassificationBadge(r.Classification) ms-1">@Ui.Label(r.Classification)</span>
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                                else if (!string.IsNullOrWhiteSpace(_linkQuery))
+                                {
+                                    <div class="form-text">No matching visible cases.</div>
+                                }
+                            }
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-0">Note (optional)</label>
+                            <input class="form-control form-control-sm" @bind="_linkDesc" placeholder="Why are these related?" />
+                        </div>
+                        <button class="btn btn-sm btn-primary" @onclick="AddLink" disabled="@(_linkTargetId is null)">Add link</button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="CancelAddLink">Cancel</button>
+                    }
+                    @if (_links.Count == 0 && !_addingLink)
+                    {
+                        <p class="text-muted small mb-0">No related cases yet. Link duplicates, related cases, or others in the same campaign.</p>
+                    }
+                    else if (_links.Count > 0)
+                    {
+                        <ul class="list-group list-group-flush">
+                            @foreach (var l in _links)
+                            {
+                                <li class="list-group-item px-0 d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <span class="@Ui.CaseLinkBadge(l.Type)">@Ui.CaseLinkLabel(l.Type, l.Outgoing)</span>
+                                        <a href="cases/@l.OtherCaseId" class="ms-1 fw-semibold text-decoration-none">@l.OtherCaseNumber</a>
+                                        <div class="small text-muted">@l.OtherTitle</div>
+                                        @if (!string.IsNullOrWhiteSpace(l.Description)) { <div class="small fst-italic text-muted">@l.Description</div> }
+                                    </div>
+                                    <AuthorizeView Policy="@Policies.EditCases" Context="rl">
+                                        <button class="btn btn-sm btn-outline-danger py-0" title="Remove link"
+                                                @onclick='() => AskConfirm($"Remove the link to {l.OtherCaseNumber}?", () => RemoveLink(l.LinkId))'>×</button>
+                                    </AuthorizeView>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+
+                <div class="im-sec">
+                    <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => _showHistory = !_showHistory">
+                        <span class="bi @(_showHistory ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>
+                        Change history (@History().Count())
+                    </button>
+                    @if (_showHistory)
+                    {
+                        @if (!History().Any())
+                        {
+                            <p class="text-muted small mt-2 mb-0">No changes recorded.</p>
+                        }
+                        else
+                        {
+                            <table class="table table-sm mt-2 mb-0">
+                                <thead><tr><th>When (@TimeDisp.Label)</th><th>Attribute</th><th>Change</th><th>By</th></tr></thead>
+                                <tbody>
+                                    @foreach (var h in History().OrderByDescending(x => x.At))
+                                    {
+                                        <tr>
+                                            <td class="small">@TimeDisp.Long(h.At)</td>
+                                            <td class="small">@h.Attribute</td>
+                                            <td class="small">@h.Change</td>
+                                            <td class="small">@h.By</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    }
+    else if (_activeTab == "Timeline")
+    {
+        <div class="btn-group mb-2" role="group" aria-label="Timeline lens">
+            <button class="btn btn-sm @(_tlLens is null ? "btn-primary" : "btn-outline-primary")"
+                    @onclick="() => SwitchLens(null)">All</button>
+            <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "btn-primary" : "btn-outline-primary")"
+                    @onclick="() => SwitchLens(TimelineKind.Event)">Event</button>
+            <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation ? "btn-primary" : "btn-outline-primary")"
+                    @onclick="() => SwitchLens(TimelineKind.Investigation)">Investigation</button>
+        </div>
+        <p class="text-muted small">
+            @(_tlLens switch
+            {
+                TimelineKind.Event => "Facts and timing of the actual event: the attack narrative.",
+                TimelineKind.Investigation => "Analyst and team actions during the investigation.",
+                _ => "The full chronology: what happened and what the team did, interleaved."
+            })
+        </p>
+
+        <AuthorizeView Policy="@Policies.EditCases">
+            <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "")">
+                <div class="card-body">
+                    @* U-40: hidden sink the paste shim feeds a pasted screenshot into; staged then attached on Add. *@
+                    <InputFile id="timeline-file-paste" class="d-none" accept="image/*" OnChange="OnTimelinePasted" />
+                    @if (_tlEditId is null)
+                    {
+                        <div class="small text-muted mb-2 d-flex align-items-center gap-2 flex-wrap">
+                            <span><span class="bi bi-clipboard me-1"></span>Paste a screenshot to attach it to this entry. It's stored as hashed, chain-of-custody evidence.</span>
+                            @if (_tlShotBytes is not null)
+                            {
+                                <span class="im-badge im-b-info">
+                                    <span class="bi bi-paperclip me-1"></span>@_tlShotName
+                                </span>
+                                <img src="@TlShotDataUri()" alt="pasted screenshot preview" style="max-height:40px;border-radius:.25rem;border:1px solid var(--bs-border-color)" />
+                                <button type="button" class="btn btn-sm btn-link text-danger p-0" @onclick="ClearTimelineShot">Remove</button>
+                            }
+                        </div>
+                    }
+                    @if (_tlEditId is not null)
+                    {
+                        <div class="alert alert-primary py-1 px-2 small d-flex justify-content-between align-items-center mb-2">
+                            <span>
+                                <span class="bi bi-pencil-square" aria-hidden="true"></span>
+                                @(_tlAddKind == TimelineKind.Event
+                                    ? "Editing this event step. The audit trail records the change."
+                                    : "Editing this entry. A new version is saved; the prior one is kept.")
+                            </span>
+                            <button type="button" class="btn btn-sm btn-link text-decoration-none p-0"
+                                    @onclick="CancelTimelineEdit">Cancel</button>
+                        </div>
+                    }
+                    @if (_tlEditId is null && _tlLens is null)
+                    {
+                        @* All lens: the composer serves both timelines, so pick which to add. *@
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <span class="text-muted small">Add:</span>
+                            <div class="btn-group btn-group-sm" role="group" aria-label="What to add">
+                                <button type="button" class="btn @(_tlAddKind == TimelineKind.Event ? "btn-secondary" : "btn-outline-secondary")"
+                                        @onclick="() => SetAddKind(TimelineKind.Event)">Event step</button>
+                                <button type="button" class="btn @(_tlAddKind == TimelineKind.Investigation ? "btn-secondary" : "btn-outline-secondary")"
+                                        @onclick="() => SetAddKind(TimelineKind.Investigation)">Investigation entry</button>
+                            </div>
+                        </div>
+                    }
+                    @if (_tlAddKind == TimelineKind.Event)
+                    {
+                        @* Event = the attack narrative: ATT&CK tactic(s) + actor→target attribution to IOCs. *@
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-4">
+                                <label class="form-label small mb-0">Occurred (UTC)</label>
+                                <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small mb-0">Actor <span class="text-muted">(from IOCs)</span></label>
+                                <select class="form-select form-select-sm" @bind="_evtActorId">
+                                    <option value="">— none —</option>
+                                    @foreach (var en in _case.Entities)
+                                    {
+                                        <option value="@en.Id">@EntityOptionLabel(en)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small mb-0">Target <span class="text-muted">(from IOCs)</span></label>
+                                <select class="form-select form-select-sm" @bind="_evtTargetId">
+                                    <option value="">— none —</option>
+                                    @foreach (var en in _case.Entities)
+                                    {
+                                        <option value="@en.Id">@EntityOptionLabel(en)</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <label class="form-label small mb-0">ATT&amp;CK <span class="text-muted">(technique or tactic, optional)</span></label>
+                            <AttackStepPicker @bind-TechniqueId="_evtTechnique" @bind-Tactic="_evtTactic" />
+                        </div>
+                        <div class="mt-2">
+                            <label class="form-label small mb-1">What the adversary did</label>
+                            <textarea class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
+                                      placeholder="e.g. Authenticated to the VPN from 203.0.113.66 with valid credentials"></textarea>
+                        </div>
+                        <div class="row g-2 align-items-end mt-1">
+                            <div class="col-md-4">
+                                <label class="form-label small mb-0">Source</label>
+                                <input class="form-control form-control-sm" @bind="_tlSource" placeholder="@($"{DetectionLabel}…")" />
+                            </div>
+                            @if (_tlEditId is not null)
+                            {
+                                <div class="col-md-4">
+                                    <label class="form-label small mb-0">Reason for change <span class="text-muted">(optional)</span></label>
+                                    <input class="form-control form-control-sm" @bind="_tlReason" placeholder="e.g. corrected source IP" />
+                                </div>
+                            }
+                            <div class="col d-flex justify-content-end align-items-end gap-2">
+                                @if (_tlEditId is null)
+                                {
+                                    <button class="btn btn-sm btn-primary" @onclick="AddEventStep">
+                                        <span class="bi bi-plus-lg" aria-hidden="true"></span> Add step
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="CancelTimelineEdit">Cancel</button>
+                                    <button class="btn btn-sm btn-primary" @onclick="SaveEventEdit">
+                                        <span class="bi bi-check-lg" aria-hidden="true"></span> Save changes
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        @* Investigation = the analyst's working log: response type + Markdown notes. *@
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label small mb-0">Type</label>
+                                <select class="form-select form-select-sm" @bind="_tlType">
+                                    @foreach (var t in Ui.Options<TimelineEntryType>("TimelineEntryType"))
+                                    {
+                                        <option value="@t">@Ui.Label(t)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small mb-0">Occurred (UTC)</label>
+                                <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small mb-0">Source</label>
+                                <input class="form-control form-control-sm" @bind="_tlSource" placeholder="@($"{DetectionLabel}…")" />
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <label class="form-label small mb-1">
+                                Notes <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, bullet/numbered lists, links</span>
+                            </label>
+                            @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add/Save. *@
+                            <textarea id="@InvEditorId" class="form-control"></textarea>
+                            @if (_tlEditId is not null)
+                            {
+                                <div class="mt-2">
+                                    <label class="form-label small mb-0">Reason for change <span class="text-muted">(optional)</span></label>
+                                    <input class="form-control form-control-sm" @bind="_tlReason" placeholder="e.g. clarified meeting outcome" />
+                                </div>
+                            }
+                            <div class="mt-2 d-flex justify-content-end gap-2">
+                                @if (_tlEditId is null)
+                                {
+                                    <button class="btn btn-sm btn-primary" @onclick="AddTimeline">
+                                        <span class="bi bi-plus-lg" aria-hidden="true"></span> Add entry
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="CancelTimelineEdit">Cancel</button>
+                                    <button class="btn btn-sm btn-primary" @onclick="SaveInvestigationEdit">
+                                        <span class="bi bi-check-lg" aria-hidden="true"></span> Save new version
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </AuthorizeView>
+
+        <div class="tl-region">
+        @{
+            // Only current versions are shown; superseded Investigation edits live in history (below) and the audit trail.
+            var tlAll = _case.TimelineEntries.Where(x => (_tlLens is null || x.Kind == _tlLens) && x.IsCurrent).ToList();
+            var tlView = FilteredTimeline(tlAll);
+            // The attack chain is always event-only, regardless of lens (shown under All and Event).
+            var tlChain = _case.TimelineEntries.Where(x => x.Kind == TimelineKind.Event && x.IsCurrent)
+                .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc).ToList();
+        }
+
+        @if (_tlLens != TimelineKind.Investigation && tlChain.Count > 0)
+        {
+            <div class="killchain-wrap mb-3">
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                    <span class="fw-semibold small"><span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>Attack chain</span>
+                    <button type="button" class="btn btn-sm btn-link text-decoration-none py-0"
+                            @onclick="() => _showKillChain = !_showKillChain">@(_showKillChain ? "Hide" : "Show")</button>
+                </div>
+                @if (_showKillChain)
+                {
+                    <div class="killchain">
+                        @for (var i = 0; i < tlChain.Count; i++)
+                        {
+                            var step = tlChain[i];
+                            if (i > 0)
+                            {
+                                <div class="killchain-arrow" aria-hidden="true"><span class="bi bi-arrow-right"></span></div>
+                            }
+                            <div class="killchain-node" style="--tl-color:@Ui.TacticColor(PrimaryTactic(step))">
+                                <div class="killchain-node-head">
+                                    <span class="killchain-idx">@(i + 1)</span>
+                                    <span class="bi @Ui.TacticGlyph(PrimaryTactic(step))" aria-hidden="true"></span>
+                                    <time class="killchain-time" title="@TimeDisp.Long(step.OccurredAtUtc)">@TimeDisp.Short(step.OccurredAtUtc)</time>
+                                </div>
+                                <div class="killchain-tactics">
+                                    @foreach (var tt in step.Tactics.Select(x => x.Tactic).OrderBy(x => (int)x))
+                                    {
+                                        <span class="tactic-chip" style="--tac:@Ui.TacticColor(tt)">@Ui.Label(tt)</span>
+                                    }
+                                </div>
+                                @if (EntityById(step.ActorEntityId) is not null || EntityById(step.TargetEntityId) is not null)
+                                {
+                                    <div class="killchain-attrib">
+                                        @if (EntityById(step.ActorEntityId) is { } a)
+                                        {
+                                            <span class="tl-ent">@Ui.EntityGlyph(a.Type) @EntityShort(a)</span>
+                                        }
+                                        <span class="tl-arrow">&rarr;</span>
+                                        @if (EntityById(step.TargetEntityId) is { } tgt)
+                                        {
+                                            <span class="tl-ent">@Ui.EntityGlyph(tgt.Type) @EntityShort(tgt)</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">?</span>
+                                        }
+                                    </div>
+                                }
+                                <div class="killchain-desc">@step.Description</div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        @if (tlAll.Count > 0)
+        {
+            <div class="tl-filters d-flex flex-wrap align-items-center gap-2 mb-3">
+                @if (_tlLens == TimelineKind.Event)
+                {
+                    <select class="form-select form-select-sm w-auto" @bind="_tlFilterTacticStr" aria-label="Filter by tactic">
+                        <option value="">All tactics</option>
+                        @foreach (var t in Enum.GetValues<MitreTactic>().Where(x => x != MitreTactic.Unspecified))
+                        {
+                            <option value="@t">@Ui.Label(t)</option>
+                        }
+                    </select>
+                }
+                else if (_tlLens == TimelineKind.Investigation)
+                {
+                    <select class="form-select form-select-sm w-auto" @bind="_tlFilterTypeStr" aria-label="Filter by type">
+                        <option value="">All types</option>
+                        @foreach (var t in Ui.Options<TimelineEntryType>("TimelineEntryType"))
+                        {
+                            <option value="@t">@Ui.Label(t)</option>
+                        }
+                    </select>
+                }
+                <input class="form-control form-control-sm w-auto" style="max-width:14rem" @bind="_tlFilterSource"
+                       @bind:event="oninput" placeholder="Filter by source…" aria-label="Filter by source" />
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        @onclick="() => _tlOldestFirst = !_tlOldestFirst"
+                        title="Toggle chronological order">
+                    <span class="bi @(_tlOldestFirst ? "bi-sort-down-alt" : "bi-sort-up-alt")" aria-hidden="true"></span>
+                    @(_tlOldestFirst ? "Oldest first" : "Newest first")
+                </button>
+                @if (_tlFilterType is not null || _tlFilterTactic is not null || !string.IsNullOrWhiteSpace(_tlFilterSource))
+                {
+                    <button type="button" class="btn btn-sm btn-link text-decoration-none px-1"
+                            @onclick="ClearTimelineFilters">Clear</button>
+                    <span class="text-muted small">@tlView.Count of @tlAll.Count</span>
+                }
+            </div>
+        }
+
+        @if (tlAll.Count == 0)
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon"><span class="bi bi-clock-history" aria-hidden="true"></span></div>
+                <div class="empty-state-title">No entries in this timeline yet</div>
+                <div class="empty-state-msg">
+                    @(_tlLens switch
+                    {
+                        TimelineKind.Event => "Record the facts and timing of what happened.",
+                        TimelineKind.Investigation => "Log the actions you and the team take as the investigation unfolds.",
+                        _ => "Record what happened and log the team's actions as the investigation unfolds."
+                    })
+                </div>
+            </div>
+        }
+        else if (tlView.Count == 0)
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon"><span class="bi bi-funnel" aria-hidden="true"></span></div>
+                <div class="empty-state-title">No entries match your filters</div>
+                <div class="empty-state-actions">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClearTimelineFilters">Clear filters</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <ol class="tl">
+                @foreach (var e in tlView)
+                {
+                    if (e.Kind == TimelineKind.Event)
+                    {
+                        <li class="tl-item tl-kind-event im-enter @FlashClass(e.Id)" style="@FlashStyle(e.Id)" id="tl-@e.Id" @key="e.Id">
+                            <span class="tl-dot" style="--tl-color:@Ui.TacticColor(PrimaryTactic(e))" aria-hidden="true">
+                                <span class="bi @Ui.TacticGlyph(PrimaryTactic(e))"></span>
+                            </span>
+                            <div class="tl-body">
+                                <div class="tl-head">
+                                    <span class="tl-kind-label"><span class="bi bi-lightning-charge" aria-hidden="true"></span> Event</span>
+                                    <span class="tl-tactics">
+                                        @foreach (var tt in e.Tactics.Select(x => x.Tactic).OrderBy(x => (int)x))
+                                        {
+                                            <span class="tactic-chip" style="--tac:@Ui.TacticColor(tt)">
+                                                <span class="bi @Ui.TacticGlyph(tt)" aria-hidden="true"></span> @Ui.Label(tt)
+                                            </span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(e.TechniqueId))
+                                        {
+                                            <a class="tactic-chip" style="--tac:#6c757d" target="_blank" rel="noopener noreferrer"
+                                               href="https://attack.mitre.org/techniques/@TechniquePath(e.TechniqueId)/">
+                                                <span class="bi bi-diagram-2" aria-hidden="true"></span> @e.TechniqueId
+                                            </a>
+                                        }
+                                    </span>
+                                    <time class="tl-time" title="@TimeDisp.Long(e.OccurredAtUtc)"><span class="tl-time-abs">@TimeDisp.Short(e.OccurredAtUtc)</span><span class="tl-time-rel">@Ui.RelativeTime(e.OccurredAtUtc, Clock.UtcNow)</span></time>
+                                </div>
+                                <div class="tl-desc">@e.Description</div>
+                                @if (e.EvidenceId is { } shotId)
+                                {
+                                    @* U-40: attached screenshot — click the thumbnail to preview it in a lightbox. *@
+                                    <button type="button" class="tl-shot d-inline-block mt-1 btn p-0 border-0 bg-transparent" @onclick="() => OpenShot(shotId)" title="Preview the attached screenshot">
+                                        <img src="evidence/@shotId/inline" alt="attached screenshot" loading="lazy"
+                                             style="max-height:120px;max-width:100%;border-radius:.375rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
+                                    </button>
+                                }
+                                <div class="tl-meta">
+                                    @if (EntityById(e.ActorEntityId) is { } actor || EntityById(e.TargetEntityId) is not null)
+                                    {
+                                        <span class="tl-attrib">
+                                            @if (EntityById(e.ActorEntityId) is { } a)
+                                            {
+                                                <span class="tl-ent">@Ui.EntityGlyph(a.Type) @EntityShort(a)</span>
+                                            }
+                                            <span class="tl-arrow">&rarr;</span>
+                                            @if (EntityById(e.TargetEntityId) is { } tgt)
+                                            {
+                                                <span class="tl-ent">@Ui.EntityGlyph(tgt.Type) @EntityShort(tgt)</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">(unspecified)</span>
+                                            }
+                                        </span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(e.Source))
+                                    {
+                                        <span class="tl-source"><span class="bi bi-tag" aria-hidden="true"></span> @e.Source</span>
+                                    }
+                                    <span>logged by @Users.DisplayFor(e.CreatedBy)</span>
+                                    @if (e.ModifiedAtUtc is { } mod)
+                                    {
+                                        <span class="text-muted" title="@TimeDisp.Long(mod)">· edited by @Users.DisplayFor(e.ModifiedBy)</span>
+                                    }
+                                    @if (_canEdit)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => StartEventEdit(e)">
+                                            <span class="bi bi-pencil" aria-hidden="true"></span> Edit
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        </li>
+                    }
+                    else
+                    {
+                        <li class="tl-item tl-kind-inv im-enter @FlashClass(e.Id)" style="@FlashStyle(e.Id)" id="tl-@e.Id" @key="e.Id">
+                            <span class="tl-dot" style="--tl-color:@Ui.TimelineColor(e.Type)" aria-hidden="true">
+                                <span class="bi @Ui.TimelineGlyph(e.Type)"></span>
+                            </span>
+                            <div class="tl-body">
+                                <div class="tl-head">
+                                    <span class="tl-kind-label"><span class="bi bi-search" aria-hidden="true"></span> Investigation</span>
+                                    <span class="tactic-chip" style="--tac:@Ui.TimelineColor(e.Type)">
+                                        <span class="bi @Ui.TimelineGlyph(e.Type)" aria-hidden="true"></span> @e.Type
+                                    </span>
+                                    @if (e.Version > 1)
+                                    {
+                                        <span class="im-badge im-b-neutral">v@(e.Version)</span>
+                                    }
+                                    <time class="tl-time" title="@TimeDisp.Long(e.OccurredAtUtc)"><span class="tl-time-abs">@TimeDisp.Short(e.OccurredAtUtc)</span><span class="tl-time-rel">@Ui.RelativeTime(e.OccurredAtUtc, Clock.UtcNow)</span></time>
+                                </div>
+                                <div class="tl-desc md-body">@((MarkupString)Md.ToHtml(e.Description))</div>
+                                @if (e.EvidenceId is { } shotId)
+                                {
+                                    @* U-40: attached screenshot — click the thumbnail to preview it in a lightbox. *@
+                                    <button type="button" class="tl-shot d-inline-block mt-1 btn p-0 border-0 bg-transparent" @onclick="() => OpenShot(shotId)" title="Preview the attached screenshot">
+                                        <img src="evidence/@shotId/inline" alt="attached screenshot" loading="lazy"
+                                             style="max-height:120px;max-width:100%;border-radius:.375rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
+                                    </button>
+                                }
+                                <div class="tl-meta">
+                                    @if (!string.IsNullOrWhiteSpace(e.Source))
+                                    {
+                                        <span class="tl-source"><span class="bi bi-tag" aria-hidden="true"></span> @e.Source</span>
+                                    }
+                                    <span>logged by @Users.DisplayFor(e.CreatedBy)</span>
+                                    @{ var history = InvestigationHistory(e); }
+                                    @if (history.Count > 0)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => ToggleHistory(e.Id)">
+                                            <span class="bi bi-clock-history" aria-hidden="true"></span>
+                                            @(_tlHistoryOpen.Contains(e.Id) ? "Hide" : "Show") @history.Count earlier version@(history.Count == 1 ? "" : "s")
+                                        </button>
+                                    }
+                                    @if (_canEdit)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => StartInvestigationEdit(e)">
+                                            <span class="bi bi-pencil" aria-hidden="true"></span> Edit
+                                        </button>
+                                    }
+                                </div>
+                                @if (_tlHistoryOpen.Contains(e.Id))
+                                {
+                                    <div class="tl-history mt-2">
+                                        @foreach (var prior in InvestigationHistory(e))
+                                        {
+                                            <div class="tl-history-item">
+                                                <div class="small text-muted">
+                                                    <span class="im-badge im-b-neutral">v@(prior.Version)</span>
+                                                    @Users.DisplayFor(prior.CreatedBy) · @TimeDisp.Long(prior.CreatedAtUtc)
+                                                </div>
+                                                <div class="md-body">@((MarkupString)Md.ToHtml(prior.Description))</div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </li>
+                    }
+                }
+            </ol>
+        }
+        @* U-32: a floating "jump to what just arrived" pill when a collaborator adds timeline entries. *@
+        @if (_newTimelineIds.Count > 0)
+        {
+            <button type="button" class="tl-newpill" @onclick="JumpToNewTimeline">
+                <span class="bi bi-arrow-down-circle" aria-hidden="true"></span>
+                @_newTimelineIds.Count new @(_newTimelineIds.Count == 1 ? "entry" : "entries")
+            </button>
+        }
+        </div>
+    }
+    else if (_activeTab == "Entities")
+    {
+        <p class="text-muted small">
+            Artifacts and indicators of compromise (IOCs) tied to this case &mdash; accounts, hosts, IPs,
+            domains, URLs, file hashes &mdash; and the relationships between them.
+        </p>
+
+        <AuthorizeView Policy="@Policies.EditCases">
+            <div class="card mb-3 @(_enEditId is not null ? "border-primary" : "")">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>@(_enEditId is null ? "Add entity / IOC" : "Edit entity / IOC")</span>
+                    @if (_enEditId is not null)
+                    {
+                        <span class="small text-muted"><span class="bi bi-pencil-square" aria-hidden="true"></span> correcting an existing indicator · change recorded in the audit trail</span>
+                    }
+                </div>
+                <div class="card-body row g-2 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label small mb-0">Type</label>
+                        <select class="form-select form-select-sm" @bind="_enType">
+                            @foreach (var t in Ui.Options<EntityType>("EntityType"))
+                            {
+                                <option value="@t">@Ui.Label(t)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-0">Value</label>
+                        <input class="form-control form-control-sm" @bind="_enValue" @bind:event="oninput" placeholder="e.g. 203.0.113.66" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-0">Label</label>
+                        <input class="form-control form-control-sm" @bind="_enLabel" placeholder="optional" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-0">Disposition</label>
+                        <select class="form-select form-select-sm" @bind="_enDisposition">
+                            @foreach (var d in Ui.Options<EntityDisposition>("EntityDisposition"))
+                            {
+                                <option value="@d">@Ui.Label(d)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-0">Source</label>
+                        <input class="form-control form-control-sm" @bind="_enSource" placeholder="@($"{DetectionLabel}…")" />
+                    </div>
+                    @if (_enEditId is null)
+                    {
+                        <div class="col-md-1">
+                            <button class="btn btn-sm btn-primary w-100" @onclick="AddEntity" disabled="@string.IsNullOrWhiteSpace(_enValue)">Add</button>
+                        </div>
+                    }
+                    <div class="col-12">
+                        <input class="form-control form-control-sm" @bind="_enDescription" placeholder="Description / context (optional)" />
+                    </div>
+                    @if (_enEditId is not null)
+                    {
+                        <div class="col-md-6">
+                            <label class="form-label small mb-0">Reason for change <span class="text-muted">(optional)</span></label>
+                            <input class="form-control form-control-sm" @bind="_enReason" placeholder="e.g. re-assessed as benign after review" />
+                        </div>
+                        <div class="col-md-6 d-flex justify-content-end align-items-end gap-2">
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEntityEdit">Cancel</button>
+                            <button class="btn btn-sm btn-primary" @onclick="SaveEntityEdit" disabled="@string.IsNullOrWhiteSpace(_enValue)">
+                                <span class="bi bi-check-lg" aria-hidden="true"></span> Save changes
+                            </button>
+                        </div>
+                    }
+                    @if (_entityError is not null) { <div class="col-12"><div class="text-danger small">@_entityError</div></div> }
+                </div>
+            </div>
+        </AuthorizeView>
+
+        @if (_case.Entities.Count == 0)
+        {
+            <p class="text-muted">No entities added yet.</p>
+        }
+        else
+        {
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Relationship graph</span>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn @(_showAttackEdges ? "btn-primary" : "btn-outline-secondary")" @onclick="ToggleAttackEdges"
+                                title="Overlay event steps (actor → target) as dashed, tactic-coloured attack edges">Attack steps</button>
+                        <button class="btn btn-outline-secondary" @onclick="GraphFit" title="Fit graph to view">Fit</button>
+                        <button class="btn btn-outline-secondary" @onclick="GraphTogglePhysics">
+                            @(_physicsOn ? "Freeze" : "Physics")
+                        </button>
+                        <button class="btn btn-outline-secondary" @onclick="GraphRelayout" title="Re-run the force layout">Re-layout</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="@GraphContainerId" style="height:460px;border:1px solid var(--bs-border-color);border-radius:.375rem;background:var(--bs-body-bg);"></div>
+                    <div class="d-flex flex-wrap gap-3 mt-2 small text-muted align-items-center">
+                        <span>Disposition:</span>
+                        <span><span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:#dc3545;"></span> @Ui.Label(EntityDisposition.Malicious)</span>
+                        <span><span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:#fd7e14;"></span> @Ui.Label(EntityDisposition.Suspicious)</span>
+                        <span><span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:#198754;"></span> @Ui.Label(EntityDisposition.Benign)</span>
+                        <span><span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:#6c757d;"></span> @Ui.Label(EntityDisposition.Unknown)</span>
+                        <span class="ms-auto fst-italic">Drag nodes to arrange · scroll to zoom · drag background to pan</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Entities (@_case.Entities.Count)</span>
+                    <span class="seg" role="radiogroup" aria-label="Indicator display"
+                          title="Defanged renders network/URL indicators as hxxp://evil[.]com so they're safe to copy out of the tool.">
+                        <button type="button" class="seg-opt @(!_defangView ? "on" : "")"
+                                role="radio" aria-checked="@(!_defangView)"
+                                @onclick="() => _defangView = false">Live</button>
+                        <button type="button" class="seg-opt @(_defangView ? "on" : "")"
+                                role="radio" aria-checked="@_defangView"
+                                @onclick="() => _defangView = true">Defanged</button>
+                    </span>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead><tr><th>Type</th><th>Value</th><th>Label</th><th>Disposition</th><th>Source</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var e in _case.Entities.OrderBy(x => x.Type).ThenBy(x => x.Value))
+                            {
+                                <tr class="im-enter @FlashClass(e.Id)" style="@FlashStyle(e.Id)" @key="e.Id">
+                                    <td class="text-nowrap">@Ui.EntityGlyph(e.Type) @Ui.Label(e.Type)</td>
+                                    <td><code class="small">@DisplayValue(e)</code>
+                                        @if (!string.IsNullOrWhiteSpace(e.Description)) { <br /><small class="text-muted">@e.Description</small> }
+                                        @if (_overlaps.TryGetValue(e.Id, out var alsoIn) && alsoIn.Count > 0)
+                                        {
+                                            <br />
+                                            <small><span class="im-badge im-b-info">also in</span>
+                                                @foreach (var o in alsoIn)
+                                                {
+                                                    <a class="ms-1" href="cases/@o.OtherCaseId"><code class="small">@o.OtherCaseNumber</code></a>
+                                                }
+                                            </small>
+                                        }
+                                    </td>
+                                    <td class="small">@(e.Label ?? "—")</td>
+                                    <td><span class="@Ui.DispositionBadge(e.Disposition)">@Ui.Label(e.Disposition)</span></td>
+                                    <td class="small text-muted">@(e.Source ?? "—")</td>
+                                    <td class="text-nowrap">
+                                        @{ var vtUrl = VirusTotalUrl(e); }
+                                        @if (vtUrl is not null)
+                                        {
+                                            <a class="btn btn-sm btn-outline-secondary py-0 me-1" href="@vtUrl" target="_blank" rel="noopener noreferrer">VirusTotal</a>
+                                        }
+                                        <AuthorizeView Policy="@Policies.EditCases" Context="rm">
+                                            <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEntityEdit(e)">Edit</button>
+                                            <button class="btn btn-sm btn-outline-danger" @onclick='() => AskConfirm($"Remove entity {e.Value}? Its relationships are removed too.", () => RemoveEntity(e.Id))'>Remove</button>
+                                        </AuthorizeView>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <AuthorizeView Policy="@Policies.EditCases">
+                @if (_case.Entities.Count >= 2)
+                {
+                    <div class="card mb-3">
+                        <div class="card-header">Add relationship</div>
+                        <div class="card-body row g-2 align-items-end">
+                            <div class="col-md-4">
+                                <label class="form-label small mb-0">Source</label>
+                                <select class="form-select form-select-sm" @bind="_relSource">
+                                    <option value="">— select —</option>
+                                    @foreach (var e in _case.Entities.OrderBy(x => x.Type))
+                                    {
+                                        <option value="@e.Id">@Ui.Label(e.Type): @(e.Label ?? e.Value)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small mb-0">Relationship</label>
+                                <select class="form-select form-select-sm" @bind="_relType">
+                                    @foreach (var t in Ui.Options<EntityRelationshipType>("EntityRelationshipType"))
+                                    {
+                                        <option value="@t">@Ui.Label(t)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small mb-0">Target</label>
+                                <select class="form-select form-select-sm" @bind="_relTarget">
+                                    <option value="">— select —</option>
+                                    @foreach (var e in _case.Entities.OrderBy(x => x.Type))
+                                    {
+                                        <option value="@e.Id">@Ui.Label(e.Type): @(e.Label ?? e.Value)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-1">
+                                <button class="btn btn-sm btn-primary w-100" @onclick="AddRelationship"
+                                        disabled="@(string.IsNullOrEmpty(_relSource) || string.IsNullOrEmpty(_relTarget))">Link</button>
+                            </div>
+                            @if (_relError is not null) { <div class="col-12"><div class="text-danger small">@_relError</div></div> }
+                        </div>
+                    </div>
+                }
+            </AuthorizeView>
+
+            @if (_case.EntityRelationships.Count > 0)
+            {
+                <div class="card">
+                    <div class="card-header">Relationships (@_case.EntityRelationships.Count)</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm align-middle mb-0">
+                            <tbody>
+                                @foreach (var r in _case.EntityRelationships.OrderBy(x => x.CreatedAtUtc))
+                                {
+                                    <tr>
+                                        <td>
+                                            <span class="fw-semibold">@EntityName(r.SourceEntityId)</span>
+                                            <span class="text-muted">@Ui.Label(r.Type)</span>
+                                            <span class="fw-semibold">@EntityName(r.TargetEntityId)</span>
+                                            @if (!string.IsNullOrWhiteSpace(r.Description)) { <br /><small class="text-muted">@r.Description</small> }
+                                        </td>
+                                        <td class="text-end">
+                                            <AuthorizeView Policy="@Policies.EditCases" Context="rm">
+                                                <button class="btn btn-sm btn-outline-danger" @onclick='() => AskConfirm("Remove this relationship?", () => RemoveRelationship(r.Id))'>Remove</button>
+                                            </AuthorizeView>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        }
+    }
+    else if (_activeTab == "Evidence")
+    {
+      <div id="evidence-dropzone">
+        <AuthorizeView Policy="@Policies.EditCases">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-5">
+                            <label class="form-label small mb-0">File</label>
+                            <InputFile id="evidence-file-input" class="form-control form-control-sm" OnChange="OnFileSelected" />
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label small mb-0">Description</label>
+                            <input class="form-control form-control-sm" @bind="_evDesc" />
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-sm btn-primary w-100" @onclick="Upload" disabled="@(_file is null)">Upload</button>
+                        </div>
+                    </div>
+                    <div class="small text-muted mt-2">
+                        <span class="bi bi-clipboard me-1"></span>Paste a screenshot, or drag files onto this tab. They're hashed and logged to the chain of custody like any upload.
+                        @if (_file is not null) { <span class="ms-1">Ready: <strong>@_file.Name</strong>. Add a description and click Upload.</span> }
+                    </div>
+                    @if (_uploadError is not null) { <div class="text-danger small mt-2">@_uploadError</div> }
+
+                    @* Hidden sinks the paste-drop shim (wwwroot/js/paste-drop.js) feeds: paste stages one
+                       screenshot in the picker; a drop bulk-uploads immediately. Both reuse InputFile streaming. *@
+                    <InputFile id="evidence-file-drop" class="d-none" multiple OnChange="OnDropped" />
+                </div>
+            </div>
+        </AuthorizeView>
+
+        @if (_case.Evidence.Count == 0)
+        {
+            <p class="text-muted">No evidence attached.</p>
+        }
+        else
+        {
+            <table class="table table-sm align-middle">
+                <thead><tr><th>File</th><th>Size</th><th>SHA-256</th><th>Uploaded</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var ev in _case.Evidence.OrderByDescending(x => x.CreatedAtUtc))
+                    {
+                        <tr class="im-enter @FlashClass(ev.Id)" style="@FlashStyle(ev.Id)" @key="ev.Id">
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    @if (IsImageEvidence(ev))
+                                    {
+                                        @* Click the thumbnail to preview the image in a lightbox (U-40 preview, reused). *@
+                                        <button type="button" class="btn p-0 border-0 bg-transparent" @onclick="() => OpenShot(ev.Id)" title="Preview">
+                                            <img src="evidence/@ev.Id/inline" alt="" loading="lazy"
+                                                 style="max-height:36px;max-width:56px;border-radius:.25rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
+                                        </button>
+                                    }
+                                    <div>@ev.OriginalFileName<br /><small class="text-muted">@ev.Description</small></div>
+                                </div>
+                            </td>
+                            <td>@FormatSize(ev.SizeBytes)</td>
+                            <td><code class="small">@ev.Sha256[..16]…</code></td>
+                            <td class="small text-muted">@TimeDisp.Long(ev.CreatedAtUtc)<br />@Users.DisplayFor(ev.CreatedBy)</td>
+                            <td class="text-nowrap">
+                                @if (IsImageEvidence(ev))
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => OpenShot(ev.Id)">Preview</button>
+                                }
+                                <a class="btn btn-sm btn-outline-primary" href="evidence/@ev.Id" target="_blank">Download</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+      </div>
+    }
+    else if (_activeTab == "Notes")
+    {
+        <AuthorizeView Policy="@Policies.EditCases">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <label class="form-label small mb-1">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links</span></label>
+                    @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add. *@
+                    <textarea id="@NoteAddEditorId" class="form-control mb-2"></textarea>
+                    <button class="btn btn-sm btn-primary" @onclick="AddNote">Add note</button>
+                </div>
+            </div>
+        </AuthorizeView>
+
+        @if (_case.Notes.Count == 0)
+        {
+            <p class="text-muted">No notes yet.</p>
+        }
+        else
+        {
+            @foreach (var n in _case.Notes.Where(x => x.IsCurrent).OrderByDescending(x => x.CreatedAtUtc))
+            {
+                <div class="card mb-2 im-enter @FlashClass(n.Id)" style="@FlashStyle(n.Id)" @key="n.Id">
+                    <div class="card-body py-2">
+                        @if (_editNoteId == n.Id)
+                        {
+                            @* EasyMDE enhances this textarea; keyed by note id so switching notes remounts a fresh editor. *@
+                            <textarea id="@NoteEditEditorId(n.Id)" class="form-control mb-2"></textarea>
+                            <button class="btn btn-sm btn-primary" @onclick="SaveNoteEdit">Save new version</button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelNoteEdit">Cancel</button>
+                        }
+                        else
+                        {
+                            <div class="md-body">@((MarkupString)Md.ToHtml(n.Body))</div>
+                            <small class="text-muted">
+                                @Users.DisplayFor(n.CreatedBy) · @TimeDisp.Long(n.CreatedAtUtc)
+                                @if (n.Version > 1)
+                                {
+                                    <span class="im-badge im-b-neutral ms-1">v@(n.Version)</span>
+                                }
+                            </small>
+                            <AuthorizeView Policy="@Policies.EditCases">
+                                <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => StartNoteEdit(n)">Edit</button>
+                            </AuthorizeView>
+                        }
+                    </div>
+                </div>
+            }
+        }
+    }
+    else if (_activeTab == "Tasks")
+    {
+        <AuthorizeView Policy="@Policies.EditCases">
+            @if (_applyTemplates is { Count: > 0 })
+            {
+                <div class="d-flex justify-content-end mb-2">
+                    @if (!_applyingTemplate)
+                    {
+                        <button class="btn btn-sm btn-outline-primary" @onclick="BeginApplyTemplate">
+                            <span class="bi bi-clipboard-check me-1"></span>Apply playbook
+                        </button>
+                    }
+                </div>
+                @if (_applyingTemplate)
+                {
+                    <div class="card mb-3 border-primary">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><span class="bi bi-clipboard-check me-1"></span>Apply a playbook</span>
+                            <button class="btn-close" aria-label="Cancel" @onclick="CancelApplyTemplate"></button>
+                        </div>
+                        <div class="card-body">
+                            <label class="form-label small mb-0">Playbook</label>
+                            <select class="form-select form-select-sm mb-3" style="max-width:28rem" @onchange="OnApplyTemplateChanged"
+                                    value="@(_applyTemplate?.Id.ToString() ?? "")">
+                                <option value="">— choose a template —</option>
+                                @foreach (var t in _applyTemplates)
+                                {
+                                    <option value="@t.Id">@t.Name@(t.Steps.Count > 0 ? $" ({t.Steps.Count} steps)" : "")</option>
+                                }
+                            </select>
+
+                            @if (_applyTemplate is not null)
+                            {
+                                @if (_applyTemplate.Steps.Count == 0)
+                                {
+                                    <p class="text-muted small">This template has no steps to add.</p>
+                                }
+                                else
+                                {
+                                    <p class="small text-muted mb-2">Uncheck any step you don't need. Owners default to the case owner; due dates are computed from now.</p>
+                                    <div class="border rounded p-2 mb-2">
+                                        @foreach (var s in _applyTemplate.Steps)
+                                        {
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="apply-step-@s.Id"
+                                                       checked="@_applySelected.Contains(s.Id)"
+                                                       @onchange="e => ToggleApplyStep(s.Id, (bool)(e.Value ?? false))" />
+                                                <label class="form-check-label" for="apply-step-@s.Id">
+                                                    @s.Title
+                                                    @if (s.DueOffsetHours is { } h) { <span class="im-badge im-b-warn ms-1">+@FormatOffset(h)</span> }
+                                                    @if (!string.IsNullOrWhiteSpace(s.OwnerHint)) { <span class="im-badge im-b-neutral ms-1">@s.OwnerHint</span> }
+                                                </label>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                        <div class="card-footer d-flex gap-2">
+                            <button class="btn btn-sm btn-primary" @onclick="ApplyTemplate"
+                                    disabled="@(_applyTemplate is null || _applySelected.Count == 0)">
+                                Add @_applySelected.Count action item(s)
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelApplyTemplate">Cancel</button>
+                        </div>
+                    </div>
+                }
+            }
+            <div class="card mb-3">
+                <div class="card-body row g-2 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label small mb-0">Follow-up</label>
+                        <input class="form-control form-control-sm" @bind="_taskTitle" @bind:event="oninput" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-0">Owner</label>
+                        <input class="form-control form-control-sm" @bind="_taskOwner" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-0">Due date</label>
+                        <input type="date" class="form-control form-control-sm" @bind="_taskDueDate" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-0">Time (@TimeDisp.Label)</label>
+                        <input type="time" class="form-control form-control-sm" @bind="_taskDueTime"
+                               title="Entered in @TimeDisp.Label. Leave blank for end of day." />
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-sm btn-primary w-100" @onclick="AddTask" disabled="@string.IsNullOrWhiteSpace(_taskTitle)">Add</button>
+                    </div>
+                </div>
+            </div>
+        </AuthorizeView>
+
+        @if (_case.ActionItems.Count == 0)
+        {
+            <p class="text-muted">No after-action items.</p>
+        }
+        else
+        {
+            <table class="table table-sm align-middle">
+                <thead><tr><th>Task</th><th>Owner</th><th>Due</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var t in _case.ActionItems.OrderBy(x => x.Status).ThenBy(x => x.DueAtUtc))
+                    {
+                        <tr class="im-enter @(t.IsOverdue(Clock.UtcNow) ? "table-danger" : "") @FlashClass(t.Id)" style="@FlashStyle(t.Id)" @key="t.Id">
+                            <td>@t.Title</td>
+                            <td>@Users.DisplayFor(t.Owner)</td>
+                            <td>@(t.DueAtUtc is { } due ? TimeDisp.Short(due) : "—")</td>
+                            <td>@t.Status</td>
+                            <td>
+                                <AuthorizeView Policy="@Policies.EditCases">
+                                    @if (t.Status != ActionItemStatus.Done)
+                                    {
+                                        <button class="btn btn-sm btn-outline-success" @onclick="() => MarkTaskDone(t.Id)">Mark done</button>
+                                    }
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+    else if (_activeTab == "Report")
+    {
+        <AuthorizeView Policy="@Policies.EditCases">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-5">
+                            <label class="form-label small mb-0">Report profile <span class="text-muted">(section layout)</span></label>
+                            <select class="form-select form-select-sm" value="@(_selectedProfileId?.ToString() ?? "")"
+                                    @onchange="OnProfileChanged">
+                                <option value="">Global default</option>
+                                @if (_reportProfiles is not null)
+                                {
+                                    @foreach (var p in _reportProfiles)
+                                    {
+                                        <option value="@p.Id">@p.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-7">
+                            @if (_profileDirty)
+                            {
+                                <button class="btn btn-sm btn-outline-primary" @onclick="SaveProfile">
+                                    <span class="bi bi-save me-1"></span>Save profile choice
+                                </button>
+                                <span class="small text-muted ms-1">Applies to newly generated reports.</span>
+                            }
+                            else
+                            {
+                                <span class="small text-muted">Reports use this profile's sections. Manage profiles in Admin → Report profiles.</span>
+                            }
+                        </div>
+                    </div>
+
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="TogglePreview">
+                        <span class="bi bi-eye me-1"></span>@(_showPreview ? "Hide preview" : "Preview")
+                    </button>
+                    <button class="btn btn-sm btn-primary ms-2" @onclick="() => Generate(ReportFormat.Word)">
+                        Generate Word draft
+                    </button>
+                    <button class="btn btn-sm btn-primary" @onclick="() => Generate(ReportFormat.Pdf)">
+                        Generate PDF draft
+                    </button>
+                    <span class="ms-2 small text-muted">Reports are generated as drafts; a PDF becomes the locked final only when approved below.</span>
+                    @if (_reportMsg is not null) { <div class="small text-muted mt-1">@_reportMsg</div> }
+                </div>
+            </div>
+
+            @if (_showPreview)
+            {
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><span class="bi bi-eye me-1"></span>Preview <span class="small text-muted">· what Generate / Approve will produce</span></span>
+                        <button class="btn-close" aria-label="Hide preview" @onclick="TogglePreview"></button>
+                    </div>
+                    <div class="card-body bg-body-tertiary">
+                        <ReportPreview Model="_previewModel" />
+                    </div>
+                </div>
+            }
+        </AuthorizeView>
+
+        @if (_reports is null)
+        {
+            <p><em>Loading&hellip;</em></p>
+        }
+        else if (_reports.Count == 0)
+        {
+            <p class="text-muted">No reports generated yet.</p>
+        }
+        else
+        {
+            <table class="table table-sm align-middle">
+                <thead><tr><th>File</th><th>Format</th><th>Ver</th><th>Status</th><th>SHA-256</th><th>Generated</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var r in _reports)
+                    {
+                        <tr>
+                            <td>@r.FileName</td>
+                            <td>@r.Format</td>
+                            <td>@r.Version</td>
+                            <td>
+                                @if (r.IsFinal)
+                                {
+                                    <span class="im-badge im-b-ok">Final</span>
+                                    <div class="small text-muted">@Users.DisplayFor(r.ApprovedBy) · @TimeDisp.Long(r.ApprovedAtUtc)</div>
+                                }
+                                else
+                                {
+                                    <span class="im-badge im-b-neutral">Draft</span>
+                                }
+                            </td>
+                            <td><code class="small">@r.ContentSha256[..16]…</code></td>
+                            <td class="small text-muted">@TimeDisp.Long(r.CreatedAtUtc)<br />@Users.DisplayFor(r.CreatedBy)</td>
+                            <td>
+                                <a class="btn btn-sm btn-outline-primary" href="reports/@r.Id" target="_blank">Download</a>
+                                @if (!r.IsFinal && r.Format == ReportFormat.Pdf)
+                                {
+                                    <AuthorizeView Policy="@Policies.ApproveReports" Context="ap">
+                                        <button class="btn btn-sm btn-dark" @onclick="() => ApproveReport(r.Id)">Approve &amp; finalize</button>
+                                    </AuthorizeView>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+    else if (_activeTab == "Audit")
+    {
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+            <p class="text-muted mb-0">Tamper-evident audit trail for this case (most recent first).</p>
+            <a class="btn btn-sm btn-outline-secondary" href="@AuditExportHref()">
+                <span class="bi bi-download me-1" aria-hidden="true"></span>Export CSV
+            </a>
+        </div>
+
+        @* E-24: filter the hash-chained trail by actor / action / entity / date range (server-side). *@
+        <div class="row g-2 align-items-end mb-3">
+            <div class="col-6 col-md-3">
+                <label class="form-label small mb-0">Actor</label>
+                <select class="form-select form-select-sm" @bind="_aqActor" @bind:after="ApplyAuditFilter">
+                    <option value="">Any</option>
+                    @foreach (var actor in _auditActors)
+                    {
+                        <option value="@actor">@Users.DisplayFor(actor)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label small mb-0">Action</label>
+                <select class="form-select form-select-sm" @bind="_aqAction" @bind:after="ApplyAuditFilter">
+                    <option value="">Any</option>
+                    @foreach (var act in Enum.GetValues<AuditAction>())
+                    {
+                        <option value="@act">@act</option>
+                    }
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-0">Entity</label>
+                <select class="form-select form-select-sm" @bind="_aqEntity" @bind:after="ApplyAuditFilter">
+                    <option value="">Any</option>
+                    @foreach (var et in _auditEntityTypes)
+                    {
+                        <option value="@et">@et</option>
+                    }
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-0">From (UTC)</label>
+                <input type="date" class="form-control form-control-sm" @bind="_aqFrom" @bind:after="ApplyAuditFilter" />
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-0">To (UTC)</label>
+                <input type="date" class="form-control form-control-sm" @bind="_aqTo" @bind:after="ApplyAuditFilter" />
+            </div>
+        </div>
+
+        @if (_audit is null)
+        {
+            <p><em>Loading&hellip;</em></p>
+        }
+        else
+        {
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="small text-muted">@_audit.Count entr@(_audit.Count == 1 ? "y" : "ies")@(_auditFiltered ? " (filtered)" : "")@(_audit.Count >= AuditPageSize ? $" — showing the most recent {AuditPageSize}" : "")</span>
+                @if (_auditFiltered)
+                {
+                    <button class="btn btn-sm btn-link p-0" @onclick="ClearAuditFilter">Clear filters</button>
+                }
+            </div>
+            @if (_audit.Count == 0)
+            {
+                <p class="text-muted">No audit entries match the current filters.</p>
+            }
+            else
+            {
+                <table class="table table-sm">
+                    <thead><tr><th>#</th><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>Reason</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in _audit)
+                        {
+                            <tr>
+                                <td>@a.Sequence</td>
+                                <td class="small">@a.AtUtc.ToString("u")</td>
+                                <td>@Users.DisplayFor(a.Actor)</td>
+                                <td>@a.Action</td>
+                                <td>@a.EntityType</td>
+                                <td class="small">@(string.IsNullOrWhiteSpace(a.Reason) ? "" : a.Reason)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        }
+
+        <AuthorizeView Policy="@Policies.ViewAllCases">
+            @ViewedByPanel()
+        </AuthorizeView>
+    }
+    </div>@* /.tabbody *@
+
+    @* Action modal — rendered outside the tab blocks so Actions works on every tab, not just Overview. *@
+    @if (_activeModal is not null)
+    {
+        <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,.5)" @onclick="CloseModal">
+            <div class="modal-dialog" @onclick:stopPropagation="true">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">@ModalTitle()</h5>
+                        <button type="button" class="btn-close" aria-label="Close" @onclick="CloseModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        @if (_activeModal == "reclass")
+                        {
+                            @if (_case?.Classification is null)
+                            {
+                                <p class="small text-muted mb-2">This is a <strong>Complex Event</strong> (pre-triage intake). Promoting it assigns its first formal classification on the ladder.</p>
+                            }
+                            <label class="form-label small">@(_case?.Classification is null ? "Promote to" : "New classification")</label>
+                            <select class="form-select mb-2" @bind="_newClass" @bind:after="OnReclassTargetChanged">@foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }</select>
+                            <input class="form-control" placeholder="Reason (required)" @bind="_reclassReason" @bind:event="oninput" />
+                            @RationaleHint(_reclassReason)
+                            @GateModalSection()
+                        }
+                        else if (_activeModal == "severity")
+                        {
+                            <label class="form-label small">New severity</label>
+                            <select class="form-select mb-2" @bind="_newSeverity">@foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@SevLabels.For(s)</option> }</select>
+                            <input class="form-control" placeholder="Reason (optional)" @bind="_severityReason" />
+                        }
+                        else if (_activeModal == "status")
+                        {
+                            <label class="form-label small">New status</label>
+                            <select class="form-select mb-2" @bind="_newPhase" @bind:after="OnStatusTargetChanged">@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
+                            <input class="form-control" placeholder="@(_gateEval is { RequiresCommentary: true } ? "Reason (required)" : "Reason (optional)")" @bind="_phaseReason" @bind:event="oninput" />
+                            @RationaleHint(_phaseReason)
+                            @GateModalSection()
+                        }
+                        else if (_activeModal == "legal")
+                        {
+                            <input class="form-control mb-2" placeholder="Legal contact" @bind="_legalContact" />
+                            <input class="form-control" placeholder="Regulatory-relevance note (e.g. NY NPI)" @bind="_legalNote" />
+                        }
+                        else if (_activeModal == "archive")
+                        {
+                            <p class="mb-0">Archive <code>@_case.CaseNumber</code>? It will be hidden from active queues; you can restore it later.</p>
+                        }
+                        else if (_activeModal == "assign")
+                        {
+                            @if (AssignableUsers() is { Count: 0 })
+                            {
+                                <p class="text-muted small mb-0">Everyone in the directory is already assigned to this case.</p>
+                            }
+                            else
+                            {
+                                <label class="form-label small">Person</label>
+                                <select class="form-select mb-2" @bind="_assignUserId">
+                                    <option value="">Select a user…</option>
+                                    @foreach (var u in AssignableUsers())
+                                    {
+                                        <option value="@u.UserId">@u.DisplayName@(string.IsNullOrWhiteSpace(u.RolesCsv) ? "" : $" · {u.RolesCsv}")</option>
+                                    }
+                                </select>
+                                <label class="form-label small">Role on this case</label>
+                                <select class="form-select" @bind="_assignRole">
+                                    @foreach (var r in Enum.GetValues<CaseAssignmentRole>())
+                                    {
+                                        <option value="@r">@r</option>
+                                    }
+                                </select>
+                            }
+                        }
+                        @if (_modalError is not null) { <p class="text-danger small mt-2 mb-0">@_modalError</p> }
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-outline-secondary" @onclick="CloseModal">Cancel</button>
+                        <button class="@(_activeModal == "archive" ? "btn btn-danger" : "btn btn-primary")" @onclick="ApplyModal" disabled="@ModalPrimaryDisabled()">@ModalPrimaryLabel()</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* Visual ATT&CK matrix — tag/untag techniques with the tactic chosen by which column you pick. *@
+    @if (_techMatrixOpen)
+    {
+        <AttackMatrixPicker Current="CurrentTechniqueMap()" OnApply="ApplyTechMatrix" OnCancel="CancelTechMatrix" />
+    }
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    // One response-SLA vital for the Overview vitals strip (E-16): containment or resolution, with
+    // badge + timing. The .im-vital cell supplies the tile background, so no inner wrapper here.
+    private RenderFragment SlaVital(SlaStatus st) =>
+        @<div class="im-vital">
+            <div class="small text-muted">@(st.Clock is { } c ? Ui.SlaClockLabel(c) : "SLA")</div>
+            @if (st.State == SlaState.NoTarget)
+            {
+                <div class="fw-semibold text-muted">No target</div>
+            }
+            else
+            {
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="@Ui.SlaBadge(st.State)"><span class="bi @Ui.SlaGlyph(st.State)" aria-hidden="true"></span> @Ui.SlaLabel(st.State)</span>
+                    @if (Ui.SlaTiming(st) is { Length: > 0 } t) { <span class="small fw-semibold">@t</span> }
+                </div>
+                <div class="small text-muted mt-1">
+                    Target @st.TargetHours h@(st.IsActive && st.DueAtUtc is { } due ? $" · due {TimeDisp.Short(due)}" : "")
+                </div>
+            }
+        </div>;
+
+    // C-05: "Viewed by" — coalesced read-sessions for this case, shown only to leads/admins (surveillance data).
+    private RenderFragment ViewedByPanel() =>
+        @<div class="mt-4">
+            <h2 class="h6 d-flex align-items-center gap-2">
+                <span class="bi bi-eye" aria-hidden="true"></span> Viewed by
+                <span class="im-badge im-b-neutral rounded-pill">@(_viewedBy?.Count ?? 0)</span>
+            </h2>
+            <p class="small text-muted mb-2">
+                Who has opened this case, coalesced into view-sessions. Access logging is out of the
+                tamper-evident chain; scope is set in Administration → Settings → Access logging.
+            </p>
+            @if (_viewedBy is null)
+            {
+                <p class="small text-muted"><em>Loading&hellip;</em></p>
+            }
+            else if (_viewedBy.Count == 0)
+            {
+                <p class="small text-muted">No recorded opens yet (or access logging is off).</p>
+            }
+            else
+            {
+                <table class="table table-sm align-middle">
+                    <thead><tr><th>Viewer</th><th class="text-end">Opens</th><th>First seen</th><th>Last seen</th></tr></thead>
+                    <tbody>
+                        @foreach (var v in _viewedBy)
+                        {
+                            <tr>
+                                <td>@Users.DisplayFor(v.ActorUserId)@if (v.WasRestricted) { <span class="im-badge im-b-warn ms-2">restricted</span> }</td>
+                                <td class="text-end">@v.Count</td>
+                                <td class="small">@TimeDisp.Short(v.FirstSeenUtc)</td>
+                                <td class="small">@TimeDisp.Short(v.LastSeenUtc)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>;
+
+    /// <summary>Deep-link a specific tab, e.g. <c>?tab=Report</c>, so a link can point straight at it.</summary>
+    [SupplyParameterFromQuery(Name = "tab")] public string? QTab { get; set; }
+
+    private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Tasks", "Report", "Audit"];
+    private string _activeTab = "Overview";
+
+    private Case? _case;
+    private bool _notFound;
+
+    // Case-number rename (inline in the header)
+    private bool _renumbering;
+    private bool _savingNumber;
+    private string _editNumber = "";
+    private string? _renumberError;
+
+    // Overview actions
+    private bool _editingDetails;
+    private string _edTitle = "";
+    private string? _edSummary;
+    private string? _edDetection;
+    private string? _edDataTypes;
+    private string? _edImpacted;
+    private DateTime? _edDetected;   // wall-clock in the viewer's active display zone (U-29), like the task due-date (F-20)
+    private DateTime? _edOccurred;
+    private string? _detailsError;
+    private Classification _newClass = Classification.Incident;
+    private string _reclassReason = "";
+    private CasePhase _newPhase = CasePhase.Triage;
+    private string? _phaseReason;
+    private Severity _newSeverity = Severity.Medium;
+    private string? _severityReason;
+    private string _assignUserId = "";
+    private CaseAssignmentRole _assignRole = CaseAssignmentRole.Analyst;
+    private bool _techMatrixOpen;
+
+    private void OpenTechMatrix() => _techMatrixOpen = true;
+    private void CancelTechMatrix() => _techMatrixOpen = false;
+
+    // The case's current technique tags as id → tactic, seeding the matrix's selection state.
+    private IReadOnlyDictionary<string, MitreTactic> CurrentTechniqueMap() =>
+        _case is null
+            ? new Dictionary<string, MitreTactic>(StringComparer.OrdinalIgnoreCase)
+            : _case.Techniques.ToDictionary(t => t.TechniqueId, t => t.Tactic, StringComparer.OrdinalIgnoreCase);
+
+    // Sync the case's techniques to the matrix's chosen set: remove dropped tags, add new ones, and
+    // re-tag any whose tactic (column) changed. AddTechniqueAsync upserts, so a tactic change is a re-add.
+    private async Task ApplyTechMatrix(IReadOnlyDictionary<string, MitreTactic> desired)
+    {
+        _techMatrixOpen = false;
+        if (_case is null) return;
+        var current = _case.Techniques.ToList();
+
+        foreach (var t in current.Where(t => !desired.ContainsKey(t.TechniqueId)))
+            await Cases.RemoveTechniqueAsync(Id, t.Id);
+
+        foreach (var kv in desired)
+        {
+            var existing = current.FirstOrDefault(t => string.Equals(t.TechniqueId, kv.Key, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+                await Cases.AddTechniqueAsync(Id, kv.Key, AttackCatalog.Find(kv.Key)?.Name ?? "", kv.Value);
+            else if (existing.Tactic != kv.Value)
+                await Cases.AddTechniqueAsync(Id, kv.Key, existing.Name, kv.Value);
+        }
+
+        await Reload();
+        Toasts.Success("Techniques updated");
+    }
+    private string? _legalContact;
+    private string? _legalNote;
+
+    // Timeline
+    private TimelineKind? _tlLens = null;                  // null = All (interleaved); else focus one timeline (U-36)
+    private TimelineKind _tlAddKind = TimelineKind.Event;  // which timeline the composer adds/edits
+    private TimelineEntryType _tlType = TimelineEntryType.Analysis;
+    private DateTime _tlWhen = DateTime.UtcNow;
+    private string _tlDesc = "";
+    private string? _tlSource;
+
+    // U-40: a screenshot pasted into the composer, staged in memory (bytes read once for both the preview
+    // and the eventual upload) and attached as evidence when the entry is added.
+    private byte[]? _tlShotBytes;
+    private string? _tlShotName;
+    private string _tlShotType = "image/png";
+
+    // U-40: the attached screenshot currently open in the lightbox preview (null = closed).
+    private Guid? _previewShotId;
+
+    private TimelineEntryType? _tlFilterType;
+    private MitreTactic? _tlFilterTactic;
+    private string _tlFilterSource = "";
+    private bool _tlOldestFirst;   // default newest-first (most recent activity at top)
+    private bool _showKillChain = true;
+    // EasyMDE editors are id-keyed; a single set-based reconcile mounts/tears them down (U-35).
+    private string InvEditorId => $"inv-md-{Id}";
+    private string SummaryEditorId => $"sum-md-{Id}";
+    private string NoteAddEditorId => $"note-md-{Id}";
+    private static string NoteEditEditorId(Guid noteId) => $"noteedit-md-{noteId}";
+    private readonly HashSet<string> _mdEditors = new();  // element ids of currently-mounted EasyMDE instances
+
+    // Event-step (attack narrative) add-form state
+    private string _evtActorId = "";
+    private string _evtTargetId = "";
+    private string _evtTechnique = "";
+    private MitreTactic _evtTactic = MitreTactic.Unspecified;
+
+    // The step model stores a set of tactics; the composer chooses one (via AttackStepPicker).
+    private IReadOnlySet<MitreTactic> EvtTacticSet() =>
+        _evtTactic == MitreTactic.Unspecified ? new HashSet<MitreTactic>() : new HashSet<MitreTactic> { _evtTactic };
+
+    // Timeline editing: the composer form doubles as an editor when an entry is selected.
+    private Guid? _tlEditId;                              // entry currently being edited (Event or Investigation)
+    private string? _tlReason;                            // optional analyst reason-for-change → audit trail
+    private readonly HashSet<Guid> _tlHistoryOpen = new(); // Investigation entries with prior versions expanded
+
+    private string _tlFilterTypeStr
+    {
+        get => _tlFilterType?.ToString() ?? "";
+        set => _tlFilterType = Enum.TryParse<TimelineEntryType>(value, out var t) ? t : null;
+    }
+
+    private string _tlFilterTacticStr
+    {
+        get => _tlFilterTactic?.ToString() ?? "";
+        set => _tlFilterTactic = Enum.TryParse<MitreTactic>(value, out var t) ? t : null;
+    }
+
+    // Entities & relationships
+    private EntityType _enType = EntityType.IpAddress;
+    private string _enValue = "";
+    private string? _enLabel;
+    private EntityDisposition _enDisposition = EntityDisposition.Suspicious;
+    private string? _enSource;
+    private string? _enDescription;
+    private string? _entityError;
+    private Guid? _enEditId;      // entity being corrected in place (null = add mode)
+    private string? _enReason;    // optional reason-for-change → audit trail
+    private string? _relSource;
+    private EntityRelationshipType _relType = EntityRelationshipType.CommunicatedWith;
+    private string? _relTarget;
+    private string? _relError;
+
+    // Interactive graph (vis-network via JS interop)
+    private string GraphContainerId => $"entity-graph-{Id}";
+    private bool _physicsOn = true;
+    private bool _showAttackEdges = true;   // overlay event steps as attack edges on the entity graph
+    private bool _graphNeedsPush;
+    private string? _lastGraphSig;
+    private bool _canEdit;
+    private DotNetObjectReference<CaseWorkspace>? _dotNetRef;
+
+    // Notes / tasks
+    private string _noteBody = "";
+    private Guid? _editNoteId;
+    private string _editNoteBody = "";
+    private string? _retentionMsg;
+
+    // Workspace chrome: actions menu, action modals, collapsible history, and per-action permissions.
+    private bool _actionsOpen;
+    private string? _activeModal;
+    private string? _modalError;
+    private bool _showHistory;
+    private bool _showReadiness = true;
+    private bool _canReclassify;
+    private bool _canManageLegal;
+    private bool _canAdmin;
+    private bool _canAnyAction => _canEdit || _canReclassify || _canManageLegal || _canAdmin;
+    private IDisposable? _caseSub;
+    private (string Message, Func<Task> OnConfirm)? _confirm;
+    private Dictionary<Guid, IReadOnlyList<EntityOverlap>> _overlaps = new();
+
+    // Related cases (E-14)
+    private IReadOnlyList<CaseLinkView> _links = Array.Empty<CaseLinkView>();
+    private bool _addingLink;
+    private CaseLinkType _linkType = CaseLinkType.RelatedTo;
+    private string _linkQuery = "";
+    private IReadOnlyList<LinkableCase> _linkResults = Array.Empty<LinkableCase>();
+    private Guid? _linkTargetId;
+    private string? _linkTargetLabel;
+    private string? _linkDesc;
+    private string _taskTitle = "";
+    private string? _taskOwner;
+    private DateTime? _taskDueDate;
+    private TimeOnly? _taskDueTime;
+
+    // Evidence
+    private IBrowserFile? _file;
+    private string? _evDesc;
+    private string? _uploadError;
+
+    // Audit
+    private List<AuditLogEntry>? _audit;
+    private bool _canViewAll;
+    private IReadOnlyList<CaseAccessEvent>? _viewedBy; // C-05: coalesced read-sessions for this case (leads only)
+    private const int AuditPageSize = 500;
+    private List<string> _auditActors = new();
+    private List<string> _auditEntityTypes = new();
+    private bool _auditFacetsLoaded;
+    private string _aqActor = "";
+    private string _aqAction = "";
+    private string _aqEntity = "";
+    private DateTime? _aqFrom;
+    private DateTime? _aqTo;
+    private bool _auditFiltered => !BuildAuditFilter().IsEmpty;
+
+    // Reports
+    private List<Report>? _reports;
+    private string? _reportMsg;
+
+    // E-28 / U-37: per-case report profile picker + in-app preview.
+    private List<IncidentManager.Application.Admin.ReportProfileView>? _reportProfiles;
+    private Guid? _selectedProfileId;   // dropdown selection (may differ from the persisted case value)
+    private bool _profileDirty;         // selection changed but not yet saved to the case
+    private bool _showPreview;
+    private IncidentManager.Application.Reporting.CaseReportModel? _previewModel;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _dotNetRef = DotNetObjectReference.Create(this);
+        _myId = CurrentUser.UserId;
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _canEdit = (await AuthZ.AuthorizeAsync(user, Policies.EditCases)).Succeeded;
+        _canReclassify = (await AuthZ.AuthorizeAsync(user, Policies.ChangeClassification)).Succeeded;
+        _canManageLegal = (await AuthZ.AuthorizeAsync(user, Policies.ManageLegal)).Succeeded;
+        _canAdmin = (await AuthZ.AuthorizeAsync(user, Policies.Administer)).Succeeded;
+        _canViewAll = (await AuthZ.AuthorizeAsync(user, Policies.ViewAllCases)).Succeeded;
+
+        // Live collaboration: refresh when another analyst changes this case.
+        _caseSub = Notifier.Subscribe(Id, OnCaseChangedAsync);
+
+        // U-32: a 30s heartbeat re-renders so relative times ("2m ago") stay live without a reload.
+        _relativeTimeTicker = new System.Threading.Timer(
+            _ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private async Task OnCaseChangedAsync(string actorId)
+    {
+        await InvokeAsync(async () =>
+        {
+            var wasEditing = _editingDetails;
+            var prevKnown = _knownIds; // U-30: snapshot before Reload re-seeds, so we can diff what appeared
+            await Reload();
+            await SetTab(_activeTab); // refresh the visible tab's data (overlaps, graph, audit, reports)
+            _editingDetails = wasEditing; // don't yank an in-progress edit out from under the user
+            FlagNewItems(prevKnown, actorId); // U-30: flash / pulse / toast a collaborator's additions
+            StateHasChanged();
+        });
+    }
+
+    // --- U-30: live-collaboration motion --------------------------------------------------------
+    // When another analyst adds something to this case, the diff of item ids (before/after reload)
+    // tells us exactly what appeared. Each new item flashes in the adder's presence colour; if it
+    // landed on a tab you aren't viewing, that tab pulses; and a toast names who added what. A
+    // viewer's own additions don't echo, because Reload() re-seeds _knownIds before the notice lands.
+    private readonly Dictionary<Guid, (int Hue, string Tab)> _flash = new(); // item id -> flash state
+    private readonly Dictionary<string, int> _newOnTab = new();              // tab -> unseen new count
+    private readonly HashSet<Guid> _newTimelineIds = new();                  // U-32: unseen new timeline entries
+    private HashSet<Guid> _knownIds = new();
+    private string? _myId;
+
+    private string FlashClass(Guid id) => _flash.ContainsKey(id) ? "im-flash" : "";
+    private string? FlashStyle(Guid id) => _flash.TryGetValue(id, out var f) ? $"--flash-hue:{f.Hue}" : null;
+    private bool TabHasNew(string tab) => tab != _activeTab && _newOnTab.GetValueOrDefault(tab) > 0;
+
+    private readonly record struct FeedItem(Guid Id, string Tab, string Kind);
+
+    private IEnumerable<FeedItem> CurrentItems()
+    {
+        if (_case is null) yield break;
+        foreach (var x in _case.TimelineEntries.Where(t => t.IsCurrent)) yield return new FeedItem(x.Id, "Timeline", "timeline entry");
+        foreach (var x in _case.Entities) yield return new FeedItem(x.Id, "Entities", "entity");
+        foreach (var x in _case.Evidence) yield return new FeedItem(x.Id, "Evidence", "evidence item");
+        foreach (var x in _case.Notes.Where(n => n.IsCurrent)) yield return new FeedItem(x.Id, "Notes", "note");
+        foreach (var x in _case.ActionItems) yield return new FeedItem(x.Id, "Tasks", "task");
+    }
+
+    private void SeedKnownIds() => _knownIds = CurrentItems().Select(i => i.Id).ToHashSet();
+
+    private void FlagNewItems(HashSet<Guid> prevKnown, string actorId)
+    {
+        if (prevKnown.Count == 0) return; // first population — nothing to diff against yet
+        var added = CurrentItems().Where(i => !prevKnown.Contains(i.Id)).ToList();
+        if (added.Count == 0) return; // e.g. a status change, or the viewer's own edit already absorbed
+
+        var hue = Ui.AvatarHue(actorId);
+        foreach (var it in added)
+        {
+            _flash[it.Id] = (hue, it.Tab);
+            if (!string.Equals(it.Tab, _activeTab, StringComparison.OrdinalIgnoreCase))
+                _newOnTab[it.Tab] = _newOnTab.GetValueOrDefault(it.Tab) + 1;
+            if (it.Tab == "Timeline") _newTimelineIds.Add(it.Id); // U-32: feeds the "jump to new" pill
+        }
+
+        // Attribution toast — never announce your own change back to you.
+        if (!string.Equals(actorId, _myId, StringComparison.OrdinalIgnoreCase))
+            Toasts.Info($"{Users.DisplayFor(actorId)} {ActivityToast.Compose(added.Select(i => i.Kind))}");
+
+        // Items already visible on the active tab have been seen — start their fade now.
+        var visible = added.Where(i => string.Equals(i.Tab, _activeTab, StringComparison.OrdinalIgnoreCase))
+                           .Select(i => i.Id).ToList();
+        if (visible.Count > 0) _ = ClearFlashesAfter(visible);
+    }
+
+    private async Task ClearFlashesAfter(List<Guid> ids)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(4)); // outlasts the ~3.6s flash animation, then clears the class
+        await InvokeAsync(() =>
+        {
+            var changed = false;
+            foreach (var id in ids) changed |= _flash.Remove(id);
+            if (changed) StateHasChanged();
+        });
+    }
+
+    // --- U-32: "jump to what just arrived" on the timeline, and a heartbeat that keeps relative
+    // times ("2m ago") advancing on their own without a reload. ---
+    private async Task JumpToNewTimeline()
+    {
+        var target = _newTimelineIds.FirstOrDefault();
+        _newTimelineIds.Clear();
+        if (target != Guid.Empty)
+        {
+            try { await JS.InvokeVoidAsync("imMotion.scrollToId", $"tl-{target}"); }
+            catch { /* circuit/JS not ready — the pill still cleared */ }
+        }
+    }
+
+    private System.Threading.Timer? _relativeTimeTicker;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Reload();
+        // Honor an explicit ?tab=, otherwise refresh whatever tab is already active. The Id can change
+        // under a reused component (e.g. following an "also in" cross-case link) while the active tab
+        // stays the same, so always reload the active tab's data rather than only on a tab-name change.
+        var tab = _tabs.FirstOrDefault(t => string.Equals(t, QTab, StringComparison.OrdinalIgnoreCase)) ?? _activeTab;
+        await SetTab(tab);
+        // U-30: a fresh case view starts with a clean slate — nothing is "new" until a collaborator acts.
+        _flash.Clear();
+        _newOnTab.Clear();
+        _newTimelineIds.Clear();
+    }
+
+    private async Task Reload()
+    {
+        _case = await Cases.GetDetailAsync(Id);
+        _notFound = _case is null;
+        // C-05: record the authorized case-detail open (best-effort; coalesced into a view-session).
+        if (_case is not null)
+        {
+            await AccessLog.RecordCaseOpenAsync(_case.Id, _case.CaseNumber, _case.IsRestricted);
+            // X-03: the data-element reference set — active options for editing, plus a code→label map
+            // (including inactive) so already-recorded elements always render with their current label.
+            _dataElements = await Cases.ListActiveDataElementsAsync();
+            _dataElementLabels = await Cases.DataElementLabelsAsync();
+        }
+        _editingDetails = false;
+        _newClass = _case?.Classification ?? Classification.Incident;
+        _newPhase = _case?.Phase ?? CasePhase.Triage;
+        _newSeverity = _case?.Severity ?? Severity.Medium;
+        _readinessEval = NextGateTrigger() is { } t ? await LoadGateAsync(t) : null;
+        SeedKnownIds(); // U-30: absorb the current items so a viewer's own edits don't echo back as "new"
+    }
+
+    // --- Overview "Stage readiness" card: the gate for this case's next likely transition ---
+    private GateEvaluation? _readinessEval;
+    private readonly HashSet<Guid> _readinessAttested = new(); // always empty — the card is read-only
+
+    /// <summary>The gate a case is heading toward next, given its current classification/phase.</summary>
+    private StageGateTrigger? NextGateTrigger()
+    {
+        if (_case is null || _case.Phase == CasePhase.Closed) return null;
+        return _case.Classification switch
+        {
+            null => StageGateTrigger.PromoteToAdverseEvent,
+            Classification.AdverseEvent => StageGateTrigger.EscalateToIncident,
+            Classification.Incident => StageGateTrigger.EscalateToBreach,
+            Classification.Breach => StageGateTrigger.CloseCase,
+            _ => null
+        };
+    }
+
+    /// <summary>Count of blocking machine checks still unsatisfied (attestations are made at the transition).</summary>
+    private int ReadinessMachineOutstanding => _readinessEval?.Requirements
+        .Count(r => r.Kind == GateRequirementKind.MachineCheck && r.IsBlocking && !r.MachineSatisfied) ?? 0;
+
+    private async Task SetTab(string tab)
+    {
+        _activeTab = tab;
+        // U-30: viewing a tab clears its "new" pulse; any items flashing there fade a moment after they're seen.
+        _newOnTab.Remove(tab);
+        var seen = _flash.Where(kv => string.Equals(kv.Value.Tab, tab, StringComparison.OrdinalIgnoreCase))
+                         .Select(kv => kv.Key).ToList();
+        if (seen.Count > 0) _ = ClearFlashesAfter(seen);
+        if (tab == "Overview") await LoadLinks();
+        if (tab == "Entities")
+        {
+            _graphNeedsPush = true; // container is (re)created on entering the tab
+            await LoadOverlaps();
+        }
+        if (tab == "Audit") await LoadAudit();
+        if (tab == "Report") await LoadReports();
+        if (tab == "Tasks") _applyTemplates ??= await Templates.ListActiveAsync();
+    }
+
+    private async Task LoadLinks() => _links = await Cases.GetCaseLinksAsync(Id);
+
+    // --- Apply playbook (E-06) ---
+    private List<IncidentManager.Application.Admin.TemplateView>? _applyTemplates;
+    private bool _applyingTemplate;
+    private IncidentManager.Application.Admin.TemplateView? _applyTemplate;
+    private readonly HashSet<Guid> _applySelected = [];
+
+    private void BeginApplyTemplate()
+    {
+        _applyingTemplate = true;
+        _applyTemplate = null;
+        _applySelected.Clear();
+    }
+
+    private void CancelApplyTemplate()
+    {
+        _applyingTemplate = false;
+        _applyTemplate = null;
+        _applySelected.Clear();
+    }
+
+    private void OnApplyTemplateChanged(ChangeEventArgs e)
+    {
+        _applyTemplate = Guid.TryParse(e.Value?.ToString(), out var id)
+            ? _applyTemplates?.FirstOrDefault(t => t.Id == id) : null;
+        _applySelected.Clear();
+        if (_applyTemplate is not null)
+            foreach (var s in _applyTemplate.Steps) _applySelected.Add(s.Id); // all checked by default
+    }
+
+    private void ToggleApplyStep(Guid stepId, bool on)
+    {
+        if (on) _applySelected.Add(stepId); else _applySelected.Remove(stepId);
+    }
+
+    private async Task ApplyTemplate()
+    {
+        if (_applyTemplate is null || _applySelected.Count == 0) return;
+        try
+        {
+            var n = await Cases.ApplyTemplateAsync(Id, _applyTemplate.Id, _applySelected.ToList());
+            Toasts.Success($"Added {n} action item(s) from '{_applyTemplate.Name}'");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        CancelApplyTemplate();
+        await Reload();
+    }
+
+    private static string FormatOffset(int hours) =>
+        hours % 24 == 0 ? $"{hours / 24}d" : $"{hours}h";
+
+    private void BeginAddLink()
+    {
+        _addingLink = true;
+        _linkType = CaseLinkType.RelatedTo;
+        ClearLinkTarget();
+        _linkDesc = null;
+    }
+
+    private void CancelAddLink()
+    {
+        _addingLink = false;
+        ClearLinkTarget();
+    }
+
+    private void ClearLinkTarget()
+    {
+        _linkTargetId = null;
+        _linkTargetLabel = null;
+        _linkQuery = "";
+        _linkResults = Array.Empty<LinkableCase>();
+    }
+
+    private async Task SearchLinkTargets()
+    {
+        _linkResults = string.IsNullOrWhiteSpace(_linkQuery)
+            ? Array.Empty<LinkableCase>()
+            : await Cases.SearchLinkableCasesAsync(Id, _linkQuery);
+    }
+
+    private void SelectLinkTarget(LinkableCase c)
+    {
+        _linkTargetId = c.Id;
+        _linkTargetLabel = $"{c.CaseNumber} — {c.Title}";
+        _linkResults = Array.Empty<LinkableCase>();
+    }
+
+    private async Task AddLink()
+    {
+        if (_linkTargetId is not { } target) return;
+        try
+        {
+            var created = await Cases.LinkCaseAsync(Id, target, _linkType, _linkDesc);
+            if (created is null) { Toasts.Warning("Those cases are already linked."); }
+            else { Toasts.Success("Case linked."); }
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Warning(ex.Message);
+        }
+        _addingLink = false;
+        ClearLinkTarget();
+        _linkDesc = null;
+        await LoadLinks();
+    }
+
+    private async Task RemoveLink(Guid linkId)
+    {
+        await Cases.RemoveCaseLinkAsync(Id, linkId);
+        Toasts.Success("Link removed.");
+        await LoadLinks();
+    }
+
+    private async Task LoadOverlaps()
+    {
+        _overlaps = (await Cases.FindEntityOverlapsAsync(Id))
+            .GroupBy(o => o.EntityId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<EntityOverlap>)g.ToList());
+    }
+
+    private async Task LoadReports()
+    {
+        if (_case is null) return;
+        _reports = await Reports.ListAsync(_case.Id);
+        _reportProfiles ??= await ReportProfiles.ListActiveAsync();
+        _selectedProfileId = _case.ReportProfileId;
+        _profileDirty = false;
+    }
+
+    private void OnProfileChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        _selectedProfileId = string.IsNullOrEmpty(raw) ? null : Guid.Parse(raw);
+        _profileDirty = _selectedProfileId != _case?.ReportProfileId;
+        // Keep an open preview in sync with the new selection.
+        if (_showPreview) _ = RefreshPreview();
+    }
+
+    private async Task SaveProfile()
+    {
+        if (_case is null) return;
+        await Cases.SetReportProfileAsync(_case.Id, _selectedProfileId);
+        await Reload();
+        _profileDirty = false;
+        Toasts.Success("Report profile saved");
+    }
+
+    private async Task TogglePreview()
+    {
+        _showPreview = !_showPreview;
+        if (_showPreview) await RefreshPreview();
+    }
+
+    private async Task RefreshPreview()
+    {
+        if (_case is null) return;
+        try
+        {
+            _previewModel = await Reports.BuildPreviewModelAsync(_case.Id, _selectedProfileId);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            Toasts.Error(ex.Message);
+            _previewModel = null;
+        }
+        StateHasChanged();
+    }
+
+    private async Task Generate(ReportFormat format)
+    {
+        if (_case is null) return;
+        // Persist a changed profile choice first so the generated report matches the selection on screen.
+        if (_profileDirty) await SaveProfile();
+        var report = await Reports.GenerateAsync(_case.Id, format);
+        _reportMsg = $"Generated draft {report.FileName} (SHA-256 {report.ContentSha256[..12]}…)";
+        await LoadReports();
+        await Reload();
+        Toasts.Success($"{format} draft generated");
+    }
+
+    private async Task ApproveReport(Guid reportId)
+    {
+        try
+        {
+            var r = await Reports.ApproveAsync(reportId);
+            Toasts.Success($"Approved {r.FileName} as the locked final");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            Toasts.Error(ex.Message);
+        }
+        await LoadReports();
+    }
+
+    private async Task LoadAudit()
+    {
+        if (_case is null) return;
+        if (!_auditFacetsLoaded)
+        {
+            (_auditActors, _auditEntityTypes) = await Integrity.AuditFacetsAsync(_case.CaseNumber);
+            _auditFacetsLoaded = true;
+        }
+        _audit = await Integrity.QueryAsync(BuildAuditFilter(), AuditPageSize);
+        // C-05: leads/admins see who has read this case (coalesced view-sessions).
+        if (_canViewAll)
+            _viewedBy = await AccessLog.ForCaseAsync(_case.Id);
+    }
+
+    // E-24: build the server-side filter from the tab's controls. "To" is inclusive to the end of the day.
+    private AuditQueryFilter BuildAuditFilter() => new()
+    {
+        CaseNumber = _case?.CaseNumber,
+        Actor = string.IsNullOrWhiteSpace(_aqActor) ? null : _aqActor,
+        Action = Enum.TryParse<AuditAction>(_aqAction, out var a) ? a : null,
+        EntityType = string.IsNullOrWhiteSpace(_aqEntity) ? null : _aqEntity,
+        FromUtc = _aqFrom is { } f ? new DateTimeOffset(f.Date, TimeSpan.Zero) : null,
+        ToUtc = _aqTo is { } t ? new DateTimeOffset(t.Date.AddDays(1).AddTicks(-1), TimeSpan.Zero) : null
+    };
+
+    private async Task ApplyAuditFilter() => await LoadAudit();
+
+    private async Task ClearAuditFilter()
+    {
+        _aqActor = _aqAction = _aqEntity = "";
+        _aqFrom = _aqTo = null;
+        await LoadAudit();
+    }
+
+    // Deep-link to the scoped CSV export mirroring the active filter (dates as yyyy-MM-dd, UTC).
+    private string AuditExportHref()
+    {
+        var f = BuildAuditFilter();
+        var qs = new List<string> { $"case={Uri.EscapeDataString(_case!.CaseNumber)}" };
+        if (f.Actor is { } actor) qs.Add($"actor={Uri.EscapeDataString(actor)}");
+        if (f.Action is { } act) qs.Add($"action={act}");
+        if (f.EntityType is { } et) qs.Add($"entity={Uri.EscapeDataString(et)}");
+        if (_aqFrom is { } from) qs.Add($"from={from:yyyy-MM-dd}");
+        if (_aqTo is { } to) qs.Add($"to={to:yyyy-MM-dd}");
+        return "export/case-audit.csv?" + string.Join("&", qs);
+    }
+
+    private async Task OpenModal(string name)
+    {
+        if (_case is null) return;
+        _activeModal = name;
+        _modalError = null;
+        _actionsOpen = false;
+        // For a Complex Event (intake) the reclassify modal is a promotion — default to the first rung.
+        _newClass = _case.Classification ?? Classification.AdverseEvent;
+        _newSeverity = _case.Severity;
+        _newPhase = _case.Phase;
+
+        // Open the assign form clean (a prior cancelled attempt may have left a stale selection).
+        if (name == "assign") { _assignUserId = ""; _assignRole = CaseAssignmentRole.Analyst; }
+
+        _attested.Clear();
+        _gateOverride = null;
+        _gateEval = name switch
+        {
+            "reclass" => await LoadGateAsync(ReclassTrigger()),
+            "status" => await LoadGateAsync(StatusTrigger()),
+            _ => null
+        };
+    }
+
+    // --- Stage gates (C-07) ---
+    private GateEvaluation? _gateEval;
+    private readonly HashSet<Guid> _attested = new();
+    private string? _gateOverride;
+
+    /// <summary>The gate governing the reclassify modal's currently-selected target (escalations only).</summary>
+    private StageGateTrigger? ReclassTrigger() =>
+        _case is not null && (_case.Classification is null || _newClass > _case.Classification)
+            ? StageGateTriggers.ForClassification(_newClass) : null;
+
+    /// <summary>The Close gate when the status modal's selected phase is Closed.</summary>
+    private StageGateTrigger? StatusTrigger() =>
+        _case is { Phase: not CasePhase.Closed } && _newPhase == CasePhase.Closed
+            ? StageGateTrigger.CloseCase : null;
+
+    private async Task<GateEvaluation?> LoadGateAsync(StageGateTrigger? trigger)
+    {
+        if (trigger is not { } t) return null;
+        var eval = await Cases.EvaluateGateAsync(Id, t);
+        return eval.GateExists ? eval : null;
+    }
+
+    private async Task OnReclassTargetChanged()
+    {
+        _attested.Clear();
+        _gateOverride = null;
+        _gateEval = await LoadGateAsync(ReclassTrigger());
+    }
+
+    private async Task OnStatusTargetChanged()
+    {
+        _attested.Clear();
+        _gateOverride = null;
+        _gateEval = await LoadGateAsync(StatusTrigger());
+    }
+
+    private void ToggleAttest(Guid id, bool on)
+    {
+        if (on) _attested.Add(id); else _attested.Remove(id);
+    }
+
+    private IReadOnlyList<GateRequirementResult> UnmetBlocking =>
+        _gateEval?.UnmetBlocking(_attested) ?? Array.Empty<GateRequirementResult>();
+
+    private bool NeedsOverride => UnmetBlocking.Count > 0;
+
+    // A gate may require a minimum-length rationale — enforced on the transition reason, and on the
+    // override justification when the move is being forced through. Returns an error message, or null.
+    private string? GateRationaleError(string? reason)
+    {
+        if (_gateEval is not { RequiresCommentary: true } g) return null;
+        var min = g.CommentaryMinLength;
+        if ((reason?.Trim().Length ?? 0) < min)
+            return $"Record a reason of at least {min} characters to pass this gate.";
+        if (NeedsOverride && (_gateOverride?.Trim().Length ?? 0) < min)
+            return $"The override justification must be at least {min} characters for this gate.";
+        return null;
+    }
+
+    // The gate readiness + override block shared by the reclassify and close-status modals.
+    private RenderFragment GateModalSection() => @<text>
+        @if (_gateEval is { } g)
+        {
+            <div class="mt-3">
+                <GateChecklist Eval="g" Attested="_attested" OnChanged="StateHasChanged" />
+                @if (NeedsOverride)
+                {
+                    <div class="alert alert-warning small mt-2 mb-1 py-2">
+                        <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
+                        @UnmetBlocking.Count required item@(UnmetBlocking.Count == 1 ? "" : "s") outstanding. Override with a recorded justification to proceed anyway.
+                    </div>
+                    <input class="form-control form-control-sm" placeholder="Override justification (required)" @bind="_gateOverride" @bind:event="oninput" />
+                    @if (g.RequiresCommentary)
+                    {
+                        <div class="form-text @((_gateOverride?.Trim().Length ?? 0) < g.CommentaryMinLength ? "text-danger" : "text-success")">
+                            @(_gateOverride?.Trim().Length ?? 0) / @g.CommentaryMinLength characters
+                        </div>
+                    }
+                }
+            </div>
+        }
+    </text>;
+
+    // Live character counter shown under the transition reason when the active gate requires a
+    // minimum-length rationale (the reason is what gets recorded on the gate passage).
+    private RenderFragment RationaleHint(string? text) => @<text>
+        @if (_gateEval is { RequiresCommentary: true } g)
+        {
+            <div class="form-text @((text?.Trim().Length ?? 0) < g.CommentaryMinLength ? "text-danger" : "text-success")">
+                @(text?.Trim().Length ?? 0) / @g.CommentaryMinLength characters — recorded on the gate passage.
+            </div>
+        }
+    </text>;
+
+    private void CloseModal()
+    {
+        _activeModal = null;
+        _modalError = null;
+    }
+
+    // Generic confirm for destructive removes: capture a message + the action to run on confirm.
+    private void AskConfirm(string message, Func<Task> onConfirm) => _confirm = (message, onConfirm);
+    private void CancelConfirm() => _confirm = null;
+
+    private async Task RunConfirm()
+    {
+        var action = _confirm?.OnConfirm;
+        _confirm = null;
+        if (action is not null) await action();
+    }
+
+    private string ModalTitle() => _activeModal switch
+    {
+        "reclass" => _case?.Classification is null ? "Promote onto the ladder" : "Reclassify case",
+        "severity" => "Change severity",
+        "status" => "Change status",
+        "legal" => "Refer to Legal / Privacy",
+        "archive" => "Archive case",
+        "assign" => "Assign someone to this case",
+        _ => ""
+    };
+
+    private string ModalPrimaryLabel() => _activeModal switch
+    {
+        "archive" => "Archive",
+        "assign" => "Assign",
+        _ => "Apply"
+    };
+
+    // Keep the primary disabled until the assign form has a user selected.
+    private bool ModalPrimaryDisabled() => _activeModal switch
+    {
+        "assign" => string.IsNullOrEmpty(_assignUserId),
+        _ => false
+    };
+
+    private async Task ApplyModal()
+    {
+        _modalError = null;
+        try
+        {
+            string done;
+            switch (_activeModal)
+            {
+                case "reclass":
+                    if (string.IsNullOrWhiteSpace(_reclassReason)) { _modalError = "A reason is required."; return; }
+                    if (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
+                    { _modalError = "Provide a justification to override the unmet gate requirements."; return; }
+                    if (GateRationaleError(_reclassReason) is { } m1) { _modalError = m1; return; }
+                    await Cases.ReclassifyAsync(Id, _newClass, _reclassReason,
+                        _attested.Count > 0 ? _attested : null, _gateOverride);
+                    _reclassReason = "";
+                    done = $"Reclassified to {Ui.Label(_newClass)}";
+                    break;
+                case "severity":
+                    await Cases.ChangeSeverityAsync(Id, _newSeverity, _severityReason);
+                    _severityReason = null;
+                    done = $"Severity changed to {_newSeverity}";
+                    break;
+                case "status":
+                    if (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
+                    { _modalError = "Provide a justification to override the unmet gate requirements."; return; }
+                    if (GateRationaleError(_phaseReason) is { } m2) { _modalError = m2; return; }
+                    await Cases.ChangePhaseAsync(Id, _newPhase, _phaseReason,
+                        _attested.Count > 0 ? _attested : null, _gateOverride);
+                    _phaseReason = null;
+                    done = $"Status changed to {Ui.Label(_newPhase)}";
+                    break;
+                case "legal":
+                    await Cases.ReferToLegalAsync(Id, _legalContact, _legalNote);
+                    done = "Referred to Legal / Privacy";
+                    break;
+                case "archive":
+                    await Cases.SetArchivedAsync(Id, true);
+                    done = "Case archived";
+                    break;
+                case "assign":
+                    if (string.IsNullOrWhiteSpace(_assignUserId)) { _modalError = "Select a user to assign."; return; }
+                    var assignName = Users.Resolve(_assignUserId)?.DisplayName ?? _assignUserId;
+                    await Cases.AssignAsync(Id, _assignUserId, assignName, _assignRole);
+                    _assignUserId = "";
+                    _assignRole = CaseAssignmentRole.Analyst;
+                    done = $"Assigned {assignName}";
+                    break;
+                default:
+                    done = "";
+                    break;
+            }
+            _activeModal = null;
+            await Reload();
+            if (done.Length > 0) Toasts.Success(done);
+        }
+        catch (GateNotSatisfiedException ex)
+        {
+            _modalError = ex.Message;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            _modalError = ex.Message;
+        }
+    }
+
+    private CasePhase? NextPhase()
+    {
+        if (_case is null) return null;
+        var phases = Enum.GetValues<CasePhase>();
+        var i = Array.IndexOf(phases, _case.Phase);
+        return (i >= 0 && i < phases.Length - 1) ? phases[i + 1] : null;
+    }
+
+    private async Task AdvanceTo(CasePhase phase)
+    {
+        await Cases.ChangePhaseAsync(Id, phase, null);
+        await Reload();
+    }
+
+    private int? TabCount(string tab)
+    {
+        if (_case is null) return null;
+        var n = tab switch
+        {
+            "Timeline" => _case.TimelineEntries.Count,
+            "Entities" => _case.Entities.Count,
+            "Evidence" => _case.Evidence.Count,
+            "Notes" => _case.Notes.Count(x => x.IsCurrent),
+            "Tasks" => _case.ActionItems.Count(a => a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled),
+            _ => -1
+        };
+        return n <= 0 ? null : n;
+    }
+
+    private void StartRenumber()
+    {
+        if (_case is null) return;
+        _editNumber = _case.CaseNumber;
+        _renumberError = null;
+        _renumbering = true;
+    }
+
+    private void CancelRenumber()
+    {
+        _renumbering = false;
+        _renumberError = null;
+    }
+
+    private async Task SaveRenumber()
+    {
+        if (_case is null) return;
+        _savingNumber = true;
+        _renumberError = null;
+        try
+        {
+            await Cases.RenumberAsync(_case.Id, _editNumber);
+            _renumbering = false;
+            await Reload();
+            Toasts.Success("Case number updated");
+        }
+        catch (Exception ex)
+        {
+            _renumberError = ex.Message;
+        }
+        finally
+        {
+            _savingNumber = false;
+        }
+    }
+
+    private void BeginEditDetails()
+    {
+        if (_case is null) return;
+        _edTitle = _case.Title;
+        _edSummary = _case.Summary;
+        _edDetection = _case.DetectionCaseId;
+        _edDataTypes = _case.DataTypesInvolved;
+        _edImpacted = _case.ImpactedAssets;
+        _edDetected = _case.DetectedAtUtc is { } d ? UtcToWall(d) : null;
+        _edOccurred = _case.OccurredAtUtc is { } o ? UtcToWall(o) : null;
+        _detailsError = null;
+        _editingDetails = true;
+    }
+
+    private async Task SaveDetails()
+    {
+        if (string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null) return;
+        try { _edSummary = await JS.InvokeAsync<string>("markdownEditor.getValue", SummaryEditorId); }
+        catch (JSException) { /* editor not mounted; keep the seeded value */ }
+        try
+        {
+            await Cases.UpdateDetailsAsync(Id, _edTitle, _edSummary, _edDetection, _edDataTypes, _edImpacted,
+                WallToUtc(_edDetected.Value), _edOccurred is { } occ ? WallToUtc(occ) : null);
+        }
+        catch (ArgumentException ex) // domain validation (future detection / activity after detection)
+        {
+            _detailsError = ex.Message;
+            return;
+        }
+        _editingDetails = false;
+        _detailsError = null;
+        await Reload();
+        Toasts.Success("Details saved");
+    }
+
+    /// <summary>Interpret a wall-clock the analyst typed as being in the viewer's active display zone (U-29)
+    /// and convert to the stored UTC instant — the same round-trip the task due-date uses (F-20).</summary>
+    private DateTimeOffset WallToUtc(DateTime wall)
+    {
+        var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
+        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, TimeDisp.Zone), TimeSpan.Zero); }
+        catch { return new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
+    }
+
+    /// <summary>Project a stored UTC instant into the active display zone as a wall-clock, to seed a datetime-local input.</summary>
+    private DateTime UtcToWall(DateTimeOffset utc)
+        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
+
+    /// <summary>Compact dwell duration (initial activity → detected) for the Overview lifecycle strip.</summary>
+    private static string DwellLabel(TimeSpan span)
+    {
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+        return span.TotalDays >= 1 ? $"{span.TotalDays:0.#}d" : $"{span.TotalHours:0.#}h";
+    }
+
+    // --- Structured impact assessment (E-12) ---
+    private bool _editingImpact;
+    private int? _impCount;
+    private HashSet<string> _impElementKeys = new(StringComparer.Ordinal);
+    private string? _impStates;
+
+    // The data-element reference set (X-03): active options for editing + a key→label map (incl. archived)
+    // for display, both loaded with the case so a relabel/reorder in admin reflects here on next load.
+    private IReadOnlyList<DataElement> _dataElements = Array.Empty<DataElement>();
+    private IReadOnlyDictionary<string, string> _dataElementLabels = new Dictionary<string, string>();
+
+    private string DataElementLabel(string key) =>
+        _dataElementLabels.TryGetValue(key, out var label) ? label : key;
+
+    // The case's involved element keys in the reference display order (active first by SortOrder), any
+    // unknown/archived keys trailing — matches the report's ordering.
+    private IEnumerable<string> SelectedElementKeysOrdered()
+    {
+        if (_case is null) return Array.Empty<string>();
+        var keys = _case.DataElements.Select(d => d.ElementKey).ToHashSet(StringComparer.Ordinal);
+        var ordered = _dataElements.Where(e => keys.Contains(e.Key)).Select(e => e.Key).ToList();
+        ordered.AddRange(keys.Where(k => ordered.All(o => o != k)).OrderBy(k => k, StringComparer.Ordinal));
+        return ordered;
+    }
+
+    private void BeginEditImpact()
+    {
+        if (_case is null) return;
+        _impCount = _case.AffectedIndividualsCount;
+        _impElementKeys = _case.DataElements.Select(d => d.ElementKey).ToHashSet(StringComparer.Ordinal);
+        // Pre-fill the org's default jurisdictions on a case that has none yet (X-01); analyst can edit.
+        // Only seeds the edit buffer — nothing persists unless they Save.
+        _impStates = string.IsNullOrWhiteSpace(_case.AffectedStates)
+            ? (Config["Organization:DefaultJurisdictions"] is { Length: > 0 } d ? d : null)
+            : _case.AffectedStates;
+        _editingImpact = true;
+    }
+
+    private void ToggleElement(string key, bool on)
+    {
+        if (on) _impElementKeys.Add(key); else _impElementKeys.Remove(key);
+    }
+
+    private async Task SaveImpact()
+    {
+        await Cases.UpdateImpactAssessmentAsync(Id, _impCount, _impElementKeys, _impStates);
+        _editingImpact = false;
+        await Reload();
+        Toasts.Success("Impact assessment saved");
+    }
+
+
+    private sealed record HistoryRow(DateTimeOffset At, string Attribute, string Change, string? Reason, string By);
+
+    private IEnumerable<HistoryRow> History()
+    {
+        if (_case is null) yield break;
+
+        foreach (var x in _case.ClassificationChanges)
+            yield return new HistoryRow(x.ChangedAtUtc, "Classification",
+                $"{(x.From is { } f ? Ui.Label(f) : "—")} → {Ui.Label(x.To)}", x.Reason, x.ChangedBy);
+
+        foreach (var x in _case.SeverityChanges)
+            yield return new HistoryRow(x.ChangedAtUtc, "Severity",
+                $"{(x.From?.ToString() ?? "—")} → {x.To}", x.Reason, x.ChangedBy);
+
+        foreach (var x in _case.StatusChanges)
+            yield return new HistoryRow(x.ChangedAtUtc, "Phase",
+                $"{(x.From is { } f ? Ui.Label(f) : "—")} → {Ui.Label(x.To)}", x.Reason, x.ChangedBy);
+    }
+
+    // Directory users not yet assigned to this case — the pool the assign modal offers.
+    private List<UserSummary> AssignableUsers() =>
+        _case is null
+            ? new List<UserSummary>()
+            : Users.All()
+                .Where(u => _case.Assignments.All(a => !string.Equals(a.UserId, u.UserId, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+    private async Task DoUnassign(string userId)
+    {
+        await Cases.UnassignAsync(Id, userId);
+        await Reload();
+        Toasts.Success("Assignment removed");
+    }
+
+    private async Task RemoveTechnique(Guid techniqueId)
+    {
+        await Cases.RemoveTechniqueAsync(Id, techniqueId);
+        await Reload();
+        Toasts.Success("Technique removed");
+    }
+
+    // Investigation timeline: author Markdown in the EasyMDE editor.
+    // U-40: a pasted screenshot arrives here (via the shim) — read it once into memory for the preview and
+    // the later upload. Capped to a screenshot-sized payload; the full evidence cap still applies at upload.
+    private async Task OnTimelinePasted(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var f = e.File;
+            const long maxShot = 15 * 1024 * 1024;
+            await using var s = f.OpenReadStream(maxShot);
+            using var ms = new MemoryStream();
+            await s.CopyToAsync(ms);
+            _tlShotBytes = ms.ToArray();
+            _tlShotName = f.Name;
+            _tlShotType = string.IsNullOrWhiteSpace(f.ContentType) ? "image/png" : f.ContentType;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Couldn't read the pasted image: {ex.Message}");
+            ClearTimelineShot();
+        }
+    }
+
+    private void ClearTimelineShot() { _tlShotBytes = null; _tlShotName = null; }
+
+    private void OpenShot(Guid evidenceId) => _previewShotId = evidenceId;
+    private void CloseShot() => _previewShotId = null;
+
+    private string TlShotDataUri() =>
+        _tlShotBytes is null ? "" : $"data:{_tlShotType};base64,{Convert.ToBase64String(_tlShotBytes)}";
+
+    // Uploads the staged screenshot as hashed, chain-of-custody evidence and returns its id to link.
+    private async Task<Guid?> UploadTimelineShotAsync()
+    {
+        if (_tlShotBytes is null) return null;
+        await using var s = new MemoryStream(_tlShotBytes);
+        var ev = await Evidence.UploadAsync(Id, _tlShotName ?? "pasted-screenshot.png", _tlShotType, s, "Pasted into the timeline");
+        return ev.Id;
+    }
+
+    private async Task AddTimeline()
+    {
+        try { _tlDesc = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
+        catch (JSException) { /* editor not mounted; fall back to bound value */ }
+
+        if (string.IsNullOrWhiteSpace(_tlDesc)) return;
+        var whenUtc = new DateTimeOffset(DateTime.SpecifyKind(_tlWhen, DateTimeKind.Utc));
+        var shotId = await UploadTimelineShotAsync();
+        await Cases.AddTimelineEntryAsync(Id, TimelineKind.Investigation, _tlType, whenUtc, _tlDesc, _tlSource, evidenceId: shotId);
+        _tlDesc = ""; _tlSource = null; ClearTimelineShot();
+        await Reload();
+        Toasts.Success(shotId is null ? "Timeline entry added" : "Timeline entry added with screenshot");
+        try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); }
+        catch (JSException) { /* best effort */ }
+    }
+
+    // Event timeline: an adversary action — ATT&CK tactic(s) + actor→target attribution.
+    private async Task AddEventStep()
+    {
+        if (string.IsNullOrWhiteSpace(_tlDesc)) return;
+        var whenUtc = new DateTimeOffset(DateTime.SpecifyKind(_tlWhen, DateTimeKind.Utc));
+        Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
+        Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
+        var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
+        var shotId = await UploadTimelineShotAsync();
+        try
+        {
+            await Cases.AddEventStepAsync(Id, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, evidenceId: shotId);
+        }
+        catch (ArgumentException ex)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = "";
+        _evtTactic = MitreTactic.Unspecified;
+        ClearTimelineShot();
+        await Reload();
+        Toasts.Success(shotId is null ? "Event step added" : "Event step added with screenshot");
+    }
+
+    // --- Timeline editing (Information changes during an investigation) ---
+
+    // Switch the timeline lens (All / Event / Investigation); abandon any in-progress edit so the
+    // composer isn't left showing the wrong form, and clear kind-specific filters that no longer apply.
+    private async Task SwitchLens(TimelineKind? lens)
+    {
+        if (_tlEditId is not null) await CancelTimelineEdit();
+        _tlLens = lens;
+        if (lens is { } k) _tlAddKind = k;   // a focused lens drives what the composer adds
+        ClearTimelineFilters();
+    }
+
+    // In the All lens the composer serves both timelines; pick which one to add to.
+    private void SetAddKind(TimelineKind kind) => _tlAddKind = kind;
+
+    // Load an Event step into the composer for an in-place correction.
+    private void StartEventEdit(TimelineEntry e)
+    {
+        _tlAddKind = TimelineKind.Event;
+        _tlEditId = e.Id;
+        _tlReason = null;
+        _tlWhen = e.OccurredAtUtc.UtcDateTime;
+        _evtActorId = e.ActorEntityId?.ToString() ?? "";
+        _evtTargetId = e.TargetEntityId?.ToString() ?? "";
+        _evtTechnique = e.TechniqueId ?? "";
+        _evtTactic = e.Tactics.Select(t => t.Tactic).FirstOrDefault();
+        _tlDesc = e.Description;
+        _tlSource = e.Source;
+    }
+
+    private async Task SaveEventEdit()
+    {
+        if (_tlEditId is not { } id || string.IsNullOrWhiteSpace(_tlDesc)) return;
+        var whenUtc = new DateTimeOffset(DateTime.SpecifyKind(_tlWhen, DateTimeKind.Utc));
+        Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
+        Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
+        var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
+        try
+        {
+            await Cases.EditEventStepAsync(Id, id, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, _tlReason);
+        }
+        catch (ArgumentException ex)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        await CancelTimelineEdit();
+        await Reload();
+        Toasts.Success("Event step updated");
+    }
+
+    // Load an Investigation entry into the Markdown composer to edit; saving creates a new version.
+    private async Task StartInvestigationEdit(TimelineEntry e)
+    {
+        _tlAddKind = TimelineKind.Investigation;
+        _tlEditId = e.Id;
+        _tlReason = null;
+        _tlType = e.Type;
+        _tlWhen = e.OccurredAtUtc.UtcDateTime;
+        _tlSource = e.Source;
+        _tlDesc = e.Description;
+        try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, e.Description); }
+        catch (JSException) { /* editor not mounted yet; ReconcileMarkdownEditors seeds it from _tlDesc */ }
+    }
+
+    private async Task SaveInvestigationEdit()
+    {
+        if (_tlEditId is not { } id) return;
+        try { _tlDesc = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
+        catch (JSException) { /* fall back to bound value */ }
+        if (string.IsNullOrWhiteSpace(_tlDesc)) return;
+        var whenUtc = new DateTimeOffset(DateTime.SpecifyKind(_tlWhen, DateTimeKind.Utc));
+        await Cases.EditInvestigationEntryAsync(Id, id, _tlType, whenUtc, _tlDesc, _tlSource, _tlReason);
+        await CancelTimelineEdit();
+        await Reload();
+        Toasts.Success("Investigation entry updated (new version saved)");
+    }
+
+    // Leave edit mode and clear the composer. For Investigation, also blank the Markdown editor.
+    private async Task CancelTimelineEdit()
+    {
+        var wasInvestigationEdit = _tlAddKind == TimelineKind.Investigation && _tlEditId is not null;
+        _tlEditId = null; _tlReason = null;
+        _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = "";
+        _evtTactic = MitreTactic.Unspecified;
+        if (wasInvestigationEdit)
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); }
+            catch (JSException) { /* best effort */ }
+        }
+    }
+
+    private void ToggleHistory(Guid entryId)
+    {
+        if (!_tlHistoryOpen.Remove(entryId)) _tlHistoryOpen.Add(entryId);
+    }
+
+    // Prior versions of an Investigation entry, newest first, by walking the supersede chain.
+    private List<TimelineEntry> InvestigationHistory(TimelineEntry current)
+    {
+        var all = _case?.TimelineEntries ?? Enumerable.Empty<TimelineEntry>();
+        var history = new List<TimelineEntry>();
+        var cursor = current.SupersedesEntryId;
+        while (cursor is { } id && all.FirstOrDefault(x => x.Id == id) is { } prior)
+        {
+            history.Add(prior);
+            cursor = prior.SupersedesEntryId;
+        }
+        return history;
+    }
+
+    private void ClearTimelineFilters()
+    {
+        _tlFilterType = null;
+        _tlFilterTactic = null;
+        _tlFilterSource = "";
+    }
+
+    private List<TimelineEntry> FilteredTimeline(IEnumerable<TimelineEntry> entries)
+    {
+        var view = entries
+            // Filter each entry by its own kind: events by ATT&CK tactic, investigation entries by type.
+            // Kind-specific filters are only surfaced (and set) in a focused lens; in All both are null.
+            .Where(x => x.Kind == TimelineKind.Event
+                ? (_tlFilterTactic is null || x.Tactics.Any(tac => tac.Tactic == _tlFilterTactic))
+                : (_tlFilterType is null || x.Type == _tlFilterType))
+            .Where(x => string.IsNullOrWhiteSpace(_tlFilterSource)
+                || (x.Source ?? "").Contains(_tlFilterSource, StringComparison.OrdinalIgnoreCase))
+            // OccurredAtUtc is minute-precision from the datetime-local picker, so several entries can
+            // share the same value. CreatedAtUtc (sub-second, set at insert) breaks the tie so equal
+            // timestamps keep submission order instead of an arbitrary DB row order.
+            .OrderBy(x => x.OccurredAtUtc)
+            .ThenBy(x => x.CreatedAtUtc)
+            .ToList();
+        if (!_tlOldestFirst) view.Reverse();
+        return view;
+    }
+
+    // --- Event-step display helpers ---
+    private MitreTactic PrimaryTactic(TimelineEntry e) =>
+        e.Tactics.Count == 0 ? MitreTactic.Unspecified : e.Tactics.Select(t => t.Tactic).OrderBy(x => (int)x).First();
+
+    private CaseEntity? EntityById(Guid? id) =>
+        id is { } g ? _case?.Entities.FirstOrDefault(x => x.Id == g) : null;
+
+    private static string EntityShort(CaseEntity e) => string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!;
+
+    private static string EntityOptionLabel(CaseEntity e) =>
+        $"{Ui.EntityGlyph(e.Type)} {(string.IsNullOrWhiteSpace(e.Label) ? e.Value : $"{e.Label} ({e.Value})")}";
+
+    /// <summary>ATT&CK technique ID → URL path segment (sub-techniques nest, e.g. T1078.001 → T1078/001).</summary>
+    private static string TechniquePath(string techniqueId) => techniqueId.Replace('.', '/');
+
+    private async Task AddNote()
+    {
+        try { _noteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteAddEditorId); }
+        catch (JSException) { /* editor not mounted; fall back to bound value */ }
+        if (string.IsNullOrWhiteSpace(_noteBody)) return;
+        await Cases.AddNoteAsync(Id, _noteBody);
+        _noteBody = "";
+        await Reload();
+        Toasts.Success("Note added");
+        try { await JS.InvokeVoidAsync("markdownEditor.setValue", NoteAddEditorId, ""); }
+        catch (JSException) { /* best effort */ }
+    }
+
+    private async Task StartNoteEdit(AnalystNote note)
+    {
+        _editNoteId = note.Id;
+        _editNoteBody = note.Body;
+        try { await JS.InvokeVoidAsync("markdownEditor.setValue", NoteEditEditorId(note.Id), note.Body); }
+        catch (JSException) { /* editor not mounted yet; ReconcileMarkdownEditors seeds it from _editNoteBody */ }
+    }
+
+    private void CancelNoteEdit()
+    {
+        _editNoteId = null;
+        _editNoteBody = "";
+    }
+
+    private async Task SaveNoteEdit()
+    {
+        if (_editNoteId is not { } noteId) return;
+        try { _editNoteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteEditEditorId(noteId)); }
+        catch (JSException) { /* fall back to bound value */ }
+        if (string.IsNullOrWhiteSpace(_editNoteBody)) return;
+        await Cases.EditNoteAsync(Id, noteId, _editNoteBody);
+        CancelNoteEdit();
+        await Reload();
+        Toasts.Success("Note updated");
+    }
+
+    private async Task SetLegalHold(bool held)
+    {
+        _actionsOpen = false;
+        _retentionMsg = null;
+        await Cases.SetLegalHoldAsync(Id, held);
+        await Reload();
+        Toasts.Success(held ? "Legal hold placed" : "Legal hold released");
+    }
+
+    private async Task SetArchived(bool archived)
+    {
+        _actionsOpen = false;
+        _retentionMsg = null;
+        try
+        {
+            await Cases.SetArchivedAsync(Id, archived);
+            await Reload();
+            Toasts.Success(archived ? "Case archived" : "Case restored");
+        }
+        catch (InvalidOperationException ex)
+        {
+            _retentionMsg = ex.Message;
+        }
+    }
+
+    private async Task AddTask()
+    {
+        if (string.IsNullOrWhiteSpace(_taskTitle)) return;
+        await Cases.AddActionItemAsync(Id, _taskTitle, _taskOwner, ResolveDueUtc());
+        _taskTitle = ""; _taskOwner = null; _taskDueDate = null; _taskDueTime = null;
+        await Reload();
+        Toasts.Success("Task added");
+    }
+
+    // A due deadline is entered in the viewer's active display zone (U-29) — the same zone every on-screen stamp
+    // is shown in — so "what you pick is what you see" round-trips through the UTC/Local toggle without shifting a
+    // day. Time is optional: a bare date means "by end of that day" (23:59 local). Stored as a UTC instant like
+    // every other timestamp; the Tasks tab / My Work render it back through TimeDisp with its zone label, and the
+    // forensic report shows it in UTC. (Fixes F-20: the old code stamped a bare date as UTC-midnight, which the
+    // local-zone formatter then rendered a calendar day early.)
+    private DateTimeOffset? ResolveDueUtc()
+    {
+        if (_taskDueDate is not { } d) return null;
+        var wall = DateTime.SpecifyKind(d.Date + (_taskDueTime ?? new TimeOnly(23, 59)).ToTimeSpan(), DateTimeKind.Unspecified);
+        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(wall, TimeDisp.Zone), TimeSpan.Zero); }
+        catch { return new DateTimeOffset(DateTime.SpecifyKind(wall, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
+    }
+
+    private async Task MarkTaskDone(Guid actionItemId)
+    {
+        await Cases.SetActionItemStatusAsync(Id, actionItemId, ActionItemStatus.Done);
+        await Reload();
+        Toasts.Success("Task completed");
+    }
+
+    // --- Entities & relationships ---
+
+    // Entities tab: when on, network/URL indicators render defanged (hxxp://evil[.]com) for safe
+    // copy-out. Stored values stay canonical (refanged on entry) — this is display-only (E-19).
+    private bool _defangView;
+
+    private string DisplayValue(CaseEntity e) =>
+        _defangView && IocObservable.IsRefangable(e.Type) ? IocObservable.Defang(e.Value) : e.Value;
+
+    private async Task AddEntity()
+    {
+        if (string.IsNullOrWhiteSpace(_enValue)) return;
+        _entityError = null;
+        try
+        {
+            var addedVal = _enValue;
+            await Cases.AddEntityAsync(Id, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource);
+            _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null;
+            await Reload();
+            await LoadOverlaps(); // the new IOC may correlate with another case — surface "also in" now
+            Toasts.Success($"Added {addedVal}");
+        }
+        catch (Exception ex) { _entityError = ex.Message; }
+    }
+
+    // Load an existing IOC into the composer to correct it in place.
+    private void StartEntityEdit(CaseEntity e)
+    {
+        _entityError = null;
+        _enEditId = e.Id;
+        _enReason = null;
+        _enType = e.Type;
+        _enValue = e.Value;
+        _enLabel = e.Label;
+        _enDisposition = e.Disposition;
+        _enSource = e.Source;
+        _enDescription = e.Description;
+    }
+
+    private void CancelEntityEdit()
+    {
+        _enEditId = null; _enReason = null; _entityError = null;
+        _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null;
+    }
+
+    private async Task SaveEntityEdit()
+    {
+        if (_enEditId is not { } id || string.IsNullOrWhiteSpace(_enValue)) return;
+        _entityError = null;
+        try
+        {
+            await Cases.EditEntityAsync(Id, id, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource, _enReason);
+            CancelEntityEdit();
+            await Reload();
+            await LoadOverlaps(); // a changed value/type may change cross-case correlation
+            Toasts.Success("Entity updated");
+        }
+        catch (Exception ex) { _entityError = ex.Message; }
+    }
+
+    private async Task RemoveEntity(Guid entityId)
+    {
+        await Cases.RemoveEntityAsync(Id, entityId);
+        await Reload();
+        await LoadOverlaps(); // keep the overlap map in sync with the current entity set
+        Toasts.Success("Entity removed");
+    }
+
+    /// <summary>Display label for the detection source (configurable); defaults to "SIEM".</summary>
+    private string DetectionLabel
+    {
+        get
+        {
+            var label = Config["ExternalLinks:DetectionSourceLabel"];
+            return string.IsNullOrWhiteSpace(label) ? "SIEM" : label;
+        }
+    }
+
+    /// <summary>Deep-link to the case in the detection source, or null when the case or the URL template is unset.</summary>
+    private string? DetectionCaseUrl()
+    {
+        var template = Config["ExternalLinks:DetectionCaseUrlTemplate"];
+        if (string.IsNullOrWhiteSpace(template) || _case is null || string.IsNullOrWhiteSpace(_case.DetectionCaseId)) return null;
+        return string.Format(template, Uri.EscapeDataString(_case.DetectionCaseId));
+    }
+
+    /// <summary>Deep-link to a VirusTotal search for an IOC-like entity, or null when not applicable.</summary>
+    private string? VirusTotalUrl(CaseEntity e)
+    {
+        if (!Ui.IsIocLike(e.Type) || string.IsNullOrWhiteSpace(e.Value)) return null;
+        var template = Config["ExternalLinks:VirusTotalUrlTemplate"];
+        if (string.IsNullOrWhiteSpace(template)) return null;
+        return string.Format(template, Uri.EscapeDataString(e.Value));
+    }
+
+    private async Task AddRelationship()
+    {
+        _relError = null;
+        if (!Guid.TryParse(_relSource, out var src) || !Guid.TryParse(_relTarget, out var tgt)) return;
+        try
+        {
+            await Cases.LinkEntitiesAsync(Id, src, tgt, _relType, null);
+            _relSource = null; _relTarget = null;
+            await Reload();
+            Toasts.Success("Relationship added");
+        }
+        catch (Exception ex) { _relError = ex.Message; }
+    }
+
+    private async Task RemoveRelationship(Guid relationshipId)
+    {
+        await Cases.UnlinkAsync(Id, relationshipId);
+        await Reload();
+        Toasts.Success("Relationship removed");
+    }
+
+    private string EntityName(Guid entityId)
+    {
+        var e = _case?.Entities.FirstOrDefault(x => x.Id == entityId);
+        if (e is null) return "(unknown)";
+        return string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!;
+    }
+
+    // --- Interactive graph (vis-network via JS interop) ---
+
+    private sealed record GraphColor(string Background, string Border);
+    private sealed record GraphNodeDto(string Id, string Label, string Title, string Shape, GraphColor Color, double? X, double? Y);
+    private sealed record GraphEdgeDto(string Id, string From, string To, string Label, string? Color, bool Dashes);
+
+    /// <summary>vis-network node shape per entity type, so hosts, IPs, URLs etc. read differently at a glance.</summary>
+    private static string ShapeFor(EntityType t) => t switch
+    {
+        EntityType.Account => "dot",
+        EntityType.Host => "hexagon",
+        EntityType.IpAddress => "diamond",
+        EntityType.Domain => "diamond",
+        EntityType.Url => "triangle",
+        EntityType.FileHash => "square",
+        EntityType.FileName => "triangleDown",
+        EntityType.EmailAddress => "star",
+        EntityType.Process => "dot",
+        EntityType.RegistryKey => "square",
+        _ => "dot"
+    };
+
+    private IReadOnlyList<GraphNodeDto> GraphNodes()
+    {
+        if (_case is null) return [];
+        var layout = _case.EntityLayouts.ToDictionary(l => l.EntityId);
+        return _case.Entities.Select(e =>
+        {
+            var label = e.Label ?? e.Value;
+            if (label.Length > 22) label = label[..21] + "…";
+            var color = Ui.DispositionColor(e.Disposition);
+            var title = $"{Ui.Label(e.Type)}: {e.Value}" + (string.IsNullOrWhiteSpace(e.Description) ? "" : $" — {e.Description}");
+            var pos = layout.TryGetValue(e.Id, out var l) ? l : null;
+            return new GraphNodeDto(e.Id.ToString(), $"{Ui.EntityGlyph(e.Type)} {label}", title,
+                ShapeFor(e.Type), new GraphColor(color, color), pos?.X, pos?.Y);
+        }).ToList();
+    }
+
+    private IReadOnlyList<GraphEdgeDto> GraphEdges()
+    {
+        if (_case is null) return [];
+        var edges = _case.EntityRelationships.Select(r =>
+            new GraphEdgeDto(r.Id.ToString(), r.SourceEntityId.ToString(), r.TargetEntityId.ToString(),
+                Ui.Label(r.Type), null, false)).ToList();
+
+        // Layer the attack narrative: event steps with both an actor and a target become dashed,
+        // tactic-coloured edges so the malicious activity graphs over the entity relationships.
+        if (_showAttackEdges)
+        {
+            foreach (var e in _case.TimelineEntries.Where(x => x.Kind == TimelineKind.Event
+                && x.ActorEntityId is not null && x.TargetEntityId is not null))
+            {
+                var tactic = PrimaryTactic(e);
+                edges.Add(new GraphEdgeDto($"evt-{e.Id}", e.ActorEntityId!.ToString()!, e.TargetEntityId!.ToString()!,
+                    Ui.Label(tactic), Ui.TacticColor(tactic), true));
+            }
+        }
+        return edges;
+    }
+
+    /// <summary>Signature of the graph's data so we only push to JS when something actually changed.</summary>
+    private string GraphSignature() => _case is null ? "" : string.Concat(
+        string.Join("|", _case.Entities.Select(e => $"{e.Id:N}:{(int)e.Type}:{(int)e.Disposition}:{e.Label}:{e.Value}")),
+        "#",
+        string.Join("|", _case.EntityRelationships.Select(r => $"{r.Id:N}:{r.SourceEntityId:N}>{r.TargetEntityId:N}:{(int)r.Type}")),
+        "#att:", _showAttackEdges ? "1" : "0", ":",
+        string.Join("|", _case.TimelineEntries.Where(x => x.Kind == TimelineKind.Event && x.ActorEntityId is not null && x.TargetEntityId is not null)
+            .Select(e => $"{e.Id:N}:{e.ActorEntityId:N}>{e.TargetEntityId:N}")));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Attach the paste/drag-drop listeners once (idempotent in the shim; each zone only acts while
+            // its wrapper is in the DOM). Evidence tab (U-39): paste + drop. Timeline tab (U-40): paste only.
+            try
+            {
+                await JS.InvokeVoidAsync("imPasteDrop.register", "evidence-dropzone", "evidence-file-input", "evidence-file-drop");
+                await JS.InvokeVoidAsync("imPasteDrop.register", "timeline-dropzone", "timeline-file-paste", null);
+            }
+            catch (JSException) { /* progressive enhancement — the manual picker still works */ }
+        }
+
+        await ReconcileMarkdownEditors();
+
+        if (_case is null || _activeTab != "Entities" || _case.Entities.Count == 0) return;
+
+        var sig = GraphSignature();
+        if (!_graphNeedsPush && sig == _lastGraphSig) return;
+
+        _graphNeedsPush = false;
+        _lastGraphSig = sig;
+        try
+        {
+            await JS.InvokeVoidAsync("entityGraph.render", GraphContainerId, GraphNodes(), GraphEdges(), _dotNetRef, _canEdit);
+        }
+        catch (JSException) { /* graph is a progressive enhancement; ignore transient interop errors */ }
+    }
+
+    /// <summary>
+    /// Reconcile the set of mounted EasyMDE editors against what the current view needs — the Investigation
+    /// composer, the Overview Summary editor, and the Notes add/edit editors. Id-keyed so several coexist;
+    /// mounts what is newly needed and tears down what is gone. Progressive enhancement — failures ignored.
+    /// </summary>
+    private async Task ReconcileMarkdownEditors()
+    {
+        var desired = new Dictionary<string, string>();
+        if (_case is not null && _canEdit)
+        {
+            if (_activeTab == "Timeline" && _tlAddKind == TimelineKind.Investigation)
+                desired[InvEditorId] = _tlDesc ?? "";
+            if (_activeTab == "Overview" && _editingDetails)
+                desired[SummaryEditorId] = _edSummary ?? "";
+            if (_activeTab == "Notes")
+            {
+                desired[NoteAddEditorId] = _noteBody ?? "";
+                if (_editNoteId is { } nid) desired[NoteEditEditorId(nid)] = _editNoteBody ?? "";
+            }
+        }
+
+        // Tear down editors no longer wanted (e.g. tab switch, cancelled edit).
+        foreach (var id in _mdEditors.Where(id => !desired.ContainsKey(id)).ToList())
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); } catch (JSException) { /* ignore */ }
+            _mdEditors.Remove(id);
+        }
+        // Mount newly-wanted editors (the seed value applies on first mount only).
+        foreach (var (id, seed) in desired)
+        {
+            if (_mdEditors.Contains(id)) continue;
+            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed); _mdEditors.Add(id); }
+            catch (JSException) { /* editor is a progressive enhancement */ }
+        }
+    }
+
+    /// <summary>Called from JS when the user finishes dragging node(s). Persists the arranged layout (editors only).</summary>
+    [JSInvokable]
+    public async Task OnNodesMoved(EntityPosition[] positions)
+    {
+        if (!_canEdit || positions is null || positions.Length == 0) return;
+        await Cases.SaveGraphLayoutAsync(Id, positions);
+    }
+
+    private async Task GraphFit() => await SafeGraphCall("entityGraph.fit", GraphContainerId);
+
+    private async Task GraphTogglePhysics()
+    {
+        _physicsOn = !_physicsOn;
+        await SafeGraphCall("entityGraph.setPhysics", GraphContainerId, _physicsOn);
+    }
+
+    private async Task GraphRelayout()
+    {
+        _physicsOn = true;
+        await SafeGraphCall("entityGraph.relayout", GraphContainerId);
+    }
+
+    private void ToggleAttackEdges()
+    {
+        _showAttackEdges = !_showAttackEdges;
+        _graphNeedsPush = true;   // edge set changed → re-render the graph on next after-render
+    }
+
+    private async Task SafeGraphCall(string fn, params object[] args)
+    {
+        try { await JS.InvokeVoidAsync(fn, args); }
+        catch (JSException) { /* ignore */ }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _caseSub?.Dispose();
+        if (_relativeTimeTicker is not null) await _relativeTimeTicker.DisposeAsync();
+        try { await JS.InvokeVoidAsync("entityGraph.destroy", GraphContainerId); }
+        catch { /* circuit may already be gone during teardown */ }
+        foreach (var id in _mdEditors)
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }
+            catch { /* circuit may already be gone during teardown */ }
+        }
+        _mdEditors.Clear();
+        _dotNetRef?.Dispose();
+    }
+
+    // Manual picker or a pasted screenshot (via the shim) stages one file to describe + Upload.
+    private void OnFileSelected(InputFileChangeEventArgs e) => _file = e.File;
+
+    private const long MaxEvidenceBytes = 50 * 1024 * 1024;
+
+    private async Task Upload()
+    {
+        if (_file is null || _case is null) return;
+        _uploadError = null;
+        try
+        {
+            await using var stream = _file.OpenReadStream(MaxEvidenceBytes);
+            var name = _file.Name;
+            await Evidence.UploadAsync(_case.Id, _file.Name, _file.ContentType, stream, _evDesc);
+            _file = null; _evDesc = null;
+            await Reload();
+            Toasts.Success($"Uploaded {name}");
+        }
+        catch (Exception ex)
+        {
+            _uploadError = ex.Message;
+        }
+    }
+
+    // U-39: files dropped onto the Evidence tab (via the paste-drop shim) upload immediately — a drop is a
+    // bulk gesture, so we don't stage them for a per-file description. Same hashed/custody UploadAsync path.
+    private async Task OnDropped(InputFileChangeEventArgs e)
+    {
+        if (_case is null) return;
+        _uploadError = null;
+        var uploaded = 0;
+        foreach (var f in e.GetMultipleFiles(maximumFileCount: 50))
+        {
+            try
+            {
+                await using var stream = f.OpenReadStream(MaxEvidenceBytes);
+                await Evidence.UploadAsync(_case.Id, f.Name, f.ContentType, stream, _evDesc);
+                uploaded++;
+            }
+            catch (Exception ex)
+            {
+                _uploadError = $"{f.Name}: {ex.Message}";
+            }
+        }
+        if (uploaded > 0)
+        {
+            _evDesc = null;
+            await Reload();
+            Toasts.Success($"Uploaded {uploaded} file{(uploaded == 1 ? "" : "s")}");
+        }
+    }
+
+    // Only image evidence can be previewed inline (the /inline endpoint serves image/* only).
+    private static bool IsImageEvidence(Evidence ev) =>
+        ev.ContentType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        >= 1024 * 1024 => $"{bytes / (1024.0 * 1024):0.0} MB",
+        >= 1024 => $"{bytes / 1024.0:0.0} KB",
+        _ => $"{bytes} B"
+    };
+}

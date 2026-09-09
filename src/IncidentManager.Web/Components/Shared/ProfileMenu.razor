@@ -1,0 +1,171 @@
+@inject ICurrentUser CurrentUser
+@inject IJSRuntime JS
+@inject TimeDisplay TimeDisp
+
+@* Top-bar account menu (U-21): initials avatar + dropdown showing identity, roles, the theme
+   toggle (folded in from the old standalone button), and an About panel. Mirrors the
+   NotificationBell dropdown pattern (button + backdrop + panel), CSP-safe and theme-aware. *@
+<div class="profile">
+    <button type="button" class="profile-btn" @onclick="Toggle"
+            title="@DisplayName" aria-haspopup="true" aria-expanded="@_open" aria-label="Account menu">
+        <span class="profile-avatar" aria-hidden="true">@Initials</span>
+    </button>
+
+    @if (_open)
+    {
+        <div class="profile-backdrop" @onclick="Close"></div>
+        <div class="profile-panel" role="menu" aria-label="Account">
+            <div class="profile-id">
+                <span class="profile-avatar profile-avatar-lg" aria-hidden="true">@Initials</span>
+                <div class="profile-id-text">
+                    <div class="profile-name" title="@DisplayName">@DisplayName</div>
+                    @if (!string.IsNullOrWhiteSpace(Secondary))
+                    {
+                        <div class="profile-sub" title="@Secondary">@Secondary</div>
+                    }
+                </div>
+            </div>
+
+            @* Show the primary (highest-privilege) role only; any others collapse into a "+N" pill
+               that lists them on hover, so the menu reads as access level, not a permission dump. *@
+            @if (_roles.Length > 0)
+            {
+                <div class="profile-roles">
+                    <span class="profile-role">@Ui.Label(_primaryRole)</span>
+                    @if (_roles.Length > 1)
+                    {
+                        <span class="profile-role profile-role-more"
+                              title="Also: @_otherRolesTooltip">+@(_roles.Length - 1)</span>
+                    }
+                </div>
+            }
+
+            <div class="profile-sep"></div>
+
+            @* Theme: a segmented toggle showing both modes with the current one highlighted, so it reads as a
+               state, not an action verb — consistent with the time-zone toggle below it. *@
+            <div class="profile-seg-row" role="group" aria-label="Theme">
+                <span class="bi @(_dark ? "bi-moon-stars" : "bi-sun")" aria-hidden="true"></span>
+                <span class="profile-seg-label">Theme</span>
+                <span class="seg" role="radiogroup" aria-label="Theme">
+                    <button type="button" class="seg-opt @(!_dark ? "on" : "")"
+                            role="radio" aria-checked="@(!_dark)"
+                            @onclick="() => SetTheme(false)">Light</button>
+                    <button type="button" class="seg-opt @(_dark ? "on" : "")"
+                            role="radio" aria-checked="@_dark"
+                            @onclick="() => SetTheme(true)">Dark</button>
+                </span>
+            </div>
+
+            @* U-29: on-screen time-zone display. A segmented toggle showing both modes so the current one is
+               explicit — not an action label. Storage/reports/audit stay UTC; this only reformats timestamps
+               in the working views, each labelled with its zone. *@
+            <div class="profile-seg-row" role="group" aria-label="On-screen time zone">
+                <span class="bi bi-clock-history" aria-hidden="true"></span>
+                <span class="profile-seg-label">Show times in</span>
+                <span class="seg" role="radiogroup" aria-label="Time zone">
+                    <button type="button" class="seg-opt @(TimeDisp.Mode == TimeDisplayMode.Utc ? "on" : "")"
+                            role="radio" aria-checked="@(TimeDisp.Mode == TimeDisplayMode.Utc)"
+                            @onclick="() => SetTimeZone(TimeDisplayMode.Utc)">UTC</button>
+                    <button type="button" class="seg-opt @(TimeDisp.Mode == TimeDisplayMode.Local ? "on" : "")"
+                            role="radio" aria-checked="@(TimeDisp.Mode == TimeDisplayMode.Local)"
+                            @onclick="() => SetTimeZone(TimeDisplayMode.Local)">Local</button>
+                </span>
+            </div>
+            <div class="profile-seg-hint">Local is @TimeDisp.LocalLabel. Reports, exports and the audit trail always stay in UTC.</div>
+
+            <button type="button" class="profile-item" role="menuitem" @onclick="() => _about = !_about" aria-expanded="@_about">
+                <span class="bi bi-info-circle" aria-hidden="true"></span>
+                <span>About</span>
+                <span class="bi bi-chevron-@(_about ? "up" : "down") profile-item-caret" aria-hidden="true"></span>
+            </button>
+
+            @if (_about)
+            {
+                <div class="profile-about">
+                    <div class="profile-about-name">Case<span class="brand-accent">Book</span></div>
+                    <div class="profile-about-line">Secure SOC incident &amp; breach case management &mdash; a
+                        tamper-evident, auditable single source of truth for adverse events, incidents and breaches.</div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _open;
+    private bool _about;
+    private bool _dark;
+    private AppRole[] _roles = Array.Empty<AppRole>();
+    private AppRole _primaryRole;
+    private string _otherRolesTooltip = "";
+
+    protected override void OnInitialized()
+    {
+        // Ascending by enum value; the largest value is the most-privileged role, shown as primary.
+        _roles = CurrentUser.Roles.OrderBy(r => (int)r).ToArray();
+        if (_roles.Length > 0)
+        {
+            _primaryRole = _roles[^1];
+            _otherRolesTooltip = string.Join(", ", _roles[..^1].Select(Ui.Label));
+        }
+    }
+
+    private string DisplayName => string.IsNullOrWhiteSpace(CurrentUser.DisplayName)
+        ? (CurrentUser.UserPrincipalName ?? CurrentUser.UserId)
+        : CurrentUser.DisplayName;
+
+    // Show the UPN (or email) underneath, but only when it adds information over the display name.
+    private string? Secondary
+    {
+        get
+        {
+            var s = CurrentUser.UserPrincipalName ?? CurrentUser.Email;
+            return string.IsNullOrWhiteSpace(s) || string.Equals(s, DisplayName, StringComparison.OrdinalIgnoreCase)
+                ? null : s;
+        }
+    }
+
+    private string Initials => Ui.Initials(DisplayName);
+
+    private async Task Toggle()
+    {
+        _open = !_open;
+        if (_open)
+        {
+            _about = false;
+            // Reflect the live theme so the toggle label is right whichever way it was last set.
+            try { _dark = string.Equals(await JS.InvokeAsync<string>("imTheme.current"), "dark", StringComparison.OrdinalIgnoreCase); }
+            catch { /* interop not ready — label defaults to "dark" */ }
+        }
+    }
+
+    private void Close() { _open = false; _about = false; }
+
+    // Set the theme to a specific mode (persisted in the browser by imTheme.apply). No-op if already active.
+    private async Task SetTheme(bool dark)
+    {
+        if (_dark == dark) return;
+        try { await JS.InvokeVoidAsync("imTheme.apply", dark ? "dark" : "light"); _dark = dark; }
+        catch { /* no-op if interop unavailable */ }
+    }
+
+    // U-29: set the on-screen display to a specific mode (UTC or local), persist the choice in the browser,
+    // and refresh so every already-rendered timestamp re-renders in the new zone. No-op if already active.
+    private async Task SetTimeZone(TimeDisplayMode next)
+    {
+        if (TimeDisp.Mode == next) return;
+        if (next == TimeDisplayMode.Local && TimeDisp.BrowserZoneId is null)
+        {
+            try { TimeDisp.Configure(await JS.InvokeAsync<string>("imTime.zone"), next); }
+            catch { TimeDisp.SetMode(next); }
+        }
+        else
+        {
+            TimeDisp.SetMode(next);
+        }
+        try { await JS.InvokeVoidAsync("imTime.setMode", next == TimeDisplayMode.Local ? "local" : "utc"); }
+        catch { /* preference just won't persist across reloads */ }
+        // TimeDisp.Configure/SetMode above raise Changed, which re-renders the layout (and every stamp).
+    }
+}

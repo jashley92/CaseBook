@@ -1,0 +1,150 @@
+@page "/admin/access-log"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using IncidentManager.Application.Access
+@inject IAccessLogService AccessLog
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject TimeDisplay TimeDisp
+
+<PageTitle>Access log</PageTitle>
+
+<PageHeader Title="Access log">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+<p class="text-muted">
+    Who <strong>read</strong> a case or pulled a sensitive artifact (evidence, report, export), coalesced into
+    per-user view-sessions (C-05). This telemetry is <strong>outside</strong> the tamper-evident audit chain and is
+    prunable independently. Scope and coalescing window are set in
+    <a href="admin">Administration → Settings → Access logging</a>.
+</p>
+
+<div class="row g-2 align-items-end mb-3">
+    <div class="col-6 col-md-3">
+        <label class="form-label small mb-0">Actor</label>
+        <select class="form-select form-select-sm" @bind="_actor" @bind:after="Load">
+            <option value="">Any</option>
+            @foreach (var a in _actors)
+            {
+                <option value="@a">@Users.DisplayFor(a)</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label small mb-0">Access type</label>
+        <select class="form-select form-select-sm" @bind="_type" @bind:after="Load">
+            <option value="">Any</option>
+            @foreach (var t in Enum.GetValues<AccessType>())
+            {
+                <option value="@t">@Ui.AccessTypeLabel(t)</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label small mb-0">Case #</label>
+        <input class="form-control form-control-sm" @bind="_caseNumber" @bind:after="Load" @bind:event="onchange" placeholder="e.g. 2026-01_…" />
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label small mb-0">From (UTC)</label>
+        <input type="date" class="form-control form-control-sm" @bind="_from" @bind:after="Load" />
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label small mb-0">To (UTC)</label>
+        <input type="date" class="form-control form-control-sm" @bind="_to" @bind:after="Load" />
+    </div>
+    <div class="col-6 col-md-1">
+        <div class="form-check mt-4">
+            <input class="form-check-input" type="checkbox" id="restrictedOnly" @bind="_restrictedOnly" @bind:after="Load" />
+            <label class="form-check-label small" for="restrictedOnly">Restricted</label>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-1">
+    <span class="small text-muted">
+        @(_rows?.Count ?? 0) session@(_rows?.Count == 1 ? "" : "s")@(_rows is { Count: >= PageSize } ? $" — showing the most recent {PageSize}" : "")
+    </span>
+    <a class="btn btn-sm btn-outline-secondary" href="@ExportHref()">
+        <span class="bi bi-download me-1" aria-hidden="true"></span>Export CSV
+    </a>
+</div>
+
+@if (_rows is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else if (_rows.Count == 0)
+{
+    <p class="text-muted">No access recorded for the current filters.</p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr><th>Actor</th><th>Type</th><th>Case</th><th>Target</th><th class="text-end">Count</th><th>First seen</th><th>Last seen</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _rows)
+            {
+                <tr>
+                    <td>@Users.DisplayFor(r.ActorUserId)</td>
+                    <td><span class="bi @Ui.AccessTypeGlyph(r.AccessType) me-1" aria-hidden="true"></span>@Ui.AccessTypeLabel(r.AccessType)</td>
+                    <td>
+                        @if (string.IsNullOrEmpty(r.CaseNumber)) { <span class="text-muted">—</span> }
+                        else { <code>@r.CaseNumber</code> }
+                        @if (r.WasRestricted) { <span class="im-badge im-b-warn ms-2">restricted</span> }
+                    </td>
+                    <td class="small">@(string.IsNullOrWhiteSpace(r.TargetLabel) ? "" : r.TargetLabel)</td>
+                    <td class="text-end">@r.Count</td>
+                    <td class="small">@TimeDisp.Short(r.FirstSeenUtc)</td>
+                    <td class="small">@TimeDisp.Short(r.LastSeenUtc)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private const int PageSize = 500;
+
+    private IReadOnlyList<CaseAccessEvent>? _rows;
+    private List<string> _actors = new();
+    private string _actor = "";
+    private string _type = "";
+    private string? _caseNumber;
+    private bool _restrictedOnly;
+    private DateTime? _from;
+    private DateTime? _to;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _actors = (await AccessLog.ActorsAsync()).ToList();
+        await Load();
+    }
+
+    private AccessLogFilter BuildFilter() => new()
+    {
+        Actor = string.IsNullOrWhiteSpace(_actor) ? null : _actor,
+        CaseNumber = string.IsNullOrWhiteSpace(_caseNumber) ? null : _caseNumber.Trim(),
+        AccessType = Enum.TryParse<AccessType>(_type, out var t) ? t : null,
+        RestrictedOnly = _restrictedOnly,
+        FromUtc = _from is { } f ? new DateTimeOffset(f.Date, TimeSpan.Zero) : null,
+        ToUtc = _to is { } dt ? new DateTimeOffset(dt.Date.AddDays(1).AddTicks(-1), TimeSpan.Zero) : null
+    };
+
+    private async Task Load() => _rows = await AccessLog.QueryAsync(BuildFilter(), PageSize);
+
+    private string ExportHref()
+    {
+        var f = BuildFilter();
+        var qs = new List<string>();
+        if (f.Actor is { } actor) qs.Add($"actor={Uri.EscapeDataString(actor)}");
+        if (f.CaseNumber is { } cn) qs.Add($"case={Uri.EscapeDataString(cn)}");
+        if (f.AccessType is { } t) qs.Add($"type={t}");
+        if (f.RestrictedOnly) qs.Add("restricted=true");
+        if (_from is { } from) qs.Add($"from={from:yyyy-MM-dd}");
+        if (_to is { } to) qs.Add($"to={to:yyyy-MM-dd}");
+        return "export/access-log.csv" + (qs.Count > 0 ? "?" + string.Join("&", qs) : "");
+    }
+}

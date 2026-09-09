@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="FluentAssertions" Version="8.10.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+  </ItemGroup>
+
+  <!-- Pin patched versions over vulnerable 4.3.0 transitives pulled in by the test SDK / runner
+       chain (GHSA-7jgj-8wvc-jh57, GHSA-cmhx-cq75-c4mj). Test-only; production projects are clean.
+       Keeps the CI vulnerable-package gate (H-05) green. -->
+  <ItemGroup>
+    <PackageReference Include="System.Net.Http" Version="4.3.4" />
+    <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\IncidentManager.Domain\IncidentManager.Domain.csproj" />
+    <ProjectReference Include="..\..\src\IncidentManager.Application\IncidentManager.Application.csproj" />
+    <ProjectReference Include="..\..\src\IncidentManager.Infrastructure\IncidentManager.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,70 @@
+@inherits LayoutComponentBase
+@layout MainLayout
+
+@* Administration hub shell (Option B): one left rail is the single navigation for every admin destination,
+   so the main sidebar carries just a single "Administration" entry instead of repeating all of these.
+   Configuration and System items route into the Settings page (admin/settings/{section}); the rest are the
+   standalone admin pages, which opt in with @layout AdminLayout so the rail persists across them. *@
+<div class="admin-shell">
+    <nav class="admin-rail" aria-label="Administration">
+        <div class="admin-rail-head">
+            <span class="bi bi-shield-lock" aria-hidden="true"></span><span>Administration</span>
+        </div>
+        @foreach (var group in Groups)
+        {
+            <div class="admin-rail-label">@group.Label</div>
+            @foreach (var item in group.Items)
+            {
+                <div class="admin-rail-item">
+                    <NavLink class="admin-rail-link" href="@item.Href" Match="NavLinkMatch.All">
+                        <span class="bi @item.Icon" aria-hidden="true"></span><span>@item.Title</span>
+                    </NavLink>
+                </div>
+            }
+        }
+    </nav>
+    <div class="admin-pane">
+        @Body
+    </div>
+</div>
+
+@code {
+    private sealed record RailItem(string Title, string Icon, string Href);
+    private sealed record RailGroup(string Label, RailItem[] Items);
+
+    // Identity & branding is the Settings landing page, so it keeps the short /admin URL; the other
+    // Configuration/System sections are /admin/settings/{section}. Match.All highlights the exact section.
+    private static readonly RailGroup[] Groups =
+    [
+        new("Configuration",
+        [
+            new("Identity & branding", "bi-building", "admin"),
+            new("Notifications", "bi-envelope", "admin/settings/notifications"),
+            new("Integrations", "bi-plug", "admin/settings/integrations"),
+            new("Response & SLA", "bi-stopwatch", "admin/settings/sla"),
+            new("Reporting", "bi-file-earmark-text", "admin/settings/reporting"),
+            new("Governance & security", "bi-shield-lock", "admin/settings/governance"),
+        ]),
+        new("Customization",
+        [
+            new("Case templates", "bi-clipboard-check", "admin/templates"),
+            new("Stage gates", "bi-shield-check", "admin/gates"),
+            new("Taxonomy labels", "bi-tags", "admin/taxonomy"),
+            new("Data elements", "bi-collection", "admin/data-elements"),
+            new("Report profiles", "bi-journal-text", "admin/report-profiles"),
+        ]),
+        new("People & audit",
+        [
+            new("Roles & access", "bi-people", "admin/roles"),
+            new("Access log", "bi-eye", "admin/access-log"),
+        ]),
+        new("System",
+        [
+            new("Server configuration", "bi-hdd-stack", "admin/settings/server"),
+            new("Configuration bundle", "bi-box-seam", "admin/config-bundle"),
+            new("Configuration source", "bi-diagram-3", "admin/settings/source"),
+            new("Diagnostics", "bi-activity", "admin/settings/diagnostics"),
+            new("Style guide", "bi-palette", "admin/style"),
+        ]),
+    ];
+}

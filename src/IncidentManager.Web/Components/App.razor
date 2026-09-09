@@ -1,0 +1,75 @@
+﻿@using IncidentManager.Application.Branding
+@inject IConfiguration Config
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <script src="js/theme-init.js?v=20260905a"></script>
+    <link rel="stylesheet" href="bootstrap/bootstrap.min.css?v=5.3.3" />
+    <link rel="stylesheet" href="lib/bootstrap-icons/bootstrap-icons.min.css?v=1.11.3" />
+    <link rel="stylesheet" href="lib/easymde/easymde.min.css?v=2.18.0" />
+    <link rel="stylesheet" href="app.css?v=20260829b" />
+    <link rel="stylesheet" href="IncidentManager.Web.styles.css?v=20260905c" />
+    @* White-label brand palette (X-08): overrides the brand/accent tokens from the org's configured
+       colours. Emitted after app.css so it wins; empty when no brand colour is set (defaults stand).
+       Placed in the static host head so there is no flash before the branded colours apply. *@
+    <style id="im-brand">@((MarkupString)(BrandPalette.BuildCss(Config["Branding:AccentColor"], Config["Branding:InkColor"]) ?? ""))</style>
+    <link rel="stylesheet" href="lib/vis-network/vis-network.min.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+
+<body>
+    <Routes @rendermode="InteractiveServer" />
+
+    @* Blazor Server circuit-disconnect UI (U-10). Static host markup (not a component) so it stays
+       in the DOM and styled even while the render circuit is frozen. The framework toggles
+       components-reconnect-{show,hide,failed,rejected} on #components-reconnect-modal and fills the
+       attempt/max spans; the buttons are wired CSP-safely by the delegated handler in theme.js. *@
+    <div id="components-reconnect-modal" class="reconnect-modal">
+        <div class="reconnect-card" role="alertdialog" aria-live="assertive" aria-labelledby="reconnect-title">
+            <div class="reconnect-body reconnect-when-show">
+                <div class="reconnect-spinner" aria-hidden="true"></div>
+                <h2 id="reconnect-title" class="reconnect-title">Reconnecting&hellip;</h2>
+                <p class="reconnect-text">
+                    The connection to the server was lost. Trying to reconnect
+                    (attempt <span id="components-reconnect-current-attempt"></span>
+                    of <span id="components-reconnect-max-retries"></span>)&hellip;
+                </p>
+            </div>
+            <div class="reconnect-body reconnect-when-failed">
+                <div class="reconnect-icon" aria-hidden="true">&#9888;</div>
+                <h2 class="reconnect-title">Can&rsquo;t reach the server</h2>
+                <p class="reconnect-text">The reconnect attempts didn&rsquo;t succeed. Check your network connection, then try again.</p>
+                <button type="button" id="components-reconnect-retry" class="btn btn-primary btn-sm">Try again</button>
+            </div>
+            <div class="reconnect-body reconnect-when-rejected">
+                <div class="reconnect-icon" aria-hidden="true">&#8635;</div>
+                <h2 class="reconnect-title">Session expired</h2>
+                <p class="reconnect-text">The server was reached but this session was lost. Reload to continue &mdash; any edit in progress that wasn&rsquo;t saved may need to be redone.</p>
+                <button type="button" id="components-reconnect-reload" class="btn btn-primary btn-sm">Reload the page</button>
+            </div>
+        </div>
+    </div>
+
+    @* Self-hosted scripts carry ?v= so edits actually ship — browsers cache them by URL, and without a
+       version bump a stale copy is served after a change. Keep this in sync when a js/ file changes. *@
+    <script src="_framework/blazor.web.js"></script>
+    <script src="js/theme.js?v=20260905a"></script>
+    <script src="js/brand.js?v=20260903a"></script>
+    <script src="js/time.js?v=20260819c"></script>
+    <script src="js/motion.js?v=20260819c"></script>
+    <script src="js/hotkeys.js?v=20260819c"></script>
+    <script src="js/activity.js?v=20260819c"></script>
+    <script src="js/idle-timeout.js?v=20260819c"></script>
+    <script src="js/paste-drop.js?v=20260824b"></script>
+    <script src="lib/vis-network/vis-network.min.js"></script>
+    <script src="js/entity-graph.js?v=20260828a"></script>
+    <script src="lib/easymde/easymde.min.js?v=2.18.0"></script>
+    <script src="js/markdown-editor.js?v=20260819e"></script>
+</body>
+
+</html>

@@ -1,0 +1,103 @@
+@* U-01b — live "who else is viewing this case" avatars. Joins the shared presence registry for the
+   current case, re-renders when the viewer set changes, and cleans up on teardown/navigation. The
+   PresenceCircuitTracker is the safety net for a closed/crashed tab. Self (the current user) is not
+   shown — this is about who *else* is here.
+
+   The avatar ring pulses as a transient effect on two occasions: when a viewer joins (the avatar
+   mounts) and when they make a change (the case-change notifier fires for their id). Both work by
+   keying the avatar on the person's id plus a per-person "acted" counter, so a fresh mount replays the
+   one-shot CSS ring animation. No live "what they're doing" state is tracked. *@
+@implements IDisposable
+@inject ICasePresenceService Presence
+@inject IncidentManager.Application.Abstractions.ICaseChangeNotifier Changes
+@inject ICurrentUser CurrentUser
+@inject IncidentManager.Web.Realtime.PresenceCircuitTracker Circuit
+
+@if (_others.Count > 0)
+{
+    <div class="presence" role="group" aria-label="@AriaLabel">
+        @foreach (var v in _others.Take(MaxAvatars))
+        {
+            <span class="presence-dot presence-ring" @key="@($"{v.UserId}:{ActCount(v.UserId)}")"
+                  style="background:@Hue(v.UserId)" title="@($"{v.DisplayName} is viewing")">
+                @Ui.Initials(v.DisplayName)
+            </span>
+        }
+        @if (_others.Count > MaxAvatars)
+        {
+            <span class="presence-dot presence-more" title="@OverflowTitle">+@(_others.Count - MaxAvatars)</span>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public Guid CaseId { get; set; }
+
+    private const int MaxAvatars = 4;
+    private Guid _joined;
+    private IDisposable? _reg;
+    private IDisposable? _sub;
+    private IDisposable? _changeSub;
+    private IReadOnlyList<CaseViewer> _others = Array.Empty<CaseViewer>();
+
+    // Per-person "number of changes seen this session". Bumping it re-keys that avatar, so its ring
+    // animation replays — a brief pulse each time the person makes a change.
+    private readonly Dictionary<string, int> _actCounts = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override void OnParametersSet()
+    {
+        if (CaseId == _joined) return;   // same case (a re-render) — nothing to re-join
+        Detach();
+        if (CaseId == Guid.Empty) return;
+
+        _joined = CaseId;
+        _reg = Presence.Join(CaseId, CurrentUser.UserId, DisplayName, Circuit.CircuitId ?? "");
+        _sub = Presence.Subscribe(CaseId, OnChangedAsync);
+        _changeSub = Changes.Subscribe(CaseId, OnActedAsync);
+        Recompute();
+    }
+
+    private Task OnChangedAsync() => InvokeAsync(() =>
+    {
+        Recompute();
+        StateHasChanged();
+    });
+
+    // A collaborator changed the case → pulse their avatar. (Own changes don't matter here: self isn't
+    // shown in the avatar list.)
+    private Task OnActedAsync(string actorId) => InvokeAsync(() =>
+    {
+        _actCounts[actorId] = ActCount(actorId) + 1;
+        StateHasChanged();
+    });
+
+    private int ActCount(string userId) => _actCounts.TryGetValue(userId, out var c) ? c : 0;
+
+    private void Recompute() =>
+        _others = Presence.Viewers(_joined)
+            .Where(v => !string.Equals(v.UserId, CurrentUser.UserId, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+    private string DisplayName => string.IsNullOrWhiteSpace(CurrentUser.DisplayName)
+        ? (CurrentUser.UserPrincipalName ?? CurrentUser.UserId)
+        : CurrentUser.DisplayName;
+
+    private static string Hue(string seed) => $"hsl({Ui.AvatarHue(seed)} 55% 42%)";
+
+    private string AriaLabel =>
+        $"{_others.Count} other {(_others.Count == 1 ? "person" : "people")} viewing this case";
+
+    private string OverflowTitle => string.Join(", ", _others.Skip(MaxAvatars).Select(v => v.DisplayName));
+
+    private void Detach()
+    {
+        _changeSub?.Dispose(); _changeSub = null;
+        _sub?.Dispose(); _sub = null;
+        _reg?.Dispose(); _reg = null;
+        _joined = Guid.Empty;
+        _others = Array.Empty<CaseViewer>();
+        _actCounts.Clear();
+    }
+
+    public void Dispose() => Detach();
+}
