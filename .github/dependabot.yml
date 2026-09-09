@@ -14,3 +14,20 @@ updates:
       github-actions:
         patterns:
           - "*"
+
+  # NuGet packages across the solution. Complements the CI vulnerable-package gate (H-05): that fails a
+  # build when something is already vulnerable; this proactively PRs upgrades before it comes to that.
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+    open-pull-requests-limit: 10
+    # Low-risk minor/patch bumps arrive as one grouped PR; majors come individually so their
+    # potential breaking changes get reviewed on their own.
+    groups:
+      nuget-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
