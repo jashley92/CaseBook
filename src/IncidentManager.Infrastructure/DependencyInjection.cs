@@ -46,6 +46,16 @@ public static class DependencyInjection
         services.AddSingleton<Application.Security.ISecurityEventSink>(
             sp => sp.GetRequiredService<Siem.SecurityEventQueue>());
 
+        // F-19: secret-resolution seam. Default is passthrough (secrets read literally from config/env);
+        // enabling Secrets:CyberArk swaps in the CCP-backed provider that fetches @cyberark: references at
+        // runtime so no secret need be stored in config. Opt-in and per-secret (a value stays literal unless
+        // it is written as a reference).
+        services.Configure<Secrets.CyberArkOptions>(config.GetSection("Secrets:CyberArk"));
+        if (config.GetValue("Secrets:CyberArk:Enabled", false))
+            services.AddSingleton<ISecretProvider, Secrets.CyberArkCcpSecretProvider>();
+        else
+            services.AddSingleton<ISecretProvider, Secrets.PassthroughSecretProvider>();
+
         // Lets a settings write signal the configuration root to re-read the DB provider (A-08).
         services.AddSingleton<ISettingsReloader, Configuration.ConfigurationReloader>();
 

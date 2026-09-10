@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text;
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Security;
 using IncidentManager.Infrastructure.Siem;
 using Microsoft.Extensions.Options;
@@ -10,19 +11,22 @@ namespace IncidentManager.Web.Siem;
 /// Webhook transport for the security-event stream (F-18): POSTs each event as JSON to the configured
 /// SIEM HTTP Collector, with a per-request timeout and a bounded retry. Best-effort — a failure is
 /// logged and the event dropped (the audit chain remains the record of truth). Lives in Web because it
-/// needs <see cref="IHttpClientFactory"/>.
+/// needs <see cref="IHttpClientFactory"/>. The auth token is resolved through <see cref="ISecretProvider"/>
+/// (F-19), so <c>Siem:Webhook:Token</c> may be a literal or a <c>@cyberark:</c> reference.
 /// </summary>
 public sealed class WebhookTransport : ISecurityEventTransport
 {
     private readonly IHttpClientFactory _httpFactory;
     private readonly IOptionsMonitor<SiemWebhookOptions> _options;
+    private readonly ISecretProvider _secrets;
     private readonly ILogger<WebhookTransport> _logger;
 
     public WebhookTransport(IHttpClientFactory httpFactory, IOptionsMonitor<SiemWebhookOptions> options,
-        ILogger<WebhookTransport> logger)
+        ISecretProvider secrets, ILogger<WebhookTransport> logger)
     {
         _httpFactory = httpFactory;
         _options = options;
+        _secrets = secrets;
         _logger = logger;
     }
 
@@ -54,6 +58,14 @@ public sealed class WebhookTransport : ISecurityEventTransport
         var payload = SecurityEventJson.Serialize(e);
         var attempts = Math.Max(1, opts.MaxAttempts);
 
+        // F-19: resolve the token (literal or @cyberark: reference) once per event; the provider caches.
+        // A configured-but-unresolvable secret comes back null → we send no auth header (fail-closed) rather
+        // than leaking a reference string as a bearer token.
+        var token = await _secrets.ResolveAsync(opts.Token, ct).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(opts.Token) && string.IsNullOrEmpty(token))
+            _logger.LogWarning("SIEM webhook token could not be resolved; sending event {EventId} without auth.",
+                e.EventId);
+
         for (var attempt = 1; attempt <= attempts && !ct.IsCancellationRequested; attempt++)
         {
             try
@@ -65,7 +77,7 @@ public sealed class WebhookTransport : ISecurityEventTransport
                 {
                     Content = new StringContent(payload, Encoding.UTF8, "application/json")
                 };
-                ApplyAuth(req, opts);
+                ApplyAuth(req, opts, token);
 
                 using var resp = await client.SendAsync(req, ct).ConfigureAwait(false);
                 if (resp.IsSuccessStatusCode) return;
@@ -91,15 +103,15 @@ public sealed class WebhookTransport : ISecurityEventTransport
         }
     }
 
-    private static void ApplyAuth(HttpRequestMessage req, SiemWebhookOptions opts)
+    private static void ApplyAuth(HttpRequestMessage req, SiemWebhookOptions opts, string? token)
     {
-        if (string.IsNullOrWhiteSpace(opts.Token)) return;
+        if (string.IsNullOrWhiteSpace(token)) return;
 
         if (string.Equals(opts.AuthHeader, "Authorization", StringComparison.OrdinalIgnoreCase))
             req.Headers.Authorization = string.IsNullOrWhiteSpace(opts.AuthScheme)
-                ? new AuthenticationHeaderValue(opts.Token)
-                : new AuthenticationHeaderValue(opts.AuthScheme, opts.Token);
+                ? new AuthenticationHeaderValue(token)
+                : new AuthenticationHeaderValue(opts.AuthScheme, token);
         else
-            req.Headers.TryAddWithoutValidation(opts.AuthHeader, opts.Token);
+            req.Headers.TryAddWithoutValidation(opts.AuthHeader, token);
     }
 }

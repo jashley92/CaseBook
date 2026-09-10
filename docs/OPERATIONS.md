@@ -222,6 +222,10 @@ This is convenient but means a host compromise could re-sign forged seals — un
       exported externally.
 - [ ] (Optional) `Siem:Webhook` configured to the SIEM's HTTP collector (see §5) if the security-event
       stream is wanted.
+- [ ] (Optional) `Secrets:CyberArk` enabled (F-19, §6) if secrets should come from CyberArk CCP: `BaseUrl`
+      (HTTPS) + `AppId` set, the CCP AppID allow-listed to this host/identity (and a client cert in
+      `LocalMachine\My` with the app-pool granted read on its key, if used), and each externalized secret
+      (e.g. `Siem:Webhook:Token`) written as a `@cyberark:Safe=…;Object=…` reference.
 
 ---
 
@@ -257,16 +261,15 @@ excess events are dropped and logged.
 |-----|---------|---------|
 | `Enabled` | On/off | `false` |
 | `Url` | SIEM HTTP collector endpoint (HTTPS) | `""` |
-| `Token` | Bearer token / API key (secret) | `""` |
+| `Token` | Bearer token / API key (secret). Literal, or a `@cyberark:` reference resolved via CCP — see §6 | `""` |
 | `AuthHeader` | Header carrying the token (`Authorization` or e.g. `x-api-key`) | `Authorization` |
 | `AuthScheme` | Scheme prefix on an `Authorization` header (blank = raw value) | `Bearer` |
 | `TimeoutSeconds` | Per-POST timeout | `5` |
 | `MaxAttempts` | Delivery attempts before drop | `3` |
 
 Point `Url` at your SIEM's **HTTP log collector**; set `Token`/`AuthHeader`/`AuthScheme` to match how it
-authenticates. Prefer an environment variable / protected config source over committing the token.
-**Planned (backlog F-19):** optional retrieval of `Token` (and any other app secret) from **an external
-secrets manager** instead of config.
+authenticates. Rather than commit the token, either use a protected config source or — preferably — store
+it in **CyberArk** and set `Token` to a `@cyberark:` reference (**§6, F-19**) so no secret lives in config.
 
 **Syslog** (`Siem:Syslog`):
 
@@ -316,3 +319,61 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 These ids are a **stable contract** — pin SIEM rules to them; they are only ever appended to, never
 renumbered. **5101** fires on a failed **Windows (Negotiate) authentication handshake**, so it is a
 production-only signal (the development auth handler never fails).
+
+---
+
+## 6. Secret Management (F-19)
+
+App secrets read from configuration (today just the SIEM webhook `Token`; more may follow — e.g. an
+authenticated SMTP relay credential) can be **kept out of config entirely** and fetched at runtime from
+**CyberArk Central Credential Provider (CCP / AIMWebService)**. It is **opt-in and per-secret**: a value
+is used literally unless it is written as a reference, so nothing changes until you choose to move a
+specific secret to CyberArk.
+
+**How a secret is selected**
+
+- **Literal (default):** the configured value is the secret, exactly as before.
+- **Reference:** a value of the form `@cyberark:Safe=<safe>;Object=<object>` (any `;`-separated CCP query
+  parameters — `Safe`, `Folder`, `Object`, …) is fetched from CCP by **AppID + query**. The install-wide
+  **AppID** comes from config, not the reference, so a reference names only *where* the secret is, never a
+  credential.
+
+Example — move the SIEM webhook token to CyberArk:
+
+```jsonc
+"Siem":    { "Webhook": { "Enabled": true, "Url": "https://collector...",
+                          "Token": "@cyberark:Safe=SIEM;Object=CaseBook-Webhook-Token" } },
+"Secrets": { "CyberArk": { "Enabled": true,
+                          "BaseUrl": "https://ccp.corp.example/AIMWebService",
+                          "AppId":   "CaseBook",
+                          "ClientCertificateThumbprint": "‹thumbprint of a cert in LocalMachine\\My›",
+                          "CacheTtlSeconds": 300, "FailClosed": true } }
+```
+
+**Configuration (`Secrets:CyberArk`, server-side only)**
+
+| Key | Meaning | Default |
+|-----|---------|---------|
+| `Enabled` | Master switch. Off → all values are literals; a `@cyberark:` reference fails **closed** | `false` |
+| `BaseUrl` | AIMWebService base URL. **Must be HTTPS** | `""` |
+| `AppId` | CCP Application ID this app is provisioned as | `""` |
+| `ClientCertificateThumbprint` | Optional client cert (in `LocalMachine\My`) for mutual TLS | `""` |
+| `CacheTtlSeconds` | How long a fetched secret is cached (supports rotation without a restart) | `300` |
+| `TimeoutSeconds` | Per-request timeout to CCP | `5` |
+| `FailClosed` | On a CCP error: `true` → resolve to unavailable (safe degrade); `false` → serve the last-known-good cached value (never a plaintext-config fallback) | `true` |
+
+**Authentication to CCP.** There is **no CCP password to store** — that is the point of CCP. CCP authorizes
+this application by **client certificate** and/or an **allow-listed machine / OS user**, both configured on
+the CCP side. If you use a client certificate, install it in `LocalMachine\My`, grant the app-pool identity
+**read** on its private key, and set its thumbprint above; otherwise leave the thumbprint blank and rely on
+machine/OS-user allow-listing.
+
+**Failure behaviour.** A reference that cannot be resolved returns **unavailable** — never the reference
+text — so a caller treats it as "no secret". For the webhook that means the event is sent **without** an
+auth header (and the collector will reject it) rather than leaking a bogus token; the failure is logged.
+With `FailClosed=false`, a transient CCP outage instead serves the **last successfully fetched** value past
+its TTL, so a working integration is not dropped by a blip.
+
+**Candidates.** First applied to `Siem:Webhook:Token`. Any future config-borne credential (e.g. E-03 SMTP)
+should resolve through the same seam. The **seal signing key** (F-05b) and **Always-Encrypted column keys**
+(F-14) are noted as candidates but generally prefer the Windows certificate store / HSM over CCP.

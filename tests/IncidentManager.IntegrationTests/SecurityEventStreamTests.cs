@@ -10,6 +10,7 @@ using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Infrastructure.Persistence.Interceptors;
 using IncidentManager.Infrastructure.Realtime;
+using IncidentManager.Infrastructure.Secrets;
 using IncidentManager.Infrastructure.Security;
 using IncidentManager.Infrastructure.Siem;
 using IncidentManager.Web.BackgroundJobs;
@@ -152,7 +153,7 @@ public class WebhookTransportTests
         };
         var handler = new CapturingHandler();
         var transport = new WebhookTransport(new StubHttpClientFactory(handler),
-            new TestOptionsMonitor<SiemWebhookOptions>(opts), NullLogger<WebhookTransport>.Instance);
+            new TestOptionsMonitor<SiemWebhookOptions>(opts), Secrets(), NullLogger<WebhookTransport>.Instance);
 
         transport.Enabled.Should().BeTrue();
         await transport.SendAsync(new SecurityEvent
@@ -173,14 +174,18 @@ public class WebhookTransportTests
     {
         new WebhookTransport(new StubHttpClientFactory(new CapturingHandler()),
                 new TestOptionsMonitor<SiemWebhookOptions>(new SiemWebhookOptions { Enabled = false }),
-                NullLogger<WebhookTransport>.Instance)
+                Secrets(), NullLogger<WebhookTransport>.Instance)
             .Enabled.Should().BeFalse();
 
         new WebhookTransport(new StubHttpClientFactory(new CapturingHandler()),
                 new TestOptionsMonitor<SiemWebhookOptions>(new SiemWebhookOptions { Enabled = true, Url = "" }),
-                NullLogger<WebhookTransport>.Instance)
+                Secrets(), NullLogger<WebhookTransport>.Instance)
             .Enabled.Should().BeFalse();
     }
+
+    // F-19: the transport now resolves its token through ISecretProvider; a passthrough returns literals
+    // unchanged, so the existing literal-token assertions are unaffected.
+    private static ISecretProvider Secrets() => new PassthroughSecretProvider(NullLogger<PassthroughSecretProvider>.Instance);
 }
 
 public class SecurityEventDispatcherTests
