@@ -22,10 +22,26 @@ public sealed record DashboardMetrics(
     int OverdueActionItems,
     int SlaAtRisk,
     int SlaBreached,
+    // Historical SLA compliance over cases that reached each milestone, judged against the administered
+    // per-severity targets (Sla:*). Met = reached within target; Missed = reached only after target passed.
+    int ContainmentMet,
+    int ContainmentMissed,
+    int ResolutionMet,
+    int ResolutionMissed,
     double? MeanHoursToContain,
     double? MeanHoursToResolve,
     IReadOnlyList<PhaseCount> ByPhase,
-    IReadOnlyList<TrendPoint> Trend);
+    IReadOnlyList<TrendPoint> Trend)
+{
+    /// <summary>Percent of contained cases that met their per-severity containment target, or null when none had one.</summary>
+    public int? ContainmentCompliancePercent => Percent(ContainmentMet, ContainmentMissed);
+
+    /// <summary>Percent of resolved cases that met their per-severity resolution target, or null when none had one.</summary>
+    public int? ResolutionCompliancePercent => Percent(ResolutionMet, ResolutionMissed);
+
+    private static int? Percent(int met, int missed)
+        => met + missed == 0 ? null : (int)Math.Round(met * 100.0 / (met + missed));
+}
 
 /// <summary>Leadership metrics computed over the caller's visible set of cases.</summary>
 public sealed class DashboardService
@@ -68,19 +84,32 @@ public sealed class DashboardService
             .ToListAsync(ct);
         var overdue = openDueDates.Count(d => d < now);
 
-        // SLA at-risk/breached over open cases, evaluated against the administered per-severity targets.
+        // One pass over the visible cases against the administered per-severity targets (Sla:*):
+        //  • open cases → the headline at-risk/breached signal (the earliest running clock);
+        //  • any case that reached a milestone → historical compliance (Met/Missed) per clock.
+        // Everything here is settings-aligned — no target is hardcoded in the app or the UI.
         var slaTargets = _sla.Current;
-        var slaRows = await open
-            .Select(c => new { c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc })
+        var slaRows = await cases
+            .Select(c => new { c.Severity, c.Phase, c.IsArchived, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc })
             .ToListAsync(ct);
         int slaAtRisk = 0, slaBreached = 0;
+        int cMet = 0, cMissed = 0, rMet = 0, rMissed = 0;
         foreach (var r in slaRows)
         {
-            var state = Sla.SlaPolicy
-                .Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, slaTargets, now)
-                .State;
-            if (state == Sla.SlaState.Breached) slaBreached++;
-            else if (state == Sla.SlaState.AtRisk) slaAtRisk++;
+            var (cont, res) = Sla.SlaPolicy.Breakdown(
+                r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, slaTargets, now);
+
+            if (cont.State == Sla.SlaState.Met) cMet++; else if (cont.State == Sla.SlaState.Missed) cMissed++;
+            if (res.State == Sla.SlaState.Met) rMet++; else if (res.State == Sla.SlaState.Missed) rMissed++;
+
+            if (r.Phase != CasePhase.Closed && !r.IsArchived)
+            {
+                var head = Sla.SlaPolicy
+                    .Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, slaTargets, now)
+                    .State;
+                if (head == Sla.SlaState.Breached) slaBreached++;
+                else if (head == Sla.SlaState.AtRisk) slaAtRisk++;
+            }
         }
 
         var byPhase = await open
@@ -110,6 +139,7 @@ public sealed class DashboardService
         return new DashboardMetrics(
             openCount, breaches, incidents, adverse, internalOrigin, thirdParty, legalReferred, overdue,
             slaAtRisk, slaBreached,
+            cMet, cMissed, rMet, rMissed,
             MeanHours(containedPairs.Select(p => (p.From, p.To))),
             MeanHours(resolvedPairs.Select(p => (p.From, p.To))),
             byPhase.OrderBy(p => p.Phase).ToList(),

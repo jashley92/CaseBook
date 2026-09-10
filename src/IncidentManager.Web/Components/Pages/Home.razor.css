@@ -1,4 +1,5 @@
-/* Dashboard surface + accent palette. Light by default; dark via the app's data-bs-theme toggle. */
+/* Leadership dashboard — the landing page. Restructured around an interactive activity chart, with a
+   KPI strip on top and a response/SLA + phase row below. Light by default; dark via data-bs-theme. */
 .dash {
     /* Consume the global U-18 tokens so the dashboard shares one surface + accent language. */
     --card: var(--im-surface);
@@ -10,12 +11,15 @@
     --danger: #dc4a34;
     --danger-bg: rgba(220, 74, 52, .10);
     --amber: #d9982b;
+    --warn: #d9982b;
     --low: #3b82f6;
+    --line: #6366f1;                   /* backlog trend line — distinct from bar colours */
     --neutral: #64748b;
     --neutral-bg: rgba(100, 116, 139, .12);
     --ok: #1f9d57;
     --ok-bg: rgba(31, 157, 87, .12);
     --track: rgba(15, 23, 42, .07);
+    --hover: rgba(15, 23, 42, .04);
 }
 
 [data-bs-theme="dark"] .dash {
@@ -28,136 +32,182 @@
     --danger: #f4614e;
     --danger-bg: rgba(244, 97, 78, .14);
     --amber: #e0a83b;
+    --warn: #e0a83b;
     --low: #5b9bf5;
+    --line: #8b8ff5;
     --neutral: #7c8aa5;
     --neutral-bg: rgba(124, 138, 165, .16);
     --ok: #37c26f;
     --ok-bg: rgba(55, 194, 111, .14);
     --track: rgba(255, 255, 255, .08);
+    --hover: rgba(255, 255, 255, .05);
 }
 
+/* ── Attention banner ─────────────────────────────────────────────────────── */
 .dash-attn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    display: flex; align-items: center; gap: 8px;
     background: var(--danger-bg);
     border-left: 3px solid var(--danger);
-    border-radius: 9px;
-    padding: 9px 13px;
-    font-size: .85rem;
-    color: var(--text);
-    margin-bottom: 16px;
+    border-radius: 9px; padding: 10px 14px;
+    font-size: .85rem; color: var(--text); margin-bottom: 16px;
 }
 .dash-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .dash-dot.danger { background: var(--danger); }
 
-.dash-grid { display: grid; grid-template-columns: 1.6fr repeat(2, 1fr); gap: 13px; margin-bottom: 13px; }
-.dash-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-bottom: 13px; }
-
+/* ── Cards + drill-in affordances ─────────────────────────────────────────── */
 .dash-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 16px;
-    color: var(--text);
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px; color: var(--text);
 }
-
-/* Drill-in affordances */
 .dash-link { text-decoration: none; color: inherit; cursor: pointer; transition: border-color .12s ease, color .12s ease; }
-a.dash-card.dash-link:hover { border-color: var(--accent); }
-.hero-open { display: block; }
-.hero-open:hover .k-value { color: var(--accent); }
 .legend a.dash-link:hover { color: var(--text); }
 .prow.dash-link:hover .pl { color: var(--accent); }
 .prow.dash-link:hover .track { box-shadow: 0 0 0 1px var(--border); }
-.bargroup.dash-link:hover .bar { filter: brightness(1.25); }
+.u-link { text-decoration: underline; text-underline-offset: 2px; }
+.u-link:hover { color: var(--accent); }
 
-.dash-hero { grid-row: span 2; display: flex; flex-direction: column; }
-.k-label { color: var(--muted); font-size: .74rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-.k-row { display: flex; align-items: baseline; gap: 12px; margin: 6px 0 12px; flex-wrap: wrap; }
-.k-value { font-size: 3rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+.c-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 16px; }
+.c-title { font-weight: 650; font-size: .98rem; }
+.c-note { color: var(--muted); font-size: .74rem; font-weight: 500; margin-left: 6px; }
+
+/* ── KPI strip ────────────────────────────────────────────────────────────── */
+.kpi-strip { display: grid; grid-template-columns: 1.55fr repeat(4, 1fr); gap: 13px; margin-bottom: 14px; }
+
+.kpi { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+.kpi-lead { display: flex; flex-direction: column; gap: 11px; }
+.kpi-open { display: flex; flex-direction: column; gap: 2px; }
+.kpi-open:hover .k-value { color: var(--accent); }
+.k-label { color: var(--muted); font-size: .72rem; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
+.k-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.k-value { font-size: 3.1rem; font-weight: 820; line-height: 1; letter-spacing: -.025em; transition: color .12s ease; }
 .k-delta { font-size: .8rem; font-weight: 700; }
 .k-delta.up { color: var(--danger); }
 .k-delta.down { color: var(--ok); }
-.k-delta-note { color: var(--muted); font-weight: 500; margin-left: 2px; }
+.k-delta-note { color: var(--muted); font-weight: 500; }
 
-.compo { display: flex; gap: 3px; height: 10px; margin-bottom: 10px; }
+.compo { display: flex; gap: 3px; height: 10px; }
 .seg { border-radius: 3px; }
 .seg.danger { background: var(--danger); }
 .seg.amber { background: var(--amber); }
 .seg.low { background: var(--low); }
-.seg.neutral { background: var(--neutral); }
 .seg.empty { background: var(--track); }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: .76rem; }
 .legend .sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 5px; vertical-align: middle; }
+.sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
 .sw.danger { background: var(--danger); }
 .sw.amber { background: var(--amber); }
 .sw.low { background: var(--low); }
-.sw.neutral { background: var(--neutral); }
+.sw.accent { background: var(--accent); }
+.sw.ok { background: var(--ok); }
+.sw.line { background: var(--line); }
 
-.hero-spark { margin-top: auto; padding-top: 12px; }
-.spark-cap { color: var(--muted); font-size: .72rem; display: block; margin-bottom: 4px; }
+/* ── Centerpiece activity chart ───────────────────────────────────────────── */
+.chart-card { margin-bottom: 14px; overflow: visible; }
+.bc-legend { display: flex; gap: 15px; font-size: .74rem; color: var(--muted); font-weight: 500; }
+.bc-legend .lg { width: 11px; height: 11px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: middle; }
+.lg.accent { background: var(--accent); }
+.lg.ok { background: var(--ok); }
+.lg.line { background: var(--line); border-radius: 11px; height: 3px; }
 
-.c-head { font-weight: 600; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: baseline; }
-.c-note, .rt-tgt { color: var(--muted); font-size: .72rem; font-weight: 500; }
+.chart { position: relative; padding-left: 34px; }
+.chart-y { position: absolute; left: 0; top: 0; bottom: 26px; width: 30px; }
+.chart-y-lab { position: absolute; right: 4px; transform: translateY(50%); font-size: .66rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-.pipe { display: flex; flex-direction: column; gap: 11px; }
-.prow { display: grid; grid-template-columns: 104px 1fr 22px; align-items: center; gap: 10px; }
-.pl { color: var(--text); font-size: .8rem; }
-.prow.off .pl, .prow.off .pc { color: var(--muted); opacity: .6; }
-.track { height: 9px; background: var(--track); border-radius: 5px; position: relative; overflow: hidden; }
-.fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 5px; }
-.pc { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; font-size: .82rem; }
+.chart-plot { position: relative; height: 224px; overflow: visible; }
+.chart-grid { position: absolute; left: 0; right: 0; height: 1px; background: var(--border); opacity: .7; }
+.chart-grid[style*="bottom:0%"] { opacity: 1; }
 
-.rt { margin-bottom: 16px; }
-.rt-label { color: var(--muted); font-size: .8rem; margin-bottom: 7px; }
-.rt-row { display: grid; grid-template-columns: 56px 1fr 56px; align-items: center; gap: 10px; }
-.rt-val { font-size: 1.4rem; font-weight: 800; letter-spacing: -.02em; }
-.rt-val .u { font-size: .75rem; font-weight: 600; color: var(--muted); margin-left: 1px; }
-.rt-val.muted { color: var(--muted); font-weight: 600; }
-.rt .track { height: 8px; overflow: visible; }
-.accentfill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 5px; }
-.tgt { position: absolute; top: -3px; right: 0; width: 2px; height: 14px; background: var(--muted); border-radius: 1px; }
-.rt-tgt { text-align: right; }
-/* SLA summary line inside the response-times card (E-16). */
-.sla-line { display: flex; align-items: center; gap: 8px; font-size: .82rem; padding: 9px 11px; border-radius: 8px; margin-bottom: 12px; }
-.sla-line .sla-go { margin-left: auto; font-size: .74rem; font-weight: 600; opacity: .85; }
+/* The polyline carries fill/stroke inline (stroke via `var(--line)`, which inherits down the DOM
+   regardless of CSS isolation) because isolation does not reliably tag SVG child elements — a scoped
+   descendant selector on <polyline> can miss. */
+.chart-line { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; opacity: .9; }
+
+.chart-cols { position: absolute; inset: 0; display: flex; gap: 3px; }
+.col {
+    flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
+    position: relative; border-radius: 7px; transition: background .12s ease;
+}
+.col:hover { background: var(--hover); }
+.col-bars { display: flex; align-items: flex-end; justify-content: center; gap: 4px; height: 100%; }
+.bar {
+    width: 11px; min-height: 0; border-radius: 3px 3px 0 0;
+    transform-origin: bottom; animation: barGrow .6s cubic-bezier(.2, .8, .2, 1) both;
+}
+.bar.opened { background: var(--accent); }
+.bar.closed { background: var(--ok); }
+.col:hover .bar { filter: brightness(1.12); }
+@keyframes barGrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+/* Hover tooltip (pure CSS — no JS, no server round-trip). */
+.col-tip {
+    position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%) translateY(4px);
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .16);
+    padding: 9px 11px; min-width: 128px; z-index: 20;
+    opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s ease, transform .12s ease;
+}
+.col:hover .col-tip { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+/* Keep the tooltip on-card at the ends of the axis. */
+.col:first-child .col-tip { left: 0; transform: translateX(0) translateY(4px); }
+.col:first-child:hover .col-tip { transform: translateX(0) translateY(0); }
+.col:last-child .col-tip { left: auto; right: 0; transform: translateX(0) translateY(4px); }
+.col:last-child:hover .col-tip { transform: translateX(0) translateY(0); }
+.tip-title { display: block; font-weight: 650; font-size: .78rem; margin-bottom: 6px; }
+.tip-row { display: flex; align-items: center; font-size: .76rem; color: var(--muted); margin-top: 3px; }
+.tip-row b { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; }
+.col-empty .col-bars { opacity: .5; }
+
+.chart-x { display: flex; margin-top: 8px; padding-left: 0; }
+.chart-x span { flex: 1; text-align: center; color: var(--muted); font-size: .64rem; }
+
+/* ── Secondary row ────────────────────────────────────────────────────────── */
+.dash-secondary { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-bottom: 13px; }
+
+.rt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.rt-fig { background: var(--hover); border-radius: 11px; padding: 12px 14px; }
+.rt-fig-val { font-size: 1.7rem; font-weight: 820; letter-spacing: -.025em; }
+.rt-fig-val.muted { color: var(--muted); font-weight: 650; }
+.rt-fig-val .u { font-size: .8rem; font-weight: 650; color: var(--muted); margin-left: 2px; }
+.rt-fig-lab { color: var(--muted); font-size: .76rem; margin-top: 3px; }
+
+/* SLA compliance meters (judged against the administered per-severity targets). */
+.cmp { margin-bottom: 13px; }
+.cmp-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+.cmp-label { font-size: .82rem; color: var(--text); }
+.cmp-val { font-weight: 750; font-variant-numeric: tabular-nums; }
+.cmp-track { height: 8px; background: var(--track); border-radius: 5px; overflow: hidden; }
+.cmp-fill { display: block; height: 100%; border-radius: 5px; transition: width .6s cubic-bezier(.2, .8, .2, 1); }
+.cmp-fill.ok { background: var(--ok); }
+.cmp-fill.warn { background: var(--warn); }
+.cmp-fill.bad { background: var(--danger); }
+.cmp-note { color: var(--muted); font-size: .72rem; margin-top: 4px; }
+.cmp-na .cmp-val, .cmp-na .cmp-label { color: var(--muted); }
+
+.sla-line { display: flex; align-items: center; gap: 8px; font-size: .82rem; padding: 10px 12px; border-radius: 9px; margin: 4px 0 12px; }
+.sla-line .sla-go { margin-left: auto; font-size: .74rem; font-weight: 650; opacity: .85; }
 .sla-line.breached { background: var(--danger-bg); color: var(--danger); }
 .sla-line.ok { background: var(--ok-bg); color: var(--ok); }
 a.sla-line { text-decoration: none; }
 a.sla-line:hover { filter: brightness(1.05); }
+.rt-foot { color: var(--muted); font-size: .72rem; border-top: 1px solid var(--border); padding-top: 11px; line-height: 1.5; }
 
-.rt-foot { color: var(--muted); font-size: .72rem; border-top: 1px solid var(--border); padding-top: 10px; }
+/* Phase pipeline */
+.pipe { display: flex; flex-direction: column; gap: 12px; }
+.prow { display: grid; grid-template-columns: 104px 1fr 22px; align-items: center; gap: 10px; }
+.pl { color: var(--text); font-size: .82rem; transition: color .12s ease; }
+.prow.off .pl, .prow.off .pc { color: var(--muted); opacity: .6; }
+.track { height: 9px; background: var(--track); border-radius: 5px; position: relative; overflow: hidden; }
+.fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 5px; }
+.pc { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; font-size: .84rem; }
 
-.bc-legend { display: flex; gap: 14px; font-size: .74rem; color: var(--muted); font-weight: 500; }
-.bc-legend .lg { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 5px; vertical-align: middle; }
-.lg.accent { background: var(--accent); }
-.lg.ok { background: var(--ok); }
-
-.barchart { position: relative; padding-left: 22px; }
-.bc-ymax { position: absolute; left: 0; top: 0; font-size: .68rem; color: var(--muted); }
-.bars {
-    display: flex;
-    align-items: flex-end;
-    gap: 4px;
-    height: 104px;
-    border-bottom: 1px solid var(--border);
-    /* faint mid gridline */
-    background: linear-gradient(var(--border), var(--border)) left 50% / 100% 1px no-repeat;
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 820px) {
+    .kpi-strip { grid-template-columns: 1fr 1fr; }
+    .kpi-lead { grid-column: span 2; }
+    .dash-secondary { grid-template-columns: 1fr; }
 }
-.bargroup { flex: 1; height: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 3px; }
-.bar { width: 7px; min-height: 0; border-radius: 2px 2px 0 0; }
-.bar.opened { background: var(--accent); }
-.bar.closed { background: var(--ok); }
-.bc-x { display: flex; margin-top: 6px; }
-.bc-x span { flex: 1; text-align: center; color: var(--muted); font-size: .62rem; }
-
-/* Sparklines are inline-styled SVG (see Home.razor Spark) since CSS isolation
-   can't tag MarkupString-injected markup; CSS variables still inherit here. */
-
-@media (max-width: 700px) {
-    .dash-grid { grid-template-columns: 1fr 1fr; }
-    .dash-hero { grid-column: span 2; grid-row: auto; }
-    .dash-grid2 { grid-template-columns: 1fr; }
-    .dash-trend .trend-grid { grid-template-columns: 1fr; }
+@media (max-width: 520px) {
+    .kpi-strip { grid-template-columns: 1fr; }
+    .kpi-lead { grid-column: auto; }
+    .rt-grid { grid-template-columns: 1fr; }
 }

@@ -34,6 +34,13 @@ public static class MetricsCsv
         Row("SLA breached", m.SlaBreached.ToString(CultureInfo.InvariantCulture));
         Row("Mean hours to contain", m.MeanHoursToContain?.ToString(CultureInfo.InvariantCulture) ?? "");
         Row("Mean hours to resolve", m.MeanHoursToResolve?.ToString(CultureInfo.InvariantCulture) ?? "");
+        // SLA compliance against the administered per-severity targets (Sla:*).
+        Row("Containment SLA met", m.ContainmentMet.ToString(CultureInfo.InvariantCulture));
+        Row("Containment SLA missed", m.ContainmentMissed.ToString(CultureInfo.InvariantCulture));
+        Row("Containment SLA compliance %", m.ContainmentCompliancePercent?.ToString(CultureInfo.InvariantCulture) ?? "");
+        Row("Resolution SLA met", m.ResolutionMet.ToString(CultureInfo.InvariantCulture));
+        Row("Resolution SLA missed", m.ResolutionMissed.ToString(CultureInfo.InvariantCulture));
+        Row("Resolution SLA compliance %", m.ResolutionCompliancePercent?.ToString(CultureInfo.InvariantCulture) ?? "");
 
         foreach (var phase in Enum.GetValues<CasePhase>())
         {
