@@ -194,8 +194,8 @@ try {
 $ancm = Join-Path $env:WINDIR 'System32\inetsrv\aspnetcorev2.dll'
 if (-not (Test-Path $ancm)) {
     throw ("The ASP.NET Core Module (aspnetcorev2.dll) is not installed, so IIS cannot host the app " +
-           "(it would fail with HTTP 500.19). Install the .NET 8 Hosting Bundle from " +
-           "https://dotnet.microsoft.com/download/dotnet/8.0 (ASP.NET Core Runtime -> Hosting Bundle), " +
+           "(it would fail with HTTP 500.19). Install the .NET 10 Hosting Bundle from " +
+           "https://dotnet.microsoft.com/download/dotnet/10.0 (ASP.NET Core Runtime -> Hosting Bundle), " +
            "run 'iisreset', then re-run this script.")
 }
 
@@ -210,7 +210,7 @@ if ($SkipPublish) {
 } else {
     Write-Step "Publishing CaseBook ($PublishConfiguration) to $SitePath"
     if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
-        throw "The .NET 8 SDK ('dotnet') is required on this host to publish. Install the SDK, or publish " +
+        throw "The .NET 10 SDK ('dotnet') is required on this host to publish. Install the SDK, or publish " +
               "elsewhere, copy the output into $SitePath, and re-run with -SkipPublish."
     }
 

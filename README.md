@@ -123,7 +123,7 @@ classification mix, phase pipeline, and activity bars deep-link straight into th
 
 ## Stack
 
-- **.NET 8**, ASP.NET Core, **Blazor Server** (interactive)
+- **.NET 10**, ASP.NET Core, **Blazor Server** (interactive)
 - **EF Core** — SQLite for local dev (zero-install), SQL Server 2022 in production
 - **Windows Integrated Authentication** (AD group → role mapping); a dev auth fallback for local use
 - Reporting: **DocumentFormat.OpenXml** (Word) + **PDFsharp-MigraDoc** (PDF) — both MIT-licensed

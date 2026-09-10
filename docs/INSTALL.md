@@ -11,7 +11,7 @@ End-to-end procedure to stand up a fresh production instance. For ongoing operat
 
 ## 0. Architecture in one paragraph
 
-CaseBook is an ASP.NET Core **Blazor Server** app (.NET 8) hosted **in-process under IIS**, talking to
+CaseBook is an ASP.NET Core **Blazor Server** app (.NET 10) hosted **in-process under IIS**, talking to
 **SQL Server 2022** over **Windows integrated authentication** (no SQL passwords). Users authenticate
 with **Windows Integrated Auth**; AD security groups map to the five app roles. Evidence blobs,
 integrity seals, and generated reports live on an **ACL-restricted data volume outside the web root**.
@@ -36,7 +36,7 @@ while the **app data volume is the main thing that grows** — size it to your e
 | | Application / web host | Database host |
 |---|---|---|
 | **OS** | Windows Server 2022 (Standard/Datacenter) | Windows Server 2022 |
-| **Server software** | IIS + **.NET 8 Hosting Bundle** | **SQL Server 2022 Standard** (Express is unsupported: 10 GB cap, no SQL Agent for backups) |
+| **Server software** | IIS + **.NET 10 Hosting Bundle** | **SQL Server 2022 Standard** (Express is unsupported: 10 GB cap, no SQL Agent for backups) |
 | **CPU** | 4 vCPU (2 minimum) | 4 vCPU |
 | **RAM** | 8 GB minimum, **16 GB recommended** (Blazor Server holds a live circuit per active user in memory; report generation adds headroom) | **16 GB** (cap SQL "max server memory" to leave the OS ~2–4 GB) |
 | **System disk** | 60 GB SSD (OS + .NET + published app) | 80 GB SSD (OS + SQL binaries) |
@@ -58,16 +58,16 @@ Virtual hardware is fine. RCSI is enabled on the database (read-heavy dashboards
 
 ### 1.3 Web host (Windows Server 2022)
 
-- [ ] IIS with the features below, then the **.NET 8 Hosting Bundle** (installs the ASP.NET Core Module).
+- [ ] IIS with the features below, then the **.NET 10 Hosting Bundle** (installs the ASP.NET Core Module).
       Install the Hosting Bundle **after** IIS, then `iisreset`.
 
 ```powershell
 Install-WindowsFeature Web-Server, Web-Windows-Auth, Web-Asp-Net45, Web-Net-Ext45, `
                        Web-ISAPI-Ext, Web-ISAPI-Filter, Web-Mgmt-Console -IncludeManagementTools
-# Then install the .NET 8 Hosting Bundle from https://dotnet.microsoft.com/download/dotnet/8.0
+# Then install the .NET 10 Hosting Bundle from https://dotnet.microsoft.com/download/dotnet/10.0
 ```
 
-- [ ] To publish **on** the server, the **.NET 8 SDK** as well. Alternatively publish on a build box and
+- [ ] To publish **on** the server, the **.NET 10 SDK** as well. Alternatively publish on a build box and
       copy the output — then run `Install-CaseBook.ps1` with the folder already populated.
 - [ ] The `SqlServer` PowerShell module **or** `sqlcmd.exe` for the database step
       (`Install-Module SqlServer -Scope AllUsers`).
@@ -189,7 +189,7 @@ The install step runs `dotnet publish`, which restores NuGet packages. Two commo
   then re-run — or re-run with **`-AddNuGetOrgSource`** to have the installer register it for you. (Behind a
   proxy, also set `HTTP_PROXY`/`HTTPS_PROXY` for the shell. Sources are **per-user** — register them as the
   account that runs the install.)
-- **Air-gapped host / no SDK** — publish on a machine **with** internet and the .NET 8 SDK
+- **Air-gapped host / no SDK** — publish on a machine **with** internet and the .NET 10 SDK
   (`dotnet publish src/IncidentManager.Web -c Release -o <folder>`), copy `<folder>` into `-SitePath`, and
   run the installer with **`-SkipPublish`** — it then does only IIS + config + ACLs.
 
@@ -245,7 +245,7 @@ Then, signed in as a mapped user:
 | Symptom | Likely cause / fix |
 |---|---|
 | App fails to start; log says *Auth:Mode is 'Dev' in Production* | `appsettings.Production.json` not deployed or environment isn't Production. The installer writes it and IIS defaults the environment to Production; confirm the file exists in the site root. |
-| `500.19` (0x8007000d), Module *IIS Web Core*, and **no app log at all** | The **ASP.NET Core Module isn't registered** — IIS can't parse the `<aspNetCore>` section in `web.config`. It ships with the **.NET 8 Hosting Bundle**, *not* the SDK. Install the Hosting Bundle, `iisreset`, retry. Confirm with `Test-Path C:\Windows\System32\inetsrv\aspnetcorev2.dll`. (The installer now preflights this.) |
+| `500.19` (0x8007000d), Module *IIS Web Core*, and **no app log at all** | The **ASP.NET Core Module isn't registered** — IIS can't parse the `<aspNetCore>` section in `web.config`. It ships with the **.NET 10 Hosting Bundle**, *not* the SDK. Install the Hosting Bundle, `iisreset`, retry. Confirm with `Test-Path C:\Windows\System32\inetsrv\aspnetcorev2.dll`. (The installer now preflights this.) |
 | `500.30` / `500.31` on first hit | ASP.NET Core Module can't start the app — usually a bad connection string, or the app can't write its `App_Data` folder under the web root (the installer now pre-creates it with Modify). Check the Windows **Application** event log and `logs\stdout`. |
 | `401 Unauthorized` for everyone | Windows Auth not negotiating — missing **SPN** for the hostname, or Anonymous still enabled. Verify Kerberos SPNs and that the installer disabled Anonymous. |
 | Login OK but *access denied* everywhere | The signed-in user isn't in any mapped AD group, or `RoleMapping:Groups` names don't match real groups. Fix the group names (config seeds roles on first run; thereafter manage in-app). |

@@ -164,7 +164,7 @@ if ($ConfigFile) {
         # --- web-host capability (only meaningful on the web host) ---
         $ancm = Join-Path $env:WINDIR 'System32\inetsrv\aspnetcorev2.dll'
         if (Test-Path $ancm) { Ok "ASP.NET Core Module present (this host can host the app)" }
-        else { Warn ".NET 8 Hosting Bundle / ASP.NET Core Module not found (install it on the WEB host before Install-CaseBook)" }
+        else { Warn ".NET 10 Hosting Bundle / ASP.NET Core Module not found (install it on the WEB host before Install-CaseBook)" }
     }
 }
 
