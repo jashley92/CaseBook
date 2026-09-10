@@ -244,7 +244,7 @@ if ($SkipPublish) {
 
 # --- 2. Data root (outside web root) + subfolders -----------------------------
 Write-Step "Creating ACL-restricted data root at $DataRoot"
-$dataDirs = @('evidence-store','report-output','keys','seals','ops','dp-keys') | ForEach-Object { Join-Path $DataRoot $_ }
+$dataDirs = @('evidence-store','report-output','branding','keys','seals','ops','dp-keys') | ForEach-Object { Join-Path $DataRoot $_ }
 foreach ($d in @($DataRoot) + $dataDirs) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 
 # --- 3. appsettings.Production.json from template -----------------------------
@@ -284,12 +284,10 @@ function Grant-Ntfs($path, $rights) {
 }
 Grant-Ntfs $SitePath 'ReadAndExecute'                       # app binaries: read/execute only
 foreach ($d in $dataDirs) { Grant-Ntfs $d 'Modify' }        # stores the app reads/writes
-# The app creates an App_Data folder under its content root at startup (Directory.CreateDirectory) and
-# uses it for runtime scratch / data-protection keys. Pre-create it and grant Modify on just that folder,
-# so the rest of the web root stays read-only. Without this the app throws at startup and IIS returns 500.
-$siteAppData = Join-Path $SitePath 'App_Data'
-New-Item -ItemType Directory -Force -Path $siteAppData | Out-Null
-Grant-Ntfs $siteAppData 'Modify'
+# H-07: on SQL Server (production) every file store — DB, evidence, reports, branding, keys, seals,
+# data-protection ring, ops status — lives under the ACL'd DataRoot, and the app no longer creates an
+# App_Data folder under its content root. The web root therefore stays fully read/execute-only above;
+# no per-folder Modify carve-out is needed.
 # Tighten the private signing key to the app identity (read) - provision the key out of band (OPERATIONS section 2).
 $keysDir = Join-Path $DataRoot 'keys'
 Write-Host "    (Provision $keysDir\seal-signing.pem out of band; do NOT let the app generate it in prod.)" -ForegroundColor Yellow

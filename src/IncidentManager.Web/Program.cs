@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -191,6 +192,14 @@ builder.Services.AddAuthorization(options =>
 });
 builder.Services.AddCascadingAuthenticationState();
 
+// --- H-09: health/readiness probes for IIS / load balancer / uptime monitoring ---
+// Two anonymous endpoints (mapped below): /health/live is a bare liveness signal (the process is up and
+// serving), /health (readiness) additionally verifies DB connectivity and evidence-store reachability.
+// Both return status only — no case data, no sensitive detail.
+builder.Services.AddHealthChecks()
+    .AddCheck<IncidentManager.Web.HealthChecks.DatabaseHealthCheck>("database", tags: ["ready"])
+    .AddCheck<IncidentManager.Web.HealthChecks.EvidenceStoreHealthCheck>("evidence-store", tags: ["ready"]);
+
 var app = builder.Build();
 
 // X-02: wire the (global) taxonomy display-label provider into the static Ui helpers, so every
@@ -199,7 +208,13 @@ IncidentManager.Web.Components.Shared.Ui.UseTaxonomy(
     app.Services.GetRequiredService<IncidentManager.Application.Abstractions.ITaxonomyDisplay>());
 
 // --- Ensure the local data directory exists (SQLite won't create it) ---
-Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, "App_Data"));
+// Only the file-based provider (SQLite: dev/default) needs a writable App_Data under the content root.
+// Production runs on SQL Server with every file store (evidence, reports, branding, keys, seals, dp-keys,
+// ops) pointed at the ACL'd DataRoot, so the web root can stay fully read-only (H-07) — don't create a
+// stray App_Data there.
+if (!(app.Configuration.GetValue<string>("Database:Provider") ?? "Sqlite")
+        .Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
+    Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, "App_Data"));
 
 // --- Initialize / migrate the database (and seed demo data outside production) ---
 using (var scope = app.Services.CreateScope())
@@ -290,6 +305,15 @@ app.UseRateLimiter();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+// --- H-09: health probes (anonymous — the default FallbackPolicy would otherwise 401 the monitor) ---
+// Liveness: process is up and the pipeline responds; runs no dependency checks.
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
+// Readiness: DB + evidence-store reachable. The default response writer emits just the status word
+// ("Healthy"/"Unhealthy") with 200/503 — no per-check names, paths, or exception detail.
+var readyOptions = new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") };
+app.MapHealthChecks("/health", readyOptions).AllowAnonymous();
+app.MapHealthChecks("/health/ready", readyOptions).AllowAnonymous();
 
 // --- Evidence download (streamed, records a chain-of-custody event) ---
 app.MapGet("/evidence/{id:guid}", async (Guid id, EvidenceService evidence,

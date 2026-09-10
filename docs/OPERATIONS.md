@@ -17,6 +17,7 @@ Three data sets must be backed up **in lockstep** so they stay mutually consiste
 | Evidence blobs | `EvidenceStore:RootPath` (outside webroot) | File backup of the whole tree |
 | Integrity seals | `Integrity:ExportPath` (out-of-band seal exports) | File backup (append-only) |
 | Generated reports | `ReportOutput:RootPath` | File backup |
+| Report branding logo | `ReportBranding:RootPath` (`DataRoot\branding`, H-07) | File backup (single small image; low churn) |
 
 ### 1.1 SQL Server backup schedule (recommended baseline)
 
@@ -180,6 +181,18 @@ This is convenient but means a host compromise could re-sign forged seals — un
   Over budget returns **429** with a `Retry-After` header and emits SIEM **`EventId 5306`** — a spike of
   these from one account is a bulk-exfiltration signal worth a detection rule. The inline timeline
   thumbnail endpoint is intentionally exempt (many load at once; it is image-only and need-to-know scoped).
+- **Health probes (H-09)**: three **anonymous** endpoints for IIS / a load balancer / uptime monitoring —
+  they return the status word only (no case data, no paths, no exception text), so they are safe to expose
+  to an internal monitor:
+  - `GET /health/live` — **liveness**: the process is up and the pipeline responds. Runs no dependency
+    checks. `200 Healthy`. Use this for the app-pool / container "is it running" probe.
+  - `GET /health` (alias `GET /health/ready`) — **readiness**: additionally verifies **database
+    connectivity** (a cheap `CanConnect`, no case data) and **evidence-store reachability** (the configured
+    root exists — catches an unmounted/disconnected data volume). `200 Healthy`, or **`503 Unhealthy`** if a
+    dependency is down. Point the load balancer's health check here so a node with an unreachable DB or
+    evidence volume is pulled from rotation instead of serving 500s. Complements the backup-health (H-04)
+    and evidence-drift (F-17) signals on the Diagnostics page, which cover freshness/tamper rather than
+    live reachability.
 
 ---
 
@@ -188,8 +201,12 @@ This is convenient but means a host compromise could re-sign forged seals — un
 - [ ] `Auth:Mode=Windows`; AD group → role mappings under `RoleMapping:Groups` match real groups.
 - [ ] `Database:Provider=SqlServer` and a valid integrated-auth connection string.
 - [ ] SQL Agent backup jobs (full/diff/log) scheduled to a secured, encrypted, offsite target.
-- [ ] Evidence / seal / report directories exist outside the webroot, ACL-restricted, and in the
-      backup set and the EDR monitoring policy.
+- [ ] Evidence / seal / report / branding directories exist outside the webroot, ACL-restricted, and in
+      the backup set and the EDR monitoring policy.
+- [ ] Web root is **read/execute-only** — on SQL Server the app writes no `App_Data` under the content
+      root (H-07); every store lives under `DataRoot`. No Modify carve-out on the site folder is required.
+- [ ] Load balancer / uptime monitor points at **`/health`** (readiness) and the app-pool/container probe
+      at **`/health/live`** (liveness) — H-09. Both are anonymous and status-only; no auth exception needed.
 - [ ] Signing key provisioned out of band and protected (DPAPI/cert store/HSM); public key + `KeyId`
       archived separately.
 - [ ] `DataProtection:KeyPath` set to an ACL-restricted folder (installer creates `DataRoot\dp-keys`) so
