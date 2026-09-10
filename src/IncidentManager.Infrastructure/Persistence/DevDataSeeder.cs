@@ -38,6 +38,10 @@ public static class DevDataSeeder
             return;
 
         await SeedAsync(db, clock, ct);
+        // A deeper historical backfill so the leadership dashboard's 12-month trend, SLA compliance, and
+        // phase mix are populated out of the box. Kept OUT of SeedAsync so tests that call SeedAsync
+        // directly still see exactly the three hand-authored cases.
+        await SeedHistoricalDemoAsync(db, clock, ct);
     }
 
     /// <summary>
@@ -356,5 +360,131 @@ public static class DevDataSeeder
         c3.Summary = "Single account showed impossible-travel; likely benign VPN egress change, under review.";
         db.Cases.Add(c3);
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Backfills a year of representative case history on top of the three hand-authored cases, so the
+    /// leadership dashboard shows a full 12-month activity trend, a realistic SLA-compliance mix (most
+    /// cases meet their per-severity target, some miss), a populated phase pipeline, and a handful of live
+    /// open cases (a couple past their SLA). Deterministic (fixed RNG seed) so the demo — and the README
+    /// screenshots taken from it — are reproducible. Fictional scenarios only; no real org/vendor names.
+    /// </summary>
+    public static async Task SeedHistoricalDemoAsync(AppDbContext db, IClock clock, CancellationToken ct = default)
+    {
+        const string actor = "system";
+        var now = clock.UtcNow;
+        var rnd = new Random(20260910);
+
+        // Mirror the appsettings SLA defaults so synthesized durations land as a believable met/missed mix.
+        static int ContainTarget(Severity s) => s switch
+            { Severity.Critical => 4, Severity.High => 12, Severity.Medium => 24, Severity.Low => 72, _ => 0 };
+        static int ResolveTarget(Severity s) => s switch
+            { Severity.Critical => 24, Severity.High => 72, Severity.Medium => 168, Severity.Low => 336, _ => 0 };
+
+        var scenarios = new (string Name, string Title, Classification Cls, Severity Sev, CaseOrigin Origin, string Data)[]
+        {
+            ("Phishing Wave", "Credential-phishing wave targeting staff", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "Credentials; potential NPI"),
+            ("Ransomware Outbreak", "Ransomware on endpoints", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "Business data; potential NPI"),
+            ("BEC Wire Fraud", "Business email compromise", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "Financial; credentials"),
+            ("Lost Laptop", "Lost or stolen device", Classification.AdverseEvent, Severity.Low, CaseOrigin.InternalDetection, "Potential NPI on device"),
+            ("Vendor Data Breach", "Vendor disclosed a data breach", Classification.Breach, Severity.High, CaseOrigin.ThirdParty, "Policyholder PII; claims history"),
+            ("Anomalous VPN Logins", "Impossible-travel VPN logins", Classification.AdverseEvent, Severity.Low, CaseOrigin.InternalDetection, "Credentials"),
+            ("Malware Beacon", "C2 beacon from a workstation", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "Business data"),
+            ("Exposed Storage Bucket", "Misconfigured storage exposure", Classification.AdverseEvent, Severity.Medium, CaseOrigin.InternalDetection, "Business data; potential NPI"),
+            ("Insider Data Access", "Unusual bulk record access", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "Policyholder PII"),
+            ("Portal DDoS", "Volumetric DDoS on the member portal", Classification.AdverseEvent, Severity.Medium, CaseOrigin.InternalDetection, "None (availability)"),
+            ("Vendor Credential Leak", "Vendor leaked API credentials", Classification.Incident, Severity.Medium, CaseOrigin.ThirdParty, "Credentials"),
+            ("Third-Party Ransomware", "Vendor ransomware affecting our data", Classification.Breach, Severity.Critical, CaseOrigin.ThirdParty, "Policyholder PII; claims history"),
+        };
+
+        var team = new (string Id, string Name, CaseAssignmentRole Role)[]
+        {
+            ("ic1", "Ivy Commander", CaseAssignmentRole.IncidentCommander),
+            ("analyst1", "Alex Analyst", CaseAssignmentRole.Analyst),
+            ("analyst2", "Robin Reyes", CaseAssignmentRole.Analyst),
+        };
+
+        int seq2025 = 1, seq2026 = 100; // never collides with the three core 2026 cases (01–03)
+        int NextSeq(int year) => year == 2025 ? seq2025++ : seq2026++;
+
+        Case NewCase((string Name, string Title, Classification Cls, Severity Sev, CaseOrigin Origin, string Data) s,
+            DateTimeOffset created, string summary)
+        {
+            var year = created.Year;
+            var c = Case.Open(year, NextSeq(year), s.Name, s.Title, s.Cls, s.Sev, s.Origin, actor, created);
+            c.DetectionCaseId = $"SIEM-{40000 + rnd.Next(1000, 9999)}";
+            c.Summary = summary;
+            c.DataTypesInvolved = s.Data;
+            return c;
+        }
+
+        // ── Closed history: 2–3 cases per month across the last ~11 months, each run fully through the
+        // lifecycle with durations that mostly beat, sometimes miss, the per-severity SLA target. ──
+        for (var m = 11; m >= 1; m--)
+        {
+            var count = 2 + rnd.Next(0, 2);
+            for (var k = 0; k < count; k++)
+            {
+                var created = now.AddMonths(-m).AddDays(rnd.Next(0, 26)).AddHours(rnd.Next(0, 23));
+                var sc = scenarios[rnd.Next(scenarios.Length)];
+                var c = NewCase(sc, created, $"{sc.Title}. Investigated, contained, and closed.");
+                db.Cases.Add(c);
+                await db.SaveChangesAsync(ct);
+
+                var who = team[rnd.Next(team.Length)];
+                c.Assign(who.Id, who.Name, who.Role, actor, created);
+
+                var containMet = rnd.NextDouble() < 0.78;
+                var resolveMet = rnd.NextDouble() < 0.72;
+                var containH = ContainTarget(sc.Sev) * (containMet ? 0.35 + rnd.NextDouble() * 0.5 : 1.1 + rnd.NextDouble() * 0.8);
+                var resolveH = Math.Max(containH + 3, ResolveTarget(sc.Sev) * (resolveMet ? 0.4 + rnd.NextDouble() * 0.5 : 1.1 + rnd.NextDouble() * 0.5));
+                var contained = created.AddHours(containH);
+                var resolved = created.AddHours(resolveH);
+                var closed = resolved.AddHours(3 + rnd.Next(0, 45));
+
+                c.ChangePhase(CasePhase.Triage, "Triaged", actor, created.AddHours(0.5));
+                c.ChangePhase(CasePhase.Containment, "Contained", actor, contained);
+                c.ChangePhase(CasePhase.Eradication, "Eradicated", actor, resolved.AddHours(-4));
+                c.ChangePhase(CasePhase.Recovery, "Recovered", actor, resolved);
+                c.ChangePhase(CasePhase.Closed, "Closed after review", actor, closed);
+                await db.SaveChangesAsync(ct);
+            }
+        }
+
+        // ── Live open cases across the last few weeks: a spread of phases and a couple already past their
+        // SLA target, so the KPI open count, phase pipeline, backlog line and attention banner are alive. ──
+        var open = new (int DaysAgo, double? ContainAfterH, CasePhase Phase, int ScenarioIdx, bool Overdue)[]
+        {
+            (30, 20, CasePhase.Eradication, 6, false),   // Malware Beacon — contained, eradicating
+            (16, 10, CasePhase.Recovery, 7, false),      // Exposed Storage Bucket — recovering
+            (9,  30, CasePhase.Containment, 0, false),   // Phishing Wave — contained
+            (5,  null, CasePhase.Triage, 5, false),      // Anomalous VPN Logins — triage
+            (3,  null, CasePhase.Triage, 4, true),       // Vendor Data Breach (High) — 3d uncontained → breached
+            (2,  null, CasePhase.Triage, 8, true),       // Insider Data Access (High) — uncontained → breached
+        };
+        foreach (var o in open)
+        {
+            var created = now.AddDays(-o.DaysAgo).AddHours(-rnd.Next(0, 10));
+            var sc = scenarios[o.ScenarioIdx];
+            var c = NewCase(sc, created, $"{sc.Title}. Under active investigation.");
+            db.Cases.Add(c);
+            await db.SaveChangesAsync(ct);
+
+            var who = team[rnd.Next(team.Length)];
+            c.Assign(who.Id, who.Name, who.Role, actor, created);
+            c.ChangePhase(CasePhase.Triage, "Triaged", actor, created.AddHours(0.5));
+            if (o.ContainAfterH is { } ch)
+                c.ChangePhase(CasePhase.Containment, "Contained", actor, created.AddHours(ch));
+            if (o.Phase is CasePhase.Eradication or CasePhase.Recovery)
+                c.ChangePhase(o.Phase, o.Phase.ToString(), actor, now.AddHours(-6));
+
+            if (o.Overdue)
+                c.ActionItems.Add(new ActionItem
+                {
+                    CaseId = c.Id, Title = "Confirm scope with stakeholders", Owner = who.Id,
+                    DueAtUtc = now.AddDays(-1), Status = ActionItemStatus.Open, CreatedBy = actor, CreatedAtUtc = created
+                });
+            await db.SaveChangesAsync(ct);
+        }
     }
 }
