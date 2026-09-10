@@ -71,6 +71,14 @@ public static class SettingsCatalog
             "Hours between signed seals of the audit chain. Verification and tamper-alarming run continuously " +
             "(about every 10 minutes) regardless, so this interval only bounds how much recent history is not " +
             "yet covered by a seal — not how quickly a tamper is detected. Takes effect within a few minutes of saving.", "6"),
+        new SettingDefinition("Integrity:EvidenceVerify:Enabled", "Evidence re-verification enabled", "Integrity", SettingKind.Bool,
+            "Whether the background job periodically re-hashes stored evidence and alarms when the bytes no longer " +
+            "match their recorded SHA-256 (F-17). Off by default — a full re-hash of the evidence store is I/O-heavy. " +
+            "The recorded hash is protected by the audit chain, so this catches bit-rot or tampering of the files themselves. " +
+            "Alerts go to the same distribution as the audit-chain alarm. Takes effect within a few minutes of saving.", "false"),
+        new SettingDefinition("Integrity:EvidenceVerify:IntervalHours", "Evidence re-verification interval (hours)", "Integrity", SettingKind.Int,
+            "Hours between full re-verification passes over the evidence store. Deliberately slow (default daily) " +
+            "because each pass re-hashes every stored file. A pass also runs once at startup. Takes effect within a few minutes of saving.", "24"),
         new SettingDefinition("Sla:Containment:Critical", "Containment — Critical (hours)", "Response SLA", SettingKind.Int,
             "Target hours from detection to containment for Critical cases. Blank disables the SLA for this severity.", "4"),
         new SettingDefinition("Sla:Containment:High", "Containment — High (hours)", "Response SLA", SettingKind.Int,

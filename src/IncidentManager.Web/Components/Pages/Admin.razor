@@ -16,6 +16,7 @@
 @inject IncidentManager.Application.Abstractions.ISealSigner Signer
 @inject IncidentManager.Application.Abstractions.IEmailSender Email
 @inject IncidentManager.Web.Ops.BackupHealthReader Backup
+@inject IncidentManager.Application.Integrity.IEvidenceIntegrityMonitor EvidenceIntegrity
 @inject ISeverityLabels SevLabels
 @inject IJSRuntime JS
 
@@ -428,11 +429,67 @@
                 </table>
             }
 
+            <h6 class="text-uppercase small text-muted mt-3">Evidence-at-rest integrity</h6>
+            <p class="small text-muted mb-2">
+                F-17: a background job re-hashes stored evidence and compares it to the recorded SHA-256
+                (which the audit chain protects), so bit-rot or tampering of the files themselves is caught.
+                Enable it and set the cadence under <em>Settings → Integrity</em>; alerts reuse the
+                integrity-alert distribution.
+            </p>
+            <table class="table table-sm">
+                <tbody>
+                    @if (EvidenceIntegrity.Current is not { } ev)
+                    {
+                        <tr>
+                            <td style="width:32%">Status</td>
+                            <td>
+                                <span class="im-badge im-b-neutral">Not run</span>
+                                <span class="small text-muted ms-2">
+                                    @(Config.GetValue<bool>("Integrity:EvidenceVerify:Enabled")
+                                        ? "enabled — awaiting the first pass"
+                                        : "disabled")
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        <tr>
+                            <td style="width:32%">Overall</td>
+                            <td>
+                                @if (ev.IsClean)
+                                {
+                                    <span class="im-badge im-b-ok">Clean</span>
+                                }
+                                else
+                                {
+                                    <span class="im-badge im-b-danger">Drift: @ev.DriftCount</span>
+                                }
+                                <span class="small text-muted ms-2">
+                                    @ev.CheckedCount checked · @ev.CheckedAtUtc.ToString("u")
+                                </span>
+                            </td>
+                        </tr>
+                        @foreach (var d in ev.Drifts)
+                        {
+                            <tr>
+                                <td>@(d.CaseNumber ?? d.CaseId.ToString())</td>
+                                <td>
+                                    <span class="im-badge im-b-danger">@d.Kind</span>
+                                    <span class="small text-muted ms-2">@d.OriginalFileName — @d.Detail</span>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+
             <h6 class="text-uppercase small text-muted mt-3">Feature flags</h6>
             <table class="table table-sm">
                 <tbody>
                     <tr><td style="width:32%">Email delivery</td><td>@StatusBadge(Config.GetValue<bool>("Email:Enabled"), "On", "Off (logged)")</td></tr>
                     <tr><td>Auto-seal</td><td>@StatusBadge(Config.GetValue<bool>("Integrity:AutoSeal:Enabled"), "On", "Off") <span class="small text-muted ms-2">every @(Config["Integrity:AutoSeal:IntervalHours"] ?? "?") h</span></td></tr>
+                    <tr><td>Evidence re-verification</td><td>@StatusBadge(Config.GetValue<bool>("Integrity:EvidenceVerify:Enabled"), "On", "Off") <span class="small text-muted ms-2">every @(Config["Integrity:EvidenceVerify:IntervalHours"] ?? "?") h</span></td></tr>
                     <tr><td>Windows authentication</td><td>@StatusBadge(string.Equals(Config["Auth:Mode"], "Windows", StringComparison.OrdinalIgnoreCase), "Enabled", "Dev fallback")</td></tr>
                 </tbody>
             </table>

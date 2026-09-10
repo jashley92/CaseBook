@@ -13,6 +13,7 @@ public static class SecurityEventIds
     // 50xx — Integrity
     public const int AuditChainBroken = 5001; // owned by F-16; may also flow through the stream
     public const int RejectedSettingOverride = 5002; // a non-whitelisted AppSettings row ignored on load (S-02 tamper signal)
+    public const int EvidenceIntegrityDrift = 5003; // evidence at rest no longer matches its recorded SHA-256 (F-17)
 
     // 51xx — Authentication
     public const int AuthenticationFailed = 5101;

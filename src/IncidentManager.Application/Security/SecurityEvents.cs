@@ -123,4 +123,20 @@ public static class SecurityEvents
         Severity = SecuritySeverity.Critical,
         Actor = "system", TargetType = "Setting", Detail = key
     };
+
+    /// <summary>
+    /// Evidence at rest failed re-verification (F-17): one or more stored files no longer match their
+    /// recorded SHA-256, or are missing/unreadable — bit-rot or filesystem tampering under the evidence
+    /// store. Carries only counts (no filenames/case content); the email alert carries the offender list.
+    /// </summary>
+    public static SecurityEvent EvidenceIntegrityDrift(int driftCount, int checkedCount) => new()
+    {
+        EventId = SecurityEventIds.EvidenceIntegrityDrift,
+        Category = "Integrity",
+        Action = "EvidenceIntegrityDrift",
+        Outcome = SecurityOutcome.Failure,
+        Severity = SecuritySeverity.Critical,
+        Actor = "system", TargetType = "Evidence",
+        Detail = $"{driftCount} of {checkedCount} evidence item(s) drifted from the recorded hash"
+    };
 }

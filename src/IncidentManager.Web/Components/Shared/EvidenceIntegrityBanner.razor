@@ -1,0 +1,19 @@
+@* Persistent evidence-at-rest drift banner (F-17). Reads the app-wide evidence-integrity status
+   (populated by the background verifier at startup and each pass). Shows only while the most recent pass
+   found drift — it is not dismissible, because you can't wave off an integrity alarm; it clears on its own
+   when a later pass returns clean. Rendered for Administer users from MainLayout. *@
+@inject IncidentManager.Application.Integrity.IEvidenceIntegrityMonitor Monitor
+
+@if (Monitor.Current is { IsClean: false } status)
+{
+    <div class="integrity-alert" role="alert">
+        <span class="bi bi-hdd-stack integrity-alert-icon" aria-hidden="true"></span>
+        <div class="integrity-alert-text">
+            <strong>Evidence-at-rest integrity failure.</strong>
+            @status.DriftCount of @status.CheckedCount stored evidence item(s) no longer match their recorded
+            SHA-256 (checked @status.CheckedAtUtc.ToString("u")). The files may have suffered bit-rot or been
+            altered, replaced, or deleted. Investigate immediately.
+        </div>
+        <a class="btn btn-sm btn-light integrity-alert-cta" href="admin#diagnostics">Open Diagnostics</a>
+    </div>
+}

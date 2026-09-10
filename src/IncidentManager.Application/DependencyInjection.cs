@@ -29,6 +29,9 @@ public static class DependencyInjection
         services.AddScoped<Work.TeamWorkloadService>();
         services.AddScoped<Activity.ActivityFeedService>();
         services.AddScoped<IntegrityService>();
+        // F-17: re-hashes evidence at rest and alarms on drift. Scoped (creates a DbContext per pass);
+        // driven by the EvidenceIntegrityHostedService and reusable by a future "verify now" action.
+        services.AddScoped<Integrity.EvidenceIntegrityVerifier>();
         services.AddScoped<Compliance.ComplianceBundleService>();
         services.AddScoped<Export.IocFeedService>();
         services.AddScoped<ReportService>();
@@ -41,6 +44,10 @@ public static class DependencyInjection
         // App-wide latest-integrity-status holder for the tamper-alert banner (F-16). Singleton so the
         // background monitor and every circuit share one view of the chain's health.
         services.AddSingleton<Integrity.IIntegrityMonitor, Integrity.IntegrityMonitor>();
+
+        // F-17: app-wide latest evidence-at-rest verification status, for the drift banner/panel. Singleton
+        // so the background verifier and every circuit share one view.
+        services.AddSingleton<Integrity.IEvidenceIntegrityMonitor, Integrity.EvidenceIntegrityMonitor>();
 
         services.AddScoped<IValidator<CreateCaseRequest>, CreateCaseValidator>();
 

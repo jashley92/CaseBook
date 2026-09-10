@@ -212,6 +212,7 @@ common startup faults precisely. The highlights:
 | Access/permissions question | Support desk (§4.2/§4.3) + AD team for group membership | Engineering if scoping behaves against spec |
 | **Integrity alarm `5001`** | **Security incident process** — preserve, don't touch | Security lead + engineering, per OPERATIONS IR/restore |
 | **`5002` rejected setting** | Security triage (§4.5) | Engineering to trace provenance |
+| **Evidence-integrity alarm `5003`** | **Security incident process** — preserve store + DB, don't overwrite | Security lead + engineering; recover drifted files from evidence backups (OPERATIONS §1.2/§1.3.2) |
 | Backup/restore health stale | Backup/DBA team (it's a job problem, not the app) | — |
 | Data looks wrong in a record | **Do not edit SQL** — capture the case number + audit rows | Engineering |
 | SIEM not ingesting | Support (§4.9) + SIEM team for collector config | — |

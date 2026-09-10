@@ -62,6 +62,10 @@ builder.Services.AddApplication();
 builder.Services.Configure<AutoSealOptions>(builder.Configuration.GetSection("Integrity:AutoSeal"));
 builder.Services.AddHostedService<IntegritySealHostedService>();
 
+// --- F-17: periodic evidence-at-rest re-verification (re-hash stored bytes, alarm on drift) ---
+builder.Services.Configure<EvidenceVerifyOptions>(builder.Configuration.GetSection("Integrity:EvidenceVerify"));
+builder.Services.AddHostedService<EvidenceIntegrityHostedService>();
+
 // --- F-18: outbound security-event stream. Transports fan out from a background dispatcher. ---
 builder.Services.AddHttpClient("siem");
 builder.Services.AddSingleton<IncidentManager.Infrastructure.Siem.ISecurityEventTransport, IncidentManager.Web.Siem.WebhookTransport>();

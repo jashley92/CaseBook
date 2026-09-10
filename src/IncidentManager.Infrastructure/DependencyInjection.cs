@@ -31,6 +31,8 @@ public static class DependencyInjection
         services.AddSingleton<ICaseNotifications, Notifications.CaseNotifications>();
         // F-16: raises the audit-chain tamper alarm (critical SIEM/log event + email distribution).
         services.AddSingleton<IIntegrityAlertNotifier, Notifications.IntegrityAlertNotifier>();
+        // F-17: raises the evidence-at-rest drift alarm (same channels + shared recipient distribution).
+        services.AddSingleton<IEvidenceIntegrityAlertNotifier, Notifications.EvidenceIntegrityAlertNotifier>();
 
         // F-18: outbound security-event stream. The queue enqueues (non-blocking); the Web-hosted
         // SecurityEventDispatcher fans out to the enabled transports. Syslog (CEF) lives here; the

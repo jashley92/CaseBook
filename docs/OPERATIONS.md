@@ -104,6 +104,30 @@ $s | Add-Member -NotePropertyName lastBackupUtc -NotePropertyValue (Get-Date).To
 $s | ConvertTo-Json | Set-Content $path -Encoding utf8
 ```
 
+### 1.3.2 Evidence-at-rest re-verification (F-17)
+
+The audit hash-chain protects each evidence row's recorded **SHA-256** (it is part of the row's
+canonical, chain-hashed content). It does **not** re-check that the *stored bytes* still match that
+hash — so bit-rot, a silently substituted file, or a deletion under the evidence store would go
+undetected until someone tried to open the file. F-17 closes that gap: a background job periodically
+**re-hashes every stored evidence file** and compares it to the recorded hash.
+
+- **Enable and schedule it** under **Administration → Settings → Integrity**
+  (`Integrity:EvidenceVerify:Enabled`, default **off**; `Integrity:EvidenceVerify:IntervalHours`,
+  default **24**). It is off by default because a full re-hash of the store is I/O-heavy; turn it on
+  where the evidence store's at-rest integrity matters. A pass also runs once at startup.
+- **On drift** (hash mismatch, missing, or unreadable file) it raises the same out-of-band alarm as the
+  F-16 chain-break: a `LogLevel.Critical` event **`EventId 5003`** (the SIEM signal, counts only — no
+  filenames), the same event on the F-18 stream, and **email** to `Email:IntegrityAlertDistribution`
+  (the offender list — case number, evidence id, filename). The alarm fires **once per drift episode**
+  and re-arms only after a clean pass.
+- **Status** is surfaced on **Administration → Diagnostics → Evidence-at-rest integrity** (last checked,
+  count verified, and any offenders) and, on drift, a persistent app-wide banner for Administer users.
+- Like the backup-health signal, the job **only reads** — it records nothing to the database and is not
+  part of the audit chain (ops telemetry, not a case mutation), so a tamper that targets the store or
+  the DB cannot also suppress the signal. Recover drifted files from the out-of-band evidence backups
+  (§1.2); the recorded hash tells you what the original bytes must hash to.
+
 ### 1.4 RTO / RPO
 
 Document target RTO/RPO with the business. The 15-minute log cadence above implies an RPO of
@@ -166,6 +190,8 @@ This is convenient but means a host compromise could re-sign forged seals — un
       the antiforgery/circuit keyring survives app-pool recycles; keys encrypted at rest (DPAPI machine
       scope). Back it up with the other stores. A scaled-out farm needs a shared key location + certificate.
 - [ ] `Integrity:AutoSeal:Enabled=true` with an interval appropriate to activity volume.
+- [ ] `Integrity:EvidenceVerify:Enabled=true` (F-17) with an interval appropriate to store size, and
+      `Email:IntegrityAlertDistribution` populated so drift is actively alarmed (§1.3.2).
 - [ ] `BackupStatus:FilePath` set and the backup/restore jobs writing it (§1.3.1); Diagnostics →
       Backup &amp; restore health reads **Fresh** for both signals.
 - [ ] A restore has been performed and chain + prior-seal verification passed on the restored copy.
@@ -247,6 +273,8 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | ID | Category | Meaning |
 |----|----------|---------|
 | 5001 | Integrity | Audit-chain integrity failure (also the F-16 critical log/email alarm) |
+| 5002 | Integrity | Non-whitelisted AppSettings override rejected on load (S-02 tamper signal) |
+| 5003 | Integrity | Evidence at rest drifted from its recorded SHA-256 (F-17 critical log/email alarm) |
 | 5101 | Authentication | Authentication failure |
 | 5201 | Authorization | Access denied (403) |
 | 5301 | DataAccess | Case opened |
