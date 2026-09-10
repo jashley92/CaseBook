@@ -213,6 +213,7 @@ common startup faults precisely. The highlights:
 | **Integrity alarm `5001`** | **Security incident process** — preserve, don't touch | Security lead + engineering, per OPERATIONS IR/restore |
 | **`5002` rejected setting** | Security triage (§4.5) | Engineering to trace provenance |
 | **Evidence-integrity alarm `5003`** | **Security incident process** — preserve store + DB, don't overwrite | Security lead + engineering; recover drifted files from evidence backups (OPERATIONS §1.2/§1.3.2) |
+| **Download throttled (`429` / `5306`)** | Expected for heavy use — retry after a moment; a *spike from one account* is a bulk-scrape signal → security triage | Tune `RateLimiting:Downloads` (OPERATIONS §3) if the cap is too tight for legitimate work |
 | Backup/restore health stale | Backup/DBA team (it's a job problem, not the app) | — |
 | Data looks wrong in a record | **Do not edit SQL** — capture the case number + audit rows | Engineering |
 | SIEM not ingesting | Support (§4.9) + SIEM team for collector config | — |

@@ -174,6 +174,12 @@ This is convenient but means a host compromise could re-sign forged seals — un
 - **Authentication**: production requires `Auth:Mode=Windows`; the app refuses to start in Production
   otherwise (see F-02), so the dev auth handler can never run in prod.
 - **SQL access**: use integrated auth to SQL (no SQL credentials in config).
+- **Download rate limiting (F-13)**: the evidence/report/export endpoints are throttled per user by a
+  token bucket, so a compromised account can't bulk-scrape artifacts. Tune under `RateLimiting:Downloads`
+  (`TokenLimit` = burst, `TokensPerPeriod` over `PeriodSeconds` = sustained rate; defaults 40 / 40 / 60s).
+  Over budget returns **429** with a `Retry-After` header and emits SIEM **`EventId 5306`** — a spike of
+  these from one account is a bulk-exfiltration signal worth a detection rule. The inline timeline
+  thumbnail endpoint is intentionally exempt (many load at once; it is image-only and need-to-know scoped).
 
 ---
 
@@ -282,6 +288,7 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5303 | DataAccess | Report downloaded |
 | 5304 | DataAccess | Data exported (metrics / IOC feed / bundle / audit CSV) |
 | 5305 | DataAccess | **Restricted** case accessed (elevated severity) |
+| 5306 | DataAccess | Download/export refused by the per-user rate limit (F-13; possible bulk-scrape) |
 | 5401 | Admin | Role created / updated / deleted |
 | 5402 | Admin | AD-group → role mapping added / removed |
 | 5403 | Admin | Operational setting changed |

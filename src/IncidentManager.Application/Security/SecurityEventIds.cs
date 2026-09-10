@@ -27,6 +27,7 @@ public static class SecurityEventIds
     public const int ReportDownloaded = 5303;
     public const int DataExported = 5304;
     public const int RestrictedCaseAccessed = 5305; // a read of a restricted case (elevated severity)
+    public const int DownloadRateLimited = 5306; // a download/export request refused by the per-user rate limit (F-13)
 
     // 54xx — Admin / configuration
     public const int RoleChanged = 5401;

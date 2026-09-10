@@ -7,6 +7,8 @@ using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Web.BackgroundJobs;
 using IncidentManager.Web.Components;
 using IncidentManager.Web.Security;
+using System.Security.Claims;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.AspNetCore.Authorization;
@@ -70,6 +72,51 @@ builder.Services.AddHostedService<EvidenceIntegrityHostedService>();
 builder.Services.AddHttpClient("siem");
 builder.Services.AddSingleton<IncidentManager.Infrastructure.Siem.ISecurityEventTransport, IncidentManager.Web.Siem.WebhookTransport>();
 builder.Services.AddHostedService<IncidentManager.Web.BackgroundJobs.SecurityEventDispatcher>();
+
+// --- F-13: per-user rate limit on the download/export endpoints, so a compromised account can't bulk-
+// scrape evidence/reports/exports. A token bucket keyed on the caller's id — bursts are fine, sustained
+// volume is capped — with an immediate 429 (no queueing) past the budget. Limits are server-side config
+// (RateLimiting:Downloads); a rejection is streamed to the SIEM (EventId 5306) and logged. ---
+var downloadLimits = builder.Configuration.GetSection("RateLimiting:Downloads").Get<DownloadRateLimitOptions>()
+    ?? new DownloadRateLimitOptions();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("downloads", httpContext =>
+    {
+        var key = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                  ?? httpContext.User.FindFirstValue(ClaimTypes.Upn)
+                  ?? httpContext.User.Identity?.Name
+                  ?? "anonymous";
+        return RateLimitPartition.GetTokenBucketLimiter(key, _ => new TokenBucketRateLimiterOptions
+        {
+            TokenLimit = downloadLimits.TokenLimit,
+            TokensPerPeriod = downloadLimits.TokensPerPeriod,
+            ReplenishmentPeriod = TimeSpan.FromSeconds(Math.Max(1, downloadLimits.PeriodSeconds)),
+            QueueLimit = 0,                          // reject over-budget requests immediately (429), don't delay
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            AutoReplenishment = true
+        });
+    });
+
+    options.OnRejected = (context, _) =>
+    {
+        var http = context.HttpContext;
+        // F-18: stream the throttle as a security event (best-effort, non-blocking) and log it.
+        http.RequestServices.GetService<ISecurityEventSink>()?.Emit(SecurityEvents.DownloadRateLimited(
+            http.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? http.User.Identity?.Name ?? "anonymous",
+            http.User.FindFirstValue(ClaimTypes.Upn),
+            http.Request.Path.Value ?? ""));
+        http.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("Security.RateLimit")
+            .LogWarning("Download rate limit reached for {Actor} on {Path}",
+                http.User.Identity?.Name ?? "anonymous", http.Request.Path.Value);
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+            http.Response.Headers.RetryAfter =
+                ((int)retryAfter.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return ValueTask.CompletedTask;
+    };
+});
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
@@ -238,6 +285,8 @@ app.UseAuthentication();
 app.UseMiddleware<UserMirrorMiddleware>();
 app.UseAuthorization();
 app.UseAntiforgery();
+// After auth so the limiter partitions per authenticated user (F-13).
+app.UseRateLimiter();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
@@ -251,7 +300,7 @@ app.MapGet("/evidence/{id:guid}", async (Guid id, EvidenceService evidence,
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.EvidenceDownload,
         item.CaseId, item.OriginalFileName, item.Id, ct);
     return Results.File(stream, item.ContentType, item.OriginalFileName);
-}).RequireAuthorization(Policies.ViewCases);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
 // --- Inline evidence image (U-40): renders a linked screenshot as a timeline thumbnail ---
 // Same need-to-know enforcement as the download (OpenAsync scopes to ForUser cases). Restricted to
@@ -290,7 +339,7 @@ app.MapGet("/reports/{id:guid}", async (Guid id, IncidentManager.Application.Rep
         ? "application/pdf"
         : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     return Results.File(stream, contentType, report.FileName);
-}).RequireAuthorization(Policies.ViewCases);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
 // --- Metrics export for board / regulatory reporting packs (E-11) ---
 // Scoped to the caller's visible cases via DashboardService; plain CSV attachment (no JS).
@@ -304,7 +353,7 @@ app.MapGet("/export/metrics.csv", async (
     var fileName = $"incident-metrics-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
-}).RequireAuthorization(Policies.ViewCases);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
 // --- Malicious-IOC blocklist feed (E-13): curated confirmed IOCs across the caller's visible cases ---
 // Flat CSV to push to SIEM / firewalls / EDR — closes the detection loop. Need-to-know scoped by the
@@ -319,7 +368,7 @@ app.MapGet("/export/iocs.csv", async (
     var fileName = $"malicious-iocs-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
-}).RequireAuthorization(Policies.ViewCases);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
 // --- Per-case audit-trail export (E-24): the hash-chained trail for one case, filtered, as CSV ---
 // Scoped: the caller must be able to view the case (need-to-know), mirroring the workspace Audit tab.
@@ -354,7 +403,7 @@ app.MapGet("/export/case-audit.csv", async (
     var fileName = $"case-audit-{safe}-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
-}).RequireAuthorization(Policies.ViewCases);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
 // --- Access-log export (C-05): the out-of-chain read/access telemetry, filtered, as CSV ---
 // Administer-gated like the console; UTC times; `to` inclusive to end of day. Plain attachment (no JS).
@@ -381,7 +430,7 @@ app.MapGet("/export/access-log.csv", async (
     var csv = IncidentManager.Application.Access.AccessLogCsv.Build(rows, clock.UtcNow);
     var fileName = $"access-log-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
-}).RequireAuthorization(Policies.Administer);
+}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
 
 // --- Compliance evidence bundle (C-01): audit-chain segment + covering seals + verification, zipped ---
 // Administer-gated: the package contains the whole cross-case audit record (including before/after
@@ -408,7 +457,7 @@ app.MapGet("/export/compliance-bundle.zip", async (
     var bundle = await bundles.BuildAsync(fromUtc, toUtc, ct);
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, bundle.FileName, null, ct);
     return Results.File(bundle.Content, "application/zip", bundle.FileName);
-}).RequireAuthorization(Policies.Administer);
+}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
 
 // X-07: download the editable-configuration "seed pack" as a signed, versioned JSON bundle. The export
 // is audited inside the service; SysAdmin-only like the other admin exports.
@@ -417,7 +466,7 @@ app.MapGet("/export/config-bundle.json", async (
 {
     var export = await config.ExportAsync(ct);
     return Results.File(export.Content, "application/json", export.FileName);
-}).RequireAuthorization(Policies.Administer);
+}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
 
 app.Run();
 

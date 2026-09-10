@@ -37,6 +37,21 @@ public static class SecurityEvents
         TargetType = targetType, TargetId = targetId?.ToString(), Detail = label
     };
 
+    /// <summary>
+    /// A download/export request was refused by the per-user rate limit (F-13) — the account exceeded the
+    /// configured download budget, which on a legitimate user is a burst and on a compromised one is the
+    /// first sign of bulk exfiltration. Carries the actor and the requested path only.
+    /// </summary>
+    public static SecurityEvent DownloadRateLimited(string actor, string? actorUpn, string path) => new()
+    {
+        EventId = SecurityEventIds.DownloadRateLimited,
+        Category = "DataAccess",
+        Action = "DownloadRateLimited",
+        Outcome = SecurityOutcome.Deny,
+        Severity = SecuritySeverity.Warning,
+        Actor = actor, ActorUpn = actorUpn, Detail = path
+    };
+
     public static SecurityEvent AuthenticationFailed(string? detail) => new()
     {
         EventId = SecurityEventIds.AuthenticationFailed,
