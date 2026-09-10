@@ -31,3 +31,14 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # App targets net8.0. The runtime/EF/tooling packages are versioned in lockstep with the .NET
+    # major, so keep them on the matching 8.x line: EF Core 10 requires net10, and 10.x Extensions
+    # skew against the ASP.NET Core 8 shared framework. A jump to 10.x is a deliberate TFM migration,
+    # not an automated bump — remove these ignores when the project moves to a newer target framework.
+    ignore:
+      - dependency-name: "Microsoft.EntityFrameworkCore*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "dotnet-ef"
+        update-types: ["version-update:semver-major"]
