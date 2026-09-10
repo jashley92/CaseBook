@@ -197,7 +197,7 @@ common startup faults precisely. The highlights:
 | Symptom | Likely cause |
 |---|---|
 | Log: *"Auth:Mode is 'Dev' in Production"* | `appsettings.Production.json` not deployed, or environment isn't Production. **This is a fail-safe, not a bug** — prod must be Windows auth. |
-| `500.19` and **no app log** | ASP.NET Core Module not registered — install the **.NET 8 Hosting Bundle** (not just the SDK), `iisreset`. |
+| `500.19` and **no app log** | ASP.NET Core Module not registered — install the **.NET 10 Hosting Bundle** (not just the SDK), `iisreset`. |
 | `500.30 / 500.31` on first hit | Bad connection string, or the app can't write `App_Data`. Check Application event log + `logs\stdout`. |
 | `401` for everyone | Windows Auth not negotiating — missing SPN, or Anonymous still enabled. |
 | DB: *CREATE TABLE permission denied* | App account lacks DDL under `AppMigrates`. Re-run the DB step or apply the schema as a DBA. |

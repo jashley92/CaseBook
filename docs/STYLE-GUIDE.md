@@ -1,6 +1,6 @@
 # CaseBook Design System Style Guide
 
-Developer-facing conventions for the CaseBook UI (a .NET 8 Blazor Server SOC
+Developer-facing conventions for the CaseBook UI (a .NET 10 Blazor Server SOC
 incident/breach case-management app). This is the single source of truth for how
 pages, badges, colors and copy should look. Every new or changed page must conform.
 
