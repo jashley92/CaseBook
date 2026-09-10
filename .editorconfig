@@ -1,0 +1,15 @@
+root = true
+
+# Test projects use xUnit's convention of underscore-separated method names
+# (Method_State_Expectation), which reads as a sentence in test output. That trips a batch of
+# analyzer rules that are meaningful in production code but are noise for test fixtures. Scope those
+# off for tests only, so production code stays honestly analyzed.
+[tests/**/*.cs]
+# CA1707: identifiers should not contain underscores — the xUnit naming convention above.
+dotnet_diagnostic.CA1707.severity = none
+# CA1822: member can be marked static — test helper methods don't benefit and reordering them
+# for staticness just churns fixtures.
+dotnet_diagnostic.CA1822.severity = none
+# CA1816: GC.SuppressFinalize in Dispose — irrelevant for the throwaway IDisposable test helpers
+# (no finalizers, deterministic teardown).
+dotnet_diagnostic.CA1816.severity = none

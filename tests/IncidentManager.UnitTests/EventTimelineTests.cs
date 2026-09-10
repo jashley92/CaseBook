@@ -1,3 +1,4 @@
+using System.Globalization;
 using FluentAssertions;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -140,6 +141,6 @@ public class EventTimelineTests
 
         canonical.Should().Contain("T1078");
         canonical.Should().Contain(actor.ToString());
-        canonical.Should().Contain(((int)MitreTactic.InitialAccess).ToString());
+        canonical.Should().Contain(((int)MitreTactic.InitialAccess).ToString(CultureInfo.InvariantCulture));
     }
 }

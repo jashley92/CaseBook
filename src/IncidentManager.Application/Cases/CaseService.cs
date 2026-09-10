@@ -146,6 +146,11 @@ public sealed class CaseService
         {
             // Lower both sides so the match is case-insensitive regardless of the database's collation
             // (SQLite and SQL Server both default to CI, but this makes it explicit and provider-safe).
+            // This runs inside an EF Core expression tree translated to SQL: ToLower() maps to the SQL
+            // LOWER() function, whereas ToLowerInvariant() and the StringComparison overloads of
+            // Contains() have no SQL translation and would throw at runtime — so the culture analyzers
+            // (CA1304/CA1311/CA1862) are false positives here and their suggested fixes must not be applied.
+#pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower()/Contains() to SQL; culture overloads don't translate.
             var s = filter.Search.Trim().ToLower();
             // Match across the case's own fields and its IOCs and notes, so analysts can find a case
             // by an indicator or a note as well as by number/title.
@@ -155,6 +160,7 @@ public sealed class CaseService
                 (c.Summary != null && c.Summary.ToLower().Contains(s)) ||
                 c.Entities.Any(e => e.Value.ToLower().Contains(s) || (e.Label != null && e.Label.ToLower().Contains(s))) ||
                 c.Notes.Any(n => n.IsCurrent && n.Body.ToLower().Contains(s)));
+#pragma warning restore CA1304, CA1311, CA1862
         }
 
         var total = await q.CountAsync(ct);
@@ -477,8 +483,8 @@ public sealed class CaseService
     }
 
     public async Task AddTimelineEntryAsync(Guid id, TimelineKind kind, TimelineEntryType type,
-        DateTimeOffset occurredAtUtc, string description, string? source, CancellationToken ct = default,
-        Guid? evidenceId = null)
+        DateTimeOffset occurredAtUtc, string description, string? source, Guid? evidenceId = null,
+        CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
@@ -496,7 +502,7 @@ public sealed class CaseService
     /// </summary>
     public async Task AddEventStepAsync(Guid id, DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
-        CancellationToken ct = default, Guid? evidenceId = null)
+        Guid? evidenceId = null, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
@@ -591,12 +597,17 @@ public sealed class CaseService
         if (wanted.Count == 0) return Array.Empty<CaseIocMatch>();
 
         using var db = _factory.CreateDbContext();
+        // e.Value.ToLower() runs in an EF Core query translated to SQL LOWER(); ToLowerInvariant() has
+        // no SQL translation and would throw. The 'wanted' keys were already invariant-lowered in memory
+        // above, so both sides match. CA1304/CA1311 are false positives in this expression-tree context.
+#pragma warning disable CA1304, CA1311 // EF Core translates ToLower() to SQL; the invariant overload doesn't translate.
         var hits = await (
             from e in db.CaseEntities.AsNoTracking()
             join c in Scoped(db.Cases.AsNoTracking()) on e.CaseId equals c.Id
             where c.Phase != CasePhase.Closed && !c.IsArchived && wanted.Contains(e.Value.ToLower())
             select new { c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, e.Value }
         ).ToListAsync(ct);
+#pragma warning restore CA1304, CA1311
 
         return hits
             .GroupBy(h => new { h.Id, h.CaseNumber, h.Title, h.Classification, h.Phase })

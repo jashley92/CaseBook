@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace IncidentManager.Application.Admin;
 
 /// <summary>How a setting's string value is typed and edited in the admin UI.</summary>
@@ -138,7 +140,7 @@ public static class SettingsCatalog
 
             case SettingKind.Int:
                 if (string.IsNullOrWhiteSpace(v)) return null;
-                if (int.TryParse(v, out var n) && n >= 0) return n.ToString();
+                if (int.TryParse(v, out var n) && n >= 0) return n.ToString(CultureInfo.InvariantCulture);
                 throw new ArgumentException($"{def.Label} must be a non-negative whole number.");
 
             case SettingKind.MultiText:

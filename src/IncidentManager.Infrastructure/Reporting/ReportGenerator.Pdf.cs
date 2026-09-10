@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentManager.Application.Reporting;
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.Rendering;
@@ -98,7 +99,7 @@ public sealed partial class ReportGenerator
                 PdfTable(section, ["#", "When (UTC)", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
                     m.AttackChain.Select(x => new[]
                     {
-                        x.Order.ToString(),
+                        x.Order.ToString(CultureInfo.InvariantCulture),
                         x.OccurredAtUtc.ToString("u"),
                         x.Tactics,
                         string.IsNullOrEmpty(x.Actor) && string.IsNullOrEmpty(x.Target) ? "" : $"{x.Actor} → {x.Target}",
@@ -208,7 +209,7 @@ public sealed partial class ReportGenerator
 
         SubHeading(section, "F. Evidence index");
         PdfTable(section, ["File", "Size", "SHA-256", "Uploaded", "By"],
-            m.Evidence.Select(x => new[] { x.FileName, x.SizeBytes.ToString(), x.Sha256, x.UploadedAtUtc.ToString("u"), x.UploadedBy }).ToList(),
+            m.Evidence.Select(x => new[] { x.FileName, x.SizeBytes.ToString(CultureInfo.InvariantCulture), x.Sha256, x.UploadedAtUtc.ToString("u"), x.UploadedBy }).ToList(),
             [3.0, 1.5, 6.5, 2.8, 2.2]);
 
         SubHeading(section, "G. Analyst notes");

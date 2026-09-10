@@ -15,9 +15,11 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <!-- Suppress low-value style/perf/naming analyzer noise so the meaningful warnings (CS nullability,
          CA1416 platform, CA1305 culture) stay visible on publish. These are non-correctness suggestions:
-         CA1725 param-name mirroring; CA1861 static-readonly vs const array args; CA1848 LoggerMessage
-         delegates; CA1716 'Shared' reserved-word namespace (C#-only app); CA1859 concrete-type perf;
+         CA1725 param-name mirroring; CA1861 static-readonly vs const array args; CA1848/CA1873
+         LoggerMessage-delegate / expensive-logging-arg perf (our logging sites are cold paths —
+         startup, 6-hourly seals, rare tamper alarms — where deferring arg evaluation buys nothing);
+         CA1716 'Shared' reserved-word namespace (C#-only app); CA1859 concrete-type perf;
          CA1711/CA1720 identifier naming guidelines. -->
-    <NoWarn>$(NoWarn);CA1725;CA1861;CA1848;CA1716;CA1859;CA1711;CA1720</NoWarn>
+    <NoWarn>$(NoWarn);CA1725;CA1861;CA1848;CA1873;CA1716;CA1859;CA1711;CA1720</NoWarn>
   </PropertyGroup>
 </Project>

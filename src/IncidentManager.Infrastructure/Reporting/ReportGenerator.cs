@@ -1,3 +1,4 @@
+using System.Globalization;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -53,7 +54,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         return ms.ToArray();
     }
 
-    private void RenderSection(Body body, ReportSection section, CaseReportModel m)
+    private static void RenderSection(Body body, ReportSection section, CaseReportModel m)
     {
         switch (section)
         {
@@ -74,7 +75,7 @@ public sealed partial class ReportGenerator : IReportGenerator
                     ["#", "When (UTC)", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
                     m.AttackChain.Select(x => new[]
                     {
-                        x.Order.ToString(),
+                        x.Order.ToString(CultureInfo.InvariantCulture),
                         x.OccurredAtUtc.ToString("u"),
                         x.Tactics,
                         string.IsNullOrEmpty(x.Actor) && string.IsNullOrEmpty(x.Target) ? "" : $"{x.Actor} → {x.Target}",
@@ -121,7 +122,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         }
     }
 
-    private void AppendFacts(Body body, CaseReportModel m)
+    private static void AppendFacts(Body body, CaseReportModel m)
     {
         body.AppendChild(P($"Classification: {m.Classification}    Phase: {m.Phase}    Severity: {m.Severity}", size: 20));
         body.AppendChild(P($"Origin: {m.Origin}{(m.VendorName is null ? "" : $" ({m.VendorName})")}", size: 20));
@@ -130,7 +131,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (m.LegalReferred) body.AppendChild(P($"Legal/Privacy referral recorded. {m.LegalNote}", size: 20));
     }
 
-    private void AppendBusinessImpact(Body body, CaseReportModel m)
+    private static void AppendBusinessImpact(Body body, CaseReportModel m)
     {
         var any = false;
         if (m.AffectedIndividualsCount is { } n) { body.AppendChild(P($"Affected individuals: {n:N0}")); any = true; }
@@ -143,7 +144,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (!any) body.AppendChild(P("(no impact assessment recorded)"));
     }
 
-    private void AppendOutcome(Body body, CaseReportModel m)
+    private static void AppendOutcome(Body body, CaseReportModel m)
     {
         body.AppendChild(P($"Current phase: {m.Phase}. Classification: {m.Classification}. Severity: {m.Severity}."));
         void Stamp(string label, DateTimeOffset? at) { if (at is { } v) body.AppendChild(P($"{label}: {v:u}")); }
@@ -154,7 +155,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (m.LegalReferred) body.AppendChild(P($"Referred to Legal/Privacy. {m.LegalNote}"));
     }
 
-    private void AppendAppendix(Body body, CaseReportModel m)
+    private static void AppendAppendix(Body body, CaseReportModel m)
     {
         body.AppendChild(SubHeading("A. Assignments"));
         body.AppendChild(WordTable(["User", "Role"],
@@ -178,7 +179,7 @@ public sealed partial class ReportGenerator : IReportGenerator
 
         body.AppendChild(SubHeading("F. Evidence index"));
         body.AppendChild(WordTable(["File", "Size (bytes)", "SHA-256", "Uploaded (UTC)", "By"],
-            m.Evidence.Select(x => new[] { x.FileName, x.SizeBytes.ToString(), x.Sha256, x.UploadedAtUtc.ToString("u"), x.UploadedBy })));
+            m.Evidence.Select(x => new[] { x.FileName, x.SizeBytes.ToString(CultureInfo.InvariantCulture), x.Sha256, x.UploadedAtUtc.ToString("u"), x.UploadedBy })));
 
         body.AppendChild(SubHeading("G. Analyst notes"));
         if (m.Notes.Count == 0) body.AppendChild(P("(none)"));
@@ -194,7 +195,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         var runProps = new RunProperties();
         if (bold) runProps.Append(new Bold());
         if (italic) runProps.Append(new Italic());
-        runProps.Append(new FontSize { Val = size.ToString() });
+        runProps.Append(new FontSize { Val = size.ToString(CultureInfo.InvariantCulture) });
         var run = new Run(runProps, new Text(text ?? "") { Space = SpaceProcessingModeValues.Preserve });
         return new Paragraph(run);
     }
@@ -206,7 +207,7 @@ public sealed partial class ReportGenerator : IReportGenerator
             new Bold(),
             new Underline { Val = UnderlineValues.Single },
             new Color { Val = HeadingColor },
-            new FontSize { Val = size.ToString() });
+            new FontSize { Val = size.ToString(CultureInfo.InvariantCulture) });
         var run = new Run(runProps, new Text(text) { Space = SpaceProcessingModeValues.Preserve });
         return new Paragraph(new ParagraphProperties(new SpacingBetweenLines { Before = "240", After = "60" }), run);
     }
@@ -288,7 +289,7 @@ public sealed partial class ReportGenerator : IReportGenerator
     {
         var runProps = new RunProperties();
         if (bold) runProps.Append(new Bold());
-        runProps.Append(new FontSize { Val = size.ToString() });
+        runProps.Append(new FontSize { Val = size.ToString(CultureInfo.InvariantCulture) });
         return new Paragraph(
             new ParagraphProperties(new Justification { Val = JustificationValues.Center }),
             new Run(runProps, new Text(text) { Space = SpaceProcessingModeValues.Preserve }));

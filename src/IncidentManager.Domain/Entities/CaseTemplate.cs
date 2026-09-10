@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentManager.Domain.Common;
 using IncidentManager.Domain.Enums;
 
@@ -33,8 +34,8 @@ public class CaseTemplate : AuditableEntity, IHashableEntity
 
     public string BuildCanonicalContent() => string.Join('|',
         Name, Description, IsActive, SortOrder,
-        DefaultClassification is { } c ? ((int)c).ToString() : "",
-        DefaultSeverity is { } s ? ((int)s).ToString() : "",
+        DefaultClassification is { } c ? ((int)c).ToString(CultureInfo.InvariantCulture) : "",
+        DefaultSeverity is { } s ? ((int)s).ToString(CultureInfo.InvariantCulture) : "",
         DefaultDataTypes, SummaryBoilerplate, CreatedBy, CreatedAtUtc.ToString("o"));
 }
 
@@ -66,5 +67,5 @@ public class CaseTemplateStep : Entity, IHashableEntity
 
     public string BuildCanonicalContent() => string.Join('|',
         TemplateId, Order, Title, Description, OwnerHint,
-        DueOffsetHours is { } h ? h.ToString() : "");
+        DueOffsetHours is { } h ? h.ToString(CultureInfo.InvariantCulture) : "");
 }

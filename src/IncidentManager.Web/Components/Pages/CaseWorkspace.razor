@@ -89,7 +89,7 @@ else
                 <div class="dropdown">
                     <button class="btn btn-sm btn-outline-primary dropdown-toggle" @onclick="() => _actionsOpen = !_actionsOpen">Actions</button>
                     <div class="dropdown-menu dropdown-menu-end @(_actionsOpen ? "show" : "")">
-                        @if (_canReclassify) { <button class="dropdown-item" @onclick='() => OpenModal("reclass")'>@(_case?.Classification is null ? "Promote to ladder…" : "Reclassify…")</button> }
+                        @if (_canReclassify) { <button class="dropdown-item" @onclick='() => OpenModal("reclass")'>@(_case.Classification is null ? "Promote to ladder…" : "Reclassify…")</button> }
                         @if (_canEdit)
                         {
                             <button class="dropdown-item" @onclick='() => OpenModal("severity")'>Change severity…</button>

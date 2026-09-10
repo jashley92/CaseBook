@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentManager.Domain.Common;
 using IncidentManager.Domain.Enums;
 
@@ -71,7 +72,7 @@ public class StageGateRequirement : Entity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        GateId, Order, (int)Kind, CheckKey ?? "", CheckParam?.ToString() ?? "", Label, IsBlocking);
+        GateId, Order, (int)Kind, CheckKey ?? "", CheckParam?.ToString(CultureInfo.InvariantCulture) ?? "", Label, IsBlocking);
 }
 
 /// <summary>

@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentManager.Domain.Common;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Domain.Observables;
@@ -721,7 +722,7 @@ public class Case : AuditableEntity, IHashableEntity
     }
 
     public string BuildCanonicalContent() => string.Join('|',
-        CaseNumber, Title, Classification is { } cls ? ((int)cls).ToString() : "", (int)Phase, (int)Severity, (int)Origin,
+        CaseNumber, Title, Classification is { } cls ? ((int)cls).ToString(CultureInfo.InvariantCulture) : "", (int)Phase, (int)Severity, (int)Origin,
         Summary, ImpactedAssets, DataTypesInvolved, DetectionCaseId,
         AffectedIndividualsCount, string.Join(',', DataElements.Select(d => d.ElementKey).OrderBy(k => k, StringComparer.Ordinal)), AffectedStates,
         ThirdParty?.ToCanonical(), LegalReferral.ToCanonical(),
