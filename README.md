@@ -51,6 +51,19 @@ connect at a glance. Network/URL indicators can be shown **defanged** for safe c
 
 ![Relationship graph](docs/screenshots/relationship-graph.png)
 
+### Campaign rollup
+When several cases are worked as one attack wave, linking them **"Same campaign as"** (E-14) makes them
+roll up into a single cross-case view — reached from the **Campaigns** sidebar entry or the **View
+campaign** shortcut on any linked case. One page shows the member cases, the **indicators shared across
+more than one case** (the pivots that tie the wave together, strongest verdict wins), the combined
+**MITRE ATT&amp;CK** coverage, a **merged event timeline**, and the aggregate posture (highest severity /
+classification, span, open count, affected individuals &amp; jurisdictions). Exportable as JSON for a
+partner or a TIP. A campaign is just the connected group of linked cases — no separate record to
+maintain — and the whole view is need-to-know scoped, so a restricted case never appears in a rollup or
+bridges two campaigns for someone who can't see it.
+
+<!-- Screenshot to add: docs/screenshots/campaign-rollup.png — the /campaigns/{id} rollup (posture + members + shared indicators). Dev data staged with a shared malicious IP across the two phishing-wave cases so the "Shared indicators" table is populated. -->
+
 ### Reporting — Word draft &amp; locked PDF
 Generate an editable **Word** working draft and a finalized, **locked PDF** carrying an embedded
 **SHA-256 content hash** — the version, final flag, hash, and author are recorded per artifact.
