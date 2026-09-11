@@ -1,4 +1,5 @@
 using FluentAssertions;
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Infrastructure.Secrets;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -70,5 +71,38 @@ public class SecretResolutionTests
     {
         // No provider can satisfy a reference here → null, never the "@cyberark:..." string.
         (await Passthrough().ResolveAsync("@cyberark:Safe=SIEM;Object=Tok")).Should().BeNull();
+    }
+
+    // --- Health monitor --------------------------------------------------------
+
+    private sealed class StubClock(DateTimeOffset now) : IClock { public DateTimeOffset UtcNow { get; set; } = now; }
+
+    [Fact]
+    public void Health_starts_empty()
+    {
+        var h = new SecretResolutionHealth(new StubClock(DateTimeOffset.UnixEpoch));
+        h.Current.AnyActivity.Should().BeFalse();
+        h.Current.LastAttemptFailed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Health_tracks_the_latest_outcome_by_time()
+    {
+        var clock = new StubClock(new DateTimeOffset(2026, 9, 10, 10, 0, 0, TimeSpan.Zero));
+        var h = new SecretResolutionHealth(clock);
+
+        h.RecordSuccess("@cyberark:Safe=A;Object=B");
+        clock.UtcNow = clock.UtcNow.AddMinutes(5);
+        h.RecordFailure("@cyberark:Safe=A;Object=B", "CCP returned HTTP 500");
+
+        var s = h.Current;
+        s.SuccessCount.Should().Be(1);
+        s.FailureCount.Should().Be(1);
+        s.LastAttemptFailed.Should().BeTrue();            // failure is newer than the success
+        s.LastFailureReason.Should().Be("CCP returned HTTP 500");
+
+        clock.UtcNow = clock.UtcNow.AddMinutes(5);
+        h.RecordSuccess("@cyberark:Safe=A;Object=B");
+        h.Current.LastAttemptFailed.Should().BeFalse();   // recovered
     }
 }

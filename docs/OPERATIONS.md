@@ -374,6 +374,17 @@ auth header (and the collector will reject it) rather than leaking a bogus token
 With `FailClosed=false`, a transient CCP outage instead serves the **last successfully fetched** value past
 its TTL, so a working integration is not dropped by a blip.
 
+**Admin visibility (read-only).** Secrets are **never editable in the app** — this stays host-side config.
+Two read-only views help operators confirm it is wired up and working:
+- **Administration → Server configuration** shows a *Secret store — CyberArk CCP* row with status badges
+  only (Enabled/Disabled · endpoint configured · AppID set · client-cert vs machine/OS-user auth) — never a
+  value.
+- **Administration → Diagnostics → Secret resolution (CyberArk)** shows live health: overall status
+  (Healthy / Last attempt failed / No activity), the **last success** and **last error** (timestamp, the
+  reference *location*, and a safe reason such as `HTTP 403 (APPAP004E)` — never the secret), and running
+  success/failure counts. It is in-memory and resets on restart. A persistent *Last attempt failed* here is
+  the first place to look if an integration that depends on a CyberArk-backed secret stops authenticating.
+
 **Candidates.** First applied to `Siem:Webhook:Token`. Any future config-borne credential (e.g. E-03 SMTP)
 should resolve through the same seam. The **seal signing key** (F-05b) and **Always-Encrypted column keys**
 (F-14) are noted as candidates but generally prefer the Windows certificate store / HSM over CCP.

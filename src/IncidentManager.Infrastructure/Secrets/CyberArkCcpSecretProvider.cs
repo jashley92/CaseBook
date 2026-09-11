@@ -22,10 +22,14 @@ public sealed class CyberArkCcpSecretProvider : ISecretProvider, IDisposable
     private readonly HttpClient _http;
     private readonly CyberArkOptions _options;
     private readonly ILogger<CyberArkCcpSecretProvider> _logger;
+    private readonly ISecretResolutionHealth _health;
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _fetchLock = new(1, 1);
 
     private sealed record CacheEntry(string? Value, DateTimeOffset FetchedUtc);
+
+    /// <summary>A CCP fetch failure carrying a caller-safe reason (status/code/config — never the secret).</summary>
+    private sealed class SecretFetchException(string reason) : Exception(reason);
 
     private sealed class CcpResponse
     {
@@ -34,15 +38,17 @@ public sealed class CyberArkCcpSecretProvider : ISecretProvider, IDisposable
         [JsonPropertyName("ErrorMsg")] public string? ErrorMsg { get; set; }
     }
 
-    public CyberArkCcpSecretProvider(IOptions<CyberArkOptions> options, ILogger<CyberArkCcpSecretProvider> logger)
-        : this(BuildHandler(options.Value, logger), options, logger) { }
+    public CyberArkCcpSecretProvider(IOptions<CyberArkOptions> options,
+        ILogger<CyberArkCcpSecretProvider> logger, ISecretResolutionHealth health)
+        : this(BuildHandler(options.Value, logger), options, logger, health) { }
 
     // Test seam: inject the transport handler so the CCP HTTP path is exercisable without a live CCP.
     internal CyberArkCcpSecretProvider(HttpMessageHandler handler, IOptions<CyberArkOptions> options,
-        ILogger<CyberArkCcpSecretProvider> logger)
+        ILogger<CyberArkCcpSecretProvider> logger, ISecretResolutionHealth health)
     {
         _options = options.Value;
         _logger = logger;
+        _health = health;
         _http = new HttpClient(handler)
         {
             Timeout = TimeSpan.FromSeconds(_options.TimeoutSeconds > 0 ? _options.TimeoutSeconds : 5)
@@ -75,22 +81,26 @@ public sealed class CyberArkCcpSecretProvider : ISecretProvider, IDisposable
             if (_cache.TryGetValue(key, out cached) && DateTimeOffset.UtcNow - cached.FetchedUtc < ttl)
                 return cached.Value;
 
-            string? value;
+            string value;
             try
             {
-                value = await FetchAsync(reference, ct).ConfigureAwait(false);   // null = failed (already logged)
+                value = await FetchAsync(reference, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                // Never surface a fetch exception to the caller — a secret it can't get is "unavailable".
-                _logger.LogWarning(ex, "CyberArk CCP fetch failed for {Reference}.", key);
-                value = null;
+                // Never surface a fetch failure to the caller — a secret it can't get is "unavailable".
+                // A SecretFetchException already carries a caller-safe reason; anything else is unexpected
+                // (log the full exception in that case only).
+                var expected = ex is SecretFetchException;
+                var reason = expected ? ex.Message : ex.GetType().Name;
+                _logger.LogWarning(expected ? null : ex, "CyberArk CCP fetch failed for {Reference}: {Reason}",
+                    key, reason);
+                _health.RecordFailure(key, reason);
+                return OnFetchFailed(key, cached);              // apply fail policy; don't cache the failure
             }
 
-            if (value is null)
-                return OnFetchFailed(key, cached);              // apply fail policy; don't cache the failure
-
             _cache[key] = new CacheEntry(value, DateTimeOffset.UtcNow);
+            _health.RecordSuccess(key);
             return value;
         }
         finally
@@ -110,19 +120,14 @@ public sealed class CyberArkCcpSecretProvider : ISecretProvider, IDisposable
         return null;                                           // fail closed
     }
 
-    private async Task<string?> FetchAsync(SecretReference reference, CancellationToken ct)
+    /// <summary>Fetches the secret, or throws <see cref="SecretFetchException"/> with a caller-safe reason.</summary>
+    private async Task<string> FetchAsync(SecretReference reference, CancellationToken ct)
     {
         if (!Uri.TryCreate(_options.BaseUrl, UriKind.Absolute, out var baseUri)
             || !baseUri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogWarning("Secrets:CyberArk:BaseUrl must be an absolute https URL; secret not resolved.");
-            return null;
-        }
+            throw new SecretFetchException("Secrets:CyberArk:BaseUrl is not an absolute https URL");
         if (string.IsNullOrWhiteSpace(_options.AppId))
-        {
-            _logger.LogWarning("Secrets:CyberArk:AppId is not configured; secret not resolved.");
-            return null;
-        }
+            throw new SecretFetchException("Secrets:CyberArk:AppId is not configured");
 
         var query = new List<string> { "AppID=" + Uri.EscapeDataString(_options.AppId) };
         query.AddRange(reference.Query.Select(p =>
@@ -130,20 +135,13 @@ public sealed class CyberArkCcpSecretProvider : ISecretProvider, IDisposable
         var url = $"{_options.BaseUrl.TrimEnd('/')}/api/Accounts?{string.Join('&', query)}";
 
         using var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
-        // CCP returns the error detail in the body as JSON; parse it either way (never log Content).
+        // CCP returns the error detail in the body as JSON; parse it either way (never read/log Content on error).
         var body = await resp.Content.ReadFromJsonAsync<CcpResponse>(ct).ConfigureAwait(false);
 
         if (!resp.IsSuccessStatusCode)
-        {
-            _logger.LogWarning("CyberArk CCP returned {Status} ({Code} {Msg}).",
-                (int)resp.StatusCode, body?.ErrorCode, body?.ErrorMsg);
-            return null;
-        }
+            throw new SecretFetchException($"CCP returned HTTP {(int)resp.StatusCode} ({body?.ErrorCode})".Trim());
         if (string.IsNullOrEmpty(body?.Content))
-        {
-            _logger.LogWarning("CyberArk CCP returned a success with no Content.");
-            return null;
-        }
+            throw new SecretFetchException("CCP returned success with no secret content");
         return body.Content;
     }
 

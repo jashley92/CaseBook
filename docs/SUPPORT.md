@@ -189,11 +189,12 @@ it** (OPERATIONS §1.3.1).
 5. The queue is **bounded** (`Siem:QueueCapacity`, default 2048); under a flood, excess events are dropped
    and logged. The audit chain remains the system of record, so a dropped event is not a data problem.
 6. If the webhook `Token` is a **CyberArk reference** (`@cyberark:…`, F-19 / OPERATIONS §6) and the collector
-   started returning **401/403**, the secret may have failed to resolve: check the app log for a
-   *"webhook token could not be resolved"* or *"CyberArk CCP … "* warning. Confirm `Secrets:CyberArk` is
-   enabled, the AppID is allow-listed to this host/identity on the CCP side, and any client cert is present
-   and readable by the app-pool identity. The stream degrades **without** an auth header (fail-closed) — it
-   does not send a bad token.
+   started returning **401/403**, the secret may have failed to resolve. Check **Administration →
+   Diagnostics → Secret resolution (CyberArk)**: a *Last attempt failed* status shows the timestamp,
+   reference, and a safe reason (e.g. `HTTP 403 (APPAP004E)`). Confirm `Secrets:CyberArk` is enabled, the
+   AppID is allow-listed to this host/identity on the CCP side, and any client cert is present and readable
+   by the app-pool identity. The stream degrades **without** an auth header (fail-closed) — it does not send
+   a bad token.
 
 ### 4.10 App won't start after a deploy/restart
 

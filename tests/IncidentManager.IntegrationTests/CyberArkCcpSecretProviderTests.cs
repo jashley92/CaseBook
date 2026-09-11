@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using FluentAssertions;
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Infrastructure.Secrets;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -31,7 +32,8 @@ public sealed class CyberArkCcpSecretProviderTests
     private static HttpResponseMessage Json(HttpStatusCode code, string json) =>
         new(code) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
-    private static CyberArkCcpSecretProvider Provider(StubHandler handler, Action<CyberArkOptions>? cfg = null)
+    private static CyberArkCcpSecretProvider Provider(StubHandler handler, Action<CyberArkOptions>? cfg = null,
+        ISecretResolutionHealth? health = null)
     {
         var o = new CyberArkOptions
         {
@@ -42,7 +44,8 @@ public sealed class CyberArkCcpSecretProviderTests
         };
         cfg?.Invoke(o);
         return new CyberArkCcpSecretProvider(handler, Options.Create(o),
-            NullLogger<CyberArkCcpSecretProvider>.Instance);
+            NullLogger<CyberArkCcpSecretProvider>.Instance,
+            health ?? new SecretResolutionHealth(new FixedClock(DateTimeOffset.UtcNow)));
     }
 
     [Fact]
@@ -99,6 +102,39 @@ public sealed class CyberArkCcpSecretProviderTests
 
         (await provider.ResolveAsync("@cyberark:Safe=A;Object=B")).Should().BeNull();
         handler.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Records_the_last_success_in_health()
+    {
+        var health = new SecretResolutionHealth(new FixedClock(new DateTimeOffset(2026, 9, 10, 8, 0, 0, TimeSpan.Zero)));
+        var handler = new StubHandler(_ => Json(HttpStatusCode.OK, "{\"Content\":\"s3cr3t\"}"));
+
+        await Provider(handler, health: health).ResolveAsync("@cyberark:Safe=SIEM;Object=Tok");
+
+        var status = health.Current;
+        status.SuccessCount.Should().Be(1);
+        status.FailureCount.Should().Be(0);
+        status.LastSuccessReference.Should().Be("@cyberark:Safe=SIEM;Object=Tok");
+        status.LastSuccessUtc.Should().Be(new DateTimeOffset(2026, 9, 10, 8, 0, 0, TimeSpan.Zero));
+        status.LastAttemptFailed.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Records_the_last_error_in_health_with_a_safe_reason()
+    {
+        var health = new SecretResolutionHealth(new FixedClock(new DateTimeOffset(2026, 9, 10, 9, 0, 0, TimeSpan.Zero)));
+        var handler = new StubHandler(_ =>
+            Json(HttpStatusCode.Forbidden, "{\"ErrorCode\":\"APPAP004E\",\"ErrorMsg\":\"denied\"}"));
+
+        await Provider(handler, health: health).ResolveAsync("@cyberark:Safe=A;Object=B");
+
+        var status = health.Current;
+        status.FailureCount.Should().Be(1);
+        status.LastAttemptFailed.Should().BeTrue();
+        status.LastFailureReference.Should().Be("@cyberark:Safe=A;Object=B");
+        status.LastFailureReason.Should().Contain("403").And.Contain("APPAP004E");
+        status.LastFailureReason.Should().NotContain("s3cr3t"); // never the secret
     }
 
     [Fact]

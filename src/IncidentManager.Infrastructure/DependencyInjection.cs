@@ -51,6 +51,8 @@ public static class DependencyInjection
         // runtime so no secret need be stored in config. Opt-in and per-secret (a value stays literal unless
         // it is written as a reference).
         services.Configure<Secrets.CyberArkOptions>(config.GetSection("Secrets:CyberArk"));
+        // Always registered so the Admin health panel can read it even when CyberArk is disabled.
+        services.AddSingleton<ISecretResolutionHealth, SecretResolutionHealth>();
         if (config.GetValue("Secrets:CyberArk:Enabled", false))
             services.AddSingleton<ISecretProvider, Secrets.CyberArkCcpSecretProvider>();
         else

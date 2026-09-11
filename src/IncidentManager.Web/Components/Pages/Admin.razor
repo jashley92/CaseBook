@@ -17,6 +17,7 @@
 @inject IncidentManager.Application.Abstractions.IEmailSender Email
 @inject IncidentManager.Web.Ops.BackupHealthReader Backup
 @inject IncidentManager.Application.Integrity.IEvidenceIntegrityMonitor EvidenceIntegrity
+@inject IncidentManager.Application.Abstractions.ISecretResolutionHealth SecretHealth
 @inject ISeverityLabels SevLabels
 @inject IJSRuntime JS
 
@@ -312,6 +313,22 @@
                             }
                         </td>
                     </tr>
+                    <tr>
+                        <td>Secret store — CyberArk CCP</td>
+                        <td>
+                            @StatusBadge(Config.GetValue<bool>("Secrets:CyberArk:Enabled"), "Enabled", "Disabled")
+                            @if (Config.GetValue<bool>("Secrets:CyberArk:Enabled"))
+                            {
+                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Secrets:CyberArk:BaseUrl"]), "Endpoint configured", "No endpoint")</span>
+                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Secrets:CyberArk:AppId"]), "AppID set", "No AppID")</span>
+                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Secrets:CyberArk:ClientCertificateThumbprint"]), "Client cert set", "Machine/OS-user auth")</span>
+                            }
+                            else
+                            {
+                                <span class="small text-muted ms-2">secrets read literally from config/env</span>
+                            }
+                        </td>
+                    </tr>
                 </tbody>
             </table>
             <p class="small text-muted mt-2">Auto-seal is an editable operational setting (see <strong>Governance &amp; security</strong>).
@@ -483,6 +500,68 @@
                     }
                 </tbody>
             </table>
+
+            <h6 class="text-uppercase small text-muted mt-3">Secret resolution (CyberArk)</h6>
+            <p class="small text-muted mb-2">
+                F-19: whether externalized secrets — e.g. the SIEM webhook token written as a
+                <code>@("@cyberark:…")</code> reference — are resolving from CyberArk CCP. Last success and last
+                error only; never a secret value. In-memory since restart, not part of the audit chain.
+            </p>
+            @if (!Config.GetValue<bool>("Secrets:CyberArk:Enabled"))
+            {
+                <p class="small mb-3">
+                    <span class="im-badge im-b-neutral">Disabled</span>
+                    <span class="small text-muted ms-2">secrets are read literally from config/env; enable under
+                    <code>Secrets:CyberArk</code> on the host (OPERATIONS §6)</span>
+                </p>
+            }
+            else if (SecretHealth.Current is { } sh)
+            {
+                <table class="table table-sm">
+                    <tbody>
+                        <tr>
+                            <td style="width:32%">Status</td>
+                            <td>
+                                @if (!sh.AnyActivity)
+                                {
+                                    <span class="im-badge im-b-neutral">No activity</span>
+                                    <span class="small text-muted ms-2">enabled — no secret has been referenced yet this run</span>
+                                }
+                                else if (sh.LastAttemptFailed)
+                                {
+                                    <span class="im-badge im-b-danger">Last attempt failed</span>
+                                }
+                                else
+                                {
+                                    <span class="im-badge im-b-ok">Healthy</span>
+                                }
+                                <span class="small text-muted ms-2">@sh.SuccessCount ok · @sh.FailureCount failed</span>
+                            </td>
+                        </tr>
+                        @if (sh.LastSuccessUtc is { } ls)
+                        {
+                            <tr>
+                                <td>Last success</td>
+                                <td>
+                                    <span class="small text-muted">@ls.ToString("u")</span>
+                                    <code class="small ms-2">@sh.LastSuccessReference</code>
+                                </td>
+                            </tr>
+                        }
+                        @if (sh.LastFailureUtc is { } lf)
+                        {
+                            <tr>
+                                <td>Last error</td>
+                                <td>
+                                    <span class="small text-muted">@lf.ToString("u")</span>
+                                    <code class="small ms-2">@sh.LastFailureReference</code>
+                                    <span class="small text-danger ms-2">@sh.LastFailureReason</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
 
             <h6 class="text-uppercase small text-muted mt-3">Feature flags</h6>
             <table class="table table-sm">
