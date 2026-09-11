@@ -68,7 +68,8 @@ public enum EntityDisposition
     Unknown = 0,
     Benign = 1,      // e.g. a victim asset confirmed clean
     Suspicious = 2,
-    Malicious = 3    // a confirmed IOC
+    Malicious = 3,   // a confirmed IOC (attacker-owned)
+    Compromised = 4  // a legitimate asset/account taken over by the attacker (E-35)
 }
 
 /// <summary>

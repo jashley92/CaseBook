@@ -341,6 +341,7 @@ public static class Ui
     public static string DispositionBadge(EntityDisposition d) => d switch
     {
         EntityDisposition.Malicious => "im-badge im-b-danger",
+        EntityDisposition.Compromised => "im-badge im-b-compromised",
         EntityDisposition.Suspicious => "im-badge im-b-warn",
         EntityDisposition.Benign => "im-badge im-b-ok",
         _ => "im-badge im-b-neutral"
@@ -350,6 +351,7 @@ public static class Ui
     public static string DispositionColor(EntityDisposition d) => d switch
     {
         EntityDisposition.Malicious => "#dc3545",
+        EntityDisposition.Compromised => "#9333ea",   // purple: a taken-over legit asset (E-35)
         EntityDisposition.Suspicious => "#fd7e14",
         EntityDisposition.Benign => "#198754",
         _ => "#6c757d"

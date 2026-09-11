@@ -380,6 +380,10 @@ h1:focus {
 .im-b-ok      { background: var(--im-phase-closed-bg); color: var(--im-phase-closed-fg); border-color: var(--im-phase-closed-bd); }
 .im-b-warn    { background: var(--im-sev-med-bg);      color: var(--im-sev-med-fg);      border-color: var(--im-sev-med-bd); }
 .im-b-danger  { background: var(--im-sev-crit-bg);     color: var(--im-sev-crit-fg);     border-color: var(--im-sev-crit-bd); }
+/* Compromised entity disposition (E-35) — a taken-over legit asset; a distinct purple, theme-aware,
+   so it reads apart from Malicious (red) and Suspicious (amber). Not part of the rebrandable palette. */
+.im-b-compromised { background: #f3e8ff; color: #6b21a8; border-color: #e9d5ff; }
+[data-bs-theme="dark"] .im-b-compromised { background: rgba(147,51,234,.20); color: #d8b4fe; border-color: rgba(147,51,234,.40); }
 
 /* --- Toast notifications (U-05) — CSP-safe, theme-aware, no JS --- */
 .toast-host {

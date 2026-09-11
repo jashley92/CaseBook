@@ -118,7 +118,7 @@ public sealed class TaxonomyAdminTests : IDisposable
     {
         var svc = NewService();
         await svc.SetVisibilityOrderAsync("EntityDisposition",
-            new[] { "Malicious", "Benign", "Unknown", "Suspicious" }, new[] { "Suspicious" });
+            new[] { "Malicious", "Benign", "Unknown", "Suspicious", "Compromised" }, new[] { "Suspicious" });
 
         var disp = (await svc.GetEffectiveAsync()).Single(k => k.Id == "EntityDisposition");
         disp.Members.Select(m => m.Value).Should().ContainInOrder("Malicious", "Benign", "Unknown", "Suspicious");
@@ -135,10 +135,10 @@ public sealed class TaxonomyAdminTests : IDisposable
     {
         var svc = NewService();
         await svc.SetVisibilityOrderAsync("EntityDisposition",
-            new[] { "Malicious", "Benign", "Unknown", "Suspicious" }, new[] { "Suspicious" });
+            new[] { "Malicious", "Benign", "Unknown", "Suspicious", "Compromised" }, new[] { "Suspicious" });
         // Back to the built-in order with everything shown → no redundant rows kept.
         await svc.SetVisibilityOrderAsync("EntityDisposition",
-            new[] { "Unknown", "Benign", "Suspicious", "Malicious" }, Array.Empty<string>());
+            new[] { "Unknown", "Benign", "Suspicious", "Malicious", "Compromised" }, Array.Empty<string>());
 
         await using var db = NewContext();
         (await db.AppSettings.CountAsync(s => s.Key.StartsWith("Taxonomy:EntityDisposition:"))).Should().Be(0);
@@ -149,8 +149,8 @@ public sealed class TaxonomyAdminTests : IDisposable
     {
         var svc = NewService();
         var act = async () => await svc.SetVisibilityOrderAsync("EntityDisposition",
-            new[] { "Unknown", "Benign", "Suspicious", "Malicious" },
-            new[] { "Unknown", "Benign", "Suspicious", "Malicious" });
+            new[] { "Unknown", "Benign", "Suspicious", "Malicious", "Compromised" },
+            new[] { "Unknown", "Benign", "Suspicious", "Malicious", "Compromised" });
         await act.Should().ThrowAsync<ArgumentException>();
     }
 

@@ -73,6 +73,7 @@ public static class TaxonomyCatalog
                 new("Benign", "Benign"),
                 new("Suspicious", "Suspicious"),
                 new("Malicious", "Malicious"),
+                new("Compromised", "Compromised"),
             }) { AllowVisibilityOrder = true },
         new TaxonomyKind("TimelineEntryType", "Timeline entry types",
             "The category of a timeline entry, used for filtering. Rename, hide unused categories, or reorder the picker.",
