@@ -1379,9 +1379,49 @@ else
                                 {
                                     <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => OpenShot(ev.Id)">Preview</button>
                                 }
+                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => ToggleCustody(ev.Id)"
+                                        title="Chain of custody — access and transfer history"
+                                        aria-expanded="@(_custodyOpen.Contains(ev.Id) ? "true" : "false")">
+                                    <span class="bi @(_custodyOpen.Contains(ev.Id) ? "bi-chevron-down" : "bi-clock-history")" aria-hidden="true"></span> Custody
+                                </button>
                                 <a class="btn btn-sm btn-outline-primary" href="evidence/@ev.Id" target="_blank">Download</a>
                             </td>
                         </tr>
+                        @if (_custodyOpen.Contains(ev.Id))
+                        {
+                            <tr class="im-custody-row">
+                                <td colspan="5" class="bg-body-tertiary">
+                                    <div class="small fw-semibold mb-2">
+                                        <span class="bi bi-shield-check me-1" aria-hidden="true"></span>Chain of custody
+                                    </div>
+                                    @if (_custodyLoading.Contains(ev.Id))
+                                    {
+                                        <span class="skel skel-line" style="width:40%;display:block"></span>
+                                    }
+                                    else if (_custody.TryGetValue(ev.Id, out var events) && events.Count > 0)
+                                    {
+                                        <table class="table table-sm mb-0 im-table">
+                                            <thead><tr><th>When (@TimeDisp.Label)</th><th>Action</th><th>By</th><th>Details</th></tr></thead>
+                                            <tbody>
+                                                @foreach (var c in events)
+                                                {
+                                                    <tr>
+                                                        <td class="small text-nowrap">@TimeDisp.Long(c.AtUtc)</td>
+                                                        <td class="small"><span class="bi @CustodyGlyph(c.Action) me-1" aria-hidden="true"></span>@c.Action</td>
+                                                        <td class="small">@Users.DisplayFor(c.Actor)</td>
+                                                        <td class="small text-muted">@c.Details</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+                                    else
+                                    {
+                                        <span class="small text-muted">No custody events recorded.</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
                     }
                 </tbody>
             </table>
@@ -2120,6 +2160,10 @@ else
     private IBrowserFile? _file;
     private string? _evDesc;
     private string? _uploadError;
+    // U-26: per-evidence chain-of-custody, lazily loaded when a row is expanded.
+    private readonly HashSet<Guid> _custodyOpen = new();
+    private readonly HashSet<Guid> _custodyLoading = new();
+    private readonly Dictionary<Guid, List<ChainOfCustodyEvent>> _custody = new();
 
     // Audit
     private List<AuditLogEntry>? _audit;
@@ -3061,6 +3105,26 @@ else
     private void ClearTimelineShot() { _tlShotBytes = null; _tlShotName = null; }
 
     private void OpenShot(Guid evidenceId) => _previewShotId = evidenceId;
+
+    // U-26: show/hide an evidence item's chain of custody, loading it on first expand.
+    private async Task ToggleCustody(Guid evidenceId)
+    {
+        if (!_custodyOpen.Add(evidenceId)) { _custodyOpen.Remove(evidenceId); return; }
+        if (_custody.ContainsKey(evidenceId)) return;
+        _custodyLoading.Add(evidenceId);
+        try { _custody[evidenceId] = await Evidence.GetCustodyAsync(evidenceId); }
+        catch { _custody[evidenceId] = new(); }
+        finally { _custodyLoading.Remove(evidenceId); }
+    }
+
+    private static string CustodyGlyph(string action) => action.ToLowerInvariant() switch
+    {
+        "uploaded" => "bi-upload",
+        "downloaded" => "bi-download",
+        "viewed" => "bi-eye",
+        "transferred" => "bi-arrow-left-right",
+        _ => "bi-dot"
+    };
     private void CloseShot() => _previewShotId = null;
 
     private string TlShotDataUri() =>
