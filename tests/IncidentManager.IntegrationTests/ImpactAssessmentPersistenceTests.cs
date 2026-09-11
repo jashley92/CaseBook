@@ -86,7 +86,7 @@ public sealed class ImpactAssessmentPersistenceTests : IDisposable
             loaded!.AffectedIndividualsCount.Should().Be(2500);
             loaded.DataElements.Select(d => d.ElementKey).Should().BeEquivalentTo(
                 new[] { "Name", "SocialSecurityNumber", "ClaimsData" });
-            loaded.AffectedStates.Should().Be("NY,NJ");
+            loaded.AffectedStates.Should().Be("NY, NJ");   // comma-space normalized (U-47a)
         }
     }
 

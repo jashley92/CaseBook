@@ -204,7 +204,7 @@ else
             @foreach (var c in _page.Items)
             {
                 <tr>
-                    <td><code>@c.CaseNumber</code>
+                    <td class="case-num"><code title="@c.CaseNumber">@c.CaseNumber</code>
                         @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
                     </td>
                     <td>

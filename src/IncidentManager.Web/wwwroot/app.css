@@ -357,6 +357,12 @@ h1:focus {
 /* Case-list title link — reads as text until hovered (the row also has an explicit Open button). */
 .case-title:hover { text-decoration: underline !important; }
 
+/* Case-list "Case #" column — cap width so a long descriptive slug (U-42b) can't widen the row;
+   the full number is available on hover (title) and on the case page. */
+.case-num { max-width: 16rem; }
+.case-num code { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+                 white-space: nowrap; vertical-align: bottom; }
+
 /* Response-time SLA flags (E-16) — reuse the severity/phase tint tokens so they stay theme-aware. */
 .im-sla-ontrack       { background: var(--im-phase-closed-bg); color: var(--im-phase-closed-fg); border-color: var(--im-phase-closed-bd); }
 .im-sla-atrisk        { background: var(--im-sev-high-bg);     color: var(--im-sev-high-fg);     border-color: var(--im-sev-high-bd); }

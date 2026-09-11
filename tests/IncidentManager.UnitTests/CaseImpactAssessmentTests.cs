@@ -22,7 +22,7 @@ public class CaseImpactAssessmentTests
 
         c.AffectedIndividualsCount.Should().Be(1500);
         c.DataElements.Select(d => d.ElementKey).Should().BeEquivalentTo(new[] { "Name", "SocialSecurityNumber" });
-        c.AffectedStates.Should().Be("NY,NJ"); // uppercased, trimmed, de-duplicated
+        c.AffectedStates.Should().Be("NY, NJ"); // uppercased, trimmed, de-duplicated, comma-space (U-47a)
     }
 
     [Fact]

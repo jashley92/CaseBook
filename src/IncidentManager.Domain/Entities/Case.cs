@@ -299,11 +299,12 @@ public class Case : AuditableEntity, IHashableEntity
         foreach (var key in desired.Where(k => DataElements.All(d => d.ElementKey != k)))
             DataElements.Add(new CaseDataElement { CaseId = Id, ElementKey = key });
 
+        // Normalize to a readable comma-space list (U-47a): "NY, NJ, PA", not "NY,NJ,PA".
         AffectedStates = string.IsNullOrWhiteSpace(affectedStates)
             ? null
-            : string.Join(",", affectedStates.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                             .Select(s => s.ToUpperInvariant())
-                                             .Distinct());
+            : string.Join(", ", affectedStates.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                              .Select(s => s.ToUpperInvariant())
+                                              .Distinct());
         Touch(actor, nowUtc);
     }
 

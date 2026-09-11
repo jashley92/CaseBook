@@ -388,11 +388,12 @@ public static class Ui
         _ => "bi-dash-circle"
     };
 
-    /// <summary>Which milestone an SLA clock measures.</summary>
+    /// <summary>Which milestone an SLA clock measures, phrased as an action so it can't be misread as the
+    /// same-named lifecycle <see cref="CasePhase"/> (U-44) — e.g. "Time to contain", not "Containment".</summary>
     public static string SlaClockLabel(SlaClock c) => c switch
     {
-        SlaClock.Containment => "Containment",
-        SlaClock.Resolution => "Resolution",
+        SlaClock.Containment => "Time to contain",
+        SlaClock.Resolution => "Time to resolve",
         _ => c.ToString()
     };
 
