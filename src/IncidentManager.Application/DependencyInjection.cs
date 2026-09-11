@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<Integrity.EvidenceIntegrityVerifier>();
         services.AddScoped<Compliance.ComplianceBundleService>();
         services.AddScoped<Export.IocFeedService>();
+        services.AddScoped<Export.StixExportService>();   // E-07: per-case entity graph → STIX 2.1 bundle
         services.AddScoped<ReportService>();
         // E-03b: overdue after-action scan. Scoped (creates a DbContext per pass, driven by the hosted
         // service); the notify-once tracker is a singleton so "already reminded" survives between passes.

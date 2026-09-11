@@ -421,6 +421,22 @@ app.MapGet("/reports/{id:guid}", async (Guid id, IncidentManager.Application.Rep
     return Results.File(stream, contentType, report.FileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
+// --- E-07: per-case entity-graph export as a STIX 2.1 bundle (shareable investigation graph) ---
+// Need-to-know scoped by the service (ForUser); 404 for a case the caller can't see. Audited as an Export
+// (C-05) — case data leaving the system. Plain JSON attachment (no JS).
+app.MapGet("/cases/{id:guid}/graph.stix.json", async (Guid id,
+    IncidentManager.Application.Export.StixExportService stix,
+    IncidentManager.Application.Access.IAccessLogService access, CancellationToken ct) =>
+{
+    var result = await stix.BuildAsync(id, ct);
+    if (result is null) return Results.NotFound();
+    var json = System.Text.Json.JsonSerializer.Serialize(result.Bundle,
+        new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+    var fileName = $"case-{result.CaseNumber}-graph.stix.json";
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, id, fileName, null, ct);
+    return Results.File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", fileName);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+
 // --- Metrics export for board / regulatory reporting packs (E-11) ---
 // Scoped to the caller's visible cases via DashboardService; plain CSV attachment (no JS).
 app.MapGet("/export/metrics.csv", async (

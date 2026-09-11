@@ -1156,6 +1156,10 @@ else
                             @(_physicsOn ? "Freeze" : "Physics")
                         </button>
                         <button class="btn btn-outline-secondary" @onclick="GraphRelayout" title="Re-run the force layout">Re-layout</button>
+                        <a class="btn btn-outline-secondary" href="cases/@Id/graph.stix.json"
+                           title="Export this investigation graph as a STIX 2.1 bundle (share with a partner / ingest into a TIP or XSIAM)">
+                            <span class="bi bi-box-arrow-up" aria-hidden="true"></span> STIX
+                        </a>
                     </div>
                 </div>
                 <div class="card-body">
