@@ -21,6 +21,7 @@ public static class DependencyInjection
         services.AddScoped<Admin.StageGateService>();
         services.AddScoped<Admin.AccessReviewService>();
         services.AddScoped<Admin.TaxonomyAdminService>();
+        services.AddScoped<Admin.EmailTemplateAdminService>();
         services.AddScoped<Admin.DataElementService>();
         services.AddScoped<Config.ConfigBundleService>();
         services.AddScoped<EvidenceService>();

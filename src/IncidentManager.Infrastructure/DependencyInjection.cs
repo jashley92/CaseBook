@@ -28,6 +28,8 @@ public static class DependencyInjection
         // One sender that decides log-vs-send per message from the live options, so an administered
         // change to Email:Enabled / From / relay takes effect at runtime (A-08) without a restart.
         services.AddSingleton<IEmailSender, Notifications.EmailSender>();
+        // E-03b: renders branded HTML emails from admin-editable templates + the console theme.
+        services.AddSingleton<IEmailComposer, Notifications.EmailComposer>();
         services.AddSingleton<ICaseNotifications, Notifications.CaseNotifications>();
         // F-16: raises the audit-chain tamper alarm (critical SIEM/log event + email distribution).
         services.AddSingleton<IIntegrityAlertNotifier, Notifications.IntegrityAlertNotifier>();

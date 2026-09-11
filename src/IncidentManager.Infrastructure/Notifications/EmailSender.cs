@@ -1,4 +1,5 @@
 using System.Net.Mail;
+using System.Net.Mime;
 using IncidentManager.Application.Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -10,7 +11,8 @@ namespace IncidentManager.Infrastructure.Notifications;
 /// on every send, so administered changes to <c>Email:Enabled</c>, <c>Email:From</c> and the SMTP relay
 /// take effect at runtime (A-08) without a restart. When email is disabled the message is logged rather
 /// than sent; SMTP failures are logged and swallowed so a mail-server problem never breaks the case
-/// operation that triggered the notification.
+/// operation that triggered the notification. Branded messages carry a multipart/alternative body (a
+/// plain-text part plus the HTML) so non-HTML clients still get readable text.
 /// </summary>
 public sealed class EmailSender : IEmailSender
 {
@@ -23,7 +25,14 @@ public sealed class EmailSender : IEmailSender
         _log = log;
     }
 
-    public async Task SendAsync(IReadOnlyCollection<string> to, string subject, string body, CancellationToken ct = default)
+    public Task SendAsync(IReadOnlyCollection<string> to, string subject, string body, CancellationToken ct = default) =>
+        SendCoreAsync(to, subject, textBody: body, htmlBody: null, ct);
+
+    public Task SendAsync(EmailMessage message, CancellationToken ct = default) =>
+        SendCoreAsync(message.To, message.Subject, textBody: message.TextBody, htmlBody: message.HtmlBody, ct);
+
+    private async Task SendCoreAsync(IReadOnlyCollection<string> to, string subject,
+        string textBody, string? htmlBody, CancellationToken ct)
     {
         if (to.Count == 0) return;
 
@@ -36,8 +45,20 @@ public sealed class EmailSender : IEmailSender
 
         try
         {
-            using var message = new MailMessage { From = new MailAddress(o.From), Subject = subject, Body = body };
+            using var message = new MailMessage { From = new MailAddress(o.From), Subject = subject };
             foreach (var addr in to) message.To.Add(addr);
+
+            if (htmlBody is null)
+            {
+                message.Body = textBody;
+            }
+            else
+            {
+                // multipart/alternative: text first (fallback), HTML preferred by capable clients.
+                message.Body = textBody;
+                message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(
+                    htmlBody, null, MediaTypeNames.Text.Html));
+            }
 
             using var client = new SmtpClient(o.SmtpHost, o.SmtpPort);
             await client.SendMailAsync(message, ct);

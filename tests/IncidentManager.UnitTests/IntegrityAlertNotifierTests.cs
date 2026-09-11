@@ -11,25 +11,14 @@ public class IntegrityAlertNotifierTests
 {
     private static readonly ChainVerificationResult Broken = ChainVerificationResult.Broken(42, "hash mismatch at 42");
 
-    private sealed class CapturingEmailSender : IEmailSender
-    {
-        public List<(IReadOnlyCollection<string> To, string Subject, string Body)> Sent { get; } = new();
-        public bool Throw { get; init; }
-        public Task SendAsync(IReadOnlyCollection<string> to, string subject, string body, CancellationToken ct = default)
-        {
-            if (Throw) throw new InvalidOperationException("smtp down");
-            Sent.Add((to, subject, body));
-            return Task.CompletedTask;
-        }
-    }
-
     private sealed class NullSecurityEventSink : ISecurityEventSink
     {
         public void Emit(SecurityEvent e) { }
     }
 
     private static IntegrityAlertNotifier Build(CapturingEmailSender sender, params string[] recipients) =>
-        new(sender, new TestOptionsMonitor<EmailOptions>(new EmailOptions { IntegrityAlertDistribution = recipients }),
+        new(sender, TestEmail.Composer(), TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions { IntegrityAlertDistribution = recipients }),
             new NullSecurityEventSink(), NullLogger<IntegrityAlertNotifier>.Instance);
 
     [Fact]
@@ -43,7 +32,8 @@ public class IntegrityAlertNotifierTests
         sender.Sent.Should().ContainSingle();
         sender.Sent[0].To.Should().Contain("secops@insurer.example");
         sender.Sent[0].Subject.Should().Contain("integrity");
-        sender.Sent[0].Body.Should().Contain("42");
+        sender.Sent[0].HtmlBody.Should().Contain("42").And.Contain("<html");
+        sender.Sent[0].TextBody.Should().Contain("42");
     }
 
     [Fact]

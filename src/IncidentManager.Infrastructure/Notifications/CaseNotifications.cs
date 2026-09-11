@@ -1,45 +1,64 @@
+using System.Globalization;
+using System.Net;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace IncidentManager.Infrastructure.Notifications;
 
 /// <summary>
-/// Composes and dispatches case-lifecycle notifications: alerting Legal/Privacy on a Breach escalation
-/// (E-03), the assignee on a case assignment, and item owners on overdue after-action items (E-03b).
-/// Recipient resolution uses the <see cref="IUserDirectory"/> mirror. Never throws into the caller — a
-/// notification failure must not fail the action (or background scan) that triggered it.
+/// Composes and dispatches case-lifecycle notifications as branded HTML (E-03b): alerting Legal/Privacy on
+/// a Breach escalation (E-03), the assignee on a case assignment, and item owners on overdue after-action
+/// items. Bodies are rendered from admin-editable templates via <see cref="IEmailComposer"/>; recipients are
+/// resolved through the <see cref="IUserDirectory"/> mirror. Never throws into the caller — a notification
+/// failure must not fail the action (or background scan) that triggered it.
 /// </summary>
 public sealed class CaseNotifications : ICaseNotifications
 {
     private readonly IEmailSender _email;
+    private readonly IEmailComposer _composer;
     private readonly IUserDirectory _users;
+    private readonly IConfiguration _config;
     private readonly IOptionsMonitor<EmailOptions> _options;
 
-    public CaseNotifications(IEmailSender email, IUserDirectory users, IOptionsMonitor<EmailOptions> options)
+    public CaseNotifications(IEmailSender email, IEmailComposer composer, IUserDirectory users,
+        IConfiguration config, IOptionsMonitor<EmailOptions> options)
     {
         _email = email;
+        _composer = composer;
         _users = users;
+        _config = config;
         _options = options;
     }
 
+    private string BaseUrl => (_config["App:BaseUrl"] ?? "").TrimEnd('/');
+    private string? CaseUrl(Guid id) => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases/{id}";
+    private string? OverdueUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases?overdue=true&closed=true";
+
     public async Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default)
     {
-        // Only on a genuine escalation into Breach, and only if a distribution is configured.
-        // Read the current value so an administered change to the distribution takes effect at runtime.
         var options = _options.CurrentValue;
         if (to != Classification.Breach || from == Classification.Breach) return;
         if (options.LegalDistribution.Length == 0) return;
 
-        var subject = $"[CaseBook] Case escalated to Breach: {c.CaseNumber}";
-        var body =
-            $"Case {c.CaseNumber} — {c.Title} — has been classified as a Breach.\n" +
-            $"Severity: {c.Severity}. Phase: {c.Phase}.\n" +
-            (c.LegalReferral.IsReferred ? "A Legal/Privacy referral is already recorded.\n" : "") +
-            "Review in CaseBook for regulatory-relevance assessment (NYDFS Part 500 / GLBA).";
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["CaseNumber"] = c.CaseNumber,
+            ["CaseTitle"] = c.Title,
+            ["Severity"] = c.Severity.ToString(),
+            ["Phase"] = c.Phase.ToString(),
+            ["CaseUrl"] = CaseUrl(c.Id) ?? "",
+        };
+        var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ReferralNote"] = c.LegalReferral.IsReferred
+                ? "<p>A Legal/Privacy referral is already recorded.</p>" : "",
+        };
 
-        await _email.SendAsync(options.LegalDistribution, subject, body, ct);
+        var message = await _composer.ComposeAsync("breach", options.LegalDistribution, tokens, CaseUrl(c.Id), htmlTokens, ct);
+        await _email.SendAsync(message, ct);
     }
 
     public async Task OnAssignedAsync(Case c, string assigneeUserId, string assigneeDisplayName,
@@ -47,58 +66,67 @@ public sealed class CaseNotifications : ICaseNotifications
     {
         var options = _options.CurrentValue;
         if (!options.AssignmentNotifications) return;
-        // Don't email someone for assigning themselves — they already know.
-        if (string.Equals(assigneeUserId, assignedByUserId, StringComparison.OrdinalIgnoreCase)) return;
-
+        if (string.Equals(assigneeUserId, assignedByUserId, StringComparison.OrdinalIgnoreCase)) return; // self-assign
         var to = _users.EmailFor(assigneeUserId);
-        if (string.IsNullOrWhiteSpace(to)) return;   // no address on file — nothing to send
+        if (string.IsNullOrWhiteSpace(to)) return;
 
-        var assignedBy = _users.DisplayFor(assignedByUserId);
-        var subject = $"[CaseBook] You've been assigned to {c.CaseNumber} ({Ui(role)})";
-        var body =
-            $"{assigneeDisplayName},\n\n" +
-            $"You have been assigned to case {c.CaseNumber} — {c.Title} — as {Ui(role)} by {assignedBy}.\n" +
-            $"Severity: {c.Severity}. Phase: {c.Phase}.\n\n" +
-            "Open it in CaseBook to review.";
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Assignee"] = assigneeDisplayName,
+            ["Role"] = Ui(role),
+            ["AssignedBy"] = _users.DisplayFor(assignedByUserId),
+            ["CaseNumber"] = c.CaseNumber,
+            ["CaseTitle"] = c.Title,
+            ["Severity"] = c.Severity.ToString(),
+            ["Phase"] = c.Phase.ToString(),
+            ["CaseUrl"] = CaseUrl(c.Id) ?? "",
+        };
 
-        await _email.SendAsync([to], subject, body, ct);
+        var message = await _composer.ComposeAsync("assignment", [to], tokens, CaseUrl(c.Id), null, ct);
+        await _email.SendAsync(message, ct);
     }
 
     public async Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default)
     {
         if (items.Count == 0) return;
 
-        // Resolve a recipient per item (its owner, else the case's incident commander) and group so each
-        // person gets one reminder listing all of their newly-overdue items.
         var byRecipient = new Dictionary<string, List<OverdueActionItem>>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in items)
         {
             var to = ResolveRecipient(item);
-            if (string.IsNullOrWhiteSpace(to)) continue;   // can't reach anyone for this item — skip it
-            if (!byRecipient.TryGetValue(to, out var list))
-                byRecipient[to] = list = [];
+            if (string.IsNullOrWhiteSpace(to)) continue;
+            if (!byRecipient.TryGetValue(to, out var list)) byRecipient[to] = list = [];
             list.Add(item);
         }
 
+        var overdueUrl = OverdueUrl();
         foreach (var (to, list) in byRecipient)
         {
-            var lines = list
-                .OrderBy(i => i.DueAtUtc)
-                .Select(i => $"  • {i.CaseNumber} — {i.Title} (due {i.DueAtUtc:u})");
-            var subject = list.Count == 1
-                ? $"[CaseBook] Overdue after-action item: {list[0].CaseNumber}"
-                : $"[CaseBook] {list.Count} overdue after-action items";
-            var body =
-                "The following after-action follow-up item(s) are past their due date:\n\n" +
-                string.Join('\n', lines) +
-                "\n\nOpen the case(s) in CaseBook to update or close them.";
+            var ordered = list.OrderBy(i => i.DueAtUtc).ToList();
+            var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ItemCount"] = ordered.Count.ToString(CultureInfo.InvariantCulture),
+                ["OverdueUrl"] = overdueUrl ?? "",
+            };
+            var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ItemsList"] = RenderItemList(ordered),
+            };
 
-            await _email.SendAsync([to], subject, body, ct);
+            var message = await _composer.ComposeAsync("overdue", [to], tokens, overdueUrl, htmlTokens, ct);
+            await _email.SendAsync(message, ct);
         }
     }
 
-    // Owner is a directory user id (the after-action picker stores an id); resolve to an address, or fall
-    // back to the case's incident commander so an unowned/unresolvable item still reaches someone.
+    // Composer-rendered safe HTML: every case-supplied field is HTML-encoded here.
+    private static string RenderItemList(IReadOnlyList<OverdueActionItem> items)
+    {
+        var lis = items.Select(i =>
+            $"<li>{WebUtility.HtmlEncode(i.CaseNumber)} — {WebUtility.HtmlEncode(i.Title)} " +
+            $"(due {WebUtility.HtmlEncode(i.DueAtUtc.ToString("u"))})</li>");
+        return "<ul>" + string.Join("", lis) + "</ul>";
+    }
+
     private string? ResolveRecipient(OverdueActionItem item)
     {
         var ownerEmail = string.IsNullOrWhiteSpace(item.OwnerUserId) ? null : _users.EmailFor(item.OwnerUserId);

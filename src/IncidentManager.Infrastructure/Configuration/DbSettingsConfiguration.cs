@@ -71,6 +71,15 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
                     continue;
                 }
 
+                // E-03b email templates (EmailTemplate:{id}:{Subject|Body}) also share this table and are the
+                // same kind of admin-editable cosmetic content — branded email copy, never a server-side config
+                // key. Load them so the composer reads overrides live; not a tamper signal.
+                if (r.Key.StartsWith(Application.Admin.EmailTemplateCatalog.KeyPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    data[r.Key] = r.Value;
+                    continue;
+                }
+
                 // Enforce the operational whitelist on the READ path too (S-02). AdminSettingsService.SetAsync
                 // only ever writes whitelisted keys; a row here whose key is not editable got in out-of-band,
                 // so it must NOT override server-side configuration (connection strings, auth mode, signing

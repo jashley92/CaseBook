@@ -18,18 +18,6 @@ public class EvidenceIntegrityAlertNotifierTests
             "aaaabbbb", "ccccdddd", EvidenceDriftKind.HashMismatch, "stored bytes hash ccccdddd… ≠ recorded aaaabbbb…")
     }, T0);
 
-    private sealed class CapturingEmailSender : IEmailSender
-    {
-        public List<(IReadOnlyCollection<string> To, string Subject, string Body)> Sent { get; } = new();
-        public bool Throw { get; init; }
-        public Task SendAsync(IReadOnlyCollection<string> to, string subject, string body, CancellationToken ct = default)
-        {
-            if (Throw) throw new InvalidOperationException("smtp down");
-            Sent.Add((to, subject, body));
-            return Task.CompletedTask;
-        }
-    }
-
     private sealed class CapturingSecurityEventSink : ISecurityEventSink
     {
         public List<SecurityEvent> Events { get; } = new();
@@ -38,7 +26,8 @@ public class EvidenceIntegrityAlertNotifierTests
 
     private static EvidenceIntegrityAlertNotifier Build(CapturingEmailSender sender,
         CapturingSecurityEventSink sink, params string[] recipients) =>
-        new(sender, new TestOptionsMonitor<EmailOptions>(new EmailOptions { IntegrityAlertDistribution = recipients }),
+        new(sender, TestEmail.Composer(), TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions { IntegrityAlertDistribution = recipients }),
             sink, NullLogger<EvidenceIntegrityAlertNotifier>.Instance);
 
     [Fact]
@@ -66,7 +55,7 @@ public class EvidenceIntegrityAlertNotifierTests
         sender.Sent.Should().ContainSingle();
         sender.Sent[0].To.Should().Contain("secops@example.test");
         sender.Sent[0].Subject.Should().Contain("evidence");
-        sender.Sent[0].Body.Should().Contain("malware.bin").And.Contain("2026-01_Phishing_Wave");
+        sender.Sent[0].HtmlBody.Should().Contain("malware.bin").And.Contain("2026-01_Phishing_Wave").And.Contain("<html");
     }
 
     [Fact]

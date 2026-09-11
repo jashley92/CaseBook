@@ -15,16 +15,6 @@ public class CaseNotificationsTests
         2026, 1, "Vendor Breach", "Vendor data breach",
         Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic1", Now);
 
-    private sealed class CapturingEmailSender : IEmailSender
-    {
-        public List<(IReadOnlyCollection<string> To, string Subject, string Body)> Sent { get; } = new();
-        public Task SendAsync(IReadOnlyCollection<string> to, string subject, string body, CancellationToken ct = default)
-        {
-            Sent.Add((to, subject, body));
-            return Task.CompletedTask;
-        }
-    }
-
     /// <summary>A minimal in-memory user directory: id → (display, email).</summary>
     private sealed class FakeUserDirectory : IUserDirectory
     {
@@ -42,7 +32,8 @@ public class CaseNotificationsTests
     }
 
     private static CaseNotifications Build(CapturingEmailSender sender, EmailOptions options, IUserDirectory? users = null) =>
-        new(sender, users ?? new FakeUserDirectory(), new TestOptionsMonitor<EmailOptions>(options));
+        new(sender, TestEmail.Composer(), users ?? new FakeUserDirectory(), TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(options));
 
     // --- Breach escalation (E-03) ----------------------------------------------
 
@@ -87,7 +78,7 @@ public class CaseNotificationsTests
         var sender = new CapturingEmailSender();
         var monitor = new TestOptionsMonitor<EmailOptions>(
             new EmailOptions { LegalDistribution = ["old@insurer.example"] });
-        var notifications = new CaseNotifications(sender, new FakeUserDirectory(), monitor);
+        var notifications = new CaseNotifications(sender, TestEmail.Composer(), new FakeUserDirectory(), TestEmail.EmptyConfig, monitor);
 
         // Admin edits the Legal distribution after the service is already constructed.
         monitor.CurrentValue = new EmailOptions { LegalDistribution = ["new@insurer.example"] };
@@ -173,7 +164,7 @@ public class CaseNotificationsTests
 
         sender.Sent.Should().HaveCount(2);                       // one per distinct recipient
         var alice = sender.Sent.Single(s => s.To.Contains("alice@insurer.example"));
-        alice.Body.Should().Contain("Task A").And.Contain("Task B");
+        alice.HtmlBody.Should().Contain("Task A").And.Contain("Task B");
         sender.Sent.Should().ContainSingle(s => s.To.Contains("bob@insurer.example"));
     }
 

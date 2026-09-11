@@ -225,6 +225,12 @@ This is convenient but means a host compromise could re-sign forged seals — un
       assigned to a case); **Overdue after-action reminders** (a slow background scan — like AutoSeal /
       EvidenceVerify — that emails each item's owner, or the case's incident commander as a fallback, once
       when it passes its due date). Both off by default; the scan is read-only and never touches the audit chain.
+- [ ] (Recommended if any email is used) Set **`App:BaseUrl`** (Settings → Notifications) to this deployment's
+      absolute URL so branded emails include **direct links** and the **logo**. All notification emails are
+      branded HTML (E-03c) using the console theme + the report logo; their subject/body are admin-editable
+      under **Settings → Email templates** (audited; the shell/branding is fixed). Blank base URL still sends —
+      emails just omit links and the hosted logo (a text wordmark stands in). The logo is served anonymously
+      at `/branding/logo` (branding image only, no case data).
 - [ ] (Optional) `Siem:Webhook` configured to the SIEM's HTTP collector (see §5) if the security-event
       stream is wanted.
 - [ ] (Optional) `Secrets:CyberArk` enabled (F-19, §6) if secrets should come from CyberArk CCP: `BaseUrl`

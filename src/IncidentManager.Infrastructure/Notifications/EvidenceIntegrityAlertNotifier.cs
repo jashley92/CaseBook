@@ -1,8 +1,9 @@
 using System.Globalization;
-using System.Text;
+using System.Net;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Integrity;
 using IncidentManager.Application.Security;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -26,14 +27,18 @@ public sealed class EvidenceIntegrityAlertNotifier : IEvidenceIntegrityAlertNoti
     private static readonly EventId EvidenceIntegrityDrift = new(5003, nameof(EvidenceIntegrityDrift));
 
     private readonly IEmailSender _email;
+    private readonly IEmailComposer _composer;
+    private readonly IConfiguration _config;
     private readonly IOptionsMonitor<EmailOptions> _options;
     private readonly ISecurityEventSink _siem;
     private readonly ILogger<EvidenceIntegrityAlertNotifier> _logger;
 
-    public EvidenceIntegrityAlertNotifier(IEmailSender email, IOptionsMonitor<EmailOptions> options,
-        ISecurityEventSink siem, ILogger<EvidenceIntegrityAlertNotifier> logger)
+    public EvidenceIntegrityAlertNotifier(IEmailSender email, IEmailComposer composer, IConfiguration config,
+        IOptionsMonitor<EmailOptions> options, ISecurityEventSink siem, ILogger<EvidenceIntegrityAlertNotifier> logger)
     {
         _email = email;
+        _composer = composer;
+        _config = config;
         _options = options;
         _siem = siem;
         _logger = logger;
@@ -54,12 +59,24 @@ public sealed class EvidenceIntegrityAlertNotifier : IEvidenceIntegrityAlertNoti
         var recipients = _options.CurrentValue.IntegrityAlertDistribution;
         if (recipients.Length == 0) return; // no distribution configured; the critical log above still fired
 
-        var subject = $"[CaseBook] ALERT: evidence-at-rest integrity failure ({result.Drifts.Count} item(s))";
-        var body = BuildBody(result);
+        var baseUrl = (_config["App:BaseUrl"] ?? "").TrimEnd('/');
+        var integrityUrl = baseUrl.Length == 0 ? null : $"{baseUrl}/integrity";
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["DriftCount"] = result.Drifts.Count.ToString(CultureInfo.InvariantCulture),
+            ["CheckedCount"] = result.CheckedCount.ToString(CultureInfo.InvariantCulture),
+            ["VerifiedAtUtc"] = result.CheckedAtUtc.ToString("u"),
+            ["IntegrityUrl"] = integrityUrl ?? "",
+        };
+        var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["DriftList"] = RenderDriftList(result),
+        };
 
         try
         {
-            await _email.SendAsync(recipients, subject, body, ct);
+            var message = await _composer.ComposeAsync("evidence-drift-alarm", recipients, tokens, integrityUrl, htmlTokens, ct);
+            await _email.SendAsync(message, ct);
         }
         catch (Exception ex)
         {
@@ -68,29 +85,12 @@ public sealed class EvidenceIntegrityAlertNotifier : IEvidenceIntegrityAlertNoti
         }
     }
 
-    private static string BuildBody(EvidenceVerificationResult result)
+    // Composer-rendered safe HTML: every field is HTML-encoded here.
+    private static string RenderDriftList(EvidenceVerificationResult result)
     {
-        var c = CultureInfo.InvariantCulture;
-        var sb = new StringBuilder();
-        sb.AppendLine("CaseBook re-verified evidence at rest and found stored bytes that no longer match their recorded SHA-256.");
-        sb.AppendLine();
-        sb.AppendLine(c, $"Checked: {result.CheckedCount}");
-        sb.AppendLine(c, $"Drifted: {result.Drifts.Count}");
-        sb.AppendLine(c, $"Verified at (UTC): {result.CheckedAtUtc:u}");
-        sb.AppendLine();
-        sb.AppendLine("Affected evidence:");
-        foreach (var d in result.Drifts)
-        {
-            sb.AppendLine(c, $"  - [{d.Kind}] case {d.CaseNumber ?? d.CaseId.ToString()} · evidence {d.EvidenceId} · {d.OriginalFileName}");
-            sb.AppendLine(c, $"      {d.Detail}");
-        }
-        sb.AppendLine();
-        sb.AppendLine("The recorded hash is itself protected by the audit hash-chain, so a drift here means the");
-        sb.AppendLine("stored file changed after it was recorded — bit-rot, a substituted file, or a deletion.");
-        sb.AppendLine("Treat it as a potential integrity/security incident:");
-        sb.AppendLine("  1. Preserve the current evidence store and database; do not overwrite.");
-        sb.AppendLine("  2. Compare against your out-of-band evidence backups to recover the original bytes.");
-        sb.AppendLine("  3. Follow the incident-response procedures in OPERATIONS.md.");
-        return sb.ToString();
+        var lis = result.Drifts.Select(d =>
+            $"<li>[{WebUtility.HtmlEncode(d.Kind.ToString())}] {WebUtility.HtmlEncode(d.CaseNumber ?? d.CaseId.ToString())} — " +
+            $"{WebUtility.HtmlEncode(d.OriginalFileName)}: {WebUtility.HtmlEncode(d.Detail)}</li>");
+        return "<ul>" + string.Join("", lis) + "</ul>";
     }
 }

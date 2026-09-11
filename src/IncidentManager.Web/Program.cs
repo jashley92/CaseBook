@@ -319,6 +319,14 @@ var readyOptions = new HealthCheckOptions { Predicate = c => c.Tags.Contains("re
 app.MapHealthChecks("/health", readyOptions).AllowAnonymous();
 app.MapHealthChecks("/health/ready", readyOptions).AllowAnonymous();
 
+// E-03b: the deployment branding logo for branded emails. Anonymous — mail clients fetch it without a
+// session, and it is only the org's branding image (no case data). 404 when no logo is configured.
+app.MapGet("/branding/logo", async (IncidentManager.Application.Abstractions.IReportBrandingStore branding, CancellationToken ct) =>
+{
+    var logo = await branding.GetLogoAsync(ct);
+    return logo is null ? Results.NotFound() : Results.File(logo.Bytes, logo.ContentType);
+}).AllowAnonymous();
+
 // --- Evidence download (streamed, records a chain-of-custody event) ---
 app.MapGet("/evidence/{id:guid}", async (Guid id, EvidenceService evidence,
     IncidentManager.Application.Access.IAccessLogService access, CancellationToken ct) =>

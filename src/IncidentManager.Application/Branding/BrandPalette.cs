@@ -96,6 +96,40 @@ public static class BrandPalette
             Convert.ToInt32(h.Substring(4, 2), 16));
     }
 
+    /// <summary>
+    /// Concrete colours for the HTML email shell (E-03b branded email). Emails can't use CSS variables, so
+    /// unlike <see cref="BuildCss"/> this resolves the console theme to literal hex values, applying the same
+    /// compile-time defaults (gold accent, charcoal ink) when a colour is unset, and the same AA-contrast
+    /// nudge for the link colour. Pure/deterministic so it can be unit-tested.
+    /// </summary>
+    public sealed record EmailPalette(
+        string PageBg, string CardBg, string HeaderBg, string HeaderText,
+        string Accent, string Link, string Text, string Muted, string Border,
+        string ButtonBg, string ButtonText);
+
+    private static readonly Rgb DefaultAccent = new(0xff, 0xcf, 0x31); // gold
+    private static readonly Rgb DefaultInk = new(0x23, 0x2a, 0x33);    // charcoal
+
+    public static EmailPalette EmailColors(string? accentHex, string? inkHex)
+    {
+        var accent = TryParse(accentHex) ?? DefaultAccent;
+        var ink = TryParse(inkHex) ?? DefaultInk;
+        var link = ContrastOn(accent, White, AaText, darken: true); // brand link, legible on the white card
+        var buttonText = Contrast(White, ink) >= 3.0 ? White : new Rgb(0x1f, 0x29, 0x33);
+        return new EmailPalette(
+            PageBg: "#f4f5f7",
+            CardBg: White.Hex,
+            HeaderBg: ink.Hex,
+            HeaderText: Contrast(White, ink) >= 3.0 ? White.Hex : "#1f2933",
+            Accent: accent.Hex,
+            Link: link.Hex,
+            Text: "#1f2933",
+            Muted: "#6b7280",
+            Border: "#e5e7eb",
+            ButtonBg: ink.Hex,
+            ButtonText: buttonText.Hex);
+    }
+
     private static Rgb Darken(Rgb c, double f) => new(
         (int)Math.Round(c.R * (1 - f)), (int)Math.Round(c.G * (1 - f)), (int)Math.Round(c.B * (1 - f)));
 

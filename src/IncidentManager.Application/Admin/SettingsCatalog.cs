@@ -65,6 +65,8 @@ public static class SettingsCatalog
             "When on, a background scan emails each after-action item's owner (or the case's incident commander if it has no reachable owner) once when the item passes its due date (E-03b). Read-only over case data — it records nothing. Takes effect within a few minutes of saving.", "false"),
         new SettingDefinition("Notifications:OverdueScan:IntervalHours", "Overdue scan interval (hours)", "Notifications", SettingKind.Int,
             "Hours between overdue after-action scans. Reminders are not time-critical, so this is deliberately slow (default daily). Takes effect within a few minutes of saving.", "24"),
+        new SettingDefinition("App:BaseUrl", "Public base URL", "Notifications", SettingKind.Text,
+            "Absolute URL of this deployment (e.g. https://casebook.corp.example), used to build direct links and the logo in notification emails. Blank = emails omit links and the hosted logo (they still render, branded, with a text wordmark). No trailing slash needed.", ""),
         new SettingDefinition("ExternalLinks:DetectionCaseUrlTemplate", "Detection case link template", "Integrations", SettingKind.Text,
             "Deep-link template for the referenced detection-source case. Use {0} where the case id should appear.", ""),
         new SettingDefinition("ExternalLinks:VirusTotalUrlTemplate", "VirusTotal lookup template", "Integrations", SettingKind.Text,

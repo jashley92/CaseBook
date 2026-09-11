@@ -1,5 +1,7 @@
+using System.Globalization;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Security;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -21,14 +23,18 @@ public sealed class IntegrityAlertNotifier : IIntegrityAlertNotifier
     private static readonly EventId AuditChainBroken = new(5001, nameof(AuditChainBroken));
 
     private readonly IEmailSender _email;
+    private readonly IEmailComposer _composer;
+    private readonly IConfiguration _config;
     private readonly IOptionsMonitor<EmailOptions> _options;
     private readonly ISecurityEventSink _siem;
     private readonly ILogger<IntegrityAlertNotifier> _logger;
 
-    public IntegrityAlertNotifier(IEmailSender email, IOptionsMonitor<EmailOptions> options,
-        ISecurityEventSink siem, ILogger<IntegrityAlertNotifier> logger)
+    public IntegrityAlertNotifier(IEmailSender email, IEmailComposer composer, IConfiguration config,
+        IOptionsMonitor<EmailOptions> options, ISecurityEventSink siem, ILogger<IntegrityAlertNotifier> logger)
     {
         _email = email;
+        _composer = composer;
+        _config = config;
         _options = options;
         _siem = siem;
         _logger = logger;
@@ -57,21 +63,19 @@ public sealed class IntegrityAlertNotifier : IIntegrityAlertNotifier
         var recipients = _options.CurrentValue.IntegrityAlertDistribution;
         if (recipients.Length == 0) return; // no distribution configured; the critical log above still fired
 
-        var subject = "[CaseBook] ALERT: audit-chain integrity failure";
-        var body =
-            "The CaseBook audit hash-chain failed verification.\n\n" +
-            $"First break at sequence: {result.FirstBrokenSequence}\n" +
-            $"Detail: {result.Detail}\n\n" +
-            "This means the tamper-evident audit log may have been altered, truncated, or reordered. " +
-            "Treat it as a potential integrity/security incident:\n" +
-            "  1. Preserve the current database and the out-of-band integrity seals.\n" +
-            "  2. Review the Integrity & Audit page and the most recent signed seal to locate the break.\n" +
-            "  3. Follow the incident-response and restore procedures in OPERATIONS.md.\n\n" +
-            "No new seals will be recorded until the chain verifies intact again.";
+        var baseUrl = (_config["App:BaseUrl"] ?? "").TrimEnd('/');
+        var integrityUrl = baseUrl.Length == 0 ? null : $"{baseUrl}/integrity";
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["FirstBrokenSequence"] = result.FirstBrokenSequence?.ToString(CultureInfo.InvariantCulture) ?? "",
+            ["Detail"] = result.Detail ?? "",
+            ["IntegrityUrl"] = integrityUrl ?? "",
+        };
 
         try
         {
-            await _email.SendAsync(recipients, subject, body, ct);
+            var message = await _composer.ComposeAsync("audit-chain-alarm", recipients, tokens, integrityUrl, null, ct);
+            await _email.SendAsync(message, ct);
         }
         catch (Exception ex)
         {
