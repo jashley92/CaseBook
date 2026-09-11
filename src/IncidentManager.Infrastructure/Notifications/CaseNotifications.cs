@@ -36,6 +36,7 @@ public sealed class CaseNotifications : ICaseNotifications
     private string BaseUrl => (_config["App:BaseUrl"] ?? "").TrimEnd('/');
     private string? CaseUrl(Guid id) => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases/{id}";
     private string? OverdueUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases?overdue=true&closed=true";
+    private string? AgendaUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/work";
 
     public async Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default)
     {
@@ -118,8 +119,44 @@ public sealed class CaseNotifications : ICaseNotifications
         }
     }
 
+    public async Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default)
+    {
+        if (items.Count == 0) return;
+
+        var byRecipient = new Dictionary<string, List<DueSoonActionItem>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in items)
+        {
+            var to = ResolveRecipient(item.OwnerUserId, item.IncidentCommanderUserId);
+            if (string.IsNullOrWhiteSpace(to)) continue;
+            if (!byRecipient.TryGetValue(to, out var list)) byRecipient[to] = list = [];
+            list.Add(item);
+        }
+
+        var agendaUrl = AgendaUrl();
+        foreach (var (to, list) in byRecipient)
+        {
+            var ordered = list.OrderBy(i => i.DueAtUtc).ToList();
+            var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ItemCount"] = ordered.Count.ToString(CultureInfo.InvariantCulture),
+                ["LeadHours"] = leadHours.ToString(CultureInfo.InvariantCulture),
+                ["AgendaUrl"] = agendaUrl ?? "",
+            };
+            var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ItemsList"] = RenderItemList(ordered.Select(i => (i.CaseNumber, i.Title, i.DueAtUtc))),
+            };
+
+            var message = await _composer.ComposeAsync("action-item-due-soon", [to], tokens, agendaUrl, htmlTokens, ct);
+            await _email.SendAsync(message, ct);
+        }
+    }
+
     // Composer-rendered safe HTML: every case-supplied field is HTML-encoded here.
-    private static string RenderItemList(IReadOnlyList<OverdueActionItem> items)
+    private static string RenderItemList(IReadOnlyList<OverdueActionItem> items) =>
+        RenderItemList(items.Select(i => (i.CaseNumber, i.Title, i.DueAtUtc)));
+
+    private static string RenderItemList(IEnumerable<(string CaseNumber, string Title, DateTimeOffset DueAtUtc)> items)
     {
         var lis = items.Select(i =>
             $"<li>{WebUtility.HtmlEncode(i.CaseNumber)} — {WebUtility.HtmlEncode(i.Title)} " +
@@ -127,13 +164,16 @@ public sealed class CaseNotifications : ICaseNotifications
         return "<ul>" + string.Join("", lis) + "</ul>";
     }
 
-    private string? ResolveRecipient(OverdueActionItem item)
+    private string? ResolveRecipient(OverdueActionItem item) =>
+        ResolveRecipient(item.OwnerUserId, item.IncidentCommanderUserId);
+
+    private string? ResolveRecipient(string? ownerUserId, string? incidentCommanderUserId)
     {
-        var ownerEmail = string.IsNullOrWhiteSpace(item.OwnerUserId) ? null : _users.EmailFor(item.OwnerUserId);
+        var ownerEmail = string.IsNullOrWhiteSpace(ownerUserId) ? null : _users.EmailFor(ownerUserId);
         if (!string.IsNullOrWhiteSpace(ownerEmail)) return ownerEmail;
-        return string.IsNullOrWhiteSpace(item.IncidentCommanderUserId)
+        return string.IsNullOrWhiteSpace(incidentCommanderUserId)
             ? null
-            : _users.EmailFor(item.IncidentCommanderUserId);
+            : _users.EmailFor(incidentCommanderUserId);
     }
 
     private static string Ui(CaseAssignmentRole role) => role switch

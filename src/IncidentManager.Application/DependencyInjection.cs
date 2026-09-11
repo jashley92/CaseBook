@@ -40,6 +40,10 @@ public static class DependencyInjection
         // service); the notify-once tracker is a singleton so "already reminded" survives between passes.
         services.AddScoped<Notifications.OverdueActionItemScanner>();
         services.AddSingleton<Notifications.IOverdueActionItemTracker, Notifications.OverdueActionItemTracker>();
+        // E-03d: due-soon after-action scan (fires ahead of the deadline). Same shape as the overdue scan;
+        // a separate tracker so the "due soon" and "overdue" reminders for one item are independent episodes.
+        services.AddScoped<Notifications.DueSoonActionItemScanner>();
+        services.AddSingleton<Notifications.IDueSoonActionItemTracker, Notifications.DueSoonActionItemTracker>();
 
         services.AddSingleton<IMarkdownService, MarkdownService>();
 

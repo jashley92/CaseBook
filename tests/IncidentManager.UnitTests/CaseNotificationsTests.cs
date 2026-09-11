@@ -191,4 +191,55 @@ public class CaseNotificationsTests
 
         sender.Sent.Should().BeEmpty();
     }
+
+    // --- Due soon (E-03d) ------------------------------------------------------
+
+    private static DueSoonActionItem DueSoon(string caseNo, string? owner, string? ic, string title = "Patch the box") =>
+        new(Guid.NewGuid(), caseNo, "A case", ic, Guid.NewGuid(), title, Now.AddHours(6), owner);
+
+    [Fact]
+    public async Task Due_soon_groups_items_by_recipient_and_sends_one_email_each()
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory()
+            .Add("alice", "Alice", "alice@insurer.example")
+            .Add("bob", "Bob", "bob@insurer.example");
+        var notifications = Build(sender, new EmailOptions(), users);
+
+        await notifications.OnActionItemsDueSoonAsync(
+        [
+            DueSoon("2026-01", "alice", "ic1", "Task A"),
+            DueSoon("2026-02", "alice", "ic1", "Task B"),
+            DueSoon("2026-03", "bob", "ic1", "Task C"),
+        ], leadHours: 24);
+
+        sender.Sent.Should().HaveCount(2);                       // one per distinct recipient
+        var alice = sender.Sent.Single(s => s.To.Contains("alice@insurer.example"));
+        alice.HtmlBody.Should().Contain("Task A").And.Contain("Task B").And.Contain("24");
+        sender.Sent.Should().ContainSingle(s => s.To.Contains("bob@insurer.example"));
+    }
+
+    [Fact]
+    public async Task Due_soon_falls_back_to_the_incident_commander_when_the_owner_is_unreachable()
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory().Add("ic1", "Ivan IC", "ivan@insurer.example"); // owner "ghost" unknown
+        var notifications = Build(sender, new EmailOptions(), users);
+
+        await notifications.OnActionItemsDueSoonAsync([DueSoon("2026-01", "ghost", "ic1")], leadHours: 24);
+
+        sender.Sent.Should().ContainSingle();
+        sender.Sent[0].To.Should().ContainSingle().Which.Should().Be("ivan@insurer.example");
+    }
+
+    [Fact]
+    public async Task Due_soon_skips_an_item_with_no_reachable_recipient()
+    {
+        var sender = new CapturingEmailSender();
+        var notifications = Build(sender, new EmailOptions(), new FakeUserDirectory()); // nobody resolves
+
+        await notifications.OnActionItemsDueSoonAsync([DueSoon("2026-01", "ghost", "ic-gone")], leadHours: 24);
+
+        sender.Sent.Should().BeEmpty();
+    }
 }

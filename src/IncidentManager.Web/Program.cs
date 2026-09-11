@@ -73,6 +73,10 @@ builder.Services.AddHostedService<EvidenceIntegrityHostedService>();
 builder.Services.Configure<OverdueScanOptions>(builder.Configuration.GetSection("Notifications:OverdueScan"));
 builder.Services.AddHostedService<OverdueActionItemHostedService>();
 
+// --- E-03d: periodic due-soon after-action scan (reminds owners ahead of the deadline, once per item) ---
+builder.Services.Configure<DueSoonScanOptions>(builder.Configuration.GetSection("Notifications:DueSoonScan"));
+builder.Services.AddHostedService<DueSoonActionItemHostedService>();
+
 // --- F-18: outbound security-event stream. Transports fan out from a background dispatcher. ---
 builder.Services.AddHttpClient("siem");
 builder.Services.AddSingleton<IncidentManager.Infrastructure.Siem.ISecurityEventTransport, IncidentManager.Web.Siem.WebhookTransport>();

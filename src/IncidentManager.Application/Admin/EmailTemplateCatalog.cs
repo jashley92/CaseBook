@@ -83,6 +83,26 @@ public static class EmailTemplateCatalog
             CtaUrlToken: "OverdueUrl"),
 
         new EmailTemplateDefinition(
+            "action-item-due-soon",
+            "After-action due-soon reminder",
+            "Sent to an item's owner (or the case's incident commander) ahead of the deadline, when a follow-up item is due within the lead window (E-03d).",
+            "{{ItemCount}} after-action item(s) due soon",
+            """
+            <h1>After-action items due soon</h1>
+            <p>The following after-action follow-up item(s) are due within the next {{LeadHours}} hours:</p>
+            {{ItemsList}}
+            <p>Please open the case(s) to progress or close them before they fall overdue.</p>
+            """,
+            new[]
+            {
+                new EmailToken("ItemCount", "How many items are due soon for this recipient."),
+                new EmailToken("LeadHours", "The lead window, in hours, that defines \"due soon\"."),
+                new EmailToken("ItemsList", "The formatted list of items due soon (case, title, due date). Rendered by the app."),
+            },
+            CtaLabel: "Open my work",
+            CtaUrlToken: "AgendaUrl"),
+
+        new EmailTemplateDefinition(
             "breach",
             "Breach escalation (Legal/Privacy)",
             "Sent to the Legal/Privacy distribution when a case is escalated to a Breach (E-03).",

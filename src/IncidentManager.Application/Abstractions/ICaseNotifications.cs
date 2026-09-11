@@ -19,6 +19,21 @@ public sealed record OverdueActionItem(
     string? OwnerUserId);
 
 /// <summary>
+/// A follow-up item whose due date is approaching but not yet passed (E-03d), flattened for notification.
+/// Same shape as <see cref="OverdueActionItem"/> — carried as a distinct type so the "due soon" and
+/// "overdue" notification paths (and their notify-once trackers) stay independent.
+/// </summary>
+public sealed record DueSoonActionItem(
+    Guid CaseId,
+    string CaseNumber,
+    string CaseTitle,
+    string? IncidentCommanderUserId,
+    Guid ActionItemId,
+    string Title,
+    DateTimeOffset DueAtUtc,
+    string? OwnerUserId);
+
+/// <summary>
 /// Case-lifecycle notifications (who to tell, and how) — kept out of the use-case layer so recipient
 /// configuration and the delivery channel live in Infrastructure. Implementations must not throw.
 /// </summary>
@@ -40,4 +55,12 @@ public interface ICaseNotifications
     /// and sends one reminder each. Gated by config; a no-op when no recipients resolve.
     /// </summary>
     Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default);
+
+    /// <summary>
+    /// Called by the scheduled due-soon scan (E-03d) with items whose due date falls within the lead window
+    /// and that have <em>not</em> yet been reminded for this due date. Resolves a recipient per item (its
+    /// owner, else the case's incident commander), groups by recipient, and sends one reminder each. Gated
+    /// by config; a no-op when no recipients resolve.
+    /// </summary>
+    Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default);
 }
