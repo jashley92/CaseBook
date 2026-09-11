@@ -28,6 +28,16 @@ window.imCaseHotkeys = (function () {
 
     function onKeydown(e) {
         if (!dotnet) return;
+
+        // Ctrl/Cmd+Enter submits the composer the caret is in — works the same for the single-line
+        // quick-adds and the multi-line Markdown editors (this capture listener runs before CodeMirror,
+        // so preventing default stops a stray newline). Fires even while typing — that is the point.
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            send('submit');
+            return;
+        }
+
         if (e.ctrlKey || e.metaKey || e.altKey) { clearG(); return; }
         if (isTyping(e.target)) { clearG(); return; }
 

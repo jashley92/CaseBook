@@ -284,7 +284,7 @@ else
                                 @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Save. *@
                                 <textarea id="@SummaryEditorId" class="form-control"></textarea>
                             </div>
-                            <button class="btn btn-sm btn-primary" @onclick="SaveDetails" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
+                            <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="SaveDetails" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
                             <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => _editingDetails = false)">Cancel</button>
                         }
                         else
@@ -715,7 +715,7 @@ else
                             <div class="col d-flex justify-content-end align-items-end gap-2">
                                 @if (_tlEditId is null)
                                 {
-                                    <button class="btn btn-sm btn-primary" @onclick="AddEventStep">
+                                    <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddEventStep">
                                         <span class="bi bi-plus-lg" aria-hidden="true"></span> Add step
                                     </button>
                                 }
@@ -767,7 +767,7 @@ else
                             <div class="mt-2 d-flex justify-content-end gap-2">
                                 @if (_tlEditId is null)
                                 {
-                                    <button class="btn btn-sm btn-primary" @onclick="AddTimeline">
+                                    <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddTimeline">
                                         <span class="bi bi-plus-lg" aria-hidden="true"></span> Add entry
                                     </button>
                                 }
@@ -1123,7 +1123,7 @@ else
                     @if (_enEditId is null)
                     {
                         <div class="col-md-1">
-                            <button class="btn btn-sm btn-primary w-100" @onclick="AddEntity" disabled="@string.IsNullOrWhiteSpace(_enValue)">Add</button>
+                            <button class="btn btn-sm btn-primary w-100" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddEntity" disabled="@string.IsNullOrWhiteSpace(_enValue)">Add</button>
                         </div>
                     }
                     <div class="col-12">
@@ -1436,7 +1436,7 @@ else
                     <label class="form-label small mb-1">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links</span></label>
                     @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add. *@
                     <textarea id="@NoteAddEditorId" class="form-control mb-2"></textarea>
-                    <button class="btn btn-sm btn-primary" @onclick="AddNote">Add note</button>
+                    <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddNote">Add note</button>
                 </div>
             </div>
         </AuthorizeView>
@@ -1571,7 +1571,7 @@ else
                                title="Entered in @TimeDisp.Label. Leave blank for end of day." />
                     </div>
                     <div class="col-md-2">
-                        <button class="btn btn-sm btn-primary w-100" @onclick="AddTask" disabled="@string.IsNullOrWhiteSpace(_taskTitle)">Add</button>
+                        <button class="btn btn-sm btn-primary w-100" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddTask" disabled="@string.IsNullOrWhiteSpace(_taskTitle)">Add</button>
                     </div>
                 </div>
             </div>
@@ -3712,6 +3712,31 @@ else
     public async Task OnCaseHotkey(string cmd)
     {
         if (_case is null || string.IsNullOrEmpty(cmd)) return;
+
+        // Ctrl/Cmd+Enter — submit the composer active on the current tab. Each add/save method guards its
+        // required fields, so a submit with nothing to post is a harmless no-op.
+        if (cmd == "submit")
+        {
+            if (!_canEdit) return;
+            switch (_activeTab)
+            {
+                case "Notes":
+                    if (_editNoteId is not null) await SaveNoteEdit(); else await AddNote();
+                    break;
+                case "Timeline":
+                    if (_tlEditId is not null)
+                    {
+                        if (_tlAddKind == TimelineKind.Event) await SaveEventEdit(); else await SaveInvestigationEdit();
+                    }
+                    else if (_tlAddKind == TimelineKind.Event) await AddEventStep();
+                    else await AddTimeline();
+                    break;
+                case "Entities": await AddEntity(); break;
+                case "Tasks": await AddTask(); break;
+                case "Overview": if (_editingDetails) await SaveDetails(); break;
+            }
+            return;
+        }
 
         if (cmd.StartsWith("tab:", StringComparison.Ordinal)
             && int.TryParse(cmd.AsSpan(4), out var n) && n >= 1 && n <= _tabs.Length)
