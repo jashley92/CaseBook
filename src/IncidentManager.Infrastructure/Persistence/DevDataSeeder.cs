@@ -177,7 +177,23 @@ public static class DevDataSeeder
                 ("Remote-lock or wipe the device via MDM", null, 4),
                 ("Verify disk encryption status at last check-in", null, 8),
                 ("Disable the user's sessions and rotate credentials if warranted", null, 8),
-                ("Assess what data resided on the device", null, 24)));
+                ("Assess what data resided on the device", null, 24)),
+
+            // A vendor/third-party disclosure is a different shape from a first-party intrusion: there is no
+            // adversary kill-chain in our estate, only a vendor-disclosure narrative (what they held, when
+            // they detected/notified, their containment). Set Origin = Third-party on the form to capture the
+            // vendor details. Pairs with the origin-aware timeline (E-32).
+            Template("Third-party / vendor breach",
+                "A vendor or service provider disclosed a security incident affecting data they hold for us.",
+                Classification.Incident, Severity.High, "Third-party-held PII / records",
+                "Vendor-disclosed incident affecting data they process for us. Scope of our exposed data and the vendor's containment under assessment.", 5,
+                ("Record the vendor's disclosure: what happened, and their detection / notification dates", "Capture the vendor and contact under Third-party details on the case.", 4),
+                ("Identify which of our data the vendor held and the scope potentially exposed", null, 12),
+                ("Obtain the vendor's incident report and forensic findings", null, 24),
+                ("Confirm the vendor's containment and remediation status", null, 24),
+                ("Review the vendor contract for breach-notification, cooperation, and liability terms", null, 48),
+                ("Assess regulatory notification obligations for the exposed data", null, 48),
+                ("Determine downstream notification requirements (affected individuals / regulators)", null, 72)));
 
         await db.SaveChangesAsync(ct);
     }

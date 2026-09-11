@@ -97,13 +97,13 @@
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Data types involved</label>
-                    <InputText class="form-control" @bind-Value="_request.DataTypesInvolved" placeholder="e.g. PII, PHI, credentials" />
+                    <InputText class="form-control" @bind-Value="_request.DataTypesInvolved" placeholder="@(_dataTypesPrompt ?? "e.g. PII, PHI, credentials")" />
                 </div>
 
                 <div class="col-12">
                     <label class="form-label">Summary</label>
                     <InputTextArea class="form-control" rows="3" @bind-Value="_request.Summary"
-                                   placeholder="What happened, current status, and immediate impact." />
+                                   placeholder="@(_summaryPrompt ?? "What happened, current status, and immediate impact.")" />
                 </div>
             </div>
 
@@ -229,14 +229,19 @@
         _selectedTemplate = Guid.TryParse(raw, out var id) ? _templates?.FirstOrDefault(t => t.Id == id) : null;
         if (_selectedTemplate is null) return;
 
-        // Quick-fill the form from the template's field defaults (never clobber values the analyst already typed).
+        // Quick-fill the structured field defaults (classification/severity) — these are safe to pre-set.
         if (_selectedTemplate.DefaultClassification is { } c) _request.Classification = c;
         if (_selectedTemplate.DefaultSeverity is { } s) _request.Severity = s;
-        if (!string.IsNullOrWhiteSpace(_selectedTemplate.DefaultDataTypes) && string.IsNullOrWhiteSpace(_request.DataTypesInvolved))
-            _request.DataTypesInvolved = _selectedTemplate.DefaultDataTypes;
-        if (!string.IsNullOrWhiteSpace(_selectedTemplate.SummaryBoilerplate) && string.IsNullOrWhiteSpace(_request.Summary))
-            _request.Summary = _selectedTemplate.SummaryBoilerplate;
+
+        // U-47b: the free-text defaults become *placeholder prompts*, not pre-filled values, so a template's
+        // generic wording can never be filed verbatim — the analyst must write the real summary/data types.
+        _dataTypesPrompt = string.IsNullOrWhiteSpace(_selectedTemplate.DefaultDataTypes) ? null : _selectedTemplate.DefaultDataTypes;
+        _summaryPrompt = string.IsNullOrWhiteSpace(_selectedTemplate.SummaryBoilerplate) ? null : _selectedTemplate.SummaryBoilerplate;
     }
+
+    // U-47b: template-supplied prompts shown as ghost text (watermarks) on the free-text fields.
+    private string? _summaryPrompt;
+    private string? _dataTypesPrompt;
 
     // U-42: one Title field drives the case-number slug. Keep the (validator-required) DescriptiveName in
     // sync with a compacted slug source so the auto number stays short instead of echoing the full title.

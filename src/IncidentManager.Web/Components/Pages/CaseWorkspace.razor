@@ -1789,7 +1789,8 @@ else
                             }
                             <label class="form-label small">@(_case?.Classification is null ? "Promote to" : "New classification")</label>
                             <select class="form-select mb-2" @bind="_newClass" @bind:after="OnReclassTargetChanged">@foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }</select>
-                            <input class="form-control" placeholder="Reason (required)" @bind="_reclassReason" @bind:event="oninput" />
+                            <label class="form-label small">Reason for the reclassification <span class="text-muted">(required)</span></label>
+                            <input class="form-control" placeholder="e.g. new evidence confirms data was exfiltrated" @bind="_reclassReason" @bind:event="oninput" />
                             @RationaleHint(_reclassReason)
                             @GateModalSection()
                         }
@@ -1803,7 +1804,8 @@ else
                         {
                             <label class="form-label small">New status</label>
                             <select class="form-select mb-2" @bind="_newPhase" @bind:after="OnStatusTargetChanged">@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
-                            <input class="form-control" placeholder="@(_gateEval is { RequiresCommentary: true } ? "Reason (required)" : "Reason (optional)")" @bind="_phaseReason" @bind:event="oninput" />
+                            <label class="form-label small">Reason for the status change <span class="text-muted">@(_gateEval is { RequiresCommentary: true } ? "(required)" : "(optional)")</span></label>
+                            <input class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
                             @RationaleHint(_phaseReason)
                             @GateModalSection()
                         }
