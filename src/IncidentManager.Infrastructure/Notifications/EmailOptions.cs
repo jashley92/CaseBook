@@ -13,6 +13,9 @@ public sealed class EmailOptions
     /// <summary>Recipients notified when a case is escalated to a Breach (Legal/Privacy distribution).</summary>
     public string[] LegalDistribution { get; set; } = [];
 
+    /// <summary>E-03b: when true, email a person when they are assigned to a case. Off by default.</summary>
+    public bool AssignmentNotifications { get; set; }
+
     /// <summary>Recipients alerted when the audit hash-chain fails verification (F-16). Usually SysAdmins / SecOps.</summary>
     public string[] IntegrityAlertDistribution { get; set; } = [];
 }

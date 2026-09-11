@@ -472,6 +472,9 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, id, ct);
         c.Assign(userId, displayName, role, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
+
+        // E-03b: tell the assignee (out of band; never fails the assignment).
+        await _notifications.OnAssignedAsync(c, userId, displayName, role, _user.UserId, ct);
     }
 
     public async Task UnassignAsync(Guid id, string userId, CancellationToken ct = default)

@@ -220,6 +220,11 @@ This is convenient but means a host compromise could re-sign forged seals — un
 - [ ] A restore has been performed and chain + prior-seal verification passed on the restored copy.
 - [ ] SQL Server 2022 **updatable ledger** enabled for defense-in-depth (backlog E-10), digest
       exported externally.
+- [ ] (Optional) Email notification triggers (E-03b) — all admin-editable under **Settings → Notifications**,
+      and all requiring **Send email** on to deliver: **Assignment notifications** (email the assignee when
+      assigned to a case); **Overdue after-action reminders** (a slow background scan — like AutoSeal /
+      EvidenceVerify — that emails each item's owner, or the case's incident commander as a fallback, once
+      when it passes its due date). Both off by default; the scan is read-only and never touches the audit chain.
 - [ ] (Optional) `Siem:Webhook` configured to the SIEM's HTTP collector (see §5) if the security-event
       stream is wanted.
 - [ ] (Optional) `Secrets:CyberArk` enabled (F-19, §6) if secrets should come from CyberArk CCP: `BaseUrl`

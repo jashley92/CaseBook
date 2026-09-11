@@ -69,6 +69,10 @@ builder.Services.AddHostedService<IntegritySealHostedService>();
 builder.Services.Configure<EvidenceVerifyOptions>(builder.Configuration.GetSection("Integrity:EvidenceVerify"));
 builder.Services.AddHostedService<EvidenceIntegrityHostedService>();
 
+// --- E-03b: periodic overdue after-action scan (emails item owners a reminder, once per item) ---
+builder.Services.Configure<OverdueScanOptions>(builder.Configuration.GetSection("Notifications:OverdueScan"));
+builder.Services.AddHostedService<OverdueActionItemHostedService>();
+
 // --- F-18: outbound security-event stream. Transports fan out from a background dispatcher. ---
 builder.Services.AddHttpClient("siem");
 builder.Services.AddSingleton<IncidentManager.Infrastructure.Siem.ISecurityEventTransport, IncidentManager.Web.Siem.WebhookTransport>();

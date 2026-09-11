@@ -1500,7 +1500,13 @@ else
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small mb-0">Owner</label>
-                        <input class="form-control form-control-sm" @bind="_taskOwner" />
+                        <select class="form-select form-select-sm" @bind="_taskOwner">
+                            <option value="">— Unassigned —</option>
+                            @foreach (var u in Users.All())
+                            {
+                                <option value="@u.UserId">@u.DisplayName</option>
+                            }
+                        </select>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small mb-0">Due date</label>
@@ -3295,7 +3301,9 @@ else
     private async Task AddTask()
     {
         if (string.IsNullOrWhiteSpace(_taskTitle)) return;
-        await Cases.AddActionItemAsync(Id, _taskTitle, _taskOwner, ResolveDueUtc());
+        // The picker stores a directory user id (or "" for unassigned) — normalise blank to null.
+        var owner = string.IsNullOrWhiteSpace(_taskOwner) ? null : _taskOwner;
+        await Cases.AddActionItemAsync(Id, _taskTitle, owner, ResolveDueUtc());
         _taskTitle = ""; _taskOwner = null; _taskDueDate = null; _taskDueTime = null;
         await Reload();
         Toasts.Success("Task added");

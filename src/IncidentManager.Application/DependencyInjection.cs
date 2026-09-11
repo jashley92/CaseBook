@@ -35,6 +35,10 @@ public static class DependencyInjection
         services.AddScoped<Compliance.ComplianceBundleService>();
         services.AddScoped<Export.IocFeedService>();
         services.AddScoped<ReportService>();
+        // E-03b: overdue after-action scan. Scoped (creates a DbContext per pass, driven by the hosted
+        // service); the notify-once tracker is a singleton so "already reminded" survives between passes.
+        services.AddScoped<Notifications.OverdueActionItemScanner>();
+        services.AddSingleton<Notifications.IOverdueActionItemTracker, Notifications.OverdueActionItemTracker>();
 
         services.AddSingleton<IMarkdownService, MarkdownService>();
 
