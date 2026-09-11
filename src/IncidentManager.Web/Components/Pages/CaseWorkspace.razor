@@ -611,14 +611,16 @@ else
             <button class="btn btn-sm @(_tlLens is null ? "btn-primary" : "btn-outline-primary")"
                     @onclick="() => SwitchLens(null)">All</button>
             <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "btn-primary" : "btn-outline-primary")"
-                    @onclick="() => SwitchLens(TimelineKind.Event)">Event</button>
+                    @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Disclosure" : "Event")</button>
             <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation ? "btn-primary" : "btn-outline-primary")"
                     @onclick="() => SwitchLens(TimelineKind.Investigation)">Investigation</button>
         </div>
         <p class="text-muted small">
             @(_tlLens switch
             {
-                TimelineKind.Event => "Facts and timing of the actual event: the attack narrative.",
+                TimelineKind.Event => IsThirdParty
+                    ? "The vendor-disclosure narrative: what the vendor reported and what we confirmed about our data."
+                    : "Facts and timing of the actual event: the attack narrative.",
                 TimelineKind.Investigation => "Analyst and team actions during the investigation.",
                 _ => "The full chronology: what happened and what the team did, interleaved."
             })
@@ -649,7 +651,8 @@ else
                             <span>
                                 <span class="bi bi-pencil-square" aria-hidden="true"></span>
                                 @(_tlAddKind == TimelineKind.Event
-                                    ? "Editing this event step. The audit trail records the change."
+                                    ? (IsThirdParty ? "Editing this disclosure step. The audit trail records the change."
+                                                    : "Editing this event step. The audit trail records the change.")
                                     : "Editing this entry. A new version is saved; the prior one is kept.")
                             </span>
                             <button type="button" class="btn btn-sm btn-link text-decoration-none p-0"
@@ -663,7 +666,7 @@ else
                             <span class="text-muted small">Add:</span>
                             <div class="btn-group btn-group-sm" role="group" aria-label="What to add">
                                 <button type="button" class="btn @(_tlAddKind == TimelineKind.Event ? "btn-secondary" : "btn-outline-secondary")"
-                                        @onclick="() => SetAddKind(TimelineKind.Event)">Event step</button>
+                                        @onclick="() => SetAddKind(TimelineKind.Event)">@(IsThirdParty ? "Disclosure step" : "Event step")</button>
                                 <button type="button" class="btn @(_tlAddKind == TimelineKind.Investigation ? "btn-secondary" : "btn-outline-secondary")"
                                         @onclick="() => SetAddKind(TimelineKind.Investigation)">Investigation entry</button>
                             </div>
@@ -671,46 +674,75 @@ else
                     }
                     @if (_tlAddKind == TimelineKind.Event)
                     {
-                        @* Event = the attack narrative: ATT&CK tactic(s) + actor→target attribution to IOCs. *@
-                        <div class="row g-2 align-items-end">
-                            <div class="col-md-4">
-                                <label class="form-label small mb-0">Occurred (@TimeDisp.Label)</label>
-                                <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                        @if (!IsThirdParty)
+                        {
+                            @* First-party: the attack narrative — ATT&CK tactic(s) + actor→target attribution to IOCs. *@
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-4">
+                                    <label class="form-label small mb-0">Occurred (@TimeDisp.Label)</label>
+                                    <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small mb-0">Actor <span class="text-muted">(from IOCs)</span></label>
+                                    <select class="form-select form-select-sm" @bind="_evtActorId">
+                                        <option value="">— none —</option>
+                                        @foreach (var en in _case.Entities)
+                                        {
+                                            <option value="@en.Id">@EntityOptionLabel(en)</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small mb-0">Target <span class="text-muted">(from IOCs)</span></label>
+                                    <select class="form-select form-select-sm" @bind="_evtTargetId">
+                                        <option value="">— none —</option>
+                                        @foreach (var en in _case.Entities)
+                                        {
+                                            <option value="@en.Id">@EntityOptionLabel(en)</option>
+                                        }
+                                    </select>
+                                </div>
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label small mb-0">Actor <span class="text-muted">(from IOCs)</span></label>
-                                <select class="form-select form-select-sm" @bind="_evtActorId">
-                                    <option value="">— none —</option>
-                                    @foreach (var en in _case.Entities)
-                                    {
-                                        <option value="@en.Id">@EntityOptionLabel(en)</option>
-                                    }
-                                </select>
+                            <div class="mt-2">
+                                <label class="form-label small mb-0">ATT&amp;CK <span class="text-muted">(technique or tactic, optional)</span></label>
+                                <AttackStepPicker @bind-TechniqueId="_evtTechnique" @bind-Tactic="_evtTactic" />
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label small mb-0">Target <span class="text-muted">(from IOCs)</span></label>
-                                <select class="form-select form-select-sm" @bind="_evtTargetId">
-                                    <option value="">— none —</option>
-                                    @foreach (var en in _case.Entities)
-                                    {
-                                        <option value="@en.Id">@EntityOptionLabel(en)</option>
-                                    }
-                                </select>
+                            <div class="mt-2">
+                                <label class="form-label small mb-1">What the adversary did</label>
+                                <textarea class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
+                                          placeholder="e.g. Authenticated to the VPN from 203.0.113.66 with valid credentials"></textarea>
                             </div>
-                        </div>
-                        <div class="mt-2">
-                            <label class="form-label small mb-0">ATT&amp;CK <span class="text-muted">(technique or tactic, optional)</span></label>
-                            <AttackStepPicker @bind-TechniqueId="_evtTechnique" @bind-Tactic="_evtTactic" />
-                        </div>
-                        <div class="mt-2">
-                            <label class="form-label small mb-1">What the adversary did</label>
-                            <textarea class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
-                                      placeholder="e.g. Authenticated to the VPN from 203.0.113.66 with valid credentials"></textarea>
-                        </div>
+                        }
+                        else
+                        {
+                            @* E-32: third-party/vendor case — a vendor-disclosure narrative, not an attack kill-chain.
+                               No ATT&CK / actor→target; the milestone (disclosure received, vendor detection, scope
+                               confirmed, remediation) is the response type carried on the step. *@
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-4">
+                                    <label class="form-label small mb-0">Occurred (@TimeDisp.Label)</label>
+                                    <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small mb-0">Milestone</label>
+                                    <select class="form-select form-select-sm" @bind="_evtStage">
+                                        @foreach (var t in Ui.Options<TimelineEntryType>("TimelineEntryType"))
+                                        {
+                                            <option value="@t">@Ui.Label(t)</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <label class="form-label small mb-1">What the vendor reported / what we confirmed</label>
+                                <textarea class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
+                                          placeholder="e.g. Vendor confirmed our policyholder records were in the exposed dataset"></textarea>
+                            </div>
+                        }
                         <div class="row g-2 align-items-end mt-1">
                             <div class="col-md-4">
                                 <label class="form-label small mb-0">Source</label>
-                                <input class="form-control form-control-sm" @bind="_tlSource" placeholder="@($"{DetectionLabel}…")" />
+                                <input class="form-control form-control-sm" @bind="_tlSource" placeholder="@EventSourcePlaceholder" />
                             </div>
                             @if (_tlEditId is not null)
                             {
@@ -802,7 +834,8 @@ else
                 .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc).ToList();
         }
 
-        @if (_tlLens != TimelineKind.Investigation && tlChain.Count > 0)
+        @* The attack chain is a first-party kill-chain view; a third-party/vendor case (E-32) has none. *@
+        @if (_tlLens != TimelineKind.Investigation && tlChain.Count > 0 && !IsThirdParty)
         {
             <div class="killchain-wrap mb-3">
                 <div class="d-flex align-items-center justify-content-between mb-1">
@@ -861,7 +894,7 @@ else
         @if (tlAll.Count > 0)
         {
             <div class="tl-filters d-flex flex-wrap align-items-center gap-2 mb-3">
-                @if (_tlLens == TimelineKind.Event)
+                @if (_tlLens == TimelineKind.Event && !IsThirdParty)
                 {
                     <select class="form-select form-select-sm w-auto" @bind="_tlFilterTacticStr" aria-label="Filter by tactic">
                         <option value="">All tactics</option>
@@ -871,7 +904,7 @@ else
                         }
                     </select>
                 }
-                else if (_tlLens == TimelineKind.Investigation)
+                else if (_tlLens == TimelineKind.Investigation || (_tlLens == TimelineKind.Event && IsThirdParty))
                 {
                     <select class="form-select form-select-sm w-auto" @bind="_tlFilterTypeStr" aria-label="Filter by type">
                         <option value="">All types</option>
@@ -906,7 +939,9 @@ else
                 <div class="empty-state-msg">
                     @(_tlLens switch
                     {
-                        TimelineKind.Event => "Record the facts and timing of what happened.",
+                        TimelineKind.Event => IsThirdParty
+                            ? "Record the vendor-disclosure milestones: what the vendor reported and what we confirmed."
+                            : "Record the facts and timing of what happened.",
                         TimelineKind.Investigation => "Log the actions you and the team take as the investigation unfolds.",
                         _ => "Record what happened and log the team's actions as the investigation unfolds."
                     })
@@ -931,27 +966,36 @@ else
                     if (e.Kind == TimelineKind.Event)
                     {
                         <li class="tl-item tl-kind-event im-enter @FlashClass(e.Id)" style="@FlashStyle(e.Id)" id="tl-@e.Id" @key="e.Id">
-                            <span class="tl-dot" style="--tl-color:@Ui.TacticColor(PrimaryTactic(e))" aria-hidden="true">
-                                <span class="bi @Ui.TacticGlyph(PrimaryTactic(e))"></span>
+                            <span class="tl-dot" style="--tl-color:@(IsThirdParty ? Ui.TimelineColor(e.Type) : Ui.TacticColor(PrimaryTactic(e)))" aria-hidden="true">
+                                <span class="bi @(IsThirdParty ? Ui.TimelineGlyph(e.Type) : Ui.TacticGlyph(PrimaryTactic(e)))"></span>
                             </span>
                             <div class="tl-body">
                                 <div class="tl-head">
-                                    <span class="tl-kind-label"><span class="bi bi-lightning-charge" aria-hidden="true"></span> Event</span>
-                                    <span class="tl-tactics">
-                                        @foreach (var tt in e.Tactics.Select(x => x.Tactic).OrderBy(x => (int)x))
-                                        {
-                                            <span class="tactic-chip" style="--tac:@Ui.TacticColor(tt)">
-                                                <span class="bi @Ui.TacticGlyph(tt)" aria-hidden="true"></span> @Ui.Label(tt)
-                                            </span>
-                                        }
-                                        @if (!string.IsNullOrWhiteSpace(e.TechniqueId))
-                                        {
-                                            <a class="tactic-chip" style="--tac:#6c757d" target="_blank" rel="noopener noreferrer"
-                                               href="https://attack.mitre.org/techniques/@TechniquePath(e.TechniqueId)/">
-                                                <span class="bi bi-diagram-2" aria-hidden="true"></span> @e.TechniqueId
-                                            </a>
-                                        }
-                                    </span>
+                                    <span class="tl-kind-label"><span class="bi @(IsThirdParty ? "bi-megaphone" : "bi-lightning-charge")" aria-hidden="true"></span> @(IsThirdParty ? "Disclosure" : "Event")</span>
+                                    @if (!IsThirdParty)
+                                    {
+                                        <span class="tl-tactics">
+                                            @foreach (var tt in e.Tactics.Select(x => x.Tactic).OrderBy(x => (int)x))
+                                            {
+                                                <span class="tactic-chip" style="--tac:@Ui.TacticColor(tt)">
+                                                    <span class="bi @Ui.TacticGlyph(tt)" aria-hidden="true"></span> @Ui.Label(tt)
+                                                </span>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(e.TechniqueId))
+                                            {
+                                                <a class="tactic-chip" style="--tac:#6c757d" target="_blank" rel="noopener noreferrer"
+                                                   href="https://attack.mitre.org/techniques/@TechniquePath(e.TechniqueId)/">
+                                                    <span class="bi bi-diagram-2" aria-hidden="true"></span> @e.TechniqueId
+                                                </a>
+                                            }
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="tactic-chip" style="--tac:@Ui.TimelineColor(e.Type)">
+                                            <span class="bi @Ui.TimelineGlyph(e.Type)" aria-hidden="true"></span> @Ui.Label(e.Type)
+                                        </span>
+                                    }
                                     <time class="tl-time" title="@TimeDisp.Long(e.OccurredAtUtc)"><span class="tl-time-abs">@TimeDisp.Short(e.OccurredAtUtc)</span><span class="tl-time-rel">@Ui.RelativeTime(e.OccurredAtUtc, Clock.UtcNow)</span></time>
                                 </div>
                                 <div class="tl-desc">@e.Description</div>
@@ -2083,6 +2127,15 @@ else
     private string _evtTargetId = "";
     private string _evtTechnique = "";
     private MitreTactic _evtTactic = MitreTactic.Unspecified;
+    // E-32: a third-party/vendor case has no ATT&CK kill-chain — its Event steps are vendor-disclosure
+    // milestones categorised by response type (Detection / Analysis / Communication / …) instead.
+    private TimelineEntryType _evtStage = TimelineEntryType.Communication;
+    private bool IsThirdParty => _case?.Origin == CaseOrigin.ThirdParty;
+
+    // Source placeholder for an event step: the vendor's name on a third-party case, else the detection label.
+    private string EventSourcePlaceholder => IsThirdParty && !string.IsNullOrWhiteSpace(_case?.ThirdParty?.VendorName)
+        ? _case!.ThirdParty!.VendorName
+        : $"{DetectionLabel}…";
 
     // The step model stores a set of tactics; the composer chooses one (via AttackStepPicker).
     private IReadOnlySet<MitreTactic> EvtTacticSet() =>
@@ -3167,13 +3220,23 @@ else
     {
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = WallToUtc(_tlWhen);
-        Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
-        Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
-        var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
         var shotId = await UploadTimelineShotAsync();
         try
         {
-            await Cases.AddEventStepAsync(Id, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, evidenceId: shotId);
+            if (IsThirdParty)
+            {
+                // Vendor-disclosure milestone: no tactics / technique / actor→target attribution; the stage
+                // (disclosure received, vendor detection, scope confirmed, remediation) rides in the type.
+                await Cases.AddEventStepAsync(Id, whenUtc, Array.Empty<MitreTactic>(), null, null, null,
+                    _tlDesc, _tlSource, evidenceId: shotId, type: _evtStage);
+            }
+            else
+            {
+                Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
+                Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
+                var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
+                await Cases.AddEventStepAsync(Id, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, evidenceId: shotId);
+            }
         }
         catch (ArgumentException ex)
         {
@@ -3184,7 +3247,8 @@ else
         _evtTactic = MitreTactic.Unspecified;
         ClearTimelineShot();
         await Reload();
-        Toasts.Success(shotId is null ? "Event step added" : "Event step added with screenshot");
+        Toasts.Success(shotId is null ? (IsThirdParty ? "Disclosure step added" : "Event step added")
+                                      : "Event step added with screenshot");
     }
 
     // --- Timeline editing (Information changes during an investigation) ---
@@ -3213,6 +3277,7 @@ else
         _evtTargetId = e.TargetEntityId?.ToString() ?? "";
         _evtTechnique = e.TechniqueId ?? "";
         _evtTactic = e.Tactics.Select(t => t.Tactic).FirstOrDefault();
+        _evtStage = e.Type;   // E-32: vendor-disclosure stage for a third-party case
         _tlDesc = e.Description;
         _tlSource = e.Source;
     }
@@ -3221,12 +3286,20 @@ else
     {
         if (_tlEditId is not { } id || string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = WallToUtc(_tlWhen);
-        Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
-        Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
-        var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
         try
         {
-            await Cases.EditEventStepAsync(Id, id, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, _tlReason);
+            if (IsThirdParty)
+            {
+                await Cases.EditEventStepAsync(Id, id, whenUtc, Array.Empty<MitreTactic>(), null, null, null,
+                    _tlDesc, _tlSource, _tlReason, type: _evtStage);
+            }
+            else
+            {
+                Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
+                Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
+                var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
+                await Cases.EditEventStepAsync(Id, id, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, _tlReason);
+            }
         }
         catch (ArgumentException ex)
         {
@@ -3235,7 +3308,7 @@ else
         }
         await CancelTimelineEdit();
         await Reload();
-        Toasts.Success("Event step updated");
+        Toasts.Success(IsThirdParty ? "Disclosure step updated" : "Event step updated");
     }
 
     // Load an Investigation entry into the Markdown composer to edit; saving creates a new version.
@@ -3310,8 +3383,9 @@ else
         var view = entries
             // Filter each entry by its own kind: events by ATT&CK tactic, investigation entries by type.
             // Kind-specific filters are only surfaced (and set) in a focused lens; in All both are null.
-            .Where(x => x.Kind == TimelineKind.Event
+            .Where(x => x.Kind == TimelineKind.Event && !IsThirdParty
                 ? (_tlFilterTactic is null || x.Tactics.Any(tac => tac.Tactic == _tlFilterTactic))
+                // Third-party disclosure steps (and all investigation entries) filter by type, not tactic.
                 : (_tlFilterType is null || x.Type == _tlFilterType))
             .Where(x => string.IsNullOrWhiteSpace(_tlFilterSource)
                 || (x.Source ?? "").Contains(_tlFilterSource, StringComparison.OrdinalIgnoreCase))

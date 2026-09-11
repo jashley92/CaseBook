@@ -265,6 +265,31 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_third_party_case_report_suppresses_the_attack_chain_and_keeps_the_disclosure_timeline(/* E-32 */)
+    {
+        await using var db = NewContext();
+        _user.UserId = "ic";
+        _user.RoleSet = [AppRole.Manager];
+
+        var c = Case.Open(2026, 1, "Vendor", "Vendor disclosed a data breach", Classification.Breach,
+            Severity.High, CaseOrigin.ThirdParty, "ic", _clock.UtcNow);
+        // A vendor-disclosure milestone: no ATT&CK tactics / actor→target, stage carried in Type.
+        c.AddEventStep(_clock.UtcNow.AddHours(1), Array.Empty<MitreTactic>(), null, null, null,
+            "Vendor confirmed our records were exposed", "Acme SaaS", "ic", _clock.UtcNow,
+            type: TimelineEntryType.Analysis);
+        db.Cases.Add(c);
+        await db.SaveChangesAsync();
+
+        var model = await NewReportService(db).BuildPreviewModelAsync(c.Id, null);
+
+        // No adversary kill-chain for a third-party case…
+        model.AttackChain.Should().BeEmpty();
+        // …but the disclosure milestone still appears on the event timeline.
+        model.EventTimeline.Should().ContainSingle()
+            .Which.Description.Should().Be("Vendor confirmed our records were exposed");
+    }
+
+    [Fact]
     public async Task Approving_a_word_draft_is_rejected_only_a_pdf_can_be_the_final()
     {
         await using var db = NewContext();

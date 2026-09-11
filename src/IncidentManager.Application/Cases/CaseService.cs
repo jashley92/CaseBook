@@ -520,12 +520,12 @@ public sealed class CaseService
     /// </summary>
     public async Task AddEventStepAsync(Guid id, DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
-        Guid? evidenceId = null, CancellationToken ct = default)
+        Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.AddEventStep(occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, description, source,
-            _user.UserId, _clock.UtcNow, evidenceId);
+            _user.UserId, _clock.UtcNow, evidenceId, type);
         await db.SaveChangesAsync(ct);
     }
 
@@ -535,12 +535,13 @@ public sealed class CaseService
     /// </summary>
     public async Task EditEventStepAsync(Guid id, Guid entryId, DateTimeOffset occurredAtUtc,
         IEnumerable<MitreTactic> tactics, string? techniqueId, Guid? actorEntityId, Guid? targetEntityId,
-        string description, string? source, string? reason = null, CancellationToken ct = default)
+        string description, string? source, string? reason = null,
+        TimelineEntryType type = TimelineEntryType.Other, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.EditEventStep(entryId, occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, description,
-            source, _user.UserId, _clock.UtcNow);
+            source, _user.UserId, _clock.UtcNow, type);
         db.PendingChangeReason = reason;
         await db.SaveChangesAsync(ct);
     }

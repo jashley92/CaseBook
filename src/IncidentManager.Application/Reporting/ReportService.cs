@@ -333,7 +333,10 @@ public sealed class ReportService
                 .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
                 .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), x.Description, x.Source))
                 .ToList(),
-            AttackChain = c.TimelineEntries
+            // The attack chain (ATT&CK tactics + actor→target in our estate) only applies to a first-party
+            // case. A third-party/vendor case (E-32) has no adversary kill-chain here — its event steps are
+            // vendor-disclosure milestones, carried by the Event timeline above — so the chain is empty.
+            AttackChain = c.Origin == CaseOrigin.ThirdParty ? new List<ReportAttackStep>() : c.TimelineEntries
                 .Where(x => x.Kind == TimelineKind.Event)
                 .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
                 .Select((x, i) => new ReportAttackStep(

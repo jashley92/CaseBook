@@ -102,6 +102,54 @@ public sealed class EventTimelinePersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Third_party_disclosure_step_persists_its_milestone_type_without_attack_attribution()
+    {
+        // E-32: a third-party/vendor case records vendor-disclosure milestones on the Event timeline —
+        // no ATT&CK tactics / technique / actor→target — carrying the stage in the entry Type.
+        Guid id;
+        await using (var db = NewContext())
+        {
+            var svc = NewService(db);
+            id = (await svc.CreateAsync(new CreateCaseRequest
+            {
+                DescriptiveName = "Vendor Breach", Title = "Vendor disclosed a data breach",
+                Classification = Classification.Breach, Severity = Severity.High, Origin = CaseOrigin.ThirdParty,
+                VendorName = "Acme SaaS"
+            })).Id;
+
+            await svc.AddEventStepAsync(id, _clock.UtcNow.AddHours(1), Array.Empty<MitreTactic>(),
+                null, null, null, "Vendor confirmed our policyholder records were in the exposed dataset",
+                "Acme SaaS", type: TimelineEntryType.Analysis);
+        }
+
+        await using (var db = NewContext())
+        {
+            var svc = NewService(db);
+            var step = (await svc.GetDetailAsync(id))!.TimelineEntries.Single(t => t.Kind == TimelineKind.Event);
+            step.Type.Should().Be(TimelineEntryType.Analysis);
+            step.Tactics.Should().BeEmpty();
+            step.TechniqueId.Should().BeNull();
+            step.ActorEntityId.Should().BeNull();
+            step.TargetEntityId.Should().BeNull();
+            step.Source.Should().Be("Acme SaaS");
+
+            // Editing to a later stage updates the milestone type in place.
+            await svc.EditEventStepAsync(id, step.Id, step.OccurredAtUtc, Array.Empty<MitreTactic>(),
+                null, null, null, step.Description, step.Source, type: TimelineEntryType.Recovery);
+        }
+
+        await using (var db = NewContext())
+        {
+            var svc = NewService(db);
+            var step = (await svc.GetDetailAsync(id))!.TimelineEntries.Single(t => t.Kind == TimelineKind.Event);
+            step.Type.Should().Be(TimelineEntryType.Recovery);
+
+            var chain = await db.AuditLog.OrderBy(a => a.Sequence).ToListAsync();
+            _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
+        }
+    }
+
+    [Fact]
     public async Task A_timeline_entry_persists_its_linked_screenshot_and_the_chain_stays_valid()
     {
         // U-40: the entry stores an EvidenceId (the pasted screenshot, uploaded separately as evidence).

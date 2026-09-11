@@ -480,7 +480,7 @@ public class Case : AuditableEntity, IHashableEntity
     /// </summary>
     public TimelineEntry EditEventStep(Guid entryId, DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
-        string actor, DateTimeOffset nowUtc)
+        string actor, DateTimeOffset nowUtc, TimelineEntryType type = TimelineEntryType.Other)
     {
         if (string.IsNullOrWhiteSpace(description))
             throw new ArgumentException("A description is required.", nameof(description));
@@ -496,6 +496,7 @@ public class Case : AuditableEntity, IHashableEntity
             throw new ArgumentException("The target is not an entity on this case.", nameof(targetEntityId));
 
         entry.OccurredAtUtc = occurredAtUtc;
+        entry.Type = type;   // vendor-disclosure stage for third-party cases (E-32); Other for first-party
         entry.Description = description.Trim();
         entry.Source = source;
         entry.TechniqueId = normalisedTechnique;
@@ -557,7 +558,7 @@ public class Case : AuditableEntity, IHashableEntity
     /// </summary>
     public TimelineEntry AddEventStep(DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
-        string actor, DateTimeOffset nowUtc, Guid? evidenceId = null)
+        string actor, DateTimeOffset nowUtc, Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other)
     {
         if (string.IsNullOrWhiteSpace(description))
             throw new ArgumentException("A description is required.", nameof(description));
@@ -573,7 +574,10 @@ public class Case : AuditableEntity, IHashableEntity
         {
             CaseId = Id,
             Kind = TimelineKind.Event,
-            Type = TimelineEntryType.Other,   // Event steps categorise by tactic, not the response type
+            // First-party attack steps categorise by tactic, so Type stays Other. A third-party/vendor case
+            // has no adversary kill-chain in our estate (E-32): its event steps are vendor-disclosure
+            // milestones instead, and the stage is carried in Type (Detection / Analysis / Communication / …).
+            Type = type,
             OccurredAtUtc = occurredAtUtc,
             Description = description.Trim(),
             Source = source,
