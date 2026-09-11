@@ -382,6 +382,21 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Reopens a closed case (E-27) with a required reason: returns it to its pre-closure phase and clears
+    /// the closure timestamp so MTTR / dashboard math stays correct. Audited via the change interceptor.
+    /// </summary>
+    public async Task ReopenAsync(Guid id, string reason, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("A reason is required to reopen a case.", nameof(reason));
+
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.Reopen(reason, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
     /// <summary>Evaluates the active gate for a transition (read-only) — for the workspace readiness view.</summary>
     public async Task<GateEvaluation> EvaluateGateAsync(Guid id, StageGateTrigger trigger, CancellationToken ct = default)
     {

@@ -249,7 +249,36 @@ public class Case : AuditableEntity, IHashableEntity
             case CasePhase.Recovery: ResolvedAtUtc ??= nowUtc; break;
             case CasePhase.Closed: ClosedAtUtc ??= nowUtc; break;
         }
+
+        // Reopening: leaving Closed must clear the closure timestamp, else the case reads as "closed at X"
+        // while active and corrupts MTTR / dashboard math keyed on ClosedAtUtc (E-27). The contained/
+        // resolved milestones stay — they really happened.
+        if (from == CasePhase.Closed && to != CasePhase.Closed) ClosedAtUtc = null;
+
         Touch(actor, nowUtc);
+    }
+
+    /// <summary>
+    /// Reopens a closed case (E-27): moves it back to the phase it held before closure (or Recovery if that
+    /// can't be determined), clears <see cref="ClosedAtUtc"/>, and records the transition with the caller's
+    /// reason. A first-class, reason-captured lifecycle action — closing again re-runs the close stage gate.
+    /// </summary>
+    public void Reopen(string reason, string actor, DateTimeOffset nowUtc)
+    {
+        if (Phase != CasePhase.Closed)
+            throw new InvalidOperationException("Only a closed case can be reopened.");
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("A reason is required to reopen a case.", nameof(reason));
+
+        // Return to the phase it was in when it closed, so the lifecycle reads truthfully.
+        var priorPhase = StatusChanges
+            .Where(s => s.To == CasePhase.Closed && s.From is { } f && f != CasePhase.Closed)
+            .OrderByDescending(s => s.ChangedAtUtc)
+            .Select(s => s.From!.Value)
+            .DefaultIfEmpty(CasePhase.Recovery)
+            .First();
+
+        ChangePhase(priorPhase, reason.Trim(), actor, nowUtc);
     }
 
     /// <summary>

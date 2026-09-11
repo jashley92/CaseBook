@@ -132,6 +132,12 @@ else
         {
             <button class="btn btn-sm btn-primary ms-2" @onclick="() => AdvanceTo(np)">Advance to @Ui.Label(np) →</button>
         }
+        @if (_canEdit && _case.Phase == CasePhase.Closed)
+        {
+            <button class="btn btn-sm btn-outline-primary ms-2" @onclick='() => OpenModal("reopen")'>
+                <span class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></span>Reopen case
+            </button>
+        }
     </div>
 
     <ul class="nav nav-tabs mb-3">
@@ -1809,6 +1815,12 @@ else
                         {
                             <p class="mb-0">Archive <code>@_case.CaseNumber</code>? It will be hidden from active queues; you can restore it later.</p>
                         }
+                        else if (_activeModal == "reopen")
+                        {
+                            <p class="small text-muted mb-2">Reopen <code>@_case.CaseNumber</code>? It returns to its pre-closure phase and the closure timestamp is cleared, so response metrics stay accurate. Closing again re-runs the close gate.</p>
+                            <label class="form-label small">Reason (required)</label>
+                            <input class="form-control" placeholder="Why is this case being reopened?" @bind="_reopenReason" @bind:event="oninput" />
+                        }
                         else if (_activeModal == "assign")
                         {
                             @if (AssignableUsers() is { Count: 0 })
@@ -1943,6 +1955,7 @@ else
     private string _reclassReason = "";
     private CasePhase _newPhase = CasePhase.Triage;
     private string? _phaseReason;
+    private string? _reopenReason;
     private Severity _newSeverity = Severity.Medium;
     private string? _severityReason;
     private string _assignUserId = "";
@@ -2708,6 +2721,7 @@ else
         "legal" => "Refer to Legal / Privacy",
         "archive" => "Archive case",
         "assign" => "Assign someone to this case",
+        "reopen" => "Reopen case",
         _ => ""
     };
 
@@ -2715,13 +2729,15 @@ else
     {
         "archive" => "Archive",
         "assign" => "Assign",
+        "reopen" => "Reopen",
         _ => "Apply"
     };
 
-    // Keep the primary disabled until the assign form has a user selected.
+    // Keep the primary disabled until required input is present.
     private bool ModalPrimaryDisabled() => _activeModal switch
     {
         "assign" => string.IsNullOrEmpty(_assignUserId),
+        "reopen" => string.IsNullOrWhiteSpace(_reopenReason),
         _ => false
     };
 
@@ -2764,6 +2780,12 @@ else
                 case "archive":
                     await Cases.SetArchivedAsync(Id, true);
                     done = "Case archived";
+                    break;
+                case "reopen":
+                    if (string.IsNullOrWhiteSpace(_reopenReason)) { _modalError = "A reason is required."; return; }
+                    await Cases.ReopenAsync(Id, _reopenReason);
+                    _reopenReason = "";
+                    done = "Case reopened";
                     break;
                 case "assign":
                     if (string.IsNullOrWhiteSpace(_assignUserId)) { _modalError = "Select a user to assign."; return; }
