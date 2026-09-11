@@ -362,11 +362,34 @@ Example — move the SIEM webhook token to CyberArk:
 | `TimeoutSeconds` | Per-request timeout to CCP | `5` |
 | `FailClosed` | On a CCP error: `true` → resolve to unavailable (safe degrade); `false` → serve the last-known-good cached value (never a plaintext-config fallback) | `true` |
 
-**Authentication to CCP.** There is **no CCP password to store** — that is the point of CCP. CCP authorizes
-this application by **client certificate** and/or an **allow-listed machine / OS user**, both configured on
-the CCP side. If you use a client certificate, install it in `LocalMachine\My`, grant the app-pool identity
-**read** on its private key, and set its thumbprint above; otherwise leave the thumbprint blank and rely on
-machine/OS-user allow-listing.
+**Authentication to CCP — who configures what.** There is **no CCP password to store** — that is the point
+of CCP. The **CyberArk admin** decides how this application authenticates when they define its **Application
+(AppID)** in the Vault, choosing any combination of: a **client certificate**, an **Allowed Machines**
+list (source **IP address** / hostname), and/or the requesting **OS user**. CaseBook simply *presents* an
+identity on each call; CCP accepts or rejects it against the AppID's rules. So most of the setup is on the
+CyberArk side, and CaseBook's config is deliberately tiny. What you do here depends on the method(s) the
+AppID requires:
+
+| Authentication method (set on the CCP **AppID** by the CyberArk admin) | What CaseBook must do |
+|---|---|
+| **Client certificate** (whether the AppID marks it *required* or *optional*) | Install the cert in **`LocalMachine\My`**, grant the **app-pool identity read on its private key**, and set **`ClientCertificateThumbprint`**. This is the only auth method that needs a CaseBook config value. |
+| **Allowed Machines — source IP / hostname** | **Nothing in config.** Ensure the web host reaches CCP from the **IP/hostname the admin allow-listed** — mind NAT, proxies, and multi-homed egress (the IP CCP *sees* is what matters, not the host's local IP). |
+| **OS user** | **Nothing in config.** Run the CaseBook app pool under the **identity the admin allow-listed** — i.e. the gMSA / service account from [INSTALL.md §1.2](INSTALL.md); that account is the OS user CCP will see. |
+
+Notes:
+
+- **"Cert required" is a CCP-side switch, not a CaseBook one.** CaseBook attaches a client cert **only when
+  `ClientCertificateThumbprint` is set**; if the AppID requires a cert and the thumbprint is blank (or the
+  cert can't be loaded), every fetch fails closed and the Diagnostics health panel shows *Last attempt
+  failed*. Conversely, setting a thumbprint the AppID doesn't expect is harmless — CCP ignores it.
+- **Methods combine (defense in depth).** A common hardened setup is *client cert **and** Allowed-Machines
+  IP* — the admin sets both on the AppID; CaseBook sets the thumbprint and you make sure the host egresses
+  from the allow-listed IP. No extra CaseBook config for the IP half.
+- **App identity is set once, in the installer.** The app-pool identity (which drives both *OS user* and,
+  via the host, *source IP*) is `AppPoolIdentity` from `Install-CaseBook.ps1` / the answers file — so the
+  account and host you give CyberArk to allow-list are the ones the install already uses.
+- If the AppID authenticates **only** by Allowed-Machines and/or OS user, leave `ClientCertificateThumbprint`
+  blank — that is a valid, fully-supported configuration.
 
 **Failure behaviour.** A reference that cannot be resolved returns **unavailable** — never the reference
 text — so a caller treats it as "no secret". For the webhook that means the event is sent **without** an

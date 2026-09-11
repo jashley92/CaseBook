@@ -236,7 +236,49 @@ Then, signed in as a mapped user:
 - [ ] Wire the **backup-status JSON** so Diagnostics → Backup &amp; restore health reads *Fresh* — §1.3.1.
 - [ ] Perform one **restore rehearsal** and confirm chain + prior-seal verification on the copy — §1.3.
 - [ ] Confirm the evidence/seal/report dirs are in the **EDR** monitoring policy — §3.
+- [ ] *(Optional)* Externalize secrets to **CyberArk CCP** — see §6.1 below and OPERATIONS.md §6.
 - [ ] Walk the **Deploy-time Checklist** (§4) and record sign-off.
+
+### 6.1 Optional — externalize secrets to CyberArk (F-19)
+
+By default, config-borne secrets (today just the SIEM webhook token, if you use the webhook) live in
+`appsettings.Production.json`. If your org uses **CyberArk**, you can instead keep them in the Vault and let
+CaseBook fetch them at runtime. This is **opt-in and per-secret** — nothing changes unless you turn it on.
+
+**The CCP URL and all CyberArk settings go in one place: the `Secrets:CyberArk` block of the deployed
+`appsettings.Production.json`** (rendered from `deploy/appsettings.Production.template.json`, where the block
+already exists, disabled). There is no installer prompt and no in-app setting for this — secrets are
+server-side only. To enable it, edit that block on the web host:
+
+```jsonc
+"Secrets": {
+  "CyberArk": {
+    "Enabled": true,
+    "BaseUrl": "https://ccp.corp.example/AIMWebService",   // ← the CCP (AIMWebService) URL goes here
+    "AppId":   "CaseBook",                                  // the Application ID your CyberArk admin created
+    "ClientCertificateThumbprint": ""                       // set ONLY if the AppID requires a client cert
+  }
+}
+```
+
+Then write each secret you want externalized as a reference instead of a literal, e.g.
+`"Token": "@cyberark:Safe=SIEM;Object=CaseBook-Webhook-Token"`.
+
+**Coordinate with your CyberArk admin — most of the auth setup is on their side.** When they define the
+Application (AppID), they choose how it authenticates: **client certificate**, **Allowed Machines (source
+IP/hostname)**, and/or **OS user**. The identity you give them to allow-list is already fixed by this
+install:
+
+- **OS user** = the **`AppPoolIdentity`** you configured in §1.2 / the answers file (the gMSA or service
+  account the app pool runs as).
+- **Source IP / hostname** = this **web host** (mind NAT/proxy egress — CCP sees the *egress* IP).
+- **Client certificate** (if required) = install it in **`LocalMachine\My`**, grant the app-pool identity
+  **read** on its private key, and put its thumbprint in the block above — this is the *only* CyberArk auth
+  method that needs a CaseBook config value.
+
+Full reference (config table, failure behaviour, the read-only Admin status card + Diagnostics health view):
+**OPERATIONS.md §6**. After enabling, confirm **Administration → Diagnostics → Secret resolution (CyberArk)**
+shows *Healthy* (or at least *No activity*, not *Last attempt failed*) once a referenced secret is first used.
 
 ---
 
