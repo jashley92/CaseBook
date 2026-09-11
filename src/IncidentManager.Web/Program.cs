@@ -331,6 +331,46 @@ app.MapGet("/branding/logo", async (IncidentManager.Application.Abstractions.IRe
     return logo is null ? Results.NotFound() : Results.File(logo.Bytes, logo.ContentType);
 }).AllowAnonymous();
 
+// --- E-39: agenda calendar (ICS) feeds ---
+// Shared builder: the caller's due, open after-action items as an iCalendar document.
+static async Task<string> BuildAgendaIcsAsync(
+    IncidentManager.Application.Work.AgendaService agenda, IConfiguration cfg, IncidentManager.Application.Abstractions.IClock clock,
+    string userId, CancellationToken ct)
+{
+    var items = await agenda.GetFeedItemsAsync(userId, ct);
+    var baseUrl = (cfg["App:BaseUrl"] ?? "").TrimEnd('/');
+    var events = items.Select(i => new IncidentManager.Application.Work.IcsEvent(
+        Uid: $"{i.ActionItemId}@casebook",
+        StartUtc: i.DueAtUtc!.Value,
+        Summary: $"[{i.CaseNumber}] {i.Title}",
+        Description: i.CaseTitle,
+        Url: baseUrl.Length == 0 ? null : $"{baseUrl}/cases/{i.CaseId}",
+        Overdue: i.DueAtUtc!.Value < clock.UtcNow));
+    return IncidentManager.Application.Work.IcsWriter.Write("CaseBook — my after-action items", events, clock.UtcNow);
+}
+
+// Authenticated one-shot download for the signed-in user (import into any calendar).
+app.MapGet("/agenda/agenda.ics", async (IncidentManager.Application.Work.AgendaService agenda,
+    IncidentManager.Application.Abstractions.ICurrentUser user, IConfiguration cfg,
+    IncidentManager.Application.Abstractions.IClock clock, CancellationToken ct) =>
+{
+    var ics = await BuildAgendaIcsAsync(agenda, cfg, clock, user.UserId, ct);
+    return Results.File(System.Text.Encoding.UTF8.GetBytes(ics), "text/calendar", "casebook-agenda.ics");
+}).RequireAuthorization(Policies.ViewCases);
+
+// Subscribable live feed — token-authenticated (the token IS the credential), so anonymous. Disabled
+// (404) until Agenda:FeedKey is configured; an invalid/forged token is also 404. Exposes only that user's
+// own task titles + case numbers. Served inline so calendar clients can poll it.
+app.MapGet("/agenda/feed.ics", async (string? token, IncidentManager.Application.Abstractions.IAgendaFeedTokens tokens,
+    IncidentManager.Application.Work.AgendaService agenda, IConfiguration cfg,
+    IncidentManager.Application.Abstractions.IClock clock, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(token) || !tokens.TryValidate(token, out var userId))
+        return Results.NotFound();
+    var ics = await BuildAgendaIcsAsync(agenda, cfg, clock, userId, ct);
+    return Results.Text(ics, "text/calendar", System.Text.Encoding.UTF8);
+}).AllowAnonymous().RequireRateLimiting("downloads");
+
 // --- Evidence download (streamed, records a chain-of-custody event) ---
 app.MapGet("/evidence/{id:guid}", async (Guid id, EvidenceService evidence,
     IncidentManager.Application.Access.IAccessLogService access, CancellationToken ct) =>

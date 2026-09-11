@@ -80,6 +80,9 @@ public static class DependencyInjection
         services.AddSingleton<IReportGenerator, ReportGenerator>();
         services.AddSingleton<IRoleDirectory, Security.RoleDirectory>();
         services.AddSingleton<IUserDirectory, Security.UserDirectory>();
+        // E-39: signs/validates the per-user agenda calendar (ICS) feed token. Stateless (HMAC over the
+        // user id, keyed by Agenda:FeedKey); disabled until the secret is set.
+        services.AddSingleton<IAgendaFeedTokens, Agenda.AgendaFeedTokenService>();
 
         services.AddScoped<AuditChainInterceptor>();
         services.AddScoped<ICaseNumberGenerator, CaseNumberGenerator>();

@@ -1,0 +1,187 @@
+@page "/agenda"
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@inject AgendaService Svc
+@inject IClock Clock
+@inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Abstractions.ICurrentUser Me
+@inject IncidentManager.Application.Abstractions.IAgendaFeedTokens FeedTokens
+@inject ISeverityLabels SevLabels
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Agenda</PageTitle>
+
+<div class="agenda">
+    <PageHeader Title="Agenda">
+        <Actions>
+            <div class="agenda-owner">
+                <label class="form-label mb-0 me-1 small text-muted" for="agenda-owner">Owner</label>
+                <select id="agenda-owner" class="form-select form-select-sm d-inline-block w-auto"
+                        value="@_owner" @onchange="OnOwnerChanged">
+                    <option value="">Everyone</option>
+                    <option value="@AgendaService.MineOwnerFilter">Me</option>
+                    @if (_board is not null)
+                    {
+                        @foreach (var o in _board.Owners)
+                        {
+                            <option value="@o.OwnerUserId">@Users.DisplayFor(o.OwnerUserId) (@o.Count)</option>
+                        }
+                    }
+                </select>
+            </div>
+            <a class="btn btn-sm btn-outline-secondary ms-2" href="agenda/agenda.ics" title="Download an .ics of your due items">
+                <span class="bi bi-calendar-plus" aria-hidden="true"></span> Add to calendar
+            </a>
+        </Actions>
+    </PageHeader>
+
+    @if (_board is null)
+    {
+        <span class="visually-hidden" role="status">Loading the agenda…</span>
+        <div class="mw-grid">
+            @for (var i = 0; i < 3; i++)
+            {
+                <section class="im-card">
+                    <span class="skel skel-line" style="width:35%;display:block;margin-bottom:0.9rem"></span>
+                    <SkeletonTable Rows="3" Columns="5" TableClass="table-sm" />
+                </section>
+            }
+        </div>
+    }
+    else
+    {
+        @if (_board.TotalCount == 0)
+        {
+            <section class="im-card">
+                <div class="mw-empty">
+                    Nothing due here.
+                    @if (!string.IsNullOrEmpty(_owner)) { <text>Try <button class="btn btn-link p-0 align-baseline" @onclick='() => ChangeOwner("")'>everyone</button>.</text> }
+                    else { <text>No open after-action items have a due date.</text> }
+                </div>
+            </section>
+        }
+        else
+        {
+            @foreach (var bucket in _board.Buckets)
+            {
+                var meta = Meta(bucket.Kind);
+                <section class="im-card">
+                    <div class="im-section-head">
+                        <span><span class="bi @meta.Icon" aria-hidden="true"></span> @meta.Label</span>
+                        <span class="im-badge @meta.Badge">@bucket.Items.Count</span>
+                    </div>
+                    <table class="table table-sm table-hover align-middle im-table mb-0">
+                        <thead>
+                            <tr><th>Case #</th><th>Task</th><th>Sev.</th><th>Owner</th><th>Due</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var i in bucket.Items)
+                            {
+                                <tr>
+                                    <td><code>@i.CaseNumber</code></td>
+                                    <td>@i.Title
+                                        <span class="d-block text-muted small">@i.CaseTitle</span>
+                                    </td>
+                                    <td><span class="@Ui.SeverityBadge(i.Severity)">@SevLabels.For(i.Severity)</span></td>
+                                    <td class="small">
+                                        @if (i.OwnedByMe) { <span class="im-badge im-b-info">You</span> }
+                                        else if (!string.IsNullOrWhiteSpace(i.OwnerUserId)) { @Users.DisplayFor(i.OwnerUserId) }
+                                        else { <span class="text-muted">Unassigned</span> }
+                                    </td>
+                                    <td>@DueCell(i.DueAtUtc, bucket.Kind)</td>
+                                    <td><a class="btn btn-sm btn-outline-primary py-0" href="cases/@i.CaseId?tab=Tasks">Open</a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+        }
+
+        <section class="im-card agenda-subscribe">
+            <div class="im-section-head">
+                <span><span class="bi bi-calendar-week" aria-hidden="true"></span> Calendar subscription</span>
+            </div>
+            @if (FeedTokens.Enabled && _feedUrl is not null)
+            {
+                <p class="text-muted small mb-2">
+                    Subscribe your calendar (Outlook: <em>Add calendar → Subscribe from web</em>) to this private URL and your
+                    due after-action items stay in sync automatically. The link is personal to you — treat it like a password.
+                </p>
+                <div class="input-group input-group-sm agenda-feed">
+                    <input class="form-control" readonly value="@_feedUrl" id="agenda-feed-url" />
+                    <button class="btn btn-outline-secondary" type="button" @onclick="CopyFeed">
+                        <span class="bi @(_copied ? "bi-check2" : "bi-clipboard")" aria-hidden="true"></span>
+                        @(_copied ? "Copied" : "Copy")
+                    </button>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted small mb-0">
+                    Live subscription is disabled. Use <strong>Add to calendar</strong> above for a one-time import, or ask an
+                    administrator to set a feed key (<code>Agenda:FeedKey</code>) to enable an auto-syncing Outlook subscription.
+                </p>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private AgendaBoard? _board;
+    private string _owner = "";      // "" = everyone, "@me" = mine, else a specific owner id
+    private string? _feedUrl;
+    private bool _copied;
+
+    [SupplyParameterFromQuery(Name = "owner")] private string? OwnerQuery { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(OwnerQuery)) _owner = OwnerQuery!;
+        if (FeedTokens.Issue(Me.UserId) is { } token)
+            _feedUrl = Nav.ToAbsoluteUri($"agenda/feed.ics?token={Uri.EscapeDataString(token)}").ToString();
+        await Load();
+    }
+
+    private async Task Load() => _board = await Svc.GetBoardAsync(string.IsNullOrEmpty(_owner) ? null : _owner);
+
+    private async Task OnOwnerChanged(ChangeEventArgs e) => await ChangeOwner(e.Value?.ToString() ?? "");
+
+    private async Task ChangeOwner(string owner)
+    {
+        _owner = owner;
+        _board = null;
+        await Load();
+    }
+
+    private async Task CopyFeed()
+    {
+        if (_feedUrl is null) return;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _feedUrl); _copied = true; }
+        catch { /* clipboard blocked; the field stays selectable as a fallback */ }
+    }
+
+    private sealed record BucketMeta(string Label, string Icon, string Badge);
+
+    private static BucketMeta Meta(AgendaBucketKind kind) => kind switch
+    {
+        AgendaBucketKind.Overdue => new("Overdue", "bi-alarm", "im-b-danger"),
+        AgendaBucketKind.Today => new("Due today", "bi-hourglass-split", "im-b-warn"),
+        AgendaBucketKind.ThisWeek => new("Due this week", "bi-calendar-week", "im-b-info"),
+        AgendaBucketKind.Later => new("Later", "bi-calendar3", "im-b-neutral"),
+        _ => new("No due date", "bi-dash-circle", "im-b-neutral"),
+    };
+
+    private RenderFragment DueCell(DateTimeOffset? due, AgendaBucketKind kind)
+    {
+        if (due is not { } d) return @<span class="text-muted">—</span>;
+        if (kind == AgendaBucketKind.Overdue)
+        {
+            var by = Clock.UtcNow - d;
+            var span = by.TotalDays >= 1 ? $"{(int)by.TotalDays}d" : $"{Math.Max(1, (int)by.TotalHours)}h";
+            return @<span class="im-badge im-b-danger" title="Due @TimeDisp.Short(d)">overdue @span</span>;
+        }
+        return @<span class="small">@TimeDisp.Short(d)</span>;
+    }
+}
