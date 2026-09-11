@@ -1,0 +1,244 @@
+@page "/campaigns/{Id:guid}"
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@using IncidentManager.Application.Campaigns
+@inject CampaignService Svc
+@inject TimeDisplay TimeDisp
+@inject ISeverityLabels SevLabels
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+
+<PageTitle>Campaign</PageTitle>
+
+<div class="campaign">
+    @if (_loaded && _rollup is null)
+    {
+        <h1>Campaign not found</h1>
+        <p>The case does not exist or you don't have access to it. <a href="cases">Back to cases</a>.</p>
+    }
+    else
+    {
+        <PageHeader Title="Campaign rollup"
+                    Subtitle="@(_rollup is null ? null : $"{_rollup.MemberCount} linked case{(_rollup.MemberCount == 1 ? "" : "s")}")">
+            <Actions>
+                @if (_rollup is not null)
+                {
+                    <a class="btn btn-sm btn-outline-secondary" href="cases/@_rollup.AnchorCaseId"
+                       title="Back to the case you came from">
+                        <span class="bi bi-arrow-left" aria-hidden="true"></span> Back to case
+                    </a>
+                    @if (_rollup.MemberCount > 1)
+                    {
+                        <a class="btn btn-sm btn-outline-secondary ms-2" href="campaigns/@_rollup.AnchorCaseId/rollup.json"
+                           title="Download the campaign rollup as JSON">
+                            <span class="bi bi-download" aria-hidden="true"></span> Export JSON
+                        </a>
+                    }
+                }
+            </Actions>
+        </PageHeader>
+
+        @if (_rollup is null)
+        {
+            <span class="visually-hidden" role="status">Loading the campaign…</span>
+            <div class="mw-grid">
+                @for (var i = 0; i < 2; i++)
+                {
+                    <section class="im-card">
+                        <span class="skel skel-line" style="width:35%;display:block;margin-bottom:0.9rem"></span>
+                        <SkeletonTable Rows="3" Columns="5" TableClass="table-sm" />
+                    </section>
+                }
+            </div>
+        }
+        else if (_rollup.MemberCount <= 1)
+        {
+            <section class="im-card">
+                <div class="mw-empty">
+                    This case isn't part of a campaign yet. Link it to others in the same attack wave
+                    (<em>Related cases → Link a case → Same campaign as</em>) and they'll roll up here.
+                    <div class="mt-2"><a class="btn btn-sm btn-outline-primary" href="cases/@_rollup.AnchorCaseId">Open the case</a></div>
+                </div>
+            </section>
+        }
+        else
+        {
+            @* Aggregate posture *@
+            <section class="im-card">
+                <div class="im-section-head">
+                    <span><span class="bi bi-diagram-3" aria-hidden="true"></span> Posture</span>
+                </div>
+                <div class="campaign-stats">
+                    <div class="stat">
+                        <div class="stat-label">Cases</div>
+                        <div class="stat-value">@_rollup.MemberCount <span class="text-muted small">(@_rollup.OpenCount open)</span></div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Highest severity</div>
+                        <div class="stat-value">
+                            @if (_rollup.HighestSeverity is { } sev) { <span class="@Ui.SeverityBadge(sev)">@SevLabels.For(sev)</span> }
+                            else { <span class="text-muted">—</span> }
+                        </div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Highest classification</div>
+                        <div class="stat-value"><span class="@Ui.ClassificationBadge(_rollup.HighestClassification)">@Ui.Label(_rollup.HighestClassification)</span></div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">First detected</div>
+                        <div class="stat-value small">@TimeDisp.Long(_rollup.EarliestDetectedAtUtc)</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Latest activity</div>
+                        <div class="stat-value small">@TimeDisp.Long(_rollup.LatestActivityUtc)</div>
+                    </div>
+                    @if (_rollup.TotalAffectedIndividuals is { } affected)
+                    {
+                        <div class="stat">
+                            <div class="stat-label">Affected individuals</div>
+                            <div class="stat-value">@affected.ToString("N0")</div>
+                        </div>
+                    }
+                    @if (_rollup.AffectedStates.Count > 0)
+                    {
+                        <div class="stat">
+                            <div class="stat-label">Affected jurisdictions</div>
+                            <div class="stat-value small">@string.Join(", ", _rollup.AffectedStates)</div>
+                        </div>
+                    }
+                </div>
+            </section>
+
+            @* Member cases *@
+            <section class="im-card">
+                <div class="im-section-head">
+                    <span><span class="bi bi-folder2-open" aria-hidden="true"></span> Cases in this campaign</span>
+                    <span class="im-badge im-b-neutral">@_rollup.Members.Count</span>
+                </div>
+                <table class="table table-sm table-hover align-middle im-table mb-0">
+                    <thead>
+                        <tr><th>Case #</th><th>Title</th><th>Class.</th><th>Phase</th><th>Sev.</th><th>IC</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var m in _rollup.Members)
+                        {
+                            <tr>
+                                <td><code>@m.CaseNumber</code>
+                                    @if (m.IsRestricted) { <span class="bi bi-lock-fill text-muted ms-1" title="Restricted" aria-label="Restricted"></span> }
+                                </td>
+                                <td>@m.Title</td>
+                                <td><span class="@Ui.ClassificationBadge(m.Classification)">@Ui.Label(m.Classification)</span></td>
+                                <td><span class="@Ui.PhaseBadge(m.Phase)">@Ui.Label(m.Phase)</span></td>
+                                <td><span class="@Ui.SeverityBadge(m.Severity)">@SevLabels.For(m.Severity)</span></td>
+                                <td class="small">@(string.IsNullOrWhiteSpace(m.IncidentCommander) ? "—" : Users.DisplayFor(m.IncidentCommander))</td>
+                                <td><a class="btn btn-sm btn-outline-primary py-0" href="cases/@m.CaseId">Open</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            @* Shared indicators *@
+            <section class="im-card">
+                <div class="im-section-head">
+                    <span><span class="bi bi-share" aria-hidden="true"></span> Shared indicators</span>
+                    @if (_rollup.SharedIocs.Count > 0) { <span class="im-badge im-b-neutral">@_rollup.SharedIocs.Count</span> }
+                </div>
+                @if (_rollup.SharedIocs.Count == 0)
+                {
+                    <p class="text-muted small mb-0">No indicator appears on more than one of these cases yet. Shared IOCs are the pivots that tie a campaign together.</p>
+                }
+                else
+                {
+                    <table class="table table-sm table-hover align-middle im-table mb-0">
+                        <thead>
+                            <tr><th>Type</th><th>Value</th><th>Verdict</th><th>Cases</th><th>Seen on</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var i in _rollup.SharedIocs)
+                            {
+                                <tr>
+                                    <td class="small">@Ui.Label(i.Type)</td>
+                                    <td><code>@i.Value</code>@if (!string.IsNullOrWhiteSpace(i.Label)) { <span class="d-block text-muted small">@i.Label</span> }</td>
+                                    <td><span class="@Ui.DispositionBadge(i.Disposition)">@Ui.Label(i.Disposition)</span></td>
+                                    <td><span class="im-badge im-b-info">@i.CaseCount</span></td>
+                                    <td class="small text-muted">@string.Join(", ", i.CaseNumbers)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            @* ATT&CK coverage *@
+            @if (_rollup.Techniques.Count > 0)
+            {
+                <section class="im-card">
+                    <div class="im-section-head">
+                        <span><span class="bi bi-bullseye" aria-hidden="true"></span> ATT&amp;CK coverage</span>
+                        <span class="im-badge im-b-neutral">@_rollup.Techniques.Count</span>
+                    </div>
+                    <table class="table table-sm table-hover align-middle im-table mb-0">
+                        <thead>
+                            <tr><th>Technique</th><th>Name</th><th>Tactic</th><th>Cases</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var t in _rollup.Techniques)
+                            {
+                                <tr>
+                                    <td><code>@t.TechniqueId</code></td>
+                                    <td>@t.Name</td>
+                                    <td class="small">@Ui.Label(t.Tactic)</td>
+                                    <td><span class="im-badge im-b-info">@t.CaseCount</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+
+            @* Merged event timeline *@
+            @if (_rollup.Timeline.Count > 0)
+            {
+                <section class="im-card">
+                    <div class="im-section-head">
+                        <span><span class="bi bi-clock-history" aria-hidden="true"></span> Combined event timeline (@TimeDisp.Label)</span>
+                        <span class="im-badge im-b-neutral">@_rollup.Timeline.Count</span>
+                    </div>
+                    <table class="table table-sm align-middle im-table mb-0">
+                        <thead>
+                            <tr><th>When</th><th>Case</th><th>Type</th><th>What happened</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var e in _rollup.Timeline)
+                            {
+                                <tr>
+                                    <td class="small text-nowrap">@TimeDisp.Short(e.OccurredAtUtc)</td>
+                                    <td><a href="cases/@e.CaseId" class="text-decoration-none"><code>@e.CaseNumber</code></a></td>
+                                    <td class="small">@Ui.Label(e.Type)</td>
+                                    <td>@e.Description
+                                        @if (!string.IsNullOrWhiteSpace(e.TechniqueId)) { <span class="im-badge im-b-neutral ms-1">@e.TechniqueId</span> }
+                                        @if (!string.IsNullOrWhiteSpace(e.Source)) { <span class="d-block text-muted small">@e.Source</span> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private CampaignRollup? _rollup;
+    private bool _loaded;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loaded = false;
+        _rollup = null;
+        _rollup = await Svc.GetRollupAsync(Id);
+        _loaded = true;
+    }
+}

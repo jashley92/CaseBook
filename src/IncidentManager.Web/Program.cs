@@ -437,6 +437,28 @@ app.MapGet("/cases/{id:guid}/graph.stix.json", async (Guid id,
     return Results.File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
+// --- Campaign rollup export (E-29): the cross-case rollup for the campaign a case belongs to, as JSON ---
+// Need-to-know scoped by the service (ForUser walk); 404 for a case the caller can't see. Audited as an
+// Export (C-05) — campaign data leaving the system. Plain JSON attachment (no JS).
+app.MapGet("/campaigns/{id:guid}/rollup.json", async (Guid id,
+    IncidentManager.Application.Campaigns.CampaignService campaigns,
+    IncidentManager.Application.Access.IAccessLogService access, CancellationToken ct) =>
+{
+    var rollup = await campaigns.GetRollupAsync(id, ct);
+    if (rollup is null) return Results.NotFound();
+    var anchorNumber = rollup.Members.FirstOrDefault(m => m.CaseId == rollup.AnchorCaseId)?.CaseNumber
+                       ?? rollup.AnchorCaseId.ToString();
+    var json = System.Text.Json.JsonSerializer.Serialize(rollup,
+        new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        });
+    var fileName = $"campaign-{anchorNumber}-rollup.json";
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, id, fileName, null, ct);
+    return Results.File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", fileName);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+
 // --- Metrics export for board / regulatory reporting packs (E-11) ---
 // Scoped to the caller's visible cases via DashboardService; plain CSV attachment (no JS).
 app.MapGet("/export/metrics.csv", async (

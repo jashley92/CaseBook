@@ -29,6 +29,7 @@ public static class DependencyInjection
         services.AddScoped<Work.MyWorkService>();
         services.AddScoped<Work.TeamWorkloadService>();
         services.AddScoped<Work.AgendaService>();
+        services.AddScoped<Campaigns.CampaignService>();   // E-29: cross-case campaign rollup + export
         services.AddScoped<Activity.ActivityFeedService>();
         services.AddScoped<IntegrityService>();
         // F-17: re-hashes evidence at rest and alarms on drift. Scoped (creates a DbContext per pass);

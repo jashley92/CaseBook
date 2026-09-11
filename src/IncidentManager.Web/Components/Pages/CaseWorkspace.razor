@@ -482,6 +482,13 @@ else
                         <h3>Related cases</h3>
                         <div class="d-flex align-items-center gap-2">
                             @if (_links.Count > 0) { <span class="im-badge im-b-neutral">@_links.Count</span> }
+                            @if (_links.Any(l => l.Type == CaseLinkType.PartOfCampaign))
+                            {
+                                <a class="btn btn-sm btn-outline-secondary" href="campaigns/@Id"
+                                   title="See all cases in this campaign, with shared indicators and a combined timeline">
+                                    <span class="bi bi-diagram-3" aria-hidden="true"></span> View campaign
+                                </a>
+                            }
                             <AuthorizeView Policy="@Policies.EditCases" Context="lk">
                                 @if (!_addingLink)
                                 {

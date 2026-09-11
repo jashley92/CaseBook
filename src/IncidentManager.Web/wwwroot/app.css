@@ -1698,6 +1698,14 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
 .im-tone-neutral .im-stat-ic { background: var(--im-neutral-bg); color: var(--im-neutral); }
 [data-bs-theme="dark"] .im-tone-accent .im-stat-ic { color: var(--im-accent); }
 
+/* Campaign rollup (E-29): a responsive row of small posture stats, and a spacing scale for the page. */
+.campaign > .im-card { margin-bottom: 14px; }
+.campaign-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px 20px; }
+.campaign-stats .stat-label { color: var(--im-text-muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
+.campaign-stats .stat-value { font-weight: 600; margin-top: 3px; }
+.campaign .mw-empty { color: var(--im-text-muted); padding: 6px 2px; }
+.campaign .mw-grid { display: grid; gap: 14px; }
+
 /* Table convention: uppercase muted headers + app-token colours, shared by the case/work/team lists.
    Bootstrap's dark .table otherwise paints its own surface (#212529) and light-grey borders (#495057),
    which clash with the im-card surface (a panel-in-panel look) — so bind its vars to the im-* tokens:
