@@ -130,7 +130,8 @@
                     <span class="bi bi-plus-lg me-1" aria-hidden="true"></span>Not in the matrix?
                 </button>
             }
-            <button type="button" class="btn btn-outline-secondary" @onclick="Cancel">Cancel</button>
+            @* U-46: separate the discarding Cancel from the primary Apply so they aren't an easy mis-click. *@
+            <button type="button" class="btn btn-outline-secondary me-3" @onclick="Cancel">Cancel</button>
             <button type="button" class="btn btn-primary" @onclick="Apply">Apply</button>
         }
     </div>

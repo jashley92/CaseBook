@@ -665,7 +665,7 @@ else
                         @* Event = the attack narrative: ATT&CK tactic(s) + actor→target attribution to IOCs. *@
                         <div class="row g-2 align-items-end">
                             <div class="col-md-4">
-                                <label class="form-label small mb-0">Occurred (UTC)</label>
+                                <label class="form-label small mb-0">Occurred (@TimeDisp.Label)</label>
                                 <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
                             </div>
                             <div class="col-md-4">
@@ -741,7 +741,7 @@ else
                                 </select>
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label small mb-0">Occurred (UTC)</label>
+                                <label class="form-label small mb-0">Occurred (@TimeDisp.Label)</label>
                                 <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
                             </div>
                             <div class="col-md-3">
@@ -2163,6 +2163,10 @@ else
         // U-32: a 30s heartbeat re-renders so relative times ("2m ago") stay live without a reload.
         _relativeTimeTicker = new System.Threading.Timer(
             _ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+
+        // U-46: the timeline "Occurred" input is entered in the viewer's active zone (like Details/tasks),
+        // so seed its default to now in that zone rather than a UTC wall-clock.
+        _tlWhen = UtcToWall(DateTimeOffset.UtcNow);
     }
 
     private async Task OnCaseChangedAsync(string actorId)
@@ -3075,7 +3079,7 @@ else
         catch (JSException) { /* editor not mounted; fall back to bound value */ }
 
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
-        var whenUtc = new DateTimeOffset(DateTime.SpecifyKind(_tlWhen, DateTimeKind.Utc));
+        var whenUtc = WallToUtc(_tlWhen);
         var shotId = await UploadTimelineShotAsync();
         await Cases.AddTimelineEntryAsync(Id, TimelineKind.Investigation, _tlType, whenUtc, _tlDesc, _tlSource, evidenceId: shotId);
         _tlDesc = ""; _tlSource = null; ClearTimelineShot();
@@ -3089,7 +3093,7 @@ else
     private async Task AddEventStep()
     {
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
-        var whenUtc = new DateTimeOffset(DateTime.SpecifyKind(_tlWhen, DateTimeKind.Utc));
+        var whenUtc = WallToUtc(_tlWhen);
         Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
         Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
         var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
@@ -3131,7 +3135,7 @@ else
         _tlAddKind = TimelineKind.Event;
         _tlEditId = e.Id;
         _tlReason = null;
-        _tlWhen = e.OccurredAtUtc.UtcDateTime;
+        _tlWhen = UtcToWall(e.OccurredAtUtc);
         _evtActorId = e.ActorEntityId?.ToString() ?? "";
         _evtTargetId = e.TargetEntityId?.ToString() ?? "";
         _evtTechnique = e.TechniqueId ?? "";
@@ -3143,7 +3147,7 @@ else
     private async Task SaveEventEdit()
     {
         if (_tlEditId is not { } id || string.IsNullOrWhiteSpace(_tlDesc)) return;
-        var whenUtc = new DateTimeOffset(DateTime.SpecifyKind(_tlWhen, DateTimeKind.Utc));
+        var whenUtc = WallToUtc(_tlWhen);
         Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
         Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
         var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
@@ -3168,7 +3172,7 @@ else
         _tlEditId = e.Id;
         _tlReason = null;
         _tlType = e.Type;
-        _tlWhen = e.OccurredAtUtc.UtcDateTime;
+        _tlWhen = UtcToWall(e.OccurredAtUtc);
         _tlSource = e.Source;
         _tlDesc = e.Description;
         try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, e.Description); }
@@ -3181,7 +3185,7 @@ else
         try { _tlDesc = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
         catch (JSException) { /* fall back to bound value */ }
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
-        var whenUtc = new DateTimeOffset(DateTime.SpecifyKind(_tlWhen, DateTimeKind.Utc));
+        var whenUtc = WallToUtc(_tlWhen);
         await Cases.EditInvestigationEntryAsync(Id, id, _tlType, whenUtc, _tlDesc, _tlSource, _tlReason);
         await CancelTimelineEdit();
         await Reload();

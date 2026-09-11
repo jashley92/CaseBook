@@ -67,7 +67,7 @@ public static class DevDataSeeder
             new ReportProfile
             {
                 Name = "Full examiner pack",
-                Description = "Every section in default order — the complete record for an examiner / DFS pack.",
+                Description = "Every section in default order: the complete record for an examiner / DFS pack.",
                 IsActive = true, SortOrder = 2, CreatedBy = "system", CreatedAtUtc = now,
                 SectionLayout = "Summary,BusinessImpact,EventTimeline,InvestigationTimeline," +
                                 "SystemsReviewed,Recommendations,Outcome,Appendix"
