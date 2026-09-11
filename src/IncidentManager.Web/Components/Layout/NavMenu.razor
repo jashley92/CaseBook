@@ -48,6 +48,12 @@
                 <span class="bi bi-folder2-open" aria-hidden="true"></span><span class="nav-text">Cases</span>
             </NavLink>
         </div>
+        @* Prefix match so the /campaigns/{id} rollup keeps this highlighted too. *@
+        <div class="nav-item">
+            <NavLink class="nav-link" href="campaigns" Match="NavLinkMatch.Prefix" title="Campaigns">
+                <span class="bi bi-diagram-3" aria-hidden="true"></span><span class="nav-text">Campaigns</span>
+            </NavLink>
+        </div>
         <AuthorizeView Policy="@Policies.EditCases">
             <div class="nav-item">
                 <NavLink class="nav-link" href="cases/new" title="New Case">

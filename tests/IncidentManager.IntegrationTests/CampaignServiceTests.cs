@@ -190,5 +190,57 @@ public sealed class CampaignServiceTests : IDisposable
         (await NewService().GetRollupAsync(restricted)).Should().BeNull();
     }
 
+    [Fact]
+    public async Task Index_lists_each_multi_case_campaign_once_and_ignores_unlinked_or_related_only_cases()
+    {
+        _user.RoleSet = [AppRole.Manager];
+        // Campaign 1: a—b—d (chain).
+        var a = SeedCase("Alpha", 1);
+        var b = SeedCase("Bravo", 2);
+        var d = SeedCase("Delta", 3);
+        LinkCampaign(a, b);
+        LinkCampaign(b, d);
+        // Campaign 2: e—f (pair).
+        var e = SeedCase("Echo", 4);
+        var f = SeedCase("Foxtrot", 5);
+        LinkCampaign(e, f);
+        // Noise: a lone case, and a pair joined only by a non-campaign link.
+        SeedCase("Lonely", 6);
+        var g = SeedCase("Golf", 7);
+        var h = SeedCase("Hotel", 8);
+        using (var db = NewContext())
+        {
+            db.CaseLinks.Add(new CaseLink { CaseId = g, RelatedCaseId = h, Type = CaseLinkType.RelatedTo });
+            db.SaveChanges();
+        }
+
+        var list = await NewService().ListAsync();
+
+        list.Should().HaveCount(2);
+        var byAnchor = list.ToDictionary(c => c.AnchorCaseId);
+        byAnchor.Should().ContainKey(a);  // lowest-numbered member of campaign 1 is the anchor
+        byAnchor[a].MemberCount.Should().Be(3);
+        byAnchor.Should().ContainKey(e);
+        byAnchor[e].MemberCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Index_does_not_surface_a_campaign_reachable_only_through_a_hidden_case()
+    {
+        _user.RoleSet = [AppRole.Manager];
+        // a—b—d where b is restricted; for a non-privileged analyst, a and d each lose their only edge.
+        var a = SeedCase("Alpha", 1);
+        var b = SeedCase("Bravo", 2, restricted: true);
+        var d = SeedCase("Delta", 3);
+        LinkCampaign(a, b);
+        LinkCampaign(b, d);
+
+        _user.UserId = "analyst-not-on-bravo";
+        _user.RoleSet = [AppRole.Analyst];
+
+        var list = await NewService().ListAsync();
+        list.Should().BeEmpty(); // no visible-both edges remain → no 2+ member component
+    }
+
     public void Dispose() => _connection.Dispose();
 }

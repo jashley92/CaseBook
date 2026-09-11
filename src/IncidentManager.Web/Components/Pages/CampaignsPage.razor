@@ -1,0 +1,70 @@
+@page "/campaigns"
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@using IncidentManager.Application.Campaigns
+@inject CampaignService Svc
+@inject TimeDisplay TimeDisp
+@inject ISeverityLabels SevLabels
+
+<PageTitle>Campaigns</PageTitle>
+
+<div class="campaign">
+    <PageHeader Title="Campaigns"
+                Subtitle="Linked groups of cases worked as one attack wave." />
+
+    @if (_campaigns is null)
+    {
+        <span class="visually-hidden" role="status">Loading campaigns…</span>
+        <section class="im-card">
+            <SkeletonTable Rows="3" Columns="6" TableClass="table-sm" />
+        </section>
+    }
+    else if (_campaigns.Count == 0)
+    {
+        <section class="im-card">
+            <div class="mw-empty">
+                No campaigns yet. Link two or more cases with <em>Related cases → Link a case → Same campaign as</em>
+                and the group will appear here with a combined rollup.
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="im-card">
+            <div class="im-section-head">
+                <span><span class="bi bi-diagram-3" aria-hidden="true"></span> Active campaigns</span>
+                <span class="im-badge im-b-neutral">@_campaigns.Count</span>
+            </div>
+            <table class="table table-sm table-hover align-middle im-table mb-0">
+                <thead>
+                    <tr><th>Campaign</th><th>Cases</th><th>Highest sev.</th><th>Class.</th><th>Open</th><th>Latest activity</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in _campaigns)
+                    {
+                        <tr>
+                            <td><code>@c.AnchorCaseNumber</code></td>
+                            <td>
+                                <span class="im-badge im-b-info">@c.MemberCount</span>
+                                <span class="d-block text-muted small">@string.Join(", ", c.MemberCaseNumbers)</span>
+                            </td>
+                            <td>
+                                @if (c.HighestSeverity is { } sev) { <span class="@Ui.SeverityBadge(sev)">@SevLabels.For(sev)</span> }
+                                else { <span class="text-muted">—</span> }
+                            </td>
+                            <td><span class="@Ui.ClassificationBadge(c.HighestClassification)">@Ui.Label(c.HighestClassification)</span></td>
+                            <td>@c.OpenCount</td>
+                            <td class="small">@TimeDisp.Long(c.LatestActivityUtc)</td>
+                            <td><a class="btn btn-sm btn-outline-primary py-0" href="campaigns/@c.AnchorCaseId">Open</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<CampaignSummary>? _campaigns;
+
+    protected override async Task OnInitializedAsync() => _campaigns = await Svc.ListAsync();
+}

@@ -53,6 +53,15 @@ public sealed record CampaignRollup(
     IReadOnlyList<string> AffectedStates);
 
 /// <summary>
+/// One campaign on the index (E-29): a linked group of cases summarised for the list. The anchor is the
+/// lowest-numbered visible member — a stable, meaningful entry point (the rollup is the same from any member).
+/// </summary>
+public sealed record CampaignSummary(
+    Guid AnchorCaseId, string AnchorCaseNumber, int MemberCount, int OpenCount,
+    Severity? HighestSeverity, Classification? HighestClassification,
+    DateTimeOffset? LatestActivityUtc, IReadOnlyList<string> MemberCaseNumbers);
+
+/// <summary>
 /// The campaign rollup (E-29). A campaign is not a first-class record: it is the connected component of
 /// cases joined by <see cref="CaseLinkType.PartOfCampaign"/> links. Given any member case, this walks that
 /// component and rolls the members up into one cross-case picture — shared IOCs, combined ATT&amp;CK
@@ -203,6 +212,98 @@ public sealed class CampaignService
             members.Count, openCount, highestSeverity, highestClassification,
             earliest, latest, totalAffected, states);
     }
+
+    /// <summary>
+    /// Lists every campaign visible to the caller: each connected component of two or more cases joined by
+    /// visible-both PartOfCampaign edges, summarised for the index. A group that only hangs together through a
+    /// case the caller can't see splits accordingly (an invisible case never bridges), and a case whose only
+    /// campaign link is to an invisible case simply doesn't surface. Ordered by highest severity, then most
+    /// recent activity. Read-only and need-to-know scoped.
+    /// </summary>
+    public async Task<IReadOnlyList<CampaignSummary>> ListAsync(CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+
+        var links = await db.CaseLinks.AsNoTracking()
+            .Where(l => l.Type == CaseLinkType.PartOfCampaign)
+            .Select(l => new { l.CaseId, l.RelatedCaseId })
+            .ToListAsync(ct);
+        if (links.Count == 0) return [];
+
+        var participantIds = links
+            .SelectMany(l => new[] { l.CaseId, l.RelatedCaseId })
+            .Distinct().ToList();
+
+        var cases = await db.Cases.AsNoTracking().ForUser(_user)
+            .Where(c => participantIds.Contains(c.Id))
+            .Select(c => new CampaignCaseRow(
+                c.Id, c.CaseNumber, c.Classification, c.Phase, c.Severity,
+                c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.ClosedAtUtc))
+            .ToListAsync(ct);
+        var visible = cases.ToDictionary(c => c.Id);
+        if (visible.Count == 0) return [];
+
+        // Adjacency over visible-both edges only.
+        var adjacency = new Dictionary<Guid, List<Guid>>();
+        void Edge(Guid a, Guid b) => (adjacency.TryGetValue(a, out var l) ? l : adjacency[a] = new()).Add(b);
+        foreach (var l in links)
+            if (visible.ContainsKey(l.CaseId) && visible.ContainsKey(l.RelatedCaseId))
+            { Edge(l.CaseId, l.RelatedCaseId); Edge(l.RelatedCaseId, l.CaseId); }
+
+        // Walk each connected component once; keep those with two or more members (a genuine campaign).
+        var seen = new HashSet<Guid>();
+        var summaries = new List<CampaignSummary>();
+        foreach (var startId in visible.Keys)
+        {
+            if (!seen.Add(startId)) continue;
+            var component = new List<Guid> { startId };
+            var stack = new Stack<Guid>();
+            stack.Push(startId);
+            while (stack.Count > 0)
+            {
+                var id = stack.Pop();
+                if (!adjacency.TryGetValue(id, out var neighbours)) continue;
+                foreach (var n in neighbours)
+                    if (seen.Add(n)) { component.Add(n); stack.Push(n); }
+            }
+            if (component.Count < 2) continue;
+
+            var members = component.Select(id => visible[id])
+                .OrderBy(c => c.CaseNumber, StringComparer.Ordinal).ToList();
+            var anchor = members[0];
+
+            var classified = members.Where(m => m.Classification is not null)
+                .Select(m => m.Classification!.Value).ToList();
+
+            var activity = new List<DateTimeOffset>();
+            foreach (var m in members)
+            {
+                if (m.DetectedAtUtc is { } d) activity.Add(d);
+                if (m.ContainedAtUtc is { } cn) activity.Add(cn);
+                if (m.ResolvedAtUtc is { } r) activity.Add(r);
+                if (m.ClosedAtUtc is { } cl) activity.Add(cl);
+            }
+
+            summaries.Add(new CampaignSummary(
+                anchor.Id, anchor.CaseNumber, members.Count,
+                members.Count(m => m.Phase != CasePhase.Closed),
+                members.Max(m => m.Severity),
+                classified.Count > 0 ? classified.Max() : null,
+                activity.Count > 0 ? activity.Max() : null,
+                members.Select(m => m.CaseNumber).ToList()));
+        }
+
+        return summaries
+            .OrderByDescending(s => s.HighestSeverity)
+            .ThenByDescending(s => s.LatestActivityUtc ?? DateTimeOffset.MinValue)
+            .ThenBy(s => s.AnchorCaseNumber, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private sealed record CampaignCaseRow(
+        Guid Id, string CaseNumber, Classification? Classification, CasePhase Phase, Severity Severity,
+        DateTimeOffset? DetectedAtUtc, DateTimeOffset? ContainedAtUtc, DateTimeOffset? ResolvedAtUtc,
+        DateTimeOffset? ClosedAtUtc);
 
     /// <summary>
     /// Resolves the visible-reachable campaign component containing <paramref name="anchorId"/>. Walks the
