@@ -143,8 +143,10 @@ else
     <ul class="nav nav-tabs mb-3">
         @foreach (var tab in _tabs)
         {
+            var _tabNo = Array.IndexOf(_tabs, tab) + 1;   // U-14: the digit shortcut for this tab
             <li class="nav-item">
-                <button class="nav-link @(_activeTab == tab ? "active" : "")" @onclick="() => SetTab(tab)">
+                <button class="nav-link @(_activeTab == tab ? "active" : "")" @onclick="() => SetTab(tab)"
+                        title="@($"{tab} — press {_tabNo}")">
                     @tab@{ var _tc = TabCount(tab); }@if (_tc is { } cnt) { <span class="im-badge im-b-neutral ms-1 im-bump" @key="@($"{tab}:{cnt}")">@cnt</span> }@if (TabHasNew(tab)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }
                 </button>
             </li>
@@ -3567,9 +3569,21 @@ else
                 await JS.InvokeVoidAsync("imPasteDrop.register", "timeline-dropzone", "timeline-file-paste", null);
             }
             catch (JSException) { /* progressive enhancement — the manual picker still works */ }
+
+            // U-14: case-local keyboard shortcuts (digit 1..8 = tab, n = new note).
+            try { await JS.InvokeVoidAsync("imCaseHotkeys.register", _dotNetRef); }
+            catch (JSException) { /* shortcuts are a progressive enhancement */ }
         }
 
         await ReconcileMarkdownEditors();
+
+        // U-14: once the Notes composer is mounted, place the caret in it (deferred from the 'n' shortcut).
+        if (_focusNotePending && _activeTab == "Notes" && _mdEditors.Contains(NoteAddEditorId))
+        {
+            _focusNotePending = false;
+            try { await JS.InvokeVoidAsync("markdownEditor.focus", NoteAddEditorId); }
+            catch (JSException) { /* editor not ready; harmless */ }
+        }
 
         if (_case is null || _activeTab != "Entities" || _case.Entities.Count == 0) return;
 
@@ -3629,6 +3643,30 @@ else
         await Cases.SaveGraphLayoutAsync(Id, positions);
     }
 
+    /// <summary>U-14: a case-local keyboard shortcut fired by the imCaseHotkeys dispatcher.</summary>
+    [JSInvokable]
+    public async Task OnCaseHotkey(string cmd)
+    {
+        if (_case is null || string.IsNullOrEmpty(cmd)) return;
+
+        if (cmd.StartsWith("tab:", StringComparison.Ordinal)
+            && int.TryParse(cmd.AsSpan(4), out var n) && n >= 1 && n <= _tabs.Length)
+        {
+            await SetTab(_tabs[n - 1]);
+            StateHasChanged();
+            return;
+        }
+
+        if (cmd == "note" && _canEdit)
+        {
+            _focusNotePending = true;      // OnAfterRenderAsync focuses once the composer is mounted
+            await SetTab("Notes");
+            StateHasChanged();
+        }
+    }
+
+    private bool _focusNotePending;
+
     private async Task GraphFit() => await SafeGraphCall("entityGraph.fit", GraphContainerId);
 
     private async Task GraphTogglePhysics()
@@ -3667,6 +3705,8 @@ else
             catch { /* circuit may already be gone during teardown */ }
         }
         _mdEditors.Clear();
+        try { await JS.InvokeVoidAsync("imCaseHotkeys.unregister"); }   // U-14: stop forwarding keys to this circuit
+        catch { /* circuit may already be gone during teardown */ }
         _dotNetRef?.Dispose();
     }
 

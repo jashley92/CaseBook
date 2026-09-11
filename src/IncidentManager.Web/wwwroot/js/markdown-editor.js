@@ -45,6 +45,10 @@
         setValue: function (id, val) {
             if (instances[id]) instances[id].value(val || '');
         },
+        focus: function (id) {                     // U-14: place the caret in the editor (keyboard shortcut)
+            const mde = instances[id];
+            if (mde && mde.codemirror) { try { mde.codemirror.focus(); } catch (e) { /* not ready */ } }
+        },
         destroy: function (id) {
             const mde = instances[id];
             if (!mde) return;
