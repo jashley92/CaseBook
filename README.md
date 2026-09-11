@@ -62,7 +62,7 @@ partner or a TIP. A campaign is just the connected group of linked cases — no 
 maintain — and the whole view is need-to-know scoped, so a restricted case never appears in a rollup or
 bridges two campaigns for someone who can't see it.
 
-<!-- Screenshot to add: docs/screenshots/campaign-rollup.png — the /campaigns/{id} rollup (posture + members + shared indicators). Dev data staged with a shared malicious IP across the two phishing-wave cases so the "Shared indicators" table is populated. -->
+![Campaign rollup](docs/screenshots/campaign-rollup.png)
 
 ### Reporting — Word draft &amp; locked PDF
 Generate an editable **Word** working draft and a finalized, **locked PDF** carrying an embedded
