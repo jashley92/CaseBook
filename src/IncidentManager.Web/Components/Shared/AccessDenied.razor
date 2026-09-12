@@ -1,9 +1,11 @@
-@* U-28: friendly "authenticated but no role assigned" page.
-   Windows auth lets a user sign in, but until an administrator maps one of their AD groups to a
-   CaseBook role they hold no permissions and every page's policy fails. The bare framework
-   "Not authorized" text left them with no idea who they were signed in as or what to do; this shows
-   both. Static markup only (CSP-safe). *@
+@* U-28 / UX-12: friendly access-denied page. Windows auth lets a user sign in, but a page's policy can
+   still fail — either because no AD group is mapped to a CaseBook role yet (no roles at all), or because
+   the user holds roles that don't grant the specific permission the page needs. The bare framework text
+   told them neither who they were nor what they had; this shows the signed-in identity, the roles they
+   hold, and the permissions those grant, so they (and an admin they ask) can see exactly why a control is
+   missing. Static markup only (CSP-safe). *@
 @using IncidentManager.Application.Abstractions
+@using IncidentManager.Domain.Enums
 @inject ICurrentUser CurrentUser
 
 <div class="access-denied">
@@ -11,7 +13,15 @@
         <div class="card-body empty-state">
             <span class="bi bi-shield-lock empty-state-icon" aria-hidden="true"></span>
 
-            @if (CurrentUser.IsAuthenticated)
+            @if (!CurrentUser.IsAuthenticated)
+            {
+                <div class="empty-state-title">Not signed in</div>
+                <div class="empty-state-msg">
+                    Your session isn't authenticated. Close and reopen the browser, or contact a CaseBook
+                    administrator if this persists.
+                </div>
+            }
+            else if (CurrentUser.Roles.Count == 0)
             {
                 <div class="empty-state-title">No access assigned yet</div>
                 <div class="empty-state-msg">
@@ -27,10 +37,44 @@
             }
             else
             {
-                <div class="empty-state-title">Not signed in</div>
+                <div class="empty-state-title">You don't have access to that</div>
                 <div class="empty-state-msg">
-                    Your session isn't authenticated. Close and reopen the browser, or contact a CaseBook
-                    administrator if this persists.
+                    You're signed in as <strong>@CurrentUser.DisplayName</strong>@_identityHint. Your account
+                    has a role in CaseBook, but that page or action needs a permission your current
+                    role@(CurrentUser.Roles.Count == 1 ? "" : "s") don't grant.
+                </div>
+
+                <div class="access-denied-grant">
+                    <div class="access-denied-grant-row">
+                        <span class="access-denied-grant-label">Your role@(CurrentUser.Roles.Count == 1 ? "" : "s")</span>
+                        <span class="access-denied-grant-chips">
+                            @foreach (var r in CurrentUser.Roles.OrderBy(r => (int)r))
+                            {
+                                <span class="im-badge im-b-info">@RoleLabel(r)</span>
+                            }
+                        </span>
+                    </div>
+                    <div class="access-denied-grant-row">
+                        <span class="access-denied-grant-label">Which grant</span>
+                        <span class="access-denied-grant-chips">
+                            @if (CurrentUser.Permissions.Count == 0)
+                            {
+                                <span class="text-muted small">no permissions</span>
+                            }
+                            else
+                            {
+                                @foreach (var p in CurrentUser.Permissions.OrderBy(p => (int)p))
+                                {
+                                    <span class="im-badge im-b-neutral">@PermissionLabel(p)</span>
+                                }
+                            }
+                        </span>
+                    </div>
+                </div>
+
+                <div class="empty-state-msg text-muted">
+                    If you need this, ask a CaseBook administrator to grant your team the required role,
+                    then sign out and back in for it to take effect.
                 </div>
             }
         </div>
@@ -55,4 +99,25 @@
             ? default
             : (MarkupString)$" <span class=\"text-muted\">({System.Net.WebUtility.HtmlEncode(hint)})</span>";
     }
+
+    private static string RoleLabel(AppRole role) => role switch
+    {
+        AppRole.IncidentCommander => "Incident Commander",
+        AppRole.LegalPrivacy => "Legal / Privacy",
+        AppRole.SysAdmin => "System Administrator",
+        _ => role.ToString()
+    };
+
+    private static string PermissionLabel(Permission p) => p switch
+    {
+        Permission.ViewCases => "View cases",
+        Permission.ViewAllCases => "View all cases",
+        Permission.EditCases => "Edit cases",
+        Permission.ChangeClassification => "Change classification",
+        Permission.ApproveReports => "Approve reports",
+        Permission.ViewRestricted => "View restricted",
+        Permission.ManageLegal => "Manage Legal / Privacy",
+        Permission.Administer => "Administer",
+        _ => p.ToString()
+    };
 }

@@ -826,6 +826,13 @@ h1:focus {
 .access-denied-card { width: 100%; max-width: 34rem; }
 .access-denied-card .empty-state { padding: 2rem 1.5rem; gap: 0.5rem; }
 
+/* UX-12: the signed-in user's roles + granted permissions on the access-denied page. */
+.access-denied-grant { width: 100%; margin: 0.75rem 0; display: flex; flex-direction: column; gap: 0.6rem;
+    padding: 0.85rem 1rem; border: 1px solid var(--im-border); border-radius: var(--im-radius); background: var(--im-surface-2, var(--im-surface)); text-align: left; }
+.access-denied-grant-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
+.access-denied-grant-label { flex: 0 0 6.5rem; font-size: var(--im-text-sm); font-weight: 600; color: var(--im-text-muted); }
+.access-denied-grant-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; flex: 1 1 12rem; }
+
 /* --- Blazor circuit-disconnect / reconnect modal (U-10) — theme-aware, CSP-safe --- */
 /* Hidden until the framework toggles a state class onto #components-reconnect-modal. */
 #components-reconnect-modal { display: none; }
