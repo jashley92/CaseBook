@@ -12,7 +12,6 @@
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject ISeverityLabels SevLabels
 @inject ToastService Toasts
-@inject IncidentManager.Application.Admin.CaseTemplateService Templates
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
 @inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
@@ -257,165 +256,10 @@ else
     }
     else if (_activeTab == "Tasks")
     {
-        <AuthorizeView Policy="@Policies.EditCases">
-            @if (_applyTemplates is { Count: > 0 })
-            {
-                <div class="d-flex justify-content-end mb-2">
-                    @if (!_applyingTemplate)
-                    {
-                        <button class="btn btn-sm btn-outline-primary" @onclick="BeginApplyTemplate">
-                            <span class="bi bi-clipboard-check me-1"></span>Apply playbook
-                        </button>
-                    }
-                </div>
-                @if (_applyingTemplate)
-                {
-                    <div class="card mb-3 border-primary">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <span><span class="bi bi-clipboard-check me-1"></span>Apply a playbook</span>
-                            <button class="btn-close" aria-label="Cancel" @onclick="CancelApplyTemplate"></button>
-                        </div>
-                        <div class="card-body">
-                            <label class="form-label small mb-0">Playbook</label>
-                            <select class="form-select form-select-sm mb-3" style="max-width:28rem" @onchange="OnApplyTemplateChanged"
-                                    value="@(_applyTemplate?.Id.ToString() ?? "")">
-                                <option value="">— choose a template —</option>
-                                @foreach (var t in _applyTemplates)
-                                {
-                                    <option value="@t.Id">@t.Name@(t.Steps.Count > 0 ? $" ({t.Steps.Count} steps)" : "")</option>
-                                }
-                            </select>
-
-                            @if (_applyTemplate is not null)
-                            {
-                                @if (_applyTemplate.Steps.Count == 0)
-                                {
-                                    <p class="text-muted small">This template has no steps to add.</p>
-                                }
-                                else
-                                {
-                                    <p class="small text-muted mb-2">Uncheck any step you don't need. Owners default to a step's own owner, then the case owner; due dates are computed from now.</p>
-                                    <div class="border rounded p-2 mb-2">
-                                        @foreach (var s in _applyTemplate.Steps)
-                                        {
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" id="apply-step-@s.Id"
-                                                       checked="@_applySelected.Contains(s.Id)"
-                                                       @onchange="e => ToggleApplyStep(s.Id, (bool)(e.Value ?? false))" />
-                                                <label class="form-check-label" for="apply-step-@s.Id">
-                                                    @s.Title
-                                                    @if (s.DueOffsetHours is { } h) { <span class="im-badge im-b-warn ms-1">+@FormatOffset(h)</span> }
-                                                    @if (!string.IsNullOrWhiteSpace(s.OwnerHint)) { <span class="im-badge im-b-neutral ms-1">@s.OwnerHint</span> }
-                                                </label>
-                                            </div>
-                                        }
-                                    </div>
-
-                                    @* U-45: no case owner yet — hint-less steps would land Unassigned. Offer a default owner. *@
-                                    @if (string.IsNullOrWhiteSpace(_case.IncidentCommander))
-                                    {
-                                        <div class="alert alert-warning py-2 px-2 small mb-0">
-                                            <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
-                                            This case has no owner (Incident Commander) yet, so steps without their own owner will be created
-                                            <strong>Unassigned</strong>. Choose a default owner for them, or leave blank to create them unassigned.
-                                            <div class="mt-2" style="max-width:20rem">
-                                                <select class="form-select form-select-sm" @bind="_applyDefaultOwner">
-                                                    <option value="">— Leave unassigned —</option>
-                                                    @foreach (var u in Users.All())
-                                                    {
-                                                        <option value="@u.UserId">@u.DisplayName</option>
-                                                    }
-                                                </select>
-                                            </div>
-                                        </div>
-                                    }
-                                }
-                            }
-                        </div>
-                        <div class="card-footer d-flex gap-2">
-                            <button class="btn btn-sm btn-primary" @onclick="ApplyTemplate"
-                                    disabled="@(_applyTemplate is null || _applySelected.Count == 0)">
-                                Add @_applySelected.Count action item(s)
-                            </button>
-                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelApplyTemplate">Cancel</button>
-                        </div>
-                    </div>
-                }
-            }
-            <div class="card mb-3">
-                <div class="card-body row g-2 align-items-end">
-                    <div class="col-md-4">
-                        <label class="form-label small mb-0">Follow-up</label>
-                        <input class="form-control form-control-sm" @bind="_taskTitle" @bind:event="oninput" />
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small mb-0">Owner</label>
-                        <select class="form-select form-select-sm" @bind="_taskOwner">
-                            <option value="">— Unassigned —</option>
-                            @foreach (var u in Users.All())
-                            {
-                                <option value="@u.UserId">@u.DisplayName</option>
-                            }
-                            <option value="@ExternalOwnerSentinel">External / other…</option>
-                        </select>
-                        @if (_taskOwner == ExternalOwnerSentinel)
-                        {
-                            @* U-45: an external owner (e.g. a vendor contact) not in the directory. *@
-                            <input class="form-control form-control-sm mt-1" @bind="_taskOwnerExternal" @bind:event="oninput"
-                                   placeholder="External owner name" />
-                        }
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small mb-0">Due date</label>
-                        <input type="date" class="form-control form-control-sm" @bind="_taskDueDate" />
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small mb-0">Time (@TimeDisp.Label)</label>
-                        <input type="time" class="form-control form-control-sm" @bind="_taskDueTime"
-                               title="Entered in @TimeDisp.Label. Leave blank for end of day." />
-                    </div>
-                    <div class="col-md-2">
-                        <button class="btn btn-sm btn-primary w-100" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddTask" disabled="@string.IsNullOrWhiteSpace(_taskTitle)">Add</button>
-                    </div>
-                </div>
-            </div>
-        </AuthorizeView>
-
-        @if (_case.ActionItems.Count == 0)
-        {
-            <p class="text-muted">No after-action items.</p>
-        }
-        else
-        {
-            <table class="table table-sm align-middle">
-                <thead><tr><th>Task</th><th>Owner</th><th>Due</th><th>Status</th><th></th></tr></thead>
-                <tbody>
-                    @foreach (var t in _case.ActionItems.OrderBy(x => x.Status).ThenBy(x => x.DueAtUtc))
-                    {
-                        <tr class="im-enter @(t.IsOverdue(Clock.UtcNow) ? "table-danger" : "") @FlashClass(t.Id)" style="@FlashStyle(t.Id)" @key="t.Id">
-                            <td>@t.Title</td>
-                            <td>
-                                @if (string.IsNullOrWhiteSpace(t.Owner))
-                                {
-                                    <span class="im-badge im-b-warn" title="No owner assigned">Unassigned</span>
-                                }
-                                else { @Users.DisplayFor(t.Owner) }
-                            </td>
-                            <td>@(t.DueAtUtc is { } due ? TimeDisp.Short(due) : "—")</td>
-                            <td>@t.Status</td>
-                            <td>
-                                <AuthorizeView Policy="@Policies.EditCases">
-                                    @if (t.Status != ActionItemStatus.Done)
-                                    {
-                                        <button class="btn btn-sm btn-outline-success" @onclick="() => MarkTaskDone(t.Id)">Mark done</button>
-                                    }
-                                </AuthorizeView>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
+        @* UX-13: extracted to CaseTasksTab. Self-loads its playbooks and builds due-dates; the parent keeps
+           the flash and hotkey dispatch (@ref) and reloads the case after a write. *@
+        <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
+                      OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" />
     }
     else if (_activeTab == "Report")
     {
@@ -584,6 +428,9 @@ else
     private CaseNotesTab? _notesTab;
     private bool _notesAutofocus;
 
+    // Tasks: the tab is extracted to CaseTasksTab (UX-13), which owns the add-task + apply-playbook flow.
+    private CaseTasksTab? _tasksTab;
+
     // Retention guard message for legal-hold / archive actions (not notes).
     private string? _retentionMsg;
 
@@ -600,13 +447,6 @@ else
 
     // UX-13: the extracted Entities tab raises this to use the parent-owned confirm dialog.
     private void OnChildRequestConfirm((string Message, Func<Task> OnConfirm) req) => AskConfirm(req.Message, req.OnConfirm);
-
-    private string _taskTitle = "";
-    private string? _taskOwner;
-    private string? _taskOwnerExternal;              // U-45: free-text owner when "External / other…" is picked
-    private const string ExternalOwnerSentinel = "__external__";
-    private DateTime? _taskDueDate;
-    private TimeOnly? _taskDueTime;
 
     // Evidence: the tab is extracted to CaseEvidenceTab (UX-13). The screenshot lightbox (OpenShot) and the
     // live-collab flash it renders stay here, shared with the Timeline; the child manages its own upload/custody state.
@@ -790,67 +630,8 @@ else
         var seen = _flash.Where(kv => string.Equals(kv.Value.Tab, tab, StringComparison.OrdinalIgnoreCase))
                          .Select(kv => kv.Key).ToList();
         if (seen.Count > 0) _ = ClearFlashesAfter(seen);
-        // Overview, Audit, Report, and Entities self-load in their extracted tab components (UX-13).
-        if (tab == "Tasks") _applyTemplates ??= await Templates.ListActiveAsync();
+        // Overview, Audit, Report, Entities, and Tasks self-load in their extracted tab components (UX-13).
     }
-
-    // --- Apply playbook (E-06) ---
-    private List<IncidentManager.Application.Admin.TemplateView>? _applyTemplates;
-    private bool _applyingTemplate;
-    private IncidentManager.Application.Admin.TemplateView? _applyTemplate;
-    private readonly HashSet<Guid> _applySelected = [];
-    // U-45: default owner for hint-less steps when the case has no Incident Commander yet.
-    private string? _applyDefaultOwner;
-
-    private void BeginApplyTemplate()
-    {
-        _applyingTemplate = true;
-        _applyTemplate = null;
-        _applySelected.Clear();
-        _applyDefaultOwner = null;
-    }
-
-    private void CancelApplyTemplate()
-    {
-        _applyingTemplate = false;
-        _applyTemplate = null;
-        _applySelected.Clear();
-        _applyDefaultOwner = null;
-    }
-
-    private void OnApplyTemplateChanged(ChangeEventArgs e)
-    {
-        _applyTemplate = Guid.TryParse(e.Value?.ToString(), out var id)
-            ? _applyTemplates?.FirstOrDefault(t => t.Id == id) : null;
-        _applySelected.Clear();
-        if (_applyTemplate is not null)
-            foreach (var s in _applyTemplate.Steps) _applySelected.Add(s.Id); // all checked by default
-    }
-
-    private void ToggleApplyStep(Guid stepId, bool on)
-    {
-        if (on) _applySelected.Add(stepId); else _applySelected.Remove(stepId);
-    }
-
-    private async Task ApplyTemplate()
-    {
-        if (_applyTemplate is null || _applySelected.Count == 0) return;
-        try
-        {
-            var n = await Cases.ApplyTemplateAsync(Id, _applyTemplate.Id, _applySelected.ToList(), _applyDefaultOwner);
-            Toasts.Success($"Added {n} action item(s) from '{_applyTemplate.Name}'");
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-        {
-            Toasts.Error(ex.Message);
-            return;
-        }
-        CancelApplyTemplate();
-        await Reload();
-    }
-
-    private static string FormatOffset(int hours) =>
-        hours % 24 == 0 ? $"{hours / 24}d" : $"{hours}h";
 
     private async Task OpenModal(string name)
     {
@@ -1203,44 +984,6 @@ else
         }
     }
 
-    private async Task AddTask()
-    {
-        if (string.IsNullOrWhiteSpace(_taskTitle)) return;
-        // The picker stores a directory user id, "" for unassigned, or the external sentinel (U-45) →
-        // then the owner is the free-text name. Blank normalises to null (Unassigned).
-        var owner = _taskOwner switch
-        {
-            ExternalOwnerSentinel => string.IsNullOrWhiteSpace(_taskOwnerExternal) ? null : _taskOwnerExternal.Trim(),
-            null or "" => null,
-            var u => u
-        };
-        await Cases.AddActionItemAsync(Id, _taskTitle, owner, ResolveDueUtc());
-        _taskTitle = ""; _taskOwner = null; _taskOwnerExternal = null; _taskDueDate = null; _taskDueTime = null;
-        await Reload();
-        Toasts.Success("Task added");
-    }
-
-    // A due deadline is entered in the viewer's active display zone (U-29) — the same zone every on-screen stamp
-    // is shown in — so "what you pick is what you see" round-trips through the UTC/Local toggle without shifting a
-    // day. Time is optional: a bare date means "by end of that day" (23:59 local). Stored as a UTC instant like
-    // every other timestamp; the Tasks tab / My Work render it back through TimeDisp with its zone label, and the
-    // forensic report shows it in UTC. (Fixes F-20: the old code stamped a bare date as UTC-midnight, which the
-    // local-zone formatter then rendered a calendar day early.)
-    private DateTimeOffset? ResolveDueUtc()
-    {
-        if (_taskDueDate is not { } d) return null;
-        var wall = DateTime.SpecifyKind(d.Date + (_taskDueTime ?? new TimeOnly(23, 59)).ToTimeSpan(), DateTimeKind.Unspecified);
-        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(wall, TimeDisp.Zone), TimeSpan.Zero); }
-        catch { return new DateTimeOffset(DateTime.SpecifyKind(wall, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
-    }
-
-    private async Task MarkTaskDone(Guid actionItemId)
-    {
-        await Cases.SetActionItemStatusAsync(Id, actionItemId, ActionItemStatus.Done);
-        await Reload();
-        Toasts.Success("Task completed");
-    }
-
     // --- Detection-source deep-links (used by the Overview header) ---
 
     /// <summary>Display label for the detection source (configurable); defaults to "SIEM".</summary>
@@ -1303,7 +1046,7 @@ else
                     if (_timelineTab is not null) await _timelineTab.SubmitAsync();
                     break;
                 case "Entities": if (_entitiesTab is not null) await _entitiesTab.SubmitAsync(); break;
-                case "Tasks": await AddTask(); break;
+                case "Tasks": if (_tasksTab is not null) await _tasksTab.SubmitAsync(); break;
                 case "Overview": if (_overviewTab is not null) await _overviewTab.SubmitAsync(); break;
             }
             return;
