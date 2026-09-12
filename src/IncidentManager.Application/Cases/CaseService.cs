@@ -87,6 +87,9 @@ public sealed class CaseService
         if (filter.Phase is { } ph) q = q.Where(c => c.Phase == ph);
         if (filter.MinSeverity is { } sev) q = q.Where(c => c.Severity >= sev);
         if (filter.Origin is { } origin) q = q.Where(c => c.Origin == origin);
+        // UX-10: SOC/IC roll-up of Legal obligations across the queue (Legal doesn't use the app).
+        if (filter.ReferredOnly) q = q.Where(c => c.LegalReferral.IsReferred);
+        if (filter.OnHoldOnly) q = q.Where(c => c.LegalHold);
 
         // Overdue and opened-month are date comparisons that don't translate on SQLite, so resolve
         // the matching case ids in memory (small, on-prem data set) and narrow the query by id.
@@ -173,7 +176,7 @@ public sealed class CaseService
             .Take(size)
             .Select(c => new CaseListItem(
                 c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, c.Severity, c.Origin,
-                c.IsRestricted, c.LegalReferral.IsReferred, c.CreatedAtUtc, c.IncidentCommander,
+                c.IsRestricted, c.LegalReferral.IsReferred, c.LegalHold, c.CreatedAtUtc, c.IncidentCommander,
                 c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc))
             .ToListAsync(ct);
 

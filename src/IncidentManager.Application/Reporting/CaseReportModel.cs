@@ -50,6 +50,9 @@ public sealed class CaseReportModel
 
     public bool LegalReferred { get; init; }
     public string? LegalNote { get; init; }
+    /// <summary>UX-10: a legal hold is in effect — case data must be preserved (no deletion). Surfaced in
+    /// the report because Legal reads the report, not the app.</summary>
+    public bool LegalHold { get; init; }
 
     public DateTimeOffset? DetectedAtUtc { get; init; }
     public DateTimeOffset? ContainedAtUtc { get; init; }

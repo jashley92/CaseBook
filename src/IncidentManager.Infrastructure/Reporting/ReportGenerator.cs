@@ -129,6 +129,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (m.DetectionCaseId is not null) body.AppendChild(P($"Detection case: {m.DetectionCaseId}", size: 20));
         if (m.DataTypesInvolved is not null) body.AppendChild(P($"Data types involved: {m.DataTypesInvolved}", size: 20));
         if (m.LegalReferred) body.AppendChild(P($"Legal/Privacy referral recorded. {m.LegalNote}", size: 20));
+        if (m.LegalHold) body.AppendChild(P("Legal hold in effect — case data must be preserved (do not delete).", size: 20));
     }
 
     private static void AppendBusinessImpact(Body body, CaseReportModel m)
@@ -141,6 +142,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (!string.IsNullOrWhiteSpace(m.ImpactedAssets)) { body.AppendChild(P($"Impacted assets: {m.ImpactedAssets}")); any = true; }
         if (m.DataTypesInvolved is not null) { body.AppendChild(P($"Data types involved: {m.DataTypesInvolved}")); any = true; }
         if (m.LegalReferred) { body.AppendChild(P($"Legal/Privacy referral recorded. {m.LegalNote}")); any = true; }
+        if (m.LegalHold) { body.AppendChild(P("Legal hold in effect — case data must be preserved (do not delete).")); any = true; }
         if (!any) body.AppendChild(P("(no impact assessment recorded)"));
     }
 
@@ -153,6 +155,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         Stamp("Resolved", m.ResolvedAtUtc);
         Stamp("Closed", m.ClosedAtUtc);
         if (m.LegalReferred) body.AppendChild(P($"Referred to Legal/Privacy. {m.LegalNote}"));
+        if (m.LegalHold) body.AppendChild(P("Legal hold in effect — case data must be preserved (do not delete)."));
     }
 
     private static void AppendAppendix(Body body, CaseReportModel m)

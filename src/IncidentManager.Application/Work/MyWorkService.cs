@@ -58,7 +58,7 @@ public sealed class MyWorkService
             .ThenByDescending(c => c.CreatedAtUtc)
             .Select(c => new CaseListItem(
                 c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, c.Severity, c.Origin,
-                c.IsRestricted, c.LegalReferral.IsReferred, c.CreatedAtUtc, c.IncidentCommander,
+                c.IsRestricted, c.LegalReferral.IsReferred, c.LegalHold, c.CreatedAtUtc, c.IncidentCommander,
                 c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc))
             .ToListAsync(ct);
 

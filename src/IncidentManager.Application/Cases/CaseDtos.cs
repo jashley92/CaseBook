@@ -37,6 +37,7 @@ public sealed record CaseListItem(
     CaseOrigin Origin,
     bool IsRestricted,
     bool LegalReferred,
+    bool LegalHold,
     DateTimeOffset CreatedAtUtc,
     string? IncidentCommander,
     // Lifecycle stamps carried so the list can compute the SLA status per row (E-16) without a second query.
@@ -65,6 +66,12 @@ public sealed class CaseFilter
 
     /// <summary>Only cases with no active (IC/Analyst) assignee — the unassigned queue.</summary>
     public bool UnassignedOnly { get; set; }
+
+    /// <summary>Only cases referred to Legal / Privacy (UX-10) — the SOC/IC roll-up of referral obligations.</summary>
+    public bool ReferredOnly { get; set; }
+
+    /// <summary>Only cases under a legal hold (UX-10) — the SOC/IC roll-up of preservation obligations.</summary>
+    public bool OnHoldOnly { get; set; }
 
     /// <summary>Only cases opened (created) in this calendar month. Both must be set to apply.</summary>
     public int? OpenedYear { get; set; }

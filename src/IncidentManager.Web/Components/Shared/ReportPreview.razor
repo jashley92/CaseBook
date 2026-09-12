@@ -55,6 +55,7 @@ else
                                 @if (!string.IsNullOrWhiteSpace(Model.ImpactedAssets)) { <li>Impacted assets: @Model.ImpactedAssets</li> }
                                 @if (Model.DataTypesInvolved is not null) { <li>Data types involved: @Model.DataTypesInvolved</li> }
                                 @if (Model.LegalReferred) { <li>Legal/Privacy referral recorded. @Model.LegalNote</li> }
+                                @if (Model.LegalHold) { <li>Legal hold in effect — case data must be preserved (do not delete).</li> }
                             </ul>
                         }
                         break;
@@ -157,6 +158,7 @@ else
                             @if (Model.ResolvedAtUtc is { } r) { <li>Resolved: @r.ToString("u")</li> }
                             @if (Model.ClosedAtUtc is { } cl) { <li>Closed: @cl.ToString("u")</li> }
                             @if (Model.LegalReferred) { <li>Referred to Legal/Privacy. @Model.LegalNote</li> }
+                            @if (Model.LegalHold) { <li>Legal hold in effect — case data must be preserved (do not delete).</li> }
                         </ul>
                         break;
 
@@ -193,7 +195,8 @@ else
         || !string.IsNullOrWhiteSpace(Model.AffectedStates)
         || !string.IsNullOrWhiteSpace(Model.ImpactedAssets)
         || Model.DataTypesInvolved is not null
-        || Model.LegalReferred;
+        || Model.LegalReferred
+        || Model.LegalHold;
 
     private static string Muted(string? text) => string.IsNullOrWhiteSpace(text) ? "text-muted fst-italic" : "";
     private static string Prose(string? text) => string.IsNullOrWhiteSpace(text) ? "(not provided)" : text!;

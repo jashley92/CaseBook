@@ -316,6 +316,7 @@ public sealed class ReportService
             AffectedStates = c.AffectedStates,
             LegalReferred = c.LegalReferral.IsReferred,
             LegalNote = c.LegalReferral.RegulatoryRelevanceNote,
+            LegalHold = c.LegalHold,
             DetectedAtUtc = c.DetectedAtUtc,
             ContainedAtUtc = c.ContainedAtUtc,
             ResolvedAtUtc = c.ResolvedAtUtc,

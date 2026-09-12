@@ -108,6 +108,19 @@
             <label class="form-check-label small" for="sla" title="Open cases approaching or past their response-time target">SLA at risk</label>
         </div>
     </div>
+    @* UX-10: SOC/IC roll-up of Legal obligations across the queue — Legal reads the reports, not the app. *@
+    <div class="col-auto">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="referred" @bind="_referredOnly" @bind:after="ApplyFilters" />
+            <label class="form-check-label small" for="referred" title="Cases referred to Legal / Privacy">Referred to Legal</label>
+        </div>
+    </div>
+    <div class="col-auto">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="hold" @bind="_onHoldOnly" @bind:after="ApplyFilters" />
+            <label class="form-check-label small" for="hold" title="Cases under a legal hold (preserve — do not delete)">On legal hold</label>
+        </div>
+    </div>
     @if (_hasActiveFilter)
     {
         <div class="col-auto">
@@ -209,7 +222,8 @@ else
                     </td>
                     <td>
                         <a href="cases/@c.Id" class="link-body-emphasis text-decoration-none fw-medium case-title">@c.Title</a>
-                        @if (c.LegalReferred) { <span class="im-badge im-b-neutral ms-1">Legal</span> }
+                        @if (c.LegalReferred) { <span class="im-badge im-b-neutral ms-1" title="Referred to Legal / Privacy">Legal</span> }
+                        @if (c.LegalHold) { <span class="im-badge im-b-danger ms-1" title="Under a legal hold — preserve, do not delete">Hold</span> }
                     </td>
                     <td><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
                     <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
@@ -260,6 +274,8 @@ else
     [SupplyParameterFromQuery(Name = "closed")] public bool QClosed { get; set; }
     [SupplyParameterFromQuery(Name = "overdue")] public bool QOverdue { get; set; }
     [SupplyParameterFromQuery(Name = "sla")] public bool QSla { get; set; }
+    [SupplyParameterFromQuery(Name = "referred")] public bool QReferred { get; set; }
+    [SupplyParameterFromQuery(Name = "hold")] public bool QHold { get; set; }
     [SupplyParameterFromQuery(Name = "opened")] public string? QOpened { get; set; }
     [SupplyParameterFromQuery(Name = "scope")] public string? QScope { get; set; }
     [SupplyParameterFromQuery(Name = "assignee")] public string? QAssignee { get; set; }
@@ -278,6 +294,8 @@ else
     private bool _includeClosed;
     private bool _overdueOnly;
     private bool _slaAtRiskOnly;
+    private bool _referredOnly;
+    private bool _onHoldOnly;
     private string? _openedLabel; // "MMM yyyy" when an opened-month drill-in is active
     private string? _assignee;    // assignee drill-in from team workload: a user id, or "none" for unassigned
     private string? _assigneeName;
@@ -288,7 +306,7 @@ else
     private bool _hasActiveFilter => !(string.IsNullOrEmpty(_classification) && string.IsNullOrEmpty(_phase)
         && string.IsNullOrEmpty(_minSeverity) && string.IsNullOrEmpty(_origin)
         && string.IsNullOrEmpty(_search) && !_includeClosed && !_overdueOnly && !_slaAtRiskOnly
-        && _openedLabel is null && _assignee is null);
+        && !_referredOnly && !_onHoldOnly && _openedLabel is null && _assignee is null);
 
     // The caseload-summary tiles are a stable overview, so load them once (not on every filter change).
     protected override async Task OnInitializedAsync() => _dash = await Dashboard.GetAsync();
@@ -311,6 +329,8 @@ else
         _includeClosed = QClosed;
         _overdueOnly = QOverdue;
         _slaAtRiskOnly = QSla;
+        _referredOnly = QReferred;
+        _onHoldOnly = QHold;
         _assignee = string.IsNullOrWhiteSpace(QAssignee) ? null : QAssignee;
         _assigneeName = QAssigneeName;
 
@@ -344,6 +364,8 @@ else
             ["closed"] = _includeClosed ? "true" : null,
             ["overdue"] = _overdueOnly ? "true" : null,
             ["sla"] = _slaAtRiskOnly ? "true" : null,
+            ["referred"] = _referredOnly ? "true" : null,
+            ["hold"] = _onHoldOnly ? "true" : null,
             ["assignee"] = _assignee,
             ["assigneeName"] = _assignee is null or "none" ? null : Blank(_assigneeName ?? ""),
         });
@@ -382,6 +404,8 @@ else
         _filter.IncludeClosed = _includeClosed;
         _filter.OverdueOnly = _overdueOnly;
         _filter.SlaAtRiskOnly = _slaAtRiskOnly;
+        _filter.ReferredOnly = _referredOnly;
+        _filter.OnHoldOnly = _onHoldOnly;
         _filter.UnassignedOnly = _assignee == "none";
         _filter.AssigneeUserId = _assignee == "none" ? null : _assignee;
         _targets = SlaProvider.Current;
