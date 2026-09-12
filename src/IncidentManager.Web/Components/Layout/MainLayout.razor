@@ -3,6 +3,9 @@
 @inject IJSRuntime JS
 @implements IDisposable
 
+@* UX-02: first focusable element on the page, so a keyboard/AT user can skip the sidebar. *@
+<a class="im-skip-link" href="#main-content">Skip to content</a>
+
 <div class="page">
     <div class="sidebar">
         <NavMenu />
@@ -39,7 +42,7 @@
         @* U-29: @key bumps on every time-mode change, forcing Blazor to rebuild the routed page subtree
            so every timestamp re-renders in the new zone (a layout StateHasChanged alone does not reach
            into @Body, and CascadingValue only reaches components that declare the parameter). *@
-        <article class="content px-4" @key="_timeVersion">
+        <article id="main-content" tabindex="-1" class="content px-4" @key="_timeVersion">
             @Body
         </article>
     </main>

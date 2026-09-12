@@ -111,6 +111,12 @@ h1:focus {
     --im-accent-bg: rgba(224, 175, 18, .12);
     --im-focus: rgba(224, 175, 18, 0.45);
 
+    /* Blocking-modal scrim (UX-04): one token behind every dismissible modal — the Bootstrap
+       .modal.d-block dialogs and the hand-built overlays (attack matrix, tactic picker, idle lock,
+       reconnect). Deliberately theme-neutral so the scrim reads the same in light and dark; the
+       lighter command-palette overlay is intentionally NOT this. */
+    --im-scrim: rgba(8, 15, 30, 0.55);
+
     /* Status roles — [fg / soft bg] shared by stat tiles, callouts and chips. */
     --im-danger: #dc4a34; --im-danger-bg: rgba(220, 74, 52, .10);
     --im-warn:   #b9791b; --im-warn-bg:   rgba(217, 152, 43, .12);
@@ -172,6 +178,39 @@ h1:focus {
 
     --bs-link-color: var(--im-accent-text);
     --bs-link-hover-color: #ffd94f;
+}
+
+/* Skip-to-content link (UX-02): off-screen until it receives keyboard focus, then it slides into
+   the top-left so a keyboard/AT user can jump past the sidebar straight to the page content. */
+.im-skip-link {
+    position: fixed;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 3000;
+    padding: 0.5rem 0.9rem;
+    background: var(--im-surface);
+    color: var(--im-text);
+    border: 1px solid var(--im-border-strong);
+    border-radius: 0.5rem;
+    box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.18);
+    transform: translateY(-150%);
+    transition: transform 120ms ease-out;
+}
+.im-skip-link:not(:focus) {
+    /* keep it in the tab order but visually removed until focused */
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    overflow: hidden;
+    white-space: nowrap;
+}
+.im-skip-link:focus,
+.im-skip-link:focus-visible {
+    transform: translateY(0);
+    outline: none;
+    box-shadow: 0 0 0 0.2rem var(--im-focus), 0 0.4rem 1rem rgba(0, 0, 0, 0.18);
+}
+@media (prefers-reduced-motion: reduce) {
+    .im-skip-link { transition: none; }
 }
 
 /* Soft tinted status badges — one base + semantic modifiers, token-driven. */
@@ -283,7 +322,7 @@ h1:focus {
 
 /* Visual ATT&CK matrix picker (AttackMatrixPicker) — tactics as columns, techniques beneath, subs
    collapsible; near-fullscreen over the workspace. Token-driven + per-column tactic accent (--tac). */
-.atkm-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 1085; }
+.atkm-backdrop { position: fixed; inset: 0; background: var(--im-scrim); z-index: 1085; }
 .atkm-panel {
     position: fixed; inset: 3vh 2vw; z-index: 1086;
     display: flex; flex-direction: column;
@@ -772,7 +811,7 @@ h1:focus {
     align-items: center;
     justify-content: center;
     padding: 1rem;
-    background: rgba(8, 15, 30, 0.55);
+    background: var(--im-scrim);
     /* No backdrop-filter here: this overlay stays up indefinitely while the server is offline, and the
        reconnect spinner animates forever on top of it. A backdrop-filter re-blurs the whole viewport on
        every spinner frame, pegging a CPU core the entire time we're disconnected. The opaque scrim alone
@@ -826,7 +865,7 @@ h1:focus {
     align-items: center;
     justify-content: center;
     padding: 1rem;
-    background: rgba(8, 15, 30, 0.55);
+    background: var(--im-scrim);
     backdrop-filter: blur(2px);
 }
 .idle-card {
@@ -1134,11 +1173,11 @@ h1:focus {
     background: color-mix(in srgb, var(--tac, #6c757d) 12%, transparent);
     white-space: nowrap;
 }
-.tactic-modal-backdrop {
+.tactic-modal-backdrop { /* scrim via --im-scrim (UX-04) */
     position: fixed;
     inset: 0;
     z-index: 1080;
-    background: rgba(8, 15, 30, 0.5);
+    background: var(--im-scrim);
 }
 .tactic-modal {
     position: fixed;

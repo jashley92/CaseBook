@@ -87,7 +87,7 @@ else
             @if (_canAnyAction)
             {
                 <div class="dropdown">
-                    <button class="btn btn-sm btn-outline-primary dropdown-toggle" @onclick="() => _actionsOpen = !_actionsOpen">Actions</button>
+                    <button id="case-actions-btn" class="btn btn-sm btn-outline-primary dropdown-toggle" @onclick="() => _actionsOpen = !_actionsOpen">Actions</button>
                     <div class="dropdown-menu dropdown-menu-end @(_actionsOpen ? "show" : "")">
                         @if (_canReclassify) { <button class="dropdown-item" @onclick='() => OpenModal("reclass")'>@(_case.Classification is null ? "Promote to ladder…" : "Reclassify…")</button> }
                         @if (_canEdit)
@@ -155,11 +155,13 @@ else
 
     @if (_confirm is not null)
     {
-        <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,.5)" @onclick="CancelConfirm">
+        <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true"
+             aria-labelledby="im-confirm-title" style="background:var(--im-scrim)"
+             @onclick="CancelConfirm" @onkeydown="OnModalEscape">
             <div class="modal-dialog" @onclick:stopPropagation="true">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">Please confirm</h5>
+                        <h5 class="modal-title" id="im-confirm-title">Please confirm</h5>
                         <button type="button" class="btn-close" aria-label="Close" @onclick="CancelConfirm"></button>
                     </div>
                     <div class="modal-body"><p class="mb-0">@_confirm.Value.Message</p></div>
@@ -175,11 +177,13 @@ else
     @* U-40: screenshot lightbox — preview an attached screenshot in place instead of forcing a download. *@
     @if (_previewShotId is { } previewId)
     {
-        <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,.65)" @onclick="CloseShot">
+        <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true"
+             aria-labelledby="im-shot-title" style="background:var(--im-scrim)"
+             @onclick="CloseShot" @onkeydown="OnModalEscape">
             <div class="modal-dialog modal-xl modal-dialog-centered" @onclick:stopPropagation="true">
                 <div class="modal-content">
                     <div class="modal-header py-2">
-                        <h5 class="modal-title"><span class="bi bi-image me-2" aria-hidden="true"></span>Screenshot</h5>
+                        <h5 class="modal-title" id="im-shot-title"><span class="bi bi-image me-2" aria-hidden="true"></span>Screenshot</h5>
                         <button type="button" class="btn-close" aria-label="Close" @onclick="CloseShot"></button>
                     </div>
                     <div class="modal-body text-center bg-body-tertiary" style="max-height:75vh;overflow:auto">
@@ -1225,11 +1229,11 @@ else
                     <div id="@GraphContainerId" style="height:460px;border:1px solid var(--bs-border-color);border-radius:.375rem;background:var(--bs-body-bg);"></div>
                     <div class="d-flex flex-wrap gap-3 mt-2 small text-muted align-items-center">
                         <span>Disposition:</span>
-                        <span><span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:#dc3545;"></span> @Ui.Label(EntityDisposition.Malicious)</span>
-                        <span><span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:#9333ea;"></span> @Ui.Label(EntityDisposition.Compromised)</span>
-                        <span><span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:#fd7e14;"></span> @Ui.Label(EntityDisposition.Suspicious)</span>
-                        <span><span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:#198754;"></span> @Ui.Label(EntityDisposition.Benign)</span>
-                        <span><span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:#6c757d;"></span> @Ui.Label(EntityDisposition.Unknown)</span>
+                        @* UX-05: dots share one source of truth with the graph via Ui.DispositionColor(). *@
+                        @foreach (var d in new[] { EntityDisposition.Malicious, EntityDisposition.Compromised, EntityDisposition.Suspicious, EntityDisposition.Benign, EntityDisposition.Unknown })
+                        {
+                            <span><span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:@Ui.DispositionColor(d);"></span> @Ui.Label(d)</span>
+                        }
                         <span class="ms-auto fst-italic">Drag nodes to arrange · scroll to zoom · drag background to pan</span>
                     </div>
                 </div>
@@ -1898,11 +1902,13 @@ else
     @* Action modal — rendered outside the tab blocks so Actions works on every tab, not just Overview. *@
     @if (_activeModal is not null)
     {
-        <div class="modal d-block" tabindex="-1" style="background:rgba(0,0,0,.5)" @onclick="CloseModal">
+        <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true"
+             aria-labelledby="im-action-title" data-return-focus="#case-actions-btn"
+             style="background:var(--im-scrim)" @onclick="CloseModal" @onkeydown="OnModalEscape">
             <div class="modal-dialog" @onclick:stopPropagation="true">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">@ModalTitle()</h5>
+                        <h5 class="modal-title" id="im-action-title">@ModalTitle()</h5>
                         <button type="button" class="btn-close" aria-label="Close" @onclick="CloseModal"></button>
                     </div>
                     <div class="modal-body">
@@ -2857,6 +2863,20 @@ else
     private void AskConfirm(string message, Func<Task> onConfirm) => _confirm = (message, onConfirm);
     private void CancelConfirm() => _confirm = null;
 
+    // UX-01: Esc closes whichever .modal.d-block dialog is open (focus is trapped inside it, so the
+    // keydown bubbles here). The JS focus-trap restores focus to the trigger on release.
+    private void OnModalEscape(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape") return;
+        if (_confirm is not null) CancelConfirm();
+        else if (_previewShotId is not null) CloseShot();
+        else if (_activeModal is not null) CloseModal();
+    }
+
+    // UX-01: whether any of the three trap modals is currently open (drives arm/release in OnAfterRenderAsync).
+    private bool AnyTrapModalOpen => _confirm is not null || _previewShotId is not null || _activeModal is not null;
+    private bool _modalTrapArmed;
+
     private async Task RunConfirm()
     {
         var action = _confirm?.OnConfirm;
@@ -3762,6 +3782,14 @@ else
             // U-14: case-local keyboard shortcuts (digit 1..8 = tab, n = new note).
             try { await JS.InvokeVoidAsync("imCaseHotkeys.register", _dotNetRef); }
             catch (JSException) { /* shortcuts are a progressive enhancement */ }
+        }
+
+        // UX-01: move focus into a modal when it opens and back to the trigger when it closes.
+        if (AnyTrapModalOpen != _modalTrapArmed)
+        {
+            _modalTrapArmed = AnyTrapModalOpen;
+            try { await JS.InvokeVoidAsync(_modalTrapArmed ? "imModal.arm" : "imModal.release"); }
+            catch (JSException) { /* focus trap is a progressive enhancement */ }
         }
 
         await ReconcileMarkdownEditors();

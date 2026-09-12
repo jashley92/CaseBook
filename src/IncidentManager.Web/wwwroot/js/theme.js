@@ -42,7 +42,7 @@ document.addEventListener('click', function (e) {
     // Collapse the mobile nav after a link is chosen.
     if (e.target.closest('.nav-scrollable a')) {
         var toggler = document.querySelector('.navbar-toggler');
-        if (toggler && toggler.checked) toggler.checked = false;
+        if (toggler && toggler.checked) { toggler.checked = false; syncNavToggler(toggler); }
     }
     // Blazor circuit-disconnect modal (U-10): retry the SignalR connection, or hard-reload when the
     // server rejected reconnection (circuit state lost). Wired here to satisfy the strict CSP.
@@ -53,5 +53,16 @@ document.addEventListener('click', function (e) {
     if (e.target.closest('#components-reconnect-reload')) {
         location.reload();
         return;
+    }
+});
+
+// UX-02: reflect the mobile nav toggler's open/closed state for assistive tech. The toggler is a
+// CSS-only checkbox, so mirror its `checked` state onto aria-expanded whenever it changes.
+function syncNavToggler(t) {
+    if (t) t.setAttribute('aria-expanded', t.checked ? 'true' : 'false');
+}
+document.addEventListener('change', function (e) {
+    if (e.target && e.target.classList && e.target.classList.contains('navbar-toggler')) {
+        syncNavToggler(e.target);
     }
 });

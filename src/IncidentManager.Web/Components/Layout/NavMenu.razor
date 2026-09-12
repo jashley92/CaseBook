@@ -22,11 +22,13 @@
     private string? _orgName => Config["Reporting:OrganizationName"];
 }
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+@* UX-02: label the toggler; theme.js keeps aria-expanded in sync with the checkbox state. *@
+<input type="checkbox" title="Navigation menu" class="navbar-toggler"
+       aria-label="Show or hide the navigation menu" aria-expanded="false" />
 
 <div class="nav-scrollable">
     @* title attributes double as tooltips when the sidebar is collapsed to icons (data-nav="collapsed"). *@
-    <nav class="flex-column">
+    <nav class="flex-column" aria-label="Primary">
         <div class="nav-group-label">Workspace</div>
         <div class="nav-item">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All" title="Dashboard">

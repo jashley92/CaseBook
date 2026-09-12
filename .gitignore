@@ -29,6 +29,7 @@ secrets.json
 BACKLOG.md
 BACKLOG-DONE.md
 SECURITY-BACKLOG.md
+UX-BACKLOG.md
 
 # Filled-in install answers file (names AD groups/hosts/account) — the *.template.psd1 stays tracked.
 casebook.config.psd1
