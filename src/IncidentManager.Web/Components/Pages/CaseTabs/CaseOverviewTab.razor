@@ -1,0 +1,802 @@
+@* Case workspace — Overview tab (UX-13, the last tab). The workspace "hub": the vitals/SLA strip, case
+   details (with the Summary Markdown editor), the structured impact assessment (E-12), stage-readiness,
+   assignments, MITRE ATT&CK techniques (with the matrix picker), related cases (E-14), and the change log.
+   It owns its Summary EasyMDE editor (own reconcile + teardown) — the last such editor, so the parent's
+   central reconcile retires. Parent-owned chrome is threaded in: the retention alert (RetentionMessage, set
+   by header actions), the readiness gate (ReadinessEval, computed in the parent's Reload), the shared
+   confirm dialog (RequestConfirm→AskConfirm), the assign modal (OnOpenModal→parent OpenModal), a Reload
+   after a write (OnChanged), a RefreshToken (bumped on collaborator changes) to re-pull related cases, and
+   Ctrl+Enter save via SubmitAsync (@ref). *@
+@implements IAsyncDisposable
+@inject CaseService Cases
+@inject IConfiguration Config
+@inject IClock Clock
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+@inject IJSRuntime JS
+@inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
+
+@{
+    var (slaContain, slaResolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase,
+        Case.DetectedAtUtc, Case.ContainedAtUtc, Case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow);
+    var hasSla = slaContain.State != SlaState.NoTarget || slaResolve.State != SlaState.NoTarget;
+    var openTasks = Case.ActionItems.Count(a => a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled);
+}
+
+@if (RetentionMessage is not null)
+{
+    <div class="alert alert-danger py-2 small">@RetentionMessage</div>
+}
+
+@* Vitals strip — the at-a-glance row (response SLA, lifecycle timestamps, dwell, counts) spanning
+   the full width, so the "how's this case doing" scan is the first thing on the pane, not the last. *@
+<div class="im-vitals mb-4">
+    @if (hasSla)
+    {
+        @SlaVital(slaContain)
+        @SlaVital(slaResolve)
+    }
+    <div class="im-vital"><div class="small text-muted">Detected</div><div class="fw-semibold">@TimeDisp.Long(Case.DetectedAtUtc)</div></div>
+    <div class="im-vital"><div class="small text-muted">Contained</div><div class="fw-semibold">@TimeDisp.Long(Case.ContainedAtUtc)</div></div>
+    <div class="im-vital"><div class="small text-muted">Resolved</div><div class="fw-semibold">@TimeDisp.Long(Case.ResolvedAtUtc)</div></div>
+    @if (Case.OccurredAtUtc is { } occ && Case.DetectedAtUtc is { } det)
+    {
+        <div class="im-vital"><div class="small text-muted">Dwell</div><div class="fw-semibold">@DwellLabel(det - occ)</div><div class="small text-muted">before detection</div></div>
+    }
+    <div class="im-vital"><div class="small text-muted">Evidence · open tasks</div><div class="fw-semibold">@Case.Evidence.Count · @openTasks</div></div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        @* Case narrative — details and impact assessment folded into one card. *@
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Details</span>
+                <AuthorizeView Policy="@Policies.EditCases" Context="ed">
+                    @if (!_editingDetails)
+                    {
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="BeginEditDetails">Edit</button>
+                    }
+                </AuthorizeView>
+            </div>
+            <div class="card-body">
+                @if (_editingDetails)
+                {
+                    <div class="mb-2">
+                        <label class="form-label small mb-0">Title</label>
+                        <input class="form-control form-control-sm" @bind="_edTitle" @bind:event="oninput" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-0">@DetectionLabel Case ID</label>
+                        <input class="form-control form-control-sm" @bind="_edDetection" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-0">Data types involved</label>
+                        <input class="form-control form-control-sm" @bind="_edDataTypes" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-0">Impacted assets</label>
+                        <input class="form-control form-control-sm" @bind="_edImpacted" />
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-sm-6">
+                            <label class="form-label small mb-0">Detected (@TimeDisp.Label)</label>
+                            <input type="datetime-local" class="form-control form-control-sm" @bind="_edDetected"
+                                   title="When the matter was first detected or reported. Drives the response-SLA clock and dwell metrics. Set it to the real detection time, not when the case was filed. Entered in @TimeDisp.Label." />
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="form-label small mb-0">Initial activity <span class="text-muted">(optional)</span></label>
+                            <input type="datetime-local" class="form-control form-control-sm" @bind="_edOccurred"
+                                   title="When adversary activity actually began (initial access / first malicious activity), if known. Detected minus this is the dwell time. Entered in @TimeDisp.Label." />
+                        </div>
+                    </div>
+                    @if (_detailsError is { } derr)
+                    {
+                        <div class="alert alert-warning py-1 px-2 small mb-2">@derr</div>
+                    }
+                    <div class="mb-2">
+                        <label class="form-label small mb-0">Summary <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links</span></label>
+                        @* EasyMDE enhances this textarea (managed in this tab's OnAfterRenderAsync); value pulled on Save. *@
+                        <textarea id="@SummaryEditorId" class="form-control"></textarea>
+                    </div>
+                    <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="SaveDetails" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => _editingDetails = false)">Cancel</button>
+                }
+                else
+                {
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">Origin</dt>
+                        <dd class="col-sm-8">@(Case.Origin == CaseOrigin.ThirdParty ? "Third-party / vendor" : "Internal detection")</dd>
+                        @if (Case.ThirdParty is not null)
+                        {
+                            <dt class="col-sm-4">Vendor</dt>
+                            <dd class="col-sm-8">@Case.ThirdParty.VendorName
+                                @if (!string.IsNullOrWhiteSpace(Case.ThirdParty.VendorContact)) { <text>(@Case.ThirdParty.VendorContact)</text> }
+                            </dd>
+                        }
+                        <dt class="col-sm-4">@DetectionLabel Case</dt>
+                        <dd class="col-sm-8">@(Case.DetectionCaseId ?? "—")
+                            @{ var detectionUrl = DetectionCaseUrl(); }
+                            @if (detectionUrl is not null)
+                            {
+                                <a class="btn btn-sm btn-outline-secondary py-0 ms-2" href="@detectionUrl" target="_blank" rel="noopener noreferrer">Open in @DetectionLabel</a>
+                            }
+                        </dd>
+                        <dt class="col-sm-4">Data types</dt>
+                        <dd class="col-sm-8">@(Case.DataTypesInvolved ?? "—")</dd>
+                        <dt class="col-sm-4">Impacted assets</dt>
+                        <dd class="col-sm-8">@(Case.ImpactedAssets ?? "—")</dd>
+                        <dt class="col-sm-4">Opened</dt>
+                        <dd class="col-sm-8">@TimeDisp.Long(Case.CreatedAtUtc) by @Users.DisplayFor(Case.CreatedBy)</dd>
+                        <dt class="col-sm-4">Summary</dt>
+                        <dd class="col-sm-8">
+                            @if (string.IsNullOrWhiteSpace(Case.Summary))
+                            {
+                                <text>—</text>
+                            }
+                            else
+                            {
+                                <div class="md-body">@((MarkupString)Md.ToHtml(Case.Summary))</div>
+                            }
+                        </dd>
+                    </dl>
+                }
+
+                <hr class="my-3" />
+
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h3 class="h6 mb-0">Impact assessment</h3>
+                    <AuthorizeView Policy="@Policies.EditCases" Context="ie">
+                        @if (!_editingImpact)
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="BeginEditImpact">Edit</button>
+                        }
+                    </AuthorizeView>
+                </div>
+                @if (_editingImpact)
+                {
+                    <div class="mb-2">
+                        <label class="form-label small mb-0">Affected individuals (estimate)</label>
+                        <input type="number" min="0" class="form-control form-control-sm" @bind="_impCount" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-1 d-block">Data elements involved</label>
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach (var el in _dataElements)
+                            {
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="de-@el.Key"
+                                           checked="@_impElementKeys.Contains(el.Key)"
+                                           @onchange="e => ToggleElement(el.Key, (bool)(e.Value ?? false))" />
+                                    <label class="form-check-label small" for="de-@el.Key">@el.Label</label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-0">Affected jurisdictions (state codes, comma-separated)</label>
+                        <input class="form-control form-control-sm" placeholder="e.g. NY, NJ, CT" @bind="_impStates" />
+                    </div>
+                    <button class="btn btn-sm btn-primary" @onclick="SaveImpact">Save</button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => _editingImpact = false">Cancel</button>
+                }
+                else if (Case.AffectedIndividualsCount is null && Case.DataElements.Count == 0 && string.IsNullOrWhiteSpace(Case.AffectedStates))
+                {
+                    <p class="text-muted small mb-0">Not yet assessed. This captures the structured facts (affected count, data elements, jurisdictions) for the Legal / regulatory handoff.</p>
+                }
+                else
+                {
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">Affected individuals</dt>
+                        <dd class="col-sm-8">@(Case.AffectedIndividualsCount?.ToString("N0") ?? "—")</dd>
+                        <dt class="col-sm-4">Data elements</dt>
+                        <dd class="col-sm-8">
+                            @if (Case.DataElements.Count == 0)
+                            {
+                                <text>—</text>
+                            }
+                            else
+                            {
+                                @foreach (var key in SelectedElementKeysOrdered())
+                                {
+                                    <span class="im-badge im-b-neutral me-1 mb-1">@DataElementLabel(key)</span>
+                                }
+                            }
+                        </dd>
+                        <dt class="col-sm-4">Jurisdictions</dt>
+                        <dd class="col-sm-8">@(Case.AffectedStates ?? "—")</dd>
+                    </dl>
+                }
+            </div>
+        </div>
+
+        @if (ReadinessEval is { } rg)
+        {
+            <div class="im-sec mt-3">
+                <div class="im-sec-head">
+                    <h3>Stage readiness</h3>
+                    <div class="d-flex align-items-center gap-2">
+                        @if (ReadinessMachineOutstanding == 0)
+                        {
+                            <span class="im-badge im-b-ok">Data complete</span>
+                        }
+                        else
+                        {
+                            <span class="im-badge im-b-warn">@ReadinessMachineOutstanding outstanding</span>
+                        }
+                        <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => _showReadiness = !_showReadiness" aria-label="Toggle stage readiness">
+                            <span class="bi @(_showReadiness ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                </div>
+                @if (_showReadiness)
+                {
+                    <p class="text-muted small mb-2">Completeness required to <strong>@StageGateTriggers.Label(rg.Trigger).ToLowerInvariant()</strong>. Enforced when you make the transition, and overridable with a recorded justification.</p>
+                    <GateChecklist Eval="rg" Attested="_readinessAttested" Interactive="false" />
+                }
+            </div>
+        }
+
+        <div class="im-sec mt-3">
+            <div class="im-sec-head"><h3>Assignments</h3></div>
+            <div class="im-chips">
+                @if (Case.Assignments.Count == 0)
+                {
+                    <span class="text-muted small">No one assigned yet.</span>
+                }
+                @foreach (var a in Case.Assignments.OrderBy(x => x.Role))
+                {
+                    <span class="im-chip" title="@a.UserDisplayName · @a.Role">
+                        <span class="bi bi-person" aria-hidden="true"></span>
+                        <span class="im-chip-name">@a.UserDisplayName</span>
+                        <span class="im-chip-role">@a.Role</span>
+                        <AuthorizeView Policy="@Policies.EditCases" Context="rm">
+                            <button type="button" class="im-chip-x" aria-label="Remove @a.UserDisplayName"
+                                    @onclick='() => Confirm($"Remove {a.UserDisplayName} from this case?", () => DoUnassign(a.UserId))'>×</button>
+                        </AuthorizeView>
+                    </span>
+                }
+                <AuthorizeView Policy="@Policies.EditCases" Context="asg">
+                    <button type="button" class="im-chip-add" @onclick='() => OnOpenModal.InvokeAsync("assign")'>
+                        <span class="bi bi-plus-lg" aria-hidden="true"></span> Assign
+                    </button>
+                </AuthorizeView>
+            </div>
+        </div>
+
+        <div class="im-sec mt-3">
+            <div class="im-sec-head"><h3>MITRE ATT&CK</h3></div>
+            <div class="im-chips">
+                @if (Case.Techniques.Count == 0)
+                {
+                    <span class="text-muted small">No techniques tagged.</span>
+                }
+                @foreach (var t in Case.Techniques.OrderBy(x => x.Tactic).ThenBy(x => x.TechniqueId))
+                {
+                    <span class="im-chip im-chip-tac" style="--tac:@Ui.TacticColor(t.Tactic)" title="@(t.TechniqueId + (string.IsNullOrWhiteSpace(t.Name) ? "" : " — " + t.Name) + " · " + Ui.Label(t.Tactic))">
+                        <a href="https://attack.mitre.org/techniques/@(t.TechniqueId.Replace('.', '/'))/" target="_blank" rel="noopener noreferrer"><code>@t.TechniqueId</code></a>
+                        @if (t.Tactic != MitreTactic.Unspecified) { <span class="im-chip-role">@Ui.Label(t.Tactic)</span> }
+                        <AuthorizeView Policy="@Policies.EditCases" Context="tq">
+                            <button type="button" class="im-chip-x" aria-label="Remove @t.TechniqueId"
+                                    @onclick='() => Confirm($"Remove technique {t.TechniqueId}?", () => RemoveTechnique(t.Id))'>×</button>
+                        </AuthorizeView>
+                    </span>
+                }
+                <AuthorizeView Policy="@Policies.EditCases" Context="tqadd">
+                    <button type="button" class="im-chip-add" @onclick="OpenTechMatrix">
+                        <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span> Techniques
+                    </button>
+                </AuthorizeView>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        @* Context rail — related cases and the change log. *@
+        <div class="im-sec">
+            <div class="im-sec-head">
+                <h3>Related cases</h3>
+                <div class="d-flex align-items-center gap-2">
+                    @if (_links.Count > 0) { <span class="im-badge im-b-neutral">@_links.Count</span> }
+                    @if (_links.Any(l => l.Type == CaseLinkType.PartOfCampaign))
+                    {
+                        <a class="btn btn-sm btn-outline-secondary" href="campaigns/@CaseId"
+                           title="See all cases in this campaign, with shared indicators and a combined timeline">
+                            <span class="bi bi-diagram-3" aria-hidden="true"></span> View campaign
+                        </a>
+                    }
+                    <AuthorizeView Policy="@Policies.EditCases" Context="lk">
+                        @if (!_addingLink)
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="BeginAddLink">Link a case</button>
+                        }
+                    </AuthorizeView>
+                </div>
+            </div>
+            @if (_addingLink)
+            {
+                <div class="mb-2">
+                    <label class="form-label small mb-0">Relationship</label>
+                    <select class="form-select form-select-sm" @bind="_linkType">
+                        @foreach (var t in Enum.GetValues<CaseLinkType>())
+                        {
+                            <option value="@t">@Ui.CaseLinkLabel(t, true)</option>
+                        }
+                    </select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small mb-0">Case</label>
+                    @if (_linkTargetId is not null)
+                    {
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="im-badge im-b-info">@_linkTargetLabel</span>
+                            <button class="btn btn-sm btn-link p-0" @onclick="ClearLinkTarget">change</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <input class="form-control form-control-sm" placeholder="Search by number or title"
+                               @bind="_linkQuery" @bind:event="oninput" @bind:after="SearchLinkTargets" />
+                        @if (_linkResults.Count > 0)
+                        {
+                            <ul class="list-group mt-1">
+                                @foreach (var r in _linkResults)
+                                {
+                                    <li class="list-group-item list-group-item-action py-1 small" role="button" @onclick="() => SelectLinkTarget(r)">
+                                        <strong>@r.CaseNumber</strong> — @r.Title
+                                        <span class="@Ui.ClassificationBadge(r.Classification) ms-1">@Ui.Label(r.Classification)</span>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(_linkQuery))
+                        {
+                            <div class="form-text">No matching visible cases.</div>
+                        }
+                    }
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small mb-0">Note (optional)</label>
+                    <input class="form-control form-control-sm" @bind="_linkDesc" placeholder="Why are these related?" />
+                </div>
+                <button class="btn btn-sm btn-primary" @onclick="AddLink" disabled="@(_linkTargetId is null)">Add link</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="CancelAddLink">Cancel</button>
+            }
+            @if (_links.Count == 0 && !_addingLink)
+            {
+                <p class="text-muted small mb-0">No related cases yet. Link duplicates, related cases, or others in the same campaign.</p>
+            }
+            else if (_links.Count > 0)
+            {
+                <ul class="list-group list-group-flush">
+                    @foreach (var l in _links)
+                    {
+                        <li class="list-group-item px-0 d-flex justify-content-between align-items-start">
+                            <div>
+                                <span class="@Ui.CaseLinkBadge(l.Type)">@Ui.CaseLinkLabel(l.Type, l.Outgoing)</span>
+                                <a href="cases/@l.OtherCaseId" class="ms-1 fw-semibold text-decoration-none">@l.OtherCaseNumber</a>
+                                <div class="small text-muted">@l.OtherTitle</div>
+                                @if (!string.IsNullOrWhiteSpace(l.Description)) { <div class="small fst-italic text-muted">@l.Description</div> }
+                            </div>
+                            <AuthorizeView Policy="@Policies.EditCases" Context="rl">
+                                <button class="btn btn-sm btn-outline-danger py-0" title="Remove link"
+                                        @onclick='() => Confirm($"Remove the link to {l.OtherCaseNumber}?", () => RemoveLink(l.LinkId))'>×</button>
+                            </AuthorizeView>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="im-sec">
+            <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => _showHistory = !_showHistory">
+                <span class="bi @(_showHistory ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>
+                Change history (@History().Count())
+            </button>
+            @if (_showHistory)
+            {
+                @if (!History().Any())
+                {
+                    <p class="text-muted small mt-2 mb-0">No changes recorded.</p>
+                }
+                else
+                {
+                    <table class="table table-sm mt-2 mb-0">
+                        <thead><tr><th>When (@TimeDisp.Label)</th><th>Attribute</th><th>Change</th><th>By</th></tr></thead>
+                        <tbody>
+                            @foreach (var h in History().OrderByDescending(x => x.At))
+                            {
+                                <tr>
+                                    <td class="small">@TimeDisp.Long(h.At)</td>
+                                    <td class="small">@h.Attribute</td>
+                                    <td class="small">@h.Change</td>
+                                    <td class="small">@h.By</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@* MITRE ATT&CK matrix picker (self-contained overlay) — tag techniques from the tactic grid. *@
+@if (_techMatrixOpen)
+{
+    <AttackMatrixPicker Current="CurrentTechniqueMap()" OnApply="ApplyTechMatrix" OnCancel="CancelTechMatrix" />
+}
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    /// <summary>Retention-guard message set by the parent's legal-hold / archive actions (header, any tab).</summary>
+    [Parameter] public string? RetentionMessage { get; set; }
+    /// <summary>The next-gate readiness evaluation, computed in the parent's Reload (null when none applies).</summary>
+    [Parameter] public GateEvaluation? ReadinessEval { get; set; }
+    /// <summary>Reload the case after a write so the rest of the workspace refreshes.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>Ask the parent's shared confirm dialog to guard a destructive action.</summary>
+    [Parameter] public EventCallback<(string Message, Func<Task> OnConfirm)> RequestConfirm { get; set; }
+    /// <summary>Open one of the parent's action modals (used for the assign modal).</summary>
+    [Parameter] public EventCallback<string> OnOpenModal { get; set; }
+    /// <summary>Bumped by the parent on a collaborator change, to re-pull related cases.</summary>
+    [Parameter] public int RefreshToken { get; set; }
+
+    private string SummaryEditorId => $"sum-md-{CaseId}";
+    private readonly HashSet<string> _mdEditors = new();
+    private readonly HashSet<Guid> _readinessAttested = new(); // always empty — the card is read-only
+    private int _loadedToken = int.MinValue;
+
+    // Details edit buffer
+    private bool _editingDetails;
+    private string _edTitle = "";
+    private string? _edSummary;
+    private string? _edDetection;
+    private string? _edDataTypes;
+    private string? _edImpacted;
+    private DateTime? _edDetected;
+    private DateTime? _edOccurred;
+    private string? _detailsError;
+
+    // Structured impact assessment (E-12)
+    private bool _editingImpact;
+    private int? _impCount;
+    private HashSet<string> _impElementKeys = new(StringComparer.Ordinal);
+    private string? _impStates;
+    private IReadOnlyList<DataElement> _dataElements = Array.Empty<DataElement>();
+    private IReadOnlyDictionary<string, string> _dataElementLabels = new Dictionary<string, string>();
+
+    // Related cases (E-14)
+    private IReadOnlyList<CaseLinkView> _links = Array.Empty<CaseLinkView>();
+    private bool _addingLink;
+    private CaseLinkType _linkType = CaseLinkType.RelatedTo;
+    private string _linkQuery = "";
+    private IReadOnlyList<LinkableCase> _linkResults = Array.Empty<LinkableCase>();
+    private Guid? _linkTargetId;
+    private string? _linkTargetLabel;
+    private string? _linkDesc;
+
+    // Techniques matrix + change-history toggle
+    private bool _techMatrixOpen;
+    private bool _showHistory;
+    private bool _showReadiness = true;
+
+    private string DetectionLabel
+    {
+        get
+        {
+            var label = Config["ExternalLinks:DetectionSourceLabel"];
+            return string.IsNullOrWhiteSpace(label) ? "SIEM" : label;
+        }
+    }
+
+    private string? DetectionCaseUrl()
+    {
+        var template = Config["ExternalLinks:DetectionCaseUrlTemplate"];
+        if (string.IsNullOrWhiteSpace(template) || string.IsNullOrWhiteSpace(Case.DetectionCaseId)) return null;
+        return string.Format(template, Uri.EscapeDataString(Case.DetectionCaseId));
+    }
+
+    private int ReadinessMachineOutstanding => ReadinessEval?.Requirements
+        .Count(r => r.Kind == GateRequirementKind.MachineCheck && r.IsBlocking && !r.MachineSatisfied) ?? 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // X-03: the data-element reference set — active options for editing, plus a key→label map (incl.
+        // inactive) so already-recorded elements always render with their current label.
+        _dataElements = await Cases.ListActiveDataElementsAsync();
+        _dataElementLabels = await Cases.DataElementLabelsAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Load related cases on first mount and whenever the parent signals a live change.
+        if (_loadedToken != RefreshToken)
+        {
+            _loadedToken = RefreshToken;
+            await LoadLinks();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await ReconcileEditor();
+    }
+
+    // This tab owns a single EasyMDE editor — the Summary composer, shown only while editing details.
+    private async Task ReconcileEditor()
+    {
+        var desired = new Dictionary<string, string>();
+        if (CanEdit && _editingDetails)
+            desired[SummaryEditorId] = _edSummary ?? "";
+
+        foreach (var id in _mdEditors.Where(id => !desired.ContainsKey(id)).ToList())
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); } catch (JSException) { /* ignore */ }
+            _mdEditors.Remove(id);
+        }
+        foreach (var (id, seed) in desired)
+        {
+            if (_mdEditors.Contains(id)) continue;
+            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed); _mdEditors.Add(id); }
+            catch (JSException) { /* editor is a progressive enhancement */ }
+        }
+    }
+
+    /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — save the details edit if open.</summary>
+    public async Task SubmitAsync()
+    {
+        if (CanEdit && _editingDetails) await SaveDetails();
+    }
+
+    private Task Confirm(string message, Func<Task> action) => RequestConfirm.InvokeAsync((message, action));
+
+    // One response-SLA vital for the vitals strip (E-16): containment or resolution, badge + timing.
+    private RenderFragment SlaVital(SlaStatus st) =>
+        @<div class="im-vital">
+            <div class="small text-muted">@(st.Clock is { } c ? Ui.SlaClockLabel(c) : "SLA")</div>
+            @if (st.State == SlaState.NoTarget)
+            {
+                <div class="fw-semibold text-muted">No target</div>
+            }
+            else
+            {
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="@Ui.SlaBadge(st.State)"><span class="bi @Ui.SlaGlyph(st.State)" aria-hidden="true"></span> @Ui.SlaLabel(st.State)</span>
+                    @if (Ui.SlaTiming(st) is { Length: > 0 } t) { <span class="small fw-semibold">@t</span> }
+                </div>
+                <div class="small text-muted mt-1">
+                    Target @st.TargetHours h@(st.IsActive && st.DueAtUtc is { } due ? $" · due {TimeDisp.Short(due)}" : "")
+                </div>
+            }
+        </div>;
+
+    private static string DwellLabel(TimeSpan span)
+    {
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+        return span.TotalDays >= 1 ? $"{span.TotalDays:0.#}d" : $"{span.TotalHours:0.#}h";
+    }
+
+    // --- Details ---
+    private void BeginEditDetails()
+    {
+        _edTitle = Case.Title;
+        _edSummary = Case.Summary;
+        _edDetection = Case.DetectionCaseId;
+        _edDataTypes = Case.DataTypesInvolved;
+        _edImpacted = Case.ImpactedAssets;
+        _edDetected = Case.DetectedAtUtc is { } d ? UtcToWall(d) : null;
+        _edOccurred = Case.OccurredAtUtc is { } o ? UtcToWall(o) : null;
+        _detailsError = null;
+        _editingDetails = true;
+    }
+
+    private async Task SaveDetails()
+    {
+        if (string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null) return;
+        try { _edSummary = await JS.InvokeAsync<string>("markdownEditor.getValue", SummaryEditorId); }
+        catch (JSException) { /* editor not mounted; keep the seeded value */ }
+        try
+        {
+            await Cases.UpdateDetailsAsync(CaseId, _edTitle, _edSummary, _edDetection, _edDataTypes, _edImpacted,
+                WallToUtc(_edDetected.Value), _edOccurred is { } occ ? WallToUtc(occ) : null);
+        }
+        catch (ArgumentException ex) // domain validation (future detection / activity after detection)
+        {
+            _detailsError = ex.Message;
+            return;
+        }
+        _editingDetails = false;
+        _detailsError = null;
+        await OnChanged.InvokeAsync();
+        Toasts.Success("Details saved");
+    }
+
+    // --- Wall-clock ⇄ UTC in the viewer's active display zone (U-29) ---
+    private DateTimeOffset WallToUtc(DateTime wall)
+    {
+        var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
+        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, TimeDisp.Zone), TimeSpan.Zero); }
+        catch { return new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
+    }
+
+    private DateTime UtcToWall(DateTimeOffset utc)
+        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
+
+    // --- Structured impact assessment (E-12) ---
+    private string DataElementLabel(string key) =>
+        _dataElementLabels.TryGetValue(key, out var label) ? label : key;
+
+    private IEnumerable<string> SelectedElementKeysOrdered()
+    {
+        var keys = Case.DataElements.Select(d => d.ElementKey).ToHashSet(StringComparer.Ordinal);
+        var ordered = _dataElements.Where(e => keys.Contains(e.Key)).Select(e => e.Key).ToList();
+        ordered.AddRange(keys.Where(k => ordered.All(o => o != k)).OrderBy(k => k, StringComparer.Ordinal));
+        return ordered;
+    }
+
+    private void BeginEditImpact()
+    {
+        _impCount = Case.AffectedIndividualsCount;
+        _impElementKeys = Case.DataElements.Select(d => d.ElementKey).ToHashSet(StringComparer.Ordinal);
+        // Pre-fill the org's default jurisdictions on a case that has none yet (X-01); analyst can edit.
+        _impStates = string.IsNullOrWhiteSpace(Case.AffectedStates)
+            ? (Config["Organization:DefaultJurisdictions"] is { Length: > 0 } d ? d : null)
+            : Case.AffectedStates;
+        _editingImpact = true;
+    }
+
+    private void ToggleElement(string key, bool on)
+    {
+        if (on) _impElementKeys.Add(key); else _impElementKeys.Remove(key);
+    }
+
+    private async Task SaveImpact()
+    {
+        await Cases.UpdateImpactAssessmentAsync(CaseId, _impCount, _impElementKeys, _impStates);
+        _editingImpact = false;
+        await OnChanged.InvokeAsync();
+        Toasts.Success("Impact assessment saved");
+    }
+
+    // --- Change history ---
+    private sealed record HistoryRow(DateTimeOffset At, string Attribute, string Change, string? Reason, string By);
+
+    private IEnumerable<HistoryRow> History()
+    {
+        foreach (var x in Case.ClassificationChanges)
+            yield return new HistoryRow(x.ChangedAtUtc, "Classification",
+                $"{(x.From is { } f ? Ui.Label(f) : "—")} → {Ui.Label(x.To)}", x.Reason, x.ChangedBy);
+
+        foreach (var x in Case.SeverityChanges)
+            yield return new HistoryRow(x.ChangedAtUtc, "Severity",
+                $"{(x.From?.ToString() ?? "—")} → {x.To}", x.Reason, x.ChangedBy);
+
+        foreach (var x in Case.StatusChanges)
+            yield return new HistoryRow(x.ChangedAtUtc, "Phase",
+                $"{(x.From is { } f ? Ui.Label(f) : "—")} → {Ui.Label(x.To)}", x.Reason, x.ChangedBy);
+    }
+
+    // --- Assignments / techniques ---
+    private async Task DoUnassign(string userId)
+    {
+        await Cases.UnassignAsync(CaseId, userId);
+        await OnChanged.InvokeAsync();
+        Toasts.Success("Assignment removed");
+    }
+
+    private async Task RemoveTechnique(Guid techniqueId)
+    {
+        await Cases.RemoveTechniqueAsync(CaseId, techniqueId);
+        await OnChanged.InvokeAsync();
+        Toasts.Success("Technique removed");
+    }
+
+    private void OpenTechMatrix() => _techMatrixOpen = true;
+    private void CancelTechMatrix() => _techMatrixOpen = false;
+
+    // The case's current technique tags as id → tactic, seeding the matrix's selection state.
+    private IReadOnlyDictionary<string, MitreTactic> CurrentTechniqueMap() =>
+        Case.Techniques.ToDictionary(t => t.TechniqueId, t => t.Tactic, StringComparer.OrdinalIgnoreCase);
+
+    // Sync the case's techniques to the matrix's chosen set: remove dropped tags, add new ones, and
+    // re-tag any whose tactic (column) changed. AddTechniqueAsync upserts, so a tactic change is a re-add.
+    private async Task ApplyTechMatrix(IReadOnlyDictionary<string, MitreTactic> desired)
+    {
+        _techMatrixOpen = false;
+        var current = Case.Techniques.ToList();
+
+        foreach (var t in current.Where(t => !desired.ContainsKey(t.TechniqueId)))
+            await Cases.RemoveTechniqueAsync(CaseId, t.Id);
+
+        foreach (var kv in desired)
+        {
+            var existing = current.FirstOrDefault(t => string.Equals(t.TechniqueId, kv.Key, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+                await Cases.AddTechniqueAsync(CaseId, kv.Key, AttackCatalog.Find(kv.Key)?.Name ?? "", kv.Value);
+            else if (existing.Tactic != kv.Value)
+                await Cases.AddTechniqueAsync(CaseId, kv.Key, existing.Name, kv.Value);
+        }
+
+        await OnChanged.InvokeAsync();
+        Toasts.Success("Techniques updated");
+    }
+
+    // --- Related cases (E-14) ---
+    private async Task LoadLinks() => _links = await Cases.GetCaseLinksAsync(CaseId);
+
+    private void BeginAddLink()
+    {
+        _addingLink = true;
+        _linkType = CaseLinkType.RelatedTo;
+        ClearLinkTarget();
+        _linkDesc = null;
+    }
+
+    private void CancelAddLink()
+    {
+        _addingLink = false;
+        ClearLinkTarget();
+    }
+
+    private void ClearLinkTarget()
+    {
+        _linkTargetId = null;
+        _linkTargetLabel = null;
+        _linkQuery = "";
+        _linkResults = Array.Empty<LinkableCase>();
+    }
+
+    private async Task SearchLinkTargets()
+    {
+        _linkResults = string.IsNullOrWhiteSpace(_linkQuery)
+            ? Array.Empty<LinkableCase>()
+            : await Cases.SearchLinkableCasesAsync(CaseId, _linkQuery);
+    }
+
+    private void SelectLinkTarget(LinkableCase c)
+    {
+        _linkTargetId = c.Id;
+        _linkTargetLabel = $"{c.CaseNumber} — {c.Title}";
+        _linkResults = Array.Empty<LinkableCase>();
+    }
+
+    private async Task AddLink()
+    {
+        if (_linkTargetId is not { } target) return;
+        try
+        {
+            var created = await Cases.LinkCaseAsync(CaseId, target, _linkType, _linkDesc);
+            if (created is null) { Toasts.Warning("Those cases are already linked."); }
+            else { Toasts.Success("Case linked."); }
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Warning(ex.Message);
+        }
+        _addingLink = false;
+        ClearLinkTarget();
+        _linkDesc = null;
+        await LoadLinks();
+    }
+
+    private async Task RemoveLink(Guid linkId)
+    {
+        await Cases.RemoveCaseLinkAsync(CaseId, linkId);
+        Toasts.Success("Link removed.");
+        await LoadLinks();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var id in _mdEditors)
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }
+            catch { /* circuit may already be gone during teardown */ }
+        }
+        _mdEditors.Clear();
+    }
+}
