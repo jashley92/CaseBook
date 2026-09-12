@@ -1,0 +1,208 @@
+@* Case workspace — Audit tab (UX-13, extracted from CaseWorkspace.razor). The tamper-evident audit
+   trail for one case, with server-side filtering (E-24) and, for leads/admins, the "Viewed by" read-log
+   (C-05). Self-contained: it loads its own data; the parent passes the case identity, the lead flag, a
+   persisted filter object, and a RefreshToken it bumps when a collaborator changes the case. *@
+@inject IntegrityService Integrity
+@inject IncidentManager.Application.Access.IAccessLogService AccessLog
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject TimeDisplay TimeDisp
+
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+    <p class="text-muted mb-0">Tamper-evident audit trail for this case (most recent first).</p>
+    <a class="btn btn-sm btn-outline-secondary" href="@AuditExportHref()">
+        <span class="bi bi-download me-1" aria-hidden="true"></span>Export CSV
+    </a>
+</div>
+
+@* E-24: filter the hash-chained trail by actor / action / entity / date range (server-side). *@
+<div class="row g-2 align-items-end mb-3">
+    <div class="col-6 col-md-3">
+        <label class="form-label small mb-0">Actor</label>
+        <select class="form-select form-select-sm" @bind="State.Actor" @bind:after="ApplyAuditFilter">
+            <option value="">Any</option>
+            @foreach (var actor in State.Actors)
+            {
+                <option value="@actor">@Users.DisplayFor(actor)</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-3">
+        <label class="form-label small mb-0">Action</label>
+        <select class="form-select form-select-sm" @bind="State.Action" @bind:after="ApplyAuditFilter">
+            <option value="">Any</option>
+            @foreach (var act in Enum.GetValues<AuditAction>())
+            {
+                <option value="@act">@act</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label small mb-0">Entity</label>
+        <select class="form-select form-select-sm" @bind="State.Entity" @bind:after="ApplyAuditFilter">
+            <option value="">Any</option>
+            @foreach (var et in State.EntityTypes)
+            {
+                <option value="@et">@et</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label small mb-0">From (UTC)</label>
+        <input type="date" class="form-control form-control-sm" @bind="State.From" @bind:after="ApplyAuditFilter" />
+    </div>
+    <div class="col-6 col-md-2">
+        <label class="form-label small mb-0">To (UTC)</label>
+        <input type="date" class="form-control form-control-sm" @bind="State.To" @bind:after="ApplyAuditFilter" />
+    </div>
+</div>
+
+@if (_audit is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-1">
+        <span class="small text-muted">@_audit.Count entr@(_audit.Count == 1 ? "y" : "ies")@(AuditFiltered ? " (filtered)" : "")@(_audit.Count >= AuditPageSize ? $" — showing the most recent {AuditPageSize}" : "")</span>
+        @if (AuditFiltered)
+        {
+            <button class="btn btn-sm btn-link p-0" @onclick="ClearAuditFilter">Clear filters</button>
+        }
+    </div>
+    @if (_audit.Count == 0)
+    {
+        <p class="text-muted">No audit entries match the current filters.</p>
+    }
+    else
+    {
+        <table class="table table-sm">
+            <thead><tr><th>#</th><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>Reason</th></tr></thead>
+            <tbody>
+                @foreach (var a in _audit)
+                {
+                    <tr>
+                        <td>@a.Sequence</td>
+                        <td class="small">@a.AtUtc.ToString("u")</td>
+                        <td>@Users.DisplayFor(a.Actor)</td>
+                        <td>@a.Action</td>
+                        <td>@a.EntityType</td>
+                        <td class="small">@(string.IsNullOrWhiteSpace(a.Reason) ? "" : a.Reason)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+<AuthorizeView Policy="@Policies.ViewAllCases">
+    @* C-05: "Viewed by" — coalesced read-sessions, shown only to leads/admins (surveillance data). *@
+    <div class="mt-4">
+        <h2 class="h6 d-flex align-items-center gap-2">
+            <span class="bi bi-eye" aria-hidden="true"></span> Viewed by
+            <span class="im-badge im-b-neutral rounded-pill">@(_viewedBy?.Count ?? 0)</span>
+        </h2>
+        <p class="small text-muted mb-2">
+            Who has opened this case, coalesced into view-sessions. Access logging is out of the
+            tamper-evident chain; scope is set in Administration → Settings → Access logging.
+        </p>
+        @if (_viewedBy is null)
+        {
+            <p class="small text-muted"><em>Loading&hellip;</em></p>
+        }
+        else if (_viewedBy.Count == 0)
+        {
+            <p class="small text-muted">No recorded opens yet (or access logging is off).</p>
+        }
+        else
+        {
+            <table class="table table-sm align-middle">
+                <thead><tr><th>Viewer</th><th class="text-end">Opens</th><th>First seen</th><th>Last seen</th></tr></thead>
+                <tbody>
+                    @foreach (var v in _viewedBy)
+                    {
+                        <tr>
+                            <td>@Users.DisplayFor(v.ActorUserId)@if (v.WasRestricted) { <span class="im-badge im-b-warn ms-2">restricted</span> }</td>
+                            <td class="text-end">@v.Count</td>
+                            <td class="small">@TimeDisp.Short(v.FirstSeenUtc)</td>
+                            <td class="small">@TimeDisp.Short(v.LastSeenUtc)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</AuthorizeView>
+
+@code {
+    [Parameter, EditorRequired] public string CaseNumber { get; set; } = "";
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    [Parameter] public bool CanViewAll { get; set; }
+    /// <summary>Filter selections + facet cache, held by the parent so they survive this tab's re-mount.</summary>
+    [Parameter, EditorRequired] public CaseAuditFilter State { get; set; } = new();
+    /// <summary>The parent bumps this when a collaborator changes the case, to re-query the trail live.</summary>
+    [Parameter] public int RefreshToken { get; set; }
+
+    private const int AuditPageSize = 500;
+    private List<AuditLogEntry>? _audit;
+    private IReadOnlyList<CaseAccessEvent>? _viewedBy;
+    private int _loadedToken = int.MinValue;
+
+    private bool AuditFiltered => !BuildAuditFilter().IsEmpty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Load on first mount and whenever the parent signals a live change; an unrelated parent re-render
+        // (same token) leaves the current, possibly-filtered, view untouched.
+        if (_loadedToken != RefreshToken)
+        {
+            _loadedToken = RefreshToken;
+            await LoadAudit();
+        }
+    }
+
+    private async Task LoadAudit()
+    {
+        if (!State.FacetsLoaded)
+        {
+            (State.Actors, State.EntityTypes) = await Integrity.AuditFacetsAsync(CaseNumber);
+            State.FacetsLoaded = true;
+        }
+        _audit = await Integrity.QueryAsync(BuildAuditFilter(), AuditPageSize);
+        // C-05: leads/admins see who has read this case (coalesced view-sessions).
+        if (CanViewAll)
+            _viewedBy = await AccessLog.ForCaseAsync(CaseId);
+    }
+
+    // E-24: build the server-side filter from the tab's controls. "To" is inclusive to the end of the day.
+    private AuditQueryFilter BuildAuditFilter() => new()
+    {
+        CaseNumber = CaseNumber,
+        Actor = string.IsNullOrWhiteSpace(State.Actor) ? null : State.Actor,
+        Action = Enum.TryParse<AuditAction>(State.Action, out var a) ? a : null,
+        EntityType = string.IsNullOrWhiteSpace(State.Entity) ? null : State.Entity,
+        FromUtc = State.From is { } f ? new DateTimeOffset(f.Date, TimeSpan.Zero) : null,
+        ToUtc = State.To is { } t ? new DateTimeOffset(t.Date.AddDays(1).AddTicks(-1), TimeSpan.Zero) : null
+    };
+
+    private async Task ApplyAuditFilter() => await LoadAudit();
+
+    private async Task ClearAuditFilter()
+    {
+        State.Actor = State.Action = State.Entity = "";
+        State.From = State.To = null;
+        await LoadAudit();
+    }
+
+    // Deep-link to the scoped CSV export mirroring the active filter (dates as yyyy-MM-dd, UTC).
+    private string AuditExportHref()
+    {
+        var f = BuildAuditFilter();
+        var qs = new List<string> { $"case={Uri.EscapeDataString(CaseNumber)}" };
+        if (f.Actor is { } actor) qs.Add($"actor={Uri.EscapeDataString(actor)}");
+        if (f.Action is { } act) qs.Add($"action={act}");
+        if (f.EntityType is { } et) qs.Add($"entity={Uri.EscapeDataString(et)}");
+        if (State.From is { } from) qs.Add($"from={from:yyyy-MM-dd}");
+        if (State.To is { } to) qs.Add($"to={to:yyyy-MM-dd}");
+        return "export/case-audit.csv?" + string.Join("&", qs);
+    }
+}

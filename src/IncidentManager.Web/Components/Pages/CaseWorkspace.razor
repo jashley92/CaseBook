@@ -3,7 +3,6 @@
 @implements IAsyncDisposable
 @inject CaseService Cases
 @inject EvidenceService Evidence
-@inject IntegrityService Integrity
 @inject ReportService Reports
 @inject IClock Clock
 @inject IJSRuntime JS
@@ -1807,96 +1806,10 @@ else
     }
     else if (_activeTab == "Audit")
     {
-        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
-            <p class="text-muted mb-0">Tamper-evident audit trail for this case (most recent first).</p>
-            <a class="btn btn-sm btn-outline-secondary" href="@AuditExportHref()">
-                <span class="bi bi-download me-1" aria-hidden="true"></span>Export CSV
-            </a>
-        </div>
-
-        @* E-24: filter the hash-chained trail by actor / action / entity / date range (server-side). *@
-        <div class="row g-2 align-items-end mb-3">
-            <div class="col-6 col-md-3">
-                <label class="form-label small mb-0">Actor</label>
-                <select class="form-select form-select-sm" @bind="_aqActor" @bind:after="ApplyAuditFilter">
-                    <option value="">Any</option>
-                    @foreach (var actor in _auditActors)
-                    {
-                        <option value="@actor">@Users.DisplayFor(actor)</option>
-                    }
-                </select>
-            </div>
-            <div class="col-6 col-md-3">
-                <label class="form-label small mb-0">Action</label>
-                <select class="form-select form-select-sm" @bind="_aqAction" @bind:after="ApplyAuditFilter">
-                    <option value="">Any</option>
-                    @foreach (var act in Enum.GetValues<AuditAction>())
-                    {
-                        <option value="@act">@act</option>
-                    }
-                </select>
-            </div>
-            <div class="col-6 col-md-2">
-                <label class="form-label small mb-0">Entity</label>
-                <select class="form-select form-select-sm" @bind="_aqEntity" @bind:after="ApplyAuditFilter">
-                    <option value="">Any</option>
-                    @foreach (var et in _auditEntityTypes)
-                    {
-                        <option value="@et">@et</option>
-                    }
-                </select>
-            </div>
-            <div class="col-6 col-md-2">
-                <label class="form-label small mb-0">From (UTC)</label>
-                <input type="date" class="form-control form-control-sm" @bind="_aqFrom" @bind:after="ApplyAuditFilter" />
-            </div>
-            <div class="col-6 col-md-2">
-                <label class="form-label small mb-0">To (UTC)</label>
-                <input type="date" class="form-control form-control-sm" @bind="_aqTo" @bind:after="ApplyAuditFilter" />
-            </div>
-        </div>
-
-        @if (_audit is null)
-        {
-            <p><em>Loading&hellip;</em></p>
-        }
-        else
-        {
-            <div class="d-flex justify-content-between align-items-center mb-1">
-                <span class="small text-muted">@_audit.Count entr@(_audit.Count == 1 ? "y" : "ies")@(_auditFiltered ? " (filtered)" : "")@(_audit.Count >= AuditPageSize ? $" — showing the most recent {AuditPageSize}" : "")</span>
-                @if (_auditFiltered)
-                {
-                    <button class="btn btn-sm btn-link p-0" @onclick="ClearAuditFilter">Clear filters</button>
-                }
-            </div>
-            @if (_audit.Count == 0)
-            {
-                <p class="text-muted">No audit entries match the current filters.</p>
-            }
-            else
-            {
-                <table class="table table-sm">
-                    <thead><tr><th>#</th><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>Reason</th></tr></thead>
-                    <tbody>
-                        @foreach (var a in _audit)
-                        {
-                            <tr>
-                                <td>@a.Sequence</td>
-                                <td class="small">@a.AtUtc.ToString("u")</td>
-                                <td>@Users.DisplayFor(a.Actor)</td>
-                                <td>@a.Action</td>
-                                <td>@a.EntityType</td>
-                                <td class="small">@(string.IsNullOrWhiteSpace(a.Reason) ? "" : a.Reason)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            }
-        }
-
-        <AuthorizeView Policy="@Policies.ViewAllCases">
-            @ViewedByPanel()
-        </AuthorizeView>
+        @* UX-13: extracted to CaseAuditTab. Loads its own trail; _auditFilter (parent-held) keeps the
+           analyst's filters across tab switches; _liveRefresh re-queries when a collaborator edits. *@
+        <CaseAuditTab CaseNumber="@_case.CaseNumber" CaseId="_case.Id" CanViewAll="_canViewAll"
+                      State="_auditFilter" RefreshToken="_liveRefresh" />
     }
     </div>@* /.tabbody *@
 
@@ -2020,44 +1933,6 @@ else
                 <div class="small text-muted mt-1">
                     Target @st.TargetHours h@(st.IsActive && st.DueAtUtc is { } due ? $" · due {TimeDisp.Short(due)}" : "")
                 </div>
-            }
-        </div>;
-
-    // C-05: "Viewed by" — coalesced read-sessions for this case, shown only to leads/admins (surveillance data).
-    private RenderFragment ViewedByPanel() =>
-        @<div class="mt-4">
-            <h2 class="h6 d-flex align-items-center gap-2">
-                <span class="bi bi-eye" aria-hidden="true"></span> Viewed by
-                <span class="im-badge im-b-neutral rounded-pill">@(_viewedBy?.Count ?? 0)</span>
-            </h2>
-            <p class="small text-muted mb-2">
-                Who has opened this case, coalesced into view-sessions. Access logging is out of the
-                tamper-evident chain; scope is set in Administration → Settings → Access logging.
-            </p>
-            @if (_viewedBy is null)
-            {
-                <p class="small text-muted"><em>Loading&hellip;</em></p>
-            }
-            else if (_viewedBy.Count == 0)
-            {
-                <p class="small text-muted">No recorded opens yet (or access logging is off).</p>
-            }
-            else
-            {
-                <table class="table table-sm align-middle">
-                    <thead><tr><th>Viewer</th><th class="text-end">Opens</th><th>First seen</th><th>Last seen</th></tr></thead>
-                    <tbody>
-                        @foreach (var v in _viewedBy)
-                        {
-                            <tr>
-                                <td>@Users.DisplayFor(v.ActorUserId)@if (v.WasRestricted) { <span class="im-badge im-b-warn ms-2">restricted</span> }</td>
-                                <td class="text-end">@v.Count</td>
-                                <td class="small">@TimeDisp.Short(v.FirstSeenUtc)</td>
-                                <td class="small">@TimeDisp.Short(v.LastSeenUtc)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
             }
         </div>;
 
@@ -2266,20 +2141,11 @@ else
     private readonly HashSet<Guid> _custodyLoading = new();
     private readonly Dictionary<Guid, List<ChainOfCustodyEvent>> _custody = new();
 
-    // Audit
-    private List<AuditLogEntry>? _audit;
+    // Audit (UX-13: the tab is extracted to CaseAuditTab; this state persists its filters across re-mounts).
     private bool _canViewAll;
-    private IReadOnlyList<CaseAccessEvent>? _viewedBy; // C-05: coalesced read-sessions for this case (leads only)
-    private const int AuditPageSize = 500;
-    private List<string> _auditActors = new();
-    private List<string> _auditEntityTypes = new();
-    private bool _auditFacetsLoaded;
-    private string _aqActor = "";
-    private string _aqAction = "";
-    private string _aqEntity = "";
-    private DateTime? _aqFrom;
-    private DateTime? _aqTo;
-    private bool _auditFiltered => !BuildAuditFilter().IsEmpty;
+    private readonly CaseAuditFilter _auditFilter = new();
+    // Bumped whenever a collaborator changes the case, so extracted tabs (audit) re-query live.
+    private int _liveRefresh;
 
     // Reports
     private List<Report>? _reports;
@@ -2323,7 +2189,8 @@ else
             var wasEditing = _editingDetails;
             var prevKnown = _knownIds; // U-30: snapshot before Reload re-seeds, so we can diff what appeared
             await Reload();
-            await SetTab(_activeTab); // refresh the visible tab's data (overlaps, graph, audit, reports)
+            _liveRefresh++; // UX-13: signal extracted tabs (audit) to re-query the case
+            await SetTab(_activeTab); // refresh the visible tab's data (overlaps, graph, reports)
             _editingDetails = wasEditing; // don't yank an in-progress edit out from under the user
             FlagNewItems(prevKnown, actorId); // U-30: flash / pulse / toast a collaborator's additions
             StateHasChanged();
@@ -2481,7 +2348,7 @@ else
             _graphNeedsPush = true; // container is (re)created on entering the tab
             await LoadOverlaps();
         }
-        if (tab == "Audit") await LoadAudit();
+        // Audit self-loads in CaseAuditTab (UX-13); nothing to fetch here.
         if (tab == "Report") await LoadReports();
         if (tab == "Tasks") _applyTemplates ??= await Templates.ListActiveAsync();
     }
@@ -2687,53 +2554,6 @@ else
             Toasts.Error(ex.Message);
         }
         await LoadReports();
-    }
-
-    private async Task LoadAudit()
-    {
-        if (_case is null) return;
-        if (!_auditFacetsLoaded)
-        {
-            (_auditActors, _auditEntityTypes) = await Integrity.AuditFacetsAsync(_case.CaseNumber);
-            _auditFacetsLoaded = true;
-        }
-        _audit = await Integrity.QueryAsync(BuildAuditFilter(), AuditPageSize);
-        // C-05: leads/admins see who has read this case (coalesced view-sessions).
-        if (_canViewAll)
-            _viewedBy = await AccessLog.ForCaseAsync(_case.Id);
-    }
-
-    // E-24: build the server-side filter from the tab's controls. "To" is inclusive to the end of the day.
-    private AuditQueryFilter BuildAuditFilter() => new()
-    {
-        CaseNumber = _case?.CaseNumber,
-        Actor = string.IsNullOrWhiteSpace(_aqActor) ? null : _aqActor,
-        Action = Enum.TryParse<AuditAction>(_aqAction, out var a) ? a : null,
-        EntityType = string.IsNullOrWhiteSpace(_aqEntity) ? null : _aqEntity,
-        FromUtc = _aqFrom is { } f ? new DateTimeOffset(f.Date, TimeSpan.Zero) : null,
-        ToUtc = _aqTo is { } t ? new DateTimeOffset(t.Date.AddDays(1).AddTicks(-1), TimeSpan.Zero) : null
-    };
-
-    private async Task ApplyAuditFilter() => await LoadAudit();
-
-    private async Task ClearAuditFilter()
-    {
-        _aqActor = _aqAction = _aqEntity = "";
-        _aqFrom = _aqTo = null;
-        await LoadAudit();
-    }
-
-    // Deep-link to the scoped CSV export mirroring the active filter (dates as yyyy-MM-dd, UTC).
-    private string AuditExportHref()
-    {
-        var f = BuildAuditFilter();
-        var qs = new List<string> { $"case={Uri.EscapeDataString(_case!.CaseNumber)}" };
-        if (f.Actor is { } actor) qs.Add($"actor={Uri.EscapeDataString(actor)}");
-        if (f.Action is { } act) qs.Add($"action={act}");
-        if (f.EntityType is { } et) qs.Add($"entity={Uri.EscapeDataString(et)}");
-        if (_aqFrom is { } from) qs.Add($"from={from:yyyy-MM-dd}");
-        if (_aqTo is { } to) qs.Add($"to={to:yyyy-MM-dd}");
-        return "export/case-audit.csv?" + string.Join("&", qs);
     }
 
     private async Task OpenModal(string name)
