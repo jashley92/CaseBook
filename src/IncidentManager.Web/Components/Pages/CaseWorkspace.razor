@@ -625,244 +625,12 @@ else
     }
     else if (_activeTab == "Entities")
     {
-        <p class="text-muted small">
-            Artifacts and indicators of compromise (IOCs) tied to this case &mdash; accounts, hosts, IPs,
-            domains, URLs, file hashes &mdash; and the relationships between them.
-        </p>
-
-        <AuthorizeView Policy="@Policies.EditCases">
-            <div class="card mb-3 @(_enEditId is not null ? "border-primary" : "")">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>@(_enEditId is null ? "Add entity / IOC" : "Edit entity / IOC")</span>
-                    @if (_enEditId is not null)
-                    {
-                        <span class="small text-muted"><span class="bi bi-pencil-square" aria-hidden="true"></span> correcting an existing indicator · change recorded in the audit trail</span>
-                    }
-                </div>
-                <div class="card-body row g-2 align-items-end">
-                    <div class="col-md-2">
-                        <label class="form-label small mb-0">Type</label>
-                        <select class="form-select form-select-sm" @bind="_enType">
-                            @foreach (var t in Ui.Options<EntityType>("EntityType"))
-                            {
-                                <option value="@t">@Ui.Label(t)</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label small mb-0">Value</label>
-                        <input class="form-control form-control-sm" @bind="_enValue" @bind:event="oninput" placeholder="e.g. 203.0.113.66" />
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small mb-0">Label</label>
-                        <input class="form-control form-control-sm" @bind="_enLabel" placeholder="optional" />
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small mb-0">Disposition</label>
-                        <select class="form-select form-select-sm" @bind="_enDisposition">
-                            @foreach (var d in Ui.Options<EntityDisposition>("EntityDisposition"))
-                            {
-                                <option value="@d">@Ui.Label(d)</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small mb-0">Source</label>
-                        <input class="form-control form-control-sm" @bind="_enSource" placeholder="@($"{DetectionLabel}…")" />
-                    </div>
-                    @if (_enEditId is null)
-                    {
-                        <div class="col-md-1">
-                            <button class="btn btn-sm btn-primary w-100" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddEntity" disabled="@string.IsNullOrWhiteSpace(_enValue)">Add</button>
-                        </div>
-                    }
-                    <div class="col-12">
-                        <input class="form-control form-control-sm" @bind="_enDescription" placeholder="Description / context (optional)" />
-                    </div>
-                    @if (_enEditId is not null)
-                    {
-                        <div class="col-md-6">
-                            <label class="form-label small mb-0">Reason for change <span class="text-muted">(optional)</span></label>
-                            <input class="form-control form-control-sm" @bind="_enReason" placeholder="e.g. re-assessed as benign after review" />
-                        </div>
-                        <div class="col-md-6 d-flex justify-content-end align-items-end gap-2">
-                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEntityEdit">Cancel</button>
-                            <button class="btn btn-sm btn-primary" @onclick="SaveEntityEdit" disabled="@string.IsNullOrWhiteSpace(_enValue)">
-                                <span class="bi bi-check-lg" aria-hidden="true"></span> Save changes
-                            </button>
-                        </div>
-                    }
-                    @if (_entityError is not null) { <div class="col-12"><div class="text-danger small">@_entityError</div></div> }
-                </div>
-            </div>
-        </AuthorizeView>
-
-        @if (_case.Entities.Count == 0)
-        {
-            <p class="text-muted">No entities added yet.</p>
-        }
-        else
-        {
-            <div class="card mb-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>Relationship graph</span>
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn @(_showAttackEdges ? "btn-primary" : "btn-outline-secondary")" @onclick="ToggleAttackEdges"
-                                title="Overlay event steps (actor → target) as dashed, tactic-coloured attack edges">Attack steps</button>
-                        <button class="btn btn-outline-secondary" @onclick="GraphFit" title="Fit graph to view">Fit</button>
-                        <button class="btn btn-outline-secondary" @onclick="GraphTogglePhysics">
-                            @(_physicsOn ? "Freeze" : "Physics")
-                        </button>
-                        <button class="btn btn-outline-secondary" @onclick="GraphRelayout" title="Re-run the force layout">Re-layout</button>
-                        <a class="btn btn-outline-secondary" href="cases/@Id/graph.stix.json"
-                           title="Export this investigation graph as a STIX 2.1 bundle (share with a partner / ingest into a TIP or XSIAM)">
-                            <span class="bi bi-box-arrow-up" aria-hidden="true"></span> STIX
-                        </a>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div id="@GraphContainerId" style="height:460px;border:1px solid var(--bs-border-color);border-radius:.375rem;background:var(--bs-body-bg);"></div>
-                    <div class="d-flex flex-wrap gap-3 mt-2 small text-muted align-items-center">
-                        <span>Disposition:</span>
-                        @* UX-05: dots share one source of truth with the graph via Ui.DispositionColor(). *@
-                        @foreach (var d in new[] { EntityDisposition.Malicious, EntityDisposition.Compromised, EntityDisposition.Suspicious, EntityDisposition.Benign, EntityDisposition.Unknown })
-                        {
-                            <span><span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:@Ui.DispositionColor(d);"></span> @Ui.Label(d)</span>
-                        }
-                        <span class="ms-auto fst-italic">Drag nodes to arrange · scroll to zoom · drag background to pan</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card mb-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>Entities (@_case.Entities.Count)</span>
-                    <span class="seg" role="radiogroup" aria-label="Indicator display"
-                          title="Defanged renders network/URL indicators as hxxp://evil[.]com so they're safe to copy out of the tool.">
-                        <button type="button" class="seg-opt @(!_defangView ? "on" : "")"
-                                role="radio" aria-checked="@(!_defangView)"
-                                @onclick="() => _defangView = false">Live</button>
-                        <button type="button" class="seg-opt @(_defangView ? "on" : "")"
-                                role="radio" aria-checked="@_defangView"
-                                @onclick="() => _defangView = true">Defanged</button>
-                    </span>
-                </div>
-                <div class="card-body p-0">
-                    <table class="table table-sm align-middle mb-0">
-                        <thead><tr><th>Type</th><th>Value</th><th>Label</th><th>Disposition</th><th>Source</th><th></th></tr></thead>
-                        <tbody>
-                            @foreach (var e in _case.Entities.OrderBy(x => x.Type).ThenBy(x => x.Value))
-                            {
-                                <tr class="im-enter @FlashClass(e.Id)" style="@FlashStyle(e.Id)" @key="e.Id">
-                                    <td class="text-nowrap">@Ui.EntityGlyph(e.Type) @Ui.Label(e.Type)</td>
-                                    <td><code class="small">@DisplayValue(e)</code>
-                                        @if (!string.IsNullOrWhiteSpace(e.Description)) { <br /><small class="text-muted">@e.Description</small> }
-                                        @if (_overlaps.TryGetValue(e.Id, out var alsoIn) && alsoIn.Count > 0)
-                                        {
-                                            <br />
-                                            <small><span class="im-badge im-b-info">also in</span>
-                                                @foreach (var o in alsoIn)
-                                                {
-                                                    <a class="ms-1" href="cases/@o.OtherCaseId"><code class="small">@o.OtherCaseNumber</code></a>
-                                                }
-                                            </small>
-                                        }
-                                    </td>
-                                    <td class="small">@(e.Label ?? "—")</td>
-                                    <td><span class="@Ui.DispositionBadge(e.Disposition)">@Ui.Label(e.Disposition)</span></td>
-                                    <td class="small text-muted">@(e.Source ?? "—")</td>
-                                    <td class="text-nowrap">
-                                        @{ var vtUrl = VirusTotalUrl(e); }
-                                        @if (vtUrl is not null)
-                                        {
-                                            <a class="btn btn-sm btn-outline-secondary py-0 me-1" href="@vtUrl" target="_blank" rel="noopener noreferrer">VirusTotal</a>
-                                        }
-                                        <AuthorizeView Policy="@Policies.EditCases" Context="rm">
-                                            <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEntityEdit(e)">Edit</button>
-                                            <button class="btn btn-sm btn-outline-danger" @onclick='() => AskConfirm($"Remove entity {e.Value}? Its relationships are removed too.", () => RemoveEntity(e.Id))'>Remove</button>
-                                        </AuthorizeView>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <AuthorizeView Policy="@Policies.EditCases">
-                @if (_case.Entities.Count >= 2)
-                {
-                    <div class="card mb-3">
-                        <div class="card-header">Add relationship</div>
-                        <div class="card-body row g-2 align-items-end">
-                            <div class="col-md-4">
-                                <label class="form-label small mb-0">Source</label>
-                                <select class="form-select form-select-sm" @bind="_relSource">
-                                    <option value="">— select —</option>
-                                    @foreach (var e in _case.Entities.OrderBy(x => x.Type))
-                                    {
-                                        <option value="@e.Id">@Ui.Label(e.Type): @(e.Label ?? e.Value)</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <label class="form-label small mb-0">Relationship</label>
-                                <select class="form-select form-select-sm" @bind="_relType">
-                                    @foreach (var t in Ui.Options<EntityRelationshipType>("EntityRelationshipType"))
-                                    {
-                                        <option value="@t">@Ui.Label(t)</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label small mb-0">Target</label>
-                                <select class="form-select form-select-sm" @bind="_relTarget">
-                                    <option value="">— select —</option>
-                                    @foreach (var e in _case.Entities.OrderBy(x => x.Type))
-                                    {
-                                        <option value="@e.Id">@Ui.Label(e.Type): @(e.Label ?? e.Value)</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="col-md-1">
-                                <button class="btn btn-sm btn-primary w-100" @onclick="AddRelationship"
-                                        disabled="@(string.IsNullOrEmpty(_relSource) || string.IsNullOrEmpty(_relTarget))">Link</button>
-                            </div>
-                            @if (_relError is not null) { <div class="col-12"><div class="text-danger small">@_relError</div></div> }
-                        </div>
-                    </div>
-                }
-            </AuthorizeView>
-
-            @if (_case.EntityRelationships.Count > 0)
-            {
-                <div class="card">
-                    <div class="card-header">Relationships (@_case.EntityRelationships.Count)</div>
-                    <div class="card-body p-0">
-                        <table class="table table-sm align-middle mb-0">
-                            <tbody>
-                                @foreach (var r in _case.EntityRelationships.OrderBy(x => x.CreatedAtUtc))
-                                {
-                                    <tr>
-                                        <td>
-                                            <span class="fw-semibold">@EntityName(r.SourceEntityId)</span>
-                                            <span class="text-muted">@Ui.Label(r.Type)</span>
-                                            <span class="fw-semibold">@EntityName(r.TargetEntityId)</span>
-                                            @if (!string.IsNullOrWhiteSpace(r.Description)) { <br /><small class="text-muted">@r.Description</small> }
-                                        </td>
-                                        <td class="text-end">
-                                            <AuthorizeView Policy="@Policies.EditCases" Context="rm">
-                                                <button class="btn btn-sm btn-outline-danger" @onclick='() => AskConfirm("Remove this relationship?", () => RemoveRelationship(r.Id))'>Remove</button>
-                                            </AuthorizeView>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            }
-        }
+        @* UX-13: extracted to CaseEntitiesTab. It owns the vis-network graph interop (its own
+           DotNetObjectReference + [JSInvokable] OnNodesMoved) and entity/relationship CRUD; the parent keeps
+           the shared confirm dialog (RequestConfirm→AskConfirm), the flash, and hotkey dispatch (@ref). *@
+        <CaseEntitiesTab @ref="_entitiesTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
+                         OnChanged="Reload" RequestConfirm="OnChildRequestConfirm"
+                         FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh" />
     }
     else if (_activeTab == "Evidence")
     {
@@ -1267,28 +1035,12 @@ else
     private string SummaryEditorId => $"sum-md-{Id}";
     private readonly HashSet<string> _mdEditors = new();  // element ids of currently-mounted EasyMDE instances
 
-    // Entities & relationships
-    private EntityType _enType = EntityType.IpAddress;
-    private string _enValue = "";
-    private string? _enLabel;
-    private EntityDisposition _enDisposition = EntityDisposition.Suspicious;
-    private string? _enSource;
-    private string? _enDescription;
-    private string? _entityError;
-    private Guid? _enEditId;      // entity being corrected in place (null = add mode)
-    private string? _enReason;    // optional reason-for-change → audit trail
-    private string? _relSource;
-    private EntityRelationshipType _relType = EntityRelationshipType.CommunicatedWith;
-    private string? _relTarget;
-    private string? _relError;
+    // Entities: the tab is extracted to CaseEntitiesTab (UX-13), which owns the graph interop and
+    // entity/relationship CRUD. The parent keeps a ref for hotkey dispatch (Ctrl+Enter submit).
+    private CaseEntitiesTab? _entitiesTab;
 
-    // Interactive graph (vis-network via JS interop)
-    private string GraphContainerId => $"entity-graph-{Id}";
-    private bool _physicsOn = true;
-    private bool _showAttackEdges = true;   // overlay event steps as attack edges on the entity graph
-    private bool _graphNeedsPush;
-    private string? _lastGraphSig;
     private bool _canEdit;
+    // Case-local keyboard shortcuts (imCaseHotkeys → OnCaseHotkey); the entity graph has its own ref in its tab.
     private DotNetObjectReference<CaseWorkspace>? _dotNetRef;
 
     // Notes: the tab is extracted to CaseNotesTab (UX-13), which owns its editors + note state. The parent
@@ -1311,7 +1063,9 @@ else
     private bool _canAnyAction => _canEdit || _canReclassify || _canManageLegal || _canAdmin;
     private IDisposable? _caseSub;
     private (string Message, Func<Task> OnConfirm)? _confirm;
-    private Dictionary<Guid, IReadOnlyList<EntityOverlap>> _overlaps = new();
+
+    // UX-13: the extracted Entities tab raises this to use the parent-owned confirm dialog.
+    private void OnChildRequestConfirm((string Message, Func<Task> OnConfirm) req) => AskConfirm(req.Message, req.OnConfirm);
 
     // Related cases (E-14)
     private IReadOnlyList<CaseLinkView> _links = Array.Empty<CaseLinkView>();
@@ -1522,12 +1276,7 @@ else
                          .Select(kv => kv.Key).ToList();
         if (seen.Count > 0) _ = ClearFlashesAfter(seen);
         if (tab == "Overview") await LoadLinks();
-        if (tab == "Entities")
-        {
-            _graphNeedsPush = true; // container is (re)created on entering the tab
-            await LoadOverlaps();
-        }
-        // Audit and Report self-load in their extracted tab components (UX-13); nothing to fetch here.
+        // Audit, Report, and Entities (graph + overlaps) self-load in their extracted tab components (UX-13).
         if (tab == "Tasks") _applyTemplates ??= await Templates.ListActiveAsync();
     }
 
@@ -1651,13 +1400,6 @@ else
         await Cases.RemoveCaseLinkAsync(Id, linkId);
         Toasts.Success("Link removed.");
         await LoadLinks();
-    }
-
-    private async Task LoadOverlaps()
-    {
-        _overlaps = (await Cases.FindEntityOverlapsAsync(Id))
-            .GroupBy(o => o.EntityId)
-            .ToDictionary(g => g.Key, g => (IReadOnlyList<EntityOverlap>)g.ToList());
     }
 
     private async Task OpenModal(string name)
@@ -2125,10 +1867,6 @@ else
     private void OpenShot(Guid evidenceId) => _previewShotId = evidenceId;
     private void CloseShot() => _previewShotId = null;
 
-    // --- Event-step display helpers ---
-    private MitreTactic PrimaryTactic(TimelineEntry e) =>
-        e.Tactics.Count == 0 ? MitreTactic.Unspecified : e.Tactics.Select(t => t.Tactic).OrderBy(x => (int)x).First();
-
     private async Task SetLegalHold(bool held)
     {
         _actionsOpen = false;
@@ -2192,73 +1930,7 @@ else
         Toasts.Success("Task completed");
     }
 
-    // --- Entities & relationships ---
-
-    // Entities tab: when on, network/URL indicators render defanged (hxxp://evil[.]com) for safe
-    // copy-out. Stored values stay canonical (refanged on entry) — this is display-only (E-19).
-    private bool _defangView;
-
-    private string DisplayValue(CaseEntity e) =>
-        _defangView && IocObservable.IsRefangable(e.Type) ? IocObservable.Defang(e.Value) : e.Value;
-
-    private async Task AddEntity()
-    {
-        if (string.IsNullOrWhiteSpace(_enValue)) return;
-        _entityError = null;
-        try
-        {
-            var addedVal = _enValue;
-            await Cases.AddEntityAsync(Id, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource);
-            _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null;
-            await Reload();
-            await LoadOverlaps(); // the new IOC may correlate with another case — surface "also in" now
-            Toasts.Success($"Added {addedVal}");
-        }
-        catch (Exception ex) { _entityError = ex.Message; }
-    }
-
-    // Load an existing IOC into the composer to correct it in place.
-    private void StartEntityEdit(CaseEntity e)
-    {
-        _entityError = null;
-        _enEditId = e.Id;
-        _enReason = null;
-        _enType = e.Type;
-        _enValue = e.Value;
-        _enLabel = e.Label;
-        _enDisposition = e.Disposition;
-        _enSource = e.Source;
-        _enDescription = e.Description;
-    }
-
-    private void CancelEntityEdit()
-    {
-        _enEditId = null; _enReason = null; _entityError = null;
-        _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null;
-    }
-
-    private async Task SaveEntityEdit()
-    {
-        if (_enEditId is not { } id || string.IsNullOrWhiteSpace(_enValue)) return;
-        _entityError = null;
-        try
-        {
-            await Cases.EditEntityAsync(Id, id, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource, _enReason);
-            CancelEntityEdit();
-            await Reload();
-            await LoadOverlaps(); // a changed value/type may change cross-case correlation
-            Toasts.Success("Entity updated");
-        }
-        catch (Exception ex) { _entityError = ex.Message; }
-    }
-
-    private async Task RemoveEntity(Guid entityId)
-    {
-        await Cases.RemoveEntityAsync(Id, entityId);
-        await Reload();
-        await LoadOverlaps(); // keep the overlap map in sync with the current entity set
-        Toasts.Success("Entity removed");
-    }
+    // --- Detection-source deep-links (used by the Overview header) ---
 
     /// <summary>Display label for the detection source (configurable); defaults to "SIEM".</summary>
     private string DetectionLabel
@@ -2277,112 +1949,6 @@ else
         if (string.IsNullOrWhiteSpace(template) || _case is null || string.IsNullOrWhiteSpace(_case.DetectionCaseId)) return null;
         return string.Format(template, Uri.EscapeDataString(_case.DetectionCaseId));
     }
-
-    /// <summary>Deep-link to a VirusTotal search for an IOC-like entity, or null when not applicable.</summary>
-    private string? VirusTotalUrl(CaseEntity e)
-    {
-        if (!Ui.IsIocLike(e.Type) || string.IsNullOrWhiteSpace(e.Value)) return null;
-        var template = Config["ExternalLinks:VirusTotalUrlTemplate"];
-        if (string.IsNullOrWhiteSpace(template)) return null;
-        return string.Format(template, Uri.EscapeDataString(e.Value));
-    }
-
-    private async Task AddRelationship()
-    {
-        _relError = null;
-        if (!Guid.TryParse(_relSource, out var src) || !Guid.TryParse(_relTarget, out var tgt)) return;
-        try
-        {
-            await Cases.LinkEntitiesAsync(Id, src, tgt, _relType, null);
-            _relSource = null; _relTarget = null;
-            await Reload();
-            Toasts.Success("Relationship added");
-        }
-        catch (Exception ex) { _relError = ex.Message; }
-    }
-
-    private async Task RemoveRelationship(Guid relationshipId)
-    {
-        await Cases.UnlinkAsync(Id, relationshipId);
-        await Reload();
-        Toasts.Success("Relationship removed");
-    }
-
-    private string EntityName(Guid entityId)
-    {
-        var e = _case?.Entities.FirstOrDefault(x => x.Id == entityId);
-        if (e is null) return "(unknown)";
-        return string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!;
-    }
-
-    // --- Interactive graph (vis-network via JS interop) ---
-
-    private sealed record GraphColor(string Background, string Border);
-    private sealed record GraphNodeDto(string Id, string Label, string Title, string Shape, GraphColor Color, double? X, double? Y);
-    private sealed record GraphEdgeDto(string Id, string From, string To, string Label, string? Color, bool Dashes);
-
-    /// <summary>vis-network node shape per entity type, so hosts, IPs, URLs etc. read differently at a glance.</summary>
-    private static string ShapeFor(EntityType t) => t switch
-    {
-        EntityType.Account => "dot",
-        EntityType.Host => "hexagon",
-        EntityType.IpAddress => "diamond",
-        EntityType.Domain => "diamond",
-        EntityType.Url => "triangle",
-        EntityType.FileHash => "square",
-        EntityType.FileName => "triangleDown",
-        EntityType.EmailAddress => "star",
-        EntityType.Process => "dot",
-        EntityType.RegistryKey => "square",
-        _ => "dot"
-    };
-
-    private IReadOnlyList<GraphNodeDto> GraphNodes()
-    {
-        if (_case is null) return [];
-        var layout = _case.EntityLayouts.ToDictionary(l => l.EntityId);
-        return _case.Entities.Select(e =>
-        {
-            var label = e.Label ?? e.Value;
-            if (label.Length > 22) label = label[..21] + "…";
-            var color = Ui.DispositionColor(e.Disposition);
-            var title = $"{Ui.Label(e.Type)}: {e.Value}" + (string.IsNullOrWhiteSpace(e.Description) ? "" : $" — {e.Description}");
-            var pos = layout.TryGetValue(e.Id, out var l) ? l : null;
-            return new GraphNodeDto(e.Id.ToString(), $"{Ui.EntityGlyph(e.Type)} {label}", title,
-                ShapeFor(e.Type), new GraphColor(color, color), pos?.X, pos?.Y);
-        }).ToList();
-    }
-
-    private IReadOnlyList<GraphEdgeDto> GraphEdges()
-    {
-        if (_case is null) return [];
-        var edges = _case.EntityRelationships.Select(r =>
-            new GraphEdgeDto(r.Id.ToString(), r.SourceEntityId.ToString(), r.TargetEntityId.ToString(),
-                Ui.Label(r.Type), null, false)).ToList();
-
-        // Layer the attack narrative: event steps with both an actor and a target become dashed,
-        // tactic-coloured edges so the malicious activity graphs over the entity relationships.
-        if (_showAttackEdges)
-        {
-            foreach (var e in _case.TimelineEntries.Where(x => x.Kind == TimelineKind.Event
-                && x.ActorEntityId is not null && x.TargetEntityId is not null))
-            {
-                var tactic = PrimaryTactic(e);
-                edges.Add(new GraphEdgeDto($"evt-{e.Id}", e.ActorEntityId!.ToString()!, e.TargetEntityId!.ToString()!,
-                    Ui.Label(tactic), Ui.TacticColor(tactic), true));
-            }
-        }
-        return edges;
-    }
-
-    /// <summary>Signature of the graph's data so we only push to JS when something actually changed.</summary>
-    private string GraphSignature() => _case is null ? "" : string.Concat(
-        string.Join("|", _case.Entities.Select(e => $"{e.Id:N}:{(int)e.Type}:{(int)e.Disposition}:{e.Label}:{e.Value}")),
-        "#",
-        string.Join("|", _case.EntityRelationships.Select(r => $"{r.Id:N}:{r.SourceEntityId:N}>{r.TargetEntityId:N}:{(int)r.Type}")),
-        "#att:", _showAttackEdges ? "1" : "0", ":",
-        string.Join("|", _case.TimelineEntries.Where(x => x.Kind == TimelineKind.Event && x.ActorEntityId is not null && x.TargetEntityId is not null)
-            .Select(e => $"{e.Id:N}:{e.ActorEntityId:N}>{e.TargetEntityId:N}")));
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -2413,19 +1979,7 @@ else
         await ReconcileMarkdownEditors();
 
         // U-14: the 'n' shortcut's caret focus is handled inside CaseNotesTab (via AutofocusComposer).
-
-        if (_case is null || _activeTab != "Entities" || _case.Entities.Count == 0) return;
-
-        var sig = GraphSignature();
-        if (!_graphNeedsPush && sig == _lastGraphSig) return;
-
-        _graphNeedsPush = false;
-        _lastGraphSig = sig;
-        try
-        {
-            await JS.InvokeVoidAsync("entityGraph.render", GraphContainerId, GraphNodes(), GraphEdges(), _dotNetRef, _canEdit);
-        }
-        catch (JSException) { /* graph is a progressive enhancement; ignore transient interop errors */ }
+        // The entity graph render lives in CaseEntitiesTab (UX-13).
     }
 
     /// <summary>
@@ -2458,14 +2012,6 @@ else
         }
     }
 
-    /// <summary>Called from JS when the user finishes dragging node(s). Persists the arranged layout (editors only).</summary>
-    [JSInvokable]
-    public async Task OnNodesMoved(EntityPosition[] positions)
-    {
-        if (!_canEdit || positions is null || positions.Length == 0) return;
-        await Cases.SaveGraphLayoutAsync(Id, positions);
-    }
-
     /// <summary>U-14: a case-local keyboard shortcut fired by the imCaseHotkeys dispatcher.</summary>
     [JSInvokable]
     public async Task OnCaseHotkey(string cmd)
@@ -2485,7 +2031,7 @@ else
                 case "Timeline":
                     if (_timelineTab is not null) await _timelineTab.SubmitAsync();
                     break;
-                case "Entities": await AddEntity(); break;
+                case "Entities": if (_entitiesTab is not null) await _entitiesTab.SubmitAsync(); break;
                 case "Tasks": await AddTask(); break;
                 case "Overview": if (_editingDetails) await SaveDetails(); break;
             }
@@ -2508,38 +2054,10 @@ else
         }
     }
 
-    private async Task GraphFit() => await SafeGraphCall("entityGraph.fit", GraphContainerId);
-
-    private async Task GraphTogglePhysics()
-    {
-        _physicsOn = !_physicsOn;
-        await SafeGraphCall("entityGraph.setPhysics", GraphContainerId, _physicsOn);
-    }
-
-    private async Task GraphRelayout()
-    {
-        _physicsOn = true;
-        await SafeGraphCall("entityGraph.relayout", GraphContainerId);
-    }
-
-    private void ToggleAttackEdges()
-    {
-        _showAttackEdges = !_showAttackEdges;
-        _graphNeedsPush = true;   // edge set changed → re-render the graph on next after-render
-    }
-
-    private async Task SafeGraphCall(string fn, params object[] args)
-    {
-        try { await JS.InvokeVoidAsync(fn, args); }
-        catch (JSException) { /* ignore */ }
-    }
-
     public async ValueTask DisposeAsync()
     {
         _caseSub?.Dispose();
         if (_relativeTimeTicker is not null) await _relativeTimeTicker.DisposeAsync();
-        try { await JS.InvokeVoidAsync("entityGraph.destroy", GraphContainerId); }
-        catch { /* circuit may already be gone during teardown */ }
         foreach (var id in _mdEditors)
         {
             try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }
