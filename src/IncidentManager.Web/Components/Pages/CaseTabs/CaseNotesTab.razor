@@ -1,0 +1,175 @@
+@* Case workspace — Notes tab (UX-13, interwoven pass). Markdown notes with versioned edits (U-35). This
+   tab owns its two EasyMDE editors (the add composer + the in-place edit editor): it reconciles them in its
+   own OnAfterRenderAsync via the shared markdownEditor JS API and tears them down on dispose, so the parent's
+   central editor reconcile no longer carries a Notes branch. Cross-tab concerns stay in the parent and are
+   threaded in: live-collab flash (delegates), a Reload after a write (OnChanged), and the case hotkeys —
+   the parent calls SubmitAsync() via @ref for Ctrl/⌘+Enter, and sets AutofocusComposer for the 'n' shortcut. *@
+@implements IAsyncDisposable
+@inject CaseService Cases
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<AuthorizeView Policy="@Policies.EditCases">
+    <div class="card mb-3">
+        <div class="card-body">
+            <label class="form-label small mb-1">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links</span></label>
+            @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add. *@
+            <textarea id="@NoteAddEditorId" class="form-control mb-2"></textarea>
+            <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddNote">Add note</button>
+        </div>
+    </div>
+</AuthorizeView>
+
+@if (Notes.Count == 0)
+{
+    <p class="text-muted">No notes yet.</p>
+}
+else
+{
+    @foreach (var n in Notes.Where(x => x.IsCurrent).OrderByDescending(x => x.CreatedAtUtc))
+    {
+        <div class="card mb-2 im-enter @FlashClass?.Invoke(n.Id)" style="@FlashStyle?.Invoke(n.Id)" @key="n.Id">
+            <div class="card-body py-2">
+                @if (_editNoteId == n.Id)
+                {
+                    @* EasyMDE enhances this textarea; keyed by note id so switching notes remounts a fresh editor. *@
+                    <textarea id="@NoteEditEditorId(n.Id)" class="form-control mb-2"></textarea>
+                    <button class="btn btn-sm btn-primary" @onclick="SaveNoteEdit">Save new version</button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="CancelNoteEdit">Cancel</button>
+                }
+                else
+                {
+                    <div class="md-body">@((MarkupString)Md.ToHtml(n.Body))</div>
+                    <small class="text-muted">
+                        @Users.DisplayFor(n.CreatedBy) · @TimeDisp.Long(n.CreatedAtUtc)
+                        @if (n.Version > 1)
+                        {
+                            <span class="im-badge im-b-neutral ms-1">v@(n.Version)</span>
+                        }
+                    </small>
+                    <AuthorizeView Policy="@Policies.EditCases" Context="edit">
+                        <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => StartNoteEdit(n)">Edit</button>
+                    </AuthorizeView>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<AnalystNote> Notes { get; set; } = [];
+    [Parameter] public bool CanEdit { get; set; }
+    /// <summary>Reload the case after a note write so the list (and the rest of the workspace) refreshes.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>Live-collab flash hooks (parent owns the flash state); render a note's flash class / hue.</summary>
+    [Parameter] public Func<Guid, string?>? FlashClass { get; set; }
+    [Parameter] public Func<Guid, string?>? FlashStyle { get; set; }
+    /// <summary>The 'n' shortcut: focus the composer once it's mounted, then signal the parent to clear the flag.</summary>
+    [Parameter] public bool AutofocusComposer { get; set; }
+    [Parameter] public EventCallback OnAutofocusHandled { get; set; }
+
+    private string NoteAddEditorId => $"note-md-{CaseId}";
+    private static string NoteEditEditorId(Guid noteId) => $"noteedit-md-{noteId}";
+    private readonly HashSet<string> _mdEditors = new();  // element ids of currently-mounted EasyMDE instances
+
+    private string _noteBody = "";
+    private Guid? _editNoteId;
+    private string _editNoteBody = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await ReconcileEditors();
+
+        // U-14: place the caret in the composer when reached via the 'n' shortcut (once it's mounted).
+        if (AutofocusComposer && _mdEditors.Contains(NoteAddEditorId))
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.focus", NoteAddEditorId); }
+            catch (JSException) { /* editor not ready; harmless */ }
+            await OnAutofocusHandled.InvokeAsync();
+        }
+    }
+
+    // Reconcile this tab's EasyMDE editors (add composer + the in-place edit editor) against what's needed.
+    // Id-keyed via the shared markdownEditor JS API; the seed value applies on first mount only.
+    private async Task ReconcileEditors()
+    {
+        var desired = new Dictionary<string, string>();
+        if (CanEdit)
+        {
+            desired[NoteAddEditorId] = _noteBody ?? "";
+            if (_editNoteId is { } nid) desired[NoteEditEditorId(nid)] = _editNoteBody ?? "";
+        }
+
+        foreach (var id in _mdEditors.Where(id => !desired.ContainsKey(id)).ToList())
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); } catch (JSException) { /* ignore */ }
+            _mdEditors.Remove(id);
+        }
+        foreach (var (id, seed) in desired)
+        {
+            if (_mdEditors.Contains(id)) continue;
+            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed); _mdEditors.Add(id); }
+            catch (JSException) { /* editor is a progressive enhancement */ }
+        }
+    }
+
+    /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — submit whichever composer is active.</summary>
+    public async Task SubmitAsync()
+    {
+        if (!CanEdit) return;
+        if (_editNoteId is not null) await SaveNoteEdit(); else await AddNote();
+    }
+
+    private async Task AddNote()
+    {
+        try { _noteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteAddEditorId); }
+        catch (JSException) { /* editor not mounted; fall back to bound value */ }
+        if (string.IsNullOrWhiteSpace(_noteBody)) return;
+        await Cases.AddNoteAsync(CaseId, _noteBody);
+        _noteBody = "";
+        await OnChanged.InvokeAsync();
+        Toasts.Success("Note added");
+        try { await JS.InvokeVoidAsync("markdownEditor.setValue", NoteAddEditorId, ""); }
+        catch (JSException) { /* best effort */ }
+    }
+
+    private async Task StartNoteEdit(AnalystNote note)
+    {
+        _editNoteId = note.Id;
+        _editNoteBody = note.Body;
+        try { await JS.InvokeVoidAsync("markdownEditor.setValue", NoteEditEditorId(note.Id), note.Body); }
+        catch (JSException) { /* editor not mounted yet; ReconcileEditors seeds it from _editNoteBody */ }
+    }
+
+    private void CancelNoteEdit()
+    {
+        _editNoteId = null;
+        _editNoteBody = "";
+    }
+
+    private async Task SaveNoteEdit()
+    {
+        if (_editNoteId is not { } noteId) return;
+        try { _editNoteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteEditEditorId(noteId)); }
+        catch (JSException) { /* fall back to bound value */ }
+        if (string.IsNullOrWhiteSpace(_editNoteBody)) return;
+        await Cases.EditNoteAsync(CaseId, noteId, _editNoteBody);
+        CancelNoteEdit();
+        await OnChanged.InvokeAsync();
+        Toasts.Success("Note updated");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var id in _mdEditors)
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }
+            catch { /* circuit may already be gone during teardown */ }
+        }
+        _mdEditors.Clear();
+    }
+}

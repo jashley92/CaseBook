@@ -1377,52 +1377,12 @@ else
     }
     else if (_activeTab == "Notes")
     {
-        <AuthorizeView Policy="@Policies.EditCases">
-            <div class="card mb-3">
-                <div class="card-body">
-                    <label class="form-label small mb-1">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links</span></label>
-                    @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add. *@
-                    <textarea id="@NoteAddEditorId" class="form-control mb-2"></textarea>
-                    <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddNote">Add note</button>
-                </div>
-            </div>
-        </AuthorizeView>
-
-        @if (_case.Notes.Count == 0)
-        {
-            <p class="text-muted">No notes yet.</p>
-        }
-        else
-        {
-            @foreach (var n in _case.Notes.Where(x => x.IsCurrent).OrderByDescending(x => x.CreatedAtUtc))
-            {
-                <div class="card mb-2 im-enter @FlashClass(n.Id)" style="@FlashStyle(n.Id)" @key="n.Id">
-                    <div class="card-body py-2">
-                        @if (_editNoteId == n.Id)
-                        {
-                            @* EasyMDE enhances this textarea; keyed by note id so switching notes remounts a fresh editor. *@
-                            <textarea id="@NoteEditEditorId(n.Id)" class="form-control mb-2"></textarea>
-                            <button class="btn btn-sm btn-primary" @onclick="SaveNoteEdit">Save new version</button>
-                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelNoteEdit">Cancel</button>
-                        }
-                        else
-                        {
-                            <div class="md-body">@((MarkupString)Md.ToHtml(n.Body))</div>
-                            <small class="text-muted">
-                                @Users.DisplayFor(n.CreatedBy) · @TimeDisp.Long(n.CreatedAtUtc)
-                                @if (n.Version > 1)
-                                {
-                                    <span class="im-badge im-b-neutral ms-1">v@(n.Version)</span>
-                                }
-                            </small>
-                            <AuthorizeView Policy="@Policies.EditCases">
-                                <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => StartNoteEdit(n)">Edit</button>
-                            </AuthorizeView>
-                        }
-                    </div>
-                </div>
-            }
-        }
+        @* UX-13: extracted to CaseNotesTab. It owns its EasyMDE editors (so the central reconcile no longer
+           carries a Notes branch); the parent keeps the flash + the Ctrl+Enter / 'n' hotkeys (dispatched to
+           the child via @ref / AutofocusComposer) and reloads the case after a write. *@
+        <CaseNotesTab @ref="_notesTab" CaseId="_case.Id" Notes="_case.Notes" CanEdit="_canEdit"
+                      OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle"
+                      AutofocusComposer="_notesAutofocus" OnAutofocusHandled="() => _notesAutofocus = false" />
     }
     else if (_activeTab == "Tasks")
     {
@@ -1819,11 +1779,10 @@ else
     private string _tlFilterSource = "";
     private bool _tlOldestFirst;   // default newest-first (most recent activity at top)
     private bool _showKillChain = true;
-    // EasyMDE editors are id-keyed; a single set-based reconcile mounts/tears them down (U-35).
+    // EasyMDE editors are id-keyed; a single set-based reconcile mounts/tears them down (U-35). The Notes
+    // tab (UX-13) owns its own editors in CaseNotesTab; these remain for the Timeline / Overview composers.
     private string InvEditorId => $"inv-md-{Id}";
     private string SummaryEditorId => $"sum-md-{Id}";
-    private string NoteAddEditorId => $"note-md-{Id}";
-    private static string NoteEditEditorId(Guid noteId) => $"noteedit-md-{noteId}";
     private readonly HashSet<string> _mdEditors = new();  // element ids of currently-mounted EasyMDE instances
 
     // Event-step (attack narrative) add-form state
@@ -1886,10 +1845,12 @@ else
     private bool _canEdit;
     private DotNetObjectReference<CaseWorkspace>? _dotNetRef;
 
-    // Notes / tasks
-    private string _noteBody = "";
-    private Guid? _editNoteId;
-    private string _editNoteBody = "";
+    // Notes: the tab is extracted to CaseNotesTab (UX-13), which owns its editors + note state. The parent
+    // keeps a ref for hotkey dispatch (Ctrl+Enter submit) and a flag for the 'n' focus shortcut.
+    private CaseNotesTab? _notesTab;
+    private bool _notesAutofocus;
+
+    // Retention guard message for legal-hold / archive actions (not notes).
     private string? _retentionMsg;
 
     // Workspace chrome: actions menu, action modals, collapsible history, and per-action permissions.
@@ -2974,45 +2935,6 @@ else
     /// <summary>ATT&CK technique ID → URL path segment (sub-techniques nest, e.g. T1078.001 → T1078/001).</summary>
     private static string TechniquePath(string techniqueId) => techniqueId.Replace('.', '/');
 
-    private async Task AddNote()
-    {
-        try { _noteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteAddEditorId); }
-        catch (JSException) { /* editor not mounted; fall back to bound value */ }
-        if (string.IsNullOrWhiteSpace(_noteBody)) return;
-        await Cases.AddNoteAsync(Id, _noteBody);
-        _noteBody = "";
-        await Reload();
-        Toasts.Success("Note added");
-        try { await JS.InvokeVoidAsync("markdownEditor.setValue", NoteAddEditorId, ""); }
-        catch (JSException) { /* best effort */ }
-    }
-
-    private async Task StartNoteEdit(AnalystNote note)
-    {
-        _editNoteId = note.Id;
-        _editNoteBody = note.Body;
-        try { await JS.InvokeVoidAsync("markdownEditor.setValue", NoteEditEditorId(note.Id), note.Body); }
-        catch (JSException) { /* editor not mounted yet; ReconcileMarkdownEditors seeds it from _editNoteBody */ }
-    }
-
-    private void CancelNoteEdit()
-    {
-        _editNoteId = null;
-        _editNoteBody = "";
-    }
-
-    private async Task SaveNoteEdit()
-    {
-        if (_editNoteId is not { } noteId) return;
-        try { _editNoteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteEditEditorId(noteId)); }
-        catch (JSException) { /* fall back to bound value */ }
-        if (string.IsNullOrWhiteSpace(_editNoteBody)) return;
-        await Cases.EditNoteAsync(Id, noteId, _editNoteBody);
-        CancelNoteEdit();
-        await Reload();
-        Toasts.Success("Note updated");
-    }
-
     private async Task SetLegalHold(bool held)
     {
         _actionsOpen = false;
@@ -3296,13 +3218,7 @@ else
 
         await ReconcileMarkdownEditors();
 
-        // U-14: once the Notes composer is mounted, place the caret in it (deferred from the 'n' shortcut).
-        if (_focusNotePending && _activeTab == "Notes" && _mdEditors.Contains(NoteAddEditorId))
-        {
-            _focusNotePending = false;
-            try { await JS.InvokeVoidAsync("markdownEditor.focus", NoteAddEditorId); }
-            catch (JSException) { /* editor not ready; harmless */ }
-        }
+        // U-14: the 'n' shortcut's caret focus is handled inside CaseNotesTab (via AutofocusComposer).
 
         if (_case is null || _activeTab != "Entities" || _case.Entities.Count == 0) return;
 
@@ -3332,11 +3248,7 @@ else
                 desired[InvEditorId] = _tlDesc ?? "";
             if (_activeTab == "Overview" && _editingDetails)
                 desired[SummaryEditorId] = _edSummary ?? "";
-            if (_activeTab == "Notes")
-            {
-                desired[NoteAddEditorId] = _noteBody ?? "";
-                if (_editNoteId is { } nid) desired[NoteEditEditorId(nid)] = _editNoteBody ?? "";
-            }
+            // Notes editors are managed by CaseNotesTab (UX-13), not here.
         }
 
         // Tear down editors no longer wanted (e.g. tab switch, cancelled edit).
@@ -3376,7 +3288,7 @@ else
             switch (_activeTab)
             {
                 case "Notes":
-                    if (_editNoteId is not null) await SaveNoteEdit(); else await AddNote();
+                    if (_notesTab is not null) await _notesTab.SubmitAsync();
                     break;
                 case "Timeline":
                     if (_tlEditId is not null)
@@ -3403,13 +3315,11 @@ else
 
         if (cmd == "note" && _canEdit)
         {
-            _focusNotePending = true;      // OnAfterRenderAsync focuses once the composer is mounted
+            _notesAutofocus = true;        // CaseNotesTab focuses its composer once mounted, then clears this
             await SetTab("Notes");
             StateHasChanged();
         }
     }
-
-    private bool _focusNotePending;
 
     private async Task GraphFit() => await SafeGraphCall("entityGraph.fit", GraphContainerId);
 
