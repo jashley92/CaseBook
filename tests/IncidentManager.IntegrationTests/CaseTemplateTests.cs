@@ -201,6 +201,38 @@ public sealed class CaseTemplateTests : IDisposable
     }
 
     [Fact]
+    public async Task Applying_to_a_case_with_no_owner_falls_back_to_the_default_owner_for_hintless_steps(/* U-45 */)
+    {
+        await using var db = NewContext();
+        var cases = NewCaseService(db);
+        var caseId = (await cases.CreateAsync(Req("Alpha"))).Id;   // no Incident Commander assigned
+        var templateId = await NewTemplateService(db).CreateAsync(Phishing());
+
+        await cases.ApplyTemplateAsync(caseId, templateId, defaultOwner: "ivy");
+
+        var c = await cases.GetDetailAsync(caseId);
+        // A step with no owner hint falls back to the supplied default owner…
+        c!.ActionItems.Single(a => a.Title == "Identify recipients").Owner.Should().Be("ivy");
+        // …but a step's own owner hint still wins over the default.
+        c.ActionItems.Single(a => a.Title == "Block sender / URL / hash").Owner.Should().Be("Detection eng");
+    }
+
+    [Fact]
+    public async Task Applying_to_a_case_with_no_owner_and_no_default_leaves_hintless_steps_unassigned(/* U-45 */)
+    {
+        await using var db = NewContext();
+        var cases = NewCaseService(db);
+        var caseId = (await cases.CreateAsync(Req("Alpha"))).Id;   // no Incident Commander, no default owner
+        var templateId = await NewTemplateService(db).CreateAsync(Phishing());
+
+        await cases.ApplyTemplateAsync(caseId, templateId);
+
+        var c = await cases.GetDetailAsync(caseId);
+        c!.ActionItems.Single(a => a.Title == "Identify recipients").Owner.Should().BeNullOrEmpty();
+        c.ActionItems.Single(a => a.Title == "Block sender / URL / hash").Owner.Should().Be("Detection eng");
+    }
+
+    [Fact]
     public async Task Applying_to_a_restricted_case_the_caller_cannot_see_is_refused()
     {
         Guid restricted, templateId;

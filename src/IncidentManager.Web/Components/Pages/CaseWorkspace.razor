@@ -1567,7 +1567,7 @@ else
                                 }
                                 else
                                 {
-                                    <p class="small text-muted mb-2">Uncheck any step you don't need. Owners default to the case owner; due dates are computed from now.</p>
+                                    <p class="small text-muted mb-2">Uncheck any step you don't need. Owners default to a step's own owner, then the case owner; due dates are computed from now.</p>
                                     <div class="border rounded p-2 mb-2">
                                         @foreach (var s in _applyTemplate.Steps)
                                         {
@@ -1583,6 +1583,25 @@ else
                                             </div>
                                         }
                                     </div>
+
+                                    @* U-45: no case owner yet — hint-less steps would land Unassigned. Offer a default owner. *@
+                                    @if (string.IsNullOrWhiteSpace(_case.IncidentCommander))
+                                    {
+                                        <div class="alert alert-warning py-2 px-2 small mb-0">
+                                            <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
+                                            This case has no owner (Incident Commander) yet, so steps without their own owner will be created
+                                            <strong>Unassigned</strong>. Choose a default owner for them, or leave blank to create them unassigned.
+                                            <div class="mt-2" style="max-width:20rem">
+                                                <select class="form-select form-select-sm" @bind="_applyDefaultOwner">
+                                                    <option value="">— Leave unassigned —</option>
+                                                    @foreach (var u in Users.All())
+                                                    {
+                                                        <option value="@u.UserId">@u.DisplayName</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                        </div>
+                                    }
                                 }
                             }
                         </div>
@@ -1610,7 +1629,14 @@ else
                             {
                                 <option value="@u.UserId">@u.DisplayName</option>
                             }
+                            <option value="@ExternalOwnerSentinel">External / other…</option>
                         </select>
+                        @if (_taskOwner == ExternalOwnerSentinel)
+                        {
+                            @* U-45: an external owner (e.g. a vendor contact) not in the directory. *@
+                            <input class="form-control form-control-sm mt-1" @bind="_taskOwnerExternal" @bind:event="oninput"
+                                   placeholder="External owner name" />
+                        }
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small mb-0">Due date</label>
@@ -1641,7 +1667,13 @@ else
                     {
                         <tr class="im-enter @(t.IsOverdue(Clock.UtcNow) ? "table-danger" : "") @FlashClass(t.Id)" style="@FlashStyle(t.Id)" @key="t.Id">
                             <td>@t.Title</td>
-                            <td>@Users.DisplayFor(t.Owner)</td>
+                            <td>
+                                @if (string.IsNullOrWhiteSpace(t.Owner))
+                                {
+                                    <span class="im-badge im-b-warn" title="No owner assigned">Unassigned</span>
+                                }
+                                else { @Users.DisplayFor(t.Owner) }
+                            </td>
                             <td>@(t.DueAtUtc is { } due ? TimeDisp.Short(due) : "—")</td>
                             <td>@t.Status</td>
                             <td>
@@ -2213,6 +2245,8 @@ else
     private string? _linkDesc;
     private string _taskTitle = "";
     private string? _taskOwner;
+    private string? _taskOwnerExternal;              // U-45: free-text owner when "External / other…" is picked
+    private const string ExternalOwnerSentinel = "__external__";
     private DateTime? _taskDueDate;
     private TimeOnly? _taskDueTime;
 
@@ -2452,12 +2486,15 @@ else
     private bool _applyingTemplate;
     private IncidentManager.Application.Admin.TemplateView? _applyTemplate;
     private readonly HashSet<Guid> _applySelected = [];
+    // U-45: default owner for hint-less steps when the case has no Incident Commander yet.
+    private string? _applyDefaultOwner;
 
     private void BeginApplyTemplate()
     {
         _applyingTemplate = true;
         _applyTemplate = null;
         _applySelected.Clear();
+        _applyDefaultOwner = null;
     }
 
     private void CancelApplyTemplate()
@@ -2465,6 +2502,7 @@ else
         _applyingTemplate = false;
         _applyTemplate = null;
         _applySelected.Clear();
+        _applyDefaultOwner = null;
     }
 
     private void OnApplyTemplateChanged(ChangeEventArgs e)
@@ -2486,7 +2524,7 @@ else
         if (_applyTemplate is null || _applySelected.Count == 0) return;
         try
         {
-            var n = await Cases.ApplyTemplateAsync(Id, _applyTemplate.Id, _applySelected.ToList());
+            var n = await Cases.ApplyTemplateAsync(Id, _applyTemplate.Id, _applySelected.ToList(), _applyDefaultOwner);
             Toasts.Success($"Added {n} action item(s) from '{_applyTemplate.Name}'");
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
@@ -3481,10 +3519,16 @@ else
     private async Task AddTask()
     {
         if (string.IsNullOrWhiteSpace(_taskTitle)) return;
-        // The picker stores a directory user id (or "" for unassigned) — normalise blank to null.
-        var owner = string.IsNullOrWhiteSpace(_taskOwner) ? null : _taskOwner;
+        // The picker stores a directory user id, "" for unassigned, or the external sentinel (U-45) →
+        // then the owner is the free-text name. Blank normalises to null (Unassigned).
+        var owner = _taskOwner switch
+        {
+            ExternalOwnerSentinel => string.IsNullOrWhiteSpace(_taskOwnerExternal) ? null : _taskOwnerExternal.Trim(),
+            null or "" => null,
+            var u => u
+        };
         await Cases.AddActionItemAsync(Id, _taskTitle, owner, ResolveDueUtc());
-        _taskTitle = ""; _taskOwner = null; _taskDueDate = null; _taskDueTime = null;
+        _taskTitle = ""; _taskOwner = null; _taskOwnerExternal = null; _taskDueDate = null; _taskDueTime = null;
         await Reload();
         Toasts.Success("Task added");
     }

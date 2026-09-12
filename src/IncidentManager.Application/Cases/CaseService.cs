@@ -914,12 +914,14 @@ public sealed class CaseService
     /// <summary>
     /// Seeds a case template's playbook steps (E-06) as action items on a case the caller can see.
     /// <paramref name="stepIds"/> optionally narrows to a subset (the Apply-playbook dialog lets an analyst
-    /// uncheck steps); null seeds them all. Each item's owner defaults to the case owner (the incident
-    /// commander), with a step's owner hint winning when set, and its due date is computed from now plus the
-    /// step's hour offset so a mid-case apply isn't instantly overdue. Returns the number seeded.
+    /// uncheck steps); null seeds them all. Each item's owner is the step's owner hint when set, else the
+    /// case owner (the incident commander), else <paramref name="defaultOwner"/> — the fallback the Apply
+    /// dialog collects when the case has no owner yet, so a playbook doesn't silently create a wall of
+    /// unassigned tasks (U-45). Any still-empty owner is left Unassigned. Due dates are computed from now plus
+    /// the step's hour offset so a mid-case apply isn't instantly overdue. Returns the number seeded.
     /// </summary>
     public async Task<int> ApplyTemplateAsync(Guid caseId, Guid templateId, IReadOnlyCollection<Guid>? stepIds = null,
-        CancellationToken ct = default)
+        string? defaultOwner = null, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
 
@@ -942,10 +944,16 @@ public sealed class CaseService
             steps = steps.Where(s => wanted.Contains(s.Id));
         }
 
+        // The fallback owner for steps with no hint: the case owner if one exists, else the default the Apply
+        // dialog collected (U-45). Trimmed to null so a blank never becomes a stored empty owner.
+        var fallbackOwner = string.IsNullOrWhiteSpace(c.IncidentCommander)
+            ? (string.IsNullOrWhiteSpace(defaultOwner) ? null : defaultOwner.Trim())
+            : c.IncidentCommander;
+
         var seeded = 0;
         foreach (var s in steps)
         {
-            var owner = string.IsNullOrWhiteSpace(s.OwnerHint) ? c.IncidentCommander : s.OwnerHint.Trim();
+            var owner = string.IsNullOrWhiteSpace(s.OwnerHint) ? fallbackOwner : s.OwnerHint.Trim();
             c.ActionItems.Add(new ActionItem
             {
                 CaseId = c.Id,
