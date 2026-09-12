@@ -1,0 +1,901 @@
+@* Case workspace — Timeline tab (UX-13, interwoven pass; the largest tab). Two interleaved timelines
+   (U-36): the Event / vendor-disclosure narrative and the analyst Investigation log, with a lens switch,
+   in-place editing (+ versioned history for Investigation), the first-party attack kill-chain, ATT&CK
+   attribution to IOC entities, per-entry screenshot paste (U-40), and filters. The tab owns its single
+   Investigation EasyMDE editor (own reconcile + teardown via the shared markdownEditor JS API). Cross-tab
+   concerns are threaded in: the screenshot lightbox (OnPreview → parent OpenShot), the live-collab flash
+   (delegates), a Reload after a write (OnChanged), and Ctrl/⌘+Enter (parent calls SubmitAsync via @ref).
+   The paste shim is registered by the parent against the ids kept here (timeline-dropzone / -file-paste).
+   The "jump to new entries" pill (U-32) stays parent-owned (live-collab state). *@
+@implements IAsyncDisposable
+@inject CaseService Cases
+@inject EvidenceService Evidence
+@inject IClock Clock
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<div class="btn-group mb-2" role="group" aria-label="Timeline lens">
+    <button class="btn btn-sm @(_tlLens is null ? "btn-primary" : "btn-outline-primary")"
+            @onclick="() => SwitchLens(null)">All</button>
+    <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "btn-primary" : "btn-outline-primary")"
+            @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Disclosure" : "Event")</button>
+    <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation ? "btn-primary" : "btn-outline-primary")"
+            @onclick="() => SwitchLens(TimelineKind.Investigation)">Investigation</button>
+</div>
+<p class="text-muted small">
+    @(_tlLens switch
+    {
+        TimelineKind.Event => IsThirdParty
+            ? "The vendor-disclosure narrative: what the vendor reported and what we confirmed about our data."
+            : "Facts and timing of the actual event: the attack narrative.",
+        TimelineKind.Investigation => "Analyst and team actions during the investigation.",
+        _ => "The full chronology: what happened and what the team did, interleaved."
+    })
+</p>
+
+<AuthorizeView Policy="@Policies.EditCases">
+    <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "")">
+        <div class="card-body">
+            @* U-40: hidden sink the paste shim feeds a pasted screenshot into; staged then attached on Add. *@
+            <InputFile id="timeline-file-paste" class="d-none" accept="image/*" OnChange="OnTimelinePasted" />
+            @if (_tlEditId is null)
+            {
+                <div class="small text-muted mb-2 d-flex align-items-center gap-2 flex-wrap">
+                    <span><span class="bi bi-clipboard me-1"></span>Paste a screenshot to attach it to this entry. It's stored as hashed, chain-of-custody evidence.</span>
+                    @if (_tlShotBytes is not null)
+                    {
+                        <span class="im-badge im-b-info">
+                            <span class="bi bi-paperclip me-1"></span>@_tlShotName
+                        </span>
+                        <img src="@TlShotDataUri()" alt="pasted screenshot preview" style="max-height:40px;border-radius:.25rem;border:1px solid var(--bs-border-color)" />
+                        <button type="button" class="btn btn-sm btn-link text-danger p-0" @onclick="ClearTimelineShot">Remove</button>
+                    }
+                </div>
+            }
+            @if (_tlEditId is not null)
+            {
+                <div class="alert alert-primary py-1 px-2 small d-flex justify-content-between align-items-center mb-2">
+                    <span>
+                        <span class="bi bi-pencil-square" aria-hidden="true"></span>
+                        @(_tlAddKind == TimelineKind.Event
+                            ? (IsThirdParty ? "Editing this disclosure step. The audit trail records the change."
+                                            : "Editing this event step. The audit trail records the change.")
+                            : "Editing this entry. A new version is saved; the prior one is kept.")
+                    </span>
+                    <button type="button" class="btn btn-sm btn-link text-decoration-none p-0"
+                            @onclick="CancelTimelineEdit">Cancel</button>
+                </div>
+            }
+            @if (_tlEditId is null && _tlLens is null)
+            {
+                @* All lens: the composer serves both timelines, so pick which to add. *@
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <span class="text-muted small">Add:</span>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="What to add">
+                        <button type="button" class="btn @(_tlAddKind == TimelineKind.Event ? "btn-secondary" : "btn-outline-secondary")"
+                                @onclick="() => SetAddKind(TimelineKind.Event)">@(IsThirdParty ? "Disclosure step" : "Event step")</button>
+                        <button type="button" class="btn @(_tlAddKind == TimelineKind.Investigation ? "btn-secondary" : "btn-outline-secondary")"
+                                @onclick="() => SetAddKind(TimelineKind.Investigation)">Investigation entry</button>
+                    </div>
+                </div>
+            }
+            @if (_tlAddKind == TimelineKind.Event)
+            {
+                @if (!IsThirdParty)
+                {
+                    @* First-party: the attack narrative — ATT&CK tactic(s) + actor→target attribution to IOCs. *@
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label small mb-0">Occurred (@TimeDisp.Label)</label>
+                            <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-0">Actor <span class="text-muted">(from IOCs)</span></label>
+                            <select class="form-select form-select-sm" @bind="_evtActorId">
+                                <option value="">— none —</option>
+                                @foreach (var en in Case.Entities)
+                                {
+                                    <option value="@en.Id">@EntityOptionLabel(en)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-0">Target <span class="text-muted">(from IOCs)</span></label>
+                            <select class="form-select form-select-sm" @bind="_evtTargetId">
+                                <option value="">— none —</option>
+                                @foreach (var en in Case.Entities)
+                                {
+                                    <option value="@en.Id">@EntityOptionLabel(en)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <label class="form-label small mb-0">ATT&amp;CK <span class="text-muted">(technique or tactic, optional)</span></label>
+                        <AttackStepPicker @bind-TechniqueId="_evtTechnique" @bind-Tactic="_evtTactic" />
+                    </div>
+                    <div class="mt-2">
+                        <label class="form-label small mb-1">What the adversary did</label>
+                        <textarea class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
+                                  placeholder="e.g. Authenticated to the VPN from 203.0.113.66 with valid credentials"></textarea>
+                    </div>
+                }
+                else
+                {
+                    @* E-32: third-party/vendor case — a vendor-disclosure narrative, not an attack kill-chain.
+                       No ATT&CK / actor→target; the milestone (disclosure received, vendor detection, scope
+                       confirmed, remediation) is the response type carried on the step. *@
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label small mb-0">Occurred (@TimeDisp.Label)</label>
+                            <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-0">Milestone</label>
+                            <select class="form-select form-select-sm" @bind="_evtStage">
+                                @foreach (var t in Ui.Options<TimelineEntryType>("TimelineEntryType"))
+                                {
+                                    <option value="@t">@Ui.Label(t)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <label class="form-label small mb-1">What the vendor reported / what we confirmed</label>
+                        <textarea class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
+                                  placeholder="e.g. Vendor confirmed our policyholder records were in the exposed dataset"></textarea>
+                    </div>
+                }
+                <div class="row g-2 align-items-end mt-1">
+                    <div class="col-md-4">
+                        <label class="form-label small mb-0">Source</label>
+                        <input class="form-control form-control-sm" @bind="_tlSource" placeholder="@EventSourcePlaceholder" />
+                    </div>
+                    @if (_tlEditId is not null)
+                    {
+                        <div class="col-md-4">
+                            <label class="form-label small mb-0">Reason for change <span class="text-muted">(optional)</span></label>
+                            <input class="form-control form-control-sm" @bind="_tlReason" placeholder="e.g. corrected source IP" />
+                        </div>
+                    }
+                    <div class="col d-flex justify-content-end align-items-end gap-2">
+                        @if (_tlEditId is null)
+                        {
+                            <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddEventStep">
+                                <span class="bi bi-plus-lg" aria-hidden="true"></span> Add step
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelTimelineEdit">Cancel</button>
+                            <button class="btn btn-sm btn-primary" @onclick="SaveEventEdit">
+                                <span class="bi bi-check-lg" aria-hidden="true"></span> Save changes
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                @* Investigation = the analyst's working log: response type + Markdown notes. *@
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small mb-0">Type</label>
+                        <select class="form-select form-select-sm" @bind="_tlType">
+                            @foreach (var t in Ui.Options<TimelineEntryType>("TimelineEntryType"))
+                            {
+                                <option value="@t">@Ui.Label(t)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-0">Occurred (@TimeDisp.Label)</label>
+                        <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-0">Source</label>
+                        <input class="form-control form-control-sm" @bind="_tlSource" placeholder="@($"{DetectionLabel}…")" />
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <label class="form-label small mb-1">
+                        Notes <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, bullet/numbered lists, links</span>
+                    </label>
+                    @* EasyMDE enhances this textarea (managed in this tab's OnAfterRenderAsync); value pulled on Add/Save. *@
+                    <textarea id="@InvEditorId" class="form-control"></textarea>
+                    @if (_tlEditId is not null)
+                    {
+                        <div class="mt-2">
+                            <label class="form-label small mb-0">Reason for change <span class="text-muted">(optional)</span></label>
+                            <input class="form-control form-control-sm" @bind="_tlReason" placeholder="e.g. clarified meeting outcome" />
+                        </div>
+                    }
+                    <div class="mt-2 d-flex justify-content-end gap-2">
+                        @if (_tlEditId is null)
+                        {
+                            <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddTimeline">
+                                <span class="bi bi-plus-lg" aria-hidden="true"></span> Add entry
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelTimelineEdit">Cancel</button>
+                            <button class="btn btn-sm btn-primary" @onclick="SaveInvestigationEdit">
+                                <span class="bi bi-check-lg" aria-hidden="true"></span> Save new version
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</AuthorizeView>
+
+@{
+    // Only current versions are shown; superseded Investigation edits live in history (below) and the audit trail.
+    var tlAll = Case.TimelineEntries.Where(x => (_tlLens is null || x.Kind == _tlLens) && x.IsCurrent).ToList();
+    var tlView = FilteredTimeline(tlAll);
+    // The attack chain is always event-only, regardless of lens (shown under All and Event).
+    var tlChain = Case.TimelineEntries.Where(x => x.Kind == TimelineKind.Event && x.IsCurrent)
+        .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc).ToList();
+}
+
+@* The attack chain is a first-party kill-chain view; a third-party/vendor case (E-32) has none. *@
+@if (_tlLens != TimelineKind.Investigation && tlChain.Count > 0 && !IsThirdParty)
+{
+    <div class="killchain-wrap mb-3">
+        <div class="d-flex align-items-center justify-content-between mb-1">
+            <span class="fw-semibold small"><span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>Attack chain</span>
+            <button type="button" class="btn btn-sm btn-link text-decoration-none py-0"
+                    @onclick="() => _showKillChain = !_showKillChain">@(_showKillChain ? "Hide" : "Show")</button>
+        </div>
+        @if (_showKillChain)
+        {
+            <div class="killchain">
+                @for (var i = 0; i < tlChain.Count; i++)
+                {
+                    var step = tlChain[i];
+                    if (i > 0)
+                    {
+                        <div class="killchain-arrow" aria-hidden="true"><span class="bi bi-arrow-right"></span></div>
+                    }
+                    <div class="killchain-node" style="--tl-color:@Ui.TacticColor(PrimaryTactic(step))">
+                        <div class="killchain-node-head">
+                            <span class="killchain-idx">@(i + 1)</span>
+                            <span class="bi @Ui.TacticGlyph(PrimaryTactic(step))" aria-hidden="true"></span>
+                            <time class="killchain-time" title="@TimeDisp.Long(step.OccurredAtUtc)">@TimeDisp.Short(step.OccurredAtUtc)</time>
+                        </div>
+                        <div class="killchain-tactics">
+                            @foreach (var tt in step.Tactics.Select(x => x.Tactic).OrderBy(x => (int)x))
+                            {
+                                <span class="tactic-chip" style="--tac:@Ui.TacticColor(tt)">@Ui.Label(tt)</span>
+                            }
+                        </div>
+                        @if (EntityById(step.ActorEntityId) is not null || EntityById(step.TargetEntityId) is not null)
+                        {
+                            <div class="killchain-attrib">
+                                @if (EntityById(step.ActorEntityId) is { } a)
+                                {
+                                    <span class="tl-ent">@Ui.EntityGlyph(a.Type) @EntityShort(a)</span>
+                                }
+                                <span class="tl-arrow">&rarr;</span>
+                                @if (EntityById(step.TargetEntityId) is { } tgt)
+                                {
+                                    <span class="tl-ent">@Ui.EntityGlyph(tgt.Type) @EntityShort(tgt)</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">?</span>
+                                }
+                            </div>
+                        }
+                        <div class="killchain-desc">@step.Description</div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@if (tlAll.Count > 0)
+{
+    <div class="tl-filters d-flex flex-wrap align-items-center gap-2 mb-3">
+        @if (_tlLens == TimelineKind.Event && !IsThirdParty)
+        {
+            <select class="form-select form-select-sm w-auto" @bind="_tlFilterTacticStr" aria-label="Filter by tactic">
+                <option value="">All tactics</option>
+                @foreach (var t in Enum.GetValues<MitreTactic>().Where(x => x != MitreTactic.Unspecified))
+                {
+                    <option value="@t">@Ui.Label(t)</option>
+                }
+            </select>
+        }
+        else if (_tlLens == TimelineKind.Investigation || (_tlLens == TimelineKind.Event && IsThirdParty))
+        {
+            <select class="form-select form-select-sm w-auto" @bind="_tlFilterTypeStr" aria-label="Filter by type">
+                <option value="">All types</option>
+                @foreach (var t in Ui.Options<TimelineEntryType>("TimelineEntryType"))
+                {
+                    <option value="@t">@Ui.Label(t)</option>
+                }
+            </select>
+        }
+        <input class="form-control form-control-sm w-auto" style="max-width:14rem" @bind="_tlFilterSource"
+               @bind:event="oninput" placeholder="Filter by source…" aria-label="Filter by source" />
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                @onclick="() => _tlOldestFirst = !_tlOldestFirst"
+                title="Toggle chronological order">
+            <span class="bi @(_tlOldestFirst ? "bi-sort-down-alt" : "bi-sort-up-alt")" aria-hidden="true"></span>
+            @(_tlOldestFirst ? "Oldest first" : "Newest first")
+        </button>
+        @if (_tlFilterType is not null || _tlFilterTactic is not null || !string.IsNullOrWhiteSpace(_tlFilterSource))
+        {
+            <button type="button" class="btn btn-sm btn-link text-decoration-none px-1"
+                    @onclick="ClearTimelineFilters">Clear</button>
+            <span class="text-muted small">@tlView.Count of @tlAll.Count</span>
+        }
+    </div>
+}
+
+@if (tlAll.Count == 0)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon"><span class="bi bi-clock-history" aria-hidden="true"></span></div>
+        <div class="empty-state-title">No entries in this timeline yet</div>
+        <div class="empty-state-msg">
+            @(_tlLens switch
+            {
+                TimelineKind.Event => IsThirdParty
+                    ? "Record the vendor-disclosure milestones: what the vendor reported and what we confirmed."
+                    : "Record the facts and timing of what happened.",
+                TimelineKind.Investigation => "Log the actions you and the team take as the investigation unfolds.",
+                _ => "Record what happened and log the team's actions as the investigation unfolds."
+            })
+        </div>
+    </div>
+}
+else if (tlView.Count == 0)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon"><span class="bi bi-funnel" aria-hidden="true"></span></div>
+        <div class="empty-state-title">No entries match your filters</div>
+        <div class="empty-state-actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ClearTimelineFilters">Clear filters</button>
+        </div>
+    </div>
+}
+else
+{
+    <ol class="tl">
+        @foreach (var e in tlView)
+        {
+            if (e.Kind == TimelineKind.Event)
+            {
+                <li class="tl-item tl-kind-event im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" id="tl-@e.Id" @key="e.Id">
+                    <span class="tl-dot" style="--tl-color:@(IsThirdParty ? Ui.TimelineColor(e.Type) : Ui.TacticColor(PrimaryTactic(e)))" aria-hidden="true">
+                        <span class="bi @(IsThirdParty ? Ui.TimelineGlyph(e.Type) : Ui.TacticGlyph(PrimaryTactic(e)))"></span>
+                    </span>
+                    <div class="tl-body">
+                        <div class="tl-head">
+                            <span class="tl-kind-label"><span class="bi @(IsThirdParty ? "bi-megaphone" : "bi-lightning-charge")" aria-hidden="true"></span> @(IsThirdParty ? "Disclosure" : "Event")</span>
+                            @if (!IsThirdParty)
+                            {
+                                <span class="tl-tactics">
+                                    @foreach (var tt in e.Tactics.Select(x => x.Tactic).OrderBy(x => (int)x))
+                                    {
+                                        <span class="tactic-chip" style="--tac:@Ui.TacticColor(tt)">
+                                            <span class="bi @Ui.TacticGlyph(tt)" aria-hidden="true"></span> @Ui.Label(tt)
+                                        </span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(e.TechniqueId))
+                                    {
+                                        <a class="tactic-chip" style="--tac:#6c757d" target="_blank" rel="noopener noreferrer"
+                                           href="https://attack.mitre.org/techniques/@TechniquePath(e.TechniqueId)/">
+                                            <span class="bi bi-diagram-2" aria-hidden="true"></span> @e.TechniqueId
+                                        </a>
+                                    }
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="tactic-chip" style="--tac:@Ui.TimelineColor(e.Type)">
+                                    <span class="bi @Ui.TimelineGlyph(e.Type)" aria-hidden="true"></span> @Ui.Label(e.Type)
+                                </span>
+                            }
+                            <time class="tl-time" title="@TimeDisp.Long(e.OccurredAtUtc)"><span class="tl-time-abs">@TimeDisp.Short(e.OccurredAtUtc)</span><span class="tl-time-rel">@Ui.RelativeTime(e.OccurredAtUtc, Clock.UtcNow)</span></time>
+                        </div>
+                        <div class="tl-desc">@e.Description</div>
+                        @if (e.EvidenceId is { } shotId)
+                        {
+                            @* U-40: attached screenshot — click the thumbnail to preview it in a lightbox. *@
+                            <button type="button" class="tl-shot d-inline-block mt-1 btn p-0 border-0 bg-transparent" @onclick="() => OnPreview.InvokeAsync(shotId)" title="Preview the attached screenshot">
+                                <img src="evidence/@shotId/inline" alt="attached screenshot" loading="lazy"
+                                     style="max-height:120px;max-width:100%;border-radius:.375rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
+                            </button>
+                        }
+                        <div class="tl-meta">
+                            @if (EntityById(e.ActorEntityId) is { } actor || EntityById(e.TargetEntityId) is not null)
+                            {
+                                <span class="tl-attrib">
+                                    @if (EntityById(e.ActorEntityId) is { } a)
+                                    {
+                                        <span class="tl-ent">@Ui.EntityGlyph(a.Type) @EntityShort(a)</span>
+                                    }
+                                    <span class="tl-arrow">&rarr;</span>
+                                    @if (EntityById(e.TargetEntityId) is { } tgt)
+                                    {
+                                        <span class="tl-ent">@Ui.EntityGlyph(tgt.Type) @EntityShort(tgt)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">(unspecified)</span>
+                                    }
+                                </span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(e.Source))
+                            {
+                                <span class="tl-source"><span class="bi bi-tag" aria-hidden="true"></span> @e.Source</span>
+                            }
+                            <span>logged by @Users.DisplayFor(e.CreatedBy)</span>
+                            @if (e.ModifiedAtUtc is { } mod)
+                            {
+                                <span class="text-muted" title="@TimeDisp.Long(mod)">· edited by @Users.DisplayFor(e.ModifiedBy)</span>
+                            }
+                            @if (CanEdit)
+                            {
+                                <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => StartEventEdit(e)">
+                                    <span class="bi bi-pencil" aria-hidden="true"></span> Edit
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </li>
+            }
+            else
+            {
+                <li class="tl-item tl-kind-inv im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" id="tl-@e.Id" @key="e.Id">
+                    <span class="tl-dot" style="--tl-color:@Ui.TimelineColor(e.Type)" aria-hidden="true">
+                        <span class="bi @Ui.TimelineGlyph(e.Type)"></span>
+                    </span>
+                    <div class="tl-body">
+                        <div class="tl-head">
+                            <span class="tl-kind-label"><span class="bi bi-search" aria-hidden="true"></span> Investigation</span>
+                            <span class="tactic-chip" style="--tac:@Ui.TimelineColor(e.Type)">
+                                <span class="bi @Ui.TimelineGlyph(e.Type)" aria-hidden="true"></span> @e.Type
+                            </span>
+                            @if (e.Version > 1)
+                            {
+                                <span class="im-badge im-b-neutral">v@(e.Version)</span>
+                            }
+                            <time class="tl-time" title="@TimeDisp.Long(e.OccurredAtUtc)"><span class="tl-time-abs">@TimeDisp.Short(e.OccurredAtUtc)</span><span class="tl-time-rel">@Ui.RelativeTime(e.OccurredAtUtc, Clock.UtcNow)</span></time>
+                        </div>
+                        <div class="tl-desc md-body">@((MarkupString)Md.ToHtml(e.Description))</div>
+                        @if (e.EvidenceId is { } shotId)
+                        {
+                            @* U-40: attached screenshot — click the thumbnail to preview it in a lightbox. *@
+                            <button type="button" class="tl-shot d-inline-block mt-1 btn p-0 border-0 bg-transparent" @onclick="() => OnPreview.InvokeAsync(shotId)" title="Preview the attached screenshot">
+                                <img src="evidence/@shotId/inline" alt="attached screenshot" loading="lazy"
+                                     style="max-height:120px;max-width:100%;border-radius:.375rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
+                            </button>
+                        }
+                        <div class="tl-meta">
+                            @if (!string.IsNullOrWhiteSpace(e.Source))
+                            {
+                                <span class="tl-source"><span class="bi bi-tag" aria-hidden="true"></span> @e.Source</span>
+                            }
+                            <span>logged by @Users.DisplayFor(e.CreatedBy)</span>
+                            @{ var history = InvestigationHistory(e); }
+                            @if (history.Count > 0)
+                            {
+                                <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => ToggleHistory(e.Id)">
+                                    <span class="bi bi-clock-history" aria-hidden="true"></span>
+                                    @(_tlHistoryOpen.Contains(e.Id) ? "Hide" : "Show") @history.Count earlier version@(history.Count == 1 ? "" : "s")
+                                </button>
+                            }
+                            @if (CanEdit)
+                            {
+                                <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => StartInvestigationEdit(e)">
+                                    <span class="bi bi-pencil" aria-hidden="true"></span> Edit
+                                </button>
+                            }
+                        </div>
+                        @if (_tlHistoryOpen.Contains(e.Id))
+                        {
+                            <div class="tl-history mt-2">
+                                @foreach (var prior in InvestigationHistory(e))
+                                {
+                                    <div class="tl-history-item">
+                                        <div class="small text-muted">
+                                            <span class="im-badge im-b-neutral">v@(prior.Version)</span>
+                                            @Users.DisplayFor(prior.CreatedBy) · @TimeDisp.Long(prior.CreatedAtUtc)
+                                        </div>
+                                        <div class="md-body">@((MarkupString)Md.ToHtml(prior.Description))</div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </li>
+            }
+        }
+    </ol>
+}
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public string DetectionLabel { get; set; } = "SIEM";
+    /// <summary>Reload the case after a timeline write so the rest of the workspace refreshes.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>Open the parent-owned screenshot lightbox (shared with Evidence) for an evidence id.</summary>
+    [Parameter] public EventCallback<Guid> OnPreview { get; set; }
+    /// <summary>Live-collab flash hooks (parent owns the flash state); render an entry's flash class / hue.</summary>
+    [Parameter] public Func<Guid, string?>? FlashClass { get; set; }
+    [Parameter] public Func<Guid, string?>? FlashStyle { get; set; }
+
+    private bool IsThirdParty => Case.Origin == CaseOrigin.ThirdParty;
+
+    // Composer / lens state
+    private TimelineKind? _tlLens = null;                  // null = All (interleaved); else focus one timeline (U-36)
+    private TimelineKind _tlAddKind = TimelineKind.Event;  // which timeline the composer adds/edits
+    private TimelineEntryType _tlType = TimelineEntryType.Analysis;
+    private DateTime _tlWhen = DateTime.UtcNow;
+    private string _tlDesc = "";
+    private string? _tlSource;
+
+    // U-40: a screenshot pasted into the composer, staged in memory and attached as evidence on Add.
+    private byte[]? _tlShotBytes;
+    private string? _tlShotName;
+    private string _tlShotType = "image/png";
+
+    private TimelineEntryType? _tlFilterType;
+    private MitreTactic? _tlFilterTactic;
+    private string _tlFilterSource = "";
+    private bool _tlOldestFirst;   // default newest-first (most recent activity at top)
+    private bool _showKillChain = true;
+
+    private string InvEditorId => $"inv-md-{CaseId}";
+    private readonly HashSet<string> _mdEditors = new();
+
+    // Event-step (attack narrative) add-form state
+    private string _evtActorId = "";
+    private string _evtTargetId = "";
+    private string _evtTechnique = "";
+    private MitreTactic _evtTactic = MitreTactic.Unspecified;
+    // E-32: a third-party/vendor case has no ATT&CK kill-chain — its Event steps are vendor-disclosure milestones.
+    private TimelineEntryType _evtStage = TimelineEntryType.Communication;
+
+    // Timeline editing: the composer form doubles as an editor when an entry is selected.
+    private Guid? _tlEditId;
+    private string? _tlReason;
+    private readonly HashSet<Guid> _tlHistoryOpen = new();
+
+    // Source placeholder for an event step: the vendor's name on a third-party case, else the detection label.
+    private string EventSourcePlaceholder => IsThirdParty && !string.IsNullOrWhiteSpace(Case.ThirdParty?.VendorName)
+        ? Case.ThirdParty!.VendorName
+        : $"{DetectionLabel}…";
+
+    // The step model stores a set of tactics; the composer chooses one (via AttackStepPicker).
+    private IReadOnlySet<MitreTactic> EvtTacticSet() =>
+        _evtTactic == MitreTactic.Unspecified ? new HashSet<MitreTactic>() : new HashSet<MitreTactic> { _evtTactic };
+
+    private string _tlFilterTypeStr
+    {
+        get => _tlFilterType?.ToString() ?? "";
+        set => _tlFilterType = Enum.TryParse<TimelineEntryType>(value, out var t) ? t : null;
+    }
+
+    private string _tlFilterTacticStr
+    {
+        get => _tlFilterTactic?.ToString() ?? "";
+        set => _tlFilterTactic = Enum.TryParse<MitreTactic>(value, out var t) ? t : null;
+    }
+
+    protected override void OnInitialized()
+    {
+        // U-46: seed the "Occurred" input to now in the viewer's active display zone (like Details / tasks).
+        _tlWhen = UtcToWall(DateTimeOffset.UtcNow);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await ReconcileEditor();
+    }
+
+    // This tab owns a single EasyMDE editor — the Investigation composer, shown only when adding/editing
+    // an Investigation entry. Mounted/torn down via the shared markdownEditor JS API.
+    private async Task ReconcileEditor()
+    {
+        var desired = new Dictionary<string, string>();
+        if (CanEdit && _tlAddKind == TimelineKind.Investigation)
+            desired[InvEditorId] = _tlDesc ?? "";
+
+        foreach (var id in _mdEditors.Where(id => !desired.ContainsKey(id)).ToList())
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); } catch (JSException) { /* ignore */ }
+            _mdEditors.Remove(id);
+        }
+        foreach (var (id, seed) in desired)
+        {
+            if (_mdEditors.Contains(id)) continue;
+            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed); _mdEditors.Add(id); }
+            catch (JSException) { /* editor is a progressive enhancement */ }
+        }
+    }
+
+    /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — submit whichever composer is active.</summary>
+    public async Task SubmitAsync()
+    {
+        if (!CanEdit) return;
+        if (_tlEditId is not null)
+        {
+            if (_tlAddKind == TimelineKind.Event) await SaveEventEdit(); else await SaveInvestigationEdit();
+        }
+        else if (_tlAddKind == TimelineKind.Event) await AddEventStep();
+        else await AddTimeline();
+    }
+
+    private async Task OnTimelinePasted(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var f = e.File;
+            const long maxShot = 15 * 1024 * 1024;
+            await using var s = f.OpenReadStream(maxShot);
+            using var ms = new MemoryStream();
+            await s.CopyToAsync(ms);
+            _tlShotBytes = ms.ToArray();
+            _tlShotName = f.Name;
+            _tlShotType = string.IsNullOrWhiteSpace(f.ContentType) ? "image/png" : f.ContentType;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Couldn't read the pasted image: {ex.Message}");
+            ClearTimelineShot();
+        }
+    }
+
+    private void ClearTimelineShot() { _tlShotBytes = null; _tlShotName = null; }
+
+    private string TlShotDataUri() =>
+        _tlShotBytes is null ? "" : $"data:{_tlShotType};base64,{Convert.ToBase64String(_tlShotBytes)}";
+
+    // Uploads the staged screenshot as hashed, chain-of-custody evidence and returns its id to link.
+    private async Task<Guid?> UploadTimelineShotAsync()
+    {
+        if (_tlShotBytes is null) return null;
+        await using var s = new MemoryStream(_tlShotBytes);
+        var ev = await Evidence.UploadAsync(CaseId, _tlShotName ?? "pasted-screenshot.png", _tlShotType, s, "Pasted into the timeline");
+        return ev.Id;
+    }
+
+    private async Task AddTimeline()
+    {
+        try { _tlDesc = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
+        catch (JSException) { /* editor not mounted; fall back to bound value */ }
+
+        if (string.IsNullOrWhiteSpace(_tlDesc)) return;
+        var whenUtc = WallToUtc(_tlWhen);
+        var shotId = await UploadTimelineShotAsync();
+        await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, _tlDesc, _tlSource, evidenceId: shotId);
+        _tlDesc = ""; _tlSource = null; ClearTimelineShot();
+        await OnChanged.InvokeAsync();
+        Toasts.Success(shotId is null ? "Timeline entry added" : "Timeline entry added with screenshot");
+        try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); }
+        catch (JSException) { /* best effort */ }
+    }
+
+    // Event timeline: an adversary action — ATT&CK tactic(s) + actor→target attribution.
+    private async Task AddEventStep()
+    {
+        if (string.IsNullOrWhiteSpace(_tlDesc)) return;
+        var whenUtc = WallToUtc(_tlWhen);
+        var shotId = await UploadTimelineShotAsync();
+        try
+        {
+            if (IsThirdParty)
+            {
+                await Cases.AddEventStepAsync(CaseId, whenUtc, Array.Empty<MitreTactic>(), null, null, null,
+                    _tlDesc, _tlSource, evidenceId: shotId, type: _evtStage);
+            }
+            else
+            {
+                Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
+                Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
+                var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
+                await Cases.AddEventStepAsync(CaseId, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, evidenceId: shotId);
+            }
+        }
+        catch (ArgumentException ex)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = "";
+        _evtTactic = MitreTactic.Unspecified;
+        ClearTimelineShot();
+        await OnChanged.InvokeAsync();
+        Toasts.Success(shotId is null ? (IsThirdParty ? "Disclosure step added" : "Event step added")
+                                      : "Event step added with screenshot");
+    }
+
+    // Switch the timeline lens (All / Event / Investigation); abandon any in-progress edit and clear
+    // kind-specific filters that no longer apply.
+    private async Task SwitchLens(TimelineKind? lens)
+    {
+        if (_tlEditId is not null) await CancelTimelineEdit();
+        _tlLens = lens;
+        if (lens is { } k) _tlAddKind = k;   // a focused lens drives what the composer adds
+        ClearTimelineFilters();
+    }
+
+    // In the All lens the composer serves both timelines; pick which one to add to.
+    private void SetAddKind(TimelineKind kind) => _tlAddKind = kind;
+
+    // Load an Event step into the composer for an in-place correction.
+    private void StartEventEdit(TimelineEntry e)
+    {
+        _tlAddKind = TimelineKind.Event;
+        _tlEditId = e.Id;
+        _tlReason = null;
+        _tlWhen = UtcToWall(e.OccurredAtUtc);
+        _evtActorId = e.ActorEntityId?.ToString() ?? "";
+        _evtTargetId = e.TargetEntityId?.ToString() ?? "";
+        _evtTechnique = e.TechniqueId ?? "";
+        _evtTactic = e.Tactics.Select(t => t.Tactic).FirstOrDefault();
+        _evtStage = e.Type;   // E-32: vendor-disclosure stage for a third-party case
+        _tlDesc = e.Description;
+        _tlSource = e.Source;
+    }
+
+    private async Task SaveEventEdit()
+    {
+        if (_tlEditId is not { } id || string.IsNullOrWhiteSpace(_tlDesc)) return;
+        var whenUtc = WallToUtc(_tlWhen);
+        try
+        {
+            if (IsThirdParty)
+            {
+                await Cases.EditEventStepAsync(CaseId, id, whenUtc, Array.Empty<MitreTactic>(), null, null, null,
+                    _tlDesc, _tlSource, _tlReason, type: _evtStage);
+            }
+            else
+            {
+                Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
+                Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
+                var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
+                await Cases.EditEventStepAsync(CaseId, id, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, _tlReason);
+            }
+        }
+        catch (ArgumentException ex)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        await CancelTimelineEdit();
+        await OnChanged.InvokeAsync();
+        Toasts.Success(IsThirdParty ? "Disclosure step updated" : "Event step updated");
+    }
+
+    // Load an Investigation entry into the Markdown composer to edit; saving creates a new version.
+    private async Task StartInvestigationEdit(TimelineEntry e)
+    {
+        _tlAddKind = TimelineKind.Investigation;
+        _tlEditId = e.Id;
+        _tlReason = null;
+        _tlType = e.Type;
+        _tlWhen = UtcToWall(e.OccurredAtUtc);
+        _tlSource = e.Source;
+        _tlDesc = e.Description;
+        try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, e.Description); }
+        catch (JSException) { /* editor not mounted yet; ReconcileEditor seeds it from _tlDesc */ }
+    }
+
+    private async Task SaveInvestigationEdit()
+    {
+        if (_tlEditId is not { } id) return;
+        try { _tlDesc = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
+        catch (JSException) { /* fall back to bound value */ }
+        if (string.IsNullOrWhiteSpace(_tlDesc)) return;
+        var whenUtc = WallToUtc(_tlWhen);
+        await Cases.EditInvestigationEntryAsync(CaseId, id, _tlType, whenUtc, _tlDesc, _tlSource, _tlReason);
+        await CancelTimelineEdit();
+        await OnChanged.InvokeAsync();
+        Toasts.Success("Investigation entry updated (new version saved)");
+    }
+
+    // Leave edit mode and clear the composer. For Investigation, also blank the Markdown editor.
+    private async Task CancelTimelineEdit()
+    {
+        var wasInvestigationEdit = _tlAddKind == TimelineKind.Investigation && _tlEditId is not null;
+        _tlEditId = null; _tlReason = null;
+        _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = "";
+        _evtTactic = MitreTactic.Unspecified;
+        if (wasInvestigationEdit)
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); }
+            catch (JSException) { /* best effort */ }
+        }
+    }
+
+    private void ToggleHistory(Guid entryId)
+    {
+        if (!_tlHistoryOpen.Remove(entryId)) _tlHistoryOpen.Add(entryId);
+    }
+
+    // Prior versions of an Investigation entry, newest first, by walking the supersede chain.
+    private List<TimelineEntry> InvestigationHistory(TimelineEntry current)
+    {
+        var all = Case.TimelineEntries;
+        var history = new List<TimelineEntry>();
+        var cursor = current.SupersedesEntryId;
+        while (cursor is { } id && all.FirstOrDefault(x => x.Id == id) is { } prior)
+        {
+            history.Add(prior);
+            cursor = prior.SupersedesEntryId;
+        }
+        return history;
+    }
+
+    private void ClearTimelineFilters()
+    {
+        _tlFilterType = null;
+        _tlFilterTactic = null;
+        _tlFilterSource = "";
+    }
+
+    private List<TimelineEntry> FilteredTimeline(IEnumerable<TimelineEntry> entries)
+    {
+        var view = entries
+            .Where(x => x.Kind == TimelineKind.Event && !IsThirdParty
+                ? (_tlFilterTactic is null || x.Tactics.Any(tac => tac.Tactic == _tlFilterTactic))
+                : (_tlFilterType is null || x.Type == _tlFilterType))
+            .Where(x => string.IsNullOrWhiteSpace(_tlFilterSource)
+                || (x.Source ?? "").Contains(_tlFilterSource, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.OccurredAtUtc)
+            .ThenBy(x => x.CreatedAtUtc)
+            .ToList();
+        if (!_tlOldestFirst) view.Reverse();
+        return view;
+    }
+
+    // --- Event-step display helpers ---
+    private static MitreTactic PrimaryTactic(TimelineEntry e) =>
+        e.Tactics.Count == 0 ? MitreTactic.Unspecified : e.Tactics.Select(t => t.Tactic).OrderBy(x => (int)x).First();
+
+    private CaseEntity? EntityById(Guid? id) =>
+        id is { } g ? Case.Entities.FirstOrDefault(x => x.Id == g) : null;
+
+    private static string EntityShort(CaseEntity e) => string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!;
+
+    private static string EntityOptionLabel(CaseEntity e) =>
+        $"{Ui.EntityGlyph(e.Type)} {(string.IsNullOrWhiteSpace(e.Label) ? e.Value : $"{e.Label} ({e.Value})")}";
+
+    /// <summary>ATT&CK technique ID → URL path segment (sub-techniques nest, e.g. T1078.001 → T1078/001).</summary>
+    private static string TechniquePath(string techniqueId) => techniqueId.Replace('.', '/');
+
+    // --- Wall-clock ⇄ UTC in the viewer's active display zone (U-29/U-46) ---
+    private DateTimeOffset WallToUtc(DateTime wall)
+    {
+        var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
+        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, TimeDisp.Zone), TimeSpan.Zero); }
+        catch { return new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
+    }
+
+    private DateTime UtcToWall(DateTimeOffset utc)
+        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
+
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var id in _mdEditors)
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }
+            catch { /* circuit may already be gone during teardown */ }
+        }
+        _mdEditors.Clear();
+    }
+}
