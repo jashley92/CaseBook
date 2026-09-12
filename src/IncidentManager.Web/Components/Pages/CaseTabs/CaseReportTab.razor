@@ -1,0 +1,220 @@
+@* Case workspace — Report tab (UX-13, extracted from CaseWorkspace.razor). Report-profile picker +
+   in-app preview (E-28 / U-37) and the generate / approve-&-finalize workflow. Self-loads its report
+   list and profiles; the parent passes the case identity + saved profile, a persisted UI-state object,
+   a RefreshToken (bumped on collaborator changes), and OnCaseChanged so the rest of the workspace
+   reloads after a profile save or a generate. *@
+@inject ReportService Reports
+@inject IncidentManager.Application.Admin.ReportProfileService ReportProfiles
+@inject CaseService Cases
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+
+<AuthorizeView Policy="@Policies.EditCases">
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-md-5">
+                    <label class="form-label small mb-0">Report profile <span class="text-muted">(section layout)</span></label>
+                    <select class="form-select form-select-sm" value="@(_selectedProfileId?.ToString() ?? "")"
+                            @onchange="OnProfileChanged">
+                        <option value="">Global default</option>
+                        @if (State.Profiles is not null)
+                        {
+                            @foreach (var p in State.Profiles)
+                            {
+                                <option value="@p.Id">@p.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div class="col-md-7">
+                    @if (_profileDirty)
+                    {
+                        <button class="btn btn-sm btn-outline-primary" @onclick="SaveProfile">
+                            <span class="bi bi-save me-1"></span>Save profile choice
+                        </button>
+                        <span class="small text-muted ms-1">Applies to newly generated reports.</span>
+                    }
+                    else
+                    {
+                        <span class="small text-muted">Reports use this profile's sections. Manage profiles in Admin → Report profiles.</span>
+                    }
+                </div>
+            </div>
+
+            <button class="btn btn-sm btn-outline-secondary" @onclick="TogglePreview">
+                <span class="bi bi-eye me-1"></span>@(State.ShowPreview ? "Hide preview" : "Preview")
+            </button>
+            <button class="btn btn-sm btn-primary ms-2" @onclick="() => Generate(ReportFormat.Word)">
+                Generate Word draft
+            </button>
+            <button class="btn btn-sm btn-primary" @onclick="() => Generate(ReportFormat.Pdf)">
+                Generate PDF draft
+            </button>
+            <span class="ms-2 small text-muted">Reports are generated as drafts; a PDF becomes the locked final only when approved below.</span>
+            @if (_reportMsg is not null) { <div class="small text-muted mt-1">@_reportMsg</div> }
+        </div>
+    </div>
+
+    @if (State.ShowPreview)
+    {
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><span class="bi bi-eye me-1"></span>Preview <span class="small text-muted">· what Generate / Approve will produce</span></span>
+                <button class="btn-close" aria-label="Hide preview" @onclick="TogglePreview"></button>
+            </div>
+            <div class="card-body bg-body-tertiary">
+                <ReportPreview Model="_previewModel" />
+            </div>
+        </div>
+    }
+</AuthorizeView>
+
+@if (_reports is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else if (_reports.Count == 0)
+{
+    <p class="text-muted">No reports generated yet.</p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead><tr><th>File</th><th>Format</th><th>Ver</th><th>Status</th><th>SHA-256</th><th>Generated</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var r in _reports)
+            {
+                <tr>
+                    <td>@r.FileName</td>
+                    <td>@r.Format</td>
+                    <td>@r.Version</td>
+                    <td>
+                        @if (r.IsFinal)
+                        {
+                            <span class="im-badge im-b-ok">Final</span>
+                            <div class="small text-muted">@Users.DisplayFor(r.ApprovedBy) · @TimeDisp.Long(r.ApprovedAtUtc)</div>
+                        }
+                        else
+                        {
+                            <span class="im-badge im-b-neutral">Draft</span>
+                        }
+                    </td>
+                    <td><code class="small">@r.ContentSha256[..16]…</code></td>
+                    <td class="small text-muted">@TimeDisp.Long(r.CreatedAtUtc)<br />@Users.DisplayFor(r.CreatedBy)</td>
+                    <td>
+                        <a class="btn btn-sm btn-outline-primary" href="reports/@r.Id" target="_blank">Download</a>
+                        @if (!r.IsFinal && r.Format == ReportFormat.Pdf)
+                        {
+                            <AuthorizeView Policy="@Policies.ApproveReports" Context="ap">
+                                <button class="btn btn-sm btn-dark" @onclick="() => ApproveReport(r.Id)">Approve &amp; finalize</button>
+                            </AuthorizeView>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    /// <summary>The case's saved report profile; the dropdown re-seeds from this each time the tab opens.</summary>
+    [Parameter] public Guid? CaseProfileId { get; set; }
+    /// <summary>UI state (preview open, cached profile list) held by the parent so it survives the tab re-mount.</summary>
+    [Parameter, EditorRequired] public CaseReportState State { get; set; } = new();
+    /// <summary>Bumped by the parent when a collaborator changes the case, to re-list reports live.</summary>
+    [Parameter] public int RefreshToken { get; set; }
+    /// <summary>Invoked after a profile save / generate so the parent reloads the case for the rest of the workspace.</summary>
+    [Parameter] public EventCallback OnCaseChanged { get; set; }
+
+    private List<Report>? _reports;
+    private string? _reportMsg;
+    private Guid? _selectedProfileId;   // dropdown selection (may differ from the saved case value until saved)
+    private bool _profileDirty;         // selection changed but not yet saved to the case
+    private IncidentManager.Application.Reporting.CaseReportModel? _previewModel;
+    private int _loadedToken = int.MinValue;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Load on first mount and whenever the parent signals a live change; unrelated re-renders (same
+        // token) leave the tab's current state alone.
+        if (_loadedToken != RefreshToken)
+        {
+            _loadedToken = RefreshToken;
+            await LoadReports();
+            if (State.ShowPreview) await RefreshPreview();
+        }
+    }
+
+    private async Task LoadReports()
+    {
+        _reports = await Reports.ListAsync(CaseId);
+        State.Profiles ??= await ReportProfiles.ListActiveAsync();
+        _selectedProfileId = CaseProfileId;
+        _profileDirty = false;
+    }
+
+    private void OnProfileChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        _selectedProfileId = string.IsNullOrEmpty(raw) ? null : Guid.Parse(raw);
+        _profileDirty = _selectedProfileId != CaseProfileId;
+        // Keep an open preview in sync with the new selection.
+        if (State.ShowPreview) _ = RefreshPreview();
+    }
+
+    private async Task SaveProfile()
+    {
+        await Cases.SetReportProfileAsync(CaseId, _selectedProfileId);
+        await OnCaseChanged.InvokeAsync(); // parent Reload → CaseProfileId reflects the saved value
+        _profileDirty = false;
+        Toasts.Success("Report profile saved");
+    }
+
+    private async Task TogglePreview()
+    {
+        State.ShowPreview = !State.ShowPreview;
+        if (State.ShowPreview) await RefreshPreview();
+    }
+
+    private async Task RefreshPreview()
+    {
+        try
+        {
+            _previewModel = await Reports.BuildPreviewModelAsync(CaseId, _selectedProfileId);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            Toasts.Error(ex.Message);
+            _previewModel = null;
+        }
+        StateHasChanged();
+    }
+
+    private async Task Generate(ReportFormat format)
+    {
+        // Persist a changed profile choice first so the generated report matches the selection on screen.
+        if (_profileDirty) await SaveProfile();
+        var report = await Reports.GenerateAsync(CaseId, format);
+        _reportMsg = $"Generated draft {report.FileName} (SHA-256 {report.ContentSha256[..12]}…)";
+        await LoadReports();
+        await OnCaseChanged.InvokeAsync();
+        Toasts.Success($"{format} draft generated");
+    }
+
+    private async Task ApproveReport(Guid reportId)
+    {
+        try
+        {
+            var r = await Reports.ApproveAsync(reportId);
+            Toasts.Success($"Approved {r.FileName} as the locked final");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            Toasts.Error(ex.Message);
+        }
+        await LoadReports();
+    }
+}

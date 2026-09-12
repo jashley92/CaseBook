@@ -3,7 +3,6 @@
 @implements IAsyncDisposable
 @inject CaseService Cases
 @inject EvidenceService Evidence
-@inject ReportService Reports
 @inject IClock Clock
 @inject IJSRuntime JS
 @inject IAuthorizationService AuthZ
@@ -15,7 +14,6 @@
 @inject ISeverityLabels SevLabels
 @inject ToastService Toasts
 @inject IncidentManager.Application.Admin.CaseTemplateService Templates
-@inject IncidentManager.Application.Admin.ReportProfileService ReportProfiles
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
 @inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
@@ -1696,113 +1694,11 @@ else
     }
     else if (_activeTab == "Report")
     {
-        <AuthorizeView Policy="@Policies.EditCases">
-            <div class="card mb-3">
-                <div class="card-body">
-                    <div class="row g-2 align-items-end mb-3">
-                        <div class="col-md-5">
-                            <label class="form-label small mb-0">Report profile <span class="text-muted">(section layout)</span></label>
-                            <select class="form-select form-select-sm" value="@(_selectedProfileId?.ToString() ?? "")"
-                                    @onchange="OnProfileChanged">
-                                <option value="">Global default</option>
-                                @if (_reportProfiles is not null)
-                                {
-                                    @foreach (var p in _reportProfiles)
-                                    {
-                                        <option value="@p.Id">@p.Name</option>
-                                    }
-                                }
-                            </select>
-                        </div>
-                        <div class="col-md-7">
-                            @if (_profileDirty)
-                            {
-                                <button class="btn btn-sm btn-outline-primary" @onclick="SaveProfile">
-                                    <span class="bi bi-save me-1"></span>Save profile choice
-                                </button>
-                                <span class="small text-muted ms-1">Applies to newly generated reports.</span>
-                            }
-                            else
-                            {
-                                <span class="small text-muted">Reports use this profile's sections. Manage profiles in Admin → Report profiles.</span>
-                            }
-                        </div>
-                    </div>
-
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="TogglePreview">
-                        <span class="bi bi-eye me-1"></span>@(_showPreview ? "Hide preview" : "Preview")
-                    </button>
-                    <button class="btn btn-sm btn-primary ms-2" @onclick="() => Generate(ReportFormat.Word)">
-                        Generate Word draft
-                    </button>
-                    <button class="btn btn-sm btn-primary" @onclick="() => Generate(ReportFormat.Pdf)">
-                        Generate PDF draft
-                    </button>
-                    <span class="ms-2 small text-muted">Reports are generated as drafts; a PDF becomes the locked final only when approved below.</span>
-                    @if (_reportMsg is not null) { <div class="small text-muted mt-1">@_reportMsg</div> }
-                </div>
-            </div>
-
-            @if (_showPreview)
-            {
-                <div class="card mb-3">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <span><span class="bi bi-eye me-1"></span>Preview <span class="small text-muted">· what Generate / Approve will produce</span></span>
-                        <button class="btn-close" aria-label="Hide preview" @onclick="TogglePreview"></button>
-                    </div>
-                    <div class="card-body bg-body-tertiary">
-                        <ReportPreview Model="_previewModel" />
-                    </div>
-                </div>
-            }
-        </AuthorizeView>
-
-        @if (_reports is null)
-        {
-            <p><em>Loading&hellip;</em></p>
-        }
-        else if (_reports.Count == 0)
-        {
-            <p class="text-muted">No reports generated yet.</p>
-        }
-        else
-        {
-            <table class="table table-sm align-middle">
-                <thead><tr><th>File</th><th>Format</th><th>Ver</th><th>Status</th><th>SHA-256</th><th>Generated</th><th></th></tr></thead>
-                <tbody>
-                    @foreach (var r in _reports)
-                    {
-                        <tr>
-                            <td>@r.FileName</td>
-                            <td>@r.Format</td>
-                            <td>@r.Version</td>
-                            <td>
-                                @if (r.IsFinal)
-                                {
-                                    <span class="im-badge im-b-ok">Final</span>
-                                    <div class="small text-muted">@Users.DisplayFor(r.ApprovedBy) · @TimeDisp.Long(r.ApprovedAtUtc)</div>
-                                }
-                                else
-                                {
-                                    <span class="im-badge im-b-neutral">Draft</span>
-                                }
-                            </td>
-                            <td><code class="small">@r.ContentSha256[..16]…</code></td>
-                            <td class="small text-muted">@TimeDisp.Long(r.CreatedAtUtc)<br />@Users.DisplayFor(r.CreatedBy)</td>
-                            <td>
-                                <a class="btn btn-sm btn-outline-primary" href="reports/@r.Id" target="_blank">Download</a>
-                                @if (!r.IsFinal && r.Format == ReportFormat.Pdf)
-                                {
-                                    <AuthorizeView Policy="@Policies.ApproveReports" Context="ap">
-                                        <button class="btn btn-sm btn-dark" @onclick="() => ApproveReport(r.Id)">Approve &amp; finalize</button>
-                                    </AuthorizeView>
-                                }
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
+        @* UX-13: extracted to CaseReportTab. Self-lists reports/profiles; _reportState (parent-held) keeps
+           the preview open across tab switches; _liveRefresh re-lists on collaborator changes; OnCaseChanged
+           reloads the case after a profile save / generate so the rest of the workspace stays in sync. *@
+        <CaseReportTab CaseId="_case.Id" CaseProfileId="_case.ReportProfileId" State="_reportState"
+                       RefreshToken="_liveRefresh" OnCaseChanged="Reload" />
     }
     else if (_activeTab == "Audit")
     {
@@ -2147,16 +2043,8 @@ else
     // Bumped whenever a collaborator changes the case, so extracted tabs (audit) re-query live.
     private int _liveRefresh;
 
-    // Reports
-    private List<Report>? _reports;
-    private string? _reportMsg;
-
-    // E-28 / U-37: per-case report profile picker + in-app preview.
-    private List<IncidentManager.Application.Admin.ReportProfileView>? _reportProfiles;
-    private Guid? _selectedProfileId;   // dropdown selection (may differ from the persisted case value)
-    private bool _profileDirty;         // selection changed but not yet saved to the case
-    private bool _showPreview;
-    private IncidentManager.Application.Reporting.CaseReportModel? _previewModel;
+    // Reports (UX-13: the tab is extracted to CaseReportTab; this state persists preview/profiles across re-mounts).
+    private readonly CaseReportState _reportState = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -2348,8 +2236,7 @@ else
             _graphNeedsPush = true; // container is (re)created on entering the tab
             await LoadOverlaps();
         }
-        // Audit self-loads in CaseAuditTab (UX-13); nothing to fetch here.
-        if (tab == "Report") await LoadReports();
+        // Audit and Report self-load in their extracted tab components (UX-13); nothing to fetch here.
         if (tab == "Tasks") _applyTemplates ??= await Templates.ListActiveAsync();
     }
 
@@ -2480,80 +2367,6 @@ else
         _overlaps = (await Cases.FindEntityOverlapsAsync(Id))
             .GroupBy(o => o.EntityId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<EntityOverlap>)g.ToList());
-    }
-
-    private async Task LoadReports()
-    {
-        if (_case is null) return;
-        _reports = await Reports.ListAsync(_case.Id);
-        _reportProfiles ??= await ReportProfiles.ListActiveAsync();
-        _selectedProfileId = _case.ReportProfileId;
-        _profileDirty = false;
-    }
-
-    private void OnProfileChanged(ChangeEventArgs e)
-    {
-        var raw = e.Value?.ToString();
-        _selectedProfileId = string.IsNullOrEmpty(raw) ? null : Guid.Parse(raw);
-        _profileDirty = _selectedProfileId != _case?.ReportProfileId;
-        // Keep an open preview in sync with the new selection.
-        if (_showPreview) _ = RefreshPreview();
-    }
-
-    private async Task SaveProfile()
-    {
-        if (_case is null) return;
-        await Cases.SetReportProfileAsync(_case.Id, _selectedProfileId);
-        await Reload();
-        _profileDirty = false;
-        Toasts.Success("Report profile saved");
-    }
-
-    private async Task TogglePreview()
-    {
-        _showPreview = !_showPreview;
-        if (_showPreview) await RefreshPreview();
-    }
-
-    private async Task RefreshPreview()
-    {
-        if (_case is null) return;
-        try
-        {
-            _previewModel = await Reports.BuildPreviewModelAsync(_case.Id, _selectedProfileId);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
-        {
-            Toasts.Error(ex.Message);
-            _previewModel = null;
-        }
-        StateHasChanged();
-    }
-
-    private async Task Generate(ReportFormat format)
-    {
-        if (_case is null) return;
-        // Persist a changed profile choice first so the generated report matches the selection on screen.
-        if (_profileDirty) await SaveProfile();
-        var report = await Reports.GenerateAsync(_case.Id, format);
-        _reportMsg = $"Generated draft {report.FileName} (SHA-256 {report.ContentSha256[..12]}…)";
-        await LoadReports();
-        await Reload();
-        Toasts.Success($"{format} draft generated");
-    }
-
-    private async Task ApproveReport(Guid reportId)
-    {
-        try
-        {
-            var r = await Reports.ApproveAsync(reportId);
-            Toasts.Success($"Approved {r.FileName} as the locked final");
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
-        {
-            Toasts.Error(ex.Message);
-        }
-        await LoadReports();
     }
 
     private async Task OpenModal(string name)
