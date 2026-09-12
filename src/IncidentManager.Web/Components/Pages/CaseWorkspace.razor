@@ -1369,117 +1369,11 @@ else
     }
     else if (_activeTab == "Evidence")
     {
-      <div id="evidence-dropzone">
-        <AuthorizeView Policy="@Policies.EditCases">
-            <div class="card mb-3">
-                <div class="card-body">
-                    <div class="row g-2 align-items-end">
-                        <div class="col-md-5">
-                            <label class="form-label small mb-0">File</label>
-                            <InputFile id="evidence-file-input" class="form-control form-control-sm" OnChange="OnFileSelected" />
-                        </div>
-                        <div class="col-md-5">
-                            <label class="form-label small mb-0">Description</label>
-                            <input class="form-control form-control-sm" @bind="_evDesc" />
-                        </div>
-                        <div class="col-md-2">
-                            <button class="btn btn-sm btn-primary w-100" @onclick="Upload" disabled="@(_file is null)">Upload</button>
-                        </div>
-                    </div>
-                    <div class="small text-muted mt-2">
-                        <span class="bi bi-clipboard me-1"></span>Paste a screenshot, or drag files onto this tab. They're hashed and logged to the chain of custody like any upload.
-                        @if (_file is not null) { <span class="ms-1">Ready: <strong>@_file.Name</strong>. Add a description and click Upload.</span> }
-                    </div>
-                    @if (_uploadError is not null) { <div class="text-danger small mt-2">@_uploadError</div> }
-
-                    @* Hidden sinks the paste-drop shim (wwwroot/js/paste-drop.js) feeds: paste stages one
-                       screenshot in the picker; a drop bulk-uploads immediately. Both reuse InputFile streaming. *@
-                    <InputFile id="evidence-file-drop" class="d-none" multiple OnChange="OnDropped" />
-                </div>
-            </div>
-        </AuthorizeView>
-
-        @if (_case.Evidence.Count == 0)
-        {
-            <p class="text-muted">No evidence attached.</p>
-        }
-        else
-        {
-            <table class="table table-sm align-middle">
-                <thead><tr><th>File</th><th>Size</th><th>SHA-256</th><th>Uploaded</th><th></th></tr></thead>
-                <tbody>
-                    @foreach (var ev in _case.Evidence.OrderByDescending(x => x.CreatedAtUtc))
-                    {
-                        <tr class="im-enter @FlashClass(ev.Id)" style="@FlashStyle(ev.Id)" @key="ev.Id">
-                            <td>
-                                <div class="d-flex align-items-center gap-2">
-                                    @if (IsImageEvidence(ev))
-                                    {
-                                        @* Click the thumbnail to preview the image in a lightbox (U-40 preview, reused). *@
-                                        <button type="button" class="btn p-0 border-0 bg-transparent" @onclick="() => OpenShot(ev.Id)" title="Preview">
-                                            <img src="evidence/@ev.Id/inline" alt="" loading="lazy"
-                                                 style="max-height:36px;max-width:56px;border-radius:.25rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
-                                        </button>
-                                    }
-                                    <div>@ev.OriginalFileName<br /><small class="text-muted">@ev.Description</small></div>
-                                </div>
-                            </td>
-                            <td>@FormatSize(ev.SizeBytes)</td>
-                            <td><code class="small">@ev.Sha256[..16]…</code></td>
-                            <td class="small text-muted">@TimeDisp.Long(ev.CreatedAtUtc)<br />@Users.DisplayFor(ev.CreatedBy)</td>
-                            <td class="text-nowrap">
-                                @if (IsImageEvidence(ev))
-                                {
-                                    <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => OpenShot(ev.Id)">Preview</button>
-                                }
-                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => ToggleCustody(ev.Id)"
-                                        title="Chain of custody — access and transfer history"
-                                        aria-expanded="@(_custodyOpen.Contains(ev.Id) ? "true" : "false")">
-                                    <span class="bi @(_custodyOpen.Contains(ev.Id) ? "bi-chevron-down" : "bi-clock-history")" aria-hidden="true"></span> Custody
-                                </button>
-                                <a class="btn btn-sm btn-outline-primary" href="evidence/@ev.Id" target="_blank">Download</a>
-                            </td>
-                        </tr>
-                        @if (_custodyOpen.Contains(ev.Id))
-                        {
-                            <tr class="im-custody-row">
-                                <td colspan="5" class="bg-body-tertiary">
-                                    <div class="small fw-semibold mb-2">
-                                        <span class="bi bi-shield-check me-1" aria-hidden="true"></span>Chain of custody
-                                    </div>
-                                    @if (_custodyLoading.Contains(ev.Id))
-                                    {
-                                        <span class="skel skel-line" style="width:40%;display:block"></span>
-                                    }
-                                    else if (_custody.TryGetValue(ev.Id, out var events) && events.Count > 0)
-                                    {
-                                        <table class="table table-sm mb-0 im-table">
-                                            <thead><tr><th>When (@TimeDisp.Label)</th><th>Action</th><th>By</th><th>Details</th></tr></thead>
-                                            <tbody>
-                                                @foreach (var c in events)
-                                                {
-                                                    <tr>
-                                                        <td class="small text-nowrap">@TimeDisp.Long(c.AtUtc)</td>
-                                                        <td class="small"><span class="bi @CustodyGlyph(c.Action) me-1" aria-hidden="true"></span>@c.Action</td>
-                                                        <td class="small">@Users.DisplayFor(c.Actor)</td>
-                                                        <td class="small text-muted">@c.Details</td>
-                                                    </tr>
-                                                }
-                                            </tbody>
-                                        </table>
-                                    }
-                                    else
-                                    {
-                                        <span class="small text-muted">No custody events recorded.</span>
-                                    }
-                                </td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-            </table>
-        }
-      </div>
+        @* UX-13: extracted to CaseEvidenceTab. The screenshot lightbox (OpenShot) + live-collab flash stay
+           in this parent and are threaded in; the paste/drop shim is still registered by this component's
+           OnAfterRenderAsync against the element IDs the child keeps (evidence-dropzone / -file-input / -file-drop). *@
+        <CaseEvidenceTab CaseId="_case.Id" EvidenceItems="_case.Evidence" OnPreview="OpenShot"
+                         OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" />
     }
     else if (_activeTab == "Notes")
     {
@@ -2028,14 +1922,8 @@ else
     private DateTime? _taskDueDate;
     private TimeOnly? _taskDueTime;
 
-    // Evidence
-    private IBrowserFile? _file;
-    private string? _evDesc;
-    private string? _uploadError;
-    // U-26: per-evidence chain-of-custody, lazily loaded when a row is expanded.
-    private readonly HashSet<Guid> _custodyOpen = new();
-    private readonly HashSet<Guid> _custodyLoading = new();
-    private readonly Dictionary<Guid, List<ChainOfCustodyEvent>> _custody = new();
+    // Evidence: the tab is extracted to CaseEvidenceTab (UX-13). The screenshot lightbox (OpenShot) and the
+    // live-collab flash it renders stay here, shared with the Timeline; the child manages its own upload/custody state.
 
     // Audit (UX-13: the tab is extracted to CaseAuditTab; this state persists its filters across re-mounts).
     private bool _canViewAll;
@@ -2857,26 +2745,6 @@ else
     private void ClearTimelineShot() { _tlShotBytes = null; _tlShotName = null; }
 
     private void OpenShot(Guid evidenceId) => _previewShotId = evidenceId;
-
-    // U-26: show/hide an evidence item's chain of custody, loading it on first expand.
-    private async Task ToggleCustody(Guid evidenceId)
-    {
-        if (!_custodyOpen.Add(evidenceId)) { _custodyOpen.Remove(evidenceId); return; }
-        if (_custody.ContainsKey(evidenceId)) return;
-        _custodyLoading.Add(evidenceId);
-        try { _custody[evidenceId] = await Evidence.GetCustodyAsync(evidenceId); }
-        catch { _custody[evidenceId] = new(); }
-        finally { _custodyLoading.Remove(evidenceId); }
-    }
-
-    private static string CustodyGlyph(string action) => action.ToLowerInvariant() switch
-    {
-        "uploaded" => "bi-upload",
-        "downloaded" => "bi-download",
-        "viewed" => "bi-eye",
-        "transferred" => "bi-arrow-left-right",
-        _ => "bi-dot"
-    };
     private void CloseShot() => _previewShotId = null;
 
     private string TlShotDataUri() =>
@@ -3586,66 +3454,4 @@ else
         _dotNetRef?.Dispose();
     }
 
-    // Manual picker or a pasted screenshot (via the shim) stages one file to describe + Upload.
-    private void OnFileSelected(InputFileChangeEventArgs e) => _file = e.File;
-
-    private const long MaxEvidenceBytes = 50 * 1024 * 1024;
-
-    private async Task Upload()
-    {
-        if (_file is null || _case is null) return;
-        _uploadError = null;
-        try
-        {
-            await using var stream = _file.OpenReadStream(MaxEvidenceBytes);
-            var name = _file.Name;
-            await Evidence.UploadAsync(_case.Id, _file.Name, _file.ContentType, stream, _evDesc);
-            _file = null; _evDesc = null;
-            await Reload();
-            Toasts.Success($"Uploaded {name}");
-        }
-        catch (Exception ex)
-        {
-            _uploadError = ex.Message;
-        }
-    }
-
-    // U-39: files dropped onto the Evidence tab (via the paste-drop shim) upload immediately — a drop is a
-    // bulk gesture, so we don't stage them for a per-file description. Same hashed/custody UploadAsync path.
-    private async Task OnDropped(InputFileChangeEventArgs e)
-    {
-        if (_case is null) return;
-        _uploadError = null;
-        var uploaded = 0;
-        foreach (var f in e.GetMultipleFiles(maximumFileCount: 50))
-        {
-            try
-            {
-                await using var stream = f.OpenReadStream(MaxEvidenceBytes);
-                await Evidence.UploadAsync(_case.Id, f.Name, f.ContentType, stream, _evDesc);
-                uploaded++;
-            }
-            catch (Exception ex)
-            {
-                _uploadError = $"{f.Name}: {ex.Message}";
-            }
-        }
-        if (uploaded > 0)
-        {
-            _evDesc = null;
-            await Reload();
-            Toasts.Success($"Uploaded {uploaded} file{(uploaded == 1 ? "" : "s")}");
-        }
-    }
-
-    // Only image evidence can be previewed inline (the /inline endpoint serves image/* only).
-    private static bool IsImageEvidence(Evidence ev) =>
-        ev.ContentType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true;
-
-    private static string FormatSize(long bytes) => bytes switch
-    {
-        >= 1024 * 1024 => $"{bytes / (1024.0 * 1024):0.0} MB",
-        >= 1024 => $"{bytes / 1024.0:0.0} KB",
-        _ => $"{bytes} B"
-    };
 }
