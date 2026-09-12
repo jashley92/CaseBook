@@ -1,0 +1,36 @@
+@* Shared breadcrumb trail (UX-08) — one consistent "you are here" + back affordance across deep routes
+   (case workspace, campaign rollup, admin subpages). Ancestor crumbs are links; the final crumb is the
+   current page (aria-current). Rendered by PageHeader when it's given Crumbs, or dropped in standalone
+   above a page's own custom header (e.g. the case workspace). Separators are drawn in CSS. *@
+@if (Items is { Count: > 0 })
+{
+    <nav class="im-crumbs" aria-label="Breadcrumb">
+        <ol>
+            @for (var i = 0; i < Items.Count; i++)
+            {
+                var c = Items[i];
+                var isLast = i == Items.Count - 1;
+                <li>
+                    @if (!isLast && !string.IsNullOrEmpty(c.Href))
+                    {
+                        <a href="@c.Href">
+                            @if (!string.IsNullOrEmpty(c.Icon)) { <span class="bi @c.Icon" aria-hidden="true"></span> }
+                            <span>@c.Label</span>
+                        </a>
+                    }
+                    else
+                    {
+                        <span aria-current="@(isLast ? "page" : null)">
+                            @if (!string.IsNullOrEmpty(c.Icon)) { <span class="bi @c.Icon" aria-hidden="true"></span> }
+                            <span>@c.Label</span>
+                        </span>
+                    }
+                </li>
+            }
+        </ol>
+    </nav>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<Crumb>? Items { get; set; }
+}

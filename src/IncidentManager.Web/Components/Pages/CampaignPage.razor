@@ -17,21 +17,15 @@
     else
     {
         <PageHeader Title="Campaign rollup"
+                    Crumbs="_crumbs"
                     Subtitle="@(_rollup is null ? null : $"{_rollup.MemberCount} linked case{(_rollup.MemberCount == 1 ? "" : "s")}")">
             <Actions>
-                @if (_rollup is not null)
+                @if (_rollup is not null && _rollup.MemberCount > 1)
                 {
-                    <a class="btn btn-sm btn-outline-secondary" href="cases/@_rollup.AnchorCaseId"
-                       title="Back to the case you came from">
-                        <span class="bi bi-arrow-left" aria-hidden="true"></span> Back to case
+                    <a class="btn btn-sm btn-outline-secondary" href="campaigns/@_rollup.AnchorCaseId/rollup.json"
+                       title="Download the campaign rollup as JSON">
+                        <span class="bi bi-download" aria-hidden="true"></span> Export JSON
                     </a>
-                    @if (_rollup.MemberCount > 1)
-                    {
-                        <a class="btn btn-sm btn-outline-secondary ms-2" href="campaigns/@_rollup.AnchorCaseId/rollup.json"
-                           title="Download the campaign rollup as JSON">
-                            <span class="bi bi-download" aria-hidden="true"></span> Export JSON
-                        </a>
-                    }
                 }
             </Actions>
         </PageHeader>
@@ -233,6 +227,17 @@
 
     private CampaignRollup? _rollup;
     private bool _loaded;
+
+    // UX-08: Cases › [anchor case] › Campaign. The middle crumb is the back affordance to the case the
+    // user came from (the anchor is the lowest-numbered member, a stable entry point from any member).
+    private IReadOnlyList<Crumb> _crumbs =>
+        _rollup is { } r
+            ? [
+                new Crumb("Cases", "cases"),
+                new Crumb(r.Members.FirstOrDefault(m => m.CaseId == r.AnchorCaseId)?.CaseNumber ?? "Case", $"cases/{r.AnchorCaseId}"),
+                new Crumb("Campaign"),
+              ]
+            : [new Crumb("Cases", "cases"), new Crumb("Campaign")];
 
     protected override async Task OnParametersSetAsync()
     {

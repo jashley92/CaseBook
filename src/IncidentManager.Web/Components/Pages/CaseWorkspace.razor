@@ -35,6 +35,8 @@ else if (_case is null)
 }
 else
 {
+    @* UX-08: consistent back affordance — the "Cases" crumb replaces the old "← All cases" button. *@
+    <Breadcrumbs Items="@(new Crumb[] { new("Cases", "cases"), new(_case.CaseNumber) })" />
     <div class="d-flex justify-content-between align-items-start">
         <div>
             <h1 class="mb-1">
@@ -115,7 +117,6 @@ else
                     </div>
                 </div>
             }
-            <a class="btn btn-sm btn-outline-secondary" href="cases">← All cases</a>
         </div>
     </div>
 

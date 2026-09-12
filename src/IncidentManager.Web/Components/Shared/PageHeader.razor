@@ -1,7 +1,12 @@
 @* Shared page header — title (+ optional subtitle) on the left, an optional actions slot on the right.
-   One header vocabulary across every top-level page. Renders the page's single <h1>. *@
+   One header vocabulary across every top-level page. Renders the page's single <h1>. An optional
+   breadcrumb trail (UX-08) sits above the title. *@
 <div class="im-page-head">
     <div>
+        @if (Crumbs is { Count: > 0 })
+        {
+            <Breadcrumbs Items="Crumbs" />
+        }
         <h1 class="im-page-title">@Title</h1>
         @if (!string.IsNullOrWhiteSpace(Subtitle))
         {
@@ -18,4 +23,6 @@
     [Parameter, EditorRequired] public string Title { get; set; } = "";
     [Parameter] public string? Subtitle { get; set; }
     [Parameter] public RenderFragment? Actions { get; set; }
+    /// <summary>Optional breadcrumb trail rendered above the title (UX-08); the current page is the last crumb.</summary>
+    [Parameter] public IReadOnlyList<Crumb>? Crumbs { get; set; }
 }

@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @layout MainLayout
+@inject NavigationManager Nav
 
 @* Administration hub shell (Option B): one left rail is the single navigation for every admin destination,
    so the main sidebar carries just a single "Administration" entry instead of repeating all of these.
@@ -24,6 +25,9 @@
         }
     </nav>
     <div class="admin-pane">
+        @* UX-08: Administration › [section] trail. The rail navigates; the breadcrumb states "you are
+           here" and gives a one-click way back to the admin landing from any deep section. *@
+        <Breadcrumbs Items="Crumbs" />
         @Body
     </div>
 </div>
@@ -31,6 +35,27 @@
 @code {
     private sealed record RailItem(string Title, string Icon, string Href);
     private sealed record RailGroup(string Label, RailItem[] Items);
+
+    // UX-08: derive the breadcrumb from the active rail item so every admin page gets a consistent
+    // "Administration › [section]" trail with no per-page wiring. The landing (admin) and any route not
+    // in the rail (e.g. the public /style alias) render no trail — the rail alone navigates there.
+    private IReadOnlyList<Crumb> Crumbs
+    {
+        get
+        {
+            var path = Nav.ToBaseRelativePath(Nav.Uri);
+            var q = path.IndexOf('?', StringComparison.Ordinal);
+            if (q >= 0) path = path[..q];
+            path = path.TrimEnd('/');
+
+            var active = Groups.SelectMany(g => g.Items)
+                .FirstOrDefault(i => string.Equals(i.Href.TrimEnd('/'), path, StringComparison.OrdinalIgnoreCase));
+
+            return active is null || string.Equals(active.Href, "admin", StringComparison.OrdinalIgnoreCase)
+                ? []
+                : [new Crumb("Administration", "admin"), new Crumb(active.Title)];
+        }
+    }
 
     // Identity & branding is the Settings landing page, so it keeps the short /admin URL; the other
     // Configuration/System sections are /admin/settings/{section}. Match.All highlights the exact section.

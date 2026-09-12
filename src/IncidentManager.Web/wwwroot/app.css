@@ -1738,6 +1738,16 @@ h1:focus {
 .im-page-sub { color: var(--im-text-muted); font-size: .82rem; margin: 2px 0 0; }
 .im-page-actions { display: flex; align-items: center; gap: var(--im-space-2); flex-wrap: wrap; }
 
+/* Breadcrumb trail (UX-08) — "you are here" + the back affordance up to an ancestor route. */
+.im-crumbs { margin: 0 0 var(--im-space-1); }
+.im-crumbs ol { list-style: none; display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; font-size: var(--im-text-sm); }
+.im-crumbs li { display: inline-flex; align-items: center; }
+.im-crumbs li + li::before { content: "\203A"; color: var(--im-text-muted); padding: 0 var(--im-space-2); } /* › */
+.im-crumbs a { color: var(--im-text-muted); text-decoration: none; }
+.im-crumbs a:hover, .im-crumbs a:focus-visible { color: var(--im-accent-text); text-decoration: underline; }
+.im-crumbs [aria-current="page"] { color: var(--im-text); font-weight: 600; }
+.im-crumbs .bi { margin-right: 4px; }
+
 /* Card / panel. */
 .im-card { background: var(--im-surface); border: 1px solid var(--im-border); border-radius: var(--im-radius-lg); padding: var(--im-space-4); color: var(--im-text); }
 
