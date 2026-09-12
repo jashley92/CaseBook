@@ -30,11 +30,15 @@
     @* title attributes double as tooltips when the sidebar is collapsed to icons (data-nav="collapsed"). *@
     <nav class="flex-column" aria-label="Primary">
         <div class="nav-group-label">Workspace</div>
-        <div class="nav-item">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All" title="Dashboard">
-                <span class="bi bi-speedometer2" aria-hidden="true"></span><span class="nav-text">Dashboard</span>
-            </NavLink>
-        </div>
+        @* UX-06: the leadership dashboard is the landing only for all-cases roles; others land on Work,
+           so the Dashboard entry is shown only to them (otherwise the link would bounce back to /work). *@
+        <AuthorizeView Policy="@Policies.ViewAllCases">
+            <div class="nav-item">
+                <NavLink class="nav-link" href="" Match="NavLinkMatch.All" title="Dashboard">
+                    <span class="bi bi-speedometer2" aria-hidden="true"></span><span class="nav-text">Dashboard</span>
+                </NavLink>
+            </div>
+        </AuthorizeView>
         <div class="nav-item">
             <NavLink class="nav-link" href="work" Match="NavLinkMatch.All" title="Work">
                 <span class="bi bi-person-workspace" aria-hidden="true"></span><span class="nav-text">Work</span>

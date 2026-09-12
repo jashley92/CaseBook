@@ -2,6 +2,9 @@
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @inject DashboardService Dashboard
 @inject TimeDisplay TimeDisp
+@inject NavigationManager Nav
+@inject IAuthorizationService AuthZ
+@inject AuthenticationStateProvider AuthState
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -9,6 +12,11 @@
 <PageHeader Title="Leadership Dashboard"
            Subtitle="@(_asOf is null ? null : $"As of {_asOf}")">
     <Actions>
+        @* UX-06: quick jump to the caller's own queue (the opposite-view cross-link). *@
+        <a class="btn btn-sm btn-outline-secondary" href="work"
+           title="Go to your own open cases and after-action tasks">
+            <span class="bi bi-person-workspace" aria-hidden="true"></span> My work
+        </a>
         <a class="btn btn-sm btn-outline-secondary" href="export/metrics.csv" download
            title="Download current metrics and 12-month trend as CSV for a board / regulatory pack">
             <span class="bi bi-download" aria-hidden="true"></span> Export metrics (CSV)
@@ -234,6 +242,15 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // UX-06: role-aware landing. This is the leadership dashboard; only users who can see all cases
+        // (Manager / Legal / SysAdmin) land here. Everyone else (analysts, ICs) starts on their own queue.
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        if (!(await AuthZ.AuthorizeAsync(user, Policies.ViewAllCases)).Succeeded)
+        {
+            Nav.NavigateTo("work", replace: true);
+            return;
+        }
+
         _metrics = await Dashboard.GetAsync();
         _asOf = TimeDisp.TimeOnly(DateTimeOffset.UtcNow);
 
