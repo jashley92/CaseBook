@@ -21,9 +21,19 @@
     else if (_campaigns.Count == 0)
     {
         <section class="im-card">
-            <div class="mw-empty">
-                No campaigns yet. Link two or more cases with <em>Related cases → Link a case → Same campaign as</em>
-                and the group will appear here with a combined rollup.
+            <div class="empty-state">
+                <div class="empty-state-icon"><span class="bi bi-diagram-3" aria-hidden="true"></span></div>
+                <div class="empty-state-title">No campaigns yet</div>
+                @* UX-11: a "campaign" is emergent — there's no campaign entity you create; it's simply a
+                   connected group of cases linked as part of the same attack wave. Say so up front. *@
+                <div class="empty-state-msg">
+                    A campaign isn't something you create — it forms on its own when you link cases as part of the
+                    same attack wave. Two or more cases joined that way show up here as one group, with a combined
+                    rollup of shared indicators, ATT&amp;CK coverage and an interleaved timeline.
+                </div>
+                <div class="empty-state-msg text-muted">
+                    Link cases from a case's <em>Related cases → Link a case → Same campaign as</em>.
+                </div>
             </div>
         </section>
     }
