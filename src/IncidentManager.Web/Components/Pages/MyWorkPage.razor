@@ -1,7 +1,11 @@
 @page "/work"
 @page "/my"
+@* UX-07: /team lands on the team-workload tab directly (its own path so the nav entry highlights
+   cleanly — NavLink ignores the query string, so ?tab=team can't distinguish it from /work). *@
+@page "/team"
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @inject MyWorkService Svc
+@inject NavigationManager Nav
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
@@ -208,14 +212,17 @@
     private bool _canViewTeam;
     private string _activeTab = MyTab;
 
-    /// <summary>Deep-link into the team view (?tab=team), used by the /team redirect and the case-list back-link.</summary>
+    /// <summary>Deep-link into the team view (?tab=team), used by the case-list back-link and older bookmarks; the /team route also lands there.</summary>
     [SupplyParameterFromQuery(Name = "tab")] private string? Tab { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
         var auth = await AuthState.GetAuthenticationStateAsync();
         _canViewTeam = (await Authz.AuthorizeAsync(auth.User, Policies.ViewAllCases)).Succeeded;
-        if (_canViewTeam && string.Equals(Tab, TeamTab, StringComparison.OrdinalIgnoreCase))
+        // Land on the team tab when reached via the /team route or the ?tab=team deep-link (used by the
+        // case-list back-link and older bookmarks). Non-team-capable users fall through to their own work.
+        var onTeamRoute = Nav.ToBaseRelativePath(Nav.Uri).StartsWith("team", StringComparison.OrdinalIgnoreCase);
+        if (_canViewTeam && (onTeamRoute || string.Equals(Tab, TeamTab, StringComparison.OrdinalIgnoreCase)))
             _activeTab = TeamTab;
 
         _work = await Svc.GetAsync();

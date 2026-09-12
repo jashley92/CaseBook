@@ -44,6 +44,15 @@
                 <span class="bi bi-person-workspace" aria-hidden="true"></span><span class="nav-text">Work</span>
             </NavLink>
         </div>
+        @* UX-07: the team-workload view is otherwise a hidden second tab on /work; surface it in nav for
+           all-cases roles so managers don't have to know to click into it. *@
+        <AuthorizeView Policy="@Policies.ViewAllCases">
+            <div class="nav-item">
+                <NavLink class="nav-link" href="team" Match="NavLinkMatch.All" title="Team workload">
+                    <span class="bi bi-people-fill" aria-hidden="true"></span><span class="nav-text">Team</span>
+                </NavLink>
+            </div>
+        </AuthorizeView>
         <div class="nav-item">
             <NavLink class="nav-link" href="agenda" Match="NavLinkMatch.All" title="Agenda">
                 <span class="bi bi-calendar-week" aria-hidden="true"></span><span class="nav-text">Agenda</span>
