@@ -36,6 +36,59 @@
     }
 </div>
 
+@* Scale tokens *@
+<div class="im-card mb-3">
+    <div class="im-section-head"><span>📐 Scale tokens</span><span class="im-section-note">spacing · radius · elevation · type</span></div>
+    <p class="text-muted small">Spacing, radius, shadow and type come from the scale (UX-03). Reach for these instead of ad-hoc px/rem so density and elevation stay consistent. Breakpoints can't be <code>var()</code>-driven in <code>@@media</code>; the canonical set is a documented convention (641 / 720 / 980).</p>
+
+    <div class="sg-tok-group">
+        <div class="sg-tok-label">Spacing <code>--im-space-1…6</code></div>
+        <div class="d-flex align-items-end flex-wrap" style="gap: var(--im-space-3)">
+            @foreach (var s in new[] { 1, 2, 3, 4, 5, 6 })
+            {
+                <div class="text-center">
+                    <div style="width: var(--im-space-@s); height: var(--im-space-@s); background: var(--im-accent-strong); border-radius: 2px;"></div>
+                    <code class="small">@s</code>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="sg-tok-group">
+        <div class="sg-tok-label">Radius <code>--im-radius-sm / (default) / -lg / -xl / -pill</code></div>
+        <div class="d-flex flex-wrap" style="gap: var(--im-space-3)">
+            @foreach (var (v, l) in new[] { ("var(--im-radius-sm)", "sm"), ("var(--im-radius)", "base"), ("var(--im-radius-lg)", "lg"), ("var(--im-radius-xl)", "xl"), ("var(--im-radius-pill)", "pill") })
+            {
+                <div class="text-center">
+                    <div style="width: 3.5rem; height: 2.5rem; background: var(--im-surface-2); border: 1px solid var(--im-border-strong); border-radius: @v;"></div>
+                    <code class="small">@l</code>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="sg-tok-group">
+        <div class="sg-tok-label">Elevation <code>--im-shadow-sm / (default) / -lg</code></div>
+        <div class="d-flex flex-wrap" style="gap: var(--im-space-5); padding: var(--im-space-2) 0 var(--im-space-4)">
+            @foreach (var (v, l) in new[] { ("var(--im-shadow-sm)", "sm"), ("var(--im-shadow)", "base"), ("var(--im-shadow-lg)", "lg") })
+            {
+                <div class="text-center">
+                    <div style="width: 4.5rem; height: 2.5rem; background: var(--im-surface); border-radius: var(--im-radius-lg); box-shadow: @v;"></div>
+                    <code class="small">@l</code>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="sg-tok-group">
+        <div class="sg-tok-label">Type <code>--im-text-xs … -xl</code></div>
+        @foreach (var (v, l) in new[] { ("var(--im-text-xl)", "xl · titles"), ("var(--im-text-lg)", "lg"), ("var(--im-text-md)", "md"), ("var(--im-text-base)", "base"), ("var(--im-text-sm)", "sm"), ("var(--im-text-xs)", "xs · badges/labels") })
+            {
+                <div style="font-size: @v; line-height: 1.4;">The quick brown fox <code class="text-muted" style="font-size: var(--im-text-xs);">@l</code></div>
+            }
+    </div>
+</div>
+
 @* Badges *@
 <div class="im-card mb-3">
     <div class="im-section-head"><span>🏷️ Badges</span><span class="im-section-note">im-badge base + variants</span></div>

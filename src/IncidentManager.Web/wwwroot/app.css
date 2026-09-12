@@ -136,13 +136,42 @@ h1:focus {
     --im-phase-recovery-bg: #d7f1ec; --im-phase-recovery-fg: #0e6b64; --im-phase-recovery-bd: #b3e4dc;
     --im-phase-closed-bg: #e4f3e7; --im-phase-closed-fg: #1f7a37; --im-phase-closed-bd: #c6e6cd;
 
+    /* Scale tokens (UX-03) — spacing / radius / elevation / type. Values equal the literals already
+       in use (12px = 0.75rem, etc.), so adopting them is a no-visual-change refactor. New work should
+       reach for these instead of ad-hoc px/rem so density and elevation stay consistent. Breakpoints
+       cannot be var()-driven in @media, so the canonical set lives as a documented convention (see
+       docs/STYLE-GUIDE.md): 641px (sidebar), 720px (tile grid), 980px (wide split). */
+    --im-space-1: 0.25rem;   /* 4px  */
+    --im-space-2: 0.5rem;    /* 8px  */
+    --im-space-3: 0.75rem;   /* 12px */
+    --im-space-4: 1rem;      /* 16px */
+    --im-space-5: 1.5rem;    /* 24px */
+    --im-space-6: 2rem;      /* 32px */
+
+    --im-radius-sm: 0.4rem;   /* badges, chips */
+    --im-radius: 0.5rem;      /* default controls (mirrors --bs-border-radius) */
+    --im-radius-lg: 0.75rem;  /* cards, stat tiles, panels (12px) */
+    --im-radius-xl: 0.85rem;  /* modals */
+    --im-radius-pill: 999px;
+
+    --im-shadow-sm: 0 0.4rem 1rem rgba(0, 0, 0, 0.18);   /* toasts */
+    --im-shadow: 0 0.6rem 1.6rem rgba(0, 0, 0, 0.22);    /* dropdowns / floating panels */
+    --im-shadow-lg: 0 1.5rem 3rem rgba(0, 0, 0, 0.35);   /* modals */
+
+    --im-text-xs: 0.75rem;
+    --im-text-sm: 0.85rem;
+    --im-text-base: 1rem;
+    --im-text-md: 1.05rem;
+    --im-text-lg: 1.15rem;
+    --im-text-xl: 1.6rem;    /* page + stat-value titles */
+
     /* Bootstrap bridge: retint global components without repainting each element.
        Primary stays charcoal (the brand's "black"); links pick up the gold. */
     --bs-primary: #232a33;
     --bs-primary-rgb: 35, 42, 51;
     --bs-link-color: var(--im-accent-text);
     --bs-link-hover-color: #6e5500;
-    --bs-border-radius: 0.5rem;
+    --bs-border-radius: var(--im-radius);
 }
 
 [data-bs-theme="dark"] {
@@ -192,7 +221,7 @@ h1:focus {
     color: var(--im-text);
     border: 1px solid var(--im-border-strong);
     border-radius: 0.5rem;
-    box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.18);
+    box-shadow: var(--im-shadow-sm);
     transform: translateY(-150%);
     transition: transform 120ms ease-out;
 }
@@ -216,11 +245,11 @@ h1:focus {
 /* Soft tinted status badges — one base + semantic modifiers, token-driven. */
 .im-badge {
     display: inline-block;
-    font-size: 0.75rem;
+    font-size: var(--im-text-xs);
     font-weight: 500;
     line-height: 1.4;
-    padding: 0.15rem 0.5rem;
-    border-radius: 0.4rem;
+    padding: 0.15rem var(--im-space-2);
+    border-radius: var(--im-radius-sm);
     border: 1px solid transparent;
     white-space: nowrap;
 }
@@ -448,7 +477,7 @@ h1:focus {
     color: var(--bs-body-color);
     border: 1px solid var(--bs-border-color);
     border-left: 4px solid var(--bs-secondary);
-    box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.18);
+    box-shadow: var(--im-shadow-sm);
     font-size: 0.9rem;
     animation: toast-in 160ms ease-out;
 }
@@ -545,7 +574,7 @@ h1:focus {
     color: var(--bs-body-color);
     border: 1px solid var(--bs-border-color);
     border-radius: 0.6rem;
-    box-shadow: 0 0.6rem 1.6rem rgba(0, 0, 0, 0.22);
+    box-shadow: var(--im-shadow);
 }
 
 .notif-head {
@@ -655,7 +684,7 @@ h1:focus {
     color: var(--bs-body-color);
     border: 1px solid var(--bs-border-color);
     border-radius: 0.6rem;
-    box-shadow: 0 0.6rem 1.6rem rgba(0, 0, 0, 0.22);
+    box-shadow: var(--im-shadow);
     padding: 0.4rem;
     overflow: hidden;
 }
@@ -1193,7 +1222,7 @@ h1:focus {
     color: var(--bs-body-color);
     border: 1px solid var(--bs-border-color);
     border-radius: 0.6rem;
-    box-shadow: 0 1.5rem 3rem rgba(0, 0, 0, 0.35);
+    box-shadow: var(--im-shadow-lg);
     overflow: hidden;
 }
 .tactic-modal-head {
@@ -1704,29 +1733,29 @@ h1:focus {
    ============================================================================ */
 
 /* Page header: title (+ optional subtitle) on the left, actions on the right. */
-.im-page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-.im-page-title { font-size: 1.6rem; font-weight: 700; letter-spacing: -.01em; margin: 0; color: var(--im-text); }
+.im-page-head { display: flex; justify-content: space-between; align-items: center; gap: var(--im-space-3); flex-wrap: wrap; margin-bottom: 14px; }
+.im-page-title { font-size: var(--im-text-xl); font-weight: 700; letter-spacing: -.01em; margin: 0; color: var(--im-text); }
 .im-page-sub { color: var(--im-text-muted); font-size: .82rem; margin: 2px 0 0; }
-.im-page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.im-page-actions { display: flex; align-items: center; gap: var(--im-space-2); flex-wrap: wrap; }
 
 /* Card / panel. */
-.im-card { background: var(--im-surface); border: 1px solid var(--im-border); border-radius: 12px; padding: 16px; color: var(--im-text); }
+.im-card { background: var(--im-surface); border: 1px solid var(--im-border); border-radius: var(--im-radius-lg); padding: var(--im-space-4); color: var(--im-text); }
 
 /* Section header inside a card. */
-.im-section-head { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; color: var(--im-text); margin-bottom: 12px; }
-.im-section-head > span > .bi, .im-section-head > .bi { color: var(--im-accent-text); margin-right: 4px; }
+.im-section-head { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; color: var(--im-text); margin-bottom: var(--im-space-3); }
+.im-section-head > span > .bi, .im-section-head > .bi { color: var(--im-accent-text); margin-right: var(--im-space-1); }
 .im-section-note { color: var(--im-text-muted); font-size: .78rem; font-weight: 400; }
 
 /* Stat-tile row. */
-.im-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+.im-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--im-space-3); margin-bottom: 14px; }
 @media (max-width: 720px) { .im-tiles { grid-template-columns: repeat(2, 1fr); } }
 
 /* One stat tile: a rounded icon chip + value/label. Link variant lifts on hover. */
-.im-stat { display: flex; align-items: center; gap: 12px; background: var(--im-surface); border: 1px solid var(--im-border); border-radius: 12px; padding: 14px 16px; color: var(--im-text); text-decoration: none; }
+.im-stat { display: flex; align-items: center; gap: var(--im-space-3); background: var(--im-surface); border: 1px solid var(--im-border); border-radius: var(--im-radius-lg); padding: 14px var(--im-space-4); color: var(--im-text); text-decoration: none; }
 a.im-stat { transition: border-color .12s ease, transform .12s ease; }
 a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-1px); }
-.im-stat-ic { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; font-size: 1.05rem; flex: 0 0 auto; }
-.im-stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+.im-stat-ic { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; font-size: var(--im-text-md); flex: 0 0 auto; }
+.im-stat-value { font-size: var(--im-text-xl); font-weight: 700; line-height: 1; }
 .im-stat-label { color: var(--im-text-muted); font-size: .78rem; margin-top: 3px; }
 
 /* Tile tones — the icon chip carries the colour; the value stays ink. */
@@ -1755,4 +1784,4 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
     --bs-table-border-color: var(--im-border);
     --bs-table-hover-color: var(--im-text);
 }
-.im-table th { font-weight: 600; color: var(--im-text-muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .02em; }
+.im-table th { font-weight: 600; color: var(--im-text-muted); font-size: var(--im-text-xs); text-transform: uppercase; letter-spacing: .02em; }

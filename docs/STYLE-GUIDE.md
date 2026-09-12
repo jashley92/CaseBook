@@ -73,6 +73,46 @@ The main `--im-*` roles. Semantic severity/phase/classification tints are
 | `--im-neutral` / `--im-neutral-bg` | Neutral state foreground / soft background |
 | `--im-sev-{info,low,med,high,crit}-{bg,fg,bd}` | Severity tint triples |
 | `--im-phase-{open,active,closed}-{bg,fg,bd}` | Case-phase tint triples |
+| `--im-scrim` | Scrim behind blocking modals (see §3a) |
+
+---
+
+## 3a. Scale tokens (spacing / radius / elevation / type)
+
+Color is not the only scale. Spacing, radius, elevation and type sizes come from
+tokens too (UX-03). Values equal the literals already in use, so adopting a token
+never shifts the pixels. **Reach for these in new work instead of ad-hoc `px`/`rem`**
+so density and elevation stay consistent; see them live at `/style`.
+
+| Token | Value | Use |
+|-------|-------|-----|
+| `--im-space-1…6` | 4 / 8 / 12 / 16 / 24 / 32 px | Gaps, padding, block margins (4px grid) |
+| `--im-radius-sm` | 0.4rem | Badges, chips |
+| `--im-radius` | 0.5rem | Default controls (mirrors `--bs-border-radius`) |
+| `--im-radius-lg` | 0.75rem | Cards, stat tiles, panels |
+| `--im-radius-xl` | 0.85rem | Modals |
+| `--im-radius-pill` | 999px | Pills |
+| `--im-shadow-sm` | — | Toasts |
+| `--im-shadow` | — | Dropdowns / floating panels |
+| `--im-shadow-lg` | — | Modals |
+| `--im-text-xs…xl` | 0.75 / 0.85 / 1 / 1.05 / 1.15 / 1.6 rem | `xs` badges & labels → `xl` page/stat titles |
+
+Adoption is incremental: the shared shell (`.im-card`, `.im-tiles`, `.im-stat`,
+`.im-badge`, `.im-table`), the exact-match shadows, and the Bootstrap radius bridge
+use the tokens today. A few off-grid legacy values (e.g. 14px block margins, 11px
+icon-chip radius) remain literal and are normalized as files are touched.
+
+**Breakpoints** cannot be `var()`-driven inside `@media`, so they live as a documented
+convention rather than tokens. The canonical set:
+
+| Width | Meaning |
+|-------|---------|
+| `641px` | Sidebar collapses to the mobile top bar (the load-bearing one — keep it) |
+| `720px` | Stat-tile grid drops from 4 to 2 columns |
+| `980px` | Wide two-column splits stack |
+
+Prefer these three when adding a media query; avoid inventing new near-neighbors
+(the old 520/640/820 spread is what this convention replaces).
 
 ---
 
@@ -232,6 +272,7 @@ Run this against any new or changed page before review:
 - [ ] Page opens with `<PageHeader Title="...">` (single `<h1>`); subtitle is factual, not marketing.
 - [ ] No raw Bootstrap badges (`badge bg-*`, `bg-*-subtle text-*-emphasis`). Domain chips use `Ui.*Badge(...)`; generic chips use `im-badge im-b-{neutral|info|ok|warn|danger}`.
 - [ ] All colors come from `--im-*` tokens; no hardcoded hex (saturated hex only in graph/bar fills via `Ui.SeverityColor`/`DispositionColor`); no Bootstrap semantic colors.
+- [ ] Spacing / radius / elevation / type use the scale tokens (`--im-space-*`, `--im-radius-*`, `--im-shadow-*`, `--im-text-*`), not ad-hoc px/rem; new media queries use the 641 / 720 / 980 breakpoints.
 - [ ] No em-dashes in prose, labels, tooltips or titles.
 - [ ] Content uses `im-card` + `im-section-head`; summary rows use `im-tiles` + `<StatTile>`; tables carry `im-table`.
 - [ ] Verified in both light and dark (`data-bs-theme` toggle), no drift or unreadable contrast.
