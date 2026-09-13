@@ -83,6 +83,12 @@
                 <span class="bi bi-shield-lock" aria-hidden="true"></span><span class="nav-text">Integrity &amp; Audit</span>
             </NavLink>
         </div>
+        @* UX-09: one home for the export/download artifacts (metrics, IOC feed, compliance bundle, …). *@
+        <div class="nav-item">
+            <NavLink class="nav-link" href="downloads" Match="NavLinkMatch.All" title="Downloads">
+                <span class="bi bi-download" aria-hidden="true"></span><span class="nav-text">Downloads</span>
+            </NavLink>
+        </div>
 
         <AuthorizeView Policy="@Policies.Administer">
             <div class="nav-group-label">Administration</div>

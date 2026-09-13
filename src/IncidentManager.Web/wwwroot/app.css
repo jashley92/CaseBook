@@ -826,6 +826,19 @@ h1:focus {
 .access-denied-card { width: 100%; max-width: 34rem; }
 .access-denied-card .empty-state { padding: 2rem 1.5rem; gap: 0.5rem; }
 
+/* UX-09: the Downloads page — one row per export artifact (icon · name+purpose · download button). */
+.dl-list { display: flex; flex-direction: column; }
+.dl-item { display: flex; align-items: flex-start; gap: var(--im-space-3); padding: var(--im-space-3) 0; border-top: 1px solid var(--im-border); }
+.dl-item:first-child { border-top: 0; padding-top: 0; }
+.dl-ic { flex: 0 0 auto; font-size: 1.25rem; color: var(--im-accent-strong, var(--im-text-muted)); margin-top: 2px; }
+.dl-body { flex: 1 1 auto; min-width: 0; }
+.dl-name { font-weight: 600; color: var(--im-text); }
+.dl-fmt { font-size: var(--im-text-xs); font-weight: 600; color: var(--im-text-muted); border: 1px solid var(--im-border); border-radius: var(--im-radius-sm); padding: 0 5px; margin-left: 4px; vertical-align: middle; }
+.dl-desc { color: var(--im-text-muted); font-size: var(--im-text-sm); margin-top: 2px; }
+.dl-range { display: flex; flex-wrap: wrap; gap: var(--im-space-3); align-items: center; margin-top: var(--im-space-2); }
+.dl-range input { max-width: 10rem; }
+.dl-btn { flex: 0 0 auto; white-space: nowrap; }
+
 /* UX-12: the signed-in user's roles + granted permissions on the access-denied page. */
 .access-denied-grant { width: 100%; margin: 0.75rem 0; display: flex; flex-direction: column; gap: 0.6rem;
     padding: 0.85rem 1rem; border: 1px solid var(--im-border); border-radius: var(--im-radius); background: var(--im-surface-2, var(--im-surface)); text-align: left; }
