@@ -220,11 +220,17 @@ This is convenient but means a host compromise could re-sign forged seals — un
 - [ ] A restore has been performed and chain + prior-seal verification passed on the restored copy.
 - [ ] SQL Server 2022 **updatable ledger** enabled for defense-in-depth (backlog E-10), digest
       exported externally.
-- [ ] (Optional) Email notification triggers (E-03b) — all admin-editable under **Settings → Notifications**,
+- [ ] (Optional) Email notification triggers (E-03b/E-03d) — all admin-editable under **Settings → Notifications**,
       and all requiring **Send email** on to deliver: **Assignment notifications** (email the assignee when
       assigned to a case); **Overdue after-action reminders** (a slow background scan — like AutoSeal /
       EvidenceVerify — that emails each item's owner, or the case's incident commander as a fallback, once
-      when it passes its due date). Both off by default; the scan is read-only and never touches the audit chain.
+      when it passes its due date); **Due-soon after-action reminders** (the same, once as an item enters its
+      lead window). Escalation to Breach also emails the **Legal/Privacy distribution** if set. All off/empty by
+      default; the scans are read-only and never touch the audit chain, and pick up a toggle change within a few
+      minutes. To go live, the sequence is: **Send email** on → **From address** set → enable the triggers you
+      want (populate the Legal distribution for breach alerts). The **Delivery readiness** panel at the top of
+      Settings → Notifications shows this whole chain at a glance and warns when a trigger is enabled but email
+      is off (it would be logged, not sent); the **Send a test email** card confirms the relay end to end.
 - [ ] (Recommended if any email is used) Set **`App:BaseUrl`** (Settings → Notifications) to this deployment's
       absolute URL so branded emails include **direct links** and the **logo**. All notification emails are
       branded HTML (E-03c) using the console theme + the report logo; their subject/body are admin-editable

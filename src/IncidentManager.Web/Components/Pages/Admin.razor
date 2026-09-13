@@ -42,6 +42,80 @@
             {
                 @foreach (var group in activeGroups)
                 {
+                    @* Delivery-readiness panel (PROD-01): the notification settings only *deliver* when
+                       Send email is on, a From address is set, and a trigger is enabled with a reachable
+                       recipient. Surface that whole chain at a glance so enabling a trigger while email is
+                       off (a silent "logged, not sent") is obvious rather than a surprise. Reads the pending
+                       form values so it updates live as switches flip; applies on Save. *@
+                    @if (group == "Notifications")
+                    {
+                        <div class="card mb-3">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><span class="bi bi-broadcast me-1"></span>Delivery readiness</span>
+                                @if (NotifyLive) { <span class="im-badge im-b-ok">Live</span> }
+                                else if (!EmailOn) { <span class="im-badge im-b-warn">Not delivering</span> }
+                                else { <span class="im-badge im-b-neutral">Nothing enabled</span> }
+                            </div>
+                            <div class="card-body">
+                                <p class="small text-muted mb-2">
+                                    A notification reaches someone only when <strong>Send email</strong> is on, a
+                                    <strong>From address</strong> is set, and the trigger is enabled with a reachable
+                                    recipient. This reflects your current selections — <strong>Save Notifications</strong>
+                                    to apply; the reminder scans pick up changes within a few minutes.
+                                </p>
+                                <ul class="list-unstyled mb-0 small">
+                                    <li class="mb-1 d-flex align-items-start gap-2">
+                                        @ReadyIcon(EmailOn)
+                                        <span><strong>Email delivery</strong> — @(EmailOn ? "on, sending through the configured relay" : "off; messages are written to the log, not sent")</span>
+                                    </li>
+                                    <li class="mb-1 d-flex align-items-start gap-2">
+                                        @ReadyIcon(FromSet)
+                                        <span><strong>From address</strong> — @(FromSet ? FormText("Email:From")! : "not set (required to send)")</span>
+                                    </li>
+                                    <li class="mb-1 d-flex align-items-center justify-content-between">
+                                        <span>Breach&nbsp;&rarr; Legal/Privacy <span class="text-muted">(on escalation)</span></span>
+                                        @if (EmailOn && FromSet && !LegalDistributionSet) { <span class="im-badge im-b-warn">No recipients set</span> }
+                                        else { @TriggerState(true, EmailOn && FromSet && LegalDistributionSet) }
+                                    </li>
+                                    <li class="mb-1 d-flex align-items-center justify-content-between">
+                                        <span>Assignment notifications</span>
+                                        @TriggerState(FormBool("Email:AssignmentNotifications"), EmailOn && FromSet)
+                                    </li>
+                                    <li class="mb-1 d-flex align-items-center justify-content-between">
+                                        <span>Overdue after-action reminders</span>
+                                        @TriggerState(FormBool("Notifications:OverdueScan:Enabled"), EmailOn && FromSet)
+                                    </li>
+                                    <li class="d-flex align-items-center justify-content-between">
+                                        <span>Due-soon after-action reminders</span>
+                                        @TriggerState(FormBool("Notifications:DueSoonScan:Enabled"), EmailOn && FromSet)
+                                    </li>
+                                </ul>
+                                @if (!EmailOn && (AnyTriggerOn || LegalDistributionSet))
+                                {
+                                    <div class="alert alert-warning small mt-2 mb-0 py-2">
+                                        <span class="bi bi-exclamation-triangle-fill me-1"></span>
+                                        One or more notifications are enabled, but <strong>Send email is off</strong> — they will be
+                                        written to the log, not delivered. Turn on Send email below to go live.
+                                    </div>
+                                }
+                                else if (EmailOn && !FromSet)
+                                {
+                                    <div class="alert alert-warning small mt-2 mb-0 py-2">
+                                        <span class="bi bi-exclamation-triangle-fill me-1"></span>
+                                        Email is on but the <strong>From address</strong> is blank — set it below or sends will fail.
+                                    </div>
+                                }
+                                else if (EmailOn && FromSet && !AnyTriggerOn && !LegalDistributionSet)
+                                {
+                                    <div class="alert alert-info small mt-2 mb-0 py-2">
+                                        <span class="bi bi-info-circle me-1"></span>
+                                        Email is ready, but no notifications are enabled yet — turn on the triggers you want below.
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
                     <div class="card mb-3">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <span>@group</span>
@@ -684,6 +758,41 @@
         builder.OpenElement(0, "span");
         builder.AddAttribute(1, "class", css);
         builder.AddContent(2, source);
+        builder.CloseElement();
+    };
+
+    // --- Notification delivery readiness (PROD-01) ---
+    // Config-derived, read-only. Reads the pending form values (not the saved config) so the panel updates
+    // as the admin flips switches; the actual pipeline applies on Save (and the scans re-read within minutes).
+    private bool FormBool(string key) => bool.TryParse(_form.GetValueOrDefault(key), out var b) && b;
+    private string? FormText(string key) => _form.GetValueOrDefault(key);
+    private bool EmailOn => FormBool("Email:Enabled");
+    private bool FromSet => !string.IsNullOrWhiteSpace(FormText("Email:From"));
+    private bool LegalDistributionSet => !string.IsNullOrWhiteSpace(FormText("Email:LegalDistribution"));
+    private bool AnyTriggerOn =>
+        FormBool("Email:AssignmentNotifications")
+        || FormBool("Notifications:OverdueScan:Enabled")
+        || FormBool("Notifications:DueSoonScan:Enabled");
+    // "Live" = at least one notification will actually reach someone once saved.
+    private bool NotifyLive => EmailOn && FromSet && (AnyTriggerOn || LegalDistributionSet);
+
+    private static RenderFragment ReadyIcon(bool ok) => builder =>
+    {
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", ok ? "bi bi-check-circle-fill text-success" : "bi bi-exclamation-triangle-fill text-warning");
+        builder.AddAttribute(2, "aria-hidden", "true");
+        builder.CloseElement();
+    };
+
+    // A trigger's effective state: On (will deliver), On but blocked (enabled yet won't reach anyone), or Off.
+    private static RenderFragment TriggerState(bool enabled, bool deliverable) => builder =>
+    {
+        var (css, text) = !enabled ? ("im-badge im-b-neutral", "Off")
+            : deliverable ? ("im-badge im-b-ok", "On")
+            : ("im-badge im-b-warn", "On — not delivering");
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", css);
+        builder.AddContent(2, text);
         builder.CloseElement();
     };
 
