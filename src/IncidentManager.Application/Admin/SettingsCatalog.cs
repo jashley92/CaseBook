@@ -73,6 +73,17 @@ public static class SettingsCatalog
             "Hours between due-soon scans. Keep this no larger than the lead window so an item can't jump from future to overdue between passes without a due-soon reminder. Default 6. Takes effect within a few minutes of saving.", "6"),
         new SettingDefinition("App:BaseUrl", "Public base URL", "Notifications", SettingKind.Text,
             "Absolute URL of this deployment (e.g. https://casebook.corp.example), used to build direct links and the logo in notification emails. Blank = emails omit links and the hosted logo (they still render, branded, with a text wordmark). No trailing slash needed.", ""),
+        // PROD-02: which notification types are also broadcast to the team chat channel. These only deliver
+        // when a chat webhook is configured on the host (Chat:Webhook, server-side); they post to that shared
+        // channel and are independent of email. All off by default.
+        new SettingDefinition("Notifications:Chat:BreachEscalations", "Chat: breach escalations", "Notifications", SettingKind.Bool,
+            "When on, a Breach escalation is also posted to the team chat channel (Slack/Teams). Broadcasts to the shared channel independent of the Legal/Privacy email distribution. Requires a chat webhook configured on the host (Chat:Webhook).", "false"),
+        new SettingDefinition("Notifications:Chat:Assignments", "Chat: assignments", "Notifications", SettingKind.Bool,
+            "When on, a case assignment is also posted to the team chat channel. A shared-channel broadcast (not a direct message), independent of the per-assignee assignment email. Requires a chat webhook on the host.", "false"),
+        new SettingDefinition("Notifications:Chat:OverdueReminders", "Chat: overdue reminders", "Notifications", SettingKind.Bool,
+            "When on, each overdue after-action scan posts a short summary (count of newly-overdue items) to the team chat channel, in addition to the per-owner emails. Requires a chat webhook on the host.", "false"),
+        new SettingDefinition("Notifications:Chat:DueSoonReminders", "Chat: due-soon reminders", "Notifications", SettingKind.Bool,
+            "When on, each due-soon scan posts a short summary to the team chat channel, in addition to the per-owner emails. Requires a chat webhook on the host.", "false"),
         new SettingDefinition("ExternalLinks:DetectionCaseUrlTemplate", "Detection case link template", "Integrations", SettingKind.Text,
             "Deep-link template for the referenced detection-source case. Use {0} where the case id should appear.", ""),
         new SettingDefinition("ExternalLinks:VirusTotalUrlTemplate", "VirusTotal lookup template", "Integrations", SettingKind.Text,

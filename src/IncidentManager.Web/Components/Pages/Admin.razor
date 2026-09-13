@@ -15,6 +15,7 @@
 @inject Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext> DbFactory
 @inject IncidentManager.Application.Abstractions.ISealSigner Signer
 @inject IncidentManager.Application.Abstractions.IEmailSender Email
+@inject IncidentManager.Application.Abstractions.IChatNotifier Chat
 @inject IncidentManager.Web.Ops.BackupHealthReader Backup
 @inject IncidentManager.Application.Integrity.IEvidenceIntegrityMonitor EvidenceIntegrity
 @inject IncidentManager.Application.Abstractions.ISecretResolutionHealth SecretHealth
@@ -85,9 +86,15 @@
                                         <span>Overdue after-action reminders</span>
                                         @TriggerState(FormBool("Notifications:OverdueScan:Enabled"), EmailOn && FromSet)
                                     </li>
-                                    <li class="d-flex align-items-center justify-content-between">
+                                    <li class="mb-1 d-flex align-items-center justify-content-between">
                                         <span>Due-soon after-action reminders</span>
                                         @TriggerState(FormBool("Notifications:DueSoonScan:Enabled"), EmailOn && FromSet)
+                                    </li>
+                                    <li class="d-flex align-items-center justify-content-between">
+                                        <span>Team chat channel <span class="text-muted">(Slack/Teams, configured on host)</span></span>
+                                        @if (ChatConfigured) { <span class="im-badge im-b-ok">Configured</span> }
+                                        else if (AnyChatTypeOn) { <span class="im-badge im-b-warn">No webhook on host</span> }
+                                        else { <span class="im-badge im-b-neutral">Not configured</span> }
                                     </li>
                                 </ul>
                                 @if (!EmailOn && (AnyTriggerOn || LegalDistributionSet))
@@ -335,6 +342,18 @@
                                         ? "Email delivery is on. This sends through the configured relay."
                                         : "Email delivery is off. The message is written to the log, not sent.")
                                 </div>
+
+                                <hr class="my-3" />
+
+                                <label class="form-label mb-1 fw-semibold">Team chat</label>
+                                <div>
+                                    <button class="btn btn-outline-primary" @onclick="SendTestChat" disabled="@(!ChatConfigured)">Send a test chat message</button>
+                                </div>
+                                <div class="form-text">
+                                    @(ChatConfigured
+                                        ? "Posts a test message to the configured Slack/Teams channel."
+                                        : "No chat webhook is configured on the host (Chat:Webhook). Configure it server-side to enable chat broadcasts.")
+                                </div>
                             </div>
                         </div>
                     }
@@ -384,6 +403,17 @@
                             {
                                 <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Siem:Syslog:Host"]), "Collector configured", "No collector")</span>
                                 <code class="small ms-2">@(Config["Siem:Syslog:Protocol"] ?? "Udp")/@(Config["Siem:Syslog:Port"] ?? "514")</code>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Team chat — webhook</td>
+                        <td>
+                            @StatusBadge(Config.GetValue<bool>("Chat:Webhook:Enabled"), "Enabled", "Disabled")
+                            @if (Config.GetValue<bool>("Chat:Webhook:Enabled"))
+                            {
+                                <span class="ms-2">@StatusBadge(!string.IsNullOrWhiteSpace(Config["Chat:Webhook:WebhookUrl"]), "Webhook configured", "No webhook")</span>
+                                <code class="small ms-2">@(Config["Chat:Webhook:Format"] ?? "Slack")</code>
                             }
                         </td>
                     </tr>
@@ -776,6 +806,13 @@
     // "Live" = at least one notification will actually reach someone once saved.
     private bool NotifyLive => EmailOn && FromSet && (AnyTriggerOn || LegalDistributionSet);
 
+    // PROD-02: the team-chat webhook is server-side config (not the in-app form), so read it from Config.
+    private bool ChatConfigured =>
+        Config.GetValue<bool>("Chat:Webhook:Enabled") && !string.IsNullOrWhiteSpace(Config["Chat:Webhook:WebhookUrl"]);
+    private bool AnyChatTypeOn =>
+        FormBool("Notifications:Chat:BreachEscalations") || FormBool("Notifications:Chat:Assignments")
+        || FormBool("Notifications:Chat:OverdueReminders") || FormBool("Notifications:Chat:DueSoonReminders");
+
     private static RenderFragment ReadyIcon(bool ok) => builder =>
     {
         builder.OpenElement(0, "span");
@@ -814,6 +851,20 @@
         Toasts.Success(Config.GetValue<bool>("Email:Enabled")
             ? $"Test email dispatched to {to}."
             : $"Email delivery is off; logged a test message for {to}.");
+    }
+
+    // PROD-02: post a sample message through the configured chat webhook so an admin can verify it end to end.
+    private async Task SendTestChat()
+    {
+        if (!Chat.Enabled) { Toasts.Warning("No chat webhook is configured on the host (Chat:Webhook)."); return; }
+
+        var baseUrl = (Config["App:BaseUrl"] ?? "").TrimEnd('/');
+        await Chat.SendAsync(new IncidentManager.Application.Abstractions.ChatNotification(
+            "CaseBook test message",
+            "This is a test notification confirming the chat webhook configuration.",
+            baseUrl.Length == 0 ? null : baseUrl));
+
+        Toasts.Success("Test chat message posted to the configured channel.");
     }
 
     private sealed record HealthCheck(string Label, bool Ok, string Detail);

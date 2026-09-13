@@ -22,15 +22,17 @@ public sealed class CaseNotifications : ICaseNotifications
     private readonly IUserDirectory _users;
     private readonly IConfiguration _config;
     private readonly IOptionsMonitor<EmailOptions> _options;
+    private readonly IChatNotifier _chat;
 
     public CaseNotifications(IEmailSender email, IEmailComposer composer, IUserDirectory users,
-        IConfiguration config, IOptionsMonitor<EmailOptions> options)
+        IConfiguration config, IOptionsMonitor<EmailOptions> options, IChatNotifier chat)
     {
         _email = email;
         _composer = composer;
         _users = users;
         _config = config;
         _options = options;
+        _chat = chat;
     }
 
     private string BaseUrl => (_config["App:BaseUrl"] ?? "").TrimEnd('/');
@@ -38,10 +40,23 @@ public sealed class CaseNotifications : ICaseNotifications
     private string? OverdueUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases?overdue=true&closed=true";
     private string? AgendaUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/work";
 
+    // PROD-02: is a given notification type routed to the team chat channel? Requires both a configured
+    // chat transport and the per-type in-app toggle (Notifications:Chat:*, layered from DB + appsettings).
+    private bool ChatOn(string type) => _chat.Enabled && _config.GetValue<bool>($"Notifications:Chat:{type}");
+
     public async Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default)
     {
-        var options = _options.CurrentValue;
         if (to != Classification.Breach || from == Classification.Breach) return;
+
+        // Chat broadcast (PROD-02): independent of the Legal email distribution — the SOC channel should
+        // learn of a breach escalation even when no Legal recipients are configured.
+        if (ChatOn("BreachEscalations"))
+            await _chat.SendAsync(new ChatNotification(
+                $"Breach escalation — {c.CaseNumber}",
+                $"{c.Title} · severity {c.Severity}, phase {c.Phase}.",
+                CaseUrl(c.Id), ChatUrgency.Alert), ct);
+
+        var options = _options.CurrentValue;
         if (options.LegalDistribution.Length == 0) return;
 
         var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -65,9 +80,18 @@ public sealed class CaseNotifications : ICaseNotifications
     public async Task OnAssignedAsync(Case c, string assigneeUserId, string assigneeDisplayName,
         CaseAssignmentRole role, string assignedByUserId, CancellationToken ct = default)
     {
+        if (string.Equals(assigneeUserId, assignedByUserId, StringComparison.OrdinalIgnoreCase)) return; // self-assign — neither channel
+
+        // Chat broadcast (PROD-02): posts to the shared channel independent of the per-assignee email
+        // toggle and of whether the assignee has an address on file.
+        if (ChatOn("Assignments"))
+            await _chat.SendAsync(new ChatNotification(
+                $"Case assigned — {c.CaseNumber}",
+                $"{assigneeDisplayName} assigned as {Ui(role)} by {_users.DisplayFor(assignedByUserId)} · {c.Title}.",
+                CaseUrl(c.Id)), ct);
+
         var options = _options.CurrentValue;
         if (!options.AssignmentNotifications) return;
-        if (string.Equals(assigneeUserId, assignedByUserId, StringComparison.OrdinalIgnoreCase)) return; // self-assign
         var to = _users.EmailFor(assigneeUserId);
         if (string.IsNullOrWhiteSpace(to)) return;
 
@@ -90,6 +114,16 @@ public sealed class CaseNotifications : ICaseNotifications
     public async Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default)
     {
         if (items.Count == 0) return;
+
+        // Chat broadcast (PROD-02): one summary to the shared channel, in addition to the per-owner emails.
+        if (ChatOn("OverdueReminders"))
+        {
+            var caseCount = items.Select(i => i.CaseId).Distinct().Count();
+            await _chat.SendAsync(new ChatNotification(
+                $"{items.Count} after-action item(s) overdue",
+                $"Across {caseCount} case(s). Owners have been emailed where reachable.",
+                OverdueUrl(), ChatUrgency.Alert), ct);
+        }
 
         var byRecipient = new Dictionary<string, List<OverdueActionItem>>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in items)
@@ -122,6 +156,16 @@ public sealed class CaseNotifications : ICaseNotifications
     public async Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default)
     {
         if (items.Count == 0) return;
+
+        // Chat broadcast (PROD-02): one summary to the shared channel, in addition to the per-owner emails.
+        if (ChatOn("DueSoonReminders"))
+        {
+            var caseCount = items.Select(i => i.CaseId).Distinct().Count();
+            await _chat.SendAsync(new ChatNotification(
+                $"{items.Count} after-action item(s) due within {leadHours}h",
+                $"Across {caseCount} case(s). Owners have been emailed where reachable.",
+                AgendaUrl()), ct);
+        }
 
         var byRecipient = new Dictionary<string, List<DueSoonActionItem>>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in items)

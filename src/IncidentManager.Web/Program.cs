@@ -82,6 +82,10 @@ builder.Services.AddHttpClient("siem");
 builder.Services.AddSingleton<IncidentManager.Infrastructure.Siem.ISecurityEventTransport, IncidentManager.Web.Siem.WebhookTransport>();
 builder.Services.AddHostedService<IncidentManager.Web.BackgroundJobs.SecurityEventDispatcher>();
 
+// --- PROD-02: team-chat (Slack/Teams) notification channel. Overrides the no-op default from Infrastructure. ---
+builder.Services.AddHttpClient("chat");
+builder.Services.AddSingleton<IncidentManager.Application.Abstractions.IChatNotifier, IncidentManager.Web.Notifications.ChatWebhookNotifier>();
+
 // --- F-13: per-user rate limit on the download/export endpoints, so a compromised account can't bulk-
 // scrape evidence/reports/exports. A token bucket keyed on the caller's id — bursts are fine, sustained
 // volume is capped — with an immediate 429 (no queueing) past the budget. Limits are server-side config

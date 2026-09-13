@@ -239,6 +239,12 @@ This is convenient but means a host compromise could re-sign forged seals — un
       at `/branding/logo` (branding image only, no case data).
 - [ ] (Optional) `Siem:Webhook` configured to the SIEM's HTTP collector (see §5) if the security-event
       stream is wanted.
+- [ ] (Optional) `Chat:Webhook` configured to a **Slack or Teams incoming-webhook** URL (PROD-02) if the SOC
+      wants case-lifecycle notifications broadcast to a shared channel. Set `Enabled`, `WebhookUrl` (the URL is
+      the channel secret — may be a literal or a `@cyberark:` reference), and `Format` (`Slack` or `Teams`).
+      Then choose which types post there in-app under **Settings → Notifications → Chat: …** (breach escalations,
+      assignments, overdue/due-soon summaries). Independent of email (no SMTP needed); https-only egress; shows
+      read-only in Admin → Server configuration, and in the Notifications delivery-readiness panel.
 - [ ] (Optional) `Secrets:CyberArk` enabled (F-19, §6) if secrets should come from CyberArk CCP: `BaseUrl`
       (HTTPS) + `AppId` set, the CCP AppID allow-listed to this host/identity (and a client cert in
       `LocalMachine\My` with the app-pool granted read on its key, if used), and each externalized secret

@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.Configure<Notifications.EmailOptions>(config.GetSection("Email"));
         services.Configure<Siem.SiemWebhookOptions>(config.GetSection("Siem:Webhook"));
         services.Configure<Siem.SiemSyslogOptions>(config.GetSection("Siem:Syslog"));
+        services.Configure<Notifications.ChatOptions>(config.GetSection("Chat:Webhook"));
 
         // One sender that decides log-vs-send per message from the live options, so an administered
         // change to Email:Enabled / From / relay takes effect at runtime (A-08) without a restart.
@@ -31,6 +32,9 @@ public static class DependencyInjection
         // E-03b: renders branded HTML emails from admin-editable templates + the console theme.
         services.AddSingleton<IEmailComposer, Notifications.EmailComposer>();
         services.AddSingleton<ICaseNotifications, Notifications.CaseNotifications>();
+        // PROD-02: team-chat (Slack/Teams) broadcast channel. Default is a no-op; the Web project registers
+        // the real HTTP-backed ChatWebhookNotifier (it needs IHttpClientFactory), which supersedes this.
+        services.AddSingleton<IChatNotifier, Notifications.NullChatNotifier>();
         // F-16: raises the audit-chain tamper alarm (critical SIEM/log event + email distribution).
         services.AddSingleton<IIntegrityAlertNotifier, Notifications.IntegrityAlertNotifier>();
         // F-17: raises the evidence-at-rest drift alarm (same channels + shared recipient distribution).

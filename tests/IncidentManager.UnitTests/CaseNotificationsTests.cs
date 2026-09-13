@@ -3,6 +3,7 @@ using IncidentManager.Application.Abstractions;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Notifications;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace IncidentManager.UnitTests;
@@ -31,9 +32,22 @@ public class CaseNotificationsTests
         public void Invalidate() { }
     }
 
-    private static CaseNotifications Build(CapturingEmailSender sender, EmailOptions options, IUserDirectory? users = null) =>
-        new(sender, TestEmail.Composer(), users ?? new FakeUserDirectory(), TestEmail.EmptyConfig,
-            new TestOptionsMonitor<EmailOptions>(options));
+    private static CaseNotifications Build(CapturingEmailSender sender, EmailOptions options,
+        IUserDirectory? users = null, IChatNotifier? chat = null, IConfiguration? config = null) =>
+        new(sender, TestEmail.Composer(), users ?? new FakeUserDirectory(), config ?? TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(options), chat ?? new NullChatNotifier());
+
+    /// <summary>Captures chat broadcasts so PROD-02 tests can assert on them.</summary>
+    private sealed class CapturingChatNotifier : IChatNotifier
+    {
+        public bool Enabled { get; init; } = true;
+        public List<ChatNotification> Sent { get; } = new();
+        public Task SendAsync(ChatNotification message, CancellationToken ct = default) { Sent.Add(message); return Task.CompletedTask; }
+    }
+
+    // Config with the given chat notification types turned on (Notifications:Chat:{type}).
+    private static IConfiguration ChatConfig(params string[] onTypes) =>
+        TestEmail.Config(onTypes.Select(t => ($"Notifications:Chat:{t}", "true")).ToArray());
 
     // --- Breach escalation (E-03) ----------------------------------------------
 
@@ -78,7 +92,7 @@ public class CaseNotificationsTests
         var sender = new CapturingEmailSender();
         var monitor = new TestOptionsMonitor<EmailOptions>(
             new EmailOptions { LegalDistribution = ["old@insurer.example"] });
-        var notifications = new CaseNotifications(sender, TestEmail.Composer(), new FakeUserDirectory(), TestEmail.EmptyConfig, monitor);
+        var notifications = new CaseNotifications(sender, TestEmail.Composer(), new FakeUserDirectory(), TestEmail.EmptyConfig, monitor, new NullChatNotifier());
 
         // Admin edits the Legal distribution after the service is already constructed.
         monitor.CurrentValue = new EmailOptions { LegalDistribution = ["new@insurer.example"] };
@@ -241,5 +255,85 @@ public class CaseNotificationsTests
         await notifications.OnActionItemsDueSoonAsync([DueSoon("2026-01", "ghost", "ic-gone")], leadHours: 24);
 
         sender.Sent.Should().BeEmpty();
+    }
+
+    // --- Chat channel (PROD-02) ------------------------------------------------
+
+    [Fact]
+    public async Task Breach_escalation_posts_to_chat_when_enabled_even_without_a_legal_distribution()
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new CapturingChatNotifier();
+        var n = Build(sender, new EmailOptions(), chat: chat, config: ChatConfig("BreachEscalations"));
+
+        await n.OnReclassifiedAsync(NewCase(), Classification.Incident, Classification.Breach);
+
+        sender.Sent.Should().BeEmpty();               // no Legal distribution → no email
+        chat.Sent.Should().ContainSingle();
+        chat.Sent[0].Title.Should().Contain("Breach");
+        chat.Sent[0].Urgency.Should().Be(ChatUrgency.Alert);
+    }
+
+    [Fact]
+    public async Task Breach_escalation_does_not_post_to_chat_when_the_type_is_off()
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new CapturingChatNotifier();
+        var n = Build(sender, new EmailOptions { LegalDistribution = ["legal@insurer.example"] }, chat: chat); // empty config → chat off
+
+        await n.OnReclassifiedAsync(NewCase(), Classification.Incident, Classification.Breach);
+
+        sender.Sent.Should().ContainSingle();         // email still goes
+        chat.Sent.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Assignment_posts_to_chat_independent_of_the_email_toggle_and_address()
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new CapturingChatNotifier();
+        var users = new FakeUserDirectory().Add("analyst1", "Alice", null); // no address on file
+        var n = Build(sender, new EmailOptions { AssignmentNotifications = false }, users, chat, ChatConfig("Assignments"));
+
+        await n.OnAssignedAsync(NewCase(), "analyst1", "Alice", CaseAssignmentRole.Analyst, "ic1");
+
+        sender.Sent.Should().BeEmpty();               // email toggle off + no address
+        chat.Sent.Should().ContainSingle();
+        chat.Sent[0].Title.Should().Contain("assigned");
+    }
+
+    [Fact]
+    public async Task Assignment_chat_skips_a_self_assignment()
+    {
+        var chat = new CapturingChatNotifier();
+        var n = Build(new CapturingEmailSender(), new EmailOptions(), chat: chat, config: ChatConfig("Assignments"));
+
+        await n.OnAssignedAsync(NewCase(), "me", "Me", CaseAssignmentRole.Analyst, "me");
+
+        chat.Sent.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Overdue_posts_a_single_chat_summary_when_enabled()
+    {
+        var chat = new CapturingChatNotifier();
+        var users = new FakeUserDirectory().Add("alice", "Alice", "alice@insurer.example");
+        var n = Build(new CapturingEmailSender(), new EmailOptions(), users, chat, ChatConfig("OverdueReminders"));
+
+        await n.OnActionItemsOverdueAsync([Overdue("2026-01", "alice", "ic1", "A"), Overdue("2026-02", "alice", "ic1", "B")]);
+
+        chat.Sent.Should().ContainSingle();
+        chat.Sent[0].Title.Should().Contain("2");      // count of newly-overdue items
+    }
+
+    [Fact]
+    public async Task Chat_is_not_posted_when_the_notifier_is_disabled()
+    {
+        var chat = new CapturingChatNotifier { Enabled = false };
+        var n = Build(new CapturingEmailSender(), new EmailOptions(), chat: chat, config: ChatConfig("BreachEscalations"));
+
+        await n.OnReclassifiedAsync(NewCase(), Classification.Incident, Classification.Breach);
+
+        chat.Sent.Should().BeEmpty();                  // ChatOn() short-circuits on !Enabled
     }
 }
