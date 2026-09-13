@@ -123,6 +123,28 @@ public static class EmailTemplateCatalog
             CtaUrlToken: "CaseUrl"),
 
         new EmailTemplateDefinition(
+            "mention",
+            "Comment mention",
+            "Sent to a person @mentioned in a case discussion comment (PROD-04).",
+            "{{MentionedBy}} mentioned you on {{CaseNumber}}",
+            """
+            <h1>You were mentioned in a case discussion</h1>
+            <p>Hi {{Mentioned}},</p>
+            <p><strong>{{MentionedBy}}</strong> mentioned you in a comment on <strong>{{CaseNumber}} — {{CaseTitle}}</strong>:</p>
+            <p class="meta">{{Comment}}</p>
+            <p>Open the case to read the full discussion and reply.</p>
+            """,
+            new[]
+            {
+                new EmailToken("Mentioned", "Display name of the person mentioned."),
+                new EmailToken("MentionedBy", "Who wrote the comment."),
+                new EmailToken("Comment", "A short excerpt of the comment."),
+                CaseNumber, CaseTitle,
+            },
+            CtaLabel: "Open the case",
+            CtaUrlToken: "CaseUrl"),
+
+        new EmailTemplateDefinition(
             "audit-chain-alarm",
             "Audit-chain integrity alarm (F-16)",
             "Sent to the integrity-alert distribution when the audit hash-chain fails verification. A critical SIEM/log event is always emitted regardless.",

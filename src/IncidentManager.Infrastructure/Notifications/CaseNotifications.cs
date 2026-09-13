@@ -77,6 +77,49 @@ public sealed class CaseNotifications : ICaseNotifications
         await _email.SendAsync(message, ct);
     }
 
+    public async Task OnMentionedAsync(Case c, string byUserId, IReadOnlyCollection<string> mentionedUserIds,
+        string commentExcerpt, CancellationToken ct = default)
+    {
+        // Distinct recipients, never the author.
+        var recipients = mentionedUserIds
+            .Where(id => !string.IsNullOrWhiteSpace(id) && !string.Equals(id, byUserId, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (recipients.Count == 0) return;
+
+        var excerpt = commentExcerpt.Length > 280 ? commentExcerpt[..280] + "…" : commentExcerpt;
+        var byName = _users.DisplayFor(byUserId);
+
+        // Chat broadcast (PROD-02/04): one summary to the shared channel when enabled.
+        if (ChatOn("Mentions"))
+        {
+            var who = string.Join(", ", recipients.Select(_users.DisplayFor));
+            await _chat.SendAsync(new ChatNotification(
+                $"Mention — {c.CaseNumber}",
+                $"{byName} mentioned {who}: {excerpt}",
+                CaseUrl(c.Id)), ct);
+        }
+
+        foreach (var id in recipients)
+        {
+            var to = _users.EmailFor(id);
+            if (string.IsNullOrWhiteSpace(to)) continue;
+
+            var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MentionedBy"] = byName,
+                ["Mentioned"] = _users.DisplayFor(id),
+                ["CaseNumber"] = c.CaseNumber,
+                ["CaseTitle"] = c.Title,
+                ["Comment"] = excerpt,
+                ["CaseUrl"] = CaseUrl(c.Id) ?? "",
+            };
+
+            var message = await _composer.ComposeAsync("mention", [to], tokens, CaseUrl(c.Id), null, ct);
+            await _email.SendAsync(message, ct);
+        }
+    }
+
     public async Task OnAssignedAsync(Case c, string assigneeUserId, string assigneeDisplayName,
         CaseAssignmentRole role, string assignedByUserId, CancellationToken ct = default)
     {

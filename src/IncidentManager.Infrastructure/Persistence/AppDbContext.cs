@@ -41,6 +41,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<AdGroupRoleMapping> RoleMappings => Set<AdGroupRoleMapping>();
     public DbSet<SavedView> SavedViews => Set<SavedView>();
+    public DbSet<CaseComment> CaseComments => Set<CaseComment>();
 
     /// <summary>
     /// Ambient reason for the current unit of work (see <see cref="IAppDbContext.PendingChangeReason"/>).

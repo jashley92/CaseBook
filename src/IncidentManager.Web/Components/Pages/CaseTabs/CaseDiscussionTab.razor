@@ -1,0 +1,158 @@
+@* Case workspace — Discussion tab (PROD-04). Durable, threaded team comments with @mention notifications.
+   Distinct from Notes (an analyst's own investigation documentation): this is cross-role conversation and
+   handoff. Comments are append-only and hash-chained/audited by the save interceptor. Available to anyone
+   who can view the case (the workspace already gates ViewCases), so Managers / Legal can participate too. *@
+@inject CaseCommentService Comments
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Abstractions.ICurrentUser Me
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+
+<div class="card mb-3">
+    <div class="card-body">
+        @if (_replyTo is { } r)
+        {
+            <div class="mb-2">
+                <span class="im-badge im-b-info">
+                    <span class="bi bi-reply" aria-hidden="true"></span> Replying to @AuthorName(r)
+                </span>
+                <button class="btn btn-link btn-sm p-0 ms-2 align-baseline" @onclick="CancelReply">Cancel</button>
+            </div>
+        }
+        <label class="form-label small mb-1" for="comment-body">
+            @(_replyTo is null ? "Add a comment" : "Reply")
+            <span class="text-muted">· Markdown supported</span>
+        </label>
+        <textarea id="comment-body" class="form-control mb-2" rows="3" placeholder="Share an update, a question, or a handoff…"
+                  @bind="_body" @bind:event="oninput"></textarea>
+
+        @if (MentionCandidates.Count > 0)
+        {
+            <details class="mb-2">
+                <summary class="small text-muted" style="cursor:pointer">
+                    <span class="bi bi-at" aria-hidden="true"></span> Mention teammates
+                    @if (_mentions.Count > 0) { <span class="im-badge im-b-info ms-1">@_mentions.Count</span> }
+                </summary>
+                <div class="d-flex flex-wrap gap-3 mt-2">
+                    @foreach (var u in MentionCandidates)
+                    {
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="@($"mention-{u.UserId}")"
+                                   checked="@_mentions.Contains(u.UserId)"
+                                   @onchange="e => ToggleMention(u.UserId, (bool)(e.Value ?? false))" />
+                            <label class="form-check-label small" for="@($"mention-{u.UserId}")">@u.DisplayName</label>
+                        </div>
+                    }
+                </div>
+                <div class="form-text">Mentioned teammates are notified (email, and chat if the team enabled it).</div>
+            </details>
+        }
+
+        <button class="btn btn-sm btn-primary" @onclick="Submit" disabled="@string.IsNullOrWhiteSpace(_body)">
+            @(_replyTo is null ? "Post comment" : "Post reply")
+        </button>
+    </div>
+</div>
+
+@if (_comments is null)
+{
+    <p class="text-muted"><em>Loading discussion…</em></p>
+}
+else if (_comments.Count == 0)
+{
+    <div class="empty-state">
+        <span class="bi bi-chat-dots empty-state-icon" aria-hidden="true"></span>
+        <div class="empty-state-title">No discussion yet</div>
+        <div class="empty-state-msg">Start the conversation — post an update, ask a question, or hand the case off. @@mention a teammate to pull them in.</div>
+    </div>
+}
+else
+{
+    @foreach (var c in TopLevel)
+    {
+        @RenderComment(c, isReply: false)
+        @foreach (var reply in RepliesOf(c.Id))
+        {
+            @RenderComment(reply, isReply: true)
+        }
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+
+    private List<CaseCommentView>? _comments;
+    private string _body = "";
+    private readonly HashSet<string> _mentions = new(StringComparer.OrdinalIgnoreCase);
+    private CaseCommentView? _replyTo;
+    private Guid _loadedCaseId;
+
+    // Everyone in the directory except the current user, as mention candidates.
+    private List<IncidentManager.Application.Abstractions.UserSummary> MentionCandidates =>
+        Users.All().Where(u => !string.Equals(u.UserId, Me.UserId, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    private IEnumerable<CaseCommentView> TopLevel =>
+        _comments!.Where(c => c.ParentId is null).OrderBy(c => c.CreatedAtUtc);
+
+    private IEnumerable<CaseCommentView> RepliesOf(Guid parentId) =>
+        _comments!.Where(c => c.ParentId == parentId).OrderBy(c => c.CreatedAtUtc);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (CaseId != _loadedCaseId) { _loadedCaseId = CaseId; await Load(); }
+    }
+
+    private async Task Load() => _comments = await Comments.ListAsync(CaseId);
+
+    private void ToggleMention(string userId, bool on)
+    {
+        if (on) _mentions.Add(userId); else _mentions.Remove(userId);
+    }
+
+    private void StartReply(CaseCommentView c) => _replyTo = c;
+    private void CancelReply() => _replyTo = null;
+
+    private async Task Submit()
+    {
+        var body = _body.Trim();
+        if (string.IsNullOrWhiteSpace(body)) return;
+        try
+        {
+            await Comments.AddAsync(CaseId, body, _replyTo?.Id, _mentions.ToList());
+            _body = "";
+            _mentions.Clear();
+            _replyTo = null;
+            await Load();
+            Toasts.Success("Comment posted.");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private string AuthorName(CaseCommentView c) => c.AuthorName;
+
+    private RenderFragment RenderComment(CaseCommentView c, bool isReply) =>@<div class="card mb-2 @(isReply ? "ms-4" : "")" @key="c.Id">
+        <div class="card-body py-2">
+            <div class="md-body">@((MarkupString)Md.ToHtml(c.Body))</div>
+            @if (c.Mentions.Count > 0)
+            {
+                <div class="mt-1">
+                    @foreach (var m in c.Mentions)
+                    {
+                        <span class="im-badge im-b-info me-1"><span class="bi bi-at" aria-hidden="true"></span> @m</span>
+                    }
+                </div>
+            }
+            <small class="text-muted">
+                @c.AuthorName · @TimeDisp.Long(c.CreatedAtUtc)
+            </small>
+            @if (!isReply)
+            {
+                <button class="btn btn-sm btn-link p-0 ms-2 align-baseline" @onclick="() => StartReply(c)">Reply</button>
+            }
+        </div>
+    </div>;
+}

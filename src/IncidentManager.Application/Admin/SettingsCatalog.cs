@@ -80,6 +80,8 @@ public static class SettingsCatalog
             "When on, a Breach escalation is also posted to the team chat channel (Slack/Teams). Broadcasts to the shared channel independent of the Legal/Privacy email distribution. Requires a chat webhook configured on the host (Chat:Webhook).", "false"),
         new SettingDefinition("Notifications:Chat:Assignments", "Chat: assignments", "Notifications", SettingKind.Bool,
             "When on, a case assignment is also posted to the team chat channel. A shared-channel broadcast (not a direct message), independent of the per-assignee assignment email. Requires a chat webhook on the host.", "false"),
+        new SettingDefinition("Notifications:Chat:Mentions", "Chat: comment mentions", "Notifications", SettingKind.Bool,
+            "When on, an @mention in a case discussion comment is also posted to the team chat channel (in addition to emailing the mentioned people). Requires a chat webhook on the host.", "false"),
         new SettingDefinition("Notifications:Chat:OverdueReminders", "Chat: overdue reminders", "Notifications", SettingKind.Bool,
             "When on, each overdue after-action scan posts a short summary (count of newly-overdue items) to the team chat channel, in addition to the per-owner emails. Requires a chat webhook on the host.", "false"),
         new SettingDefinition("Notifications:Chat:DueSoonReminders", "Chat: due-soon reminders", "Notifications", SettingKind.Bool,

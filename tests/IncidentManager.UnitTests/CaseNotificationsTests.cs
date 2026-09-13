@@ -336,4 +336,50 @@ public class CaseNotificationsTests
 
         chat.Sent.Should().BeEmpty();                  // ChatOn() short-circuits on !Enabled
     }
+
+    // --- Mentions (PROD-04) ----------------------------------------------------
+
+    [Fact]
+    public async Task Mention_emails_each_mentioned_user_except_the_author()
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory()
+            .Add("alice", "Alice", "alice@insurer.example")
+            .Add("bob", "Bob", "bob@insurer.example")
+            .Add("author", "Author", "author@insurer.example");
+        var n = Build(sender, new EmailOptions(), users);
+
+        await n.OnMentionedAsync(NewCase(), "author", ["alice", "bob", "author"], "please take a look");
+
+        sender.Sent.Should().HaveCount(2);
+        sender.Sent.Should().Contain(s => s.To.Contains("alice@insurer.example"));
+        sender.Sent.Should().Contain(s => s.To.Contains("bob@insurer.example"));
+        sender.Sent.Should().NotContain(s => s.To.Contains("author@insurer.example"));  // author never notified
+        sender.Sent[0].Subject.Should().Contain("mentioned");
+    }
+
+    [Fact]
+    public async Task Mention_skips_a_user_with_no_email()
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory().Add("alice", "Alice", null);
+        var n = Build(sender, new EmailOptions(), users);
+
+        await n.OnMentionedAsync(NewCase(), "author", ["alice"], "hi");
+
+        sender.Sent.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Mention_posts_to_chat_when_enabled()
+    {
+        var chat = new CapturingChatNotifier();
+        var users = new FakeUserDirectory().Add("alice", "Alice", "alice@insurer.example");
+        var n = Build(new CapturingEmailSender(), new EmailOptions(), users, chat, ChatConfig("Mentions"));
+
+        await n.OnMentionedAsync(NewCase(), "author", ["alice"], "ping");
+
+        chat.Sent.Should().ContainSingle();
+        chat.Sent[0].Title.Should().Contain("Mention");
+    }
 }

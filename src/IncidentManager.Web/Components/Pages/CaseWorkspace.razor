@@ -254,6 +254,12 @@ else
                       OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle"
                       AutofocusComposer="_notesAutofocus" OnAutofocusHandled="() => _notesAutofocus = false" />
     }
+    else if (_activeTab == "Discussion")
+    {
+        @* PROD-04: durable threaded team discussion with @mention notifications. Self-loads its comments;
+           available to any case viewer (cross-role collaboration/handoff), so it isn't gated on EditCases. *@
+        <CaseDiscussionTab CaseId="_case.Id" />
+    }
     else if (_activeTab == "Tasks")
     {
         @* UX-13: extracted to CaseTasksTab. Self-loads its playbooks and builds due-dates; the parent keeps
@@ -378,7 +384,7 @@ else
     /// <summary>Deep-link a specific tab, e.g. <c>?tab=Report</c>, so a link can point straight at it.</summary>
     [SupplyParameterFromQuery(Name = "tab")] public string? QTab { get; set; }
 
-    private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Tasks", "Report", "Audit"];
+    private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Discussion", "Tasks", "Report", "Audit"];
     private string _activeTab = "Overview";
 
     private Case? _case;

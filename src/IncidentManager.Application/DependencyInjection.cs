@@ -14,6 +14,7 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddScoped<CaseService>();
+        services.AddScoped<CaseCommentService>();            // PROD-04: durable threaded case discussion
         services.AddScoped<Admin.AdminSettingsService>();
         services.AddScoped<Admin.RoleService>();
         services.AddScoped<Admin.CaseTemplateService>();

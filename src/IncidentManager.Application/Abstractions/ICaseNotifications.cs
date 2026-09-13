@@ -43,6 +43,15 @@ public interface ICaseNotifications
     Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default);
 
     /// <summary>
+    /// Called after a comment @mentioning teammates is posted (PROD-04). Emails each mentioned user (resolved
+    /// via the user directory), skipping the comment's author. Best-effort and gated like the other triggers.
+    /// A default no-op is provided so existing implementers (and test doubles) need not change; the real
+    /// <c>CaseNotifications</c> overrides it.
+    /// </summary>
+    Task OnMentionedAsync(Case c, string byUserId, IReadOnlyCollection<string> mentionedUserIds,
+        string commentExcerpt, CancellationToken ct = default) => Task.CompletedTask;
+
+    /// <summary>
     /// Called after someone is assigned to a case (E-03b). Emails the assignee (resolved via the user
     /// directory) that they have a new case role. Skips self-assignments and is gated by config.
     /// </summary>
