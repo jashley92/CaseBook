@@ -39,20 +39,14 @@
                 </NavLink>
             </div>
         </AuthorizeView>
+        @* Work is one section; the My work / Team workload switch lives in the in-page tabs on the page
+           (all-cases roles see both). A separate "Team" sidebar entry was redundant with those tabs — the
+           /team route and ?tab=team deep-link still land on the team tab for bookmarks and back-links. *@
         <div class="nav-item">
             <NavLink class="nav-link" href="work" Match="NavLinkMatch.All" title="Work">
                 <span class="bi bi-person-workspace" aria-hidden="true"></span><span class="nav-text">Work</span>
             </NavLink>
         </div>
-        @* UX-07: the team-workload view is otherwise a hidden second tab on /work; surface it in nav for
-           all-cases roles so managers don't have to know to click into it. *@
-        <AuthorizeView Policy="@Policies.ViewAllCases">
-            <div class="nav-item">
-                <NavLink class="nav-link" href="team" Match="NavLinkMatch.All" title="Team workload">
-                    <span class="bi bi-people-fill" aria-hidden="true"></span><span class="nav-text">Team</span>
-                </NavLink>
-            </div>
-        </AuthorizeView>
         <div class="nav-item">
             <NavLink class="nav-link" href="agenda" Match="NavLinkMatch.All" title="Agenda">
                 <span class="bi bi-calendar-week" aria-hidden="true"></span><span class="nav-text">Agenda</span>

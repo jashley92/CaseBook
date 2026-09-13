@@ -1,7 +1,8 @@
 @page "/work"
 @page "/my"
-@* UX-07: /team lands on the team-workload tab directly (its own path so the nav entry highlights
-   cleanly — NavLink ignores the query string, so ?tab=team can't distinguish it from /work). *@
+@* /team and ?tab=team are deep-link / bookmark aliases that land on the Team workload tab (e.g. the
+   case-list "← Team workload" back-link). The My work / Team workload switch itself is the in-page tab bar
+   below — there is no separate "Team" sidebar entry (it was redundant with these tabs). *@
 @page "/team"
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @inject MyWorkService Svc
