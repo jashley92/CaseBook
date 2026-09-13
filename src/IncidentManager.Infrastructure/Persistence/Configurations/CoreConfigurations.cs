@@ -448,3 +448,18 @@ public sealed class AdGroupRoleMappingConfiguration : IEntityTypeConfiguration<A
         b.HasIndex(x => x.RoleName);
     }
 }
+
+public sealed class SavedViewConfiguration : IEntityTypeConfiguration<SavedView>
+{
+    public void Configure(EntityTypeBuilder<SavedView> b)
+    {
+        b.ToTable("SavedViews");
+        b.Property(x => x.OwnerUserId).HasMaxLength(200).IsRequired();
+        b.Property(x => x.Name).HasMaxLength(120).IsRequired();
+        b.Property(x => x.Query).HasMaxLength(2000);
+        b.HasIndex(x => x.OwnerUserId);
+        b.HasIndex(x => x.IsShared);
+        // A user can't have two views with the same name; shared views still live under their owner.
+        b.HasIndex(x => new { x.OwnerUserId, x.Name }).IsUnique();
+    }
+}

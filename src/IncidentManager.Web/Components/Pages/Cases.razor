@@ -1,12 +1,15 @@
 @page "/cases"
 @page "/cases/mine"
+@using IncidentManager.Application.Views
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @inject CaseService CaseSvc
 @inject DashboardService Dashboard
+@inject SavedViewService Views
 @inject IClock Clock
 @inject ISlaTargetsProvider SlaProvider
 @inject ISeverityLabels SevLabels
 @inject NavigationManager Nav
+@inject ToastService Toasts
 
 <PageTitle>Cases</PageTitle>
 
@@ -43,6 +46,60 @@
         <StatTile Icon="bi-list-check" Value="d.OverdueActionItems" Label="Overdue tasks"
                   Tone="@(d.OverdueActionItems > 0 ? "danger" : "ok")"
                   Href="@(d.OverdueActionItems > 0 ? "cases?overdue=true&closed=true" : null)" />
+    </div>
+}
+
+@* PROD-09: saved / shared case-queue views. Each view is a name + the current filter query string;
+   personal by default, or shared to the whole team. *@
+<div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+    <span class="text-muted small"><span class="bi bi-bookmark-star" aria-hidden="true"></span> Views</span>
+    @if (_views is { Count: > 0 })
+    {
+        @foreach (var v in _views)
+        {
+            <span class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn @(IsActiveView(v) ? "btn-primary" : "btn-outline-secondary")"
+                        @onclick="() => ApplyView(v)" title="@ViewTooltip(v)">
+                    @if (v.IsShared) { <span class="bi bi-people me-1" aria-hidden="true"></span> }
+                    @v.Name
+                    @if (!v.IsMine) { <span class="opacity-75 ms-1">· @v.OwnerName</span> }
+                </button>
+                @if (v.IsMine)
+                {
+                    <button type="button" class="btn btn-outline-secondary" title="Delete this view"
+                            aria-label="@($"Delete view {v.Name}")" @onclick="() => DeleteView(v)">
+                        <span class="bi bi-x" aria-hidden="true"></span>
+                    </button>
+                }
+            </span>
+        }
+    }
+    else
+    {
+        <span class="text-muted small fst-italic">none yet</span>
+    }
+    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="ToggleSaveForm">
+        <span class="bi bi-plus-lg" aria-hidden="true"></span> Save current view
+    </button>
+</div>
+
+@if (_savingView)
+{
+    <div class="card my-2" style="max-width:32rem">
+        <div class="card-body">
+            <label class="form-label small mb-1 fw-semibold" for="view-name">Save these filters as a view</label>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <input id="view-name" class="form-control form-control-sm" style="max-width:16rem" placeholder="e.g. My triage queue"
+                       @bind="_newViewName" @bind:event="oninput" @onkeydown="OnSaveKeyDown" />
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="view-share" @bind="_newViewShared" />
+                    <label class="form-check-label small" for="view-share" title="Everyone on the team sees this view">Share with team</label>
+                </div>
+                <button class="btn btn-sm btn-primary" @onclick="SaveView" disabled="@string.IsNullOrWhiteSpace(_newViewName)">Save</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => _savingView = false">Cancel</button>
+            </div>
+            <div class="form-text">Saving over an existing name of yours updates it. Captures the current filters and Mine/All scope.</div>
+        </div>
     </div>
 }
 
@@ -308,8 +365,18 @@ else
         && string.IsNullOrEmpty(_search) && !_includeClosed && !_overdueOnly && !_slaAtRiskOnly
         && !_referredOnly && !_onHoldOnly && _openedLabel is null && _assignee is null);
 
+    // PROD-09: the user's own + shared views, and the inline "save view" form state.
+    private List<SavedViewItem>? _views;
+    private bool _savingView;
+    private string _newViewName = "";
+    private bool _newViewShared;
+
     // The caseload-summary tiles are a stable overview, so load them once (not on every filter change).
-    protected override async Task OnInitializedAsync() => _dash = await Dashboard.GetAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _dash = await Dashboard.GetAsync();
+        await ReloadViews();
+    }
 
     // Runs on initial load and on every query-string change (e.g. a dashboard drill-in).
     protected override async Task OnParametersSetAsync()
@@ -349,28 +416,29 @@ else
         await Reload();
     }
 
+    // The current filter state as query parameters — the single source used both to navigate on a filter
+    // change and to capture the current view for saving.
+    private Dictionary<string, object?> CurrentParams() => new()
+    {
+        ["scope"] = _onlyMine ? "mine" : null,
+        ["classification"] = Blank(_classification),
+        ["phase"] = Blank(_phase),
+        ["sev"] = Blank(_minSeverity),
+        ["origin"] = Blank(_origin),
+        ["q"] = Blank(_search),
+        ["closed"] = _includeClosed ? "true" : null,
+        ["overdue"] = _overdueOnly ? "true" : null,
+        ["sla"] = _slaAtRiskOnly ? "true" : null,
+        ["referred"] = _referredOnly ? "true" : null,
+        ["hold"] = _onHoldOnly ? "true" : null,
+        ["assignee"] = _assignee,
+        ["assigneeName"] = _assignee is null or "none" ? null : Blank(_assigneeName ?? ""),
+    };
+
     // A select/search change rewrites the query string; OnParametersSetAsync then reloads. We always
     // target the /cases base so scope lives in one place (?scope=mine), normalising the /cases/mine alias.
-    private void ApplyFilters()
-    {
-        var target = Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(), new Dictionary<string, object?>
-        {
-            ["scope"] = _onlyMine ? "mine" : null,
-            ["classification"] = Blank(_classification),
-            ["phase"] = Blank(_phase),
-            ["sev"] = Blank(_minSeverity),
-            ["origin"] = Blank(_origin),
-            ["q"] = Blank(_search),
-            ["closed"] = _includeClosed ? "true" : null,
-            ["overdue"] = _overdueOnly ? "true" : null,
-            ["sla"] = _slaAtRiskOnly ? "true" : null,
-            ["referred"] = _referredOnly ? "true" : null,
-            ["hold"] = _onHoldOnly ? "true" : null,
-            ["assignee"] = _assignee,
-            ["assigneeName"] = _assignee is null or "none" ? null : Blank(_assigneeName ?? ""),
-        });
-        Nav.NavigateTo(target);
-    }
+    private void ApplyFilters() =>
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(), CurrentParams()));
 
     // The Mine/All toggle. Keeps the active filters, just flips scope.
     private void SetScope(bool mine)
@@ -381,6 +449,74 @@ else
     }
 
     private void ClearFilters() => Nav.NavigateTo(_onlyMine ? "cases?scope=mine" : "cases");
+
+    // --- PROD-09: saved / shared views ---------------------------------------
+    private async Task ReloadViews() => _views = await Views.ListAsync();
+
+    private void ApplyView(SavedViewItem v) =>
+        Nav.NavigateTo(string.IsNullOrEmpty(v.Query) ? "cases" : $"cases?{v.Query}");
+
+    private void ToggleSaveForm()
+    {
+        _savingView = !_savingView;
+        if (_savingView) { _newViewName = ""; _newViewShared = false; }
+    }
+
+    private async Task OnSaveKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_newViewName)) await SaveView();
+    }
+
+    private async Task SaveView()
+    {
+        var name = _newViewName.Trim();
+        if (string.IsNullOrWhiteSpace(name)) return;
+        try
+        {
+            await Views.SaveAsync(name, CurrentQuery(), _newViewShared);
+            _savingView = false;
+            await ReloadViews();
+            Toasts.Success($"Saved view “{name}”.");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task DeleteView(SavedViewItem v)
+    {
+        try
+        {
+            await Views.DeleteAsync(v.Id);
+            await ReloadViews();
+            Toasts.Info($"Deleted view “{v.Name}”.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    // The current filters as a query string (no leading '?'), for saving a view.
+    private string CurrentQuery()
+    {
+        var url = Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(), CurrentParams());
+        return new Uri(url).Query.TrimStart('?');
+    }
+
+    // Highlight the view whose filters match the current query (order-insensitive).
+    private bool IsActiveView(SavedViewItem v) => NormalizeQuery(v.Query) == NormalizeQuery(CurrentQuery());
+
+    private static string NormalizeQuery(string? query) =>
+        string.Join('&', (query ?? "").TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .OrderBy(p => p, StringComparer.Ordinal));
+
+    private static string ViewTooltip(SavedViewItem v)
+    {
+        var who = v.IsMine ? (v.IsShared ? "Shared by you" : "Your private view") : $"Shared by {v.OwnerName}";
+        return string.IsNullOrEmpty(v.Query) ? $"{who} · all cases" : $"{who} · cases?{v.Query}";
+    }
 
     private static string? Blank(string v) => string.IsNullOrEmpty(v) ? null : v;
 

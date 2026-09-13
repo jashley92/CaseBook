@@ -40,6 +40,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<AdGroupRoleMapping> RoleMappings => Set<AdGroupRoleMapping>();
+    public DbSet<SavedView> SavedViews => Set<SavedView>();
 
     /// <summary>
     /// Ambient reason for the current unit of work (see <see cref="IAppDbContext.PendingChangeReason"/>).
