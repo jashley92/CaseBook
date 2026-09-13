@@ -207,7 +207,7 @@ else
            retires) + details/impact/techniques/links/history; the parent threads the retention alert, the
            readiness gate, the shared confirm dialog, the assign modal (OnOpenModal), and hotkey dispatch. *@
         <CaseOverviewTab @ref="_overviewTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
-                         RetentionMessage="_retentionMsg" ReadinessEval="_readinessEval"
+                         RetentionMessage="@_retentionMsg" ReadinessEval="_readinessEval"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" OnOpenModal="OpenModal"
                          RefreshToken="_liveRefresh" />
     }
