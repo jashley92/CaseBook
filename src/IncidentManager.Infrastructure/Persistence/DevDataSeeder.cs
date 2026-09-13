@@ -502,5 +502,22 @@ public static class DevDataSeeder
                 });
             await db.SaveChangesAsync(ct);
         }
+
+        // A demo campaign (E-29): link the two hand-authored breaches as part of the same wave, so the
+        // Campaigns page and the cross-case rollup are populated out of the box (and the README screenshot
+        // is reproducible). Kept here rather than in SeedAsync so tests that seed the three base cases
+        // directly still see no links. Idempotent: only added when no PartOfCampaign link exists yet.
+        var phishing = await db.Cases.FirstOrDefaultAsync(c => c.CaseNumber.StartsWith("2026-01"), ct);
+        var vendor = await db.Cases.FirstOrDefaultAsync(c => c.CaseNumber.StartsWith("2026-02"), ct);
+        if (phishing is not null && vendor is not null
+            && !await db.CaseLinks.AnyAsync(l => l.Type == CaseLinkType.PartOfCampaign, ct))
+        {
+            db.CaseLinks.Add(new CaseLink
+            {
+                CaseId = phishing.Id, RelatedCaseId = vendor.Id, Type = CaseLinkType.PartOfCampaign,
+                Description = "Worked together as one breach response.", CreatedBy = actor, CreatedAtUtc = now
+            });
+            await db.SaveChangesAsync(ct);
+        }
     }
 }
