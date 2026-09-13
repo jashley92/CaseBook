@@ -89,6 +89,10 @@ else
                         @if (_canReclassify) { <button class="dropdown-item" @onclick='() => OpenModal("reclass")'>@(_case.Classification is null ? "Promote to ladder…" : "Reclassify…")</button> }
                         @if (_canEdit)
                         {
+                            @if (!_case.Assignments.Any(a => string.Equals(a.UserId, _myId, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                <button class="dropdown-item" @onclick="AssignToMe">Assign to me</button>
+                            }
                             <button class="dropdown-item" @onclick='() => OpenModal("severity")'>Change severity…</button>
                             <button class="dropdown-item" @onclick='() => OpenModal("status")'>Change status…</button>
                             <button class="dropdown-item" @onclick='() => OpenModal("legal")'>Refer to Legal / Privacy…</button>
@@ -353,7 +357,7 @@ else
                                     <option value="">Select a user…</option>
                                     @foreach (var u in AssignableUsers())
                                     {
-                                        <option value="@u.UserId">@u.DisplayName@(string.IsNullOrWhiteSpace(u.RolesCsv) ? "" : $" · {u.RolesCsv}")</option>
+                                        <option value="@u.UserId">@u.DisplayName</option>
                                     }
                                 </select>
                                 <label class="form-label small">Role on this case</label>
@@ -953,6 +957,23 @@ else
         }
     }
 
+
+    // Quick self-assign from the Actions menu — picks the case up as an Analyst without opening the modal.
+    // Self-assignments never notify (the notifier skips assignee == assigner).
+    private async Task AssignToMe()
+    {
+        _actionsOpen = false;
+        try
+        {
+            await Cases.AssignAsync(Id, _myId, CurrentUser.DisplayName, CaseAssignmentRole.Analyst);
+            await Reload();
+            Toasts.Success("Assigned to you.");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
 
     // Directory users not yet assigned to this case — the pool the assign modal offers.
     private List<UserSummary> AssignableUsers() =>
