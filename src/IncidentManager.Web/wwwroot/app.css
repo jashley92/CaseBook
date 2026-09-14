@@ -326,6 +326,16 @@ h1:focus {
     color: var(--bs-secondary-color);
 }
 
+/* Right-aligned dropdowns (e.g. the case Actions and account menus). Our dropdowns toggle with a plain
+   @onclick handler, not Bootstrap's JS, so Popper never runs and Bootstrap only right-aligns
+   `.dropdown-menu-end` under a `[data-bs-popper]` selector — which we never have. Without this the menu
+   stays left-anchored to its trigger and a right-edge trigger spills off-screen. Anchor its right edge to
+   the trigger instead so it opens leftward and stays in view. */
+.dropdown-menu-end {
+    right: 0;
+    left: auto;
+}
+
 /* MITRE ATT&CK technique picker (AttackTechniquePicker) — type-ahead dropdown over the embedded
    v19.1 catalogue. Panel + rows are token-driven so they read in both themes and over a modal. */
 .atk-menu {
