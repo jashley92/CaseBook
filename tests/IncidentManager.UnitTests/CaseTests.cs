@@ -157,6 +157,28 @@ public class CaseTests
     }
 
     [Fact]
+    public void MarkReported_sets_the_milestone_and_can_be_cleared()
+    {
+        var c = NewCase();
+        c.MarkReported(Now.AddHours(2), "ic1", Now.AddHours(2));
+        c.ReportedAtUtc.Should().Be(Now.AddHours(2));
+
+        c.ClearReported("ic1", Now.AddHours(3));
+        c.ReportedAtUtc.Should().BeNull();
+    }
+
+    [Fact]
+    public void MarkReported_rejects_a_future_or_pre_detection_time()
+    {
+        var c = NewCase(); // DetectedAtUtc == Now (set on Open)
+        var future = () => c.MarkReported(Now.AddDays(1), "ic1", Now);
+        future.Should().Throw<ArgumentException>();
+
+        var beforeDetection = () => c.MarkReported(Now.AddHours(-1), "ic1", Now);
+        beforeDetection.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void RecordMateriality_is_refused_below_the_incident_rung()
     {
         var c = NewCase(); // opens as AdverseEvent

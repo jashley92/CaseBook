@@ -24,6 +24,8 @@ public static class DependencyInjection
         services.AddScoped<Admin.TaxonomyAdminService>();
         services.AddScoped<Admin.EmailTemplateAdminService>();
         services.AddScoped<Admin.DataElementService>();
+        services.AddScoped<Admin.NotificationRuleService>();          // PROD-07: per-jurisdiction deadline rules
+        services.AddScoped<Compliance.NotificationDeadlineService>(); // PROD-07: per-case deadline evaluation
         services.AddScoped<Config.ConfigBundleService>();
         services.AddScoped<EvidenceService>();
         services.AddScoped<DashboardService>();

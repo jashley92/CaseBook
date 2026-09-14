@@ -34,6 +34,9 @@ public static class DevDataSeeder
         // admin-managed reference data seeded on first run (codes are the original enum bit values).
         await SeedDataElementsAsync(db, clock, ct);
 
+        // Per-jurisdiction notification-deadline rules (PROD-07): a minimal baseline; admin-managed thereafter.
+        await SeedNotificationRulesAsync(db, clock, ct);
+
         if (!seedDemoData || await db.Cases.AnyAsync(ct))
             return;
 
@@ -92,6 +95,29 @@ public static class DevDataSeeder
             Key = s.Key,
             Label = s.Label,
             SortOrder = s.SortOrder,
+            IsActive = true,
+            IsSystem = true,
+            CreatedBy = "system",
+            CreatedAtUtc = now
+        }));
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Seeds the built-in per-jurisdiction notification-deadline rules (PROD-07) on first run; admins may then
+    /// relabel / retime / archive / add. Idempotent — a no-op once any rule exists.
+    /// </summary>
+    public static async Task SeedNotificationRulesAsync(AppDbContext db, IClock clock, CancellationToken ct = default)
+    {
+        if (await db.NotificationRules.AnyAsync(ct)) return;
+
+        var now = clock.UtcNow;
+        db.NotificationRules.AddRange(NotificationRuleCatalog.Defaults.Select(s => new NotificationRule
+        {
+            Code = s.Code,
+            Label = s.Label,
+            WindowHours = s.WindowHours,
             IsActive = true,
             IsSystem = true,
             CreatedBy = "system",

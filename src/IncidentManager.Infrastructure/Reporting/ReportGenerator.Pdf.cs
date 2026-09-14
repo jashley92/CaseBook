@@ -186,6 +186,7 @@ public sealed partial class ReportGenerator
         Stamp("Detected", m.DetectedAtUtc);
         Stamp("Contained", m.ContainedAtUtc);
         Stamp("Resolved", m.ResolvedAtUtc);
+        Stamp("Reported to regulators", m.ReportedAtUtc);
         Stamp("Closed", m.ClosedAtUtc);
         if (m.LegalReferred) section.AddParagraph($"Referred to Legal/Privacy. {m.LegalNote}");
         if (m.LegalHold) section.AddParagraph("Legal hold in effect — case data must be preserved (do not delete).");

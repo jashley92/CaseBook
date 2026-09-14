@@ -1,0 +1,185 @@
+@page "/admin/notification-deadlines"
+@using IncidentManager.Application.Admin
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject NotificationRuleService Rules
+@inject ToastService Toasts
+
+<PageTitle>Notification rules</PageTitle>
+
+<PageHeader Title="Notification rules">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+<p class="text-muted">
+    Per-jurisdiction regulatory notification deadlines (e.g. New York / NYDFS Part 500 = 72h). The
+    <strong>code</strong> is matched against the notification jurisdictions on your
+    <a href="admin/data-elements">data elements</a>, so a case's involved data determines which deadlines apply.
+    Any triggered jurisdiction without a rule here falls back to the <strong>default window</strong> set under
+    <a href="admin/settings/notification-deadlines">Notification deadlines</a> settings — where you also turn the
+    whole feature on. Tailor these without a release: add, retime, or archive. Changes are audited.
+</p>
+
+@if (_all is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-header"><span class="bi bi-alarm me-1"></span>Add or edit a rule</div>
+        <div class="card-body">
+            <div class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label small mb-0">Code</label>
+                    <input class="form-control form-control-sm" style="max-width:8rem" maxlength="16"
+                           placeholder="e.g. NY" @bind="_code" disabled="@(_editId is not null)" />
+                </div>
+                <div class="col">
+                    <label class="form-label small mb-0">Label</label>
+                    <input class="form-control form-control-sm" maxlength="200" placeholder="e.g. New York (NYDFS Part 500)" @bind="_label" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small mb-0">Window (hours)</label>
+                    <input type="number" min="1" class="form-control form-control-sm" style="max-width:8rem" @bind="_window" />
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-sm btn-primary" @onclick="Save">@(_editId is null ? "Add rule" : "Save")</button>
+                    @if (_editId is not null)
+                    {
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="ResetForm">Cancel</button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header"><span class="bi bi-list-check me-1"></span>Active rules</div>
+        <div class="card-body">
+            @if (_all.Count(r => r.IsActive) == 0)
+            {
+                <p class="text-muted small mb-0">No active rules — add one above, or every jurisdiction uses the default window.</p>
+            }
+            else
+            {
+                <table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>Code</th><th>Label</th><th>Window</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var r in _all.Where(r => r.IsActive))
+                        {
+                            <tr>
+                                <td><code>@r.Code</code> @if (r.IsSystem) { <span class="im-badge im-b-neutral ms-1">Built-in</span> }</td>
+                                <td>@r.Label</td>
+                                <td class="small text-muted">@r.WindowHours h</td>
+                                <td class="text-end" style="width:14rem">
+                                    <button class="btn btn-sm btn-outline-secondary py-0" @onclick="() => BeginEdit(r)">Edit</button>
+                                    <button class="btn btn-sm btn-outline-secondary py-0" @onclick="() => Archive(r.Id)">Archive</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+
+    @if (_all.Any(r => !r.IsActive))
+    {
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><span class="bi bi-archive me-1"></span>Archived (@_all.Count(r => !r.IsActive))</span>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => _showArchived = !_showArchived">@(_showArchived ? "Hide" : "Show")</button>
+            </div>
+            @if (_showArchived)
+            {
+                <div class="card-body">
+                    <p class="small text-muted">Archived rules are ignored; the default window then covers their jurisdiction.</p>
+                    <table class="table table-sm align-middle mb-0">
+                        <tbody>
+                            @foreach (var r in _all.Where(r => !r.IsActive))
+                            {
+                                <tr>
+                                    <td><code>@r.Code</code> @r.Label @if (r.IsSystem) { <span class="im-badge im-b-neutral ms-1">Built-in</span> }</td>
+                                    <td class="text-end" style="width:14rem">
+                                        <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => Restore(r.Id)">Restore</button>
+                                        @if (r.IsDeletable)
+                                        {
+                                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => Delete(r.Id)">Delete</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<NotificationRuleView>? _all;
+    private bool _showArchived;
+
+    private Guid? _editId;
+    private string _code = "";
+    private string _label = "";
+    private int _window = 72;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => _all = await Rules.ListAllAsync();
+
+    private void BeginEdit(NotificationRuleView r)
+    {
+        _editId = r.Id;
+        _code = r.Code;
+        _label = r.Label;
+        _window = r.WindowHours;
+    }
+
+    private void ResetForm()
+    {
+        _editId = null;
+        _code = "";
+        _label = "";
+        _window = 72;
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            await Rules.SaveAsync(_editId, _code, _label, _window);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        ResetForm();
+        await LoadAsync();
+        Toasts.Success("Notification rule saved");
+    }
+
+    private async Task Archive(Guid id) => await Lifecycle(() => Rules.SetArchivedAsync(id, true), "Rule archived");
+    private async Task Restore(Guid id) => await Lifecycle(() => Rules.SetArchivedAsync(id, false), "Rule restored");
+    private async Task Delete(Guid id) => await Lifecycle(() => Rules.DeleteAsync(id), "Rule deleted");
+
+    private async Task Lifecycle(Func<Task> action, string ok)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        await LoadAsync();
+        Toasts.Info(ok);
+    }
+}

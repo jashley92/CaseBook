@@ -718,6 +718,32 @@ public class Case : AuditableEntity, IHashableEntity
         return next;
     }
 
+    /// <summary>
+    /// Records the <b>regulatory-notification milestone</b> (PROD-07): the instant the reportable event was
+    /// notified to regulators. Sets <see cref="ReportedAtUtc"/> (already part of the tamper-evident canonical),
+    /// stopping the per-jurisdiction deadline countdown. Legal owns the actual filing and its per-regulator
+    /// timing; the tool records that it happened. May be backdated (Legal often reports before it is entered
+    /// here) but not set in the future or before the matter was detected.
+    /// </summary>
+    public void MarkReported(DateTimeOffset reportedAtUtc, string actor, DateTimeOffset nowUtc)
+    {
+        if (reportedAtUtc > nowUtc)
+            throw new ArgumentException("The reported time cannot be in the future.", nameof(reportedAtUtc));
+        if (DetectedAtUtc is { } detected && reportedAtUtc < detected)
+            throw new ArgumentException("The reported time cannot be before the matter was detected.", nameof(reportedAtUtc));
+
+        ReportedAtUtc = reportedAtUtc;
+        Touch(actor, nowUtc);
+    }
+
+    /// <summary>Clears the reported milestone (a mis-entry), reopening the notification countdown. Audited.</summary>
+    public void ClearReported(string actor, DateTimeOffset nowUtc)
+    {
+        if (ReportedAtUtc is null) return;
+        ReportedAtUtc = null;
+        Touch(actor, nowUtc);
+    }
+
     /// <summary>Places a legal hold, blocking archival/retention purge until it is released.</summary>
     public void PlaceLegalHold(string actor, DateTimeOffset nowUtc)
     {

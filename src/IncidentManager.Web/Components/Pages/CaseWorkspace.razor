@@ -14,6 +14,7 @@
 @inject ToastService Toasts
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
+@inject IncidentManager.Application.Compliance.NotificationDeadlineService Deadlines
 @inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
 @inject IncidentManager.Application.Access.IAccessLogService AccessLog
 
@@ -71,6 +72,12 @@ else
                 {
                     <span class="@Ui.SlaBadge(slaHead.State)" title="@slaHeadTitle">
                         <span class="bi @Ui.SlaGlyph(slaHead.State)" aria-hidden="true"></span> SLA: @Ui.SlaLabel(slaHead.State)
+                    </span>
+                }
+                @if (_notifyDeadlines?.Headline is { } nh)
+                {
+                    <span class="@Ui.SlaBadge(nh.State)" title="@($"Notify {nh.JurisdictionLabel}{(nh.DueAtUtc is { } due ? " · due " + TimeDisp.Short(due) : "")}")">
+                        <span class="bi bi-megaphone" aria-hidden="true"></span> Notify: @Ui.SlaLabel(nh.State)
                     </span>
                 }
                 @if (_case.LegalReferral.IsReferred) { <span class="im-badge im-b-neutral">Legal referred</span> }
@@ -639,6 +646,8 @@ else
         _newClass = _case?.Classification ?? Classification.Incident;
         _newPhase = _case?.Phase ?? CasePhase.Triage;
         _newSeverity = _case?.Severity ?? Severity.Medium;
+        // PROD-07: headline regulatory-notification deadline for the header badge (null when the feature is off).
+        _notifyDeadlines = _case is null ? null : await Deadlines.EvaluateAsync(Id);
         // Readiness is computed here and passed to CaseOverviewTab for the stage-readiness card.
         _readinessEval = NextGateTrigger() is { } t ? await LoadGateAsync(t) : null;
         SeedKnownIds(); // U-30: absorb the current items so a viewer's own edits don't echo back as "new"
@@ -646,6 +655,9 @@ else
 
     // --- Overview "Stage readiness" card: the gate for this case's next likely transition (passed to the tab) ---
     private GateEvaluation? _readinessEval;
+
+    // PROD-07: the case's evaluated regulatory-notification deadlines (null when the feature is off).
+    private IncidentManager.Application.Compliance.CaseNotificationDeadlines? _notifyDeadlines;
 
     /// <summary>The gate a case is heading toward next, given its current classification/phase.</summary>
     private StageGateTrigger? NextGateTrigger()

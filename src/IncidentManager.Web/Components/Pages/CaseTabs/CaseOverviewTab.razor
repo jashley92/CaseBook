@@ -17,6 +17,8 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
+@inject IncidentManager.Application.Compliance.NotificationDeadlineService Deadlines
+@using IncidentManager.Application.Compliance
 
 @{
     var (slaContain, slaResolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase,
@@ -211,6 +213,88 @@
                 }
             </div>
         </div>
+
+        @if (_deadlines is { Enabled: true })
+        {
+            <div class="im-sec mt-3">
+                <div class="im-sec-head">
+                    <h3>Regulatory notification</h3>
+                    @if (_deadlines.Headline is { } hl)
+                    {
+                        <span class="@Ui.SlaBadge(hl.State)" title="Earliest / most urgent jurisdiction">
+                            <span class="bi @Ui.SlaGlyph(hl.State)" aria-hidden="true"></span> @Ui.SlaLabel(hl.State)
+                        </span>
+                    }
+                </div>
+                <div class="im-sec-body">
+                    @if (_deadlines.ReportedAtUtc is { } rep)
+                    {
+                        <p class="small mb-2"><span class="bi bi-check2-circle text-success" aria-hidden="true"></span>
+                            Reported to regulators <strong>@TimeDisp.Short(rep)</strong>.</p>
+                    }
+                    @if (_deadlines.AwaitingTrigger)
+                    {
+                        <p class="text-muted small mb-0">
+                            @(_deadlines.StartBasis == NotificationStartBasis.Determination
+                                ? "The countdown starts once this case is determined material (record the materiality determination)."
+                                : "The countdown starts once this case is classified a Breach.")
+                        </p>
+                    }
+                    else if (_deadlines.StartedButNoJurisdictions)
+                    {
+                        <p class="text-muted small mb-0">No notifying jurisdictions are triggered by the recorded data elements. Add the involved data elements in the impact assessment above.</p>
+                    }
+                    else if (_deadlines.Statuses.Count > 0)
+                    {
+                        <table class="table table-sm im-table mb-2">
+                            <thead><tr><th>Jurisdiction</th><th>Window</th><th>Deadline</th><th>Status</th></tr></thead>
+                            <tbody>
+                                @foreach (var s in _deadlines.Statuses)
+                                {
+                                    <tr>
+                                        <td>@s.JurisdictionLabel <code class="small text-muted">@s.JurisdictionCode</code></td>
+                                        <td class="small text-muted">@s.WindowHours h</td>
+                                        <td class="small">@(s.DueAtUtc is { } d ? TimeDisp.Short(d) : "—")
+                                            @if (s is { IsActive: true, Remaining: { } rem }) { <span class="text-muted">(@RemainingLabel(rem))</span> }
+                                        </td>
+                                        <td><span class="@Ui.SlaBadge(s.State)">@Ui.SlaLabel(s.State)</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+
+                    @if (CanEdit)
+                    {
+                        @if (_deadlines.ReportedAtUtc is null && !_deadlines.AwaitingTrigger)
+                        {
+                            @if (_markingReported)
+                            {
+                                <div class="d-flex align-items-end gap-2 flex-wrap">
+                                    <div>
+                                        <label class="form-label small mb-0">Reported at (UTC)</label>
+                                        <input type="datetime-local" class="form-control form-control-sm" @bind="_reportedAt" />
+                                    </div>
+                                    <button class="btn btn-sm btn-primary" @onclick="MarkReported">Save</button>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => _markingReported = false">Cancel</button>
+                                </div>
+                                @if (_reportedError is not null) { <p class="text-danger small mt-1 mb-0">@_reportedError</p> }
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-outline-primary" @onclick="BeginMarkReported">
+                                    <span class="bi bi-send-check" aria-hidden="true"></span> Mark reported to regulators
+                                </button>
+                            }
+                        }
+                        else if (_deadlines.ReportedAtUtc is not null)
+                        {
+                            <button class="btn btn-sm btn-link text-danger p-0" @onclick="ClearReported">Clear reported milestone</button>
+                        }
+                    }
+                </div>
+            </div>
+        }
 
         @if (ReadinessEval is { } rg)
         {
@@ -469,6 +553,12 @@
     private IReadOnlyList<DataElement> _dataElements = Array.Empty<DataElement>();
     private IReadOnlyDictionary<string, string> _dataElementLabels = new Dictionary<string, string>();
 
+    // Regulatory notification deadlines (PROD-07)
+    private CaseNotificationDeadlines? _deadlines;
+    private bool _markingReported;
+    private DateTime? _reportedAt;
+    private string? _reportedError;
+
     // Related cases (E-14)
     private IReadOnlyList<CaseLinkView> _links = Array.Empty<CaseLinkView>();
     private bool _addingLink;
@@ -511,6 +601,53 @@
         _dataElementLabels = await Cases.DataElementLabelsAsync();
     }
 
+    // --- Regulatory notification deadlines (PROD-07) ---
+    private void BeginMarkReported()
+    {
+        _reportedError = null;
+        _reportedAt = Clock.UtcNow.UtcDateTime;
+        _markingReported = true;
+    }
+
+    private async Task MarkReported()
+    {
+        _reportedError = null;
+        if (_reportedAt is not { } dt) { _reportedError = "Enter the reported time."; return; }
+        try
+        {
+            var utc = new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc));
+            await Cases.MarkReportedAsync(CaseId, utc);
+            _markingReported = false;
+            _deadlines = await Deadlines.EvaluateAsync(CaseId);
+            await OnChanged.InvokeAsync();
+            Toasts.Success("Reported milestone recorded");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            _reportedError = ex.Message;
+        }
+    }
+
+    private async Task ClearReported() =>
+        await RequestConfirm.InvokeAsync(("Clear the reported milestone? The notification countdown will resume.",
+            async () =>
+            {
+                await Cases.ClearReportedAsync(CaseId);
+                _deadlines = await Deadlines.EvaluateAsync(CaseId);
+                await OnChanged.InvokeAsync();
+                Toasts.Success("Reported milestone cleared");
+            }));
+
+    private static string RemainingLabel(TimeSpan rem)
+    {
+        if (rem < TimeSpan.Zero)
+        {
+            var over = -rem;
+            return over.TotalDays >= 1 ? $"overdue {(int)over.TotalDays}d" : $"overdue {Math.Max(1, (int)over.TotalHours)}h";
+        }
+        return rem.TotalDays >= 1 ? $"in {(int)rem.TotalDays}d" : $"in {Math.Max(1, (int)rem.TotalHours)}h";
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         // Load related cases on first mount and whenever the parent signals a live change.
@@ -519,6 +656,10 @@
             _loadedToken = RefreshToken;
             await LoadLinks();
         }
+        // Re-evaluate the notification deadlines whenever the parent passes an updated case (e.g. after a
+        // materiality determination or reported milestone recorded from the header Actions), so the card and
+        // the header badge stay in sync (PROD-07).
+        _deadlines = await Deadlines.EvaluateAsync(CaseId);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

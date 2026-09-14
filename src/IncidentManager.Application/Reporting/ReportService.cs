@@ -332,6 +332,7 @@ public sealed class ReportService
             MaterialityDecidedOnUtc = c.Materiality.DecidedOnUtc,
             MaterialityRationale = c.Materiality.Rationale,
             DetectedAtUtc = c.DetectedAtUtc,
+            ReportedAtUtc = c.ReportedAtUtc,
             ContainedAtUtc = c.ContainedAtUtc,
             ResolvedAtUtc = c.ResolvedAtUtc,
             ClosedAtUtc = c.ClosedAtUtc,

@@ -125,6 +125,19 @@ public static class SettingsCatalog
         new SettingDefinition("Sla:AtRiskThresholdPercent", "At-risk threshold (%)", "Response SLA", SettingKind.Int,
             "How much of a target must elapse before an open case is flagged \"at risk\" (e.g. 80 = flag once 80% of the target time has passed). 1–100.", "80"),
 
+        // PROD-07: regulatory notification-deadline clock. Off by default; per-jurisdiction timers are managed
+        // as reference data under Admin → Notification deadlines. Takes effect within a few minutes of saving.
+        new SettingDefinition("Compliance:NotificationDeadlines:Enabled", "Notification deadline clock", "Notification deadlines", SettingKind.Bool,
+            "Master switch for the regulatory notification-deadline countdown (per-jurisdiction, e.g. NYDFS Part 500 = 72h). " +
+            "Off by default; when on, breach/material cases show a deadline to notify each triggered jurisdiction. Nothing auto-acts — it only surfaces and reminds.", "false"),
+        new SettingDefinition("Compliance:NotificationDeadlines:StartBasis", "Clock starts from", "Notification deadlines", SettingKind.Text,
+            "What instant the clock is measured from: \"Determination\" (the materiality \"Material\" determination — NYDFS 500.17(a) / SEC Item 1.05; the clock runs only once a case is determined material) or " +
+            "\"Detection\" (the detection timestamp, for a Breach-classified case). Defaults to Determination.", "Determination"),
+        new SettingDefinition("Compliance:NotificationDeadlines:DefaultWindowHours", "Default window (hours)", "Notification deadlines", SettingKind.Int,
+            "The deadline window applied to any triggered jurisdiction that has no explicit rule under Admin → Notification deadlines, so a countdown always exists.", "72"),
+        new SettingDefinition("Compliance:NotificationDeadlines:AtRiskThresholdPercent", "At-risk threshold (%)", "Notification deadlines", SettingKind.Int,
+            "How much of a jurisdiction's window must elapse before its deadline is flagged \"at risk\" (e.g. 80 = flag at 80% elapsed). 1–100.", "80"),
+
         new SettingDefinition("Severity:Label:Critical", "Critical label", "Severity labels", SettingKind.Text,
             "Display name shown for the Critical severity. The level, ordering, colour and SLA are unchanged; only the shown name varies (e.g. \"SEV-1\").", "Critical"),
         new SettingDefinition("Severity:Label:High", "High label", "Severity labels", SettingKind.Text,

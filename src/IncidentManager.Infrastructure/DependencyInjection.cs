@@ -70,6 +70,9 @@ public static class DependencyInjection
         services.AddSingleton<IClock, SystemClock>();
         // E-16: reads per-severity SLA targets from live config (appsettings + DB override) on demand.
         services.AddSingleton<Application.Sla.ISlaTargetsProvider, Sla.ConfigurationSlaTargetsProvider>();
+        // PROD-07: reads the notification-deadline settings (incl. the on/off toggle) from live config on demand.
+        services.AddSingleton<Application.Compliance.INotificationDeadlineSettingsProvider,
+            Compliance.ConfigurationNotificationDeadlineSettingsProvider>();
         services.AddSingleton<Application.Abstractions.ISeverityLabels, Severities.ConfigurationSeverityLabels>();
         // X-02: admin-set taxonomy display labels, read live from config (same mechanism as severity labels).
         services.AddSingleton<Application.Abstractions.ITaxonomyDisplay, Taxonomy.ConfigurationTaxonomyDisplay>();

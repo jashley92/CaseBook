@@ -260,6 +260,21 @@ public sealed class DataElementConfiguration : IEntityTypeConfiguration<DataElem
     }
 }
 
+public sealed class NotificationRuleConfiguration : IEntityTypeConfiguration<NotificationRule>
+{
+    public void Configure(EntityTypeBuilder<NotificationRule> b)
+    {
+        b.ToTable("NotificationRules");
+        b.Property(x => x.Code).HasMaxLength(16).IsRequired();
+        b.Property(x => x.Label).HasMaxLength(200).IsRequired();
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.ModifiedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(64);
+        // Code is the stable jurisdiction identity matched against DataElement.NotificationJurisdictions.
+        b.HasIndex(x => x.Code).IsUnique();
+    }
+}
+
 public sealed class CaseDataElementConfiguration : IEntityTypeConfiguration<CaseDataElement>
 {
     public void Configure(EntityTypeBuilder<CaseDataElement> b)

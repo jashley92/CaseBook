@@ -65,6 +65,8 @@ public sealed class CaseReportModel
     public bool LegalHold { get; init; }
 
     public DateTimeOffset? DetectedAtUtc { get; init; }
+    /// <summary>PROD-07: the regulatory-notification milestone, when set. Legal reads the report, not the app.</summary>
+    public DateTimeOffset? ReportedAtUtc { get; init; }
     public DateTimeOffset? ContainedAtUtc { get; init; }
     public DateTimeOffset? ResolvedAtUtc { get; init; }
     public DateTimeOffset? ClosedAtUtc { get; init; }

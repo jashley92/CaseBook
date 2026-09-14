@@ -454,6 +454,25 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>Records the regulatory-notification milestone (PROD-07): sets <c>ReportedAtUtc</c>, stopping the
+    /// per-jurisdiction deadline countdown. Backdatable but not future / pre-detection (enforced in the domain).</summary>
+    public async Task MarkReportedAsync(Guid id, DateTimeOffset reportedAtUtc, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.MarkReported(reportedAtUtc, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Clears the reported milestone (a mis-entry), reopening the notification countdown.</summary>
+    public async Task ClearReportedAsync(Guid id, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.ClearReported(_user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
     /// <summary>
     /// Records the materiality determination on a case (PROD-18). This is a Legal/committee decision the SOC
     /// only transcribes, so <paramref name="decisionMaker"/> (the external authority) and
