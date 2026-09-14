@@ -27,6 +27,22 @@ public class StatusChange : Entity
     public DateTimeOffset ChangedAtUtc { get; set; }
 }
 
+/// <summary>Immutable record of a materiality-determination transition (Undetermined → Under review →
+/// Material / Not material). Carries the off-app decision-maker/date/rationale as recorded at the time.</summary>
+public class MaterialityChange : Entity
+{
+    public Guid CaseId { get; set; }
+
+    /// <summary>The prior status (Undetermined for the first determination).</summary>
+    public MaterialityStatus From { get; set; }
+    public MaterialityStatus To { get; set; }
+    public string? DecisionMaker { get; set; }
+    public DateTimeOffset? DecidedOnUtc { get; set; }
+    public string? Rationale { get; set; }
+    public string ChangedBy { get; set; } = string.Empty;
+    public DateTimeOffset ChangedAtUtc { get; set; }
+}
+
 /// <summary>Immutable record of a severity change.</summary>
 public class SeverityChange : Entity
 {

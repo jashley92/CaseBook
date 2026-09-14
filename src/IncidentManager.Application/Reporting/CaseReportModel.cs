@@ -50,6 +50,16 @@ public sealed class CaseReportModel
 
     public bool LegalReferred { get; init; }
     public string? LegalNote { get; init; }
+
+    // Materiality determination (PROD-18): a Legal/committee decision recorded for the file. Surfaced in the
+    // report because Legal reads the report, not the app. Only rendered once a determination has been started.
+    /// <summary>Human label for the current determination (e.g. "Material", "Under review"); null when Undetermined.</summary>
+    public string? MaterialityStatus { get; init; }
+    /// <summary>True once a final material / not-material call has been recorded.</summary>
+    public bool MaterialityDetermined { get; init; }
+    public string? MaterialityDecisionMaker { get; init; }
+    public DateTimeOffset? MaterialityDecidedOnUtc { get; init; }
+    public string? MaterialityRationale { get; init; }
     /// <summary>UX-10: a legal hold is in effect — case data must be preserved (no deletion). Surfaced in
     /// the report because Legal reads the report, not the app.</summary>
     public bool LegalHold { get; init; }

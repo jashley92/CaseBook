@@ -189,6 +189,7 @@ public sealed class CaseService
         using var db = _factory.CreateDbContext();
         var c = await Scoped(db.Cases.AsNoTracking())
             .Include(x => x.ClassificationChanges)
+            .Include(x => x.MaterialityChanges)
             .Include(x => x.StatusChanges)
             .Include(x => x.SeverityChanges)
             .Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics)
@@ -320,6 +321,7 @@ public sealed class CaseService
     {
         var c = await db.Cases
             .Include(x => x.ClassificationChanges)
+            .Include(x => x.MaterialityChanges)
             .Include(x => x.StatusChanges)
             .Include(x => x.SeverityChanges)
             .Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics)
@@ -449,6 +451,21 @@ public sealed class CaseService
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.ReferToLegal(_user.UserId, contact, relevanceNote, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Records the materiality determination on a case (PROD-18). This is a Legal/committee decision the SOC
+    /// only transcribes, so <paramref name="decisionMaker"/> (the external authority) and
+    /// <paramref name="decidedOnUtc"/> are captured distinctly from the recording user + timestamp. Allowed
+    /// only on Incidents/Breaches; a final call requires decision-maker, date and rationale.
+    /// </summary>
+    public async Task RecordMaterialityAsync(Guid id, MaterialityStatus status, string? decisionMaker,
+        DateTimeOffset? decidedOnUtc, string? rationale, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.RecordMateriality(status, decisionMaker, decidedOnUtc, rationale, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
 

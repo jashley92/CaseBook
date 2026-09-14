@@ -1,3 +1,5 @@
+using IncidentManager.Domain.Enums;
+
 namespace IncidentManager.Application.StageGates;
 
 /// <summary>
@@ -55,6 +57,9 @@ public static class GateCheckKeys
     public const string IncidentCommanderAssigned = nameof(IncidentCommanderAssigned);
     /// <summary>Stage 2: a threshold on the recorded affected-individual count (e.g. an org's notification floor).</summary>
     public const string MinAffectedIndividuals = nameof(MinAffectedIndividuals);
+    /// <summary>PROD-18: a materiality determination has been recorded. Self-scoping — vacuously satisfied
+    /// below the Incident rung, so it only bites on Incidents/Breaches (e.g. on the close gate).</summary>
+    public const string MaterialityDetermined = nameof(MaterialityDetermined);
 }
 
 /// <summary>
@@ -97,6 +102,11 @@ public static class GateCheckRegistry
             n => $"Affected-individual count is at least {n}",
             (f, n) => f.HasAffectedCount && f.AffectedIndividualsCount >= n,
             new GateCheckParamSpec("Minimum affected individuals", Default: 1, Min: 1)),
+        // Self-scoping: passes vacuously below the Incident rung, so requiring it on the close gate forces a
+        // recorded material / not-material call on Incidents & Breaches without gating minor cases (PROD-18).
+        new(GateCheckKeys.MaterialityDetermined,
+            _ => "Materiality determination recorded (Incidents & Breaches)",
+            (f, _) => f.Classification is not (Classification.Incident or Classification.Breach) || f.MaterialityDetermined),
     ];
 
     private static readonly IReadOnlyDictionary<string, GateCheckDescriptor> _byKey =

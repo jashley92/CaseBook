@@ -62,6 +62,13 @@ public class Case : AuditableEntity, IHashableEntity
     public ThirdPartyDetails? ThirdParty { get; set; }
     public LegalReferral LegalReferral { get; set; } = new();
 
+    /// <summary>
+    /// The materiality determination (E-12 sibling of <see cref="LegalReferral"/>): whether this is a
+    /// material, disclosure-triggering matter. Not the SOC's call — recorded here on behalf of Legal /
+    /// a disclosure committee. Enforced at closure for Incidents/Breaches via the stage gate.
+    /// </summary>
+    public MaterialityDetermination Materiality { get; set; } = new();
+
     /// <summary>AD identifier of the assigned Incident Commander.</summary>
     public string? IncidentCommander { get; set; }
 
@@ -92,6 +99,7 @@ public class Case : AuditableEntity, IHashableEntity
 
     // --- Owned collections ---
     public List<ClassificationChange> ClassificationChanges { get; set; } = new();
+    public List<MaterialityChange> MaterialityChanges { get; set; } = new();
     public List<StatusChange> StatusChanges { get; set; } = new();
     public List<GatePassage> GatePassages { get; set; } = new();
     public List<SeverityChange> SeverityChanges { get; set; } = new();
@@ -402,6 +410,57 @@ public class Case : AuditableEntity, IHashableEntity
             ReferredToContact = contact, RegulatoryRelevanceNote = relevanceNote
         };
         Touch(referredBy, nowUtc);
+    }
+
+    /// <summary>
+    /// Records the materiality determination — a decision the SOC does <b>not</b> make but must capture for
+    /// the file. Allowed only once the case is on the Incident/Breach rungs (materiality is meaningless for a
+    /// pre-ladder Complex Event or a mere Adverse Event). A <em>final</em> call (Material / Not material) must
+    /// name who decided, when, and why — this record stands in for an off-app decision, so its provenance is
+    /// mandatory; the interim states carry only what is known so far. <paramref name="actor"/> is the SOC user
+    /// recording it, kept distinct from <paramref name="decisionMaker"/> (the external authority). Each status
+    /// transition is captured in <see cref="MaterialityChanges"/>; the determination is part of the canonical.
+    /// </summary>
+    public void RecordMateriality(MaterialityStatus status, string? decisionMaker, DateTimeOffset? decidedOnUtc,
+        string? rationale, string actor, DateTimeOffset nowUtc)
+    {
+        if (Classification is null or Domain.Enums.Classification.AdverseEvent)
+            throw new InvalidOperationException("Materiality is determined only for Incidents and Breaches.");
+        if (decidedOnUtc is { } future && future > nowUtc)
+            throw new ArgumentException("The decision date cannot be in the future.", nameof(decidedOnUtc));
+
+        if (status is MaterialityStatus.Material or MaterialityStatus.NotMaterial)
+        {
+            if (string.IsNullOrWhiteSpace(decisionMaker))
+                throw new ArgumentException("A final determination must record who made the decision.", nameof(decisionMaker));
+            if (string.IsNullOrWhiteSpace(rationale))
+                throw new ArgumentException("A final determination must record the rationale.", nameof(rationale));
+            if (decidedOnUtc is null)
+                throw new ArgumentException("A final determination must record the decision date.", nameof(decidedOnUtc));
+        }
+
+        var from = Materiality.Status;
+        Materiality = new MaterialityDetermination
+        {
+            Status = status,
+            DecisionMaker = string.IsNullOrWhiteSpace(decisionMaker) ? null : decisionMaker.Trim(),
+            DecidedOnUtc = decidedOnUtc,
+            Rationale = string.IsNullOrWhiteSpace(rationale) ? null : rationale.Trim(),
+            RecordedBy = actor,
+            RecordedAtUtc = nowUtc
+        };
+
+        // History captures genuine status transitions (the audit chain records provenance-only edits via the
+        // case row's canonical), mirroring how classification/severity changes are recorded.
+        if (from != status)
+            MaterialityChanges.Add(new MaterialityChange
+            {
+                CaseId = Id, From = from, To = status,
+                DecisionMaker = Materiality.DecisionMaker, DecidedOnUtc = decidedOnUtc,
+                Rationale = Materiality.Rationale, ChangedBy = actor, ChangedAtUtc = nowUtc
+            });
+
+        Touch(actor, nowUtc);
     }
 
     /// <summary>
@@ -759,7 +818,7 @@ public class Case : AuditableEntity, IHashableEntity
         CaseNumber, Title, Classification is { } cls ? ((int)cls).ToString(CultureInfo.InvariantCulture) : "", (int)Phase, (int)Severity, (int)Origin,
         Summary, ImpactedAssets, DataTypesInvolved, DetectionCaseId,
         AffectedIndividualsCount, string.Join(',', DataElements.Select(d => d.ElementKey).OrderBy(k => k, StringComparer.Ordinal)), AffectedStates,
-        ThirdParty?.ToCanonical(), LegalReferral.ToCanonical(),
+        ThirdParty?.ToCanonical(), LegalReferral.ToCanonical(), Materiality.ToCanonical(),
         IncidentCommander, IsRestricted, IsArchived, LegalHold,
         OccurredAtUtc?.ToString("o"), DetectedAtUtc?.ToString("o"), ReportedAtUtc?.ToString("o"),
         ContainedAtUtc?.ToString("o"), ResolvedAtUtc?.ToString("o"), ClosedAtUtc?.ToString("o"),

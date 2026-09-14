@@ -26,6 +26,18 @@ public sealed class StatusChangeConfiguration : IEntityTypeConfiguration<StatusC
     }
 }
 
+public sealed class MaterialityChangeConfiguration : IEntityTypeConfiguration<MaterialityChange>
+{
+    public void Configure(EntityTypeBuilder<MaterialityChange> b)
+    {
+        b.ToTable("MaterialityChanges");
+        b.Property(x => x.DecisionMaker).HasMaxLength(300);
+        b.Property(x => x.Rationale).HasMaxLength(4000);
+        b.Property(x => x.ChangedBy).HasMaxLength(200);
+        b.HasIndex(x => x.CaseId);
+    }
+}
+
 public sealed class SeverityChangeConfiguration : IEntityTypeConfiguration<SeverityChange>
 {
     public void Configure(EntityTypeBuilder<SeverityChange> b)

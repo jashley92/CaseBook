@@ -143,6 +143,14 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (m.DataTypesInvolved is not null) { body.AppendChild(P($"Data types involved: {m.DataTypesInvolved}")); any = true; }
         if (m.LegalReferred) { body.AppendChild(P($"Legal/Privacy referral recorded. {m.LegalNote}")); any = true; }
         if (m.LegalHold) { body.AppendChild(P("Legal hold in effect — case data must be preserved (do not delete).")); any = true; }
+        if (m.MaterialityStatus is { } ms)
+        {
+            var by = string.IsNullOrWhiteSpace(m.MaterialityDecisionMaker) ? "" : $" by {m.MaterialityDecisionMaker}";
+            var on = m.MaterialityDecidedOnUtc is { } d ? $" on {d:yyyy-MM-dd}" : "";
+            body.AppendChild(P($"Materiality: {ms}{(m.MaterialityDetermined ? $" — determined{by}{on}" : "")}."));
+            if (!string.IsNullOrWhiteSpace(m.MaterialityRationale)) body.AppendChild(P($"Materiality rationale: {m.MaterialityRationale}"));
+            any = true;
+        }
         if (!any) body.AppendChild(P("(no impact assessment recorded)"));
     }
 

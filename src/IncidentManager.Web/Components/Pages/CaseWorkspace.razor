@@ -74,6 +74,10 @@ else
                     </span>
                 }
                 @if (_case.LegalReferral.IsReferred) { <span class="im-badge im-b-neutral">Legal referred</span> }
+                @if (_case.Materiality.Status != MaterialityStatus.Undetermined)
+                {
+                    <span class="@MaterialityBadgeClass(_case.Materiality.Status)" title="Materiality determination">@MaterialityLabel(_case.Materiality.Status)</span>
+                }
                 @if (_case.IsRestricted) { <span class="im-badge im-b-warn">Restricted</span> }
                 @if (_case.LegalHold) { <span class="im-badge im-b-danger">Legal hold</span> }
                 @if (_case.IsArchived) { <span class="im-badge im-b-neutral">Archived</span> }
@@ -100,6 +104,10 @@ else
                         @if (_canManageLegal)
                         {
                             <button class="dropdown-item" @onclick="() => SetLegalHold(!_case.LegalHold)">@(_case.LegalHold ? "Release legal hold" : "Place legal hold")</button>
+                            @if (_case.Classification is Classification.Incident or Classification.Breach)
+                            {
+                                <button class="dropdown-item" @onclick='() => OpenModal("materiality")'>Record materiality determination…</button>
+                            }
                         }
                         @if (_canAdmin)
                         {
@@ -334,6 +342,22 @@ else
                             <input class="form-control mb-2" placeholder="Legal contact" @bind="_legalContact" />
                             <input class="form-control" placeholder="Regulatory-relevance note (e.g. NY NPI)" @bind="_legalNote" />
                         }
+                        else if (_activeModal == "materiality")
+                        {
+                            <p class="small text-muted mb-2">This determination is made by Legal / Privacy or a disclosure committee — <strong>not the SOC</strong>. Record their decision for the case file; a final call requires the decision-maker, the date, and a rationale. A case can't close with this left open (Incidents &amp; Breaches).</p>
+                            <label class="form-label small">Determination</label>
+                            <select class="form-select mb-2" @bind="_materialityStatus">
+                                <option value="@MaterialityStatus.UnderReview">Under review (with Legal / committee)</option>
+                                <option value="@MaterialityStatus.Material">Material</option>
+                                <option value="@MaterialityStatus.NotMaterial">Not material</option>
+                            </select>
+                            <label class="form-label small">Decision-maker <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
+                            <input class="form-control mb-2" placeholder="e.g. Disclosure Committee, General Counsel" @bind="_materialityDecisionMaker" />
+                            <label class="form-label small">Decision date <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
+                            <input type="date" class="form-control mb-2" @bind="_materialityDecidedOn" />
+                            <label class="form-label small">Rationale <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
+                            <textarea class="form-control" rows="2" placeholder="Why the matter is (or isn't) material" @bind="_materialityRationale"></textarea>
+                        }
                         else if (_activeModal == "archive")
                         {
                             <p class="mb-0">Archive <code>@_case.CaseNumber</code>? It will be hidden from active queues; you can restore it later.</p>
@@ -416,6 +440,11 @@ else
     private CaseAssignmentRole _assignRole = CaseAssignmentRole.Analyst;
     private string? _legalContact;
     private string? _legalNote;
+    // Materiality determination (PROD-18) — a Legal/committee decision the SOC only records.
+    private MaterialityStatus _materialityStatus = MaterialityStatus.UnderReview;
+    private string? _materialityDecisionMaker;
+    private DateTime? _materialityDecidedOn;
+    private string? _materialityRationale;
 
     // Timeline: the tab is extracted to CaseTimelineTab (UX-13), which owns its composer/edit state + its
     // Investigation EasyMDE editor. The parent keeps a ref for hotkey dispatch (Ctrl+Enter submit).
@@ -657,6 +686,17 @@ else
         // Open the assign form clean (a prior cancelled attempt may have left a stale selection).
         if (name == "assign") { _assignUserId = ""; _assignRole = CaseAssignmentRole.Analyst; }
 
+        // Prefill the materiality form from the current determination (edit-in-place); default a fresh one
+        // to "Under review" rather than the Undetermined baseline the picker doesn't offer.
+        if (name == "materiality")
+        {
+            var m = _case.Materiality;
+            _materialityStatus = m.Status == MaterialityStatus.Undetermined ? MaterialityStatus.UnderReview : m.Status;
+            _materialityDecisionMaker = m.DecisionMaker;
+            _materialityDecidedOn = m.DecidedOnUtc?.UtcDateTime.Date;
+            _materialityRationale = m.Rationale;
+        }
+
         _attested.Clear();
         _gateOverride = null;
         _gateEval = name switch
@@ -798,10 +838,30 @@ else
         "severity" => "Change severity",
         "status" => "Change status",
         "legal" => "Refer to Legal / Privacy",
+        "materiality" => "Record materiality determination",
         "archive" => "Archive case",
         "assign" => "Assign someone to this case",
         "reopen" => "Reopen case",
         _ => ""
+    };
+
+    /// <summary>Whether the materiality picker's current selection is a final call (needs full provenance).</summary>
+    private bool MaterialityIsFinal => _materialityStatus is MaterialityStatus.Material or MaterialityStatus.NotMaterial;
+
+    private static string MaterialityLabel(MaterialityStatus s) => s switch
+    {
+        MaterialityStatus.UnderReview => "Under review",
+        MaterialityStatus.Material => "Material",
+        MaterialityStatus.NotMaterial => "Not material",
+        _ => "Undetermined"
+    };
+
+    private static string MaterialityBadgeClass(MaterialityStatus s) => s switch
+    {
+        MaterialityStatus.Material => "im-badge im-b-danger",
+        MaterialityStatus.NotMaterial => "im-badge im-b-ok",
+        MaterialityStatus.UnderReview => "im-badge im-b-warn",
+        _ => "im-badge im-b-neutral"
     };
 
     private string ModalPrimaryLabel() => _activeModal switch
@@ -817,6 +877,10 @@ else
     {
         "assign" => string.IsNullOrEmpty(_assignUserId),
         "reopen" => string.IsNullOrWhiteSpace(_reopenReason),
+        // A final call needs decision-maker, date and rationale; "Under review" needs none of them.
+        "materiality" => _materialityStatus is MaterialityStatus.Material or MaterialityStatus.NotMaterial
+            && (string.IsNullOrWhiteSpace(_materialityDecisionMaker) || _materialityDecidedOn is null
+                || string.IsNullOrWhiteSpace(_materialityRationale)),
         _ => false
     };
 
@@ -855,6 +919,12 @@ else
                 case "legal":
                     await Cases.ReferToLegalAsync(Id, _legalContact, _legalNote);
                     done = "Referred to Legal / Privacy";
+                    break;
+                case "materiality":
+                    DateTimeOffset? decidedOn = _materialityDecidedOn is { } d
+                        ? new DateTimeOffset(DateTime.SpecifyKind(d.Date, DateTimeKind.Utc)) : null;
+                    await Cases.RecordMaterialityAsync(Id, _materialityStatus, _materialityDecisionMaker, decidedOn, _materialityRationale);
+                    done = $"Materiality: {MaterialityLabel(_materialityStatus)} recorded";
                     break;
                 case "archive":
                     await Cases.SetArchivedAsync(Id, true);

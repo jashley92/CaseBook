@@ -56,6 +56,13 @@ else
                                 @if (Model.DataTypesInvolved is not null) { <li>Data types involved: @Model.DataTypesInvolved</li> }
                                 @if (Model.LegalReferred) { <li>Legal/Privacy referral recorded. @Model.LegalNote</li> }
                                 @if (Model.LegalHold) { <li>Legal hold in effect — case data must be preserved (do not delete).</li> }
+                                @if (Model.MaterialityStatus is { } ms)
+                                {
+                                    <li>
+                                        Materiality: @ms@(Model.MaterialityDetermined ? $" — determined{(string.IsNullOrWhiteSpace(Model.MaterialityDecisionMaker) ? "" : $" by {Model.MaterialityDecisionMaker}")}{(Model.MaterialityDecidedOnUtc is { } dd ? $" on {dd:yyyy-MM-dd}" : "")}" : "").
+                                        @if (!string.IsNullOrWhiteSpace(Model.MaterialityRationale)) { <span>@Model.MaterialityRationale</span> }
+                                    </li>
+                                }
                             </ul>
                         }
                         break;
@@ -196,7 +203,8 @@ else
         || !string.IsNullOrWhiteSpace(Model.ImpactedAssets)
         || Model.DataTypesInvolved is not null
         || Model.LegalReferred
-        || Model.LegalHold;
+        || Model.LegalHold
+        || Model.MaterialityStatus is not null;
 
     private static string Muted(string? text) => string.IsNullOrWhiteSpace(text) ? "text-muted fst-italic" : "";
     private static string Prose(string? text) => string.IsNullOrWhiteSpace(text) ? "(not provided)" : text!;

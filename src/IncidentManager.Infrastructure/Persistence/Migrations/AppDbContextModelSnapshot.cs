@@ -1211,6 +1211,46 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.ToTable("IntegritySeals", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.MaterialityChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ChangedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ChangedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("DecidedOnUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DecisionMaker")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("From")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Rationale")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("To")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseId");
+
+                    b.ToTable("MaterialityChanges", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.Report", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1692,6 +1732,46 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                                 .HasForeignKey("CaseId");
                         });
 
+                    b.OwnsOne("IncidentManager.Domain.ValueObjects.MaterialityDetermination", "Materiality", b1 =>
+                        {
+                            b1.Property<Guid>("CaseId")
+                                .HasColumnType("TEXT");
+
+                            b1.Property<long?>("DecidedOnUtc")
+                                .HasColumnType("INTEGER")
+                                .HasColumnName("Materiality_DecidedOnUtc");
+
+                            b1.Property<string>("DecisionMaker")
+                                .HasMaxLength(300)
+                                .HasColumnType("TEXT")
+                                .HasColumnName("Materiality_DecisionMaker");
+
+                            b1.Property<string>("Rationale")
+                                .HasMaxLength(4000)
+                                .HasColumnType("TEXT")
+                                .HasColumnName("Materiality_Rationale");
+
+                            b1.Property<long?>("RecordedAtUtc")
+                                .HasColumnType("INTEGER")
+                                .HasColumnName("Materiality_RecordedAtUtc");
+
+                            b1.Property<string>("RecordedBy")
+                                .HasMaxLength(200)
+                                .HasColumnType("TEXT")
+                                .HasColumnName("Materiality_RecordedBy");
+
+                            b1.Property<int>("Status")
+                                .HasColumnType("INTEGER")
+                                .HasColumnName("Materiality_Status");
+
+                            b1.HasKey("CaseId");
+
+                            b1.ToTable("Cases");
+
+                            b1.WithOwner()
+                                .HasForeignKey("CaseId");
+                        });
+
                     b.OwnsOne("IncidentManager.Domain.ValueObjects.ThirdPartyDetails", "ThirdParty", b1 =>
                         {
                             b1.Property<Guid>("CaseId")
@@ -1722,6 +1802,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         });
 
                     b.Navigation("LegalReferral")
+                        .IsRequired();
+
+                    b.Navigation("Materiality")
                         .IsRequired();
 
                     b.Navigation("ThirdParty");
@@ -1835,6 +1918,15 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.MaterialityChange", b =>
+                {
+                    b.HasOne("IncidentManager.Domain.Entities.Case", null)
+                        .WithMany("MaterialityChanges")
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.Report", b =>
                 {
                     b.HasOne("IncidentManager.Domain.Entities.Case", null)
@@ -1909,6 +2001,8 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Navigation("Evidence");
 
                     b.Navigation("GatePassages");
+
+                    b.Navigation("MaterialityChanges");
 
                     b.Navigation("Notes");
 

@@ -175,6 +175,14 @@ public sealed class ReportService
         return string.IsNullOrWhiteSpace(e.Label) ? e.Value : $"{e.Label} ({e.Value})";
     }
 
+    /// <summary>Readable label for a materiality status (compound names get a space).</summary>
+    private static string MaterialityLabel(Domain.Enums.MaterialityStatus s) => s switch
+    {
+        Domain.Enums.MaterialityStatus.UnderReview => "Under review",
+        Domain.Enums.MaterialityStatus.NotMaterial => "Not material",
+        _ => s.ToString()
+    };
+
     /// <summary>Turns a PascalCase enum name into spaced words, e.g. "LoggedInTo" → "Logged In To".</summary>
     private static string Humanize(string pascal)
     {
@@ -317,6 +325,12 @@ public sealed class ReportService
             LegalReferred = c.LegalReferral.IsReferred,
             LegalNote = c.LegalReferral.RegulatoryRelevanceNote,
             LegalHold = c.LegalHold,
+            MaterialityStatus = c.Materiality.Status == Domain.Enums.MaterialityStatus.Undetermined
+                ? null : MaterialityLabel(c.Materiality.Status),
+            MaterialityDetermined = c.Materiality.IsDetermined,
+            MaterialityDecisionMaker = c.Materiality.DecisionMaker,
+            MaterialityDecidedOnUtc = c.Materiality.DecidedOnUtc,
+            MaterialityRationale = c.Materiality.Rationale,
             DetectedAtUtc = c.DetectedAtUtc,
             ContainedAtUtc = c.ContainedAtUtc,
             ResolvedAtUtc = c.ResolvedAtUtc,

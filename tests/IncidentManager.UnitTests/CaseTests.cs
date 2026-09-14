@@ -157,6 +157,59 @@ public class CaseTests
     }
 
     [Fact]
+    public void RecordMateriality_is_refused_below_the_incident_rung()
+    {
+        var c = NewCase(); // opens as AdverseEvent
+        var act = () => c.RecordMateriality(MaterialityStatus.UnderReview, null, null, null, "legal1", Now);
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void RecordMateriality_final_call_requires_decision_maker_date_and_rationale()
+    {
+        var c = NewCase();
+        c.Reclassify(Classification.Incident, "confirmed", "ic1", Now);
+
+        // Interim "under review" needs no provenance.
+        c.RecordMateriality(MaterialityStatus.UnderReview, null, null, null, "legal1", Now.AddHours(1));
+        c.Materiality.Status.Should().Be(MaterialityStatus.UnderReview);
+
+        // A material / not-material call must name who decided, when, and why.
+        var missing = () => c.RecordMateriality(MaterialityStatus.Material, "  ", Now, "npi exfiltrated", "legal1", Now.AddHours(2));
+        missing.Should().Throw<ArgumentException>();
+        var noDate = () => c.RecordMateriality(MaterialityStatus.Material, "Disclosure Committee", null, "npi exfiltrated", "legal1", Now.AddHours(2));
+        noDate.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void RecordMateriality_captures_the_off_app_decision_and_records_a_transition()
+    {
+        var c = NewCase();
+        c.Reclassify(Classification.Breach, "npi confirmed", "ic1", Now);
+
+        var decidedOn = Now.AddHours(3);
+        c.RecordMateriality(MaterialityStatus.Material, "Disclosure Committee", decidedOn,
+            "Reasonable likelihood of harm to NY residents.", "soc-analyst", Now.AddHours(4));
+
+        c.Materiality.Status.Should().Be(MaterialityStatus.Material);
+        c.Materiality.IsDetermined.Should().BeTrue();
+        c.Materiality.DecisionMaker.Should().Be("Disclosure Committee");     // the external authority
+        c.Materiality.DecidedOnUtc.Should().Be(decidedOn);
+        c.Materiality.RecordedBy.Should().Be("soc-analyst");                 // the SOC recorder, kept distinct
+        c.MaterialityChanges.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(new { From = MaterialityStatus.Undetermined, To = MaterialityStatus.Material });
+    }
+
+    [Fact]
+    public void RecordMateriality_rejects_a_future_decision_date()
+    {
+        var c = NewCase();
+        c.Reclassify(Classification.Incident, "confirmed", "ic1", Now);
+        var act = () => c.RecordMateriality(MaterialityStatus.Material, "GC", Now.AddDays(1), "why", "legal1", Now);
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void UpdateDetails_edits_core_fields_and_requires_a_title()
     {
         var c = NewCase();

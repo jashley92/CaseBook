@@ -51,7 +51,18 @@ public sealed class CaseConfiguration : IEntityTypeConfiguration<Case>
             lr.Property(p => p.RegulatoryRelevanceNote).HasMaxLength(4000).HasColumnName("Legal_RelevanceNote");
         });
 
+        b.OwnsOne(c => c.Materiality, md =>
+        {
+            md.Property(p => p.Status).HasColumnName("Materiality_Status");
+            md.Property(p => p.DecisionMaker).HasMaxLength(300).HasColumnName("Materiality_DecisionMaker");
+            md.Property(p => p.DecidedOnUtc).HasColumnName("Materiality_DecidedOnUtc");
+            md.Property(p => p.Rationale).HasMaxLength(4000).HasColumnName("Materiality_Rationale");
+            md.Property(p => p.RecordedBy).HasMaxLength(200).HasColumnName("Materiality_RecordedBy");
+            md.Property(p => p.RecordedAtUtc).HasColumnName("Materiality_RecordedAtUtc");
+        });
+
         b.HasMany(c => c.ClassificationChanges).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+        b.HasMany(c => c.MaterialityChanges).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(c => c.StatusChanges).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(c => c.SeverityChanges).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(c => c.TimelineEntries).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);

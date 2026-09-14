@@ -33,6 +33,23 @@ public enum Severity
     Critical = 4
 }
 
+/// <summary>
+/// Whether the matter is a <b>material</b> one for disclosure purposes. Crucially this is <em>not</em> the
+/// SOC's determination — Legal/Privacy or a disclosure committee makes the call; the tool records the
+/// decision for the file (and gates closure on it for Incidents/Breaches). Ordered start → interim → final.
+/// </summary>
+public enum MaterialityStatus
+{
+    /// <summary>No determination has been started.</summary>
+    Undetermined = 0,
+    /// <summary>Referred out and awaiting the call (with Legal / the disclosure committee).</summary>
+    UnderReview = 1,
+    /// <summary>Determined material — disclosure-relevant.</summary>
+    Material = 2,
+    /// <summary>Determined not material.</summary>
+    NotMaterial = 3
+}
+
 /// <summary>Where the item originated.</summary>
 public enum CaseOrigin
 {

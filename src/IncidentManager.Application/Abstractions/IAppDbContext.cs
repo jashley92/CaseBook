@@ -13,6 +13,7 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
 {
     DbSet<Case> Cases { get; }
     DbSet<ClassificationChange> ClassificationChanges { get; }
+    DbSet<MaterialityChange> MaterialityChanges { get; }
     DbSet<StatusChange> StatusChanges { get; }
     DbSet<SeverityChange> SeverityChanges { get; }
     DbSet<TimelineEntry> TimelineEntries { get; }

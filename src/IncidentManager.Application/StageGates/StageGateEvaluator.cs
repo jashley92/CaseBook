@@ -54,7 +54,10 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
                 HasDataElements = x.DataElements.Any(),
                 HasAffectedStates = x.AffectedStates != null && x.AffectedStates != "",
                 HasDetectionCaseId = x.DetectionCaseId != null && x.DetectionCaseId != "",
-                HasIncidentCommander = x.IncidentCommander != null && x.IncidentCommander != ""
+                HasIncidentCommander = x.IncidentCommander != null && x.IncidentCommander != "",
+                x.Classification,
+                MaterialityDetermined = x.Materiality.Status == MaterialityStatus.Material
+                                        || x.Materiality.Status == MaterialityStatus.NotMaterial
             })
             .FirstOrDefaultAsync(ct);
 
@@ -70,6 +73,6 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
         return new GateCaseFacts(
             c.HasSummary, c.HasAffectedCount, c.HasDataElements, c.HasAffectedStates, c.HasDetectionCaseId,
             entityCount, maliciousCount, evidenceCount, reportCount, c.HasIncidentCommander,
-            c.AffectedIndividualsCount);
+            c.AffectedIndividualsCount, c.Classification, c.MaterialityDetermined);
     }
 }

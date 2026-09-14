@@ -18,7 +18,9 @@ public sealed record GateCaseFacts(
     int EvidenceCount,
     int ReportCount,
     bool HasIncidentCommander,
-    int AffectedIndividualsCount = 0);
+    int AffectedIndividualsCount = 0,
+    Classification? Classification = null,
+    bool MaterialityDetermined = false);
 
 /// <summary>The outcome of one requirement against a specific case.</summary>
 public sealed record GateRequirementResult(

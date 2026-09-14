@@ -30,7 +30,7 @@ public class StageGateTests
     [Fact]
     public void The_registry_exposes_every_built_in_check_and_ignores_unknown_keys()
     {
-        GateCheckRegistry.All.Should().HaveCount(11);
+        GateCheckRegistry.All.Should().HaveCount(12);
         GateCheckRegistry.IsKnown(GateCheckKeys.SummaryPresent).Should().BeTrue();
         GateCheckRegistry.IsKnown("NotARealCheck").Should().BeFalse();
         // An unknown key never passes a gate and is labelled for review, rather than throwing.
@@ -67,6 +67,23 @@ public class StageGateTests
         GateCheckRegistry.IsSatisfied(GateCheckKeys.MinAffectedIndividuals, noCount, 1).Should().BeFalse("no count recorded");
         GateCheckRegistry.IsSatisfied(GateCheckKeys.MinAffectedIndividuals, small, 100).Should().BeTrue();
         GateCheckRegistry.IsSatisfied(GateCheckKeys.MinAffectedIndividuals, small, 500).Should().BeFalse("below the 500 threshold");
+    }
+
+    [Fact]
+    public void MaterialityDetermined_check_only_bites_on_incidents_and_breaches()
+    {
+        // Self-scoping (PROD-18): vacuously satisfied for a pre-ladder Complex Event and an Adverse Event…
+        GateCheckRegistry.IsSatisfied(GateCheckKeys.MaterialityDetermined, Empty).Should().BeTrue("null classification");
+        GateCheckRegistry.IsSatisfied(GateCheckKeys.MaterialityDetermined,
+            Empty with { Classification = Classification.AdverseEvent }).Should().BeTrue();
+
+        // …but required, until recorded, on Incidents and Breaches.
+        GateCheckRegistry.IsSatisfied(GateCheckKeys.MaterialityDetermined,
+            Empty with { Classification = Classification.Incident }).Should().BeFalse();
+        GateCheckRegistry.IsSatisfied(GateCheckKeys.MaterialityDetermined,
+            Empty with { Classification = Classification.Breach }).Should().BeFalse();
+        GateCheckRegistry.IsSatisfied(GateCheckKeys.MaterialityDetermined,
+            Empty with { Classification = Classification.Incident, MaterialityDetermined = true }).Should().BeTrue();
     }
 
     [Fact]
