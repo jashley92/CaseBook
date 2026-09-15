@@ -11,17 +11,21 @@ auto-generated Word/PDF reports, on a **tamper-evident, hash-chained audit trail
 
 ### Leadership dashboard
 Headline open-items tile with classification mix, attention stats, an open-items-by-phase pipeline,
-response times against SLA targets, and a **12-month case-activity bar chart** (opened vs. closed) plus
-an open-items sparkline — all derived from case timestamps — with one-click metrics CSV export (incl.
-monthly & quarterly rollups) for board / regulatory packs.
+response times against SLA targets, a **regulatory-notification** compliance block (detected→reported
+mean, awaiting-report, and at-risk/overdue deadlines), and a **12-month case-activity bar chart** (opened
+vs. closed) plus an open-items sparkline — all derived from case timestamps — with one-click metrics CSV
+export (incl. monthly & quarterly rollups) for board / regulatory packs.
 
 ![Leadership dashboard](docs/screenshots/dashboard.png)
 
 ### Case workspace
 The analyst's hub: a NIST SP 800-61 lifecycle bar, tabbed **Overview / Timeline / Entities /
-Evidence / Notes / Tasks / Report / Audit**, true **detected / occurred** timestamps (with
+Evidence / Notes / Discussion / Tasks / Report / Audit**, true **detected / occurred** timestamps (with
 dwell-before-detection and per-severity SLA targets), **links to related cases**, and a structured
-impact assessment (affected individuals, data-element taxonomy, and jurisdictions).
+impact assessment (affected individuals, data-element taxonomy, and jurisdictions). The header carries
+at-a-glance status badges — SLA, **materiality** (material / not material, a Legal/committee decision the
+tool records but does not make), and the **regulatory notification** countdown — alongside the classic
+classification/severity/legal chips.
 
 ![Case workspace](docs/screenshots/case-workspace.png)
 
@@ -40,6 +44,14 @@ Two separate chronologies per case — the **event** timeline (facts and timing 
 **investigation** timeline (analyst/team actions) — each typed, sourced, and audited.
 
 ![Timeline](docs/screenshots/timeline.png)
+
+### Team discussion &amp; @mentions
+A durable, **hash-chained** discussion thread per case (part of the audited record, unlike ephemeral
+presence) for cross-role handoffs — Markdown, one-level replies, and **@mentions** that notify the
+mentioned teammates through the notification pipeline (email and/or chat). Open to everyone who can see
+the case, so an analyst, IC, and Legal work from one shared trail.
+
+![Team discussion](docs/screenshots/discussion.png)
 
 ### Entities &amp; relationship graph
 Every case's indicators and entities — accounts, hosts, IPs, domains, URLs, file hashes — captured with
@@ -87,7 +99,7 @@ workspaces also show a leadership-only **"Viewed by"** panel.
 
 ### Administration
 SysAdmin-only admin hub. A single left rail groups every admin area — configuration, customization
-(templates, stage gates, taxonomy labels, **data elements**, report profiles), people & audit, and
+(templates, stage gates, taxonomy labels, **data elements**, **notification rules**, report profiles), people & audit, and
 a **configuration bundle** plus read-only system views. Operational settings are edited in-app and
 stored as **audited, hash-chained** records; security- and infrastructure-sensitive settings stay in
 server-side configuration and are shown read-only (secrets as status only). The main sidebar collapses
@@ -106,9 +118,21 @@ an element no case uses can be deleted outright. Every change is audited.
 
 ![Data elements](docs/screenshots/data-elements.png)
 
+### Notification deadlines
+Per-jurisdiction **regulatory notification deadlines** (e.g. New York / NYDFS Part 500 = 72h) as
+admin-managed reference data — add, retime, or archive **without a release**. Each rule's code is matched
+against the notification jurisdictions on the case's data elements, so a case's involved data determines
+which deadlines apply; anything untuned falls back to a default window. The whole feature is a master
+toggle (shipped **off**), and the clock starts from the **materiality determination** (or, optionally,
+detection). The countdown surfaces on the case (a header badge and a per-jurisdiction table with a
+one-click **"Mark reported"**) and aggregates on the leadership dashboard (detected→reported mean,
+awaiting-report, and at-risk/overdue) — reminders only, never an automatic state change.
+
+![Notification deadlines](docs/screenshots/notification-rules.png)
+
 ### Configuration bundle
 Export an instance's **editable configuration** — operational & taxonomy settings, roles & AD mappings,
-case templates, stage gates, report profiles, and data elements — as a single **signed, versioned**
+case templates, stage gates, report profiles, data elements, and notification-deadline rules — as a single **signed, versioned**
 JSON "seed pack" to snapshot a setup, diff it against an IRP revision, promote config from a test
 instance to production, or stand up a new **white-label** instance from a known baseline. Import is
 **additive and previewed**: the signature is verified first, then a diff shows exactly what would change

@@ -45,6 +45,90 @@ public static class DevDataSeeder
         // phase mix are populated out of the box. Kept OUT of SeedAsync so tests that call SeedAsync
         // directly still see exactly the three hand-authored cases.
         await SeedHistoricalDemoAsync(db, clock, ct);
+        // Lights up the compliance features (PROD-18 materiality + PROD-07 notification deadlines) and PROD-04
+        // discussion on the demo cases so they are visible in the app and README screenshots. Demo-only (not
+        // in SeedAsync), so tests that seed the base cases are unaffected.
+        await SeedComplianceShowcaseAsync(db, clock, ct);
+    }
+
+    /// <summary>
+    /// Demo-only showcase (not seeded in production or in the test base set): turns on the notification-deadline
+    /// clock, tags the notification jurisdictions the demo data elements trigger, records a materiality
+    /// determination on the two breaches (one with a running per-jurisdiction deadline, one already reported),
+    /// and adds a short discussion thread — so the materiality badge, the regulatory-notification countdown,
+    /// the dashboard compliance block, and the Discussion tab all have real content to show.
+    /// </summary>
+    public static async Task SeedComplianceShowcaseAsync(AppDbContext db, IClock clock, CancellationToken ct = default)
+    {
+        var now = clock.UtcNow;
+
+        // 1) Turn the feature on for the demo instance (a DB override over the OFF appsettings default).
+        if (!await db.AppSettings.AnyAsync(s => s.Key == "Compliance:NotificationDeadlines:Enabled", ct))
+            db.AppSettings.Add(new AppSetting
+            {
+                Key = "Compliance:NotificationDeadlines:Enabled", Value = "true",
+                UpdatedAtUtc = now, UpdatedBy = "system"
+            });
+
+        // 2) Tag which jurisdictions each personal-data category triggers notification in (also drives the
+        //    report's X-03 grouping). Applied only where an admin hasn't already set a value.
+        var juris = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["SocialSecurityNumber"] = "US, NY",
+            ["FinancialAccountNumber"] = "US",
+            ["PaymentCard"] = "US",
+            ["MedicalOrHealthInfo"] = "NY",
+            ["DateOfBirth"] = "NY",
+        };
+        foreach (var e in await db.DataElements.Where(e => juris.Keys.Contains(e.Key)).ToListAsync(ct))
+            if (string.IsNullOrWhiteSpace(e.NotificationJurisdictions))
+            {
+                e.NotificationJurisdictions = juris[e.Key];
+                e.ModifiedBy = "system";
+                e.ModifiedAtUtc = now;
+            }
+        await db.SaveChangesAsync(ct);
+
+        // 3) Phishing breach — a live, still-open notification obligation: material, impact recorded, no report
+        //    filed yet, so the per-jurisdiction countdown is running (well inside its 72h window).
+        var phishing = await db.Cases.Include(c => c.DataElements)
+            .FirstOrDefaultAsync(c => c.CaseNumber == "2026-01_Phishing_Wave", ct);
+        if (phishing is not null)
+        {
+            phishing.SetImpactAssessment(1450, new[] { "SocialSecurityNumber", "DateOfBirth", "OnlineCredentials" },
+                "NY, NJ", "system", now.AddDays(-4));
+            phishing.RecordMateriality(MaterialityStatus.Material, "Disclosure Committee", now.AddDays(-1),
+                "NY resident NPI (SSNs) confirmed exposed — reasonable likelihood of harm; NYDFS Part 500 applies.",
+                "legal1", now.AddDays(-1));
+
+            db.CaseComments.Add(new CaseComment
+            {
+                CaseId = phishing.Id, Body = "Handing off to day shift — mailbox rules cleared, creds reset. "
+                    + "Legal has the affected-user list; awaiting the materiality call.",
+                CreatedBy = "ic1", CreatedAtUtc = now.AddDays(-2)
+            });
+            db.CaseComments.Add(new CaseComment
+            {
+                CaseId = phishing.Id, Body = "Disclosure committee determined this **material**. NYDFS 72h clock is running — "
+                    + "please confirm the NY + federal notification drafts.",
+                CreatedBy = "legal1", CreatedAtUtc = now.AddDays(-1)
+            });
+            await db.SaveChangesAsync(ct);
+        }
+
+        // 4) Vendor breach — the obligation was met: material, impact recorded, and reported to regulators, so
+        //    it feeds the dashboard's detected → reported mean and shows a "Met" deadline outcome.
+        var vendor = await db.Cases.Include(c => c.DataElements)
+            .FirstOrDefaultAsync(c => c.CaseNumber == "2026-02_Vendor_SaaS_Breach", ct);
+        if (vendor is not null)
+        {
+            vendor.SetImpactAssessment(320, new[] { "SocialSecurityNumber", "ClaimsData", "MedicalOrHealthInfo" },
+                "NY", "system", now.AddDays(-3));
+            vendor.RecordMateriality(MaterialityStatus.Material, "General Counsel", now.AddDays(-2),
+                "Vendor-confirmed exposure of policyholder NPI.", "legal1", now.AddDays(-2));
+            vendor.MarkReported(now.AddDays(-2).AddHours(20), "legal1", now.AddDays(-2).AddHours(20));
+            await db.SaveChangesAsync(ct);
+        }
     }
 
     /// <summary>
