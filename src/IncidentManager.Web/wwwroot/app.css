@@ -336,6 +336,16 @@ h1:focus {
     left: auto;
 }
 
+/* Inline @mention autocomplete for the discussion composer (markdown-editor.js appends it to <body>,
+   caret-anchored, so it must float above everything and read in both themes). */
+.cm-mention-menu {
+    position: absolute; z-index: 2000; min-width: 12rem; max-height: 14rem; overflow-y: auto;
+    background: var(--bs-body-bg); border: 1px solid var(--bs-border-color);
+    border-radius: .375rem; box-shadow: var(--im-shadow); padding: .25rem;
+}
+.cm-mention-item { padding: .3rem .55rem; border-radius: .25rem; cursor: pointer; font-size: .85rem; white-space: nowrap; }
+.cm-mention-item.active, .cm-mention-item:hover { background: var(--bs-secondary-bg); }
+
 /* MITRE ATT&CK technique picker (AttackTechniquePicker) — type-ahead dropdown over the embedded
    v19.1 catalogue. Panel + rows are token-driven so they read in both themes and over a modal. */
 .atk-menu {

@@ -2,12 +2,14 @@
    Distinct from Notes (an analyst's own investigation documentation): this is cross-role conversation and
    handoff. Comments are append-only and hash-chained/audited by the save interceptor. Available to anyone
    who can view the case (the workspace already gates ViewCases), so Managers / Legal can participate too. *@
+@implements IAsyncDisposable
 @inject CaseCommentService Comments
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Abstractions.ICurrentUser Me
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
+@inject IJSRuntime JS
 
 <div class="card mb-3">
     <div class="card-body">
@@ -20,36 +22,14 @@
                 <button class="btn btn-link btn-sm p-0 ms-2 align-baseline" @onclick="CancelReply">Cancel</button>
             </div>
         }
-        <label class="form-label small mb-1" for="comment-body">
+        <label class="form-label small mb-1" for="@ComposerId">
             @(_replyTo is null ? "Add a comment" : "Reply")
-            <span class="text-muted">· Markdown supported</span>
+            <span class="text-muted">· Markdown &mdash; type <code>@@</code> to mention a teammate</span>
         </label>
-        <textarea id="comment-body" class="form-control mb-2" rows="3" placeholder="Share an update, a question, or a handoff…"
-                  @bind="_body" @bind:event="oninput"></textarea>
+        @* EasyMDE enhances this textarea (toolbar + inline @mention autocomplete); managed in OnAfterRenderAsync. *@
+        <textarea id="@ComposerId" class="form-control mb-2" placeholder="Share an update, a question, or a handoff…"></textarea>
 
-        @if (MentionCandidates.Count > 0)
-        {
-            <details class="mb-2">
-                <summary class="small text-muted" style="cursor:pointer">
-                    <span class="bi bi-at" aria-hidden="true"></span> Mention teammates
-                    @if (_mentions.Count > 0) { <span class="im-badge im-b-info ms-1">@_mentions.Count</span> }
-                </summary>
-                <div class="d-flex flex-wrap gap-3 mt-2">
-                    @foreach (var u in MentionCandidates)
-                    {
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="@($"mention-{u.UserId}")"
-                                   checked="@_mentions.Contains(u.UserId)"
-                                   @onchange="e => ToggleMention(u.UserId, (bool)(e.Value ?? false))" />
-                            <label class="form-check-label small" for="@($"mention-{u.UserId}")">@u.DisplayName</label>
-                        </div>
-                    }
-                </div>
-                <div class="form-text">Mentioned teammates are notified (email, and chat if the team enabled it).</div>
-            </details>
-        }
-
-        <button class="btn btn-sm btn-primary" @onclick="Submit" disabled="@string.IsNullOrWhiteSpace(_body)">
+        <button class="btn btn-sm btn-primary" @onclick="Submit">
             @(_replyTo is null ? "Post comment" : "Post reply")
         </button>
     </div>
@@ -83,14 +63,18 @@ else
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
 
     private List<CaseCommentView>? _comments;
-    private string _body = "";
-    private readonly HashSet<string> _mentions = new(StringComparer.OrdinalIgnoreCase);
     private CaseCommentView? _replyTo;
     private Guid _loadedCaseId;
 
-    // Everyone in the directory except the current user, as mention candidates.
-    private List<IncidentManager.Application.Abstractions.UserSummary> MentionCandidates =>
-        Users.All().Where(u => !string.Equals(u.UserId, Me.UserId, StringComparison.OrdinalIgnoreCase)).ToList();
+    private string ComposerId => $"discuss-md-{CaseId}";
+    private bool _editorMounted;
+
+    // Everyone in the directory except the current user, as inline-@mention candidates ({id, name} for JS).
+    private object[] MentionCandidates =>
+        Users.All()
+            .Where(u => !string.Equals(u.UserId, Me.UserId, StringComparison.OrdinalIgnoreCase))
+            .Select(u => (object)new { id = u.UserId, name = u.DisplayName })
+            .ToArray();
 
     private IEnumerable<CaseCommentView> TopLevel =>
         _comments!.Where(c => c.ParentId is null).OrderBy(c => c.CreatedAtUtc);
@@ -105,9 +89,18 @@ else
 
     private async Task Load() => _comments = await Comments.ListAsync(CaseId);
 
-    private void ToggleMention(string userId, bool on)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (on) _mentions.Add(userId); else _mentions.Remove(userId);
+        // Enhance the composer with EasyMDE (markdown toolbar) + inline @mention autocomplete, once mounted.
+        if (!_editorMounted)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("markdownEditor.init", ComposerId, "", MentionCandidates);
+                _editorMounted = true;
+            }
+            catch (JSException) { /* editor is a progressive enhancement; Submit falls back gracefully */ }
+        }
     }
 
     private void StartReply(CaseCommentView c) => _replyTo = c;
@@ -115,21 +108,34 @@ else
 
     private async Task Submit()
     {
-        var body = _body.Trim();
+        string body;
+        IReadOnlyList<string> mentions = Array.Empty<string>();
+        try
+        {
+            body = (await JS.InvokeAsync<string>("markdownEditor.getValue", ComposerId) ?? "").Trim();
+            mentions = await JS.InvokeAsync<string[]>("markdownEditor.getMentions", ComposerId);
+        }
+        catch (JSException) { return; } // editor not ready
+
         if (string.IsNullOrWhiteSpace(body)) return;
         try
         {
-            await Comments.AddAsync(CaseId, body, _replyTo?.Id, _mentions.ToList());
-            _body = "";
-            _mentions.Clear();
+            await Comments.AddAsync(CaseId, body, _replyTo?.Id, mentions);
             _replyTo = null;
             await Load();
             Toasts.Success("Comment posted.");
+            try { await JS.InvokeVoidAsync("markdownEditor.setValue", ComposerId, ""); } catch (JSException) { /* best effort */ }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             Toasts.Error(ex.Message);
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("markdownEditor.destroy", ComposerId); }
+        catch { /* circuit may already be gone during teardown */ }
     }
 
     private string AuthorName(CaseCommentView c) => c.AuthorName;
