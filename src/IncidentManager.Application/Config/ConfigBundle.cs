@@ -43,6 +43,11 @@ public sealed record ConfigReportProfile(string Name, string? Description, bool 
 public sealed record ConfigDataElement(
     string Key, string Label, int SortOrder, bool IsActive, bool IsSystem, string? NotificationJurisdictions);
 
+/// <summary>A per-jurisdiction notification-deadline rule (PROD-07). Matched on import by its <see cref="Code"/>,
+/// which is a portable shared key (e.g. "NY", "US"), so rules travel between instances like report profiles.</summary>
+public sealed record ConfigNotificationRule(
+    string Code, string Label, int WindowHours, bool IsActive, bool IsSystem);
+
 /// <summary>The editable-configuration payload. This is the object that gets canonically serialized and signed.</summary>
 public sealed record ConfigBundle(
     IReadOnlyList<ConfigSetting> Settings,
@@ -51,7 +56,9 @@ public sealed record ConfigBundle(
     IReadOnlyList<ConfigCaseTemplate> CaseTemplates,
     IReadOnlyList<ConfigStageGate> StageGates,
     IReadOnlyList<ConfigReportProfile> ReportProfiles,
-    IReadOnlyList<ConfigDataElement> DataElements);
+    IReadOnlyList<ConfigDataElement> DataElements,
+    // Added in schema v2 (PROD-07). A v1 bundle omits it and deserializes to null — read sites guard with `?? []`.
+    IReadOnlyList<ConfigNotificationRule> NotificationRules);
 
 /// <summary>
 /// The downloadable file: the <see cref="ConfigBundle"/> plus provenance and a signature over the bundle's
@@ -68,7 +75,8 @@ public sealed record ConfigBundleEnvelope(
 public static class ConfigBundleJson
 {
     public const string FormatTag = "casebook-config-bundle";
-    public const int CurrentSchemaVersion = 1;
+    // v2 (PROD-07) added ConfigBundle.NotificationRules. Older v1 bundles still import (the field reads as empty).
+    public const int CurrentSchemaVersion = 2;
 
     /// <summary>Human-readable, stable-cased options for the downloadable envelope file (diff-friendly).</summary>
     public static readonly JsonSerializerOptions File = new(JsonSerializerDefaults.Web)

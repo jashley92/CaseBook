@@ -83,6 +83,8 @@ public sealed partial class ConfigBundleService
         Diff("Case template", incoming.CaseTemplates, live.CaseTemplates, t => t.Name, items);
         Diff("Stage gate", incoming.StageGates, live.StageGates, g => g.Name, items);
         Diff("Report profile", incoming.ReportProfiles, live.ReportProfiles, p => p.Name, items);
+        // Notification rules match on their portable jurisdiction Code (null when importing a pre-v2 bundle).
+        Diff("Notification rule", incoming.NotificationRules ?? [], live.NotificationRules, r => r.Code, items);
 
         // Data elements match on Key (codes are per-instance), so compare a code-agnostic shape.
         var liveByKey = live.DataElements.ToDictionary(e => e.Key, StringComparer.Ordinal);
@@ -288,6 +290,28 @@ public sealed partial class ConfigBundleService
                 if (changed) { existing.Label = d.Label; existing.SortOrder = d.SortOrder; existing.IsActive = d.IsActive;
                     existing.NotificationJurisdictions = d.NotificationJurisdictions;
                     existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
+                Tally(false, changed);
+            }
+        }
+
+        // --- Notification rules (match by portable jurisdiction Code; absent on a pre-v2 bundle) ---
+        var rules = await db.NotificationRules.ToListAsync(ct);
+        foreach (var r in bundle.NotificationRules ?? [])
+        {
+            var existing = rules.FirstOrDefault(x => x.Code == r.Code);
+            if (existing is null)
+            {
+                db.NotificationRules.Add(new NotificationRule { Code = r.Code, Label = r.Label,
+                    WindowHours = r.WindowHours, IsActive = r.IsActive, IsSystem = r.IsSystem,
+                    CreatedBy = actor, CreatedAtUtc = now });
+                Tally(true, true);
+            }
+            else
+            {
+                var changed = existing.Label != r.Label || existing.WindowHours != r.WindowHours
+                    || existing.IsActive != r.IsActive;
+                if (changed) { existing.Label = r.Label; existing.WindowHours = r.WindowHours;
+                    existing.IsActive = r.IsActive; existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
                 Tally(false, changed);
             }
         }

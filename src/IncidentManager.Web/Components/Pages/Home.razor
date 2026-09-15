@@ -44,7 +44,7 @@ else
     var m = _metrics;
     var compTotal = m.Breaches + m.Incidents + m.AdverseEvents;
 
-    @if (m.Breaches > 0 || m.OverdueActionItems > 0 || m.SlaBreached > 0)
+    @if (m.Breaches > 0 || m.OverdueActionItems > 0 || m.SlaBreached > 0 || m.NotifyBreached > 0)
     {
         <div class="dash-attn">
             <span class="dash-dot danger"></span>
@@ -52,6 +52,7 @@ else
             @{ var bits = new List<string>();
                if (m.Breaches > 0) bits.Add($"{m.Breaches} open breach{(m.Breaches == 1 ? "" : "es")}");
                if (m.SlaBreached > 0) bits.Add($"{m.SlaBreached} SLA breach{(m.SlaBreached == 1 ? "" : "es")}");
+               if (m.NotifyBreached > 0) bits.Add($"{m.NotifyBreached} notification deadline{(m.NotifyBreached == 1 ? "" : "s")} overdue");
                if (m.OverdueActionItems > 0) bits.Add($"{m.OverdueActionItems} overdue task{(m.OverdueActionItems == 1 ? "" : "s")}"); }
             @string.Join(" · ", bits)
         </div>
@@ -200,6 +201,39 @@ else
                     <span>All open cases within SLA</span>
                 </div>
             }
+
+            @* PROD-07: regulatory notification-deadline compliance, shown only when the feature is on. *@
+            @if (m.NotifyDeadlinesEnabled)
+            {
+                <div class="rt-foot" style="margin-top:2px; margin-bottom:4px">Regulatory notification (detected → reported)</div>
+                <div class="rt-grid">
+                    <div class="rt-fig">
+                        <div class="rt-fig-val @(m.MeanHoursToReport is null ? "muted" : "")">
+                            @(m.MeanHoursToReport is { } hrep ? $"{hrep:0.#}" : "—")<span class="u">@(m.MeanHoursToReport is null ? "" : "h")</span>
+                        </div>
+                        <div class="rt-fig-lab">Mean time to report</div>
+                    </div>
+                    <div class="rt-fig">
+                        <div class="rt-fig-val @(m.NotifyAwaitingReport == 0 ? "muted" : "")">@m.NotifyAwaitingReport</div>
+                        <div class="rt-fig-lab">Awaiting report</div>
+                    </div>
+                </div>
+                @if (m.NotifyBreached > 0 || m.NotifyAtRisk > 0)
+                {
+                    <div class="sla-line breached" title="Open cases with a regulatory notification deadline at risk or past due">
+                        <span class="bi bi-megaphone" aria-hidden="true"></span>
+                        <span><strong>@m.NotifyBreached</strong> overdue · <strong>@m.NotifyAtRisk</strong> at risk</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="sla-line ok">
+                        <span class="bi bi-check-circle" aria-hidden="true"></span>
+                        <span>@(m.NotifyAwaitingReport > 0 ? "All notification deadlines within window" : "No open notification deadlines")</span>
+                    </div>
+                }
+            }
+
             <div class="rt-foot">Compliance and SLA flags are judged against the administered per-severity
                 targets (<a class="dash-link u-link" href="admin/settings/sla">Settings → Response &amp; SLA</a>);
                 mean times average every case that reached the milestone.</div>

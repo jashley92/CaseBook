@@ -237,6 +237,49 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Notification_rules_round_trip_through_export_and_import()
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        await DevDataSeeder.SeedNotificationRulesAsync(db, _clock); // seeds NY, US at 72h
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+
+        live.NotificationRules.Should().Contain(r => r.Code == "NY" && r.WindowHours == 72);
+
+        // Retime NY and add a new jurisdiction rule.
+        var incoming = live with
+        {
+            NotificationRules = live.NotificationRules
+                .Select(r => r.Code == "NY" ? r with { WindowHours = 36 } : r)
+                .Append(new ConfigNotificationRule("CA", "California", 720, true, false))
+                .ToList()
+        };
+
+        var result = await svc.ImportAsync(incoming);
+        result.Added.Should().BeGreaterThanOrEqualTo(1);
+        result.Updated.Should().BeGreaterThanOrEqualTo(1);
+
+        var after = await svc.BuildBundleAsync();
+        after.NotificationRules.Single(r => r.Code == "CA").WindowHours.Should().Be(720);
+        after.NotificationRules.Single(r => r.Code == "NY").WindowHours.Should().Be(36);
+    }
+
+    [Fact]
+    public async Task A_pre_v2_bundle_without_notification_rules_still_imports()
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+
+        // Simulate a v1 bundle: the field is absent (null) rather than an empty list.
+        var v1 = live with { NotificationRules = null! };
+        var act = async () => await svc.ImportAsync(v1);
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task A_non_editable_setting_in_a_bundle_is_ignored_on_import()
     {
         await using var db = NewContext();

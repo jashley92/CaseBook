@@ -30,6 +30,14 @@ public sealed record DashboardMetrics(
     int ResolutionMissed,
     double? MeanHoursToContain,
     double? MeanHoursToResolve,
+    // PROD-07: regulatory notification-deadline aggregates (zero/null when the feature is off). Awaiting =
+    // open cases with a running notification clock (obligation triggered, not yet reported); of those, how
+    // many are at-risk / breached. MeanHoursToReport is the detected→reported compliance MTTR.
+    bool NotifyDeadlinesEnabled,
+    int NotifyAwaitingReport,
+    int NotifyAtRisk,
+    int NotifyBreached,
+    double? MeanHoursToReport,
     IReadOnlyList<PhaseCount> ByPhase,
     IReadOnlyList<TrendPoint> Trend)
 {
@@ -50,13 +58,19 @@ public sealed class DashboardService
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
     private readonly Sla.ISlaTargetsProvider _sla;
+    private readonly Compliance.INotificationDeadlineSettingsProvider _notify;
+    private readonly Admin.NotificationRuleService _rules;
 
-    public DashboardService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, Sla.ISlaTargetsProvider sla)
+    public DashboardService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
+        Sla.ISlaTargetsProvider sla, Compliance.INotificationDeadlineSettingsProvider notify,
+        Admin.NotificationRuleService rules)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
         _sla = sla;
+        _notify = notify;
+        _rules = rules;
     }
 
     public async Task<DashboardMetrics> GetAsync(CancellationToken ct = default)
@@ -134,6 +148,57 @@ public sealed class DashboardService
             return hours.Count > 0 ? Math.Round(hours.Average(), 1) : null;
         }
 
+        // PROD-07: regulatory notification-deadline aggregates, only when the feature is administered on. One
+        // pass over open, not-yet-reported cases whose obligation is triggered (per the configured start
+        // basis) and whose data elements trigger a jurisdiction; count the headline at-risk/breached.
+        var ndSettings = _notify.Current;
+        int notifyAwaiting = 0, notifyAtRisk = 0, notifyBreached = 0;
+        double? meanHoursToReport = null;
+        if (ndSettings.Enabled)
+        {
+            var ruleSet = await _rules.LoadRuleSetAsync(ndSettings.DefaultWindowHours, ct);
+            var elementJur = await db.DataElements.AsNoTracking()
+                .Where(e => e.NotificationJurisdictions != null && e.NotificationJurisdictions != "")
+                .Select(e => new { e.Key, e.NotificationJurisdictions })
+                .ToDictionaryAsync(e => e.Key, e => e.NotificationJurisdictions!, ct);
+
+            var openRows = await open
+                .Select(c => new
+                {
+                    c.Classification, c.DetectedAtUtc, c.ReportedAtUtc,
+                    MatStatus = c.Materiality.Status, MatDecided = c.Materiality.DecidedOnUtc, MatRecorded = c.Materiality.RecordedAtUtc,
+                    Keys = c.DataElements.Select(d => d.ElementKey).ToList()
+                })
+                .ToListAsync(ct);
+
+            foreach (var c in openRows)
+            {
+                if (c.ReportedAtUtc is not null) continue; // clock already stopped
+                var start = Compliance.NotificationDeadlineService.ResolveStart(
+                    ndSettings.StartBasis, c.Classification, c.DetectedAtUtc, c.MatStatus, c.MatDecided, c.MatRecorded);
+                if (start is null) continue; // obligation not triggered yet
+
+                var jurisdictions = c.Keys.Where(elementJur.ContainsKey)
+                    .SelectMany(k => elementJur[k].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    .Select(j => j.ToUpperInvariant()).Distinct().ToList();
+                if (jurisdictions.Count == 0) continue;
+
+                var head = Compliance.NotificationDeadlinePolicy.Headline(
+                    Compliance.NotificationDeadlinePolicy.Evaluate(start, null, jurisdictions, ruleSet,
+                        ndSettings.AtRiskThresholdPercent, now));
+                if (head is null) continue;
+                notifyAwaiting++;
+                if (head.State == Sla.SlaState.Breached) notifyBreached++;
+                else if (head.State == Sla.SlaState.AtRisk) notifyAtRisk++;
+            }
+
+            var reportedPairs = await cases
+                .Where(c => c.ReportedAtUtc != null && c.DetectedAtUtc != null)
+                .Select(c => new { From = c.DetectedAtUtc!.Value, To = c.ReportedAtUtc!.Value })
+                .ToListAsync(ct);
+            meanHoursToReport = MeanHours(reportedPairs.Select(p => (p.From, p.To)));
+        }
+
         var trend = await BuildTrendAsync(cases, now, months: 12, ct);
 
         return new DashboardMetrics(
@@ -142,6 +207,7 @@ public sealed class DashboardService
             cMet, cMissed, rMet, rMissed,
             MeanHours(containedPairs.Select(p => (p.From, p.To))),
             MeanHours(resolvedPairs.Select(p => (p.From, p.To))),
+            ndSettings.Enabled, notifyAwaiting, notifyAtRisk, notifyBreached, meanHoursToReport,
             byPhase.OrderBy(p => p.Phase).ToList(),
             trend);
     }
