@@ -536,6 +536,10 @@ else
     /// <summary>Live-collab flash hooks (parent owns the flash state); render an entry's flash class / hue.</summary>
     [Parameter] public Func<Guid, string?>? FlashClass { get; set; }
     [Parameter] public Func<Guid, string?>? FlashStyle { get; set; }
+    /// <summary>FR-02: parent-owned draft store (survives tab switches). The Investigation add composer stashes
+    /// its unsubmitted text here on teardown and re-seeds from it on remount, so hopping tabs doesn't lose an
+    /// entry. Scoped to add mode — an in-progress edit is not stashed (it would reappear as a new entry).</summary>
+    [Parameter] public Dictionary<string, string>? ComposerDrafts { get; set; }
 
     private bool IsThirdParty => Case.Origin == CaseOrigin.ThirdParty;
 
@@ -612,7 +616,9 @@ else
     {
         var desired = new Dictionary<string, string>();
         if (CanEdit && _tlAddKind == TimelineKind.Investigation)
-            desired[InvEditorId] = _tlDesc ?? "";
+            // FR-02: in add mode, seed from a stashed draft if one survived a tab switch; while editing an
+            // existing entry, seed from that entry's text (_tlDesc).
+            desired[InvEditorId] = (_tlEditId is null ? ComposerDrafts?.GetValueOrDefault(InvEditorId) : null) ?? _tlDesc ?? "";
 
         foreach (var id in _mdEditors.Where(id => !desired.ContainsKey(id)).ToList())
         {
@@ -694,6 +700,7 @@ else
         var shotId = await UploadTimelineShotAsync();
         await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, _tlDesc, _tlSource, evidenceId: shotId);
         _tlDesc = ""; _tlSource = null; ClearTimelineShot();
+        ComposerDrafts?.Remove(InvEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
         Toasts.Success(shotId is null ? "Timeline entry added" : "Timeline entry added with screenshot");
         try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); }
@@ -900,8 +907,24 @@ else
     private DateTime UtcToWall(DateTimeOffset utc)
         => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
 
+    // FR-02: in add mode, capture the Investigation composer's unsubmitted text into the parent-owned store
+    // before teardown, so a tab switch preserves it. An in-progress edit (_tlEditId set) is intentionally not
+    // stashed — it would otherwise resurface as a new add entry after the tab remounts in add mode.
+    private async Task StashDraft()
+    {
+        if (ComposerDrafts is null || _tlEditId is not null) return;
+        try
+        {
+            var val = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId);
+            if (!string.IsNullOrWhiteSpace(val)) ComposerDrafts[InvEditorId] = val;
+            else ComposerDrafts.Remove(InvEditorId);
+        }
+        catch { /* editor not mounted or circuit tearing down — nothing to stash */ }
+    }
+
     public async ValueTask DisposeAsync()
     {
+        await StashDraft();
         foreach (var id in _mdEditors)
         {
             try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }

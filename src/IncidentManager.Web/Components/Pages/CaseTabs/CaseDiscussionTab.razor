@@ -63,6 +63,9 @@ else
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     /// <summary>The case's entities/IOCs, offered as inline "#" tags in the composer.</summary>
     [Parameter] public IReadOnlyList<IncidentManager.Domain.Entities.CaseEntity> Entities { get; set; } = [];
+    /// <summary>FR-02: parent-owned draft store (survives tab switches). The comment composer stashes its
+    /// unsubmitted text here on teardown and re-seeds from it on remount, so hopping tabs doesn't lose a reply.</summary>
+    [Parameter] public Dictionary<string, string>? ComposerDrafts { get; set; }
 
     private List<CaseCommentView>? _comments;
     private CaseCommentView? _replyTo;
@@ -109,7 +112,9 @@ else
         {
             try
             {
-                await JS.InvokeVoidAsync("markdownEditor.init", ComposerId, "",
+                // FR-02: re-seed the composer from a stashed draft if one survived a tab switch.
+                var seed = ComposerDrafts?.GetValueOrDefault(ComposerId) ?? "";
+                await JS.InvokeVoidAsync("markdownEditor.init", ComposerId, seed,
                     new { mentions = MentionCandidates, entities = EntityCandidates });
                 _editorMounted = true;
             }
@@ -138,6 +143,7 @@ else
             _replyTo = null;
             await Load();
             Toasts.Success("Comment posted.");
+            ComposerDrafts?.Remove(ComposerId); // FR-02: the draft is now saved
             try { await JS.InvokeVoidAsync("markdownEditor.setValue", ComposerId, ""); } catch (JSException) { /* best effort */ }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
@@ -146,8 +152,22 @@ else
         }
     }
 
+    // FR-02: preserve an unsubmitted comment across a tab switch by stashing it in the parent-owned store.
+    private async Task StashDraft()
+    {
+        if (ComposerDrafts is null) return;
+        try
+        {
+            var val = await JS.InvokeAsync<string>("markdownEditor.getValue", ComposerId);
+            if (!string.IsNullOrWhiteSpace(val)) ComposerDrafts[ComposerId] = val;
+            else ComposerDrafts.Remove(ComposerId);
+        }
+        catch { /* editor not mounted or circuit tearing down — nothing to stash */ }
+    }
+
     public async ValueTask DisposeAsync()
     {
+        await StashDraft();
         try { await JS.InvokeVoidAsync("markdownEditor.destroy", ComposerId); }
         catch { /* circuit may already be gone during teardown */ }
     }

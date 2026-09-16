@@ -237,7 +237,7 @@ else
            paste-shim registration (element ids kept in the child), and the live-collab "new entries" pill. *@
         <CaseTimelineTab @ref="_timelineTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
                          DetectionLabel="@DetectionLabel" OnChanged="Reload" OnPreview="OpenShot"
-                         FlashClass="FlashClass" FlashStyle="FlashStyle" />
+                         FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts" />
         @* U-32: a floating "jump to what just arrived" pill when a collaborator adds timeline entries. *@
         @if (_newTimelineIds.Count > 0)
         {
@@ -270,14 +270,14 @@ else
            carries a Notes branch); the parent keeps the flash + the Ctrl+Enter / 'n' hotkeys (dispatched to
            the child via @ref / AutofocusComposer) and reloads the case after a write. *@
         <CaseNotesTab @ref="_notesTab" CaseId="_case.Id" Notes="_case.Notes" Entities="_case.Entities" CanEdit="_canEdit"
-                      OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle"
+                      OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts"
                       AutofocusComposer="_notesAutofocus" OnAutofocusHandled="() => _notesAutofocus = false" />
     }
     else if (_activeTab == "Discussion")
     {
         @* PROD-04: durable threaded team discussion with @mention notifications. Self-loads its comments;
            available to any case viewer (cross-role collaboration/handoff), so it isn't gated on EditCases. *@
-        <CaseDiscussionTab CaseId="_case.Id" Entities="_case.Entities" />
+        <CaseDiscussionTab CaseId="_case.Id" Entities="_case.Entities" ComposerDrafts="_composerDrafts" />
     }
     else if (_activeTab == "Tasks")
     {
@@ -507,6 +507,14 @@ else
     // Bumped whenever a collaborator changes the case, so extracted tabs (audit) re-query live.
     private int _liveRefresh;
 
+    // FR-02: unsubmitted composer text, kept in the parent (which survives tab switches, unlike the tab
+    // components) so hopping tabs doesn't discard an in-progress note / comment / investigation entry.
+    // Keyed by the editor's element id; each composer tab stashes on teardown and re-seeds on remount.
+    // Server-memory only — never persisted to the client, so it's gone when the circuit ends (idle-lock /
+    // logout), preserving the unattended-workstation posture; also cleared when the case changes.
+    private readonly Dictionary<string, string> _composerDrafts = new();
+    private Guid _draftsCaseId;
+
     // Reports (UX-13: the tab is extracted to CaseReportTab; this state persists preview/profiles across re-mounts).
     private readonly CaseReportState _reportState = new();
 
@@ -636,6 +644,9 @@ else
         _flash.Clear();
         _newOnTab.Clear();
         _newTimelineIds.Clear();
+        // FR-02: a different case starts with a clean draft slate; within the same case (e.g. an entity
+        // deep-link that re-runs OnParametersSetAsync) keep any in-progress composer text.
+        if (_draftsCaseId != Id) { _composerDrafts.Clear(); _draftsCaseId = Id; }
     }
 
     private async Task Reload()
