@@ -4,6 +4,7 @@
 @inject CaseService Cases
 @inject IClock Clock
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 @inject IAuthorizationService AuthZ
 @inject IncidentManager.Application.Abstractions.ICaseChangeNotifier Notifier
 @inject AuthenticationStateProvider AuthState
@@ -33,6 +34,10 @@ else
 {
     @* UX-08: consistent back affordance — the "Cases" crumb replaces the old "← All cases" button. *@
     <Breadcrumbs Items="@(new Crumb[] { new("Cases", "cases"), new(_case.CaseNumber) })" />
+    @* FR-05: warn before leaving the case (in-app SPA nav) with unsubmitted composer text. The browser-level
+       beforeunload guard in markdown-editor.js covers refresh / tab-close / external nav; this covers a
+       sidebar or case-link click the SPA router handles without a page unload. *@
+    <NavigationLock OnBeforeInternalNavigation="OnBeforeInternalNav" />
     <div class="d-flex justify-content-between align-items-start">
         <div>
             <h1 class="mb-1">
@@ -183,6 +188,30 @@ else
                     <div class="modal-footer">
                         <button class="btn btn-outline-secondary" @onclick="CancelConfirm">Cancel</button>
                         <button class="btn btn-danger" @onclick="RunConfirm">Remove</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* FR-05: confirm before leaving the case with unsubmitted composer text (in-app navigation). *@
+    @if (_confirmLeaveOpen)
+    {
+        <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true"
+             aria-labelledby="im-leave-title" style="background:var(--im-scrim)"
+             @onclick="CancelLeave" @onkeydown="OnModalEscape">
+            <div class="modal-dialog" @onclick:stopPropagation="true">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="im-leave-title">Unsaved text</h5>
+                        <button type="button" class="btn-close" aria-label="Close" @onclick="CancelLeave"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-0">You have unsubmitted text in a composer on this case. Leave the page and discard it?</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-outline-secondary" @onclick="CancelLeave">Stay on this page</button>
+                        <button class="btn btn-danger" @onclick="ConfirmLeave">Leave &amp; discard</button>
                     </div>
                 </div>
             </div>
@@ -515,6 +544,11 @@ else
     private readonly Dictionary<string, string> _composerDrafts = new();
     private Guid _draftsCaseId;
 
+    // FR-05: guard against leaving the case (in-app navigation) with unsubmitted composer text.
+    private bool _confirmLeaveOpen;
+    private string? _pendingLeave;
+    private bool _leaveConfirmed;
+
     // Reports (UX-13: the tab is extracted to CaseReportTab; this state persists preview/profiles across re-mounts).
     private readonly CaseReportState _reportState = new();
 
@@ -838,18 +872,54 @@ else
     private void AskConfirm(string message, Func<Task> onConfirm) => _confirm = (message, onConfirm);
     private void CancelConfirm() => _confirm = null;
 
+    // FR-05: intercept in-app navigation away from this case when a composer still holds unsubmitted text,
+    // and confirm before it's discarded. Same-case navigation (a tab or entity deep-link keeps the editors
+    // mounted) and the security idle-lock's /session-expired landing are never blocked.
+    private async Task OnBeforeInternalNav(LocationChangingContext ctx)
+    {
+        if (_leaveConfirmed) { _leaveConfirmed = false; return; } // already confirmed — let it through
+        var target = ctx.TargetLocation;
+        if (target.Contains("session-expired", StringComparison.OrdinalIgnoreCase)) return;
+        if (target.Contains($"cases/{Id}", StringComparison.OrdinalIgnoreCase)) return; // same case
+        bool dirty;
+        try { dirty = await JS.InvokeAsync<bool>("markdownEditor.anyDirty"); }
+        catch { dirty = false; } // if we can't tell, don't obstruct navigation
+        if (!dirty) return;
+        ctx.PreventNavigation();
+        _pendingLeave = target;
+        _confirmLeaveOpen = true;
+        StateHasChanged();
+    }
+
+    private void CancelLeave()
+    {
+        _confirmLeaveOpen = false;
+        _pendingLeave = null;
+    }
+
+    private void ConfirmLeave()
+    {
+        var target = _pendingLeave;
+        _confirmLeaveOpen = false;
+        _pendingLeave = null;
+        if (target is null) return;
+        _leaveConfirmed = true; // the reissued navigation passes straight through the guard
+        Nav.NavigateTo(target);
+    }
+
     // UX-01: Esc closes whichever .modal.d-block dialog is open (focus is trapped inside it, so the
     // keydown bubbles here). The JS focus-trap restores focus to the trigger on release.
     private void OnModalEscape(KeyboardEventArgs e)
     {
         if (e.Key != "Escape") return;
         if (_confirm is not null) CancelConfirm();
+        else if (_confirmLeaveOpen) CancelLeave();
         else if (_previewShotId is not null) CloseShot();
         else if (_activeModal is not null) CloseModal();
     }
 
     // UX-01: whether any of the three trap modals is currently open (drives arm/release in OnAfterRenderAsync).
-    private bool AnyTrapModalOpen => _confirm is not null || _previewShotId is not null || _activeModal is not null;
+    private bool AnyTrapModalOpen => _confirm is not null || _previewShotId is not null || _activeModal is not null || _confirmLeaveOpen;
     private bool _modalTrapArmed;
 
     private async Task RunConfirm()

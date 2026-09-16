@@ -103,6 +103,10 @@
         _countdownCts?.Cancel();
         try { await JS.InvokeVoidAsync("imIdle.stop"); }
         catch (JSDisconnectedException) { }
+        // FR-05: this is a deliberate security teardown — suppress the unsaved-changes beforeunload prompt so
+        // the forced navigation is never trapped behind a native dialog on an unattended screen.
+        try { await JS.InvokeVoidAsync("markdownEditor.suppressUnloadGuard"); }
+        catch (JSDisconnectedException) { }
         // Full-page navigation tears down this circuit and everything it held in memory.
         Nav.NavigateTo("session-expired", forceLoad: true);
     }

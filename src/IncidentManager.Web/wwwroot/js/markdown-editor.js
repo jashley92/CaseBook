@@ -158,6 +158,36 @@
             if (!mde) return;
             try { mde.toTextArea(); mde.cleanup && mde.cleanup(); } catch (e) { /* best effort */ }
             delete instances[id];
+        },
+        // FR-05: does any mounted composer still hold unsubmitted (non-whitespace) text? Drives the
+        // unsaved-changes guards (browser beforeunload below + the in-app NavigationLock in the workspace).
+        anyDirty: function () {
+            return Object.values(instances).some(function (m) {
+                try { return (m.value() || '').trim().length > 0; } catch (e) { return false; }
+            });
+        },
+        // FR-05: let a deliberate, security-driven teardown (the idle-lock's forced navigation to
+        // /session-expired) bypass the beforeunload prompt, so an unattended screen is never trapped behind
+        // a native dialog. One-shot: it clears itself once the unload it was meant for has passed.
+        suppressUnloadGuard: function () {
+            suppressUnload = true;
+            setTimeout(function () { suppressUnload = false; }, 4000);
         }
     };
+
+    // FR-05: warn before a full-page exit (refresh / tab close / typing a new URL / external link) when a
+    // Markdown composer still holds unsubmitted text. In-app SPA navigation is guarded separately by the
+    // NavigationLock in the case workspace; this covers the browser-level unload that guard can't see. It
+    // only prompts when actually dirty (and never when suppressed for the idle-lock), so it's otherwise inert.
+    let suppressUnload = false;
+    window.addEventListener('beforeunload', function (e) {
+        if (suppressUnload) return;
+        let dirty = false;
+        try {
+            dirty = Object.values(instances).some(function (m) {
+                try { return (m.value() || '').trim().length > 0; } catch (_) { return false; }
+            });
+        } catch (err) { return; /* never block an unload on an error */ }
+        if (dirty) { e.preventDefault(); e.returnValue = ''; }
+    });
 })();
