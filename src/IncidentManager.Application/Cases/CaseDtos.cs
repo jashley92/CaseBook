@@ -15,6 +15,16 @@ public sealed class CreateCaseRequest
     public Classification? Classification { get; set; } = Domain.Enums.Classification.AdverseEvent;
     public Severity Severity { get; set; } = Severity.Medium;
     public CaseOrigin Origin { get; set; } = CaseOrigin.InternalDetection;
+
+    /// <summary>When the matter was first detected/reported (FR-03). Drives the response-SLA clock and the
+    /// dwell/MTTD metrics, so it should be the real detection instant, not when the case was filed. Null
+    /// defaults to filing time in the service.</summary>
+    public DateTimeOffset? DetectedAtUtc { get; set; }
+
+    /// <summary>Optional: when adversary activity actually began (initial access / first malicious activity).
+    /// Detected minus this is the dwell time. Must not be after <see cref="DetectedAtUtc"/>.</summary>
+    public DateTimeOffset? OccurredAtUtc { get; set; }
+
     public string? Summary { get; set; }
     public string? DetectionCaseId { get; set; }
     public string? DataTypesInvolved { get; set; }

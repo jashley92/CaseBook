@@ -234,6 +234,15 @@ public sealed class CaseService
         var year = now.Year;
         var custom = NormalizeCaseNumber(request.CaseNumber);
 
+        // FR-03: capture the detection time at intake (drives the SLA clock + dwell). Defaults to filing time
+        // when omitted, and is validated exactly like the domain's UpdateDetails so a bad value is rejected
+        // with the same friendly message rather than silently anchoring the SLA to the wrong instant.
+        var detectedAtUtc = request.DetectedAtUtc ?? now;
+        if (detectedAtUtc > now)
+            throw new ArgumentException("The detected time cannot be in the future.");
+        if (request.OccurredAtUtc is { } occurred && occurred > detectedAtUtc)
+            throw new ArgumentException("Activity cannot begin after it was detected.");
+
         // Retry on the rare auto-sequence collision (the unique CaseNumber / per-scheme sequence indexes
         // are the guard). A fresh context per attempt so a failed save's audit entry never lingers into the
         // retry. A custom number is fixed, so it isn't retried — a duplicate surfaces as a friendly error.
@@ -260,6 +269,8 @@ public sealed class CaseService
             c.DetectionCaseId = request.DetectionCaseId;
             c.DataTypesInvolved = request.DataTypesInvolved;
             c.ImpactedAssets = request.ImpactedAssets;
+            c.DetectedAtUtc = detectedAtUtc;          // FR-03: real detection time (Case.Open defaults it to now)
+            c.OccurredAtUtc = request.OccurredAtUtc;
             if (request.Origin == CaseOrigin.ThirdParty)
             {
                 c.ThirdParty = new ThirdPartyDetails

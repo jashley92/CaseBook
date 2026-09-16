@@ -6,6 +6,7 @@
 @inject NavigationManager Nav
 @inject IConfiguration Config
 @inject ISeverityLabels SevLabels
+@inject TimeDisplay TimeDisp
 
 <PageTitle>New Case</PageTitle>
 
@@ -90,6 +91,20 @@
                         <InputText class="form-control" @bind-Value="_request.VendorReference" />
                     </div>
                 }
+
+                @* FR-03: capture the real detection time at intake — it anchors the response-SLA clock and
+                   the dwell metric. Defaults to now (in the viewer's display zone); set it back to when the
+                   matter was actually detected, not when the case is being filed. *@
+                <div class="col-md-4">
+                    <label class="form-label">Detected (@TimeDisp.Label) <span class="text-danger">*</span></label>
+                    <input type="datetime-local" class="form-control" @bind="_detectedWall"
+                           title="When the matter was first detected or reported. Drives the response-SLA clock and dwell metrics. Set it to the real detection time, not when the case was filed. Entered in @TimeDisp.Label." />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Initial activity <span class="text-muted">(optional)</span></label>
+                    <input type="datetime-local" class="form-control" @bind="_occurredWall"
+                           title="When adversary activity actually began (initial access / first malicious activity), if known. Detected minus this is the dwell time. Entered in @TimeDisp.Label." />
+                </div>
 
                 <div class="col-md-6">
                     <label class="form-label">@DetectionLabel Case ID <span class="text-muted">(optional)</span></label>
@@ -188,6 +203,11 @@
     private bool _saving;
     private string? _error;
 
+    // FR-03: intake detection/dwell timestamps entered as wall-clock in the viewer's display zone (U-29),
+    // converted to UTC on submit. Detected defaults to now; initial-activity is optional.
+    private DateTime? _detectedWall;
+    private DateTime? _occurredWall;
+
     private List<TemplateView>? _templates;
     private TemplateView? _selectedTemplate;
 
@@ -221,7 +241,25 @@
             _linkChoice.Remove(id);
     }
 
-    protected override async Task OnInitializedAsync() => _templates = await Templates.ListActiveAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _templates = await Templates.ListActiveAsync();
+        // FR-03: default Detected to now in the viewer's display zone. If the display zone resolves after
+        // first render (U-29 reconfigures TimeDisp, remounting this page via the layout @key), this re-seeds
+        // with the correct zone — the user hasn't interacted yet at that point.
+        _detectedWall = UtcToWall(DateTimeOffset.UtcNow);
+    }
+
+    // Wall-clock ⇄ UTC in the viewer's active display zone (U-29), matching the Overview details editor.
+    private DateTimeOffset WallToUtc(DateTime wall)
+    {
+        var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
+        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, TimeDisp.Zone), TimeSpan.Zero); }
+        catch { return new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
+    }
+
+    private DateTime UtcToWall(DateTimeOffset utc)
+        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
 
     private void OnTemplateChanged(ChangeEventArgs e)
     {
@@ -286,6 +324,9 @@
         _error = null;
         try
         {
+            // FR-03: fold the intake timestamps (entered as wall-clock) into the request as UTC.
+            _request.DetectedAtUtc = _detectedWall is { } dw ? WallToUtc(dw) : null;
+            _request.OccurredAtUtc = _occurredWall is { } ow ? WallToUtc(ow) : null;
             var created = await Cases.CreateAsync(_request);
             // E-23: seed entered indicators as entities (best-effort typed; correctable on the Entities tab).
             foreach (var raw in IndicatorLines(_indicators))
