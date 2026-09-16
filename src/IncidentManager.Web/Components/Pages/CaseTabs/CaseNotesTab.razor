@@ -42,7 +42,7 @@ else
                 }
                 else
                 {
-                    <div class="md-body">@((MarkupString)Md.ToHtml(n.Body))</div>
+                    <div class="md-body">@((MarkupString)Md.ToHtml(n.Body, CaseId))</div>
                     <small class="text-muted">
                         @Users.DisplayFor(n.CreatedBy) · @TimeDisp.Long(n.CreatedAtUtc)
                         @if (n.Version > 1)

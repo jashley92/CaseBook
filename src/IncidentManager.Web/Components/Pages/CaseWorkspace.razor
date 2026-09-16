@@ -253,7 +253,7 @@ else
            DotNetObjectReference + [JSInvokable] OnNodesMoved) and entity/relationship CRUD; the parent keeps
            the shared confirm dialog (RequestConfirm→AskConfirm), the flash, and hotkey dispatch (@ref). *@
         <CaseEntitiesTab @ref="_entitiesTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
-                         OnChanged="Reload" RequestConfirm="OnChildRequestConfirm"
+                         OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" FocusEntityId="QEntity"
                          FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh" />
     }
     else if (_activeTab == "Evidence")
@@ -418,6 +418,10 @@ else
 
     /// <summary>Deep-link a specific tab, e.g. <c>?tab=Report</c>, so a link can point straight at it.</summary>
     [SupplyParameterFromQuery(Name = "tab")] public string? QTab { get; set; }
+
+    /// <summary>Deep-link a specific entity (from an inline "#" tag chip): <c>?tab=Entities&amp;entity={guid}</c>
+    /// focuses that row on the Entities tab.</summary>
+    [SupplyParameterFromQuery(Name = "entity")] public Guid? QEntity { get; set; }
 
     private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Discussion", "Tasks", "Report", "Audit"];
     private string _activeTab = "Overview";

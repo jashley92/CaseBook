@@ -60,6 +60,23 @@ public class MetricsCsvTests
     }
 
     [Fact]
+    public void Notification_deadline_metrics_appear_only_when_the_feature_is_enabled()
+    {
+        // Off (the Sample default) → no notification section.
+        MetricsCsv.Build(Sample(), At).Should().NotContain("Notification deadlines");
+
+        var on = Sample() with
+        {
+            NotifyDeadlinesEnabled = true, NotifyAwaitingReport = 3, NotifyAtRisk = 1,
+            NotifyBreached = 2, MeanHoursToReport = 30.0
+        };
+        var csv = MetricsCsv.Build(on, At);
+        csv.Should().Contain("Notification deadlines awaiting report,3");
+        csv.Should().Contain("Notification deadlines overdue,2");
+        csv.Should().Contain("Mean hours to report (detected to reported),30");
+    }
+
+    [Fact]
     public void Monthly_and_quarterly_trend_sections_are_emitted()
     {
         var csv = MetricsCsv.Build(Sample(), At);

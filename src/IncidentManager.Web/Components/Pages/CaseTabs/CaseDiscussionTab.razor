@@ -156,7 +156,7 @@ else
 
     private RenderFragment RenderComment(CaseCommentView c, bool isReply) =>@<div class="card mb-2 @(isReply ? "ms-4" : "")" @key="c.Id">
         <div class="card-body py-2">
-            <div class="md-body">@((MarkupString)Md.ToHtml(c.Body))</div>
+            <div class="md-body">@((MarkupString)Md.ToHtml(c.Body, CaseId))</div>
             @if (c.Mentions.Count > 0)
             {
                 <div class="mt-1">

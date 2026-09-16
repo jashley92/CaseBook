@@ -42,6 +42,15 @@ public static class MetricsCsv
         Row("Resolution SLA missed", m.ResolutionMissed.ToString(CultureInfo.InvariantCulture));
         Row("Resolution SLA compliance %", m.ResolutionCompliancePercent?.ToString(CultureInfo.InvariantCulture) ?? "");
 
+        // Regulatory notification deadlines (PROD-07) — only when the feature is administered on.
+        if (m.NotifyDeadlinesEnabled)
+        {
+            Row("Notification deadlines awaiting report", m.NotifyAwaitingReport.ToString(CultureInfo.InvariantCulture));
+            Row("Notification deadlines at risk", m.NotifyAtRisk.ToString(CultureInfo.InvariantCulture));
+            Row("Notification deadlines overdue", m.NotifyBreached.ToString(CultureInfo.InvariantCulture));
+            Row("Mean hours to report (detected to reported)", m.MeanHoursToReport?.ToString(CultureInfo.InvariantCulture) ?? "");
+        }
+
         foreach (var phase in Enum.GetValues<CasePhase>())
         {
             var count = m.ByPhase.FirstOrDefault(p => p.Phase == phase)?.Count ?? 0;

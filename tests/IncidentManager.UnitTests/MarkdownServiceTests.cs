@@ -55,14 +55,34 @@ public class MarkdownServiceTests
     }
 
     [Fact]
-    public void Entity_tag_links_render_as_a_non_navigating_chip()
+    public void Entity_tag_links_deep_link_to_the_entities_tab_when_the_case_is_known()
     {
-        var html = _md.ToHtml("Traced it to [FIN-WKS-07](entity:3f2504e0-4f89-41d3-9a0c-0305e82c3301).");
+        var caseId = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        var html = _md.ToHtml("Traced it to [FIN-WKS-07](entity:3f2504e0-4f89-41d3-9a0c-0305e82c3301).", caseId);
 
         html.Should().Contain("class=\"im-entity-tag\"");
         html.Should().Contain("FIN-WKS-07");
-        html.Should().NotContain("href=\"entity:");   // not an anchor — the scheme never reaches an href
-        html.Should().NotContain("<a ");               // rendered as a <span> chip, not a link
+        html.Should().Contain("href=\"/cases/11111111-2222-3333-4444-555555555555?tab=Entities&amp;entity=3f2504e0-4f89-41d3-9a0c-0305e82c3301\"");
+        html.Should().NotContain("entity:");   // the raw scheme never reaches an href
+    }
+
+    [Fact]
+    public void Entity_tag_without_a_case_context_renders_a_non_navigating_chip()
+    {
+        var html = _md.ToHtml("[FIN-WKS-07](entity:3f2504e0-4f89-41d3-9a0c-0305e82c3301)");
+
+        html.Should().Contain("class=\"im-entity-tag\"").And.Contain("FIN-WKS-07");
+        html.Should().NotContain("<a ");        // no case → not a link
+    }
+
+    [Fact]
+    public void A_malformed_entity_reference_degrades_to_a_non_navigating_chip()
+    {
+        var html = _md.ToHtml("[x](entity:not-a-guid)", Guid.NewGuid());
+
+        html.Should().Contain("class=\"im-entity-tag\"");
+        html.Should().NotContain("<a ");        // no anchor for an unvalidated id
+        html.Should().NotContain("entity:");
     }
 
     [Fact]

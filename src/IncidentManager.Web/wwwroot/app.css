@@ -354,9 +354,17 @@ h1:focus {
     font-size: .88em; font-weight: 600; line-height: 1.4;
     background: color-mix(in srgb, var(--bs-info) 14%, transparent);
     color: var(--bs-info-text-emphasis, var(--bs-info)); border: 1px solid color-mix(in srgb, var(--bs-info) 30%, transparent);
-    white-space: nowrap;
+    white-space: nowrap; text-decoration: none; cursor: pointer;
 }
+.im-entity-tag:hover { background: color-mix(in srgb, var(--bs-info) 24%, transparent); text-decoration: none; }
 .im-entity-tag .bi { font-size: .82em; opacity: .8; }
+
+/* Brief highlight of an entity row deep-linked from a "#" tag chip (PROD: entity tagging). */
+.im-focus-row { animation: im-focus-pulse 2.6s ease-out 1; }
+@keyframes im-focus-pulse {
+    0%, 12% { background: color-mix(in srgb, var(--bs-info) 22%, transparent); }
+    100% { background: transparent; }
+}
 
 /* MITRE ATT&CK technique picker (AttackTechniquePicker) — type-ahead dropdown over the embedded
    v19.1 catalogue. Panel + rows are token-driven so they read in both themes and over a modal. */

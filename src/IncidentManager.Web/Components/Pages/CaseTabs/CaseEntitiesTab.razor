@@ -140,7 +140,7 @@ else
                 <tbody>
                     @foreach (var e in Case.Entities.OrderBy(x => x.Type).ThenBy(x => x.Value))
                     {
-                        <tr class="im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" @key="e.Id">
+                        <tr id="@RowId(e.Id)" class="im-enter @(FocusEntityId == e.Id ? "im-focus-row" : "") @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" @key="e.Id">
                             <td class="text-nowrap">@Ui.EntityGlyph(e.Type) @Ui.Label(e.Type)</td>
                             <td><code class="small">@DisplayValue(e)</code>
                                 @if (!string.IsNullOrWhiteSpace(e.Description)) { <br /><small class="text-muted">@e.Description</small> }
@@ -255,6 +255,8 @@ else
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter] public bool CanEdit { get; set; }
+    /// <summary>Deep-link focus: when set (from a "#" entity tag chip), scroll to and briefly highlight that row.</summary>
+    [Parameter] public Guid? FocusEntityId { get; set; }
     /// <summary>Reload the case after an entity/relationship write so the rest of the workspace refreshes.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
     /// <summary>Ask the parent's shared confirm dialog to guard a destructive action.</summary>
@@ -498,8 +500,19 @@ else
         string.Join("|", Case.TimelineEntries.Where(x => x.Kind == TimelineKind.Event && x.ActorEntityId is not null && x.TargetEntityId is not null)
             .Select(e => $"{e.Id:N}:{e.ActorEntityId:N}>{e.TargetEntityId:N}")));
 
+    private Guid? _focusHandled;
+    /// <summary>Stable DOM id for an entity row, so a "#" tag chip can deep-link straight to it.</summary>
+    private static string RowId(Guid id) => $"ent-{id:N}";
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Deep-link focus (entity tagging): scroll to the referenced row once; CSS pulses it briefly.
+        if (FocusEntityId is { } fid && fid != _focusHandled)
+        {
+            _focusHandled = fid;
+            try { await JS.InvokeVoidAsync("imMotion.scrollToId", RowId(fid)); } catch (JSException) { /* motion is optional */ }
+        }
+
         // The graph container only exists when there are entities to draw.
         if (Case.Entities.Count == 0) return;
 

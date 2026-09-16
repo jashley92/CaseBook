@@ -472,7 +472,7 @@ else
                             }
                             <time class="tl-time" title="@TimeDisp.Long(e.OccurredAtUtc)"><span class="tl-time-abs">@TimeDisp.Short(e.OccurredAtUtc)</span><span class="tl-time-rel">@Ui.RelativeTime(e.OccurredAtUtc, Clock.UtcNow)</span></time>
                         </div>
-                        <div class="tl-desc md-body">@((MarkupString)Md.ToHtml(e.Description))</div>
+                        <div class="tl-desc md-body">@((MarkupString)Md.ToHtml(e.Description, CaseId))</div>
                         @if (e.EvidenceId is { } shotId)
                         {
                             @* U-40: attached screenshot — click the thumbnail to preview it in a lightbox. *@
@@ -512,7 +512,7 @@ else
                                             <span class="im-badge im-b-neutral">v@(prior.Version)</span>
                                             @Users.DisplayFor(prior.CreatedBy) · @TimeDisp.Long(prior.CreatedAtUtc)
                                         </div>
-                                        <div class="md-body">@((MarkupString)Md.ToHtml(prior.Description))</div>
+                                        <div class="md-body">@((MarkupString)Md.ToHtml(prior.Description, CaseId))</div>
                                     </div>
                                 }
                             </div>
