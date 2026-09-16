@@ -988,8 +988,29 @@ else
 
     private async Task AdvanceTo(CasePhase phase)
     {
-        await Cases.ChangePhaseAsync(Id, phase, null);
-        await Reload();
+        // FR-01: closing is gated (CloseCase). Route the stepper button through the status modal so the
+        // readiness checklist + override justification are shown — rather than calling the bare API, which
+        // throws GateNotSatisfiedException and (with no try/catch here) hit the generic Blazor error UI.
+        if (phase == CasePhase.Closed)
+        {
+            await OpenModal("status");
+            _newPhase = phase;
+            await OnStatusTargetChanged(); // load the CloseCase gate for the newly-selected target
+            return;
+        }
+
+        // Ungated forward steps: apply directly, but surface any domain error as a toast instead of
+        // letting it reach the unhandled-error bar.
+        try
+        {
+            await Cases.ChangePhaseAsync(Id, phase, null);
+            await Reload();
+            Toasts.Success($"Status changed to {Ui.Label(phase)}");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or GateNotSatisfiedException)
+        {
+            Toasts.Error(ex.Message);
+        }
     }
 
     private int? TabCount(string tab)
