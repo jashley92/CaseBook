@@ -15,7 +15,7 @@
 <AuthorizeView Policy="@Policies.EditCases">
     <div class="card mb-3">
         <div class="card-body">
-            <label class="form-label small mb-1">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links</span></label>
+            <label class="form-label small mb-1">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links · <code>#</code> to tag an entity</span></label>
             @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add. *@
             <textarea id="@NoteAddEditorId" class="form-control mb-2"></textarea>
             <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddNote">Add note</button>
@@ -62,6 +62,8 @@ else
 @code {
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<AnalystNote> Notes { get; set; } = [];
+    /// <summary>The case's entities/IOCs, offered as inline "#" tags in the note editors.</summary>
+    [Parameter] public IReadOnlyList<CaseEntity> Entities { get; set; } = [];
     [Parameter] public bool CanEdit { get; set; }
     /// <summary>Reload the case after a note write so the list (and the rest of the workspace) refreshes.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
@@ -112,10 +114,21 @@ else
         foreach (var (id, seed) in desired)
         {
             if (_mdEditors.Contains(id)) continue;
-            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed); _mdEditors.Add(id); }
+            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed, new { entities = EntityCandidates }); _mdEditors.Add(id); }
             catch (JSException) { /* editor is a progressive enhancement */ }
         }
     }
+
+    // The case's entities as inline "#" tag candidates ({id, value, hint} for the editor JS).
+    private object[] EntityCandidates =>
+        (Entities ?? Array.Empty<CaseEntity>())
+            .Select(e => (object)new
+            {
+                id = e.Id.ToString(),
+                value = string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!,
+                hint = e.Type.ToString()
+            })
+            .ToArray();
 
     /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — submit whichever composer is active.</summary>
     public async Task SubmitAsync()

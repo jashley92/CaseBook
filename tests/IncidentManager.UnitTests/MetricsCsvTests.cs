@@ -15,6 +15,7 @@ public class MetricsCsvTests
         SlaAtRisk: 1, SlaBreached: 2,
         ContainmentMet: 8, ContainmentMissed: 2, ResolutionMet: 6, ResolutionMissed: 3,
         MeanHoursToContain: 4.5, MeanHoursToResolve: null,
+        NotifyDeadlinesEnabled: false, NotifyAwaitingReport: 0, NotifyAtRisk: 0, NotifyBreached: 0, MeanHoursToReport: null,
         ByPhase: new[] { new PhaseCount(CasePhase.Triage, 3), new PhaseCount(CasePhase.Containment, 2) },
         Trend: new[]
         {

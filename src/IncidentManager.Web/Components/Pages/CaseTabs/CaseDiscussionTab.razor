@@ -24,7 +24,7 @@
         }
         <label class="form-label small mb-1" for="@ComposerId">
             @(_replyTo is null ? "Add a comment" : "Reply")
-            <span class="text-muted">· Markdown &mdash; type <code>@@</code> to mention a teammate</span>
+            <span class="text-muted">· Markdown &mdash; <code>@@</code> to mention a teammate, <code>#</code> to tag an entity</span>
         </label>
         @* EasyMDE enhances this textarea (toolbar + inline @mention autocomplete); managed in OnAfterRenderAsync. *@
         <textarea id="@ComposerId" class="form-control mb-2" placeholder="Share an update, a question, or a handoff…"></textarea>
@@ -61,6 +61,8 @@ else
 
 @code {
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    /// <summary>The case's entities/IOCs, offered as inline "#" tags in the composer.</summary>
+    [Parameter] public IReadOnlyList<IncidentManager.Domain.Entities.CaseEntity> Entities { get; set; } = [];
 
     private List<CaseCommentView>? _comments;
     private CaseCommentView? _replyTo;
@@ -74,6 +76,17 @@ else
         Users.All()
             .Where(u => !string.Equals(u.UserId, Me.UserId, StringComparison.OrdinalIgnoreCase))
             .Select(u => (object)new { id = u.UserId, name = u.DisplayName })
+            .ToArray();
+
+    // The case's entities as inline "#" tag candidates ({id, value, hint} for JS).
+    private object[] EntityCandidates =>
+        (Entities ?? Array.Empty<IncidentManager.Domain.Entities.CaseEntity>())
+            .Select(e => (object)new
+            {
+                id = e.Id.ToString(),
+                value = string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!,
+                hint = e.Type.ToString()
+            })
             .ToArray();
 
     private IEnumerable<CaseCommentView> TopLevel =>
@@ -96,7 +109,8 @@ else
         {
             try
             {
-                await JS.InvokeVoidAsync("markdownEditor.init", ComposerId, "", MentionCandidates);
+                await JS.InvokeVoidAsync("markdownEditor.init", ComposerId, "",
+                    new { mentions = MentionCandidates, entities = EntityCandidates });
                 _editorMounted = true;
             }
             catch (JSException) { /* editor is a progressive enhancement; Submit falls back gracefully */ }

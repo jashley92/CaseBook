@@ -22,54 +22,74 @@
         ];
     }
 
-    // Inline @mention autocomplete for a CodeMirror instance (EasyMDE). `candidates` is [{id, name}].
-    // Type "@" then a partial name to open a caret-anchored dropdown; Up/Down to move, Enter/Tab/click to
-    // insert "@Display Name ". Mentions are derived from the text on demand (getMentions), so deleting the
-    // inserted token removes the mention — no hidden state to drift. Pure DOM, CSP-safe (no eval/fetch).
-    function attachMentions(mde, candidates) {
+    // Caret-anchored autocomplete for a CodeMirror instance (EasyMDE), driven by trigger characters:
+    //   @  → teammate mentions  → inserts "@Display Name " (notifies; derived on submit via getMentions)
+    //   #  → case entities/IOCs → inserts "[value](entity:<id>) " (rendered as a chip by the Markdown service)
+    // Type the trigger then a partial to open a dropdown; Up/Down to move, Enter/Tab/click to insert, Esc to
+    // dismiss. Pure DOM, CSP-safe (no eval/fetch). `triggers` is built from init's opts.
+    function buildTriggers(opts) {
+        const triggers = [];
+        if (opts && Array.isArray(opts.mentions) && opts.mentions.length) {
+            triggers.push({
+                re: /(?:^|[\s(\[])@([\p{L}\p{N}._-]{0,30})$/u,
+                list: opts.mentions,                                  // {id, name}
+                label: c => c.name,
+                match: (c, q) => { const n = c.name.toLowerCase(); return q === '' || n.includes(q) || n.split(/\s+/).some(w => w.startsWith(q)); },
+                insert: c => '@' + c.name + ' '
+            });
+        }
+        if (opts && Array.isArray(opts.entities) && opts.entities.length) {
+            triggers.push({
+                re: /(?:^|[\s(\[])#([\p{L}\p{N}._\\/:-]{0,40})$/u,
+                list: opts.entities,                                  // {id, value, hint}
+                label: c => c.hint ? (c.value + '  ·  ' + c.hint) : c.value,
+                match: (c, q) => q === '' || c.value.toLowerCase().includes(q) || (c.hint || '').toLowerCase().includes(q),
+                insert: c => '[' + String(c.value).replace(/[\[\]\r\n]/g, '') + '](entity:' + c.id + ') '
+            });
+        }
+        return triggers;
+    }
+
+    function attachAutocomplete(mde, triggers) {
+        if (!triggers.length) return;
         const cm = mde.codemirror;
         const wrap = cm.getWrapperElement();
-        let menu = null, items = [], active = -1, range = null;
+        let menu = null, items = [], active = -1, range = null, current = null;
 
-        const close = () => { if (menu) { menu.remove(); menu = null; } items = []; active = -1; range = null; };
+        const close = () => { if (menu) { menu.remove(); menu = null; } items = []; active = -1; range = null; current = null; };
 
         function tokenBeforeCursor() {
             const cur = cm.getCursor();
             const upto = cm.getLine(cur.line).slice(0, cur.ch);
-            // "@" must start a line or follow whitespace / an opening bracket; partial has no spaces.
-            const m = upto.match(/(?:^|[\s(\[])@([\p{L}\p{N}._-]{0,30})$/u);
-            if (!m) return null;
-            const partial = m[1];
-            return { partial, from: { line: cur.line, ch: cur.ch - partial.length - 1 }, to: cur };
+            for (const t of triggers) {
+                const m = upto.match(t.re);
+                if (m) return { t, partial: m[1], from: { line: cur.line, ch: cur.ch - m[1].length - 1 }, to: cur };
+            }
+            return null;
         }
 
-        function highlight() {
-            if (menu) [...menu.children].forEach((el, i) => el.classList.toggle('active', i === active));
-        }
+        function highlight() { if (menu) [...menu.children].forEach((el, i) => el.classList.toggle('active', i === active)); }
 
         function choose(i) {
-            if (range && items[i]) cm.replaceRange('@' + items[i].name + ' ', range.from, range.to);
+            if (range && current && items[i]) cm.replaceRange(current.insert(items[i]), range.from, range.to);
             close();
             cm.focus();
         }
 
         function update() {
-            const t = tokenBeforeCursor();
-            if (!t) return close();
-            const q = t.partial.toLowerCase();
-            const matches = candidates.filter(c => {
-                const n = c.name.toLowerCase();
-                return q === '' || n.includes(q) || n.split(/\s+/).some(w => w.startsWith(q));
-            }).slice(0, 8);
+            const tok = tokenBeforeCursor();
+            if (!tok) return close();
+            const q = tok.partial.toLowerCase();
+            const matches = tok.t.list.filter(c => tok.t.match(c, q)).slice(0, 8);
             if (matches.length === 0) return close();
 
-            range = { from: t.from, to: t.to }; items = matches; active = 0;
+            range = { from: tok.from, to: tok.to }; items = matches; active = 0; current = tok.t;
             if (!menu) { menu = document.createElement('div'); menu.className = 'cm-mention-menu'; document.body.appendChild(menu); }
             menu.innerHTML = '';
             matches.forEach((c, i) => {
                 const el = document.createElement('div');
                 el.className = 'cm-mention-item' + (i === 0 ? ' active' : '');
-                el.textContent = c.name;
+                el.textContent = tok.t.label(c);
                 el.addEventListener('mousedown', ev => { ev.preventDefault(); choose(i); });
                 menu.appendChild(el);
             });
@@ -94,7 +114,9 @@
     }
 
     window.markdownEditor = {
-        init: function (id, initial, candidates) {
+        // opts: { mentions?: [{id,name}], entities?: [{id,value,hint}] } — an array is treated as mentions
+        // for backward compatibility.
+        init: function (id, initial, opts) {
             const el = document.getElementById(id);
             if (!el || typeof EasyMDE === 'undefined') return;
             if (instances[id]) { instances[id].value(initial || ''); return; }
@@ -110,10 +132,9 @@
                 shortcuts: { toggleSideBySide: null, toggleFullScreen: null }
             });
             instances[id] = mde;
-            if (Array.isArray(candidates) && candidates.length) {
-                mde._mentionCandidates = candidates;
-                try { attachMentions(mde, candidates); } catch (e) { /* mentions are an enhancement */ }
-            }
+            if (Array.isArray(opts)) opts = { mentions: opts };
+            if (opts && Array.isArray(opts.mentions)) mde._mentionCandidates = opts.mentions;
+            try { attachAutocomplete(mde, buildTriggers(opts)); } catch (e) { /* autocomplete is an enhancement */ }
         },
         // Ids of the mention candidates whose "@Display Name" token currently appears in the text.
         getMentions: function (id) {

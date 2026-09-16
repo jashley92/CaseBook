@@ -55,6 +55,23 @@ public class MarkdownServiceTests
     }
 
     [Fact]
+    public void Entity_tag_links_render_as_a_non_navigating_chip()
+    {
+        var html = _md.ToHtml("Traced it to [FIN-WKS-07](entity:3f2504e0-4f89-41d3-9a0c-0305e82c3301).");
+
+        html.Should().Contain("class=\"im-entity-tag\"");
+        html.Should().Contain("FIN-WKS-07");
+        html.Should().NotContain("href=\"entity:");   // not an anchor — the scheme never reaches an href
+        html.Should().NotContain("<a ");               // rendered as a <span> chip, not a link
+    }
+
+    [Fact]
+    public void Entity_tag_reduces_to_its_label_in_report_plain_text()
+    {
+        _md.ToPlainText("See [CONTOSO\\jdoe](entity:abc).").Should().Contain("CONTOSO\\jdoe").And.NotContain("entity:");
+    }
+
+    [Fact]
     public void PlainText_strips_formatting_for_reports()
     {
         var text = _md.ToPlainText("# Title\n\n- alpha\n- beta\n\n**strong**");

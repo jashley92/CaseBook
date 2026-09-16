@@ -269,7 +269,7 @@ else
         @* UX-13: extracted to CaseNotesTab. It owns its EasyMDE editors (so the central reconcile no longer
            carries a Notes branch); the parent keeps the flash + the Ctrl+Enter / 'n' hotkeys (dispatched to
            the child via @ref / AutofocusComposer) and reloads the case after a write. *@
-        <CaseNotesTab @ref="_notesTab" CaseId="_case.Id" Notes="_case.Notes" CanEdit="_canEdit"
+        <CaseNotesTab @ref="_notesTab" CaseId="_case.Id" Notes="_case.Notes" Entities="_case.Entities" CanEdit="_canEdit"
                       OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle"
                       AutofocusComposer="_notesAutofocus" OnAutofocusHandled="() => _notesAutofocus = false" />
     }
@@ -277,7 +277,7 @@ else
     {
         @* PROD-04: durable threaded team discussion with @mention notifications. Self-loads its comments;
            available to any case viewer (cross-role collaboration/handoff), so it isn't gated on EditCases. *@
-        <CaseDiscussionTab CaseId="_case.Id" />
+        <CaseDiscussionTab CaseId="_case.Id" Entities="_case.Entities" />
     }
     else if (_activeTab == "Tasks")
     {

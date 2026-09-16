@@ -622,10 +622,21 @@ else
         foreach (var (id, seed) in desired)
         {
             if (_mdEditors.Contains(id)) continue;
-            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed); _mdEditors.Add(id); }
+            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed, new { entities = EntityCandidates }); _mdEditors.Add(id); }
             catch (JSException) { /* editor is a progressive enhancement */ }
         }
     }
+
+    // The case's entities as inline "#" tag candidates ({id, value, hint}) for the Investigation editor.
+    private object[] EntityCandidates =>
+        Case.Entities
+            .Select(e => (object)new
+            {
+                id = e.Id.ToString(),
+                value = string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!,
+                hint = e.Type.ToString()
+            })
+            .ToArray();
 
     /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — submit whichever composer is active.</summary>
     public async Task SubmitAsync()

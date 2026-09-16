@@ -346,6 +346,18 @@ h1:focus {
 .cm-mention-item { padding: .3rem .55rem; border-radius: .25rem; cursor: pointer; font-size: .85rem; white-space: nowrap; }
 .cm-mention-item.active, .cm-mention-item:hover { background: var(--bs-secondary-bg); }
 
+/* Inline entity/IOC tag chip rendered in markdown bodies (notes, investigation timeline, discussion) from
+   an `entity:` reference link (see MarkdownService.EntityTagLinkRenderer). */
+.im-entity-tag {
+    display: inline-flex; align-items: baseline; gap: .28em;
+    padding: 0 .4em; border-radius: .35em;
+    font-size: .88em; font-weight: 600; line-height: 1.4;
+    background: color-mix(in srgb, var(--bs-info) 14%, transparent);
+    color: var(--bs-info-text-emphasis, var(--bs-info)); border: 1px solid color-mix(in srgb, var(--bs-info) 30%, transparent);
+    white-space: nowrap;
+}
+.im-entity-tag .bi { font-size: .82em; opacity: .8; }
+
 /* MITRE ATT&CK technique picker (AttackTechniquePicker) — type-ahead dropdown over the embedded
    v19.1 catalogue. Panel + rows are token-driven so they read in both themes and over a modal. */
 .atk-menu {
