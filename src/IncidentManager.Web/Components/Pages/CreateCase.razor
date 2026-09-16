@@ -136,7 +136,7 @@
         @* Indicators + duplicate / campaign detection (E-23) *@
         <div class="im-card nc-card">
             <label class="form-label">Indicators / IOCs <span class="text-muted">(optional, one per line)</span></label>
-            <textarea class="form-control" rows="3" @bind="_indicators" @bind:event="oninput"
+            <textarea class="form-control" rows="3" @bind="_indicators" @bind:event="oninput" @bind:after="OnIndicatorsChanged"
                       placeholder="One indicator per line, e.g. 1.2.3.4, evil.example.com, hxxp://bad[.]site/x, or a file hash"
                       @onblur="CheckOverlaps"></textarea>
             <div class="form-text">
@@ -186,13 +186,24 @@
             }
         </div>
 
+        @* FR-04: the check ran on Create and surfaced related cases the analyst hadn't seen — pause once so
+           they can relate one above, then Create again to file (or file as-is). *@
+        @if (_overlapPrompt)
+        {
+            <div class="alert alert-warning mb-0">
+                <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
+                Open case(s) already reference these indicators (see above). Relate one to avoid fragmenting a
+                campaign, then click <strong>Create case</strong> again — or click again to file as a separate matter.
+            </div>
+        }
+
         @if (_error is not null)
         {
             <div class="alert alert-danger mb-0">@_error</div>
         }
 
         <div class="nc-actions">
-            <button type="submit" class="btn btn-primary" disabled="@_saving">Create case</button>
+            <button type="submit" class="btn btn-primary" disabled="@(_saving || _checking)">Create case</button>
             <a class="btn btn-outline-secondary" href="cases">Cancel</a>
         </div>
     </div>
@@ -217,6 +228,9 @@
     private bool _checking;
     private string? _checkedInput; // the indicator text last checked — so "no matches" feedback clears once it's edited
     private readonly Dictionary<Guid, CaseLinkType?> _linkChoice = new();
+    // FR-04: set when Create ran the overlap check itself and found matches the analyst hadn't seen — the first
+    // Create pauses on it so the check can't be skipped; a second Create then files.
+    private bool _overlapPrompt;
 
     private static IEnumerable<string> IndicatorLines(string? raw) =>
         (raw ?? "").Replace("\r", "").Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0);
@@ -228,8 +242,12 @@
     private void SetLink(Guid caseId, string? raw)
         => _linkChoice[caseId] = Enum.TryParse<CaseLinkType>(raw, out var t) ? t : (CaseLinkType?)null;
 
+    // FR-04: any edit or re-check clears the "paused for review" state so a stale prompt never lingers.
+    private void OnIndicatorsChanged() => _overlapPrompt = false;
+
     private async Task CheckOverlaps()
     {
+        _overlapPrompt = false;
         var lines = IndicatorLines(_indicators).ToList();
         _checkedInput = _indicators;
         if (lines.Count == 0) { _matches = new(); return; }
@@ -320,8 +338,25 @@
 
     private async Task Submit()
     {
-        _saving = true;
         _error = null;
+
+        // FR-04: the duplicate/campaign check must not be skippable. If indicators were entered but the check
+        // is stale (typed then clicked Create without ever blurring / checking), run it now; if it surfaces
+        // open cases sharing these indicators for the first time, pause once so the analyst can relate one —
+        // then a second Create files. Filing is never blocked; this only guarantees the check is seen.
+        var lines = IndicatorLines(_indicators).ToList();
+        if (lines.Count > 0 && _checkedInput != _indicators)
+        {
+            await CheckOverlaps();
+            if (_matches.Count > 0)
+            {
+                _overlapPrompt = true;
+                return;
+            }
+        }
+
+        _saving = true;
+        _overlapPrompt = false;
         try
         {
             // FR-03: fold the intake timestamps (entered as wall-clock) into the request as UTC.
