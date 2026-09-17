@@ -112,14 +112,18 @@ else
                             <button class="dropdown-item" @onclick='() => OpenModal("severity")'>Change severity…</button>
                             <button class="dropdown-item" @onclick='() => OpenModal("status")'>Change status…</button>
                             <button class="dropdown-item" @onclick='() => OpenModal("legal")'>Refer to Legal / Privacy…</button>
-                        }
-                        @if (_canManageLegal)
-                        {
-                            <button class="dropdown-item" @onclick="() => SetLegalHold(!_case.LegalHold)">@(_case.LegalHold ? "Release legal hold" : "Place legal hold")</button>
+                            @* FR-07: the materiality determination gates closing an Incident/Breach, and the
+                               analyst who owns the case's timeline/data is the one who records it — so it needs
+                               EditCases, not ManageLegal (which only Legal/Privacy hold, and Legal doesn't use the
+                               app). The determination stays hash-chained/audited, so who made the call is on record. *@
                             @if (_case.Classification is Classification.Incident or Classification.Breach)
                             {
                                 <button class="dropdown-item" @onclick='() => OpenModal("materiality")'>Record materiality determination…</button>
                             }
+                        }
+                        @if (_canManageLegal)
+                        {
+                            <button class="dropdown-item" @onclick="() => SetLegalHold(!_case.LegalHold)">@(_case.LegalHold ? "Release legal hold" : "Place legal hold")</button>
                         }
                         @if (_canAdmin)
                         {
@@ -380,7 +384,7 @@ else
                         }
                         else if (_activeModal == "materiality")
                         {
-                            <p class="small text-muted mb-2">This determination is made by Legal / Privacy or a disclosure committee — <strong>not the SOC</strong>. Record their decision for the case file; a final call requires the decision-maker, the date, and a rationale. A case can't close with this left open (Incidents &amp; Breaches).</p>
+                            <p class="small text-muted mb-2">Record the materiality decision for the case file. It may be the SOC's own call or one made by Legal / Privacy or a disclosure committee — capture <strong>who</strong> decided in the decision-maker field either way. A final call requires the decision-maker, the date, and a rationale. A case can't close with this left open (Incidents &amp; Breaches).</p>
                             <label class="form-label small">Determination</label>
                             <select class="form-select mb-2" @bind="_materialityStatus">
                                 <option value="@MaterialityStatus.UnderReview">Under review (with Legal / committee)</option>
@@ -480,7 +484,8 @@ else
     private CaseAssignmentRole _assignRole = CaseAssignmentRole.Analyst;
     private string? _legalContact;
     private string? _legalNote;
-    // Materiality determination (PROD-18) — a Legal/committee decision the SOC only records.
+    // Materiality determination (PROD-18). Recorded by any case editor (FR-07); the decision itself may be
+    // the SOC's or an external Legal/committee call, captured in the decision-maker field either way.
     private MaterialityStatus _materialityStatus = MaterialityStatus.UnderReview;
     private string? _materialityDecisionMaker;
     private DateTime? _materialityDecidedOn;

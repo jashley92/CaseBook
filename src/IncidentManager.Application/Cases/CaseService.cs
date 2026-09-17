@@ -485,8 +485,8 @@ public sealed class CaseService
     }
 
     /// <summary>
-    /// Records the materiality determination on a case (PROD-18). This is a Legal/committee decision the SOC
-    /// only transcribes, so <paramref name="decisionMaker"/> (the external authority) and
+    /// Records the materiality determination on a case (PROD-18). The decision may be the SOC's own or an
+    /// external Legal/committee call, so <paramref name="decisionMaker"/> (the deciding authority) and
     /// <paramref name="decidedOnUtc"/> are captured distinctly from the recording user + timestamp. Allowed
     /// only on Incidents/Breaches; a final call requires decision-maker, date and rationale.
     /// </summary>
