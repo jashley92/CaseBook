@@ -840,6 +840,27 @@ public class Case : AuditableEntity, IHashableEntity
         ModifiedAtUtc = nowUtc;
     }
 
+    // --- Optimistic-concurrency stamps (FR-06) --------------------------------------------------
+    // A stable signature of just the fields a single editor governs, so a save can detect that another
+    // author changed those same fields since the editor was opened and refuse to silently overwrite them.
+    // Scoped per editor (not the whole row's ModifiedAtUtc) so an unrelated change — a severity edit, a new
+    // assignment — never false-conflicts with a details edit. Unit separator (U+001F) can't occur in the text.
+    private const char StampSep = '';
+
+    /// <summary>Signature of the "Details" editor's fields (title, summary, detection id, data types,
+    /// impacted assets, and the two intake timestamps). See <see cref="UpdateDetails"/>.</summary>
+    public string DetailsConcurrencyStamp() => string.Join(StampSep,
+        Title, Summary, DetectionCaseId, DataTypesInvolved, ImpactedAssets,
+        DetectedAtUtc?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? "",
+        OccurredAtUtc?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? "");
+
+    /// <summary>Signature of the structured "Impact assessment" editor's fields (affected count, the
+    /// data-element key set, and jurisdictions). See <see cref="SetImpactAssessment"/>.</summary>
+    public string ImpactConcurrencyStamp() => string.Join(StampSep,
+        AffectedIndividualsCount?.ToString(CultureInfo.InvariantCulture) ?? "",
+        string.Join(',', DataElements.Select(d => d.ElementKey).OrderBy(k => k, StringComparer.Ordinal)),
+        AffectedStates);
+
     public string BuildCanonicalContent() => string.Join('|',
         CaseNumber, Title, Classification is { } cls ? ((int)cls).ToString(CultureInfo.InvariantCulture) : "", (int)Phase, (int)Severity, (int)Origin,
         Summary, ImpactedAssets, DataTypesInvolved, DetectionCaseId,

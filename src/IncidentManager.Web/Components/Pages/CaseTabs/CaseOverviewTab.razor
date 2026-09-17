@@ -181,6 +181,10 @@
                         <label class="form-label small mb-0">Affected jurisdictions (state codes, comma-separated)</label>
                         <input class="form-control form-control-sm" placeholder="e.g. NY, NJ, CT" @bind="_impStates" />
                     </div>
+                    @if (_impactError is { } ierr)
+                    {
+                        <div class="alert alert-warning py-1 px-2 small mb-2">@ierr</div>
+                    }
                     <button class="btn btn-sm btn-primary" @onclick="SaveImpact">Save</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => _editingImpact = false">Cancel</button>
                 }
@@ -544,12 +548,15 @@
     private DateTime? _edDetected;
     private DateTime? _edOccurred;
     private string? _detailsError;
+    private string? _detailsBaseline; // FR-06: field signature captured when the editor opened
 
     // Structured impact assessment (E-12)
     private bool _editingImpact;
     private int? _impCount;
     private HashSet<string> _impElementKeys = new(StringComparer.Ordinal);
     private string? _impStates;
+    private string? _impactError;
+    private string? _impactBaseline; // FR-06: field signature captured when the editor opened
     private IReadOnlyList<DataElement> _dataElements = Array.Empty<DataElement>();
     private IReadOnlyDictionary<string, string> _dataElementLabels = new Dictionary<string, string>();
 
@@ -732,6 +739,7 @@
         _edDetected = Case.DetectedAtUtc is { } d ? UtcToWall(d) : null;
         _edOccurred = Case.OccurredAtUtc is { } o ? UtcToWall(o) : null;
         _detailsError = null;
+        _detailsBaseline = Case.DetailsConcurrencyStamp(); // FR-06: baseline for the optimistic-concurrency check
         _editingDetails = true;
     }
 
@@ -743,7 +751,14 @@
         try
         {
             await Cases.UpdateDetailsAsync(CaseId, _edTitle, _edSummary, _edDetection, _edDataTypes, _edImpacted,
-                WallToUtc(_edDetected.Value), _edOccurred is { } occ ? WallToUtc(occ) : null);
+                WallToUtc(_edDetected.Value), _edOccurred is { } occ ? WallToUtc(occ) : null, _detailsBaseline);
+        }
+        catch (StaleEditException ex) // FR-06: another author changed these fields while we were editing
+        {
+            _detailsBaseline = ex.CurrentStamp; // re-baseline so a deliberate re-Save overwrites
+            _detailsError = "Another author saved changes to these details while you were editing. Your text is unsaved — review the current values, then Save again to overwrite, or Cancel to discard yours.";
+            await OnChanged.InvokeAsync(); // refresh the rest of the workspace to the newer values
+            return;
         }
         catch (ArgumentException ex) // domain validation (future detection / activity after detection)
         {
@@ -787,6 +802,8 @@
         _impStates = string.IsNullOrWhiteSpace(Case.AffectedStates)
             ? (Config["Organization:DefaultJurisdictions"] is { Length: > 0 } d ? d : null)
             : Case.AffectedStates;
+        _impactError = null;
+        _impactBaseline = Case.ImpactConcurrencyStamp(); // FR-06: baseline for the optimistic-concurrency check
         _editingImpact = true;
     }
 
@@ -797,8 +814,19 @@
 
     private async Task SaveImpact()
     {
-        await Cases.UpdateImpactAssessmentAsync(CaseId, _impCount, _impElementKeys, _impStates);
+        try
+        {
+            await Cases.UpdateImpactAssessmentAsync(CaseId, _impCount, _impElementKeys, _impStates, _impactBaseline);
+        }
+        catch (StaleEditException ex) // FR-06: another author changed the impact assessment while we were editing
+        {
+            _impactBaseline = ex.CurrentStamp;
+            _impactError = "Another author saved a different impact assessment while you were editing. Your entries are unsaved — review the current values, then Save again to overwrite, or Cancel to discard yours.";
+            await OnChanged.InvokeAsync();
+            return;
+        }
         _editingImpact = false;
+        _impactError = null;
         await OnChanged.InvokeAsync();
         Toasts.Success("Impact assessment saved");
     }

@@ -510,10 +510,15 @@ public sealed class CaseService
 
     public async Task UpdateDetailsAsync(Guid id, string title, string? summary, string? detectionCaseId,
         string? dataTypesInvolved, string? impactedAssets, DateTimeOffset detectedAtUtc, DateTimeOffset? occurredAtUtc,
-        CancellationToken ct = default)
+        string? expectedStamp = null, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        // FR-06: expected-value optimistic-concurrency. If the details fields changed since the editor was
+        // opened, refuse rather than silently clobbering the other author's edit (last-write-wins).
+        if (expectedStamp is not null && c.DetailsConcurrencyStamp() != expectedStamp)
+            throw new StaleEditException(c.DetailsConcurrencyStamp(),
+                "Another author changed these details while you were editing.");
         c.UpdateDetails(title, summary, detectionCaseId, dataTypesInvolved, impactedAssets,
             detectedAtUtc, occurredAtUtc, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
@@ -522,10 +527,15 @@ public sealed class CaseService
     /// <summary>Records the structured impact assessment (affected count, data-element taxonomy, jurisdictions). E-12.
     /// Data elements are supplied as stable <c>DataElement.Key</c>s (X-03).</summary>
     public async Task UpdateImpactAssessmentAsync(Guid id, int? affectedIndividualsCount,
-        IEnumerable<string> dataElementKeys, string? affectedStates, CancellationToken ct = default)
+        IEnumerable<string> dataElementKeys, string? affectedStates, string? expectedStamp = null,
+        CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        // FR-06: expected-value optimistic-concurrency, as on the details editor.
+        if (expectedStamp is not null && c.ImpactConcurrencyStamp() != expectedStamp)
+            throw new StaleEditException(c.ImpactConcurrencyStamp(),
+                "Another author changed the impact assessment while you were editing.");
         c.SetImpactAssessment(affectedIndividualsCount, dataElementKeys, affectedStates, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
