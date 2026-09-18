@@ -165,31 +165,42 @@
             <label class="form-check-label small" for="closed">Include closed</label>
         </div>
     </div>
+    @* FR-16: the four status roll-up toggles collapse behind "More filters" to cut the density; they auto-
+       reveal whenever one is active so a set filter is never hidden (and each also shows as a chip below). *@
+    @{ var showAdvanced = _showMoreFilters || _overdueOnly || _slaAtRiskOnly || _referredOnly || _onHoldOnly; }
     <div class="col-auto">
-        <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="overdue" @bind="_overdueOnly" @bind:after="ApplyFilters" />
-            <label class="form-check-label small" for="overdue">Overdue only</label>
-        </div>
+        <button type="button" class="btn btn-sm btn-link p-0" @onclick="() => _showMoreFilters = !_showMoreFilters">
+            <span class="bi @(showAdvanced ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span> More filters
+        </button>
     </div>
-    <div class="col-auto">
-        <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="sla" @bind="_slaAtRiskOnly" @bind:after="ApplyFilters" />
-            <label class="form-check-label small" for="sla" title="Open cases approaching or past their response-time target">SLA at risk</label>
+    @if (showAdvanced)
+    {
+        <div class="col-auto">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="overdue" @bind="_overdueOnly" @bind:after="ApplyFilters" />
+                <label class="form-check-label small" for="overdue">Overdue only</label>
+            </div>
         </div>
-    </div>
-    @* UX-10: SOC/IC roll-up of Legal obligations across the queue — Legal reads the reports, not the app. *@
-    <div class="col-auto">
-        <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="referred" @bind="_referredOnly" @bind:after="ApplyFilters" />
-            <label class="form-check-label small" for="referred" title="Cases referred to Legal / Privacy">Referred to Legal</label>
+        <div class="col-auto">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="sla" @bind="_slaAtRiskOnly" @bind:after="ApplyFilters" />
+                <label class="form-check-label small" for="sla" title="Open cases approaching or past their response-time target">SLA at risk</label>
+            </div>
         </div>
-    </div>
-    <div class="col-auto">
-        <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="hold" @bind="_onHoldOnly" @bind:after="ApplyFilters" />
-            <label class="form-check-label small" for="hold" title="Cases under a legal hold (preserve — do not delete)">On legal hold</label>
+        @* UX-10: SOC/IC roll-up of Legal obligations across the queue — Legal reads the reports, not the app. *@
+        <div class="col-auto">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="referred" @bind="_referredOnly" @bind:after="ApplyFilters" />
+                <label class="form-check-label small" for="referred" title="Cases referred to Legal / Privacy">Referred to Legal</label>
+            </div>
         </div>
-    </div>
+        <div class="col-auto">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="hold" @bind="_onHoldOnly" @bind:after="ApplyFilters" />
+                <label class="form-check-label small" for="hold" title="Cases under a legal hold (preserve — do not delete)">On legal hold</label>
+            </div>
+        </div>
+    }
     @if (_hasActiveFilter)
     {
         <div class="col-auto">
@@ -197,6 +208,26 @@
         </div>
     }
 </div>
+
+@* FR-16: removable active-filter chips, so it's obvious what's applied and a zero-row result can be
+   unwound one filter at a time instead of reasoning backward about which of ten filters killed it. *@
+@{ var chips = ActiveFilterChips().ToList(); }
+@if (chips.Count > 0)
+{
+    <div class="im-chips mb-3">
+        @foreach (var chip in chips)
+        {
+            <span class="im-chip" title="Remove this filter">
+                <span class="im-chip-name">@chip.Label</span>
+                <button type="button" class="im-chip-x" aria-label="Remove filter: @chip.Label" @onclick="() => RemoveFilter(chip.Clear)">×</button>
+            </span>
+        }
+        @if (chips.Count > 1)
+        {
+            <button type="button" class="btn btn-sm btn-link p-0 ms-1 align-baseline" @onclick="ClearFilters">Clear all</button>
+        }
+    </div>
+}
 
 @if (_assignee is not null)
 {
@@ -405,6 +436,9 @@ else
         && string.IsNullOrEmpty(_search) && !_includeClosed && !_overdueOnly && !_slaAtRiskOnly
         && !_referredOnly && !_onHoldOnly && _openedLabel is null && _assignee is null);
 
+    // FR-16: whether the collapsed "More filters" (status roll-up toggles) group is expanded.
+    private bool _showMoreFilters;
+
     // PROD-09: the user's own + shared views, and the inline "save view" form state.
     private List<SavedViewItem>? _views;
     private bool _savingView;
@@ -505,6 +539,31 @@ else
     }
 
     private void ClearFilters() => Nav.NavigateTo(_onlyMine ? "cases?scope=mine" : "cases");
+
+    // FR-16: the active filters as removable chips (label + a one-field clear). Excludes the assignee /
+    // opened-month drill-ins, which already have their own context badges below.
+    private IEnumerable<(string Label, Action Clear)> ActiveFilterChips()
+    {
+        if (Enum.TryParse<Classification>(_classification, out var c))
+            yield return ($"Classification: {Ui.Label(c)}", () => _classification = "");
+        if (Enum.TryParse<CasePhase>(_phase, out var p))
+            yield return ($"Phase: {Ui.Label(p)}", () => _phase = "");
+        if (Enum.TryParse<Severity>(_minSeverity, out var sev))
+            yield return ($"Severity ≥ {SevLabels.For(sev)}", () => _minSeverity = "");
+        if (_origin == nameof(CaseOrigin.InternalDetection))
+            yield return ("Origin: Internal", () => _origin = "");
+        else if (_origin == nameof(CaseOrigin.ThirdParty))
+            yield return ("Origin: Third-party", () => _origin = "");
+        if (!string.IsNullOrWhiteSpace(_search))
+            yield return ($"Search: “{_search}”", () => _search = "");
+        if (_includeClosed) yield return ("Including closed", () => _includeClosed = false);
+        if (_overdueOnly) yield return ("Overdue only", () => _overdueOnly = false);
+        if (_slaAtRiskOnly) yield return ("SLA at risk", () => _slaAtRiskOnly = false);
+        if (_referredOnly) yield return ("Referred to Legal", () => _referredOnly = false);
+        if (_onHoldOnly) yield return ("On legal hold", () => _onHoldOnly = false);
+    }
+
+    private void RemoveFilter(Action clear) { clear(); ApplyFilters(); }
 
     // --- PROD-09: saved / shared views ---------------------------------------
     private async Task ReloadViews() => _views = await Views.ListAsync();
