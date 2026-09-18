@@ -27,7 +27,7 @@ public sealed class CaseLinkTests : IDisposable
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
-        _user.RoleSet = [AppRole.Manager]; // sees all cases unless a test overrides
+        _user.RoleSet = [AppRole.SysAdmin]; // sees all + may edit (F-21); tests override to a lesser role for scoping
     }
 
     private AppDbContext NewContext()

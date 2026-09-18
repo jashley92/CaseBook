@@ -71,7 +71,7 @@ public sealed class IocFeedTests : IDisposable
     [Fact]
     public async Task Feed_carries_only_confirmed_malicious_ioc_like_indicators()
     {
-        _user.RoleSet = [AppRole.Manager]; // sees all cases
+        _user.RoleSet = [AppRole.SysAdmin]; // sees all cases + may edit (F-21: intake/entities assert EditCases)
         await using var db = NewContext();
         var svc = NewService(db);
         var c = await svc.CreateAsync(Req("Alpha"));
@@ -91,7 +91,7 @@ public sealed class IocFeedTests : IDisposable
     [Fact]
     public async Task Same_indicator_on_two_cases_is_deduped_with_span_and_source_cases()
     {
-        _user.RoleSet = [AppRole.Manager];
+        _user.RoleSet = [AppRole.SysAdmin]; // sees all cases + may edit (F-21: intake/entities assert EditCases)
         Guid alpha, beta;
         await using (var db = NewContext())
         {

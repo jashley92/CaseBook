@@ -1,6 +1,8 @@
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using FluentValidation;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Application.StageGates;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -66,6 +68,24 @@ public sealed class CaseService
 
     /// <summary>Applies need-to-know scoping to a case query for the current user.</summary>
     private IQueryable<Case> Scoped(IQueryable<Case> query) => query.ForUser(_user);
+
+    /// <summary>
+    /// F-21: the write-authorization backstop. Every mutating use case calls this on entry; the caller's
+    /// method name (via <see cref="CallerMemberNameAttribute"/>) is looked up in the single reviewed
+    /// <see cref="CaseActionPermissions.Required"/> table and the caller's held permissions are checked.
+    /// Fails <b>closed</b>: a mutation with no table entry throws, so a newly added write can never ship
+    /// unguarded. This runs behind the Blazor UI gates — defense-in-depth, and the guarantee any future
+    /// non-UI caller inherits for free. Reads never call it (they carry no entry); their access is
+    /// governed by need-to-know data scoping in the query layer instead.
+    /// </summary>
+    private void Require([CallerMemberName] string action = "")
+    {
+        if (!CaseActionPermissions.Required.TryGetValue(action, out var permission))
+            throw new InvalidOperationException(
+                $"No case-action permission is defined for '{action}'. Add it to {nameof(CaseActionPermissions)}.");
+        if (!_user.Has(permission))
+            throw new ForbiddenException(permission, action);
+    }
 
     /// <summary>
     /// Whether the current user may view the case with this number, honouring need-to-know scoping.
@@ -245,6 +265,7 @@ public sealed class CaseService
 
     public async Task<Case> CreateAsync(CreateCaseRequest request, CancellationToken ct = default)
     {
+        Require();
         await _createValidator.ValidateAndThrowAsync(request, ct);
 
         var now = _clock.UtcNow;
@@ -331,6 +352,7 @@ public sealed class CaseService
     /// </summary>
     public async Task RenumberAsync(Guid id, string newNumber, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
 
@@ -370,6 +392,7 @@ public sealed class CaseService
         IReadOnlySet<Guid>? attestedRequirementIds = null, string? overrideJustification = null,
         CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         var from = c.Classification;
@@ -405,6 +428,7 @@ public sealed class CaseService
         IReadOnlySet<Guid>? attestedRequirementIds = null, string? overrideJustification = null,
         CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
 
@@ -421,6 +445,7 @@ public sealed class CaseService
     /// </summary>
     public async Task ReopenAsync(Guid id, string reason, CancellationToken ct = default)
     {
+        Require();
         if (string.IsNullOrWhiteSpace(reason))
             throw new ArgumentException("A reason is required to reopen a case.", nameof(reason));
 
@@ -476,6 +501,7 @@ public sealed class CaseService
 
     public async Task ReferToLegalAsync(Guid id, string? contact, string? relevanceNote, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.ReferToLegal(_user.UserId, contact, relevanceNote, _clock.UtcNow);
@@ -486,6 +512,7 @@ public sealed class CaseService
     /// per-jurisdiction deadline countdown. Backdatable but not future / pre-detection (enforced in the domain).</summary>
     public async Task MarkReportedAsync(Guid id, DateTimeOffset reportedAtUtc, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.MarkReported(reportedAtUtc, _user.UserId, _clock.UtcNow);
@@ -495,6 +522,7 @@ public sealed class CaseService
     /// <summary>Clears the reported milestone (a mis-entry), reopening the notification countdown.</summary>
     public async Task ClearReportedAsync(Guid id, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.ClearReported(_user.UserId, _clock.UtcNow);
@@ -510,6 +538,7 @@ public sealed class CaseService
     public async Task RecordMaterialityAsync(Guid id, MaterialityStatus status, string? decisionMaker,
         DateTimeOffset? decidedOnUtc, string? rationale, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.RecordMateriality(status, decisionMaker, decidedOnUtc, rationale, _user.UserId, _clock.UtcNow);
@@ -519,6 +548,7 @@ public sealed class CaseService
     public async Task ChangeSeverityAsync(Guid id, Domain.Enums.Severity severity, string? reason = null,
         CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.ChangeSeverity(severity, reason, _user.UserId, _clock.UtcNow);
@@ -529,6 +559,7 @@ public sealed class CaseService
         string? dataTypesInvolved, string? impactedAssets, DateTimeOffset detectedAtUtc, DateTimeOffset? occurredAtUtc,
         string? expectedStamp = null, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         // FR-06: expected-value optimistic-concurrency. If the details fields changed since the editor was
@@ -547,6 +578,7 @@ public sealed class CaseService
         IEnumerable<string> dataElementKeys, string? affectedStates, string? expectedStamp = null,
         CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         // FR-06: expected-value optimistic-concurrency, as on the details editor.
@@ -560,6 +592,7 @@ public sealed class CaseService
     public async Task AssignAsync(Guid id, string userId, string displayName, CaseAssignmentRole role,
         CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.Assign(userId, displayName, role, _user.UserId, _clock.UtcNow);
@@ -571,6 +604,7 @@ public sealed class CaseService
 
     public async Task UnassignAsync(Guid id, string userId, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.Unassign(userId, _user.UserId, _clock.UtcNow);
@@ -581,6 +615,7 @@ public sealed class CaseService
         DateTimeOffset occurredAtUtc, string description, string? source, Guid? evidenceId = null,
         CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.TimelineEntries.Add(new TimelineEntry
@@ -599,6 +634,7 @@ public sealed class CaseService
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
         Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.AddEventStep(occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, description, source,
@@ -615,6 +651,7 @@ public sealed class CaseService
         string description, string? source, string? reason = null,
         TimelineEntryType type = TimelineEntryType.Other, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.EditEventStep(entryId, occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, description,
@@ -631,6 +668,7 @@ public sealed class CaseService
         DateTimeOffset occurredAtUtc, string description, string? source, string? reason = null,
         CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.EditInvestigationEntry(entryId, type, occurredAtUtc, description, source, _user.UserId, _clock.UtcNow);
@@ -717,6 +755,7 @@ public sealed class CaseService
     public async Task<Guid> AddEntityAsync(Guid id, EntityType type, string value, string? label,
         EntityDisposition disposition, string? description, string? source, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         var entity = c.AddEntity(type, value, label, disposition, description, source, _user.UserId, _clock.UtcNow);
@@ -732,6 +771,7 @@ public sealed class CaseService
         EntityDisposition disposition, string? description, string? source, string? reason = null,
         CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.EditEntity(entityId, type, value, label, disposition, description, source, _user.UserId, _clock.UtcNow);
@@ -741,6 +781,7 @@ public sealed class CaseService
 
     public async Task RemoveEntityAsync(Guid id, Guid entityId, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.RemoveEntity(entityId, _user.UserId, _clock.UtcNow);
@@ -750,6 +791,7 @@ public sealed class CaseService
     public async Task LinkEntitiesAsync(Guid id, Guid sourceEntityId, Guid targetEntityId,
         EntityRelationshipType type, string? description, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.LinkEntities(sourceEntityId, targetEntityId, type, description, _user.UserId, _clock.UtcNow);
@@ -758,6 +800,7 @@ public sealed class CaseService
 
     public async Task UnlinkAsync(Guid id, Guid relationshipId, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.Unlink(relationshipId, _user.UserId, _clock.UtcNow);
@@ -774,6 +817,7 @@ public sealed class CaseService
     public async Task<Guid?> LinkCaseAsync(Guid caseId, Guid relatedCaseId, CaseLinkType type,
         string? description, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         if (caseId == relatedCaseId) throw new ArgumentException("A case cannot be linked to itself.");
 
@@ -807,6 +851,7 @@ public sealed class CaseService
     /// <summary>Removes a case link. No-op unless the link touches <paramref name="caseId"/> and the caller can see it.</summary>
     public async Task RemoveCaseLinkAsync(Guid caseId, Guid linkId, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var link = await db.CaseLinks.FirstOrDefaultAsync(l => l.Id == linkId, ct);
         if (link is null || (link.CaseId != caseId && link.RelatedCaseId != caseId)) return;
@@ -878,6 +923,7 @@ public sealed class CaseService
     public async Task<Guid> AddTechniqueAsync(Guid id, string techniqueId, string name, MitreTactic tactic,
         CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         var technique = c.AddTechnique(techniqueId, name, tactic, _user.UserId, _clock.UtcNow);
@@ -887,6 +933,7 @@ public sealed class CaseService
 
     public async Task RemoveTechniqueAsync(Guid id, Guid techniqueId, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.RemoveTechnique(techniqueId, _user.UserId, _clock.UtcNow);
@@ -899,6 +946,7 @@ public sealed class CaseService
     /// </summary>
     public async Task SaveGraphLayoutAsync(Guid caseId, IReadOnlyList<EntityPosition> positions, CancellationToken ct = default)
     {
+        Require();
         if (positions.Count == 0) return;
 
         using var db = _factory.CreateDbContext();
@@ -924,6 +972,7 @@ public sealed class CaseService
 
     public async Task AddNoteAsync(Guid id, string body, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.Notes.Add(new AnalystNote
@@ -936,6 +985,7 @@ public sealed class CaseService
     /// <summary>Edits a note, superseding the current version with a new one (no destructive overwrite).</summary>
     public async Task EditNoteAsync(Guid id, Guid noteId, string newBody, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.EditNote(noteId, newBody, _user.UserId, _clock.UtcNow);
@@ -945,6 +995,7 @@ public sealed class CaseService
     /// <summary>Places or releases a legal hold on the case (blocks archival while held).</summary>
     public async Task SetLegalHoldAsync(Guid id, bool held, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         if (held) c.PlaceLegalHold(_user.UserId, _clock.UtcNow);
@@ -959,6 +1010,7 @@ public sealed class CaseService
     /// </summary>
     public async Task SetReportProfileAsync(Guid id, Guid? profileId, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.SetReportProfile(profileId, _user.UserId, _clock.UtcNow);
@@ -968,6 +1020,7 @@ public sealed class CaseService
     /// <summary>Archives or restores the case. Archiving is refused while a legal hold is in force.</summary>
     public async Task SetArchivedAsync(Guid id, bool archived, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         if (archived) c.Archive(_user.UserId, _clock.UtcNow);
@@ -978,6 +1031,7 @@ public sealed class CaseService
     public async Task AddActionItemAsync(Guid id, string title, string? owner, DateTimeOffset? dueAtUtc,
         CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.ActionItems.Add(new ActionItem
@@ -1000,6 +1054,7 @@ public sealed class CaseService
     public async Task<int> ApplyTemplateAsync(Guid caseId, Guid templateId, IReadOnlyCollection<Guid>? stepIds = null,
         string? defaultOwner = null, CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
 
         // Scope the case so a caller can't seed items onto a case they can't see.
@@ -1051,6 +1106,7 @@ public sealed class CaseService
     public async Task SetActionItemStatusAsync(Guid caseId, Guid actionItemId, ActionItemStatus status,
         CancellationToken ct = default)
     {
+        Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, caseId, ct);
         var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)

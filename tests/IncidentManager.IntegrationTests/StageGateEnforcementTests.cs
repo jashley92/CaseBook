@@ -29,7 +29,7 @@ public sealed class StageGateEnforcementTests : IDisposable
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
-        _user.RoleSet = [AppRole.Manager];
+        _user.RoleSet = [AppRole.SysAdmin]; // sees all + may edit/reclassify (F-21: reclassify asserts ChangeClassification)
     }
 
     private AppDbContext NewContext()

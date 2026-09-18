@@ -23,7 +23,7 @@ public sealed class ImpactAssessmentPersistenceTests : IDisposable
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
-        _user.RoleSet = [AppRole.Manager];
+        _user.RoleSet = [AppRole.SysAdmin]; // sees all + may edit (F-21: impact assessment asserts EditCases)
     }
 
     private AppDbContext NewContext()

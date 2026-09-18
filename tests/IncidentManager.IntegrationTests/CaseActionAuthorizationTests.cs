@@ -1,0 +1,135 @@
+using FluentAssertions;
+using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
+using IncidentManager.Application.Security;
+using IncidentManager.Domain.Enums;
+using IncidentManager.Infrastructure.Persistence;
+using IncidentManager.Infrastructure.Persistence.Interceptors;
+using IncidentManager.Infrastructure.Realtime;
+using IncidentManager.Infrastructure.Security;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Xunit;
+
+namespace IncidentManager.IntegrationTests;
+
+/// <summary>
+/// F-21: the write-authorization backstop asserted inside <see cref="CaseService"/> mutations. Behind the
+/// Blazor UI gates, but the guarantee any future non-UI caller inherits: a user who can see a case may still
+/// only perform actions their permissions allow. Data scoping (who can see a case) is covered elsewhere;
+/// this is about who can <em>write</em>. The acting role is flipped between calls — the service reads the
+/// live permission set — so one case can be created by an editor and then probed by a lesser role.
+/// </summary>
+public sealed class CaseActionAuthorizationTests : IDisposable
+{
+    private readonly SqliteConnection _connection;
+    private readonly HashChainService _hasher = new();
+    private readonly FixedClock _clock = new(new DateTimeOffset(2026, 8, 8, 0, 0, 0, TimeSpan.Zero));
+    private readonly TestCurrentUser _user = new();
+
+    public CaseActionAuthorizationTests()
+    {
+        _connection = new SqliteConnection("Data Source=:memory:");
+        _connection.Open();
+    }
+
+    private AppDbContext NewContext()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
+            .Options;
+        var db = new AppDbContext(options);
+        db.Database.EnsureCreated();
+        return db;
+    }
+
+    private IAppDbContextFactory NewFactory() =>
+        new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
+            .Options);
+
+    private CaseService NewService(AppDbContext db) =>
+        new(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+
+    private sealed class NoOpCaseNotifications : ICaseNotifications
+    {
+        public Task OnAssignedAsync(IncidentManager.Domain.Entities.Case c, string assigneeUserId, string assigneeDisplayName, CaseAssignmentRole role, string assignedByUserId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnActionItemsOverdueAsync(System.Collections.Generic.IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnActionItemsDueSoonAsync(System.Collections.Generic.IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnReclassifiedAsync(IncidentManager.Domain.Entities.Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    private async Task<Guid> CreateIncidentAsync(CaseService svc)
+    {
+        var c = await svc.CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "Authz", Title = "Authz case",
+            Classification = Classification.Incident, Severity = Severity.Medium,
+            Origin = CaseOrigin.InternalDetection
+        });
+        return c.Id;
+    }
+
+    [Fact]
+    public async Task An_editor_can_create_and_note_but_not_reclassify_hold_or_archive()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        _user.RoleSet = [AppRole.Analyst]; // ViewCases + EditCases only
+
+        // EditCases actions succeed.
+        var id = await CreateIncidentAsync(svc);
+        await svc.AddNoteAsync(id, "An analyst note.");
+
+        // ChangeClassification is not held → refused.
+        var reclassify = () => svc.ReclassifyAsync(id, Classification.Breach, "NPI confirmed");
+        (await reclassify.Should().ThrowAsync<ForbiddenException>())
+            .Which.Required.Should().Be(Permission.ChangeClassification);
+
+        // ManageLegal is not held → legal hold refused.
+        var hold = () => svc.SetLegalHoldAsync(id, held: true);
+        (await hold.Should().ThrowAsync<ForbiddenException>())
+            .Which.Required.Should().Be(Permission.ManageLegal);
+
+        // Administer is not held → archive refused.
+        var archive = () => svc.SetArchivedAsync(id, archived: true);
+        (await archive.Should().ThrowAsync<ForbiddenException>())
+            .Which.Required.Should().Be(Permission.Administer);
+    }
+
+    [Fact]
+    public async Task A_viewer_without_edit_cannot_create_a_case()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        _user.RoleSet = [AppRole.Manager]; // ViewCases + ViewAllCases, no EditCases
+
+        var create = () => CreateIncidentAsync(svc);
+        (await create.Should().ThrowAsync<ForbiddenException>())
+            .Which.Required.Should().Be(Permission.EditCases);
+    }
+
+    [Fact]
+    public async Task An_administrator_may_perform_every_gated_action()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        _user.RoleSet = [AppRole.SysAdmin]; // holds every permission
+
+        var id = await CreateIncidentAsync(svc);
+        var reclassify = () => svc.ReclassifyAsync(id, Classification.Breach, "NPI confirmed across the estate.");
+        var hold = () => svc.SetLegalHoldAsync(id, held: true);
+        var archive = () => svc.SetArchivedAsync(id, archived: true);
+
+        await reclassify.Should().NotThrowAsync();
+        await hold.Should().NotThrowAsync();
+        // Archiving is refused while a hold is in force (domain rule), so release first, then archive.
+        await svc.SetLegalHoldAsync(id, held: false);
+        await archive.Should().NotThrowAsync();
+    }
+
+    public void Dispose() => _connection.Dispose();
+}

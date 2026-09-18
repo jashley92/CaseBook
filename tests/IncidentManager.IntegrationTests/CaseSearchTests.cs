@@ -24,7 +24,7 @@ public sealed class CaseSearchTests : IDisposable
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
-        _user.RoleSet = [AppRole.Manager]; // sees all cases (no need-to-know scoping)
+        _user.RoleSet = [AppRole.SysAdmin]; // sees all cases + may edit (F-21: intake asserts EditCases)
     }
 
     private AppDbContext NewContext()

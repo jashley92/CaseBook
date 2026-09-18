@@ -24,7 +24,7 @@ public sealed class ActivityFeedTests : IDisposable
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
-        _user.RoleSet = [AppRole.Manager]; // sees all cases
+        _user.RoleSet = [AppRole.SysAdmin]; // sees all cases + may edit (F-21: mutations assert EditCases)
     }
 
     private AppDbContext NewContext()
