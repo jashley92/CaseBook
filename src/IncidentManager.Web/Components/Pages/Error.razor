@@ -1,36 +1,43 @@
-﻿@page "/Error"
+@* FR-12: friendly, branded error fallback. UseExceptionHandler re-executes here on an unhandled exception
+   (production only; Development still shows the developer page). Matches the SessionExpired / AccessDenied
+   quality bar — a short apology, a copyable Request ID for support, and a way back — and it leaks no
+   framework internals or exception detail. AllowAnonymous + the chromeless BlankLayout so it always renders
+   and reveals nothing sensitive, even if the failure was auth-related. *@
+@page "/Error"
 @using System.Diagnostics
+@layout Layout.BlankLayout
+@attribute [AllowAnonymous]
 
-<PageTitle>Error</PageTitle>
+<PageTitle>Something went wrong — CaseBook</PageTitle>
 
-<h1 class="text-danger">Error.</h1>
-<h2 class="text-danger">An error occurred while processing your request.</h2>
+<div class="error-notice">
+    <div class="error-notice-card">
+        <div class="error-notice-icon" aria-hidden="true"><span class="bi bi-exclamation-triangle-fill"></span></div>
+        <h1 class="error-notice-title">Something went wrong</h1>
+        <p class="error-notice-text">
+            CaseBook hit an unexpected error while handling your request. Anything you had already saved is
+            safe. Please try again — if it keeps happening, contact your CaseBook administrator.
+        </p>
+        @if (ShowRequestId)
+        {
+            <p class="error-notice-text error-notice-muted">
+                Quote this reference so support can find it in the logs:<br />
+                <code>@RequestId</code>
+            </p>
+        }
+        <a href="/cases" class="btn btn-primary">Back to cases</a>
+    </div>
+</div>
 
-@if (ShowRequestId)
-{
-    <p>
-        <strong>Request ID:</strong> <code>@RequestId</code>
-    </p>
-}
-
-<h3>Development Mode</h3>
-<p>
-    Swapping to <strong>Development</strong> environment will display more detailed information about the error that occurred.
-</p>
-<p>
-    <strong>The Development environment shouldn't be enabled for deployed applications.</strong>
-    It can result in displaying sensitive information from exceptions to end users.
-    For local debugging, enable the <strong>Development</strong> environment by setting the <strong>ASPNETCORE_ENVIRONMENT</strong> environment variable to <strong>Development</strong>
-    and restarting the app.
-</p>
-
-@code{
-    [CascadingParameter]
-    private HttpContext? HttpContext { get; set; }
+@code {
+    // The exception handler passes the correlation id here (?ref=…); the cascading HttpContext is a fallback
+    // for a direct visit, though it's null under this app's interactive render (hence the query hand-off).
+    [SupplyParameterFromQuery(Name = "ref")] public string? Ref { get; set; }
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
 
     private string? RequestId { get; set; }
     private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
 
     protected override void OnInitialized() =>
-        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+        RequestId = !string.IsNullOrWhiteSpace(Ref) ? Ref : (Activity.Current?.Id ?? HttpContext?.TraceIdentifier);
 }

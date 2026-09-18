@@ -991,7 +991,9 @@ h1:focus {
 
 /* Chromeless page shell (BlankLayout) + the idle-lock landing. */
 .blank-layout { min-height: 100vh; display: flex; }
-.session-locked {
+/* Centered-notice card, shared by the idle-lock (.session-locked) and the FR-12 error fallback
+   (.error-notice) so both standalone chromeless pages read as one system. */
+.session-locked, .error-notice {
     flex: 1;
     min-height: 100vh;
     display: flex;
@@ -1000,7 +1002,7 @@ h1:focus {
     padding: 1.5rem;
     background: var(--bs-body-bg);
 }
-.session-locked-card {
+.session-locked-card, .error-notice-card {
     width: min(30rem, 100%);
     text-align: center;
     padding: 2rem 1.75rem;
@@ -1009,11 +1011,12 @@ h1:focus {
     background: var(--bs-body-bg);
     box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.12);
 }
-.session-locked-icon { font-size: 2.6rem; line-height: 1; color: var(--im-accent); margin-bottom: 0.5rem; }
-.session-locked-title { font-size: 1.4rem; font-weight: 700; margin: 0.25rem 0 0.75rem; }
-.session-locked-text { font-size: 0.95rem; color: var(--bs-secondary-color, #6c757d); line-height: 1.5; margin-bottom: 0.75rem; }
-.session-locked-muted { font-size: 0.85rem; }
-.session-locked-card .btn { margin-top: 0.5rem; }
+.session-locked-icon, .error-notice-icon { font-size: 2.6rem; line-height: 1; color: var(--im-accent); margin-bottom: 0.5rem; }
+.error-notice-icon { color: var(--bs-danger, #dc3545); }
+.session-locked-title, .error-notice-title { font-size: 1.4rem; font-weight: 700; margin: 0.25rem 0 0.75rem; }
+.session-locked-text, .error-notice-text { font-size: 0.95rem; color: var(--bs-secondary-color, #6c757d); line-height: 1.5; margin-bottom: 0.75rem; }
+.session-locked-muted, .error-notice-muted { font-size: 0.85rem; }
+.session-locked-card .btn, .error-notice-card .btn { margin-top: 0.5rem; }
 
 /* --- Timeline rail (U-08) — the "hero" chronological view, theme-aware --- */
 .tl {

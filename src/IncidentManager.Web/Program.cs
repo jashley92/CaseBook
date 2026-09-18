@@ -275,7 +275,16 @@ using (var scope = app.Services.CreateScope())
 // --- HTTP pipeline ---
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
+    // FR-12: on an unhandled exception, capture the correlation id and hand off to the branded /Error page
+    // with it in the query string. The page renders interactively (Routes is InteractiveServer), so the
+    // cascading HttpContext — and thus TraceIdentifier — is null there; passing the id via the query is the
+    // reliable way to show a Request ID for support. Development still gets the developer exception page.
+    app.UseExceptionHandler(errorApp => errorApp.Run(context =>
+    {
+        var id = System.Diagnostics.Activity.Current?.Id ?? context.TraceIdentifier;
+        context.Response.Redirect($"/Error?ref={Uri.EscapeDataString(id)}");
+        return Task.CompletedTask;
+    }));
     app.UseHsts();
     app.UseHttpsRedirection();
 }
