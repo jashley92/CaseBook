@@ -308,13 +308,32 @@ else
         </tbody>
     </table>
 
-    @if (_page.TotalPages > 1)
+    @if (_page is { Total: > 0 } && (_page.TotalPages > 1 || _pageSize != DefaultPageSize))
     {
-        <nav class="d-flex justify-content-between align-items-center mt-2">
-            <span class="text-muted small">Page @_page.Page of @_page.TotalPages</span>
-            <div class="btn-group">
-                <button class="btn btn-sm btn-outline-secondary" @onclick="PrevPage" disabled="@(_page.Page <= 1)">← Prev</button>
-                <button class="btn btn-sm btn-outline-secondary" @onclick="NextPage" disabled="@(_page.Page >= _page.TotalPages)">Next →</button>
+        <nav class="d-flex justify-content-between align-items-center gap-2 flex-wrap mt-2">
+            <span class="text-muted small">
+                @if (_page.TotalPages > 1) { <text>Page @_page.Page of @_page.TotalPages · </text> }
+                @_page.Total case@(_page.Total == 1 ? "" : "s")
+            </span>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <label class="text-muted small mb-0">Per page
+                    <select class="form-select form-select-sm d-inline-block w-auto ms-1" value="@_pageSize" @onchange="SetPageSize" aria-label="Cases per page">
+                        @foreach (var s in PageSizeOptions) { <option value="@s">@s</option> }
+                    </select>
+                </label>
+                @if (_page.TotalPages > 1)
+                {
+                    <div class="btn-group">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => GoToPage(1)" disabled="@(_page.Page <= 1)" title="First page">« First</button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="PrevPage" disabled="@(_page.Page <= 1)">← Prev</button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="NextPage" disabled="@(_page.Page >= _page.TotalPages)">Next →</button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => GoToPage(_page.TotalPages)" disabled="@(_page.Page >= _page.TotalPages)" title="Last page">Last »</button>
+                    </div>
+                    <label class="text-muted small mb-0">Go to
+                        <input type="number" min="1" max="@_page.TotalPages" value="@_page.Page" @onchange="JumpToPage"
+                               class="form-control form-control-sm d-inline-block ms-1" style="width:4.5rem" aria-label="Jump to page" />
+                    </label>
+                }
             </div>
         </nav>
     }
@@ -337,6 +356,10 @@ else
     [SupplyParameterFromQuery(Name = "scope")] public string? QScope { get; set; }
     [SupplyParameterFromQuery(Name = "assignee")] public string? QAssignee { get; set; }
     [SupplyParameterFromQuery(Name = "assigneeName")] public string? QAssigneeName { get; set; }
+    // FR-10: pagination position + page size live in the URL too, so a refresh / dropped circuit / bookmark
+    // keeps the reader on the same page instead of snapping back to page 1.
+    [SupplyParameterFromQuery(Name = "page")] public int? QPage { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public int? QPageSize { get; set; }
 
     private CasePage? _page;
     private DashboardMetrics? _dash; // caseload summary tiles (same figures as the dashboard)
@@ -356,6 +379,11 @@ else
     private string? _openedLabel; // "MMM yyyy" when an opened-month drill-in is active
     private string? _assignee;    // assignee drill-in from team workload: a user id, or "none" for unassigned
     private string? _assigneeName;
+
+    // FR-10: page size is a URL-carried display preference (persists across filter changes; see CurrentParams).
+    private const int DefaultPageSize = 25;
+    private static readonly int[] PageSizeOptions = [25, 50, 100];
+    private int _pageSize = DefaultPageSize;
 
     // The administered SLA targets, refreshed each reload so an admin change is reflected on next load.
     private SlaTargets _targets = SlaTargets.Empty;
@@ -412,8 +440,21 @@ else
             _openedLabel = mo.ToString("MMM yyyy");
         }
 
-        _filter.Page = 1; // a filter change always starts at the first page
+        // FR-10: page position + size come from the URL, not just component state. A filter change navigates
+        // without the `page` param (see CurrentParams), so it naturally falls back to page 1; a paging or
+        // page-size change navigates *with* these params, landing here to reload at that position.
+        _pageSize = PageSizeOptions.Contains(QPageSize ?? 0) ? QPageSize!.Value : DefaultPageSize;
+        _filter.PageSize = _pageSize;
+        _filter.Page = QPage is int qp && qp > 0 ? qp : 1;
         await Reload();
+
+        // A bookmarked page beyond the current end (the queue shrank) clamps to the last page rather than
+        // showing an empty list under a "Page 6 of 3" label.
+        if (_page is { Total: > 0 } pg && _filter.Page > pg.TotalPages)
+        {
+            _filter.Page = pg.TotalPages;
+            await Reload();
+        }
     }
 
     // The current filter state as query parameters — the single source used both to navigate on a filter
@@ -433,6 +474,9 @@ else
         ["hold"] = _onHoldOnly ? "true" : null,
         ["assignee"] = _assignee,
         ["assigneeName"] = _assignee is null or "none" ? null : Blank(_assigneeName ?? ""),
+        // FR-10: page size persists across filter changes (omitted at the default to keep URLs clean). `page`
+        // is deliberately NOT here — a filter change should restart at page 1; paging adds it in GoToPage.
+        ["size"] = _pageSize == DefaultPageSize ? null : _pageSize.ToString(),
     };
 
     // A select/search change rewrites the query string; OnParametersSetAsync then reloads. We always
@@ -520,14 +564,32 @@ else
 
     private static string? Blank(string v) => string.IsNullOrEmpty(v) ? null : v;
 
-    private async Task PrevPage()
+    // FR-10: paging navigates (rewrites the URL) rather than mutating component state, so the position is
+    // bookmarkable and survives a refresh / dropped circuit. OnParametersSetAsync then reloads at that page.
+    private void GoToPage(int page)
     {
-        if (_filter.Page > 1) { _filter.Page--; await Reload(); }
+        var p = new Dictionary<string, object?>(CurrentParams());
+        p["page"] = page > 1 ? page.ToString() : null; // omit page=1 for clean URLs
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(), p));
     }
 
-    private async Task NextPage()
+    private void PrevPage() { if (_filter.Page > 1) GoToPage(_filter.Page - 1); }
+    private void NextPage() { if (_page is not null && _filter.Page < _page.TotalPages) GoToPage(_filter.Page + 1); }
+
+    private void JumpToPage(ChangeEventArgs e)
     {
-        if (_page is not null && _filter.Page < _page.TotalPages) { _filter.Page++; await Reload(); }
+        if (_page is not null && int.TryParse(e.Value?.ToString(), out var p))
+            GoToPage(Math.Clamp(p, 1, _page.TotalPages));
+    }
+
+    // A page-size change resets to page 1 at the new size (both carried in the URL).
+    private void SetPageSize(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var size) || !PageSizeOptions.Contains(size)) return;
+        var p = new Dictionary<string, object?>(CurrentParams());
+        p["size"] = size == DefaultPageSize ? null : size.ToString(); // CurrentParams reflects the old size
+        p["page"] = null;
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("cases").ToString(), p));
     }
 
     private async Task Reload()
