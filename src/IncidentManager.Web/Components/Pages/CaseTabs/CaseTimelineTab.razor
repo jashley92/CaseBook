@@ -84,9 +84,20 @@
             }
             @if (_tlAddKind == TimelineKind.Event)
             {
-                @if (!IsThirdParty)
+                @if (IsThirdParty)
                 {
-                    @* First-party: the attack narrative — ATT&CK tactic(s) + actor→target attribution to IOCs. *@
+                    @* FR-24: optionally switch this third-party Event composer between a disclosure milestone and
+                       a vendor-provided attack (ATT&CK) step. Disclosure is the default. *@
+                    <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Event step type">
+                        <button type="button" class="btn @(!_evtAttackMode ? "btn-secondary" : "btn-outline-secondary")"
+                                @onclick="() => _evtAttackMode = false">Disclosure milestone</button>
+                        <button type="button" class="btn @(_evtAttackMode ? "btn-secondary" : "btn-outline-secondary")"
+                                @onclick="() => _evtAttackMode = true" title="Optionally record the vendor's attack breakdown (MITRE ATT&CK)">Attack step (ATT&amp;CK)</button>
+                    </div>
+                }
+                @if (!IsThirdParty || _evtAttackMode)
+                {
+                    @* First-party (or a third-party attack step): the attack narrative — ATT&CK tactic(s) + actor→target attribution to IOCs. *@
                     <div class="row g-2 align-items-end">
                         <div class="col-md-4">
                             <label class="form-label small mb-0">Occurred (@TimeDisp.Label)</label>
@@ -375,14 +386,17 @@ else
         {
             if (e.Kind == TimelineKind.Event)
             {
+                // FR-24: a third-party case can carry attack (ATT&CK) steps alongside disclosure milestones —
+                // render each Event entry by what it actually holds, not just the case's third-party flag.
+                var asAttack = !IsThirdParty || IsAttackStep(e);
                 <li class="tl-item tl-kind-event im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" id="tl-@e.Id" @key="e.Id">
-                    <span class="tl-dot" style="--tl-color:@(IsThirdParty ? Ui.TimelineColor(e.Type) : Ui.TacticColor(PrimaryTactic(e)))" aria-hidden="true">
-                        <span class="bi @(IsThirdParty ? Ui.TimelineGlyph(e.Type) : Ui.TacticGlyph(PrimaryTactic(e)))"></span>
+                    <span class="tl-dot" style="--tl-color:@(asAttack ? Ui.TacticColor(PrimaryTactic(e)) : Ui.TimelineColor(e.Type))" aria-hidden="true">
+                        <span class="bi @(asAttack ? Ui.TacticGlyph(PrimaryTactic(e)) : Ui.TimelineGlyph(e.Type))"></span>
                     </span>
                     <div class="tl-body">
                         <div class="tl-head">
-                            <span class="tl-kind-label"><span class="bi @(IsThirdParty ? "bi-megaphone" : "bi-lightning-charge")" aria-hidden="true"></span> @(IsThirdParty ? "Disclosure" : "Event")</span>
-                            @if (!IsThirdParty)
+                            <span class="tl-kind-label"><span class="bi @(asAttack ? "bi-lightning-charge" : "bi-megaphone")" aria-hidden="true"></span> @(asAttack ? (IsThirdParty ? "Attack" : "Event") : "Disclosure")</span>
+                            @if (asAttack)
                             {
                                 <span class="tl-tactics">
                                     @foreach (var tt in e.Tactics.Select(x => x.Tactic).OrderBy(x => (int)x))
@@ -574,6 +588,14 @@ else
     // E-32: a third-party/vendor case has no ATT&CK kill-chain — its Event steps are vendor-disclosure milestones.
     private TimelineEntryType _evtStage = TimelineEntryType.Notified;
 
+    // FR-24: a third-party case can *optionally* also capture the vendor's attack breakdown (ATT&CK) on its
+    // Event timeline, alongside the disclosure milestones. Off by default (disclosure), so a bare disclosure
+    // stays simple. An Event entry is an attack step (vs a disclosure step) when it carries ATT&CK content.
+    private bool _evtAttackMode;
+    private static bool IsAttackStep(TimelineEntry e) =>
+        e.Tactics.Count > 0 || !string.IsNullOrWhiteSpace(e.TechniqueId)
+        || e.ActorEntityId is not null || e.TargetEntityId is not null;
+
     // FR-23: the Disclosure timeline (third-party) uses a scoped milestone set, not the generic IR list. The
     // shared values (Communication / Evidence / Other) appear in both; DisclosureOnly are Disclosure-only.
     private static readonly TimelineEntryType[] DisclosureOrder =
@@ -739,9 +761,10 @@ else
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = WallToUtc(_tlWhen);
         var shotId = await UploadTimelineShotAsync();
+        var disclosure = IsThirdParty && !_evtAttackMode;
         try
         {
-            if (IsThirdParty)
+            if (disclosure)
             {
                 await Cases.AddEventStepAsync(CaseId, whenUtc, Array.Empty<MitreTactic>(), null, null, null,
                     _tlDesc, _tlSource, evidenceId: shotId, type: _evtStage);
@@ -763,8 +786,8 @@ else
         _evtTactic = MitreTactic.Unspecified;
         ClearTimelineShot();
         await OnChanged.InvokeAsync();
-        Toasts.Success(shotId is null ? (IsThirdParty ? "Disclosure step added" : "Event step added")
-                                      : "Event step added with screenshot");
+        var what = disclosure ? "Disclosure step" : "Attack step";
+        Toasts.Success(shotId is null ? $"{what} added" : $"{what} added with screenshot");
     }
 
     // Switch the timeline lens (All / Event / Investigation); abandon any in-progress edit and clear
@@ -784,6 +807,7 @@ else
     private void StartEventEdit(TimelineEntry e)
     {
         _tlAddKind = TimelineKind.Event;
+        _evtAttackMode = IsThirdParty && IsAttackStep(e); // FR-24: edit an attack step in attack mode
         _tlEditId = e.Id;
         _tlReason = null;
         _tlWhen = UtcToWall(e.OccurredAtUtc);
@@ -802,7 +826,7 @@ else
         var whenUtc = WallToUtc(_tlWhen);
         try
         {
-            if (IsThirdParty)
+            if (IsThirdParty && !_evtAttackMode)
             {
                 await Cases.EditEventStepAsync(CaseId, id, whenUtc, Array.Empty<MitreTactic>(), null, null, null,
                     _tlDesc, _tlSource, _tlReason, type: _evtStage);
@@ -858,7 +882,7 @@ else
         var wasInvestigationEdit = _tlAddKind == TimelineKind.Investigation && _tlEditId is not null;
         _tlEditId = null; _tlReason = null;
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = "";
-        _evtTactic = MitreTactic.Unspecified;
+        _evtTactic = MitreTactic.Unspecified; _evtAttackMode = false; // FR-24: back to the default disclosure composer
         if (wasInvestigationEdit)
         {
             try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); }
