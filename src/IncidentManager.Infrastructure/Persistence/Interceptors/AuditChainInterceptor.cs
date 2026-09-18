@@ -1,5 +1,6 @@
 using System.Text.Json;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Integrity;
 using IncidentManager.Domain.Common;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -128,7 +129,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         {
             var entity = (Entity)e.Entity;
             var type = e.Entity.GetType().Name;
-            var (action, before, after) = Describe(e);
+            var (action, before, after, changedFields) = Describe(e);
 
             string? caseNumber = entity is Case c ? c.CaseNumber
                 : TryGetCaseId(e) is { } cid && caseNumbers.TryGetValue(cid, out var cn) ? cn
@@ -142,7 +143,9 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                 EntityType = type,
                 EntityId = entity.Id.ToString(),
                 CaseNumber = caseNumber,
-                Summary = $"{action} {type}",
+                // Name the fields that actually moved (e.g. "Update Case — Legal hold") so the trail reads as
+                // what changed, not just that "something" did. The full before/after is in the JSON below.
+                Summary = AuditChangeDetail.ComposeSummary(action, type, changedFields),
                 BeforeJson = before,
                 AfterJson = after,
                 // A correction reason only makes sense against an in-place update, not a create/delete.
@@ -156,19 +159,22 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         ctx.Set<AuditLogEntry>().AddRange(newEntries);
     }
 
-    private static (AuditAction action, string? before, string? after) Describe(EntityEntry e)
+    private static readonly string[] NoFields = Array.Empty<string>();
+
+    private static (AuditAction action, string? before, string? after, IReadOnlyList<string> changedFields) Describe(EntityEntry e)
     {
         switch (e.State)
         {
             case EntityState.Added:
-                return (AuditAction.Create, null, Serialize(e.CurrentValues, e.CurrentValues.Properties));
+                return (AuditAction.Create, null, Serialize(e.CurrentValues, e.CurrentValues.Properties), NoFields);
             case EntityState.Deleted:
-                return (AuditAction.SoftDelete, Serialize(e.OriginalValues, e.OriginalValues.Properties), null);
+                return (AuditAction.SoftDelete, Serialize(e.OriginalValues, e.OriginalValues.Properties), null, NoFields);
             default:
                 var changed = e.Properties.Where(p => p.IsModified).Select(p => p.Metadata).ToList();
                 return (AuditAction.Update,
                     Serialize(e.OriginalValues, changed),
-                    Serialize(e.CurrentValues, changed));
+                    Serialize(e.CurrentValues, changed),
+                    changed.Select(p => p.Name).ToList());
         }
     }
 

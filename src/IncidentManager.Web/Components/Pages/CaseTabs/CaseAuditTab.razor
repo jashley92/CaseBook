@@ -76,7 +76,7 @@ else
     else
     {
         <table class="table table-sm">
-            <thead><tr><th>#</th><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>Reason</th></tr></thead>
+            <thead><tr><th>#</th><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Entity</th><th>What changed</th><th>Reason</th></tr></thead>
             <tbody>
                 @foreach (var a in _audit)
                 {
@@ -86,6 +86,7 @@ else
                         <td>@Users.DisplayFor(a.Actor)</td>
                         <td>@a.Action</td>
                         <td>@a.EntityType</td>
+                        <td class="small">@ChangeCell(a)</td>
                         <td class="small">@(string.IsNullOrWhiteSpace(a.Reason) ? "" : a.Reason)</td>
                     </tr>
                 }
@@ -205,4 +206,39 @@ else
         if (State.To is { } to) qs.Add($"to={to:yyyy-MM-dd}");
         return "export/case-audit.csv?" + string.Join("&", qs);
     }
+
+    // The "what changed" cell: the field-level before/after diff parsed from the entry's captured snapshots
+    // (the detail was always recorded — this surfaces it). Long values are truncated with the full text on
+    // hover. Create/delete have no diff, so they read as a short verb.
+    private RenderFragment ChangeCell(AuditLogEntry a) => __builder =>
+    {
+        var changes = AuditChangeDetail.Changes(a);
+        if (changes.Count == 0)
+        {
+            var verb = a.Action switch
+            {
+                AuditAction.Create => "created",
+                AuditAction.SoftDelete => "removed",
+                _ => "—"
+            };
+            <span class="text-muted">@verb</span>
+        }
+        else
+        {
+            <ul class="list-unstyled mb-0">
+                @foreach (var ch in changes)
+                {
+                    <li>
+                        <span class="fw-medium">@ch.Label:</span>
+                        <span class="text-muted" title="@ch.Before">@Trunc(ch.Before)</span>
+                        <span class="bi bi-arrow-right mx-1" aria-hidden="true"></span>
+                        <span title="@ch.After">@Trunc(ch.After)</span>
+                    </li>
+                }
+            </ul>
+        }
+    };
+
+    private static string Trunc(string value, int max = 48) =>
+        value.Length <= max ? value : value[..(max - 1)] + "…";
 }

@@ -21,7 +21,9 @@ public static class AuditCsv
         sb.Append("# CaseBook audit trail — ").Append(scope).Append(", generated ")
           .Append(generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(" UTC\r\n");
 
-        sb.Append("sequence,at_utc,actor,action,entity_type,entity_id,case_number,summary,reason,entry_hash\r\n");
+        // `changes` renders the captured before/after diff (e.g. "Legal hold: No → Yes") so an examiner sees
+        // what moved without parsing raw JSON; it sits next to the (now field-naming) summary.
+        sb.Append("sequence,at_utc,actor,action,entity_type,entity_id,case_number,summary,changes,reason,entry_hash\r\n");
 
         foreach (var a in entries)
         {
@@ -33,6 +35,7 @@ public static class AuditCsv
               .Append(Escape(a.EntityId ?? "")).Append(',')
               .Append(Escape(a.CaseNumber ?? "")).Append(',')
               .Append(Escape(a.Summary ?? "")).Append(',')
+              .Append(Escape(AuditChangeDetail.ToLine(AuditChangeDetail.Changes(a)))).Append(',')
               .Append(Escape(a.Reason ?? "")).Append(',')
               .Append(Escape(a.EntryHash)).Append("\r\n");
         }
