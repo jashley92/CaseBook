@@ -974,7 +974,9 @@ else
         _ => "Apply"
     };
 
-    // Keep the primary disabled until required input is present.
+    // Keep the primary disabled until required input is present. FR-14: the predicate mirrors the on-click
+    // validation in ApplyModal exactly, so the button is disabled precisely when a submit would be rejected
+    // — no modal leaves "Apply" enabled only to error on click. (The on-click checks stay as a safety net.)
     private bool ModalPrimaryDisabled() => _activeModal switch
     {
         "assign" => string.IsNullOrEmpty(_assignUserId),
@@ -983,6 +985,13 @@ else
         "materiality" => _materialityStatus is MaterialityStatus.Material or MaterialityStatus.NotMaterial
             && (string.IsNullOrWhiteSpace(_materialityDecisionMaker) || _materialityDecidedOn is null
                 || string.IsNullOrWhiteSpace(_materialityRationale)),
+        // Reclass always needs a reason; both gated modals need an override justification when a blocking
+        // requirement is unmet, and a long-enough rationale when the gate requires commentary.
+        "reclass" => string.IsNullOrWhiteSpace(_reclassReason)
+            || (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
+            || GateRationaleError(_reclassReason) is not null,
+        "status" => (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
+            || GateRationaleError(_phaseReason) is not null,
         _ => false
     };
 
