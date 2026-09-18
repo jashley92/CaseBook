@@ -19,13 +19,9 @@ public static class AuditChangeDetail
     public readonly record struct FieldChange(string Label, string Before, string After);
 
     // Bookkeeping / integrity plumbing that changes on almost every write — noise in a "what changed" view.
-    // Enum transitions with their own dedicated, audited change-history entities (classification / severity /
-    // phase) are suppressed here too: they would otherwise show as bare numbers, and their real record lives
-    // in the ClassificationChange / SeverityChange / StatusChange lines alongside.
     private static readonly HashSet<string> Suppressed = new(StringComparer.Ordinal)
     {
-        "RowHash", "ModifiedAtUtc", "ModifiedBy", "CreatedAtUtc", "CreatedBy",
-        "Classification", "Severity", "Phase", "HasCustomNumber",
+        "RowHash", "ModifiedAtUtc", "ModifiedBy", "CreatedAtUtc", "CreatedBy", "HasCustomNumber",
     };
 
     // Friendly labels for the fields that don't humanise cleanly from their property name.
@@ -44,6 +40,18 @@ public static class AuditChangeDetail
         ["ReportProfileId"] = "Report profile",
         ["Summary"] = "Case summary",
         ["ReportedAtUtc"] = "Reported (regulatory)",
+        ["Phase"] = "Status", // the phase field is surfaced as "status" everywhere the user acts on it
+    };
+
+    // Enum fields whose stored value is a number: mapped back to the member name so a transition reads
+    // "Status: Triage → Containment" rather than "Phase: 1 → 2". Keyed by (entity, field) to stay unambiguous.
+    private static Type? EnumTypeFor(string entityType, string field) => (entityType, field) switch
+    {
+        ("Case", "Classification") => typeof(Classification),
+        ("Case", "Severity") => typeof(Severity),
+        ("Case", "Phase") => typeof(CasePhase),
+        ("Case", "Origin") => typeof(CaseOrigin),
+        _ => null
     };
 
     /// <summary>Whether a field is hidden from the readable diff and the enriched summary.</summary>
@@ -93,8 +101,9 @@ public static class AuditChangeDetail
         foreach (var key in after.Keys.Concat(before.Keys.Where(k => !after.ContainsKey(k))))
         {
             if (!IsMeaningful(key)) continue;
-            var from = before.TryGetValue(key, out var b) ? Format(b) : "—";
-            var to = after.TryGetValue(key, out var a) ? Format(a) : "—";
+            var enumType = EnumTypeFor(entry.EntityType, key);
+            var from = before.TryGetValue(key, out var b) ? Format(b, enumType) : "—";
+            var to = after.TryGetValue(key, out var a) ? Format(a, enumType) : "—";
             if (from == to) continue; // unchanged (e.g. a field re-serialised but not actually moved)
             changes.Add(new FieldChange(Label(key), from, to));
         }
@@ -105,15 +114,23 @@ public static class AuditChangeDetail
     public static string ToLine(IReadOnlyList<FieldChange> changes) =>
         string.Join("; ", changes.Select(c => $"{c.Label}: {c.Before} → {c.After}"));
 
-    private static string Format(JsonElement value) => value.ValueKind switch
+    private static string Format(JsonElement value, Type? enumType = null)
     {
-        JsonValueKind.Null or JsonValueKind.Undefined => "—",
-        JsonValueKind.True => "Yes",
-        JsonValueKind.False => "No",
-        JsonValueKind.String => value.GetString() is { Length: > 0 } s ? s : "—",
-        JsonValueKind.Number => value.GetRawText(),
-        _ => value.GetRawText(),
-    };
+        // A known enum field stored as a number → its member name (humanised), e.g. 2 → "Containment".
+        if (enumType is not null && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var iv)
+            && Enum.GetName(enumType, iv) is { } name)
+            return Humanize(name);
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Null or JsonValueKind.Undefined => "—",
+            JsonValueKind.True => "Yes",
+            JsonValueKind.False => "No",
+            JsonValueKind.String => value.GetString() is { Length: > 0 } s ? s : "—",
+            JsonValueKind.Number => value.GetRawText(),
+            _ => value.GetRawText(),
+        };
+    }
 
     // "LegalHold" → "Legal hold"; "IsRestricted" → "Restricted"; "AffectedStates" → "Affected states".
     private static string Humanize(string name)

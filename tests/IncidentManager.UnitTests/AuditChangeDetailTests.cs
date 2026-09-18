@@ -87,6 +87,25 @@ public class AuditChangeDetailTests
             .Should().Be(new AuditChangeDetail.FieldChange("Incident commander", "user-1", "—"));
     }
 
+    [Fact]
+    public void Changes_maps_enum_transitions_to_member_names()
+    {
+        var entry = new AuditLogEntry
+        {
+            EntityType = "Case",
+            Action = AuditAction.Update,
+            // Classification 2→3 (Incident→Breach), Phase 1→2 (Triage→Containment) — stored as numbers.
+            BeforeJson = """{"Classification":2,"Phase":1}""",
+            AfterJson = """{"Classification":3,"Phase":2}""",
+        };
+
+        AuditChangeDetail.Changes(entry).Should().BeEquivalentTo(new[]
+        {
+            new AuditChangeDetail.FieldChange("Classification", "Incident", "Breach"),
+            new AuditChangeDetail.FieldChange("Status", "Triage", "Containment"), // Phase surfaces as "Status"
+        });
+    }
+
     [Theory]
     [InlineData(AuditAction.Create)]
     [InlineData(AuditAction.SoftDelete)]
