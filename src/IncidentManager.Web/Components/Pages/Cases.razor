@@ -90,7 +90,7 @@
             <label class="form-label small mb-1 fw-semibold" for="view-name">Save these filters as a view</label>
             <div class="d-flex flex-wrap align-items-center gap-2">
                 <input id="view-name" class="form-control form-control-sm" style="max-width:16rem" placeholder="e.g. My triage queue"
-                       @bind="_newViewName" @bind:event="oninput" @onkeydown="OnSaveKeyDown" />
+                       @bind="_newViewName" @bind:event="oninput" @bind:after="() => _confirmOverwrite = false" @onkeydown="OnSaveKeyDown" />
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="view-share" @bind="_newViewShared" />
                     <label class="form-check-label small" for="view-share" title="Everyone on the team sees this view">Share with team</label>
@@ -98,7 +98,19 @@
                 <button class="btn btn-sm btn-primary" @onclick="SaveView" disabled="@string.IsNullOrWhiteSpace(_newViewName)">Save</button>
                 <button class="btn btn-sm btn-outline-secondary" @onclick="() => _savingView = false">Cancel</button>
             </div>
-            <div class="form-text">Saving over an existing name of yours updates it. Captures the current filters and Mine/All scope.</div>
+            @* FR-15: a name that matches one of the user's own views overwrites it — confirm before clobbering. *@
+            @if (_confirmOverwrite)
+            {
+                <div class="alert alert-warning small mt-2 mb-0 py-2 d-flex flex-wrap align-items-center gap-2">
+                    <span><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>You already have a view named “<strong>@_newViewName.Trim()</strong>”. Overwrite it?</span>
+                    <button class="btn btn-sm btn-warning py-0" @onclick="SaveView">Overwrite</button>
+                    <button class="btn btn-sm btn-outline-secondary py-0" @onclick="() => _confirmOverwrite = false">Cancel</button>
+                </div>
+            }
+            else
+            {
+                <div class="form-text">Saving over an existing name of yours updates it (you'll be asked to confirm). Captures the current filters and Mine/All scope.</div>
+            }
         </div>
     </div>
 }
@@ -503,6 +515,7 @@ else
     private void ToggleSaveForm()
     {
         _savingView = !_savingView;
+        _confirmOverwrite = false;
         if (_savingView) { _newViewName = ""; _newViewShared = false; }
     }
 
@@ -511,14 +524,23 @@ else
         if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_newViewName)) await SaveView();
     }
 
+    // FR-15: a save whose name matches one of the user's own views overwrites it, so pause for a one-click
+    // confirm the first time (unless they already confirmed via the Overwrite button).
+    private bool _confirmOverwrite;
+
+    private bool NameCollidesWithMine(string name) =>
+        _views?.Any(v => v.IsMine && string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase)) ?? false;
+
     private async Task SaveView()
     {
         var name = _newViewName.Trim();
         if (string.IsNullOrWhiteSpace(name)) return;
+        if (!_confirmOverwrite && NameCollidesWithMine(name)) { _confirmOverwrite = true; return; }
         try
         {
             await Views.SaveAsync(name, CurrentQuery(), _newViewShared);
             _savingView = false;
+            _confirmOverwrite = false;
             await ReloadViews();
             Toasts.Success($"Saved view “{name}”.");
         }
