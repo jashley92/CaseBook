@@ -92,5 +92,34 @@ public sealed class AuditChangeVerbosityTests : IDisposable
         changes[0].Should().Be(new AuditChangeDetail.FieldChange("Legal hold", "No", "Yes"));
     }
 
+    [Fact]
+    public async Task A_pure_touch_is_not_audited_as_a_case_update()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+
+        var c = await svc.CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "Touch", Title = "Touch case",
+            Classification = Classification.Incident, Severity = Severity.Medium,
+            Origin = CaseOrigin.InternalDetection
+        });
+
+        // Assigning adds a CaseAssignment and only "touches" the case (bumps ModifiedAtUtc/ModifiedBy).
+        await svc.AssignAsync(c.Id, "analyst-2", "Second Analyst", CaseAssignmentRole.Analyst);
+
+        await using var read = NewContext();
+
+        // The substantive action is audited...
+        (await read.AuditLog.AsNoTracking()
+            .AnyAsync(a => a.EntityType == "CaseAssignment" && a.Action == AuditAction.Create))
+            .Should().BeTrue();
+
+        // ...but the parent-case touch it triggered is not logged as a no-op "Update Case".
+        (await read.AuditLog.AsNoTracking()
+            .CountAsync(a => a.EntityType == "Case" && a.Action == AuditAction.Update))
+            .Should().Be(0);
+    }
+
     public void Dispose() => _connection.Dispose();
 }

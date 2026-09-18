@@ -27,6 +27,10 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };
 
+    // Freshness stamps bumped by a "touch". An update whose ONLY changed columns are these carries no
+    // forensic value — see the skip in Apply.
+    private static bool IsTouchOnly(string field) => field is "ModifiedAtUtc" or "ModifiedBy";
+
     private readonly IHashChainService _hasher;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
@@ -130,6 +134,13 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             var entity = (Entity)e.Entity;
             var type = e.Entity.GetType().Name;
             var (action, before, after, changedFields) = Describe(e);
+
+            // Skip a pure "touch": an update whose only changed columns are the freshness stamps
+            // (ModifiedAtUtc/ModifiedBy). It never alters the tamper-evident canonical (RowHash stays put),
+            // and the substantive action that caused it — e.g. adding an assignment, note, or timeline entry —
+            // is recorded by its own audit entry. Logging the touch on the parent only adds noise.
+            if (action == AuditAction.Update && changedFields.All(IsTouchOnly))
+                continue;
 
             string? caseNumber = entity is Case c ? c.CaseNumber
                 : TryGetCaseId(e) is { } cid && caseNumbers.TryGetValue(cid, out var cn) ? cn
