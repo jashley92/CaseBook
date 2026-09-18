@@ -6,6 +6,9 @@
 @page "/team"
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @inject MyWorkService Svc
+@inject IncidentManager.Application.Cases.CaseService Cases
+@inject IncidentManager.Web.Services.ToastService Toasts
+@inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
 @inject NavigationManager Nav
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
@@ -144,6 +147,35 @@
                         <span><span class="bi bi-list-check" aria-hidden="true"></span> My after-action tasks</span>
                         <span class="im-section-note">@_work.Tasks.Count open@(overdueCount > 0 ? $" · {overdueCount} overdue" : "")</span>
                     </div>
+
+                    @* PROD-21: add a follow-up without leaving the page. Owned by you; pick which of your open
+                       cases it belongs to. Shown only when you can edit and have an open case to attach it to. *@
+                    <AuthorizeView Policy="@Policies.EditCases">
+                        @if (_work.OpenCases.Count > 0)
+                        {
+                            <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
+                                <div>
+                                    <label class="form-label small mb-0" for="mw-task-title">Quick-add a follow-up</label>
+                                    <input id="mw-task-title" class="form-control form-control-sm" style="min-width:15rem"
+                                           placeholder="Task title" @bind="_newTaskTitle" @bind:event="oninput" @onkeydown="OnQuickAddKey" />
+                                </div>
+                                <div>
+                                    <label class="form-label small mb-0" for="mw-task-case">On case</label>
+                                    <select id="mw-task-case" class="form-select form-select-sm" @bind="_newTaskCaseId">
+                                        @foreach (var c in _work.OpenCases)
+                                        {
+                                            <option value="@c.Id">@c.CaseNumber — @c.Title</option>
+                                        }
+                                    </select>
+                                </div>
+                                <button class="btn btn-sm btn-primary" @onclick="AddQuickTask"
+                                        disabled="@string.IsNullOrWhiteSpace(_newTaskTitle)" title="Add — Enter">
+                                    <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
+                                </button>
+                            </div>
+                        }
+                    </AuthorizeView>
+
                     @if (_work.Tasks.Count == 0)
                     {
                         <div class="mw-empty">No open tasks assigned to you.</div>
@@ -165,7 +197,16 @@
                                             else { @Users.DisplayFor(t.Owner) }
                                         </td>
                                         <td>@DueBadge(t.DueAtUtc)</td>
-                                        <td><a class="btn btn-sm btn-outline-primary py-0" href="cases/@t.CaseId?tab=Tasks">Open</a></td>
+                                        <td class="text-end text-nowrap">
+                                            @* PROD-21: complete a task in place — no trip into the case's Tasks tab. *@
+                                            <AuthorizeView Policy="@Policies.EditCases">
+                                                <button class="btn btn-sm btn-outline-success py-0 me-1" @onclick="() => MarkDone(t)"
+                                                        title="Mark this task done">
+                                                    <span class="bi bi-check2" aria-hidden="true"></span> Done
+                                                </button>
+                                            </AuthorizeView>
+                                            <a class="btn btn-sm btn-outline-primary py-0" href="cases/@t.CaseId?tab=Tasks">Open</a>
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -226,10 +267,61 @@
         if (_canViewTeam && (onTeamRoute || string.Equals(Tab, TeamTab, StringComparison.OrdinalIgnoreCase)))
             _activeTab = TeamTab;
 
-        _work = await Svc.GetAsync();
+        await Reload();
     }
 
     private void SetTab(string tab) => _activeTab = tab;
+
+    // PROD-21: quick-add + inline complete, so a task can be created or closed without opening its case.
+    private string _newTaskTitle = "";
+    private Guid _newTaskCaseId;
+
+    private async Task Reload()
+    {
+        _work = await Svc.GetAsync();
+        // Default the quick-add case picker to the first open case (and recover if the prior pick closed).
+        if (_work.OpenCases.All(c => c.Id != _newTaskCaseId))
+            _newTaskCaseId = _work.OpenCases.FirstOrDefault()?.Id ?? Guid.Empty;
+    }
+
+    private async Task OnQuickAddKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await AddQuickTask();
+    }
+
+    private async Task AddQuickTask()
+    {
+        var title = _newTaskTitle.Trim();
+        if (string.IsNullOrWhiteSpace(title) || _newTaskCaseId == Guid.Empty) return;
+        try
+        {
+            // Owned by me (it's my work); no due date on a quick capture — the case Tasks tab has the full form.
+            await Cases.AddActionItemAsync(_newTaskCaseId, title, CurrentUser.UserId, null);
+            _newTaskTitle = "";
+            Toasts.Success("Task added");
+            await Reload();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
+                                   or IncidentManager.Application.Security.ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task MarkDone(MyTask t)
+    {
+        try
+        {
+            await Cases.SetActionItemStatusAsync(t.CaseId, t.Id, ActionItemStatus.Done);
+            Toasts.Success("Task completed");
+            await Reload();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
+                                   or IncidentManager.Application.Security.ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
 
     private bool IsOverdue(DateTimeOffset? due) => due is { } d && d < Clock.UtcNow;
 

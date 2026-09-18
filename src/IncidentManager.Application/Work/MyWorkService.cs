@@ -7,7 +7,7 @@ namespace IncidentManager.Application.Work;
 
 /// <summary>An open after-action task the current user is responsible for (overdue or upcoming).</summary>
 public sealed record MyTask(
-    Guid CaseId, string CaseNumber, string Title, string? Owner,
+    Guid Id, Guid CaseId, string CaseNumber, string Title, string? Owner,
     DateTimeOffset? DueAtUtc, bool OwnedByMe);
 
 /// <summary>A recent upward classification transition (escalation) on a case the user can see.</summary>
@@ -70,6 +70,7 @@ public sealed class MyWorkService
             join c in visible on a.CaseId equals c.Id
             select new
             {
+                a.Id,
                 a.CaseId,
                 c.CaseNumber,
                 a.Title,
@@ -85,7 +86,7 @@ public sealed class MyWorkService
             // DateTimeOffset comparison off SQLite, which doesn't translate it.)
             .OrderBy(t => t.Row.DueAtUtc ?? DateTimeOffset.MaxValue)
             .ThenBy(t => t.Row.Title)
-            .Select(t => new MyTask(t.Row.CaseId, t.Row.CaseNumber, t.Row.Title, t.Row.Owner, t.Row.DueAtUtc, t.Owned))
+            .Select(t => new MyTask(t.Row.Id, t.Row.CaseId, t.Row.CaseNumber, t.Row.Title, t.Row.Owner, t.Row.DueAtUtc, t.Owned))
             .ToList();
 
         // Upward classification transitions across my visible set in the recent window (situational

@@ -139,12 +139,48 @@
 }
 else
 {
+    @* PROD-21: multi-select complete — tick several open tasks and close them in one action. *@
+    @if (CanEdit && _selected.Count > 0)
+    {
+        <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="small text-muted">@_selected.Count selected</span>
+            <button class="btn btn-sm btn-success" @onclick="MarkSelectedDone">
+                <span class="bi bi-check2-all me-1" aria-hidden="true"></span>Mark @_selected.Count done
+            </button>
+            <button class="btn btn-sm btn-link p-0" @onclick="() => _selected.Clear()">Clear selection</button>
+        </div>
+    }
     <table class="table table-sm align-middle">
-        <thead><tr><th>Task</th><th>Owner</th><th>Due</th><th>Status</th><th></th></tr></thead>
+        <thead>
+            <tr>
+                @if (CanEdit)
+                {
+                    <th style="width:1%">
+                        <input class="form-check-input" type="checkbox" title="Select all open tasks"
+                               aria-label="Select all open tasks"
+                               checked="@(OpenTaskIds.Count > 0 && _selected.Count == OpenTaskIds.Count)"
+                               @onchange="e => ToggleSelectAll(OpenTaskIds, (bool)(e.Value ?? false))" />
+                    </th>
+                }
+                <th>Task</th><th>Owner</th><th>Due</th><th>Status</th><th></th>
+            </tr>
+        </thead>
         <tbody>
             @foreach (var t in Case.ActionItems.OrderBy(x => x.Status).ThenBy(x => x.DueAtUtc))
             {
+                var isOpen = t.Status != ActionItemStatus.Done && t.Status != ActionItemStatus.Cancelled;
                 <tr class="im-enter @(t.IsOverdue(Clock.UtcNow) ? "table-danger" : "") @FlashClass?.Invoke(t.Id)" style="@FlashStyle?.Invoke(t.Id)" @key="t.Id">
+                    @if (CanEdit)
+                    {
+                        <td>
+                            @if (isOpen)
+                            {
+                                <input class="form-check-input" type="checkbox" checked="@_selected.Contains(t.Id)"
+                                       aria-label="@($"Select task: {t.Title}")"
+                                       @onchange="e => ToggleSelect(t.Id, (bool)(e.Value ?? false))" />
+                            }
+                        </td>
+                    }
                     <td>@t.Title</td>
                     <td>
                         @if (string.IsNullOrWhiteSpace(t.Owner))
@@ -236,6 +272,38 @@ else
         await Cases.SetActionItemStatusAsync(CaseId, actionItemId, ActionItemStatus.Done);
         await OnChanged.InvokeAsync();
         Toasts.Success("Task completed");
+    }
+
+    // PROD-21: multi-select complete.
+    private readonly HashSet<Guid> _selected = new();
+
+    private List<Guid> OpenTaskIds => Case.ActionItems
+        .Where(x => x.Status != ActionItemStatus.Done && x.Status != ActionItemStatus.Cancelled)
+        .Select(x => x.Id).ToList();
+
+    private void ToggleSelect(Guid id, bool on) { if (on) _selected.Add(id); else _selected.Remove(id); }
+
+    private void ToggleSelectAll(IEnumerable<Guid> openIds, bool on)
+    {
+        _selected.Clear();
+        if (on) foreach (var id in openIds) _selected.Add(id);
+    }
+
+    private async Task MarkSelectedDone()
+    {
+        if (_selected.Count == 0) return;
+        var done = 0;
+        foreach (var id in _selected.ToList())
+        {
+            try { await Cases.SetActionItemStatusAsync(CaseId, id, ActionItemStatus.Done); done++; }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Toasts.Error(ex.Message); }
+        }
+        _selected.Clear();
+        if (done > 0)
+        {
+            Toasts.Success($"Marked {done} task{(done == 1 ? "" : "s")} done");
+            await OnChanged.InvokeAsync();
+        }
     }
 
     // --- Apply playbook (E-06) ---
