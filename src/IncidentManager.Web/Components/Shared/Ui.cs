@@ -120,7 +120,19 @@ public static class Ui
 
     public static string Label(EntityDisposition d) => Tax("EntityDisposition", d.ToString(), d.ToString());
 
-    public static string Label(TimelineEntryType t) => Tax("TimelineEntryType", t.ToString(), t.ToString());
+    public static string Label(TimelineEntryType t) => Tax("TimelineEntryType", t.ToString(), TimelineTypeDefault(t));
+
+    // Friendly default label (admin-overridable via the taxonomy). The multi-word FR-23 disclosure
+    // milestones need spelled-out defaults; the single-word IR types read fine as their enum name.
+    private static string TimelineTypeDefault(TimelineEntryType t) => t switch
+    {
+        TimelineEntryType.Notified => "Vendor notified us",
+        TimelineEntryType.ScopeConfirmed => "Scope confirmed",
+        TimelineEntryType.DataConfirmed => "Our data confirmed in scope",
+        TimelineEntryType.Remediation => "Remediation",
+        TimelineEntryType.RegulatoryNotification => "Regulatory notification",
+        _ => t.ToString()
+    };
 
     public static string Label(EntityRelationshipType t)
     {
@@ -457,6 +469,12 @@ public static class Ui
         TimelineEntryType.Evidence => "bi-paperclip",
         TimelineEntryType.Escalation => "bi-arrow-up-circle",
         TimelineEntryType.Note => "bi-journal-text",
+        // FR-23 disclosure milestones
+        TimelineEntryType.Notified => "bi-envelope-exclamation",
+        TimelineEntryType.ScopeConfirmed => "bi-clipboard-check",
+        TimelineEntryType.DataConfirmed => "bi-file-earmark-lock",
+        TimelineEntryType.Remediation => "bi-tools",
+        TimelineEntryType.RegulatoryNotification => "bi-bank",
         _ => "bi-record-circle"
     };
 
@@ -472,6 +490,12 @@ public static class Ui
         TimelineEntryType.Evidence => "#20c997",        // teal
         TimelineEntryType.Escalation => "#d63384",      // pink
         TimelineEntryType.Note => "#6c757d",            // gray
+        // FR-23 disclosure milestones
+        TimelineEntryType.Notified => "#0d6efd",              // blue
+        TimelineEntryType.ScopeConfirmed => "#6f42c1",        // indigo
+        TimelineEntryType.DataConfirmed => "#dc3545",         // red — our data exposed
+        TimelineEntryType.Remediation => "#198754",          // green
+        TimelineEntryType.RegulatoryNotification => "#fd7e14", // orange
         _ => "#6c757d"
     };
 

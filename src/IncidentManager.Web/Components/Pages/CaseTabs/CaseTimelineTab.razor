@@ -136,7 +136,7 @@
                         <div class="col-md-4">
                             <label class="form-label small mb-0">Milestone</label>
                             <select class="form-select form-select-sm" @bind="_evtStage">
-                                @foreach (var t in Ui.Options<TimelineEntryType>("TimelineEntryType"))
+                                @foreach (var t in DisclosureComposerOptions())
                                 {
                                     <option value="@t">@Ui.Label(t)</option>
                                 }
@@ -185,7 +185,7 @@
                     <div class="col-md-3">
                         <label class="form-label small mb-0">Type</label>
                         <select class="form-select form-select-sm" @bind="_tlType">
-                            @foreach (var t in Ui.Options<TimelineEntryType>("TimelineEntryType"))
+                            @foreach (var t in InvestigationTypeOptions())
                             {
                                 <option value="@t">@Ui.Label(t)</option>
                             }
@@ -317,7 +317,8 @@
         {
             <select class="form-select form-select-sm w-auto" @bind="_tlFilterTypeStr" aria-label="Filter by type">
                 <option value="">All types</option>
-                @foreach (var t in Ui.Options<TimelineEntryType>("TimelineEntryType"))
+                @* FR-23: the Disclosure lens filters by its milestone set; Investigation by the IR-type set. *@
+                @foreach (var t in (_tlLens == TimelineKind.Event ? (IReadOnlyList<TimelineEntryType>)DisclosureOrder : InvestigationTypeOptions()))
                 {
                     <option value="@t">@Ui.Label(t)</option>
                 }
@@ -571,7 +572,32 @@ else
     private string _evtTechnique = "";
     private MitreTactic _evtTactic = MitreTactic.Unspecified;
     // E-32: a third-party/vendor case has no ATT&CK kill-chain — its Event steps are vendor-disclosure milestones.
-    private TimelineEntryType _evtStage = TimelineEntryType.Communication;
+    private TimelineEntryType _evtStage = TimelineEntryType.Notified;
+
+    // FR-23: the Disclosure timeline (third-party) uses a scoped milestone set, not the generic IR list. The
+    // shared values (Communication / Evidence / Other) appear in both; DisclosureOnly are Disclosure-only.
+    private static readonly TimelineEntryType[] DisclosureOrder =
+    [
+        TimelineEntryType.Notified, TimelineEntryType.ScopeConfirmed, TimelineEntryType.DataConfirmed,
+        TimelineEntryType.Remediation, TimelineEntryType.RegulatoryNotification,
+        TimelineEntryType.Communication, TimelineEntryType.Evidence, TimelineEntryType.Other
+    ];
+    private static readonly HashSet<TimelineEntryType> DisclosureOnly =
+    [
+        TimelineEntryType.Notified, TimelineEntryType.ScopeConfirmed, TimelineEntryType.DataConfirmed,
+        TimelineEntryType.Remediation, TimelineEntryType.RegulatoryNotification
+    ];
+
+    // Disclosure composer options: the curated set, but preserve a legacy/out-of-set value when editing an
+    // existing disclosure step so it still shows and isn't silently changed on save.
+    private IReadOnlyList<TimelineEntryType> DisclosureComposerOptions() =>
+        _tlEditId is not null && !DisclosureOrder.Contains(_evtStage)
+            ? new[] { _evtStage }.Concat(DisclosureOrder).ToList()
+            : DisclosureOrder;
+
+    // Investigation type options: the admin-customizable full list minus the Disclosure-only additions.
+    private IReadOnlyList<TimelineEntryType> InvestigationTypeOptions() =>
+        Ui.Options<TimelineEntryType>("TimelineEntryType").Where(t => !DisclosureOnly.Contains(t)).ToList();
 
     // Timeline editing: the composer form doubles as an editor when an entry is selected.
     private Guid? _tlEditId;

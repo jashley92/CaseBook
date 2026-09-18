@@ -10,7 +10,12 @@ public enum TimelineKind
     Investigation = 1
 }
 
-/// <summary>Category of a timeline entry, used for filtering the log.</summary>
+/// <summary>
+/// Category of a timeline entry, used for filtering the log. Values 0–9 are the incident-response set the
+/// Investigation timeline (analyst actions) uses; 10+ (FR-23) are third-party disclosure milestones scoped
+/// to the Disclosure timeline. The two sets share Communication / Evidence / Other. Appended, never
+/// renumbered, so stored entries keep their meaning.
+/// </summary>
 public enum TimelineEntryType
 {
     Detection = 0,
@@ -22,7 +27,15 @@ public enum TimelineEntryType
     Evidence = 6,
     Escalation = 7,
     Note = 8,
-    Other = 9
+    Other = 9,
+
+    // FR-23: vendor-disclosure milestones (Disclosure timeline only). The generic IR set above described
+    // *our* response, not the *vendor's* disclosure, so a third-party case now gets its own scoped list.
+    Notified = 10,                 // vendor first notified us of the incident/breach
+    ScopeConfirmed = 11,           // vendor confirmed the scope / affected systems
+    DataConfirmed = 12,            // our data confirmed present in the exposed set
+    Remediation = 13,              // vendor remediation / containment status
+    RegulatoryNotification = 14    // a regulatory notification was made on this matter
 }
 
 /// <summary>Status of an after-action follow-up item.</summary>

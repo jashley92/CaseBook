@@ -89,6 +89,12 @@ public static class TaxonomyCatalog
                 new("Escalation", "Escalation"),
                 new("Note", "Note"),
                 new("Other", "Other"),
+                // FR-23: third-party disclosure milestones (Disclosure timeline).
+                new("Notified", "Vendor notified us"),
+                new("ScopeConfirmed", "Scope confirmed"),
+                new("DataConfirmed", "Our data confirmed in scope"),
+                new("Remediation", "Remediation"),
+                new("RegulatoryNotification", "Regulatory notification"),
             }) { AllowVisibilityOrder = true },
         new TaxonomyKind("EntityRelationshipType", "Entity relationships",
             "How one entity relates to another in the investigation graph. Rename, hide unused relationships, or reorder the picker.",
