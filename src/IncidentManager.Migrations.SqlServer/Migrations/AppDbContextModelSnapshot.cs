@@ -1307,6 +1307,32 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("NotificationRules", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.PinnedCase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("PinnedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "CaseId")
+                        .IsUnique();
+
+                    b.ToTable("PinnedCases", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.Report", b =>
                 {
                     b.Property<Guid>("Id")

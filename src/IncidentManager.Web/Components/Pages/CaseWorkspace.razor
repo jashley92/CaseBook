@@ -19,6 +19,7 @@
 @inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
 @inject IncidentManager.Application.Access.IAccessLogService AccessLog
 @inject IncidentManager.Web.Services.CaseCommandRegistry PaletteActions
+@inject IncidentManager.Application.Cases.CaseShortcutService Shortcuts
 
 <PageTitle>@(_case?.CaseNumber ?? "Case")</PageTitle>
 
@@ -109,6 +110,13 @@ else
         </div>
         <div class="d-flex align-items-center gap-2">
             <CasePresence CaseId="_case.Id" />
+            @* PROD-20: pin this case so it's one keystroke away (palette) and on My Work. Personal, any viewer. *@
+            <button type="button" class="btn btn-sm @(_isPinned ? "btn-warning" : "btn-outline-secondary")"
+                    title="@(_isPinned ? "Unpin this case" : "Pin this case for quick access")"
+                    aria-pressed="@_isPinned" aria-label="@(_isPinned ? "Unpin this case" : "Pin this case")"
+                    @onclick="TogglePin">
+                <span class="bi @(_isPinned ? "bi-pin-angle-fill" : "bi-pin-angle")" aria-hidden="true"></span>
+            </button>
             @if (_canAnyAction)
             {
                 <div class="dropdown">
@@ -742,6 +750,7 @@ else
         if (_case is not null)
         {
             await AccessLog.RecordCaseOpenAsync(_case.Id, _case.CaseNumber, _case.IsRestricted);
+            _isPinned = await Shortcuts.IsPinnedAsync(_case.Id); // PROD-20: header star + palette action state
         }
         _newClass = _case?.Classification ?? Classification.Incident;
         _newPhase = _case?.Phase ?? CasePhase.Triage;
@@ -1307,10 +1316,28 @@ else
                 list.Add(new("Archive case…", "bi-archive", () => OpenModalFromPalette("archive")));
         }
 
-        // Always available (any viewer) — a dependable action for read-only roles too, and a genuine time-saver.
+        // Always available (any viewer): pin/unpin (PROD-20) and copy link — dependable, personal actions.
+        list.Add(new(_isPinned ? "Unpin this case" : "Pin this case",
+            _isPinned ? "bi-pin-angle-fill" : "bi-pin-angle", RunThenRender(TogglePin)));
         list.Add(new("Copy link to this case", "bi-link-45deg", CopyCaseLink));
 
         return list;
+    }
+
+    // PROD-20: pin/unpin the open case for the current user.
+    private bool _isPinned;
+
+    private async Task TogglePin()
+    {
+        try
+        {
+            _isPinned = await Shortcuts.TogglePinAsync(Id);
+            Toasts.Success(_isPinned ? "Pinned for quick access." : "Unpinned.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex.Message);
+        }
     }
 
     // A one-click action invoked from the palette: run it, then re-render this workspace (the palette has

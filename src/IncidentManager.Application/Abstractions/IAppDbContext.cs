@@ -41,6 +41,7 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     DbSet<AuditLogEntry> AuditLog { get; }
     DbSet<CaseAccessEvent> CaseAccessEvents { get; }
     DbSet<SavedView> SavedViews { get; }
+    DbSet<PinnedCase> PinnedCases { get; }
     DbSet<CaseComment> CaseComments { get; }
     DbSet<IntegritySeal> IntegritySeals { get; }
     DbSet<AppSetting> AppSettings { get; }

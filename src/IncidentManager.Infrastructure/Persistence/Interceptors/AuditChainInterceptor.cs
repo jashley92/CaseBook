@@ -22,7 +22,8 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         typeof(AuditLogEntry), typeof(IntegritySeal), typeof(AppUser), typeof(ChainOfCustodyEvent),
         typeof(EntityLayout), // cosmetic graph positions — deliberately outside the tamper-evident chain
         typeof(CaseAccessEvent), // C-05 read/access telemetry — high-volume, out of the tamper-evident chain
-        typeof(SavedView) // PROD-09 personal/shared case-queue filter sets — user convenience state, not case data
+        typeof(SavedView), // PROD-09 personal/shared case-queue filter sets — user convenience state, not case data
+        typeof(PinnedCase) // PROD-20 per-user pinned favourites — convenience state, not case data
     ];
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };

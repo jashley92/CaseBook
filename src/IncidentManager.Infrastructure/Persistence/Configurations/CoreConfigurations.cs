@@ -504,3 +504,15 @@ public sealed class SavedViewConfiguration : IEntityTypeConfiguration<SavedView>
         b.HasIndex(x => new { x.OwnerUserId, x.Name }).IsUnique();
     }
 }
+
+public sealed class PinnedCaseConfiguration : IEntityTypeConfiguration<PinnedCase>
+{
+    public void Configure(EntityTypeBuilder<PinnedCase> b)
+    {
+        b.ToTable("PinnedCases");
+        b.Property(x => x.UserId).HasMaxLength(200).IsRequired();
+        b.HasIndex(x => x.UserId);
+        // A case is pinned at most once per user (toggling is idempotent).
+        b.HasIndex(x => new { x.UserId, x.CaseId }).IsUnique();
+    }
+}

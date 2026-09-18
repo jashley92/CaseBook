@@ -7,6 +7,7 @@
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @inject MyWorkService Svc
 @inject IncidentManager.Application.Cases.CaseService Cases
+@inject IncidentManager.Application.Cases.CaseShortcutService Shortcuts
 @inject IncidentManager.Web.Services.ToastService Toasts
 @inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
 @inject NavigationManager Nav
@@ -96,6 +97,43 @@
             </div>
 
             <div class="mw-grid">
+                @* PROD-20: the cases you pinned for quick access. Only shown when you have some. *@
+                @if (_pinned is { Count: > 0 })
+                {
+                    <section class="im-card" id="pinned">
+                        <div class="im-section-head">
+                            <span><span class="bi bi-pin-angle-fill" aria-hidden="true"></span> Pinned</span>
+                            <span class="im-section-note">@_pinned.Count pinned</span>
+                        </div>
+                        <table class="table table-sm table-hover align-middle im-table mb-0">
+                            <thead>
+                                <tr><th>Case #</th><th>Title</th><th>Class.</th><th>Phase</th><th>Sev.</th><th></th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var c in _pinned)
+                                {
+                                    <tr>
+                                        <td><code>@c.CaseNumber</code>
+                                            @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
+                                        </td>
+                                        <td>@c.Title</td>
+                                        <td><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
+                                        <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
+                                        <td><span class="@Ui.SeverityBadge(c.Severity)">@SevLabels.For(c.Severity)</span></td>
+                                        <td class="text-end text-nowrap">
+                                            <button class="btn btn-sm btn-outline-secondary py-0 me-1" title="Unpin this case"
+                                                    aria-label="@($"Unpin {c.CaseNumber}")" @onclick="() => Unpin(c.Id)">
+                                                <span class="bi bi-pin-angle" aria-hidden="true"></span>
+                                            </button>
+                                            <a class="btn btn-sm btn-outline-primary py-0" href="cases/@c.Id">Open</a>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </section>
+                }
+
                 <section class="im-card" id="cases">
                     <div class="im-section-head">
                         <span><span class="bi bi-folder2-open" aria-hidden="true"></span> My open cases</span>
@@ -276,12 +314,30 @@
     private string _newTaskTitle = "";
     private Guid _newTaskCaseId;
 
+    // PROD-20: the current user's pinned cases.
+    private IReadOnlyList<IncidentManager.Application.Cases.CaseListItem>? _pinned;
+
     private async Task Reload()
     {
         _work = await Svc.GetAsync();
+        _pinned = await Shortcuts.PinnedAsync();
         // Default the quick-add case picker to the first open case (and recover if the prior pick closed).
         if (_work.OpenCases.All(c => c.Id != _newTaskCaseId))
             _newTaskCaseId = _work.OpenCases.FirstOrDefault()?.Id ?? Guid.Empty;
+    }
+
+    private async Task Unpin(Guid caseId)
+    {
+        try
+        {
+            await Shortcuts.TogglePinAsync(caseId);
+            await Reload();
+            Toasts.Info("Unpinned.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex.Message);
+        }
     }
 
     private async Task OnQuickAddKey(KeyboardEventArgs e)

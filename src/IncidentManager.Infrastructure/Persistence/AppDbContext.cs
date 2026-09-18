@@ -43,6 +43,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<AdGroupRoleMapping> RoleMappings => Set<AdGroupRoleMapping>();
     public DbSet<SavedView> SavedViews => Set<SavedView>();
+    public DbSet<PinnedCase> PinnedCases => Set<PinnedCase>();
     public DbSet<CaseComment> CaseComments => Set<CaseComment>();
 
     /// <summary>

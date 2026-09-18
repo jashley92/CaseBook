@@ -5,6 +5,7 @@
 @inject IJSRuntime JS
 @inject IncidentManager.Web.Services.CommandPaletteController Palette
 @inject IncidentManager.Web.Services.CaseCommandRegistry PaletteActions
+@inject IncidentManager.Application.Cases.CaseShortcutService Shortcuts
 
 @* Command palette + keyboard-first layer (U-22, with the light chords from U-14). Hosted once in
    MainLayout. All shortcut behaviour funnels through OnHotkey, invoked by the CSP-safe global
@@ -207,6 +208,22 @@
     {
         var q = _query.Trim();
         var items = new List<Cmd>();
+
+        // PROD-20: with nothing typed, lead with the user's pinned cases and recently-opened cases, so the
+        // handful they're working are one keystroke away. Scoping/need-to-know is enforced in the service.
+        if (q.Length == 0)
+        {
+            try
+            {
+                var pinned = await Shortcuts.PinnedAsync();
+                var pinnedIds = pinned.Select(c => c.Id).ToHashSet();
+                foreach (var c in pinned) items.Add(CaseCmd("Pinned", "bi-pin-angle-fill", c));
+                foreach (var c in (await Shortcuts.RecentAsync(6)).Where(c => !pinnedIds.Contains(c.Id)).Take(5))
+                    items.Add(CaseCmd("Recent", "bi-clock-history", c));
+            }
+            catch { /* transient — the palette still works without the shortcuts */ }
+        }
+
         foreach (var c in StaticCommands())
         {
             if (q.Length == 0
@@ -247,6 +264,12 @@
         if (_selected < 0) _selected = 0;
         StateHasChanged();
     }
+
+    // PROD-20: a palette entry that jumps to a case (used by the Pinned / Recent groups).
+    private Cmd CaseCmd(string group, string icon, IncidentManager.Application.Cases.CaseListItem c) =>
+        new(group, icon, $"{c.CaseNumber} · {c.Title}",
+            $"{Ui.Label(c.Classification)} · {c.Severity} · {Ui.Label(c.Phase)}",
+            () => GoTo($"cases/{c.Id}"));
 
     private IEnumerable<Cmd> StaticCommands()
     {
