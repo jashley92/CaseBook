@@ -1,8 +1,15 @@
 @inject TeamWorkloadService Workload
+@inject IncidentManager.Application.Cases.CaseService Cases
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Web.Services.ToastService Toasts
+@inject IAuthorizationService Authz
+@inject AuthenticationStateProvider AuthState
 
 @* Team-workload panel (E-25): per-analyst open-case distribution + the unassigned queue, for rebalancing.
    Extracted from the former /team page so it can be embedded in the consolidated Work landing under a
-   ViewAllCases gate. Carries no <h1>/PageTitle — the host page owns the page heading. *@
+   ViewAllCases gate. Carries no <h1>/PageTitle — the host page owns the page heading.
+   PROD-23: an editor (IC/SysAdmin) can rebalance in place — a *metered* reassign scoped to one analyst's
+   queue (or the unassigned queue): count-capped and enumerate-and-confirm, never across disparate cases. *@
 
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
     <p class="text-muted mb-0">Open cases by analyst, plus the unassigned queue.</p>
@@ -49,6 +56,7 @@ else
                         <th>Severity mix</th>
                         <th>SLA</th>
                         <th class="text-center" title="Open cases with no activity in @TeamWorkloadBuilder.StaleDays days">Stale</th>
+                        @if (_canEdit) { <th></th> }
                     </tr>
                 </thead>
                 <tbody>
@@ -65,6 +73,14 @@ else
                             <td>@SevBar(u.Critical, u.High, u.Medium, u.Low, u.Informational)</td>
                             <td>@SlaCell(u.SlaAtRisk, u.SlaBreached)</td>
                             <td class="text-center">@StaleCell(u.Stale)</td>
+                            @if (_canEdit)
+                            {
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-primary py-0" @onclick='() => OpenReassign(null, "the unassigned queue")'>
+                                        <span class="bi bi-person-plus me-1" aria-hidden="true"></span>Assign…
+                                    </button>
+                                </td>
+                            }
                         </tr>
                     }
                     @foreach (var a in _w.Analysts)
@@ -82,6 +98,15 @@ else
                             <td>@SevBar(a.Critical, a.High, a.Medium, a.Low, a.Informational)</td>
                             <td>@SlaCell(a.SlaAtRisk, a.SlaBreached)</td>
                             <td class="text-center">@StaleCell(a.Stale)</td>
+                            @if (_canEdit)
+                            {
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => OpenReassign(a.UserId, a.DisplayName)"
+                                            title="@($"Reassign some of {a.DisplayName}'s cases")">
+                                        <span class="bi bi-arrow-left-right me-1" aria-hidden="true"></span>Reassign…
+                                    </button>
+                                </td>
+                            }
                         </tr>
                     }
                 </tbody>
@@ -95,15 +120,245 @@ else
     }
 }
 
+@* PROD-23: metered reassign. Scoped to one analyst's queue (or the unassigned queue), count-capped, and
+   routed through an enumerate-and-confirm step — never a bulk action across disparate cases. *@
+@if (_reassignOpen)
+{
+    var fromLabel = _reassignFromId is null ? "the unassigned queue" : _reassignFromName;
+    <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true" aria-label="Reassign cases"
+         style="background:var(--im-scrim)" @onclick="CloseReassign">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        @(_reassignFromId is null ? "Assign from the unassigned queue" : $"Reassign from {_reassignFromName}")
+                    </h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseReassign"></button>
+                </div>
+
+                @if (!_reassignConfirm)
+                {
+                    <div class="modal-body">
+                        <div class="row g-2 align-items-end mb-3">
+                            <div class="col-sm-7">
+                                <label class="form-label small mb-0" for="reassign-to">Assign to</label>
+                                <select id="reassign-to" class="form-select form-select-sm" @bind="_reassignToId">
+                                    <option value="">Select a user…</option>
+                                    @foreach (var u in Users.All().Where(u => !string.Equals(u.UserId, _reassignFromId, StringComparison.OrdinalIgnoreCase)))
+                                    {
+                                        <option value="@u.UserId">@u.DisplayName</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-sm-5">
+                                <label class="form-label small mb-0" for="reassign-role">Role on the case</label>
+                                <select id="reassign-role" class="form-select form-select-sm" @bind="_reassignRole">
+                                    @foreach (var r in Enum.GetValues<CaseAssignmentRole>())
+                                    {
+                                        <option value="@r">@r</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="small fw-semibold">@fromLabel's open cases</span>
+                            <span class="small text-muted">@_reassignSelected.Count / @MaxReassign selected</span>
+                        </div>
+
+                        @if (_reassignCases is null)
+                        {
+                            <p class="text-muted small"><em>Loading…</em></p>
+                        }
+                        else if (_reassignCases.Count == 0)
+                        {
+                            <p class="text-muted small mb-0">No open cases here to reassign.</p>
+                        }
+                        else
+                        {
+                            <div class="border rounded" style="max-height:22rem;overflow:auto">
+                                <table class="table table-sm table-hover align-middle mb-0">
+                                    <tbody>
+                                        @foreach (var c in _reassignCases)
+                                        {
+                                            var atCap = !_reassignSelected.Contains(c.Id) && _reassignSelected.Count >= MaxReassign;
+                                            <tr>
+                                                <td style="width:1%">
+                                                    <input class="form-check-input" type="checkbox" checked="@_reassignSelected.Contains(c.Id)"
+                                                           disabled="@atCap" aria-label="@($"Select {c.CaseNumber}")"
+                                                           @onchange="e => ToggleReassign(c.Id, (bool)(e.Value ?? false))" />
+                                                </td>
+                                                <td><code>@c.CaseNumber</code></td>
+                                                <td>@c.Title</td>
+                                                <td><span class="@Ui.SeverityBadge(c.Severity)">@c.Severity</span></td>
+                                                <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="form-text">
+                                Metered: scoped to this one queue, up to <strong>@MaxReassign</strong> at a time, with a confirm step —
+                                bulk reassignment across unrelated cases isn't offered.
+                            </div>
+                        }
+                    </div>
+                    <div class="modal-footer">
+                        @if (_reassignCases is { Count: > 0 })
+                        {
+                            <button class="btn btn-sm btn-outline-secondary me-auto" @onclick="SelectUpToCap">Select @Math.Min(_reassignCases.Count, MaxReassign)</button>
+                        }
+                        <button class="btn btn-outline-secondary" @onclick="CloseReassign">Cancel</button>
+                        <button class="btn btn-primary" @onclick="ProceedToConfirm"
+                                disabled="@(_reassignSelected.Count == 0 || string.IsNullOrEmpty(_reassignToId))">
+                            Reassign @_reassignSelected.Count…
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <div class="modal-body">
+                        <p>
+                            Reassign these <strong>@_reassignSelected.Count</strong> case@(_reassignSelected.Count == 1 ? "" : "s")
+                            @(_reassignFromId is null ? "" : $"from {_reassignFromName} ")to
+                            <strong>@ToName()</strong> as <strong>@_reassignRole</strong>?
+                            @if (_reassignFromId is not null)
+                            {
+                                <span class="text-muted">@_reassignFromName will be removed from @(_reassignSelected.Count == 1 ? "it" : "them").</span>
+                            }
+                        </p>
+                        <ul class="small mb-0">
+                            @foreach (var c in _reassignCases!.Where(c => _reassignSelected.Contains(c.Id)))
+                            {
+                                <li><code>@c.CaseNumber</code> — @c.Title</li>
+                            }
+                        </ul>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-outline-secondary" @onclick="() => _reassignConfirm = false" disabled="@_reassigning">Back</button>
+                        <button class="btn btn-primary" @onclick="ApplyReassign" disabled="@_reassigning">
+                            @if (_reassigning) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
+                            Confirm reassign
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private TeamWorkload? _w;
     private int _sumAtRisk, _sumBreached;
+    private bool _canEdit;
 
     protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        _canEdit = (await Authz.AuthorizeAsync(auth.User, Policies.EditCases)).Succeeded;
+        await LoadWorkload();
+    }
+
+    private async Task LoadWorkload()
     {
         _w = await Workload.GetAsync();
         _sumAtRisk = _w.Analysts.Sum(a => a.SlaAtRisk) + _w.Unassigned.SlaAtRisk;
         _sumBreached = _w.Analysts.Sum(a => a.SlaBreached) + _w.Unassigned.SlaBreached;
+    }
+
+    // --- PROD-23: metered reassign ------------------------------------------------------------------
+    private const int MaxReassign = 25;
+
+    private bool _reassignOpen;
+    private string? _reassignFromId;   // null = the unassigned queue (assign only, nobody to remove)
+    private string _reassignFromName = "";
+    private IReadOnlyList<CaseListItem>? _reassignCases;
+    private readonly HashSet<Guid> _reassignSelected = new();
+    private string _reassignToId = "";
+    private CaseAssignmentRole _reassignRole = CaseAssignmentRole.Analyst;
+    private bool _reassignConfirm;
+    private bool _reassigning;
+
+    private async Task OpenReassign(string? fromId, string fromName)
+    {
+        _reassignOpen = true;
+        _reassignFromId = fromId;
+        _reassignFromName = fromName;
+        _reassignSelected.Clear();
+        _reassignToId = "";
+        _reassignRole = CaseAssignmentRole.Analyst;
+        _reassignConfirm = false;
+        _reassignCases = null;
+
+        // Load only this queue's open cases — the coherent cohort the reassign is scoped to.
+        var page = await Cases.ListAsync(new CaseFilter
+        {
+            AssigneeUserId = fromId,
+            UnassignedOnly = fromId is null,
+            IncludeClosed = false,
+            Page = 1,
+            PageSize = 200
+        });
+        _reassignCases = page.Items;
+    }
+
+    private void CloseReassign() { _reassignOpen = false; _reassignCases = null; _reassignSelected.Clear(); }
+
+    private void ToggleReassign(Guid id, bool on)
+    {
+        if (on) { if (_reassignSelected.Count < MaxReassign) _reassignSelected.Add(id); }
+        else _reassignSelected.Remove(id);
+    }
+
+    private void SelectUpToCap()
+    {
+        _reassignSelected.Clear();
+        foreach (var c in (_reassignCases ?? Array.Empty<CaseListItem>()).Take(MaxReassign))
+            _reassignSelected.Add(c.Id);
+    }
+
+    private void ProceedToConfirm()
+    {
+        if (_reassignSelected.Count > 0 && !string.IsNullOrEmpty(_reassignToId)) _reassignConfirm = true;
+    }
+
+    private string ToName() => Users.Resolve(_reassignToId)?.DisplayName ?? _reassignToId;
+
+    private async Task ApplyReassign()
+    {
+        if (_reassigning || _reassignSelected.Count == 0 || string.IsNullOrEmpty(_reassignToId)) return;
+        _reassigning = true;
+        var toName = ToName();
+        var done = 0;
+        try
+        {
+            foreach (var id in _reassignSelected.ToList())
+            {
+                try
+                {
+                    await Cases.AssignAsync(id, _reassignToId, toName, _reassignRole);
+                    // Rebalancing: take the case off the source analyst (nobody to remove for the unassigned queue).
+                    if (_reassignFromId is not null)
+                        await Cases.UnassignAsync(id, _reassignFromId);
+                    done++;
+                }
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+                {
+                    Toasts.Error(ex.Message);
+                }
+            }
+        }
+        finally
+        {
+            _reassigning = false;
+        }
+
+        CloseReassign();
+        if (done > 0)
+        {
+            Toasts.Success($"Reassigned {done} case{(done == 1 ? "" : "s")} to {toName}.");
+            await LoadWorkload();
+        }
     }
 
     private static string AssigneeHref(AnalystLoad a) =>
