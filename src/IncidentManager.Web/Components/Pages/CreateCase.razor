@@ -120,6 +120,14 @@
                     <label class="form-label">Summary</label>
                     <InputTextArea class="form-control" rows="3" @bind-Value="_request.Summary"
                                    placeholder="@(_summaryPrompt ?? "What happened, current status, and immediate impact.")" />
+                    @* FR-21: a template's summary shows as grey prompt text (U-47b), never a filled value, so a
+                       hurried user can mistake it for content and file an empty summary. Nudge softly (no block). *@
+                    @if (_selectedTemplate is not null && string.IsNullOrWhiteSpace(_request.Summary))
+                    {
+                        <div class="form-text text-warning">
+                            <span class="bi bi-info-circle me-1" aria-hidden="true"></span>The grey text is the template's prompt, not content — add your own summary or the case is filed with none.
+                        </div>
+                    }
                 </div>
             </div>
 
