@@ -276,8 +276,9 @@
                             {
                                 <div class="d-flex align-items-end gap-2 flex-wrap">
                                     <div>
-                                        <label class="form-label small mb-0">Reported at (UTC)</label>
-                                        <input type="datetime-local" class="form-control form-control-sm" @bind="_reportedAt" />
+                                        <label class="form-label small mb-0">Reported at (@TimeDisp.Label)</label>
+                                        <input type="datetime-local" class="form-control form-control-sm" @bind="_reportedAt"
+                                               title="When regulators were notified. Entered in @TimeDisp.Label (the same convention as every other time field), stored as UTC. This stops the notification-deadline countdown." />
                                     </div>
                                     <button class="btn btn-sm btn-primary" @onclick="MarkReported">Save</button>
                                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => _markingReported = false">Cancel</button>
@@ -612,7 +613,10 @@
     private void BeginMarkReported()
     {
         _reportedError = null;
-        _reportedAt = Clock.UtcNow.UtcDateTime;
+        // FR-09: seed + accept the reported time as wall-clock in the viewer's display zone (like Detected /
+        // Initial-activity), not raw UTC — so an analyst who types local everywhere can't mis-stop the
+        // highest-stakes regulatory clock by their zone offset. WallToUtc converts on save.
+        _reportedAt = UtcToWall(Clock.UtcNow);
         _markingReported = true;
     }
 
@@ -622,7 +626,7 @@
         if (_reportedAt is not { } dt) { _reportedError = "Enter the reported time."; return; }
         try
         {
-            var utc = new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc));
+            var utc = WallToUtc(dt); // FR-09: wall-clock (display zone) → UTC, matching every other datetime field
             await Cases.MarkReportedAsync(CaseId, utc);
             _markingReported = false;
             _deadlines = await Deadlines.EvaluateAsync(CaseId);
