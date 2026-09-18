@@ -19,9 +19,13 @@ public static class AuditChangeDetail
     public readonly record struct FieldChange(string Label, string Before, string After);
 
     // Bookkeeping / integrity plumbing that changes on almost every write — noise in a "what changed" view.
+    // Includes the owned value objects' own recorder/timestamp stamps: the substantive move (referred?,
+    // materiality status, …) is shown, while "who recorded / when" stays out of the headline diff.
     private static readonly HashSet<string> Suppressed = new(StringComparer.Ordinal)
     {
         "RowHash", "ModifiedAtUtc", "ModifiedBy", "CreatedAtUtc", "CreatedBy", "HasCustomNumber",
+        "LegalReferral.ReferredAtUtc", "LegalReferral.ReferredBy",
+        "Materiality.RecordedAtUtc", "Materiality.RecordedBy",
     };
 
     // Friendly labels for the fields that don't humanise cleanly from their property name.
@@ -41,6 +45,26 @@ public static class AuditChangeDetail
         ["Summary"] = "Case summary",
         ["ReportedAtUtc"] = "Reported (regulatory)",
         ["Phase"] = "Status", // the phase field is surfaced as "status" everywhere the user acts on it
+        // Owned value objects, folded into the case diff by the interceptor as "Nav.Prop".
+        ["LegalReferral.IsReferred"] = "Referred to Legal",
+        ["LegalReferral.ReferredToContact"] = "Legal contact",
+        ["LegalReferral.RegulatoryRelevanceNote"] = "Legal relevance note",
+        ["Materiality.Status"] = "Materiality",
+        ["Materiality.DecisionMaker"] = "Materiality decision-maker",
+        ["Materiality.DecidedOnUtc"] = "Materiality decision date",
+        ["Materiality.Rationale"] = "Materiality rationale",
+        ["ThirdParty.VendorName"] = "Vendor name",
+        ["ThirdParty.VendorContact"] = "Vendor contact",
+        ["ThirdParty.VendorReference"] = "Vendor reference",
+    };
+
+    // For the one-line summary, owned value-object fields collapse to their group so a materiality change
+    // reads "Update Case — Materiality" rather than repeating every sub-field.
+    private static readonly Dictionary<string, string> GroupLabels = new(StringComparer.Ordinal)
+    {
+        ["LegalReferral"] = "Legal referral",
+        ["Materiality"] = "Materiality",
+        ["ThirdParty"] = "Third-party details",
     };
 
     // Enum fields whose stored value is a number: mapped back to the member name so a transition reads
@@ -51,6 +75,7 @@ public static class AuditChangeDetail
         ("Case", "Severity") => typeof(Severity),
         ("Case", "Phase") => typeof(CasePhase),
         ("Case", "Origin") => typeof(CaseOrigin),
+        ("Case", "Materiality.Status") => typeof(MaterialityStatus),
         _ => null
     };
 
@@ -61,6 +86,15 @@ public static class AuditChangeDetail
     public static string Label(string propertyName) =>
         Labels.TryGetValue(propertyName, out var l) ? l : Humanize(propertyName);
 
+    // For the summary: an owned "Nav.Prop" key collapses to its group label ("Materiality"); anything else
+    // uses its normal field label.
+    private static string GroupOrLabel(string field)
+    {
+        var dot = field.IndexOf('.');
+        if (dot > 0 && GroupLabels.TryGetValue(field[..dot], out var group)) return group;
+        return Label(field);
+    }
+
     /// <summary>
     /// The stored audit summary for an entry. For an update it names the meaningful fields that moved
     /// (e.g. <c>Update Case — Legal hold</c>); create/delete keep the plain <c>Action Entity</c> form.
@@ -70,7 +104,8 @@ public static class AuditChangeDetail
         var baseline = $"{action} {entityType}";
         if (action != AuditAction.Update) return baseline;
 
-        var fields = changedFields.Where(IsMeaningful).Select(Label).ToList();
+        // Collapse owned value-object fields to their group so the summary stays short, and de-dup.
+        var fields = changedFields.Where(IsMeaningful).Select(GroupOrLabel).Distinct().ToList();
         return fields.Count == 0 ? baseline : $"{baseline} — {string.Join(", ", fields)}";
     }
 

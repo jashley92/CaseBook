@@ -181,13 +181,60 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             case EntityState.Deleted:
                 return (AuditAction.SoftDelete, Serialize(e.OriginalValues, e.OriginalValues.Properties), null, NoFields);
             default:
-                var changed = e.Properties.Where(p => p.IsModified).Select(p => p.Metadata).ToList();
-                return (AuditAction.Update,
-                    Serialize(e.OriginalValues, changed),
-                    Serialize(e.CurrentValues, changed),
-                    changed.Select(p => p.Name).ToList());
+                return DescribeUpdate(e);
         }
     }
+
+    /// <summary>
+    /// Builds the before/after diff for an update. Owned value objects (LegalReferral / Materiality /
+    /// ThirdParty) share the owner's row but are tracked as separate, excluded entries — so their changes are
+    /// folded into the owner's diff here, keyed "Nav.Prop" (e.g. "Materiality.Status"). Without this, a
+    /// referral or materiality determination shows only as an empty "Update Case" (just the row-hash/touch).
+    /// </summary>
+    private static (AuditAction, string?, string?, IReadOnlyList<string>) DescribeUpdate(EntityEntry e)
+    {
+        var before = new Dictionary<string, object?>();
+        var after = new Dictionary<string, object?>();
+        var names = new List<string>();
+
+        foreach (var p in e.Properties.Where(p => p.IsModified && !p.Metadata.IsShadowProperty()))
+        {
+            before[p.Metadata.Name] = p.OriginalValue;
+            after[p.Metadata.Name] = p.CurrentValue;
+            names.Add(p.Metadata.Name);
+        }
+
+        foreach (var reference in e.References)
+        {
+            var target = reference.TargetEntry;
+            if (target is null || !target.Metadata.IsOwned()) continue;
+            if (target.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted)) continue;
+
+            var nav = reference.Metadata.Name;
+            foreach (var p in target.Properties)
+            {
+                if (p.Metadata.IsShadowProperty()) continue; // owner FK / key
+                var moved = target.State is EntityState.Added or EntityState.Deleted || p.IsModified;
+                if (!moved) continue;
+                var key = $"{nav}.{p.Metadata.Name}";
+                // Replacing the whole VO tracks it as Added (no original), so a first-time referral/materiality
+                // reads from the type's default — "No" / "Undetermined" — rather than an "absent" dash.
+                before[key] = target.State == EntityState.Added ? DefaultOf(p.Metadata.ClrType) : p.OriginalValue;
+                after[key] = target.State == EntityState.Deleted ? null : p.CurrentValue;
+                names.Add(key);
+            }
+        }
+
+        return (AuditAction.Update,
+            JsonSerializer.Serialize(before, Json),
+            JsonSerializer.Serialize(after, Json),
+            names);
+    }
+
+    // The "empty" prior value for a property whose owned VO was added wholesale: the zero of a value type
+    // (false, Undetermined, 0), or null for strings / nullable types.
+    private static object? DefaultOf(Type clrType) =>
+        clrType.IsValueType && Nullable.GetUnderlyingType(clrType) is null ? Activator.CreateInstance(clrType) : null;
 
     private static string Serialize(PropertyValues values, IEnumerable<Microsoft.EntityFrameworkCore.Metadata.IProperty> props)
     {

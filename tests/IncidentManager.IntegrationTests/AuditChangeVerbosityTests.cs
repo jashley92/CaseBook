@@ -121,5 +121,33 @@ public sealed class AuditChangeVerbosityTests : IDisposable
             .Should().Be(0);
     }
 
+    [Fact]
+    public async Task Referring_to_legal_shows_the_change_on_the_case_line()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+
+        var c = await svc.CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "Referral", Title = "Referral case",
+            Classification = Classification.Incident, Severity = Severity.Medium,
+            Origin = CaseOrigin.InternalDetection
+        });
+
+        // A referral changes an owned value object (LegalReferral), which shares the case row.
+        await svc.ReferToLegalAsync(c.Id, "General Counsel", "NY NPI involved");
+
+        await using var read = NewContext();
+        var entry = await read.AuditLog.AsNoTracking()
+            .Where(a => a.EntityType == "Case" && a.Action == AuditAction.Update)
+            .OrderByDescending(a => a.Sequence)
+            .FirstAsync();
+
+        // The owned-VO change is folded into the case entry's diff (previously this was an empty "Update Case").
+        entry.Summary.Should().Be("Update Case — Legal referral");
+        AuditChangeDetail.Changes(entry).Should()
+            .Contain(x => x.Label == "Referred to Legal" && x.Before == "No" && x.After == "Yes");
+    }
+
     public void Dispose() => _connection.Dispose();
 }

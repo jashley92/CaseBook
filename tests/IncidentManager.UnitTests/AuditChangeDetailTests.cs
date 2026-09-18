@@ -106,6 +106,48 @@ public class AuditChangeDetailTests
         });
     }
 
+    [Fact]
+    public void Changes_surfaces_owned_value_object_fields_on_the_owner()
+    {
+        var entry = new AuditLogEntry
+        {
+            EntityType = "Case",
+            Action = AuditAction.Update,
+            // A materiality determination: the case row itself only moves its hash/touch, but the interceptor
+            // folds the owned VO's fields in as "Materiality.*" (Status 1→2 = Under review→Material).
+            BeforeJson = """{"RowHash":"a","ModifiedAtUtc":"t0","Materiality.Status":1,"Materiality.RecordedBy":"u1"}""",
+            AfterJson = """{"RowHash":"b","ModifiedAtUtc":"t1","Materiality.Status":2,"Materiality.RecordedBy":"u1"}""",
+        };
+
+        // Hash/touch and the owned recorder stamp are suppressed; the status transition maps to enum names.
+        AuditChangeDetail.Changes(entry).Should().ContainSingle()
+            .Which.Should().Be(new AuditChangeDetail.FieldChange("Materiality", "Under review", "Material"));
+    }
+
+    [Fact]
+    public void Changes_reads_a_legal_referral_flag_on_the_case_line()
+    {
+        var entry = new AuditLogEntry
+        {
+            EntityType = "Case",
+            Action = AuditAction.Update,
+            BeforeJson = """{"RowHash":"a","LegalReferral.IsReferred":false}""",
+            AfterJson = """{"RowHash":"b","LegalReferral.IsReferred":true}""",
+        };
+
+        AuditChangeDetail.Changes(entry).Single()
+            .Should().Be(new AuditChangeDetail.FieldChange("Referred to Legal", "No", "Yes"));
+    }
+
+    [Fact]
+    public void Update_summary_collapses_owned_fields_to_their_group()
+    {
+        var summary = AuditChangeDetail.ComposeSummary(AuditAction.Update, "Case",
+            ["RowHash", "ModifiedAtUtc", "Materiality.Status", "Materiality.Rationale", "Materiality.RecordedBy"]);
+
+        summary.Should().Be("Update Case — Materiality"); // not "Materiality, Materiality rationale, …"
+    }
+
     [Theory]
     [InlineData(AuditAction.Create)]
     [InlineData(AuditAction.SoftDelete)]
