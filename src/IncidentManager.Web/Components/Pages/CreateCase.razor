@@ -11,7 +11,7 @@
 <PageTitle>New Case</PageTitle>
 
 <PageHeader Title="New case"
-           Subtitle="For items that have escalated to an Adverse Event, Incident, or Breach." />
+           Subtitle="File a new security matter — set its classification (Adverse Event, Incident, or Breach), or choose Complex Event to capture and triage it before classifying." />
 
 <EditForm Model="_request" OnValidSubmit="Submit" FormName="createCase">
     <div class="nc-form">
@@ -67,6 +67,7 @@
                             <option value="@s">@SevLabels.For(s)</option>
                         }
                     </InputSelect>
+                    <div class="form-text">Sets the response-time SLA clock — confirm it matches the matter's impact (defaults to @SevLabels.For(Severity.Medium)).</div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Origin</label>
