@@ -54,11 +54,20 @@ else
             @if (_renumbering)
             {
                 <div class="d-flex align-items-center gap-2 mb-2" style="max-width:32rem">
-                    <input class="form-control form-control-sm font-monospace" @bind="_editNumber" @bind:event="oninput"
+                    <input class="form-control form-control-sm font-monospace" @bind="_editNumber" @bind:event="oninput" @bind:after="CheckRenumberAvailable"
                            placeholder="Case number" aria-label="Case number" />
-                    <button class="btn btn-sm btn-primary" @onclick="SaveRenumber" disabled="@_savingNumber">Save</button>
+                    <button class="btn btn-sm btn-primary" @onclick="SaveRenumber" disabled="@(_savingNumber || _renumberAvailable == false)">Save</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="CancelRenumber">Cancel</button>
                 </div>
+                @* FR-22: flag a collision as the analyst types, not only when they click Save. *@
+                @if (_renumberAvailable == false)
+                {
+                    <div class="text-danger small mb-2"><span class="bi bi-x-circle me-1" aria-hidden="true"></span>“@_editNumber?.Trim()” is already in use.</div>
+                }
+                else if (_renumberAvailable == true)
+                {
+                    <div class="text-success small mb-2"><span class="bi bi-check-circle me-1" aria-hidden="true"></span>Available.</div>
+                }
             }
             @if (_renumberError is not null)
             {
@@ -475,6 +484,28 @@ else
     private bool _savingNumber;
     private string _editNumber = "";
     private string? _renumberError;
+    // FR-22: inline availability of the typed number (debounced), null when blank / unchanged / unchecked.
+    private bool? _renumberAvailable;
+    private CancellationTokenSource? _renumberCheckCts;
+
+    private async Task CheckRenumberAvailable()
+    {
+        _renumberCheckCts?.Cancel();
+        var cts = _renumberCheckCts = new CancellationTokenSource();
+        var v = _editNumber?.Trim();
+        if (string.IsNullOrEmpty(v) || string.Equals(v, _case.CaseNumber, StringComparison.Ordinal))
+        {
+            _renumberAvailable = null;
+            return;
+        }
+        try
+        {
+            await Task.Delay(350, cts.Token); // debounce keystrokes
+            var ok = await Cases.IsCaseNumberAvailableAsync(v, _case.Id, cts.Token);
+            if (!cts.Token.IsCancellationRequested) { _renumberAvailable = ok; StateHasChanged(); }
+        }
+        catch (OperationCanceledException) { /* superseded by a newer keystroke */ }
+    }
 
     // Overview: the tab is extracted to CaseOverviewTab (UX-13), which owns details/impact/techniques/links
     // + the Summary editor. The parent keeps a ref for hotkey dispatch (Ctrl+Enter save).
@@ -1136,6 +1167,7 @@ else
         if (_case is null) return;
         _editNumber = _case.CaseNumber;
         _renumberError = null;
+        _renumberAvailable = null;
         _renumbering = true;
     }
 
@@ -1143,6 +1175,8 @@ else
     {
         _renumbering = false;
         _renumberError = null;
+        _renumberCheckCts?.Cancel();
+        _renumberAvailable = null;
     }
 
     private async Task SaveRenumber()

@@ -136,8 +136,20 @@
                 <summary>Advanced</summary>
                 <div class="mt-2 nc-advanced-body">
                     <label class="form-label">Case number <span class="text-muted">(optional)</span></label>
-                    <InputText class="form-control" @bind-Value="_request.CaseNumber" placeholder="@PreviewNumber" />
-                    <div class="form-text">Leave blank to auto-generate. Must be unique.</div>
+                    <InputText class="form-control" @bind-Value="_request.CaseNumber" @bind-Value:after="CheckNumberAvailable" placeholder="@PreviewNumber" />
+                    @* FR-22: flag a collision here instead of only on submit. *@
+                    @if (_numberAvailable == false)
+                    {
+                        <div class="form-text text-danger"><span class="bi bi-x-circle me-1" aria-hidden="true"></span>“@(_request.CaseNumber?.Trim())” is already in use — pick another or leave blank.</div>
+                    }
+                    else if (_numberAvailable == true)
+                    {
+                        <div class="form-text text-success"><span class="bi bi-check-circle me-1" aria-hidden="true"></span>Available. Must be unique.</div>
+                    }
+                    else
+                    {
+                        <div class="form-text">Leave blank to auto-generate. Must be unique.</div>
+                    }
                 </div>
             </details>
         </div>
@@ -230,6 +242,14 @@
 
     private List<TemplateView>? _templates;
     private TemplateView? _selectedTemplate;
+
+    // FR-22: inline availability of a custom (Advanced) case number — null = blank/unchecked, true/false checked.
+    private bool? _numberAvailable;
+    private async Task CheckNumberAvailable()
+    {
+        var v = _request.CaseNumber?.Trim();
+        _numberAvailable = string.IsNullOrEmpty(v) ? null : await Cases.IsCaseNumberAvailableAsync(v);
+    }
 
     // E-23: creation-time IOC entry + duplicate/related-case detection.
     private string? _indicators;

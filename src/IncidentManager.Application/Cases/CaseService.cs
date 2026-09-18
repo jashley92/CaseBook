@@ -77,6 +77,23 @@ public sealed class CaseService
         return await Scoped(db.Cases.AsNoTracking()).AnyAsync(c => c.CaseNumber == caseNumber, ct);
     }
 
+    /// <summary>
+    /// FR-22: whether a custom case number is free, so intake / renumber can flag a collision as the user
+    /// types instead of only on submit. Uniqueness is global (unscoped) — a number must not collide even
+    /// with a case the user can't see — matching the enforcement in CreateAsync / RenumberAsync. A blank
+    /// number is "available" (it auto-generates); an over-long one is not. <paramref name="exceptCaseId"/>
+    /// excludes the case being renumbered from the check.
+    /// </summary>
+    public async Task<bool> IsCaseNumberAvailableAsync(string? caseNumber, Guid? exceptCaseId = null, CancellationToken ct = default)
+    {
+        var n = caseNumber?.Trim();
+        if (string.IsNullOrEmpty(n)) return true;
+        if (n.Length > 200) return false;
+        using var db = _factory.CreateDbContext();
+        return !await db.Cases.AsNoTracking()
+            .AnyAsync(x => (exceptCaseId == null || x.Id != exceptCaseId) && x.CaseNumber == n, ct);
+    }
+
     public async Task<CasePage> ListAsync(CaseFilter filter, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
