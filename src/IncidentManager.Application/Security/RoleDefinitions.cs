@@ -14,7 +14,10 @@ public static class RoleDefinitions
     {
         [AppRole.Analyst] =
         [
-            Permission.ViewCases, Permission.EditCases
+            // Analysts may change classification: they own the timeline and evidence that justify it, and the
+            // promotion is already governed by the stage gate (blocking requirements, attestation, override
+            // justification — all hash-chained), so the classification move needs no extra role beyond it.
+            Permission.ViewCases, Permission.EditCases, Permission.ChangeClassification
         ],
         [AppRole.IncidentCommander] =
         [

@@ -74,20 +74,17 @@ public sealed class CaseActionAuthorizationTests : IDisposable
     }
 
     [Fact]
-    public async Task An_editor_can_create_and_note_but_not_reclassify_hold_or_archive()
+    public async Task An_analyst_can_create_note_and_reclassify_but_not_hold_or_archive()
     {
         await using var db = NewContext();
         var svc = NewService(db);
-        _user.RoleSet = [AppRole.Analyst]; // ViewCases + EditCases only
+        _user.RoleSet = [AppRole.Analyst]; // ViewCases + EditCases + ChangeClassification
 
-        // EditCases actions succeed.
+        // EditCases + ChangeClassification actions succeed (the stage gate, not the role, governs the promotion).
         var id = await CreateIncidentAsync(svc);
         await svc.AddNoteAsync(id, "An analyst note.");
-
-        // ChangeClassification is not held → refused.
-        var reclassify = () => svc.ReclassifyAsync(id, Classification.Breach, "NPI confirmed");
-        (await reclassify.Should().ThrowAsync<ForbiddenException>())
-            .Which.Required.Should().Be(Permission.ChangeClassification);
+        var reclassify = () => svc.ReclassifyAsync(id, Classification.Breach, "NPI confirmed across the estate.");
+        await reclassify.Should().NotThrowAsync();
 
         // ManageLegal is not held → legal hold refused.
         var hold = () => svc.SetLegalHoldAsync(id, held: true);
@@ -110,6 +107,23 @@ public sealed class CaseActionAuthorizationTests : IDisposable
         var create = () => CreateIncidentAsync(svc);
         (await create.Should().ThrowAsync<ForbiddenException>())
             .Which.Required.Should().Be(Permission.EditCases);
+    }
+
+    [Fact]
+    public async Task Reclassification_is_refused_for_a_role_lacking_ChangeClassification()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+
+        // Create as an editor, then act as Legal/Privacy: sees the case (ViewAllCases) but holds no
+        // ChangeClassification, so the reclassification is refused at the service boundary.
+        _user.RoleSet = [AppRole.SysAdmin];
+        var id = await CreateIncidentAsync(svc);
+
+        _user.RoleSet = [AppRole.LegalPrivacy];
+        var reclassify = () => svc.ReclassifyAsync(id, Classification.Breach, "NPI confirmed across the estate.");
+        (await reclassify.Should().ThrowAsync<ForbiddenException>())
+            .Which.Required.Should().Be(Permission.ChangeClassification);
     }
 
     [Fact]

@@ -15,12 +15,14 @@ public class RoleDefinitionsTests
     }
 
     [Fact]
-    public void Analyst_is_limited_to_view_and_edit()
+    public void Analyst_can_view_edit_and_classify_but_no_more()
     {
         var perms = RoleDefinitions.PermissionsFor([AppRole.Analyst]);
 
-        perms.Should().BeEquivalentTo([Permission.ViewCases, Permission.EditCases]);
+        // Analysts change classification too — the stage gate governs the promotion, not the role.
+        perms.Should().BeEquivalentTo([Permission.ViewCases, Permission.EditCases, Permission.ChangeClassification]);
         perms.Should().NotContain(Permission.ViewAllCases);   // scoped by need-to-know
+        perms.Should().NotContain(Permission.ManageLegal);
         perms.Should().NotContain(Permission.Administer);
     }
 

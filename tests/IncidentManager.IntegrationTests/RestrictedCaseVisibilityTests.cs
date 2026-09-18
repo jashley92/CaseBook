@@ -93,7 +93,7 @@ public sealed class RestrictedCaseVisibilityTests : IDisposable
         var id = await SeedRestrictedCaseOwnedByAnotherAsync();
 
         _user.UserId = "analyst-unrelated";
-        _user.RoleSet = [AppRole.Analyst]; // ViewCases + EditCases, no ViewRestricted
+        _user.RoleSet = [AppRole.Analyst]; // no ViewRestricted / ViewAllCases
 
         var svc = NewService();
         (await svc.GetDetailAsync(id)).Should().BeNull();

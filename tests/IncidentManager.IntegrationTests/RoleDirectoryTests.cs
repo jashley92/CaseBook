@@ -73,7 +73,7 @@ public sealed class RoleDirectoryTests : IDisposable
         var dir = _sp.GetRequiredService<IRoleDirectory>();
         dir.RolesForGroups(["SOC-AppAdmins"]).Should().Contain("SysAdmin");
         dir.PermissionsForRoles(["SysAdmin"]).Should().BeEquivalentTo(Enum.GetValues<Permission>());
-        dir.PermissionsForRoles(["Analyst"]).Should().BeEquivalentTo([Permission.ViewCases, Permission.EditCases]);
+        dir.PermissionsForRoles(["Analyst"]).Should().BeEquivalentTo([Permission.ViewCases, Permission.EditCases, Permission.ChangeClassification]);
 
         using var scope = Scope();
         var roles = await scope.ServiceProvider.GetRequiredService<RoleService>().ListRolesAsync();

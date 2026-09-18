@@ -73,7 +73,7 @@ public static class RoleSeeder
 
     private static string Describe(AppRole role) => role switch
     {
-        AppRole.Analyst => "SOC analyst: investigate and edit assigned cases.",
+        AppRole.Analyst => "SOC analyst: investigate, edit, and classify cases (classification gated by stage requirements).",
         AppRole.IncidentCommander => "Owns incidents; changes classification and approves reports.",
         AppRole.Manager => "Leadership: read and report across all cases.",
         AppRole.LegalPrivacy => "Legal/Privacy: breach oversight and referral workflow.",
