@@ -4,6 +4,7 @@
 @inject ICurrentUser CurrentUser
 @inject IJSRuntime JS
 @inject IncidentManager.Web.Services.CommandPaletteController Palette
+@inject IncidentManager.Web.Services.CaseCommandRegistry PaletteActions
 
 @* Command palette + keyboard-first layer (U-22, with the light chords from U-14). Hosted once in
    MainLayout. All shortcut behaviour funnels through OnHotkey, invoked by the CSP-safe global
@@ -262,6 +263,16 @@
             yield return new Cmd("Navigate", "bi-sliders", "Administration", null, () => GoTo("admin"));
             yield return new Cmd("Navigate", "bi-people", "Roles & access", null, () => GoTo("admin/roles"));
             yield return new Cmd("Navigate", "bi-clipboard-check", "Case templates", null, () => GoTo("admin/templates"));
+        }
+
+        // PROD-19: when a case workspace is open, offer its action verbs (reclassify, assign, advance, refer to
+        // Legal, …). They come from the live workspace via the registry, so permissions, the next phase, and
+        // hold/archive state are already resolved there — the palette just lists and runs them. Activating one
+        // closes the palette first, then invokes the workspace handler (which opens a modal or applies a change).
+        foreach (var a in PaletteActions.Current())
+        {
+            var run = a.Run;
+            yield return new Cmd("Case actions", a.Icon, a.Label, null, () => { ClosePalette(); return run(); });
         }
 
         // Contextual: when a case is open, offer a jump to each of its tabs.

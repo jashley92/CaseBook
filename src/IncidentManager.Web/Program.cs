@@ -139,6 +139,8 @@ builder.Services.AddScoped<IncidentManager.Web.Services.ToastService>();
 builder.Services.AddScoped<IncidentManager.Web.Services.TimeDisplay>();
 // Lets the top-bar search pill open the hosted command palette (see CommandPaletteController).
 builder.Services.AddScoped<IncidentManager.Web.Services.CommandPaletteController>();
+// PROD-19: lets the open CaseWorkspace publish its action verbs to the hosted command palette.
+builder.Services.AddScoped<IncidentManager.Web.Services.CaseCommandRegistry>();
 
 // Live case-presence (U-01b): one tracker per circuit, also wired as the circuit handler so a
 // closed/crashed tab's presence is cleaned up even if the component never disposes gracefully.

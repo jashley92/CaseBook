@@ -18,6 +18,7 @@
 @inject IncidentManager.Application.Compliance.NotificationDeadlineService Deadlines
 @inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
 @inject IncidentManager.Application.Access.IAccessLogService AccessLog
+@inject IncidentManager.Web.Services.CaseCommandRegistry PaletteActions
 
 <PageTitle>@(_case?.CaseNumber ?? "Case")</PageTitle>
 
@@ -610,6 +611,12 @@ else
 
         // Live collaboration: refresh when another analyst changes this case.
         _caseSub = Notifier.Subscribe(Id, OnCaseChangedAsync);
+
+        // PROD-19: publish this case's action verbs to the command palette. The provider is a closure over
+        // live state, so the palette reflects the case as it currently is (permissions, next phase, hold state).
+        // Owner-guarded (see CaseCommandRegistry): MainLayout re-keys this page subtree on a time-zone change,
+        // so a fresh instance registers before the old one disposes — pass `this` so teardown clears only ours.
+        PaletteActions.Set(this, BuildPaletteActions);
 
         // U-32: a 30s heartbeat re-renders so relative times ("2m ago") stay live without a reload.
         _relativeTimeTicker = new System.Threading.Timer(
@@ -1255,6 +1262,88 @@ else
         }
     }
 
+    // --- PROD-19: the case's action verbs, surfaced in the command palette -----------------------------
+    // Mirrors the Actions dropdown + the stepper's Advance button, reusing the same permission gates and the
+    // same handlers (so behaviour and audit are identical whether invoked by mouse or by Ctrl/⌘K). Recomputed
+    // on demand from live state; the palette closes itself before invoking Run.
+    private IReadOnlyList<IncidentManager.Web.Services.CasePaletteAction> BuildPaletteActions()
+    {
+        var list = new List<IncidentManager.Web.Services.CasePaletteAction>();
+        if (_case is null) return list;
+
+        // Assign to me — one-click self-assign, only when editable and not already on the case.
+        if (_canEdit && !_case.Assignments.Any(a => string.Equals(a.UserId, _myId, StringComparison.OrdinalIgnoreCase)))
+            list.Add(new("Assign to me", "bi-person-check", RunThenRender(AssignToMe)));
+
+        // Advance to the next phase (Close routes through the gated status modal — see AdvanceTo).
+        if (_canEdit && NextPhase() is { } np)
+            list.Add(new($"Advance to {Ui.Label(np)}", "bi-arrow-right-circle", RunThenRender(() => AdvanceTo(np))));
+
+        if (_canReclassify)
+            list.Add(new(_case.Classification is null ? "Promote onto the ladder…" : "Reclassify…",
+                "bi-diagram-2", () => OpenModalFromPalette("reclass")));
+
+        if (_canEdit)
+        {
+            list.Add(new("Change severity…", "bi-thermometer-half", () => OpenModalFromPalette("severity")));
+            list.Add(new("Change status…", "bi-signpost-split", () => OpenModalFromPalette("status")));
+            list.Add(new("Refer to Legal / Privacy…", "bi-briefcase", () => OpenModalFromPalette("legal")));
+            if (_case.Classification is Classification.Incident or Classification.Breach)
+                list.Add(new("Record materiality determination…", "bi-clipboard2-check", () => OpenModalFromPalette("materiality")));
+            list.Add(new("Assign someone to this case…", "bi-person-plus", () => OpenModalFromPalette("assign")));
+            if (_case.Phase == CasePhase.Closed)
+                list.Add(new("Reopen case…", "bi-arrow-counterclockwise", () => OpenModalFromPalette("reopen")));
+        }
+
+        if (_canManageLegal)
+            list.Add(new(_case.LegalHold ? "Release legal hold" : "Place legal hold",
+                _case.LegalHold ? "bi-unlock" : "bi-lock", RunThenRender(() => SetLegalHold(!_case.LegalHold))));
+
+        if (_canAdmin)
+        {
+            if (_case.IsArchived)
+                list.Add(new("Restore from archive", "bi-box-arrow-up", RunThenRender(() => SetArchived(false))));
+            else
+                list.Add(new("Archive case…", "bi-archive", () => OpenModalFromPalette("archive")));
+        }
+
+        // Always available (any viewer) — a dependable action for read-only roles too, and a genuine time-saver.
+        list.Add(new("Copy link to this case", "bi-link-45deg", CopyCaseLink));
+
+        return list;
+    }
+
+    // A one-click action invoked from the palette: run it, then re-render this workspace (the palette has
+    // already closed itself). Wrapped so the private handlers keep their existing signatures.
+    private Func<Task> RunThenRender(Func<Task> action) => async () =>
+    {
+        await action();
+        StateHasChanged();
+    };
+
+    // Opening a modal from the palette is async (it may load the stage gate), and needs an explicit re-render
+    // because the trigger lives in another component's event handler, not this one's.
+    private async Task OpenModalFromPalette(string name)
+    {
+        await OpenModal(name);
+        StateHasChanged();
+    }
+
+    private async Task CopyCaseLink()
+    {
+        var url = Nav.ToAbsoluteUri($"cases/{Id}").ToString();
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+            Toasts.Success("Case link copied to the clipboard.");
+        }
+        catch
+        {
+            // Clipboard API unavailable (insecure context / permissions) — surface the URL so it's still usable.
+            Toasts.Info(url);
+        }
+    }
+
     // --- Detection-source deep-links (used by the Overview header) ---
 
     /// <summary>Display label for the detection source (configurable); defaults to "SIEM".</summary>
@@ -1342,6 +1431,7 @@ else
     public async ValueTask DisposeAsync()
     {
         _caseSub?.Dispose();
+        PaletteActions.Clear(this); // PROD-19: stop offering this case's actions (only if we're still the owner)
         if (_relativeTimeTicker is not null) await _relativeTimeTicker.DisposeAsync();
         // EasyMDE editors and the entity graph are torn down by their own tab components (UX-13).
         try { await JS.InvokeVoidAsync("imCaseHotkeys.unregister"); }   // U-14: stop forwarding keys to this circuit
