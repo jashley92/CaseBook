@@ -1859,6 +1859,18 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
 }
 .im-table th { font-weight: 600; color: var(--im-text-muted); font-size: var(--im-text-xs); text-transform: uppercase; letter-spacing: .02em; }
 
+/* FR-17: on phones the 9-tab case-workspace bar becomes a single-row swipeable strip instead of wrapping
+   to 2–3 rows. Scoped to ≤640px so desktop tabs are unchanged. */
+@media (max-width: 640px) {
+    .nav-tabs.im-workspace-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .nav-tabs.im-workspace-tabs .nav-item { flex: 0 0 auto; }
+    .nav-tabs.im-workspace-tabs .nav-link { white-space: nowrap; }
+}
+
 /* FR-11: on phones, wide data tables (case list, My Work, notification deadlines, campaigns, agenda, …)
    scroll horizontally within their card instead of overflowing the page or clipping columns. Scoped to
    ≤640px — the same breakpoint the sidebar collapses at — so desktop table layout is untouched. Making the
