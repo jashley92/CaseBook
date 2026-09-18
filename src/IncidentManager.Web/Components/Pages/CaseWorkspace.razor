@@ -102,6 +102,12 @@ else
             @if (_canAnyAction)
             {
                 <div class="dropdown">
+                    @* FR-19: transparent full-viewport backdrop (behind the menu, above the page) so a click
+                       anywhere outside closes the custom dropdown — it has no Bootstrap Popper/blur to do it. *@
+                    @if (_actionsOpen)
+                    {
+                        <div style="position:fixed;inset:0;z-index:999" @onclick="() => _actionsOpen = false"></div>
+                    }
                     <button id="case-actions-btn" class="btn btn-sm btn-outline-primary dropdown-toggle" @onclick="() => _actionsOpen = !_actionsOpen">Actions</button>
                     <div class="dropdown-menu dropdown-menu-end @(_actionsOpen ? "show" : "")">
                         @if (_canReclassify) { <button class="dropdown-item" @onclick='() => OpenModal("reclass")'>@(_case.Classification is null ? "Promote to ladder…" : "Reclassify…")</button> }
