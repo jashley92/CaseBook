@@ -500,7 +500,7 @@
                                     <td class="small">@TimeDisp.Long(h.At)</td>
                                     <td class="small">@h.Attribute</td>
                                     <td class="small">@h.Change</td>
-                                    <td class="small">@h.By</td>
+                                    <td class="small">@Users.DisplayFor(h.By)</td>
                                 </tr>
                             }
                         </tbody>
@@ -851,7 +851,24 @@
         foreach (var x in Case.StatusChanges)
             yield return new HistoryRow(x.ChangedAtUtc, "Phase",
                 $"{(x.From is { } f ? Ui.Label(f) : "—")} → {Ui.Label(x.To)}", x.Reason, x.ChangedBy);
+
+        // Materiality is a significant, decision-maker-attributed case-level transition and belongs in the
+        // curated progression alongside classification/severity/phase. The rationale is the "reason"; the
+        // off-app decision-maker (when recorded) is appended so the curated view names who made the call.
+        foreach (var x in Case.MaterialityChanges)
+            yield return new HistoryRow(x.ChangedAtUtc, "Materiality",
+                $"{MaterialityLabel(x.From)} → {MaterialityLabel(x.To)}"
+                    + (string.IsNullOrWhiteSpace(x.DecisionMaker) ? "" : $" (by {x.DecisionMaker})"),
+                x.Rationale, x.ChangedBy);
     }
+
+    private static string MaterialityLabel(MaterialityStatus s) => s switch
+    {
+        MaterialityStatus.UnderReview => "Under review",
+        MaterialityStatus.Material => "Material",
+        MaterialityStatus.NotMaterial => "Not material",
+        _ => "Undetermined"
+    };
 
     // --- Assignments / techniques ---
     private async Task DoUnassign(string userId)
