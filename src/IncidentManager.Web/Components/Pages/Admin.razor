@@ -277,8 +277,8 @@
                         </div>
                     }
 
-                    @* The report-section designer belongs with the rest of the Reporting settings. *@
-                    @if (group == "Reporting")
+                    @* The report-section designer belongs with the rest of the report settings. *@
+                    @if (group == "Report defaults")
                     {
                         <div class="card mb-3">
                             <div class="card-header d-flex justify-content-between align-items-center">
@@ -320,6 +320,10 @@
                                 </ol>
                             </div>
                         </div>
+
+                        @* UX-16: reusable report profiles live on the same Reports page as the defaults and
+                           the section designer, not a separate rail entry. *@
+                        <ReportProfilesEditor />
                     }
 
                     @* UX-15: the per-jurisdiction rules editor sits directly beneath the deadline-clock
@@ -704,7 +708,7 @@
         new("integrations", "Integrations", ["Integrations"]),
         new("sla", "Response & SLA", ["Response SLA", "Severity labels"]),
         new("regulatory-deadlines", "Regulatory deadlines", ["Deadline clock"]),
-        new("reporting", "Reporting", ["Reporting"]),
+        new("reporting", "Reports", ["Report defaults"]),
         new("governance", "Governance & security", ["Retention", "Integrity", "Access logging", "Security"]),
     ];
 
@@ -754,6 +758,7 @@
         "server" => "Managed in server-side configuration and shown read-only; change these on the host.",
         "source" => "Where each setting's effective value resolves from right now.",
         "regulatory-deadlines" => "The regulatory notification-deadline clock and its per-jurisdiction rules.",
+        "reporting" => "Report defaults, the section layout, and reusable report profiles.",
         _ => null,
     };
 

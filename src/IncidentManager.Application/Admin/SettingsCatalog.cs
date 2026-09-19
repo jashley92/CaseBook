@@ -160,9 +160,9 @@ public static class SettingsCatalog
             "view-session row (with a count) instead of many rows, to keep the log readable. Default: 30.", "30"),
         new SettingDefinition("Security:IdleTimeoutMinutes", "Idle session timeout (minutes)", "Security", SettingKind.Int,
             "Lock the screen and tear down the live session after this many minutes with no keyboard or mouse activity, prompting the user to resume. Complements — does not replace — the workstation/AD screen-lock policy. Set 0 to disable the app-level timeout and rely on OS lock alone. Applies to sessions started after saving.", "15"),
-        new SettingDefinition("Reporting:RequireSeparateApprover", "Require separate report approver", "Reporting", SettingKind.Bool,
+        new SettingDefinition("Reporting:RequireSeparateApprover", "Require separate report approver", "Report defaults", SettingKind.Bool,
             "When on, a report must be approved by someone other than the analyst who generated it (two-person / maker-checker control). Off by default so small teams aren't blocked; the approver is recorded in the audit trail either way.", "false"),
-        new SettingDefinition("Reporting:SectionLayout", "Report sections", "Reporting", SettingKind.Text,
+        new SettingDefinition("Reporting:SectionLayout", "Report sections", "Report defaults", SettingKind.Text,
             "Which report body sections are included, and in what order. Edited with the layout designer below; the document title, header/footer and integrity stamp always appear.", "", CustomEditor: true),
     };
 
