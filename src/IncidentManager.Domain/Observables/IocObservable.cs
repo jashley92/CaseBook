@@ -56,6 +56,39 @@ public static partial class IocObservable
     }
 
     /// <summary>
+    /// A single indicator parsed out of a pasted block: the refanged, canonical <see cref="Value"/> and
+    /// its best-effort detected <see cref="Type"/> (which the analyst may correct before committing).
+    /// </summary>
+    public readonly record struct ParsedIndicator(string Value, EntityType Type);
+
+    /// <summary>
+    /// Splits a pasted block of indicators — one per line and/or separated by commas, semicolons or tabs —
+    /// into distinct, refanged <see cref="ParsedIndicator"/>s in first-seen order, each auto-typed via
+    /// <see cref="DetectType"/>. Blank tokens are dropped and case-insensitive duplicates of the same
+    /// (type, value) are collapsed. Spaces are NOT separators — indicator values don't contain them, and
+    /// treating a space as a break would fragment the odd token. Backs the Entities-tab bulk paste
+    /// (PROD-22): SOC receives IOCs in blocks, so an analyst drops the block and reviews before one write.
+    /// </summary>
+    public static IReadOnlyList<ParsedIndicator> ParseIndicators(string? block)
+    {
+        var result = new List<ParsedIndicator>();
+        if (string.IsNullOrWhiteSpace(block)) return result;
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var token in block.Split(
+            new[] { '\n', '\r', ',', ';', '\t' },
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var type = DetectType(token);
+            var value = Normalize(type, token);
+            if (value.Length == 0) continue;
+            if (!seen.Add($"{(int)type}|{value.ToLowerInvariant()}")) continue;
+            result.Add(new ParsedIndicator(value, type));
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Trims and, for a refangable <paramref name="type"/>, refangs the value into its canonical
     /// form for storage and matching. The single choke point used by the case aggregate on add/edit.
     /// </summary>

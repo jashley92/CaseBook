@@ -137,4 +137,49 @@ public class IocObservableTests
         IocObservable.DetectType("evil[.]com").Should().Be(EntityType.Domain);
         IocObservable.DetectType("   ").Should().Be(EntityType.Other);
     }
+
+    // --- PROD-22: ParseIndicators (bulk paste) ---
+
+    [Fact]
+    public void ParseIndicators_splits_refangs_and_auto_types_a_mixed_block()
+    {
+        const string block = "1.2.3.4, evil.example[.]com\nhxxp://bad[.]site/x\n44d88612fea8a8f36de82e1278abb02f\nuser[at]phish.example";
+        var parsed = IocObservable.ParseIndicators(block);
+
+        parsed.Should().Equal(
+            new IocObservable.ParsedIndicator("1.2.3.4", EntityType.IpAddress),
+            new IocObservable.ParsedIndicator("evil.example.com", EntityType.Domain),
+            new IocObservable.ParsedIndicator("http://bad.site/x", EntityType.Url),
+            new IocObservable.ParsedIndicator("44d88612fea8a8f36de82e1278abb02f", EntityType.FileHash),
+            new IocObservable.ParsedIndicator("user@phish.example", EntityType.EmailAddress));
+    }
+
+    [Fact]
+    public void ParseIndicators_drops_blanks_and_collapses_duplicates_in_first_seen_order()
+    {
+        // Same value defanged and live, plus a blank line and different separators — one entry, canonical.
+        const string block = "1.1.1[.]1\n\n , ;\n1.1.1.1\tevil.com;evil.com";
+        var parsed = IocObservable.ParseIndicators(block);
+
+        parsed.Should().Equal(
+            new IocObservable.ParsedIndicator("1.1.1.1", EntityType.IpAddress),
+            new IocObservable.ParsedIndicator("evil.com", EntityType.Domain));
+    }
+
+    [Fact]
+    public void ParseIndicators_does_not_split_on_spaces()
+    {
+        // A single URL token stays one indicator even though it contains no separator we split on.
+        IocObservable.ParseIndicators("https://evil.com/a b")
+            .Should().ContainSingle().Which.Value.Should().Be("https://evil.com/a b");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   \n  , ; \t")]
+    public void ParseIndicators_returns_empty_for_no_indicators(string? block)
+    {
+        IocObservable.ParseIndicators(block).Should().BeEmpty();
+    }
 }

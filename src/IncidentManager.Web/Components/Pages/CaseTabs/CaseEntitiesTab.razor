@@ -82,6 +82,104 @@
             @if (_entityError is not null) { <div class="col-12"><div class="text-danger small">@_entityError</div></div> }
         </div>
     </div>
+
+    @* PROD-22: bulk indicator paste. SOC receives IOCs in blocks; parse → refang → auto-type → review → one write. *@
+    @if (_enEditId is null)
+    {
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><span class="bi bi-clipboard-plus" aria-hidden="true"></span> Paste indicators</span>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ToggleBulk">
+                    @(_bulkOpen ? "Close" : "Open")
+                </button>
+            </div>
+            @if (_bulkOpen)
+            {
+                <div class="card-body">
+                    <p class="text-muted small mb-2">
+                        Drop a block of IOCs (one per line, or comma / semicolon separated). We refang defanged
+                        notation (<code>hxxp</code>→<code>http</code>, <code>[.]</code>→<code>.</code>), auto-detect
+                        each type, and drop duplicates &mdash; review below, then add them in one step.
+                    </p>
+                    <textarea class="form-control form-control-sm mb-2" rows="4" @bind="_bulkText" @bind:event="oninput"
+                              placeholder="1.2.3.4, evil.example[.]com&#10;hxxp://bad[.]site/x&#10;44d88612fea8a8f36de82e1278abb02f&#10;user@phish.example"></textarea>
+                    <div class="d-flex gap-2 mb-2">
+                        <button class="btn btn-sm btn-outline-primary" @onclick="ParseBulk"
+                                disabled="@string.IsNullOrWhiteSpace(_bulkText)">Parse &amp; preview</button>
+                        @if (_bulkRows.Count > 0)
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="ClearBulk">Clear</button>
+                        }
+                    </div>
+
+                    @if (_bulkParsedEmpty)
+                    {
+                        <div class="text-muted small">No indicators found in that text.</div>
+                    }
+
+                    @if (_bulkRows.Count > 0)
+                    {
+                        <div class="row g-2 align-items-end mb-2">
+                            <div class="col-md-3">
+                                <label class="form-label small mb-0">Disposition (all)</label>
+                                <select class="form-select form-select-sm" @bind="_bulkDisposition">
+                                    @foreach (var d in Ui.Options<EntityDisposition>("EntityDisposition"))
+                                    {
+                                        <option value="@d">@Ui.Label(d)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small mb-0">Source (all)</label>
+                                <input class="form-control form-control-sm" @bind="_bulkSource" placeholder="@($"{DetectionLabel}…")" />
+                            </div>
+                            <div class="col-md-6 text-md-end">
+                                <span class="small text-muted me-2">@_bulkRows.Count(r => r.Include) of @_bulkRows.Count selected</span>
+                                <button class="btn btn-sm btn-link p-0 me-2" @onclick="() => SetAllBulk(true)">Select all</button>
+                                <button class="btn btn-sm btn-link p-0" @onclick="() => SetAllBulk(false)">None</button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-2">
+                                <thead><tr><th style="width:2rem"></th><th style="width:11rem">Type</th><th>Value</th></tr></thead>
+                                <tbody>
+                                    @foreach (var r in _bulkRows)
+                                    {
+                                        <tr class="@(r.Include ? "" : "text-muted")">
+                                            <td><input class="form-check-input" type="checkbox" @bind="r.Include" /></td>
+                                            <td>
+                                                <select class="form-select form-select-sm" @bind="r.Type">
+                                                    @foreach (var t in Ui.Options<EntityType>("EntityType"))
+                                                    {
+                                                        <option value="@t">@Ui.Label(t)</option>
+                                                    }
+                                                </select>
+                                            </td>
+                                            <td>
+                                                <code class="small">@r.Value</code>
+                                                @if (r.Type == EntityType.Other)
+                                                {
+                                                    <span class="im-badge im-b-warn ms-1" title="Couldn't auto-detect a type — set one or leave as Other.">check type</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <button class="btn btn-sm btn-primary" @onclick="AddBulk"
+                                disabled="@(_bulkBusy || !_bulkRows.Any(r => r.Include))">
+                            @if (_bulkBusy) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
+                            Add @_bulkRows.Count(r => r.Include) indicator(s)
+                        </button>
+                        @if (_bulkError is not null) { <span class="text-danger small ms-2">@_bulkError</span> }
+                    }
+                </div>
+            }
+        </div>
+    }
 </AuthorizeView>
 
 @if (Case.Entities.Count == 0)
@@ -278,6 +376,23 @@ else
     private Guid? _enEditId;      // entity being corrected in place (null = add mode)
     private string? _enReason;    // optional reason-for-change → audit trail
 
+    // PROD-22: bulk indicator paste (parse → review → one write).
+    private bool _bulkOpen;
+    private string _bulkText = "";
+    private bool _bulkParsedEmpty;
+    private EntityDisposition _bulkDisposition = EntityDisposition.Suspicious;
+    private string? _bulkSource;
+    private bool _bulkBusy;
+    private string? _bulkError;
+    private readonly List<BulkRow> _bulkRows = new();
+
+    private sealed class BulkRow
+    {
+        public bool Include { get; set; } = true;
+        public EntityType Type { get; set; }
+        public string Value { get; set; } = "";
+    }
+
     // Relationship add form
     private string? _relSource;
     private EntityRelationshipType _relType = EntityRelationshipType.CommunicatedWith;
@@ -349,6 +464,59 @@ else
             Toasts.Success($"Added {addedVal}");
         }
         catch (Exception ex) { _entityError = ex.Message; }
+    }
+
+    // --- PROD-22: bulk indicator paste ---
+    private void ToggleBulk() => _bulkOpen = !_bulkOpen;
+
+    private void ParseBulk()
+    {
+        _bulkError = null;
+        _bulkRows.Clear();
+        foreach (var p in IocObservable.ParseIndicators(_bulkText))
+            _bulkRows.Add(new BulkRow { Type = p.Type, Value = p.Value });
+        _bulkParsedEmpty = _bulkRows.Count == 0;
+    }
+
+    private void ClearBulk()
+    {
+        _bulkText = "";
+        _bulkRows.Clear();
+        _bulkParsedEmpty = false;
+        _bulkError = null;
+    }
+
+    private void SetAllBulk(bool include)
+    {
+        foreach (var r in _bulkRows) r.Include = include;
+    }
+
+    private async Task AddBulk()
+    {
+        var rows = _bulkRows.Where(r => r.Include).ToList();
+        if (rows.Count == 0 || _bulkBusy) return;
+        _bulkBusy = true;
+        _bulkError = null;
+        var added = 0;
+        try
+        {
+            // One case is a coherent cohort (like PROD-21's per-case task bulk), so no E-18 cross-case
+            // metering applies here. AddEntity upserts by (type, value), so re-pasting is idempotent.
+            foreach (var r in rows)
+            {
+                await Cases.AddEntityAsync(CaseId, r.Type, r.Value, null, _bulkDisposition, null, _bulkSource);
+                added++;
+            }
+            ClearBulk();
+            await OnChanged.InvokeAsync();
+            await LoadOverlaps(); // pasted IOCs may correlate with other cases — refresh "also in"
+            Toasts.Success($"Added {added} indicator(s)");
+        }
+        catch (Exception ex)
+        {
+            _bulkError = added > 0 ? $"Added {added}, then stopped: {ex.Message}" : ex.Message;
+        }
+        finally { _bulkBusy = false; }
     }
 
     // Load an existing IOC into the composer to correct it in place.
