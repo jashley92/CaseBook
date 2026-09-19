@@ -10,6 +10,9 @@
 @inject ISeverityLabels SevLabels
 @inject NavigationManager Nav
 @inject ToastService Toasts
+@inject IAuthorizationService Authz
+@inject AuthenticationStateProvider AuthState
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
 
 <PageTitle>Cases</PageTitle>
 
@@ -306,6 +309,29 @@ else
         <span><span class="bi bi-folder2-open" aria-hidden="true"></span> Case list</span>
         <span class="im-section-note">@_page.Total case@(_page.Total == 1 ? "" : "s")@(_hasActiveFilter ? " · filtered" : "")</span>
     </div>
+
+    @* E-18 / U-15: metered bulk-action bar. Surfaces only over a coherent cohort (a filter is set, or the
+       Mine scope) — never the naked All queue — and only for editors. Count-capped at @MaxBulk, and every
+       verb routes through an enumerate-and-confirm step. Reversible verbs only (assign / refer-to-Legal);
+       reclassify and close are deliberately absent — those keep the per-case human-gated stage transition. *@
+    @if (BulkEligible && _selected.Count > 0)
+    {
+        <div class="im-bulkbar d-flex flex-wrap align-items-center gap-2 mb-2 p-2 rounded"
+             style="background:var(--im-accent-weak, rgba(13,110,253,.08));border:1px solid var(--im-accent)">
+            <span class="fw-semibold small">
+                <span class="bi bi-check2-square me-1" aria-hidden="true"></span>@_selected.Count selected
+                <span class="text-muted fw-normal">of @MaxBulk max</span>
+            </span>
+            <div class="vr d-none d-sm-block"></div>
+            <button class="btn btn-sm btn-primary" @onclick="() => OpenBulk(BulkVerb.Assign)">
+                <span class="bi bi-person-plus me-1" aria-hidden="true"></span>Assign…
+            </button>
+            <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenBulk(BulkVerb.Refer)">
+                <span class="bi bi-briefcase me-1" aria-hidden="true"></span>Refer to Legal…
+            </button>
+            <button class="btn btn-sm btn-link ms-auto" @onclick="ClearSelection">Clear selection</button>
+        </div>
+    }
     @* PROD-25: keyboard row navigation. Focus the table (click or Tab) then j/k (or ↑/↓) move the cursor and
        Enter/o opens it — no default to prevent, so Tab still leaves the table. (x-to-select waits on E-18's
        metered bulk bar to have something to act on.) *@
@@ -313,6 +339,13 @@ else
            aria-label="Case list — press j and k to move, Enter to open">
         <thead>
             <tr>
+                @if (BulkEligible)
+                {
+                    <th style="width:1%" title="Select cases for a bulk action">
+                        <input class="form-check-input" type="checkbox" aria-label="Select this page (up to @MaxBulk)"
+                               checked="@PageAllSelected" @onchange="e => TogglePage((bool)(e.Value ?? false))" />
+                    </th>
+                }
                 <th>Case #</th>
                 <th>Title</th>
                 <th>Classification</th>
@@ -328,7 +361,16 @@ else
             @for (var i = 0; i < _page.Items.Count; i++)
             {
                 var c = _page.Items[i];
-                <tr class="@(i == _cursor ? "table-active" : "")">
+                <tr class="@(i == _cursor ? "table-active" : "") @(_selected.Contains(c.Id) ? "table-primary" : "")">
+                    @if (BulkEligible)
+                    {
+                        var atCap = !_selected.Contains(c.Id) && _selected.Count >= MaxBulk;
+                        <td style="width:1%">
+                            <input class="form-check-input" type="checkbox" checked="@_selected.Contains(c.Id)"
+                                   disabled="@atCap" aria-label="@($"Select {c.CaseNumber}")"
+                                   @onchange="e => ToggleSelect(c.Id, (bool)(e.Value ?? false))" />
+                        </td>
+                    }
                     <td class="case-num" style="@(i == _cursor ? "box-shadow:inset 3px 0 0 var(--im-accent)" : null)">
                         <code title="@c.CaseNumber">@c.CaseNumber</code>
                         @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
@@ -364,7 +406,11 @@ else
         </tbody>
     </table>
     <div class="form-text mt-1 d-none d-md-block">
-        <span class="bi bi-keyboard me-1" aria-hidden="true"></span>Tip: focus the list, then <kbd>j</kbd>/<kbd>k</kbd> move and <kbd>Enter</kbd> opens.
+        <span class="bi bi-keyboard me-1" aria-hidden="true"></span>Tip: focus the list, then <kbd>j</kbd>/<kbd>k</kbd> move and <kbd>Enter</kbd> opens@(BulkEligible ? "" : ".")
+        @if (BulkEligible)
+        {
+            <text>, <kbd>x</kbd> selects for a bulk action.</text>
+        }
     </div>
 
     @if (_page is { Total: > 0 } && (_page.TotalPages > 1 || _pageSize != DefaultPageSize))
@@ -399,6 +445,110 @@ else
     </div>
 }
 
+@* E-18 / U-15: bulk-action modal. Step 1 collects the verb's inputs; step 2 enumerates the exact case
+   numbers affected before anything is written. Each case is still assigned / referred individually and so is
+   individually audited. *@
+@if (_bulkVerb != BulkVerb.None)
+{
+    var selectedItems = _page?.Items.Where(i => _selected.Contains(i.Id)).ToList() ?? new();
+    <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true" aria-label="Bulk action"
+         style="background:var(--im-scrim)" @onclick="CloseBulk">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        @(_bulkVerb == BulkVerb.Assign ? "Assign selected cases" : "Refer selected cases to Legal")
+                    </h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseBulk"></button>
+                </div>
+
+                @if (!_bulkConfirm)
+                {
+                    <div class="modal-body">
+                        @if (_bulkVerb == BulkVerb.Assign)
+                        {
+                            <div class="row g-2 align-items-end">
+                                <div class="col-sm-7">
+                                    <label class="form-label small mb-0" for="bulk-to">Assign to</label>
+                                    <select id="bulk-to" class="form-select form-select-sm" @bind="_bulkAssignToId">
+                                        <option value="">Select a user…</option>
+                                        @foreach (var u in Users.All())
+                                        {
+                                            <option value="@u.UserId">@u.DisplayName</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-sm-5">
+                                    <label class="form-label small mb-0" for="bulk-role">Role on each case</label>
+                                    <select id="bulk-role" class="form-select form-select-sm" @bind="_bulkAssignRole">
+                                        @foreach (var r in Enum.GetValues<CaseAssignmentRole>())
+                                        {
+                                            <option value="@r">@r</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-text">Adds this assignee to each selected case (existing assignees are kept). Reversible per case.</div>
+                        }
+                        else
+                        {
+                            <div class="row g-2">
+                                <div class="col-sm-6">
+                                    <label class="form-label small mb-0" for="bulk-contact">Legal / Privacy contact <span class="text-muted">(optional)</span></label>
+                                    <input id="bulk-contact" class="form-control form-control-sm" @bind="_bulkReferContact" placeholder="e.g. privacy@@example" />
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small mb-0" for="bulk-note">Regulatory-relevance note <span class="text-muted">(optional)</span></label>
+                                    <input id="bulk-note" class="form-control form-control-sm" @bind="_bulkReferNote" placeholder="Why these are being referred" />
+                                </div>
+                            </div>
+                            <div class="form-text">Marks each selected case as referred to Legal / Privacy. The same contact / note applies to all.</div>
+                        }
+                    </div>
+                    <div class="modal-footer">
+                        <span class="me-auto small text-muted">@_selected.Count case@(_selected.Count == 1 ? "" : "s") selected</span>
+                        <button class="btn btn-outline-secondary" @onclick="CloseBulk">Cancel</button>
+                        <button class="btn btn-primary" @onclick="ProceedBulk"
+                                disabled="@(_bulkVerb == BulkVerb.Assign && string.IsNullOrEmpty(_bulkAssignToId))">
+                            Continue…
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <div class="modal-body">
+                        <p>
+                            @if (_bulkVerb == BulkVerb.Assign)
+                            {
+                                <text>Assign these <strong>@selectedItems.Count</strong> case@(selectedItems.Count == 1 ? "" : "s")
+                                to <strong>@BulkToName()</strong> as <strong>@_bulkAssignRole</strong>?</text>
+                            }
+                            else
+                            {
+                                <text>Refer these <strong>@selectedItems.Count</strong> case@(selectedItems.Count == 1 ? "" : "s")
+                                to Legal / Privacy@(string.IsNullOrWhiteSpace(_bulkReferContact) ? "" : $" ({_bulkReferContact})")?</text>
+                            }
+                        </p>
+                        <ul class="small mb-0" style="max-height:16rem;overflow:auto">
+                            @foreach (var c in selectedItems)
+                            {
+                                <li><code>@c.CaseNumber</code> — @c.Title @(c.LegalReferred && _bulkVerb == BulkVerb.Refer ? "· already referred" : "")</li>
+                            }
+                        </ul>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-outline-secondary" @onclick="() => _bulkConfirm = false" disabled="@_bulkBusy">Back</button>
+                        <button class="btn btn-primary" @onclick="ApplyBulk" disabled="@_bulkBusy">
+                            @if (_bulkBusy) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
+                            @(_bulkVerb == BulkVerb.Assign ? "Confirm assign" : "Confirm referral")
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     // Filters live in the URL so views are bookmarkable and the dashboard can deep-link into them.
     [SupplyParameterFromQuery(Name = "classification")] public string? QClassification { get; set; }
@@ -424,6 +574,7 @@ else
     private DashboardMetrics? _dash; // caseload summary tiles (same figures as the dashboard)
     private readonly CaseFilter _filter = new();
     private bool _onlyMine; // the Mine/All scope toggle, driven by ?scope=mine
+    private bool _canEdit;  // EditCases — gates the metered bulk-select bar (E-18/U-15)
 
     private string _classification = "";
     private string _phase = "";
@@ -464,6 +615,8 @@ else
     // The caseload-summary tiles are a stable overview, so load them once (not on every filter change).
     protected override async Task OnInitializedAsync()
     {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        _canEdit = (await Authz.AuthorizeAsync(auth.User, Policies.EditCases)).Succeeded;
         _dash = await Dashboard.GetAsync();
         await ReloadViews();
 
@@ -495,6 +648,11 @@ else
                 break;
             case "Enter" or "o":
                 if (_cursor >= 0 && _cursor < n) Nav.NavigateTo($"cases/{p.Items[_cursor].Id}");
+                break;
+            // PROD-25 + E-18: x toggles the cursor row into the bulk selection (editors, cohort only).
+            case "x" when BulkEligible && _cursor >= 0 && _cursor < n:
+                var id = p.Items[_cursor].Id;
+                ToggleSelect(id, !_selected.Contains(id));
                 break;
         }
     }
@@ -750,6 +908,107 @@ else
         _targets = SlaProvider.Current;
         _page = await CaseSvc.ListAsync(_filter);
         _cursor = -1; // PROD-25: a fresh result set clears the keyboard row cursor
+        // E-18: a new cohort (filter/page/scope change) invalidates the selection — never carry a bulk
+        // selection across cohorts, and never leave a stale id from a page we've navigated away from.
+        _selected.Clear();
+    }
+
+    // --- E-18 / U-15: metered bulk-select + bulk actions ---------------------
+    // Metering: (1) scope-gated — bulk is offered only over a coherent cohort (a filter is set, or the Mine
+    // scope), never the naked All queue; (2) hard count cap; (3) enumerate-and-confirm before any write;
+    // (4) reversible verbs only (assign / refer-to-Legal) — never reclassify/close.
+    private const int MaxBulk = 25;
+    private readonly HashSet<Guid> _selected = new();
+    private bool BulkEligible => _canEdit && (_hasActiveFilter || _onlyMine);
+
+    private enum BulkVerb { None, Assign, Refer }
+    private BulkVerb _bulkVerb = BulkVerb.None;
+    private bool _bulkConfirm;
+    private bool _bulkBusy;
+    private string _bulkAssignToId = "";
+    private CaseAssignmentRole _bulkAssignRole = CaseAssignmentRole.Analyst;
+    private string? _bulkReferContact;
+    private string? _bulkReferNote;
+
+    // The "select page" header checkbox is on when the page's selectable rows (up to the cap) are all selected.
+    private bool PageAllSelected =>
+        _page is { Items.Count: > 0 } p && p.Items.Take(MaxBulk).All(i => _selected.Contains(i.Id));
+
+    private void ToggleSelect(Guid id, bool on)
+    {
+        if (on) { if (_selected.Count < MaxBulk) _selected.Add(id); }
+        else _selected.Remove(id);
+    }
+
+    private void TogglePage(bool on)
+    {
+        if (_page is not { Items.Count: > 0 } p) return;
+        if (on) foreach (var i in p.Items.Take(MaxBulk)) _selected.Add(i.Id);
+        else foreach (var i in p.Items) _selected.Remove(i.Id);
+    }
+
+    private void ClearSelection() => _selected.Clear();
+
+    private void OpenBulk(BulkVerb verb)
+    {
+        _bulkVerb = verb;
+        _bulkConfirm = false;
+        _bulkAssignToId = "";
+        _bulkAssignRole = CaseAssignmentRole.Analyst;
+        _bulkReferContact = null;
+        _bulkReferNote = null;
+    }
+
+    private void CloseBulk() { _bulkVerb = BulkVerb.None; _bulkConfirm = false; }
+
+    private void ProceedBulk()
+    {
+        if (_bulkVerb == BulkVerb.Assign && string.IsNullOrEmpty(_bulkAssignToId)) return;
+        _bulkConfirm = true;
+    }
+
+    private string BulkToName() => Users.Resolve(_bulkAssignToId)?.DisplayName ?? _bulkAssignToId;
+
+    private async Task ApplyBulk()
+    {
+        if (_bulkBusy || _page is null) return;
+        // Snapshot the affected cases from the confirmed set (the selection clears on the reload that follows).
+        var targets = _page.Items.Where(i => _selected.Contains(i.Id)).ToList();
+        if (targets.Count == 0) { CloseBulk(); return; }
+        _bulkBusy = true;
+        var verb = _bulkVerb;
+        var toName = BulkToName();
+        var done = 0;
+        try
+        {
+            foreach (var c in targets)
+            {
+                try
+                {
+                    if (verb == BulkVerb.Assign)
+                        await CaseSvc.AssignAsync(c.Id, _bulkAssignToId, toName, _bulkAssignRole);
+                    else
+                        await CaseSvc.ReferToLegalAsync(c.Id,
+                            string.IsNullOrWhiteSpace(_bulkReferContact) ? null : _bulkReferContact.Trim(),
+                            string.IsNullOrWhiteSpace(_bulkReferNote) ? null : _bulkReferNote.Trim());
+                    done++;
+                }
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+                {
+                    Toasts.Error($"{c.CaseNumber}: {ex.Message}");
+                }
+            }
+        }
+        finally { _bulkBusy = false; }
+
+        CloseBulk();
+        if (done > 0)
+        {
+            Toasts.Success(verb == BulkVerb.Assign
+                ? $"Assigned {done} case{(done == 1 ? "" : "s")} to {toName}."
+                : $"Referred {done} case{(done == 1 ? "" : "s")} to Legal.");
+            await Reload(); // reflect the new assignee / Legal badge and clear the selection
+        }
     }
 
     // Tooltip for an SLA badge: the clock, its target, and time left / overshoot.
