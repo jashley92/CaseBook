@@ -1,5 +1,6 @@
 @page "/admin/style"
-@page "/style"
+@* UX-18: dropped the redundant public /style alias (both routes were Administer-gated anyway); the
+   design-system reference lives in the admin hub's "Developer" rail group. *@
 @attribute [Authorize(Policy = Policies.Administer)]
 @layout AdminLayout
 @using IncidentManager.Application.Sla

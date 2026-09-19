@@ -38,7 +38,7 @@
 
     // UX-08: derive the breadcrumb from the active rail item so every admin page gets a consistent
     // "Administration › [section]" trail with no per-page wiring. The landing (admin) and any route not
-    // in the rail (e.g. the public /style alias) render no trail — the rail alone navigates there.
+    // in the rail render no trail — the rail alone navigates there.
     private IReadOnlyList<Crumb> Crumbs
     {
         get
@@ -57,27 +57,38 @@
         }
     }
 
-    // Identity & branding is the Settings landing page, so it keeps the short /admin URL; the other
-    // Configuration/System sections are /admin/settings/{section}. Match.All highlights the exact section.
+    // UX-18: the rail is grouped by what an admin is trying to *do*, not by the old implementation split
+    // (settings-catalog page vs standalone editor). Identity & branding is the Settings landing, so it keeps
+    // the short /admin URL; other Settings/System sections are /admin/settings/{section}. Match.All
+    // highlights the exact section.
     private static readonly RailGroup[] Groups =
     [
-        new("Configuration",
+        new("Organization",
         [
             new("Identity & branding", "bi-building", "admin"),
-            new("Notifications", "bi-envelope", "admin/settings/notifications"),
-            new("Integrations", "bi-plug", "admin/settings/integrations"),
-            new("Response & SLA", "bi-stopwatch", "admin/settings/sla"),
-            new("Regulatory deadlines", "bi-alarm", "admin/settings/regulatory-deadlines"),
+        ]),
+        new("Reports",
+        [
             new("Reports", "bi-file-earmark-text", "admin/settings/reporting"),
+        ]),
+        new("Notifications & integrations",
+        [
+            new("Notifications", "bi-envelope", "admin/settings/notifications"),
+            new("Email templates", "bi-envelope-paper", "admin/email-templates"),
+            new("Integrations", "bi-plug", "admin/settings/integrations"),
+        ]),
+        new("Compliance & security",
+        [
+            new("Regulatory deadlines", "bi-alarm", "admin/settings/regulatory-deadlines"),
             new("Governance & security", "bi-shield-lock", "admin/settings/governance"),
         ]),
-        new("Customization",
+        new("Workflow & taxonomy",
         [
             new("Case templates", "bi-clipboard-check", "admin/templates"),
             new("Stage gates", "bi-shield-check", "admin/gates"),
             new("Taxonomy labels", "bi-tags", "admin/taxonomy"),
-            new("Email templates", "bi-envelope-paper", "admin/email-templates"),
             new("Data elements", "bi-collection", "admin/data-elements"),
+            new("Response & SLA", "bi-stopwatch", "admin/settings/sla"),
         ]),
         new("People & access",
         [
@@ -88,9 +99,14 @@
         new("System",
         [
             new("Server configuration", "bi-hdd-stack", "admin/settings/server"),
+            new("Setting sources", "bi-diagram-3", "admin/settings/source"),
             new("Configuration bundle", "bi-box-seam", "admin/config-bundle"),
-            new("Configuration source", "bi-diagram-3", "admin/settings/source"),
             new("Diagnostics", "bi-activity", "admin/settings/diagnostics"),
+        ]),
+        @* UX-18: the design-system reference is a developer/design tool, not deployment inspection, so it
+           sits in its own group rather than polluting System. *@
+        new("Developer",
+        [
             new("Style guide", "bi-palette", "admin/style"),
         ]),
     ];
