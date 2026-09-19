@@ -1,0 +1,25 @@
+@page "/team"
+@* UX-14: Team workload is a leadership *oversight* surface (gated ViewAllCases — the same gate as the
+   Dashboard), so it lives in the Overview cluster beside the Dashboard rather than as a tab on the
+   personal "My Work" page, where it was a category error (a team-wide view under a page named "My work").
+   The old /work?tab=team deep-link now redirects here (see MyWorkPage). *@
+@attribute [Authorize(Policy = Policies.ViewAllCases)]
+
+<PageTitle>Team workload</PageTitle>
+
+<PageHeader Title="Team workload"
+            Subtitle="Open-case distribution across the team, for rebalancing.">
+    <Actions>
+        @* Lateral links across the Overview cluster + a jump into the caller's own queue. *@
+        <a class="btn btn-sm btn-outline-secondary" href=""
+           title="Go to the leadership dashboard">
+            <span class="bi bi-speedometer2" aria-hidden="true"></span> Dashboard
+        </a>
+        <a class="btn btn-sm btn-outline-secondary" href="work"
+           title="Go to your own open cases and after-action tasks">
+            <span class="bi bi-person-workspace" aria-hidden="true"></span> My work
+        </a>
+    </Actions>
+</PageHeader>
+
+<TeamWorkloadPanel />

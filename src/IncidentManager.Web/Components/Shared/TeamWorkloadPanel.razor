@@ -6,8 +6,8 @@
 @inject AuthenticationStateProvider AuthState
 
 @* Team-workload panel (E-25): per-analyst open-case distribution + the unassigned queue, for rebalancing.
-   Extracted from the former /team page so it can be embedded in the consolidated Work landing under a
-   ViewAllCases gate. Carries no <h1>/PageTitle — the host page owns the page heading.
+   Hosted by the /team page (UX-14: its own Overview-cluster page, ViewAllCases). Carries no <h1>/PageTitle
+   — the host page owns the page heading.
    PROD-23: an editor (IC/SysAdmin) can rebalance in place — a *metered* reassign scoped to one analyst's
    queue (or the unassigned queue): count-capped and enumerate-and-confirm, never across disparate cases. *@
 

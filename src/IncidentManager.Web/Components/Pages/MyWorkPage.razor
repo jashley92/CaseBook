@@ -1,9 +1,8 @@
 @page "/work"
 @page "/my"
-@* /team and ?tab=team are deep-link / bookmark aliases that land on the Team workload tab (e.g. the
-   case-list "← Team workload" back-link). The My work / Team workload switch itself is the in-page tab bar
-   below — there is no separate "Team" sidebar entry (it was redundant with these tabs). *@
-@page "/team"
+@* UX-14: this page is the caller's *personal* queue only. Team workload moved out to its own
+   Overview-cluster page (/team, ViewAllCases) — it's oversight, not "my" work. The old ?tab=team
+   deep-link redirects there (see OnInitializedAsync) so existing back-links/bookmarks still land. *@
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @inject MyWorkService Svc
 @inject IncidentManager.Application.Cases.CaseService Cases
@@ -18,53 +17,28 @@
 @inject AuthenticationStateProvider AuthState
 @inject ISeverityLabels SevLabels
 
-<PageTitle>Work</PageTitle>
+<PageTitle>My Work</PageTitle>
 
 <div class="mywork">
-    <PageHeader Title="Work">
+    <PageHeader Title="My Work">
         <Actions>
             @* UX-06: leadership lands on the dashboard, but may drop into their own queue here; give them
                a one-click way back. Shown only to all-cases roles (the ones who have a dashboard). *@
-            @if (_canViewTeam)
+            @if (_hasDashboard)
             {
                 <a class="btn btn-sm btn-outline-secondary" href=""
                    title="Go to the leadership dashboard">
                     <span class="bi bi-speedometer2" aria-hidden="true"></span> Dashboard
                 </a>
             }
-            @if (_activeTab == MyTab)
-            {
-                <a class="btn btn-sm btn-outline-secondary" href="cases?scope=mine">
-                    <span class="bi bi-inbox" aria-hidden="true"></span> Full queue
-                </a>
-            }
+            <a class="btn btn-sm btn-outline-secondary" href="cases?scope=mine">
+                <span class="bi bi-inbox" aria-hidden="true"></span> Full queue
+            </a>
         </Actions>
     </PageHeader>
 
-    @* One tab bar for the whole "Work" surface — analysts see only their work (no tab bar); leadership
-       (ViewAllCases) gets the team view alongside it. Same nav-tabs idiom as the case workspace / admin. *@
-    @if (_canViewTeam)
-    {
-        <ul class="nav nav-tabs mb-3">
-            <li class="nav-item">
-                <button class="nav-link @(_activeTab == MyTab ? "active" : "")" @onclick="() => SetTab(MyTab)">
-                    <span class="bi bi-person-workspace me-1" aria-hidden="true"></span>My work
-                </button>
-            </li>
-            <li class="nav-item">
-                <button class="nav-link @(_activeTab == TeamTab ? "active" : "")" @onclick="() => SetTab(TeamTab)">
-                    <span class="bi bi-people-fill me-1" aria-hidden="true"></span>Team workload
-                </button>
-            </li>
-        </ul>
-    }
-
-    <div class="tabbody" @key="_activeTab">
-        @if (_activeTab == TeamTab && _canViewTeam)
-        {
-            <TeamWorkloadPanel />
-        }
-        else if (_work is null)
+    <div class="tabbody">
+        @if (_work is null)
         {
             <span class="visually-hidden" role="status">Loading your work…</span>
             <div class="im-tiles">
@@ -285,30 +259,27 @@
 </div>
 
 @code {
-    private const string MyTab = "mywork";
-    private const string TeamTab = "team";
-
     private MyWork? _work;
-    private bool _canViewTeam;
-    private string _activeTab = MyTab;
+    private bool _hasDashboard;
 
-    /// <summary>Deep-link into the team view (?tab=team), used by the case-list back-link and older bookmarks; the /team route also lands there.</summary>
+    /// <summary>Legacy deep-link (?tab=team) from the old combined Work page; redirected to /team below.</summary>
     [SupplyParameterFromQuery(Name = "tab")] private string? Tab { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
         var auth = await AuthState.GetAuthenticationStateAsync();
-        _canViewTeam = (await Authz.AuthorizeAsync(auth.User, Policies.ViewAllCases)).Succeeded;
-        // Land on the team tab when reached via the /team route or the ?tab=team deep-link (used by the
-        // case-list back-link and older bookmarks). Non-team-capable users fall through to their own work.
-        var onTeamRoute = Nav.ToBaseRelativePath(Nav.Uri).StartsWith("team", StringComparison.OrdinalIgnoreCase);
-        if (_canViewTeam && (onTeamRoute || string.Equals(Tab, TeamTab, StringComparison.OrdinalIgnoreCase)))
-            _activeTab = TeamTab;
+        _hasDashboard = (await Authz.AuthorizeAsync(auth.User, Policies.ViewAllCases)).Succeeded;
+
+        // UX-14: Team workload is now its own Overview-cluster page. Forward the old ?tab=team deep-link
+        // (case-list back-link, older bookmarks) there for anyone who can see it; others stay on their work.
+        if (_hasDashboard && string.Equals(Tab, "team", StringComparison.OrdinalIgnoreCase))
+        {
+            Nav.NavigateTo("team", replace: true);
+            return;
+        }
 
         await Reload();
     }
-
-    private void SetTab(string tab) => _activeTab = tab;
 
     // PROD-21: quick-add + inline complete, so a task can be created or closed without opening its case.
     private string _newTaskTitle = "";

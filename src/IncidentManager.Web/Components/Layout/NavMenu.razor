@@ -29,22 +29,29 @@
 <div class="nav-scrollable">
     @* title attributes double as tooltips when the sidebar is collapsed to icons (data-nav="collapsed"). *@
     <nav class="flex-column" aria-label="Primary">
-        <div class="nav-group-label">Workspace</div>
-        @* UX-06: the leadership dashboard is the landing only for all-cases roles; others land on Work,
-           so the Dashboard entry is shown only to them (otherwise the link would bounce back to /work). *@
+        @* UX-14: leadership-only "Overview" cluster — the surfaces for looking *across* the team. Both are
+           gated ViewAllCases (the dashboard is also the landing for these roles; others land on My Work).
+           The whole group — label included — is inside the gate so analysts, who see neither entry, never
+           get an empty heading. Team workload lives here, beside the Dashboard, because it is oversight,
+           not personal work; it used to be a tab on the Work page, which read as a category error. *@
         <AuthorizeView Policy="@Policies.ViewAllCases">
+            <div class="nav-group-label">Overview</div>
             <div class="nav-item">
                 <NavLink class="nav-link" href="" Match="NavLinkMatch.All" title="Dashboard">
                     <span class="bi bi-speedometer2" aria-hidden="true"></span><span class="nav-text">Dashboard</span>
                 </NavLink>
             </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="team" Match="NavLinkMatch.All" title="Team workload">
+                    <span class="bi bi-people-fill" aria-hidden="true"></span><span class="nav-text">Team workload</span>
+                </NavLink>
+            </div>
         </AuthorizeView>
-        @* Work is one section; the My work / Team workload switch lives in the in-page tabs on the page
-           (all-cases roles see both). A separate "Team" sidebar entry was redundant with those tabs — the
-           /team route and ?tab=team deep-link still land on the team tab for bookmarks and back-links. *@
+
+        <div class="nav-group-label">Workspace</div>
         <div class="nav-item">
-            <NavLink class="nav-link" href="work" Match="NavLinkMatch.All" title="Work">
-                <span class="bi bi-person-workspace" aria-hidden="true"></span><span class="nav-text">Work</span>
+            <NavLink class="nav-link" href="work" Match="NavLinkMatch.All" title="My Work">
+                <span class="bi bi-person-workspace" aria-hidden="true"></span><span class="nav-text">My Work</span>
             </NavLink>
         </div>
         <div class="nav-item">
