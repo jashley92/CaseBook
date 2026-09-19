@@ -125,17 +125,19 @@ public static class SettingsCatalog
         new SettingDefinition("Sla:AtRiskThresholdPercent", "At-risk threshold (%)", "Response SLA", SettingKind.Int,
             "How much of a target must elapse before an open case is flagged \"at risk\" (e.g. 80 = flag once 80% of the target time has passed). 1–100.", "80"),
 
-        // PROD-07: regulatory notification-deadline clock. Off by default; per-jurisdiction timers are managed
-        // as reference data under Admin → Notification deadlines. Takes effect within a few minutes of saving.
-        new SettingDefinition("Compliance:NotificationDeadlines:Enabled", "Notification deadline clock", "Notification deadlines", SettingKind.Bool,
+        // PROD-07 / UX-15: regulatory notification-deadline clock. Off by default; per-jurisdiction timers are
+        // managed as reference data in the "Per-jurisdiction rules" editor on the same Regulatory deadlines page.
+        // Group "Deadline clock" so the settings card reads clearly beneath the page's "Regulatory deadlines" title.
+        // Takes effect within a few minutes of saving.
+        new SettingDefinition("Compliance:NotificationDeadlines:Enabled", "Regulatory deadline clock", "Deadline clock", SettingKind.Bool,
             "Master switch for the regulatory notification-deadline countdown (per-jurisdiction, e.g. NYDFS Part 500 = 72h). " +
             "Off by default; when on, breach/material cases show a deadline to notify each triggered jurisdiction. Nothing auto-acts — it only surfaces and reminds.", "false"),
-        new SettingDefinition("Compliance:NotificationDeadlines:StartBasis", "Clock starts from", "Notification deadlines", SettingKind.Text,
+        new SettingDefinition("Compliance:NotificationDeadlines:StartBasis", "Clock starts from", "Deadline clock", SettingKind.Text,
             "What instant the clock is measured from: \"Determination\" (the materiality \"Material\" determination — NYDFS 500.17(a) / SEC Item 1.05; the clock runs only once a case is determined material) or " +
             "\"Detection\" (the detection timestamp, for a Breach-classified case). Defaults to Determination.", "Determination"),
-        new SettingDefinition("Compliance:NotificationDeadlines:DefaultWindowHours", "Default window (hours)", "Notification deadlines", SettingKind.Int,
-            "The deadline window applied to any triggered jurisdiction that has no explicit rule under Admin → Notification deadlines, so a countdown always exists.", "72"),
-        new SettingDefinition("Compliance:NotificationDeadlines:AtRiskThresholdPercent", "At-risk threshold (%)", "Notification deadlines", SettingKind.Int,
+        new SettingDefinition("Compliance:NotificationDeadlines:DefaultWindowHours", "Default window (hours)", "Deadline clock", SettingKind.Int,
+            "The deadline window applied to any triggered jurisdiction that has no explicit rule in the Per-jurisdiction rules editor below, so a countdown always exists.", "72"),
+        new SettingDefinition("Compliance:NotificationDeadlines:AtRiskThresholdPercent", "At-risk threshold (%)", "Deadline clock", SettingKind.Int,
             "How much of a jurisdiction's window must elapse before its deadline is flagged \"at risk\" (e.g. 80 = flag at 80% elapsed). 1–100.", "80"),
 
         new SettingDefinition("Severity:Label:Critical", "Critical label", "Severity labels", SettingKind.Text,

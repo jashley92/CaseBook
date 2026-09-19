@@ -21,6 +21,7 @@
 @inject IncidentManager.Application.Abstractions.ISecretResolutionHealth SecretHealth
 @inject ISeverityLabels SevLabels
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 
 <PageTitle>Administration</PageTitle>
 
@@ -319,6 +320,13 @@
                                 </ol>
                             </div>
                         </div>
+                    }
+
+                    @* UX-15: the per-jurisdiction rules editor sits directly beneath the deadline-clock
+                       settings, so the regulatory-deadline feature is one page (clock + rules), not two. *@
+                    @if (group == "Deadline clock")
+                    {
+                        <RegulatoryDeadlineRules />
                     }
 
                     @* Send-a-test-email sits with the notification settings it exercises. *@
@@ -695,7 +703,7 @@
         new("notifications", "Notifications", ["Notifications"]),
         new("integrations", "Integrations", ["Integrations"]),
         new("sla", "Response & SLA", ["Response SLA", "Severity labels"]),
-        new("notification-deadlines", "Notification deadlines", ["Notification deadlines"]),
+        new("regulatory-deadlines", "Regulatory deadlines", ["Deadline clock"]),
         new("reporting", "Reporting", ["Reporting"]),
         new("governance", "Governance & security", ["Retention", "Integrity", "Access logging", "Security"]),
     ];
@@ -726,6 +734,13 @@
     protected override void OnParametersSet()
     {
         var id = string.IsNullOrWhiteSpace(Section) ? "identity" : Section.Trim().ToLowerInvariant();
+        // UX-15: the old "Notification deadlines" settings route folded into "Regulatory deadlines"
+        // (clock + per-jurisdiction rules on one page); forward the old URL to the canonical one.
+        if (id == "notification-deadlines")
+        {
+            Nav.NavigateTo("admin/settings/regulatory-deadlines", replace: true);
+            return;
+        }
         _activeId = AllSections.Any(s => s.Id == id) ? id : "identity";
     }
 
@@ -738,6 +753,7 @@
     {
         "server" => "Managed in server-side configuration and shown read-only; change these on the host.",
         "source" => "Where each setting's effective value resolves from right now.",
+        "regulatory-deadlines" => "The regulatory notification-deadline clock and its per-jurisdiction rules.",
         _ => null,
     };
 
