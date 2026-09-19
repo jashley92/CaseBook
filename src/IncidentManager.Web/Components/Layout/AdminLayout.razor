@@ -79,10 +79,11 @@
             new("Email templates", "bi-envelope-paper", "admin/email-templates"),
             new("Data elements", "bi-collection", "admin/data-elements"),
         ]),
-        new("People & audit",
+        new("People & access",
         [
             new("Roles & access", "bi-people", "admin/roles"),
-            new("Access log", "bi-eye", "admin/access-log"),
+            @* UX-17: the Access log viewer moved to the top-level "Audit & Exports" group (beside Integrity
+               & Audit). The access-logging *settings* stay under Governance & security. *@
         ]),
         new("System",
         [

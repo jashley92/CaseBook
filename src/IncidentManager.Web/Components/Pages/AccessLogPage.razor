@@ -1,6 +1,7 @@
-@page "/admin/access-log"
+@page "/access-log"
+@* UX-17: a forensic/oversight surface, so it lives at the top level in the "Audit & Exports" group beside
+   Integrity & Audit (in the main layout) rather than buried in the admin hub. Still SysAdmin-only. *@
 @attribute [Authorize(Policy = Policies.Administer)]
-@layout AdminLayout
 @using IncidentManager.Application.Access
 @inject IAccessLogService AccessLog
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
@@ -17,7 +18,7 @@
     Who <strong>read</strong> a case or pulled a sensitive artifact (evidence, report, export), coalesced into
     per-user view-sessions (C-05). This telemetry is <strong>outside</strong> the tamper-evident audit chain and is
     prunable independently. Scope and coalescing window are set in
-    <a href="admin">Administration → Settings → Access logging</a>.
+    <a href="admin/settings/governance">Administration → Governance &amp; security → Access logging</a>.
 </p>
 
 <div class="row g-2 align-items-end mb-3">

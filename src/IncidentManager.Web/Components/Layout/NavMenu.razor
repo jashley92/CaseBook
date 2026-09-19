@@ -78,16 +78,26 @@
             </div>
         </AuthorizeView>
 
-        <div class="nav-group-label">Assurance</div>
+        @* UX-17: audit/forensic surfaces + the export hub together. Access log (the "who viewed this"
+           telemetry) sits beside Integrity & Audit — its sibling forensic surface — instead of being
+           buried in the admin hub; it stays SysAdmin-only. Downloads renamed Exports (names the job). *@
+        <div class="nav-group-label">Audit &amp; Exports</div>
         <div class="nav-item">
             <NavLink class="nav-link" href="integrity" title="Integrity &amp; Audit">
                 <span class="bi bi-shield-lock" aria-hidden="true"></span><span class="nav-text">Integrity &amp; Audit</span>
             </NavLink>
         </div>
-        @* UX-09: one home for the export/download artifacts (metrics, IOC feed, compliance bundle, …). *@
+        <AuthorizeView Policy="@Policies.Administer">
+            <div class="nav-item">
+                <NavLink class="nav-link" href="access-log" Match="NavLinkMatch.All" title="Access log">
+                    <span class="bi bi-eye" aria-hidden="true"></span><span class="nav-text">Access log</span>
+                </NavLink>
+            </div>
+        </AuthorizeView>
+        @* UX-09: one home for the export artifacts (metrics, IOC feed, compliance bundle, …). *@
         <div class="nav-item">
-            <NavLink class="nav-link" href="downloads" Match="NavLinkMatch.All" title="Downloads">
-                <span class="bi bi-download" aria-hidden="true"></span><span class="nav-text">Downloads</span>
+            <NavLink class="nav-link" href="exports" Match="NavLinkMatch.All" title="Exports">
+                <span class="bi bi-download" aria-hidden="true"></span><span class="nav-text">Exports</span>
             </NavLink>
         </div>
 

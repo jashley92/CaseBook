@@ -4,12 +4,12 @@
    plain-language "what this is for / who it's for" copy. Each links the same rate-limited endpoint the
    inline links use; admin-only artifacts sit behind an AuthorizeView. Per-case exports (STIX graph,
    per-case audit CSV, campaign rollup) stay on the case — noted at the bottom. *@
-@page "/downloads"
+@page "/exports"
 @attribute [Authorize(Policy = Policies.ViewCases)]
 
-<PageTitle>Downloads</PageTitle>
+<PageTitle>Exports</PageTitle>
 
-<PageHeader Title="Downloads"
+<PageHeader Title="Exports"
             Subtitle="Export the metrics, feeds and regulator/examiner artifacts CaseBook produces." />
 
 <section class="im-card mb-3">
@@ -75,7 +75,7 @@
                 <span class="dl-ic bi bi-eye" aria-hidden="true"></span>
                 <div class="dl-body">
                     <div class="dl-name">Access log <span class="dl-fmt">CSV</span></div>
-                    <div class="dl-desc">The out-of-chain read/access telemetry — who opened which case or artifact, and when. Supports an access review or an examiner's "who saw this" question. Filter it first on <a href="admin/access-log">Access log</a>.</div>
+                    <div class="dl-desc">The out-of-chain read/access telemetry — who opened which case or artifact, and when. Supports an access review or an examiner's "who saw this" question. Filter it first on <a href="access-log">Access log</a>.</div>
                 </div>
                 <a class="btn btn-sm btn-outline-primary dl-btn" href="export/access-log.csv" download>
                     <span class="bi bi-download" aria-hidden="true"></span> Download

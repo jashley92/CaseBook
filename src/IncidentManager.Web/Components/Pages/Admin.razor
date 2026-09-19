@@ -21,7 +21,6 @@
 @inject IncidentManager.Application.Abstractions.ISecretResolutionHealth SecretHealth
 @inject ISeverityLabels SevLabels
 @inject IJSRuntime JS
-@inject NavigationManager Nav
 
 <PageTitle>Administration</PageTitle>
 
@@ -738,13 +737,6 @@
     protected override void OnParametersSet()
     {
         var id = string.IsNullOrWhiteSpace(Section) ? "identity" : Section.Trim().ToLowerInvariant();
-        // UX-15: the old "Notification deadlines" settings route folded into "Regulatory deadlines"
-        // (clock + per-jurisdiction rules on one page); forward the old URL to the canonical one.
-        if (id == "notification-deadlines")
-        {
-            Nav.NavigateTo("admin/settings/regulatory-deadlines", replace: true);
-            return;
-        }
         _activeId = AllSections.Any(s => s.Id == id) ? id : "identity";
     }
 

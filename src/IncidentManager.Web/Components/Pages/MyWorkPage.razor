@@ -1,15 +1,13 @@
 @page "/work"
 @page "/my"
 @* UX-14: this page is the caller's *personal* queue only. Team workload moved out to its own
-   Overview-cluster page (/team, ViewAllCases) — it's oversight, not "my" work. The old ?tab=team
-   deep-link redirects there (see OnInitializedAsync) so existing back-links/bookmarks still land. *@
+   Overview-cluster page (/team, ViewAllCases) — it's oversight, not "my" work. *@
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @inject MyWorkService Svc
 @inject IncidentManager.Application.Cases.CaseService Cases
 @inject IncidentManager.Application.Cases.CaseShortcutService Shortcuts
 @inject IncidentManager.Web.Services.ToastService Toasts
 @inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
-@inject NavigationManager Nav
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
@@ -262,22 +260,10 @@
     private MyWork? _work;
     private bool _hasDashboard;
 
-    /// <summary>Legacy deep-link (?tab=team) from the old combined Work page; redirected to /team below.</summary>
-    [SupplyParameterFromQuery(Name = "tab")] private string? Tab { get; set; }
-
     protected override async Task OnInitializedAsync()
     {
         var auth = await AuthState.GetAuthenticationStateAsync();
         _hasDashboard = (await Authz.AuthorizeAsync(auth.User, Policies.ViewAllCases)).Succeeded;
-
-        // UX-14: Team workload is now its own Overview-cluster page. Forward the old ?tab=team deep-link
-        // (case-list back-link, older bookmarks) there for anyone who can see it; others stay on their work.
-        if (_hasDashboard && string.Equals(Tab, "team", StringComparison.OrdinalIgnoreCase))
-        {
-            Nav.NavigateTo("team", replace: true);
-            return;
-        }
-
         await Reload();
     }
 

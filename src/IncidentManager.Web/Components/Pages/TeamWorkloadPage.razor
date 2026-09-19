@@ -1,8 +1,7 @@
 @page "/team"
 @* UX-14: Team workload is a leadership *oversight* surface (gated ViewAllCases — the same gate as the
    Dashboard), so it lives in the Overview cluster beside the Dashboard rather than as a tab on the
-   personal "My Work" page, where it was a category error (a team-wide view under a page named "My work").
-   The old /work?tab=team deep-link now redirects here (see MyWorkPage). *@
+   personal "My Work" page, where it was a category error (a team-wide view under a page named "My work"). *@
 @attribute [Authorize(Policy = Policies.ViewAllCases)]
 
 <PageTitle>Team workload</PageTitle>
