@@ -1493,6 +1493,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsShared")
                         .HasColumnType("bit");
 

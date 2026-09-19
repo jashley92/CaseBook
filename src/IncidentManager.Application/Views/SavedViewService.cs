@@ -7,7 +7,7 @@ namespace IncidentManager.Application.Views;
 /// <summary>A saved case-queue view as shown in the views menu.</summary>
 /// <param name="IsMine">True when the current user owns it (and so may rename/share/delete it).</param>
 /// <param name="OwnerName">Display name of the owner, for shared views from someone else.</param>
-public sealed record SavedViewItem(Guid Id, string Name, string Query, bool IsShared, bool IsMine, string OwnerName);
+public sealed record SavedViewItem(Guid Id, string Name, string Query, bool IsShared, bool IsMine, string OwnerName, bool IsDefault);
 
 /// <summary>
 /// Persists named case-queue filter sets (PROD-09 / E-02b). Each view is the exact Cases query string plus
@@ -42,10 +42,46 @@ public sealed class SavedViewService
             .Select(v => new SavedViewItem(
                 v.Id, v.Name, v.Query, v.IsShared,
                 IsMine: string.Equals(v.OwnerUserId, me, StringComparison.OrdinalIgnoreCase),
-                OwnerName: string.Equals(v.OwnerUserId, me, StringComparison.OrdinalIgnoreCase) ? "you" : _users.DisplayFor(v.OwnerUserId)))
+                OwnerName: string.Equals(v.OwnerUserId, me, StringComparison.OrdinalIgnoreCase) ? "you" : _users.DisplayFor(v.OwnerUserId),
+                // A default only applies to its owner's own landing (never inherited from someone's shared view).
+                IsDefault: v.IsDefault && string.Equals(v.OwnerUserId, me, StringComparison.OrdinalIgnoreCase)))
             .OrderByDescending(v => v.IsMine)
             .ThenBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>
+    /// PROD-24: toggle which of the current user's own views is their default landing view. Setting one
+    /// clears the rest (at most one default per user); calling it on the current default clears it.
+    /// Returns the id that is now the default, or null if none.
+    /// </summary>
+    public async Task<Guid?> ToggleDefaultAsync(Guid id, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var me = _user.UserId;
+
+        var target = await db.SavedViews.FirstOrDefaultAsync(v => v.Id == id, ct);
+        if (target is null) return null;
+        if (!string.Equals(target.OwnerUserId, me, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("You can only set one of your own views as default.");
+
+        var mine = await db.SavedViews.Where(v => v.OwnerUserId == me && v.IsDefault).ToListAsync(ct);
+        var wasDefault = target.IsDefault;
+        foreach (var v in mine) v.IsDefault = false; // clear any existing default
+        target.IsDefault = !wasDefault;              // toggle the target
+        await db.SaveChangesAsync(ct);
+        return target.IsDefault ? target.Id : null;
+    }
+
+    /// <summary>The current user's default landing view (the query to apply on a bare /cases), or null.</summary>
+    public async Task<SavedViewItem?> DefaultAsync(CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var me = _user.UserId;
+        var v = await db.SavedViews.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.OwnerUserId == me && x.IsDefault, ct);
+        return v is null ? null
+            : new SavedViewItem(v.Id, v.Name, v.Query, v.IsShared, IsMine: true, OwnerName: "you", IsDefault: true);
     }
 
     /// <summary>

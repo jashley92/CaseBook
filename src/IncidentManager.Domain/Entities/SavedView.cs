@@ -27,5 +27,11 @@ public class SavedView : Entity
     /// <summary>When true, every user who can see the Cases queue sees this as a shared team view.</summary>
     public bool IsShared { get; set; }
 
+    /// <summary>
+    /// PROD-24: when true, a bare <c>/cases</c> load lands the owner on this view. At most one of a user's
+    /// own views is the default (setting one clears the rest). Personal — never inherited from a shared view.
+    /// </summary>
+    public bool IsDefault { get; set; }
+
     public DateTimeOffset CreatedAtUtc { get; set; }
 }

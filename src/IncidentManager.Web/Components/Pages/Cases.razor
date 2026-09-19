@@ -66,6 +66,13 @@
                 </button>
                 @if (v.IsMine)
                 {
+                    @* PROD-24: mark one of your own views as the default Cases landing (captures Mine/All too). *@
+                    <button type="button" class="btn @(v.IsDefault ? "btn-warning" : "btn-outline-secondary")"
+                            title="@(v.IsDefault ? "Your default view — Cases lands here" : "Set as your default view")"
+                            aria-pressed="@v.IsDefault" aria-label="@($"{(v.IsDefault ? "Unset" : "Set")} {v.Name} as default view")"
+                            @onclick="() => ToggleDefault(v)">
+                        <span class="bi @(v.IsDefault ? "bi-star-fill" : "bi-star")" aria-hidden="true"></span>
+                    </button>
                     <button type="button" class="btn btn-outline-secondary" title="Delete this view"
                             aria-label="@($"Delete view {v.Name}")" @onclick="() => DeleteView(v)">
                         <span class="bi bi-x" aria-hidden="true"></span>
@@ -299,7 +306,11 @@ else
         <span><span class="bi bi-folder2-open" aria-hidden="true"></span> Case list</span>
         <span class="im-section-note">@_page.Total case@(_page.Total == 1 ? "" : "s")@(_hasActiveFilter ? " · filtered" : "")</span>
     </div>
-    <table class="table table-hover align-middle im-table">
+    @* PROD-25: keyboard row navigation. Focus the table (click or Tab) then j/k (or ↑/↓) move the cursor and
+       Enter/o opens it — no default to prevent, so Tab still leaves the table. (x-to-select waits on E-18's
+       metered bulk bar to have something to act on.) *@
+    <table class="table table-hover align-middle im-table" tabindex="0" @onkeydown="OnListKey"
+           aria-label="Case list — press j and k to move, Enter to open">
         <thead>
             <tr>
                 <th>Case #</th>
@@ -314,10 +325,12 @@ else
             </tr>
         </thead>
         <tbody>
-            @foreach (var c in _page.Items)
+            @for (var i = 0; i < _page.Items.Count; i++)
             {
-                <tr>
-                    <td class="case-num"><code title="@c.CaseNumber">@c.CaseNumber</code>
+                var c = _page.Items[i];
+                <tr class="@(i == _cursor ? "table-active" : "")">
+                    <td class="case-num" style="@(i == _cursor ? "box-shadow:inset 3px 0 0 var(--im-accent)" : null)">
+                        <code title="@c.CaseNumber">@c.CaseNumber</code>
                         @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
                     </td>
                     <td>
@@ -350,6 +363,9 @@ else
             }
         </tbody>
     </table>
+    <div class="form-text mt-1 d-none d-md-block">
+        <span class="bi bi-keyboard me-1" aria-hidden="true"></span>Tip: focus the list, then <kbd>j</kbd>/<kbd>k</kbd> move and <kbd>Enter</kbd> opens.
+    </div>
 
     @if (_page is { Total: > 0 } && (_page.TotalPages > 1 || _pageSize != DefaultPageSize))
     {
@@ -450,6 +466,50 @@ else
     {
         _dash = await Dashboard.GetAsync();
         await ReloadViews();
+
+        // PROD-24: a bare /cases load (fresh mount from elsewhere) lands on the user's default view, if set.
+        // Only the exact "cases" path with no query — /cases/mine and any ?filter= are explicit, so left alone.
+        // A later Clear/toggle stays on the same mount (OnParametersSet, not here), so it never bounces back.
+        var rel = Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/');
+        if (string.Equals(rel, "cases", StringComparison.OrdinalIgnoreCase)
+            && _views?.FirstOrDefault(v => v.IsDefault) is { Query.Length: > 0 } def)
+        {
+            Nav.NavigateTo($"cases?{def.Query}");
+        }
+    }
+
+    // PROD-25: a keyboard row cursor over the current page. -1 = none until the first j/k. Reset on reload.
+    private int _cursor = -1;
+
+    private void OnListKey(KeyboardEventArgs e)
+    {
+        if (_page is not { Items.Count: > 0 } p) return;
+        var n = p.Items.Count;
+        switch (e.Key)
+        {
+            case "j" or "ArrowDown":
+                _cursor = _cursor < 0 ? 0 : Math.Min(_cursor + 1, n - 1);
+                break;
+            case "k" or "ArrowUp":
+                _cursor = _cursor <= 0 ? 0 : _cursor - 1;
+                break;
+            case "Enter" or "o":
+                if (_cursor >= 0 && _cursor < n) Nav.NavigateTo($"cases/{p.Items[_cursor].Id}");
+                break;
+        }
+    }
+
+    private async Task ToggleDefault(SavedViewItem v)
+    {
+        try
+        {
+            await Views.ToggleDefaultAsync(v.Id);
+            await ReloadViews();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex.Message);
+        }
     }
 
     // Runs on initial load and on every query-string change (e.g. a dashboard drill-in).
@@ -689,6 +749,7 @@ else
         _filter.AssigneeUserId = _assignee == "none" ? null : _assignee;
         _targets = SlaProvider.Current;
         _page = await CaseSvc.ListAsync(_filter);
+        _cursor = -1; // PROD-25: a fresh result set clears the keyboard row cursor
     }
 
     // Tooltip for an SLA badge: the clock, its target, and time left / overshoot.
