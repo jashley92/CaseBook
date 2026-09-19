@@ -361,7 +361,7 @@ else
             @for (var i = 0; i < _page.Items.Count; i++)
             {
                 var c = _page.Items[i];
-                <tr class="@(i == _cursor ? "table-active" : "") @(_selected.Contains(c.Id) ? "table-primary" : "")">
+                <tr class="@(i == _cursor ? "table-active" : "") @(_selected.Contains(c.Id) ? "im-row-selected" : "")">
                     @if (BulkEligible)
                     {
                         var atCap = !_selected.Contains(c.Id) && _selected.Count >= MaxBulk;

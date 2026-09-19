@@ -1859,6 +1859,12 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
 }
 .im-table th { font-weight: 600; color: var(--im-text-muted); font-size: var(--im-text-xs); text-transform: uppercase; letter-spacing: .02em; }
 
+/* E-18: a selected case row (bulk-select). A subtle accent wash + a gold left bar that stays legible in
+   both themes — distinct from the grey keyboard-cursor row (.table-active), and higher-specificity than
+   Bootstrap's own cell background so text/link colours are untouched. */
+.im-table > tbody > tr.im-row-selected > td { background-color: var(--im-accent-bg); }
+.im-table > tbody > tr.im-row-selected > td:first-child { box-shadow: inset 3px 0 0 var(--im-accent); }
+
 /* FR-17: on phones the 9-tab case-workspace bar becomes a single-row swipeable strip instead of wrapping
    to 2–3 rows. Scoped to ≤640px so desktop tabs are unchanged. */
 @media (max-width: 640px) {
