@@ -7,6 +7,7 @@
 @inject IConfiguration Config
 @inject ISeverityLabels SevLabels
 @inject TimeDisplay TimeDisp
+@inject IJSRuntime JS
 
 <PageTitle>New Case</PageTitle>
 
@@ -297,6 +298,27 @@
         _detectedWall = UtcToWall(DateTimeOffset.UtcNow);
     }
 
+    // PROD-26: prefill severity/origin from what this user last filed — the highest-frequency form, and a
+    // per-viewer convenience (localStorage). A chosen template still overrides these. Read after first render
+    // (localStorage needs interop); wrapped so a private/blocked store just leaves the defaults in place.
+    private const string SevKey = "im.newcase.severity";
+    private const string OriginKey = "im.newcase.origin";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var sev = await JS.InvokeAsync<string?>("localStorage.getItem", SevKey);
+            var org = await JS.InvokeAsync<string?>("localStorage.getItem", OriginKey);
+            var changed = false;
+            if (Enum.TryParse<Severity>(sev, out var s)) { _request.Severity = s; changed = true; }
+            if (Enum.TryParse<CaseOrigin>(org, out var o)) { _request.Origin = o; changed = true; }
+            if (changed) StateHasChanged();
+        }
+        catch { /* localStorage unavailable — the form's own defaults stand */ }
+    }
+
     // Wall-clock ⇄ UTC in the viewer's active display zone (U-29), matching the Overview details editor.
     private DateTimeOffset WallToUtc(DateTime wall)
     {
@@ -403,6 +425,13 @@
             // Seed the template's playbook steps as action items on the fresh case.
             if (_selectedTemplate is { Steps.Count: > 0 })
                 await Cases.ApplyTemplateAsync(created.Id, _selectedTemplate.Id);
+            // PROD-26: remember this filing's severity/origin to prefill the next new case.
+            try
+            {
+                await JS.InvokeVoidAsync("localStorage.setItem", SevKey, _request.Severity.ToString());
+                await JS.InvokeVoidAsync("localStorage.setItem", OriginKey, _request.Origin.ToString());
+            }
+            catch { /* non-fatal — the case is already created */ }
             Nav.NavigateTo($"cases/{created.Id}");
         }
         catch (FluentValidation.ValidationException ex)
