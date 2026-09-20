@@ -77,6 +77,37 @@ public sealed class CaseImportTests : IDisposable
         CaseImportService.Parse("{\"format\":\"casebook-case-import\",\"schemaVersion\":1}").Ok.Should().BeTrue();
     }
 
+    // ── Prompt builder (pure, PROD-32) ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Prompt_for_a_new_case_embeds_the_schema_rules_and_enum_values()
+    {
+        var prompt = CaseImportPrompt.Build(new CaseImportPromptOptions(ToolName: "Copilot"));
+
+        prompt.Should().Contain(CaseImportJson.FormatTag);
+        prompt.Should().Contain("Output ONLY the JSON");
+        prompt.Should().Contain("AI-assisted (Copilot)");
+        prompt.Should().Contain("\"target\"").And.Contain("newCase");
+        // Enum values are derived from the real types, so the prompt can't drift from the importer.
+        prompt.Should().Contain("Malicious").And.Contain("IpAddress").And.Contain("Breach");
+    }
+
+    [Fact]
+    public void Prompt_for_an_existing_case_omits_the_target_block()
+    {
+        var prompt = CaseImportPrompt.Build(new CaseImportPromptOptions(TargetIsExisting: true));
+
+        prompt.Should().NotContain("newCase");
+        prompt.Should().Contain("Do NOT include a \"target\"");
+    }
+
+    [Fact]
+    public void Prompt_pins_a_classification_hint_when_given()
+    {
+        var prompt = CaseImportPrompt.Build(new CaseImportPromptOptions(Classification: Classification.Incident));
+        prompt.Should().Contain("\"classification\": \"Incident\"");
+    }
+
     // ── Preview (pure) ───────────────────────────────────────────────────────────────────────────
 
     [Fact]

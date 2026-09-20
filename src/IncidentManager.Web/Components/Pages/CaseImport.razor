@@ -6,21 +6,72 @@
 @inject ToastService Toasts
 @inject NavigationManager Nav
 @inject ILogger<CaseImport> Logger
+@inject IJSRuntime JS
 
 <PageTitle>Import case</PageTitle>
 
 <PageHeader Title="Import case"
            Subtitle="Bring a structured case-import document into a new or existing case. Paste or upload the JSON, review an editable preview, then confirm — nothing is written until you apply." />
 
+@* Step 1 (PROD-32): generate a prompt for the analyst's own AI. CaseBook never calls an LLM. *@
 <div class="im-card nc-card">
+    <div class="d-flex justify-content-between align-items-center">
+        <div class="fw-semibold"><span class="bi bi-robot me-1" aria-hidden="true"></span>Step 1 — Generate a prompt for your AI <span class="text-muted small fw-normal">(optional)</span></div>
+        <button class="btn btn-sm btn-outline-secondary" @onclick="() => _showPromptBuilder = !_showPromptBuilder">@(_showPromptBuilder ? "Hide" : "Show")</button>
+    </div>
+    @if (_showPromptBuilder)
+    {
+        <p class="text-muted small mt-2 mb-2">
+            CaseBook never calls an AI. Copy this prompt into your <strong>own</strong> tool (e.g. Copilot) together with
+            the incident's emails, chat logs and notes — it returns JSON you paste into Step 2 below. The prompt embeds
+            the exact schema, so what your AI produces will import cleanly.
+        </p>
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Your AI tool</label>
+                <input class="form-control form-control-sm" @bind="_promptTool" placeholder="e.g. Copilot" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Target</label>
+                <select class="form-select form-select-sm" value="@_promptExisting" @onchange="OnPromptTargetChanged">
+                    <option value="False">New case</option>
+                    <option value="True">Existing case</option>
+                </select>
+            </div>
+            @if (!_promptExisting)
+            {
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Classification hint</label>
+                    <select class="form-select form-select-sm" value="@(_promptClassification?.ToString() ?? "")"
+                            @onchange="e => _promptClassification = Enum.TryParse<Classification>(e.Value?.ToString(), out var c) ? c : null">
+                        <option value="">Let the AI choose</option>
+                        @foreach (var cl in Enum.GetValues<Classification>()) { <option value="@cl">@Ui.Label(cl)</option> }
+                    </select>
+                </div>
+            }
+            <div class="col-md-3">
+                <button class="btn btn-sm btn-primary" @onclick="GeneratePrompt"><span class="bi bi-stars me-1" aria-hidden="true"></span>Generate prompt</button>
+            </div>
+        </div>
+        @if (_prompt is not null)
+        {
+            <textarea class="form-control font-monospace mt-2" rows="10" readonly>@_prompt</textarea>
+            <button class="btn btn-sm btn-outline-primary mt-2" @onclick="CopyPrompt"><span class="bi bi-clipboard me-1" aria-hidden="true"></span>Copy prompt</button>
+        }
+    }
+</div>
+
+@* Step 2 (PROD-31): paste/upload the resulting JSON and review the preview. *@
+<div class="im-card nc-card">
+    <div class="fw-semibold mb-2"><span class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></span>Step 2 — Paste or upload the import JSON</div>
     <p class="text-muted small mb-2">
         The document is <strong>untrusted</strong> and reviewed before anything is written: indicators are refanged and
         auto-typed, unknown values fall back to a safe default and are flagged, and each item can be edited or excluded.
-        Provenance (<code>origin</code>) is recorded on imported indicators and timeline entries. This never calls an
-        external AI — you produce the JSON elsewhere (see the <a href="#" @onclick="ToggleSample" @onclick:preventDefault>sample below</a>) and bring it here.
+        Provenance (<code>origin</code>) is recorded on imported indicators and timeline entries. Not sure of the shape?
+        See the <a href="#" @onclick="ToggleSample" @onclick:preventDefault>sample below</a>.
     </p>
 
-    <label class="form-label">Paste the import JSON</label>
+    <label class="form-label">Import JSON</label>
     <textarea class="form-control font-monospace" rows="6" @bind="_text" @bind:event="oninput"
               placeholder='{ "format": "casebook-case-import", "schemaVersion": 1, ... }'></textarea>
 
@@ -244,6 +295,32 @@
     private bool _showSample;
     private string? _existingNumber;
     private string? _existingError;
+
+    // PROD-32: AI prompt generator state.
+    private bool _showPromptBuilder;
+    private string? _promptTool;
+    private bool _promptExisting;
+    private Classification? _promptClassification;
+    private string? _prompt;
+
+    private void OnPromptTargetChanged(ChangeEventArgs e) => _promptExisting = e.Value?.ToString() == "True";
+
+    private void GeneratePrompt() => _prompt = CaseImportPrompt.Build(
+        new CaseImportPromptOptions(_promptExisting, _promptExisting ? null : _promptClassification, _promptTool));
+
+    private async Task CopyPrompt()
+    {
+        if (_prompt is null) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _prompt);
+            Toasts.Success("Prompt copied — paste it into your AI tool with the incident material.");
+        }
+        catch
+        {
+            Toasts.Error("Couldn't copy automatically — select the text and copy it manually.");
+        }
+    }
 
     private void ToggleSample() => _showSample = !_showSample;
 
