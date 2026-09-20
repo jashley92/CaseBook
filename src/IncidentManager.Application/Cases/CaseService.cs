@@ -34,6 +34,14 @@ public sealed record CaseIocMatch(Guid CaseId, string CaseNumber, string Title, 
     CasePhase Phase, IReadOnlyList<string> Indicators);
 
 /// <summary>
+/// A visible <em>open</em> case that shares one or more indicators with the case in view and is <b>not yet
+/// linked</b> to it — surfaced mid-investigation as a suggestion to relate the two (PROD-40). Purely a
+/// suggestion: a human decides whether (and how) to link.
+/// </summary>
+public sealed record RelatedCaseSuggestion(Guid CaseId, string CaseNumber, string Title,
+    Classification? Classification, CasePhase Phase, IReadOnlyList<string> SharedIndicators);
+
+/// <summary>
 /// Use cases for the case aggregate. Reads are access-scoped to the current user; writes go
 /// through the domain model so classification/lifecycle history is always recorded, and are
 /// captured by the audit-chain interceptor on save.
@@ -760,6 +768,53 @@ public sealed class CaseService
                 g.Key.Phase, g.Select(x => x.Value).Distinct().ToList()))
             .OrderByDescending(m => m.Indicators.Count)
             .ThenBy(m => m.CaseNumber)
+            .ToList();
+    }
+
+    /// <summary>
+    /// PROD-40: given the case in view, the visible <b>open</b> cases that share one or more of its indicators
+    /// and are <b>not already linked</b> to it — a mid-investigation "these look related, link them?" surface
+    /// (the in-case cousin of the at-intake <see cref="FindOpenCaseMatchesForIocsAsync"/>). Matched
+    /// case-insensitively on the stored (already-refanged) indicator value alone (type-agnostic — an IP is an
+    /// IP). Need-to-know scoped; closed/archived and already-linked cases are excluded. Suggestion only — it
+    /// never creates a link.
+    /// </summary>
+    public async Task<IReadOnlyList<RelatedCaseSuggestion>> FindRelatedOpenCasesAsync(
+        Guid caseId, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+
+        var mine = await db.CaseEntities.AsNoTracking()
+            .Where(e => e.CaseId == caseId)
+            .Select(e => e.Value)
+            .ToListAsync(ct);
+        if (mine.Count == 0) return Array.Empty<RelatedCaseSuggestion>();
+        var wanted = mine.Select(v => v.ToLowerInvariant()).Distinct().ToList();
+
+        // Cases already linked to this one (either direction) shouldn't be re-suggested.
+        var linked = await db.CaseLinks.AsNoTracking()
+            .Where(l => l.CaseId == caseId || l.RelatedCaseId == caseId)
+            .Select(l => l.CaseId == caseId ? l.RelatedCaseId : l.CaseId)
+            .ToListAsync(ct);
+
+        // e.Value.ToLower() translates to SQL LOWER(); the invariant overload does not (see the E-23 matcher).
+#pragma warning disable CA1304, CA1311
+        var hits = await (
+            from e in db.CaseEntities.AsNoTracking()
+            join c in Scoped(db.Cases.AsNoTracking()) on e.CaseId equals c.Id
+            where c.Id != caseId && c.Phase != CasePhase.Closed && !c.IsArchived
+                  && wanted.Contains(e.Value.ToLower())
+            select new { c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, e.Value }
+        ).ToListAsync(ct);
+#pragma warning restore CA1304, CA1311
+
+        return hits
+            .Where(h => !linked.Contains(h.Id))
+            .GroupBy(h => new { h.Id, h.CaseNumber, h.Title, h.Classification, h.Phase })
+            .Select(g => new RelatedCaseSuggestion(g.Key.Id, g.Key.CaseNumber, g.Key.Title,
+                g.Key.Classification, g.Key.Phase, g.Select(x => x.Value).Distinct().ToList()))
+            .OrderByDescending(s => s.SharedIndicators.Count)
+            .ThenBy(s => s.CaseNumber, StringComparer.Ordinal)
             .ToList();
     }
 

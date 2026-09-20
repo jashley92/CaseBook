@@ -17,6 +17,53 @@
     domains, URLs, file hashes &mdash; and the relationships between them.
 </p>
 
+@* PROD-40: mid-investigation correlation. When this case shares indicators with other OPEN cases that aren't
+   already linked, suggest relating them — surface only; a human decides whether (and how) to link. *@
+@if (CanEdit && _related.Count > 0 && !_relatedDismissed)
+{
+    <div class="card mb-3 border-info">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>Possibly related open case(s)</span>
+            <button class="btn btn-sm btn-link p-0 text-muted" @onclick="() => _relatedDismissed = true" title="Hide until the next indicator is added">Dismiss</button>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-2">
+                This case shares indicators with the open case(s) below. Link any that are genuinely related &mdash;
+                nothing is linked automatically.
+            </p>
+            <ul class="list-unstyled mb-0">
+                @foreach (var r in _related)
+                {
+                    <li class="d-flex flex-wrap align-items-center gap-2 py-2 border-top">
+                        <a href="cases/@r.CaseId" class="fw-semibold text-decoration-none"><code>@r.CaseNumber</code></a>
+                        <span>@r.Title</span>
+                        <span class="@Ui.ClassificationBadge(r.Classification)">@Ui.Label(r.Classification)</span>
+                        <span class="text-muted small">shares:</span>
+                        @foreach (var ind in r.SharedIndicators.Take(6))
+                        {
+                            <code class="small im-badge im-b-neutral">@ind</code>
+                        }
+                        @if (r.SharedIndicators.Count > 6)
+                        {
+                            <span class="text-muted small">+@(r.SharedIndicators.Count - 6) more</span>
+                        }
+                        <span class="ms-auto d-flex align-items-center gap-1">
+                            <select class="form-select form-select-sm" style="width:auto" aria-label="Relationship type"
+                                    @onchange="e => SetRelatedType(r.CaseId, e.Value?.ToString())">
+                                @foreach (var t in Enum.GetValues<CaseLinkType>())
+                                {
+                                    <option value="@t" selected="@(RelatedTypeFor(r.CaseId) == t)">@Ui.CaseLinkLabel(t, true)</option>
+                                }
+                            </select>
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => LinkRelated(r.CaseId)">Link</button>
+                        </span>
+                    </li>
+                }
+            </ul>
+        </div>
+    </div>
+}
+
 <AuthorizeView Policy="@Policies.EditCases">
     <div class="card mb-3 @(_enEditId is not null ? "border-primary" : "")">
         <div class="card-header d-flex justify-content-between align-items-center">
@@ -403,6 +450,11 @@ else
     private Dictionary<Guid, IReadOnlyList<EntityOverlap>> _overlaps = new();
     private int _loadedToken = int.MinValue;
 
+    // PROD-40: mid-investigation correlation — visible OPEN cases sharing indicators, not yet linked.
+    private IReadOnlyList<RelatedCaseSuggestion> _related = Array.Empty<RelatedCaseSuggestion>();
+    private bool _relatedDismissed;
+    private readonly Dictionary<Guid, CaseLinkType> _relatedType = new();
+
     // Defanged vs live indicator display.
     private bool _defangView;
 
@@ -432,6 +484,7 @@ else
         {
             _loadedToken = RefreshToken;
             await LoadOverlaps();
+            await LoadRelated();
         }
     }
 
@@ -440,6 +493,35 @@ else
         _overlaps = (await Cases.FindEntityOverlapsAsync(CaseId))
             .GroupBy(o => o.EntityId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<EntityOverlap>)g.ToList());
+    }
+
+    // PROD-40: pull the visible open cases sharing indicators with this one (not already linked). Only
+    // editors — who can act on it — see the suggestion.
+    private async Task LoadRelated()
+    {
+        if (!CanEdit) { _related = Array.Empty<RelatedCaseSuggestion>(); return; }
+        _related = await Cases.FindRelatedOpenCasesAsync(CaseId);
+    }
+
+    private CaseLinkType RelatedTypeFor(Guid caseId) =>
+        _relatedType.TryGetValue(caseId, out var t) ? t : CaseLinkType.RelatedTo;
+
+    private void SetRelatedType(Guid caseId, string? value)
+    {
+        if (Enum.TryParse<CaseLinkType>(value, out var t)) _relatedType[caseId] = t;
+    }
+
+    private async Task LinkRelated(Guid otherCaseId)
+    {
+        try
+        {
+            var linkId = await Cases.LinkCaseAsync(CaseId, otherCaseId, RelatedTypeFor(otherCaseId),
+                "Suggested from shared indicators");
+            await OnChanged.InvokeAsync();   // refresh the case + the Overview "Related cases" list
+            await LoadRelated();             // the now-linked case drops off the suggestions
+            Toasts.Success(linkId is null ? "Those cases were already linked." : "Cases linked.");
+        }
+        catch (Exception ex) { Toasts.Error(ex.Message); }
     }
 
     private Task Confirm(string message, Func<Task> action) => RequestConfirm.InvokeAsync((message, action));
@@ -461,6 +543,8 @@ else
             _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null;
             await OnChanged.InvokeAsync();
             await LoadOverlaps(); // the new IOC may correlate with another case — surface "also in" now
+            _relatedDismissed = false; // a new IOC may reveal a related case — re-surface the suggestion (PROD-40)
+            await LoadRelated();
             Toasts.Success($"Added {addedVal}");
         }
         catch (Exception ex) { _entityError = ex.Message; }
@@ -510,6 +594,8 @@ else
             ClearBulk();
             await OnChanged.InvokeAsync();
             await LoadOverlaps(); // pasted IOCs may correlate with other cases — refresh "also in"
+            _relatedDismissed = false; // pasted IOCs may reveal related cases — re-surface the suggestion (PROD-40)
+            await LoadRelated();
             Toasts.Success($"Added {added} indicator(s)");
         }
         catch (Exception ex)
@@ -549,6 +635,8 @@ else
             CancelEntityEdit();
             await OnChanged.InvokeAsync();
             await LoadOverlaps(); // a changed value/type may change cross-case correlation
+            _relatedDismissed = false; // a changed value may reveal/clear a related case (PROD-40)
+            await LoadRelated();
             Toasts.Success("Entity updated");
         }
         catch (Exception ex) { _entityError = ex.Message; }
@@ -559,6 +647,7 @@ else
         await Cases.RemoveEntityAsync(CaseId, entityId);
         await OnChanged.InvokeAsync();
         await LoadOverlaps(); // keep the overlap map in sync with the current entity set
+        await LoadRelated();  // a removed IOC may drop a correlation (don't un-dismiss on a removal)
         Toasts.Success("Entity removed");
     }
 
