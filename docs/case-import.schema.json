@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:casebook:schema:case-import:v1",
+  "title": "CaseBook case import (v1)",
+  "description": "A structured document that seeds a new or existing CaseBook case with a summary, timeline entries, entities/IOCs and action items. Imported as a human-confirmed draft.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "schemaVersion"
+  ],
+  "properties": {
+    "format": {
+      "const": "casebook-case-import"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "origin": {
+      "type": "string",
+      "description": "Provenance recorded as the source of imported indicators and timeline entries (e.g. \u0022AI-assisted (Copilot)\u0022, \u0022manual\u0022, \u0022XSIAM\u0022)."
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "summary": {
+      "type": "string",
+      "description": "A narrative summary of the matter, imported as an analyst note."
+    },
+    "timeline": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/timelineEntry"
+      }
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entity"
+      }
+    },
+    "actionItems": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/actionItem"
+      }
+    }
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "description": "Where the import lands: an existing case (by id) or a new one.",
+      "additionalProperties": false,
+      "properties": {
+        "caseId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Import into this existing case (takes precedence over newCase when visible)."
+        },
+        "newCase": {
+          "$ref": "#/$defs/newCase"
+        }
+      }
+    },
+    "newCase": {
+      "type": "object",
+      "description": "Opening fields for a new case.",
+      "additionalProperties": false,
+      "required": [
+        "title"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Short, specific case title."
+        },
+        "descriptiveName": {
+          "type": "string",
+          "description": "Optional short slug source; derived from the title when omitted."
+        },
+        "classification": {
+          "type": "string",
+          "enum": [
+            "ComplexEvent",
+            "AdverseEvent",
+            "Incident",
+            "Breach"
+          ],
+          "description": "Omit or \u0022ComplexEvent\u0022 files an intake Complex Event."
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "Informational",
+            "Low",
+            "Medium",
+            "High",
+            "Critical"
+          ]
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "InternalDetection",
+            "ThirdParty"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "description": "The case\u0027s own summary field (distinct from the top-level summary note)."
+        },
+        "detectedAtUtc": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the matter was detected (defaults to now; not in the future)."
+        },
+        "occurredAtUtc": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When activity began (must not be after detection)."
+        },
+        "dataTypesInvolved": {
+          "type": "string"
+        },
+        "impactedAssets": {
+          "type": "string"
+        }
+      }
+    },
+    "timelineEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description"
+      ],
+      "properties": {
+        "occurredAtUtc": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When it happened (defaults to now if omitted; future entries are excluded)."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "Event",
+            "Investigation"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "Detection",
+            "Analysis",
+            "Containment",
+            "Eradication",
+            "Recovery",
+            "Communication",
+            "Evidence",
+            "Escalation",
+            "Note",
+            "Other",
+            "Notified",
+            "ScopeConfirmed",
+            "DataConfirmed",
+            "Remediation",
+            "RegulatoryNotification"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "description": "What happened."
+        },
+        "source": {
+          "type": "string",
+          "description": "Optional origin of this entry (defaults to the document origin)."
+        }
+      }
+    },
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "Account",
+            "Host",
+            "IpAddress",
+            "Domain",
+            "Url",
+            "FileHash",
+            "FileName",
+            "EmailAddress",
+            "Process",
+            "RegistryKey",
+            "Other"
+          ],
+          "description": "Optional \u2014 auto-detected from the value when omitted."
+        },
+        "value": {
+          "type": "string",
+          "description": "The indicator; defanged notation (hxxp://, 1.1.1[.]1) is accepted and refanged."
+        },
+        "label": {
+          "type": "string"
+        },
+        "disposition": {
+          "type": "string",
+          "enum": [
+            "Unknown",
+            "Benign",
+            "Suspicious",
+            "Malicious",
+            "Compromised"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "description": "Optional (defaults to the document origin)."
+        }
+      }
+    },
+    "actionItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The follow-up task."
+        },
+        "owner": {
+          "type": "string"
+        },
+        "dueAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

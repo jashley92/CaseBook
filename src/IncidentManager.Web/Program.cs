@@ -637,6 +637,13 @@ app.MapPost("/api/import/cases", async (
     AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName
 }).RequireRateLimiting("downloads");
 
+// PROD-35: the machine-readable JSON Schema for the import format, so producers can validate/generate against
+// it and editors can autocomplete. A public contract (no data), served anonymously and generated from the
+// model so it can never drift from what the importer accepts.
+app.MapGet("/api/import/cases/schema", () =>
+        Results.Text(IncidentManager.Application.Import.CaseImportSchema.Build(), "application/json"))
+    .AllowAnonymous().RequireRateLimiting("downloads");
+
 app.Run();
 
 public partial class Program;

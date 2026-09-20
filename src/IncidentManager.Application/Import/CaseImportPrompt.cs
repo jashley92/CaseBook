@@ -43,6 +43,7 @@ public static class CaseImportPrompt
         sb.AppendLine("completeness.");
         sb.AppendLine();
         sb.AppendLine("Read the SOURCE MATERIAL at the end and produce ONE JSON object matching the SCHEMA below.");
+        sb.AppendLine("(A machine-readable JSON Schema for this format is published at /api/import/cases/schema.)");
         sb.AppendLine();
         sb.AppendLine("OUTPUT RULES");
         sb.AppendLine("- Output ONLY the JSON object — no prose, no explanation, no Markdown code fences.");

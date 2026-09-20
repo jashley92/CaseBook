@@ -1,4 +1,6 @@
+using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
@@ -76,6 +78,62 @@ public sealed class CaseImportTests : IDisposable
         CaseImportService.Parse("{\"format\":\"casebook-case-import\",\"schemaVersion\":99}").Error
             .Should().Contain("newer than this app supports");
         CaseImportService.Parse("{\"format\":\"casebook-case-import\",\"schemaVersion\":1}").Ok.Should().BeTrue();
+    }
+
+    // ── JSON Schema (pure, PROD-35) ──────────────────────────────────────────────────────────────
+
+    private static string[] SchemaEnum(JsonObject root, string def, string prop) =>
+        root["$defs"]![def]!["properties"]![prop]!["enum"]!.AsArray().Select(n => n!.GetValue<string>()).ToArray();
+
+    [Fact]
+    public void The_schema_is_valid_json_and_pins_the_format_and_version()
+    {
+        var act = () => JsonNode.Parse(CaseImportSchema.Build());
+        act.Should().NotThrow();
+
+        var root = CaseImportSchema.Root();
+        root["properties"]!["format"]!["const"]!.GetValue<string>().Should().Be(CaseImportJson.FormatTag);
+        root["properties"]!["schemaVersion"]!["const"]!.GetValue<int>().Should().Be(CaseImportJson.CurrentSchemaVersion);
+    }
+
+    [Fact]
+    public void The_schema_enums_match_the_domain_enums()
+    {
+        var root = CaseImportSchema.Root();
+        SchemaEnum(root, "entity", "type").Should().BeEquivalentTo(Enum.GetNames<EntityType>());
+        SchemaEnum(root, "entity", "disposition").Should().BeEquivalentTo(Enum.GetNames<EntityDisposition>());
+        SchemaEnum(root, "timelineEntry", "kind").Should().BeEquivalentTo(Enum.GetNames<TimelineKind>());
+        SchemaEnum(root, "timelineEntry", "type").Should().BeEquivalentTo(Enum.GetNames<TimelineEntryType>());
+        SchemaEnum(root, "newCase", "severity").Should().BeEquivalentTo(Enum.GetNames<Severity>());
+        SchemaEnum(root, "newCase", "origin").Should().BeEquivalentTo(Enum.GetNames<CaseOrigin>());
+        SchemaEnum(root, "newCase", "classification").Should()
+            .Contain("ComplexEvent").And.Contain(Enum.GetNames<Classification>());
+    }
+
+    [Fact]
+    public void The_committed_schema_file_matches_the_builder()
+    {
+        var repoRoot = FindRepoRoot();
+        repoRoot.Should().NotBeNull("the repo root (with IncidentManager.sln) should be locatable from the test output");
+        var path = Path.Combine(repoRoot!, "docs", "case-import.schema.json");
+        File.Exists(path).Should().BeTrue(
+            $"the committed schema should exist at {path} — regenerate it from GET /api/import/cases/schema");
+
+        // Compare structurally (parse → compact) so line-ending/indentation differences don't matter.
+        var onDisk = JsonNode.Parse(File.ReadAllText(path))!.ToJsonString();
+        var built = JsonNode.Parse(CaseImportSchema.Build())!.ToJsonString();
+        onDisk.Should().Be(built, "docs/case-import.schema.json must match CaseImportSchema.Build() — regenerate it");
+    }
+
+    private static string? FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "IncidentManager.sln"))) return dir.FullName;
+            dir = dir.Parent;
+        }
+        return null;
     }
 
     // ── Prompt builder (pure, PROD-32) ───────────────────────────────────────────────────────────
