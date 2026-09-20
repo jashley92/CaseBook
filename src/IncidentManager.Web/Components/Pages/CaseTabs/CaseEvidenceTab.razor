@@ -15,14 +15,26 @@
                 <div class="row g-2 align-items-end">
                     <div class="col-md-5">
                         <label class="form-label small mb-0">File</label>
-                        <InputFile id="evidence-file-input" class="form-control form-control-sm" OnChange="OnFileSelected" />
+                        <InputFile id="evidence-file-input" class="form-control form-control-sm" OnChange="OnFileSelected" disabled="@_busy" />
                     </div>
                     <div class="col-md-5">
                         <label class="form-label small mb-0">Description</label>
-                        <input class="form-control form-control-sm" @bind="_evDesc" />
+                        <input class="form-control form-control-sm" @bind="_evDesc" disabled="@_busy" />
                     </div>
                     <div class="col-md-2">
-                        <button class="btn btn-sm btn-primary w-100" @onclick="Upload" disabled="@(_file is null)">Upload</button>
+                        @* REL-03: guard against a double-click (and give feedback on a slow/large upload) — the
+                           button both disables and shows a spinner while a hashed upload is streaming, so the
+                           same file can't be sent twice (which would create duplicate evidence + custody events). *@
+                        <button class="btn btn-sm btn-primary w-100" @onclick="Upload" disabled="@(_file is null || _busy)">
+                            @if (_busy)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span><text>Uploading…</text>
+                            }
+                            else
+                            {
+                                <text>Upload</text>
+                            }
+                        </button>
                     </div>
                 </div>
                 <div class="small text-muted mt-2">
@@ -136,6 +148,9 @@
     private IBrowserFile? _file;
     private string? _evDesc;
     private string? _uploadError;
+    // REL-03: true while an upload is streaming, so a second click / drop can't fire a duplicate upload and
+    // the UI can show progress on a slow or large (≤50MB) file.
+    private bool _busy;
 
     // U-26: per-evidence chain-of-custody, lazily loaded when a row is expanded.
     private readonly HashSet<Guid> _custodyOpen = new();
@@ -147,8 +162,9 @@
 
     private async Task Upload()
     {
-        if (_file is null) return;
+        if (_file is null || _busy) return; // REL-03: ignore a re-click while an upload is in flight
         _uploadError = null;
+        _busy = true;
         try
         {
             await using var stream = _file.OpenReadStream(MaxEvidenceBytes);
@@ -162,26 +178,39 @@
         {
             _uploadError = ex.Message;
         }
+        finally
+        {
+            _busy = false;
+        }
     }
 
     // U-39: files dropped onto the Evidence tab (via the paste-drop shim) upload immediately — a drop is a
     // bulk gesture, so we don't stage them for a per-file description. Same hashed/custody UploadAsync path.
     private async Task OnDropped(InputFileChangeEventArgs e)
     {
+        if (_busy) return; // REL-03: ignore a drop while an upload batch is already streaming
         _uploadError = null;
+        _busy = true;
         var uploaded = 0;
-        foreach (var f in e.GetMultipleFiles(maximumFileCount: 50))
+        try
         {
-            try
+            foreach (var f in e.GetMultipleFiles(maximumFileCount: 50))
             {
-                await using var stream = f.OpenReadStream(MaxEvidenceBytes);
-                await Evidence.UploadAsync(CaseId, f.Name, f.ContentType, stream, _evDesc);
-                uploaded++;
+                try
+                {
+                    await using var stream = f.OpenReadStream(MaxEvidenceBytes);
+                    await Evidence.UploadAsync(CaseId, f.Name, f.ContentType, stream, _evDesc);
+                    uploaded++;
+                }
+                catch (Exception ex)
+                {
+                    _uploadError = $"{f.Name}: {ex.Message}";
+                }
             }
-            catch (Exception ex)
-            {
-                _uploadError = $"{f.Name}: {ex.Message}";
-            }
+        }
+        finally
+        {
+            _busy = false;
         }
         if (uploaded > 0)
         {
