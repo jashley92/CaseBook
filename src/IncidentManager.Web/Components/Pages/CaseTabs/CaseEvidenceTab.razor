@@ -3,10 +3,12 @@
    The cross-tab concerns stay in the parent and are threaded in: the screenshot lightbox (OnPreview), the
    live-collab flash (FlashClass/FlashStyle), and a Reload after upload (OnChanged). The paste/drop shim is
    still registered by the parent against the element IDs kept here (evidence-dropzone / -file-input / -file-drop). *@
+@using Microsoft.Extensions.Logging
 @inject EvidenceService Evidence
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
+@inject ILogger<CaseEvidenceTab> Logger
 
 <div id="evidence-dropzone">
     <AuthorizeView Policy="@Policies.EditCases">
@@ -164,6 +166,9 @@
     {
         if (_file is null || _busy) return; // REL-03: ignore a re-click while an upload is in flight
         _uploadError = null;
+        // REL-06: catch the common, expected failure (over the size cap) up front with a clear message,
+        // rather than letting the stream throw a generic IOException that reads as an internal error.
+        if (_file.Size > MaxEvidenceBytes) { _uploadError = TooLargeMessage(_file.Name); return; }
         _busy = true;
         try
         {
@@ -176,7 +181,9 @@
         }
         catch (Exception ex)
         {
-            _uploadError = ex.Message;
+            // REL-06: domain messages pass through; EF/IO/internal errors become a plain line (detail logged).
+            _uploadError = UserFacingError.Describe(ex, Logger, "uploading evidence",
+                "The file couldn't be uploaded. Please try again.");
         }
         finally
         {
@@ -196,6 +203,7 @@
         {
             foreach (var f in e.GetMultipleFiles(maximumFileCount: 50))
             {
+                if (f.Size > MaxEvidenceBytes) { _uploadError = TooLargeMessage(f.Name); continue; } // REL-06
                 try
                 {
                     await using var stream = f.OpenReadStream(MaxEvidenceBytes);
@@ -204,7 +212,8 @@
                 }
                 catch (Exception ex)
                 {
-                    _uploadError = $"{f.Name}: {ex.Message}";
+                    // REL-06: per-file — keep the name, map the reason (domain verbatim / internal generic).
+                    _uploadError = $"{f.Name}: {UserFacingError.Describe(ex, Logger, "uploading evidence", "couldn't be uploaded. Please try again.")}";
                 }
             }
         }
@@ -234,6 +243,10 @@
     // Only image evidence can be previewed inline (the /inline endpoint serves image/* only).
     private static bool IsImageEvidence(Evidence ev) =>
         ev.ContentType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true;
+
+    // REL-06: friendly, consistent message for a file over the 50 MB cap (used by the picker and drop paths).
+    private static string TooLargeMessage(string name) =>
+        $"“{name}” is larger than the {MaxEvidenceBytes / (1024 * 1024)} MB limit and wasn't uploaded.";
 
     private static string FormatSize(long bytes) => bytes switch
     {

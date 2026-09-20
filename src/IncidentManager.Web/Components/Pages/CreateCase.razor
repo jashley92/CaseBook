@@ -1,7 +1,9 @@
 @page "/cases/new"
 @attribute [Authorize(Policy = Policies.EditCases)]
 @using IncidentManager.Application.Admin
+@using Microsoft.Extensions.Logging
 @inject CaseService Cases
+@inject ILogger<CreateCase> Logger
 @inject CaseTemplateService Templates
 @inject NavigationManager Nav
 @inject IConfiguration Config
@@ -478,13 +480,12 @@
             catch { /* non-fatal — the case is already created */ }
             Nav.NavigateTo($"cases/{_created.Id}");
         }
-        catch (FluentValidation.ValidationException ex)
-        {
-            _error = string.Join(" ", ex.Errors.Select(e => e.ErrorMessage));
-        }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            // REL-06: show domain/validation messages verbatim; replace cryptic EF/SQLite/internal errors
+            // with a plain line and log the detail. The amber "was filed" state renders this the same way.
+            _error = UserFacingError.Describe(ex, Logger, "creating a case",
+                "The case couldn't be created. Please try again.");
         }
         finally
         {
