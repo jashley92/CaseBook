@@ -39,6 +39,16 @@ surfaced and linked at creation** instead of fragmenting across cases.
 
 ![Create case](docs/screenshots/create-case.png)
 
+### Structured &amp; AI-assisted import
+Bring a matter in as a structured document instead of retyping it: paste or upload a versioned JSON that
+seeds a **new or existing** case with a summary, timeline, indicators and tasks. CaseBook never calls an AI —
+**Step 1** generates a copy-paste prompt for your *own* tool (e.g. Copilot) that emits the exact schema, and
+**Step 2** shows an editable, validated preview you confirm. Producers (XSIAM/SOAR playbooks, scripts) can
+also submit over a **token-authenticated API**, landing in a review queue — a human always confirms before
+anything is written to a case.
+
+![Structured and AI-assisted import](docs/screenshots/case-import.png)
+
 ### Event &amp; investigation timelines
 Two separate chronologies per case — the **event** timeline (facts and timing of what happened) and the
 **investigation** timeline (analyst/team actions) — each typed, sourced, and audited.
