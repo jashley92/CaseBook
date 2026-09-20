@@ -90,6 +90,12 @@
                                         <span>Due-soon after-action reminders</span>
                                         @TriggerState(FormBool("Notifications:DueSoonScan:Enabled"), EmailOn && FromSet)
                                     </li>
+                                    <li class="mb-1 d-flex align-items-center justify-content-between">
+                                        <span>Regulatory deadline reminders <span class="text-muted">(needs the deadline clock on)</span></span>
+                                        @if (FormBool("Notifications:DeadlineScan:Enabled") && !DeadlineClockOn)
+                                        { <span class="im-badge im-b-warn">On — clock off</span> }
+                                        else { @TriggerState(FormBool("Notifications:DeadlineScan:Enabled"), EmailOn && FromSet) }
+                                    </li>
                                     <li class="d-flex align-items-center justify-content-between">
                                         <span>Team chat channel <span class="text-muted">(Slack/Teams, configured on host)</span></span>
                                         @if (ChatConfigured) { <span class="im-badge im-b-ok">Configured</span> }
@@ -816,7 +822,11 @@
     private bool AnyTriggerOn =>
         FormBool("Email:AssignmentNotifications")
         || FormBool("Notifications:OverdueScan:Enabled")
-        || FormBool("Notifications:DueSoonScan:Enabled");
+        || FormBool("Notifications:DueSoonScan:Enabled")
+        || FormBool("Notifications:DeadlineScan:Enabled");
+    // PROD-37: the regulatory-deadline reminder additionally needs the deadline clock itself on. That toggle
+    // lives in the "Deadline clock" settings group (also part of the pending form), so read it from there.
+    private bool DeadlineClockOn => FormBool("Compliance:NotificationDeadlines:Enabled");
     // "Live" = at least one notification will actually reach someone once saved.
     private bool NotifyLive => EmailOn && FromSet && (AnyTriggerOn || LegalDistributionSet);
 
@@ -825,7 +835,8 @@
         Config.GetValue<bool>("Chat:Webhook:Enabled") && !string.IsNullOrWhiteSpace(Config["Chat:Webhook:WebhookUrl"]);
     private bool AnyChatTypeOn =>
         FormBool("Notifications:Chat:BreachEscalations") || FormBool("Notifications:Chat:Assignments")
-        || FormBool("Notifications:Chat:OverdueReminders") || FormBool("Notifications:Chat:DueSoonReminders");
+        || FormBool("Notifications:Chat:Mentions") || FormBool("Notifications:Chat:OverdueReminders")
+        || FormBool("Notifications:Chat:DueSoonReminders") || FormBool("Notifications:Chat:DeadlineReminders");
 
     private static RenderFragment ReadyIcon(bool ok) => builder =>
     {

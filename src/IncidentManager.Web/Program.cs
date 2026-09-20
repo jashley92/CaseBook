@@ -77,6 +77,11 @@ builder.Services.AddHostedService<OverdueActionItemHostedService>();
 builder.Services.Configure<DueSoonScanOptions>(builder.Configuration.GetSection("Notifications:DueSoonScan"));
 builder.Services.AddHostedService<DueSoonActionItemHostedService>();
 
+// --- PROD-37: periodic regulatory notification-deadline scan (reminds IC + assignees as a case's deadline
+// approaches/passes, once per band). Also requires the deadline clock on; read-only, never mutates state. ---
+builder.Services.Configure<DeadlineReminderScanOptions>(builder.Configuration.GetSection("Notifications:DeadlineScan"));
+builder.Services.AddHostedService<NotificationDeadlineHostedService>();
+
 // --- F-18: outbound security-event stream. Transports fan out from a background dispatcher. ---
 builder.Services.AddHttpClient("siem");
 builder.Services.AddSingleton<IncidentManager.Infrastructure.Siem.ISecurityEventTransport, IncidentManager.Web.Siem.WebhookTransport>();

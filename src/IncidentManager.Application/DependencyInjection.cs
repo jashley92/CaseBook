@@ -54,6 +54,11 @@ public static class DependencyInjection
         // a separate tracker so the "due soon" and "overdue" reminders for one item are independent episodes.
         services.AddScoped<Notifications.DueSoonActionItemScanner>();
         services.AddSingleton<Notifications.IDueSoonActionItemTracker, Notifications.DueSoonActionItemTracker>();
+        // PROD-37: regulatory notification-deadline scan (the deadline-clock sibling of the two above). Scoped
+        // (a DbContext + a scoped NotificationDeadlineService per pass); a singleton tracker so "already
+        // reminded for this band" survives between passes, like the other reminder trackers.
+        services.AddScoped<Notifications.NotificationDeadlineScanner>();
+        services.AddSingleton<Notifications.IDeadlineReminderTracker, Notifications.DeadlineReminderTracker>();
 
         services.AddSingleton<IMarkdownService, MarkdownService>();
 

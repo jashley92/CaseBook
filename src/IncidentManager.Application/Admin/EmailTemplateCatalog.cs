@@ -103,6 +103,25 @@ public static class EmailTemplateCatalog
             CtaUrlToken: "AgendaUrl"),
 
         new EmailTemplateDefinition(
+            "notification-deadline",
+            "Regulatory notification-deadline reminder",
+            "Sent to a case's incident commander and assignees when its regulatory notification deadline (PROD-07) is approaching or has passed and the case is not yet marked reported (PROD-37). Requires the deadline clock on.",
+            "{{ItemCount}} case(s) approaching a regulatory notification deadline",
+            """
+            <h1>Regulatory notification deadline</h1>
+            <p>The following case(s) are at risk of, or already past, a regulatory notification deadline and have <strong>not yet been marked reported</strong>:</p>
+            {{ItemsList}}
+            <p>Review each case's notification status and record the reported milestone once notified. CaseBook records the milestone — it never files on your behalf.</p>
+            """,
+            new[]
+            {
+                new EmailToken("ItemCount", "How many cases are approaching or past a deadline for this recipient."),
+                new EmailToken("ItemsList", "The formatted list of cases (case, title, jurisdiction, standing, deadline). Rendered by the app."),
+            },
+            CtaLabel: "Review the case(s)",
+            CtaUrlToken: "DeadlinesUrl"),
+
+        new EmailTemplateDefinition(
             "breach",
             "Breach escalation (Legal/Privacy)",
             "Sent to the Legal/Privacy distribution when a case is escalated to a Breach (E-03).",

@@ -1,3 +1,4 @@
+using IncidentManager.Application.Sla;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 
@@ -32,6 +33,24 @@ public sealed record DueSoonActionItem(
     string Title,
     DateTimeOffset DueAtUtc,
     string? OwnerUserId);
+
+/// <summary>
+/// A case whose regulatory notification deadline (PROD-07) is approaching or already passed, flattened for
+/// notification (PROD-37). Carries the resolved recipient user-ids (the incident commander plus the case's
+/// assignees) so the notifier can address them without re-loading, plus the headline jurisdiction's standing
+/// for the email body. <see cref="State"/> is always <see cref="SlaState.AtRisk"/> or
+/// <see cref="SlaState.Breached"/> — the scanner only raises the attention-worthy bands.
+/// </summary>
+public sealed record DeadlineReminder(
+    Guid CaseId,
+    string CaseNumber,
+    string CaseTitle,
+    Severity Severity,
+    IReadOnlyList<string> RecipientUserIds,
+    SlaState State,
+    string JurisdictionLabel,
+    DateTimeOffset? DueAtUtc,
+    TimeSpan? Remaining);
 
 /// <summary>
 /// Case-lifecycle notifications (who to tell, and how) — kept out of the use-case layer so recipient
@@ -72,4 +91,15 @@ public interface ICaseNotifications
     /// by config; a no-op when no recipients resolve.
     /// </summary>
     Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default);
+
+    /// <summary>
+    /// Called by the scheduled regulatory-deadline scan (PROD-37) with the cases that have <em>newly</em>
+    /// crossed into an at-risk or breached notification-deadline band and have not yet been reminded for it.
+    /// Resolves each case's recipients (incident commander + assignees), groups by recipient, and sends one
+    /// reminder each. A default no-op is provided so existing implementers (and test doubles) need not change;
+    /// the real <c>CaseNotifications</c> overrides it. Gated by config; a no-op when no recipients resolve.
+    /// Reminds only — a human still records the reported milestone; nothing here mutates case state.
+    /// </summary>
+    Task OnDeadlineApproachingAsync(IReadOnlyList<DeadlineReminder> reminders, CancellationToken ct = default)
+        => Task.CompletedTask;
 }

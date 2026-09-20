@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Sla;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.Extensions.Configuration;
@@ -39,6 +40,7 @@ public sealed class CaseNotifications : ICaseNotifications
     private string? CaseUrl(Guid id) => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases/{id}";
     private string? OverdueUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases?overdue=true&closed=true";
     private string? AgendaUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/work";
+    private string? CasesUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases";
 
     // PROD-02: is a given notification type routed to the team chat channel? Requires both a configured
     // chat transport and the per-type in-app toggle (Notifications:Chat:*, layered from DB + appsettings).
@@ -237,6 +239,76 @@ public sealed class CaseNotifications : ICaseNotifications
             var message = await _composer.ComposeAsync("action-item-due-soon", [to], tokens, agendaUrl, htmlTokens, ct);
             await _email.SendAsync(message, ct);
         }
+    }
+
+    public async Task OnDeadlineApproachingAsync(IReadOnlyList<DeadlineReminder> reminders, CancellationToken ct = default)
+    {
+        if (reminders.Count == 0) return;
+
+        // Chat broadcast (PROD-02): one urgent summary to the shared channel, alongside the per-recipient emails.
+        if (ChatOn("DeadlineReminders"))
+        {
+            var caseCount = reminders.Select(r => r.CaseId).Distinct().Count();
+            var breached = reminders.Count(r => r.State == SlaState.Breached);
+            var detail = breached > 0
+                ? $"{breached} past deadline, {reminders.Count - breached} at risk, across {caseCount} case(s). IC/owners emailed where reachable."
+                : $"{reminders.Count} case(s) approaching a deadline. IC/owners emailed where reachable.";
+            await _chat.SendAsync(new ChatNotification(
+                "Regulatory notification deadline", detail,
+                CasesUrl(), ChatUrgency.Alert), ct);
+        }
+
+        // Group by recipient email, so a person on several at-risk cases gets one reminder listing them all.
+        var byRecipient = new Dictionary<string, List<DeadlineReminder>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in reminders)
+        {
+            foreach (var uid in r.RecipientUserIds)
+            {
+                var to = _users.EmailFor(uid);
+                if (string.IsNullOrWhiteSpace(to)) continue;
+                if (!byRecipient.TryGetValue(to, out var list)) byRecipient[to] = list = [];
+                list.Add(r);
+            }
+        }
+
+        foreach (var (to, list) in byRecipient)
+        {
+            // A recipient who is both IC and an assignee on the same case would otherwise see it twice.
+            var ordered = list
+                .DistinctBy(r => r.CaseId)
+                .OrderBy(r => r.DueAtUtc ?? DateTimeOffset.MaxValue)
+                .ThenBy(r => r.CaseNumber, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // The CTA points at the one case when this recipient's list is a single case, else the case list.
+            var cta = ordered.Count == 1 ? CaseUrl(ordered[0].CaseId) : CasesUrl();
+
+            var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ItemCount"] = ordered.Count.ToString(CultureInfo.InvariantCulture),
+                ["DeadlinesUrl"] = cta ?? "",
+            };
+            var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ItemsList"] = RenderDeadlineList(ordered),
+            };
+
+            var message = await _composer.ComposeAsync("notification-deadline", [to], tokens, cta, htmlTokens, ct);
+            await _email.SendAsync(message, ct);
+        }
+    }
+
+    // Composer-rendered safe HTML: every case-supplied field is HTML-encoded here.
+    private static string RenderDeadlineList(IEnumerable<DeadlineReminder> reminders)
+    {
+        var lis = reminders.Select(r =>
+        {
+            var standing = r.State == SlaState.Breached ? "past deadline" : "at risk";
+            var due = r.DueAtUtc is { } d ? $", due {d.ToString("u")}" : "";
+            return $"<li>{WebUtility.HtmlEncode(r.CaseNumber)} — {WebUtility.HtmlEncode(r.CaseTitle)} " +
+                   $"({WebUtility.HtmlEncode(r.JurisdictionLabel)}: {standing}{WebUtility.HtmlEncode(due)})</li>";
+        });
+        return "<ul>" + string.Join("", lis) + "</ul>";
     }
 
     // Composer-rendered safe HTML: every case-supplied field is HTML-encoded here.
