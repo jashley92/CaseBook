@@ -44,6 +44,7 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     DbSet<PinnedCase> PinnedCases { get; }
     DbSet<CaseComment> CaseComments { get; }
     DbSet<PendingImport> PendingImports { get; }
+    DbSet<ApiToken> ApiTokens { get; }
     DbSet<IntegritySeal> IntegritySeals { get; }
     DbSet<AppSetting> AppSettings { get; }
     DbSet<Role> Roles { get; }

@@ -50,6 +50,14 @@ public enum PendingImportStatus
     Rejected = 2
 }
 
+/// <summary>Whether an API token belongs to a person (actions attribute to them) or is a named machine
+/// identity an admin created and granted roles (PROD-34).</summary>
+public enum ApiTokenKind
+{
+    Personal = 0,
+    System = 1
+}
+
 /// <summary>Status of an after-action follow-up item.</summary>
 public enum ActionItemStatus
 {

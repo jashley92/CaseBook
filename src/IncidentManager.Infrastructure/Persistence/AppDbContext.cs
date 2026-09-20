@@ -46,6 +46,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<PinnedCase> PinnedCases => Set<PinnedCase>();
     public DbSet<CaseComment> CaseComments => Set<CaseComment>();
     public DbSet<PendingImport> PendingImports => Set<PendingImport>();
+    public DbSet<ApiToken> ApiTokens => Set<ApiToken>();
 
     /// <summary>
     /// Ambient reason for the current unit of work (see <see cref="IAppDbContext.PendingChangeReason"/>).

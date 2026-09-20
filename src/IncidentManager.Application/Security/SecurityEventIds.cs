@@ -33,6 +33,7 @@ public static class SecurityEventIds
     public const int RoleChanged = 5401;
     public const int AdGroupMappingChanged = 5402;
     public const int SettingChanged = 5403;
+    public const int ApiTokenChanged = 5404; // an API token was created or revoked (PROD-34)
 
     // 55xx — Case governance
     public const int LegalHoldPlaced = 5501;

@@ -194,6 +194,11 @@ else
         .AddScheme<AuthenticationSchemeOptions, DevAuthenticationHandler>(DevAuthenticationHandler.SchemeName, _ => { });
 }
 
+// PROD-34: the API-token scheme, registered in both auth modes. It does not change the default scheme —
+// interactive requests still use Windows/Dev — endpoints opt into it via AuthenticationSchemes.
+builder.Services.AddAuthentication()
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { });
+
 builder.Services.AddAuthorization(options =>
 {
     foreach (var (policy, permission) in Policies.Required)
@@ -626,7 +631,11 @@ app.MapPost("/api/import/cases", async (
         itemCount = preview.IncludedItemCount,
         warnings = preview.Warnings
     });
-}).RequireAuthorization(Policies.EditCases).RequireRateLimiting("downloads");
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    Policy = Policies.EditCases,
+    AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName
+}).RequireRateLimiting("downloads");
 
 app.Run();
 

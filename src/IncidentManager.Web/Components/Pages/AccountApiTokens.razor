@@ -1,0 +1,167 @@
+@page "/account/api-tokens"
+@attribute [Authorize]
+@using IncidentManager.Application.ApiTokens
+@inject ApiTokenService Tokens
+@inject ICurrentUser CurrentUser
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<PageTitle>My API tokens</PageTitle>
+
+<PageHeader Title="My API tokens"
+           Subtitle="Personal tokens let you call the CaseBook API as yourself — actions are logged to you. Grant only the roles you need; every token needs an expiry and can be revoked anytime." />
+
+@if (_created is not null)
+{
+    <div class="alert alert-success">
+        <div class="fw-semibold mb-1"><span class="bi bi-check2-circle me-1"></span>Token “@_created.Token.Name” created — copy it now</div>
+        <div class="small mb-2">This is the only time it's shown. CaseBook stores only a hash.</div>
+        <div class="input-group input-group-sm" style="max-width:40rem">
+            <input class="form-control font-monospace" readonly value="@_created.Plaintext" />
+            <button class="btn btn-outline-secondary" type="button" @onclick="CopyToken">
+                <span class="bi @(_copied ? "bi-check2" : "bi-clipboard") me-1"></span>@(_copied ? "Copied" : "Copy")
+            </button>
+        </div>
+        <button class="btn btn-sm btn-link p-0 mt-2" @onclick="() => _created = null">Dismiss</button>
+    </div>
+}
+
+<div class="im-card nc-card">
+    <div class="fw-semibold mb-2">Create a token</div>
+    <div class="row g-3">
+        <div class="col-md-5">
+            <label class="form-label">Name <span class="text-danger">*</span></label>
+            <input class="form-control form-control-sm" @bind="_name" placeholder="e.g. my-triage-script" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Expires <span class="text-danger">*</span></label>
+            <input type="date" class="form-control form-control-sm" @bind="_expiresDate" />
+        </div>
+    </div>
+    <label class="form-label mt-3">Roles <span class="text-muted small">(a subset of your own)</span></label>
+    @if (_myRoles.Length == 0)
+    {
+        <p class="text-muted small">You have no roles to grant.</p>
+    }
+    else
+    {
+        <div class="row">
+            @foreach (var r in _myRoles)
+            {
+                <div class="col-md-4">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="myrole-@r"
+                               checked="@_selectedRoles.Contains(r.ToString())"
+                               @onchange="e => ToggleRole(r.ToString(), (bool)(e.Value ?? false))" />
+                        <label class="form-check-label" for="myrole-@r">@Ui.Label(r)</label>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    <div class="mt-3">
+        <button class="btn btn-sm btn-primary" @onclick="CreateToken" disabled="@(_myRoles.Length == 0)">
+            <span class="bi bi-key me-1"></span>Create token
+        </button>
+    </div>
+</div>
+
+<h4 class="mt-4 mb-2">Your tokens</h4>
+@if (_tokens is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else if (_tokens.Count == 0)
+{
+    <p class="text-muted">You haven't created any API tokens.</p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead><tr><th>Name</th><th>Roles</th><th>Last used (UTC)</th><th>Expires (UTC)</th><th>Status</th><th style="width:6rem"></th></tr></thead>
+        <tbody>
+            @foreach (var t in _tokens)
+            {
+                <tr class="@(t.IsActive ? "" : "opacity-75")">
+                    <td><span class="fw-semibold">@t.Name</span><div class="small text-muted font-monospace">@t.Prefix…</div></td>
+                    <td>@foreach (var r in t.Roles) { <span class="im-badge im-b-info me-1 mb-1">@r</span> }</td>
+                    <td class="small text-muted">@(t.LastUsedAtUtc?.UtcDateTime.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                    <td class="small text-muted">@t.ExpiresAtUtc.UtcDateTime.ToString("yyyy-MM-dd")</td>
+                    <td>
+                        @if (t.RevokedAtUtc is not null) { <span class="im-badge im-b-danger">Revoked</span> }
+                        else if (!t.IsActive) { <span class="im-badge im-b-warn">Expired</span> }
+                        else { <span class="im-badge im-b-ok">Active</span> }
+                    </td>
+                    <td class="text-end">
+                        @if (t.RevokedAtUtc is null)
+                        {
+                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => Revoke(t)">Revoke</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private AppRole[] _myRoles = Array.Empty<AppRole>();
+    private IReadOnlyList<ApiTokenView>? _tokens;
+    private string _name = "";
+    private DateTime _expiresDate = DateTime.UtcNow.Date.AddDays(90);
+    private readonly HashSet<string> _selectedRoles = new(StringComparer.OrdinalIgnoreCase);
+    private ApiTokenCreated? _created;
+    private bool _copied;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _myRoles = CurrentUser.Roles.OrderBy(r => (int)r).ToArray();
+        foreach (var r in _myRoles) _selectedRoles.Add(r.ToString()); // default to all of the user's roles
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => _tokens = await Tokens.ListMineAsync();
+
+    private void ToggleRole(string role, bool on)
+    {
+        if (on) _selectedRoles.Add(role); else _selectedRoles.Remove(role);
+    }
+
+    private async Task CreateToken()
+    {
+        try
+        {
+            var expiry = new DateTimeOffset(DateTime.SpecifyKind(_expiresDate, DateTimeKind.Utc), TimeSpan.Zero);
+            _created = await Tokens.CreatePersonalAsync(_name, _selectedRoles, expiry);
+            _copied = false;
+            _name = "";
+            await LoadAsync();
+            Toasts.Success($"Token “{_created.Token.Name}” created.");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task Revoke(ApiTokenView t)
+    {
+        try
+        {
+            await Tokens.RevokeAsync(t.Id);
+            await LoadAsync();
+            Toasts.Info($"Revoked “{t.Name}”.");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task CopyToken()
+    {
+        if (_created is null) return;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _created.Plaintext); _copied = true; }
+        catch { /* clipboard blocked; the field stays selectable */ }
+    }
+}

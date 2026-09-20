@@ -346,6 +346,23 @@ foreach ($s in $authSections) {
     }
 }
 
+# PROD-34: the API-token endpoints under /api authenticate with a bearer token, not Windows. Carve out just
+# that path as Anonymous (the rest of the site stays Windows-authenticated) so a tokenless request reaches
+# the app, where the ApiKey scheme validates the token. Scoped to "<site>/api" via a <location> entry.
+$apiAuthSections = @(
+    @{ Name = 'anonymousAuthentication'; Enabled = 'true'  },
+    @{ Name = 'windowsAuthentication';   Enabled = 'false' }
+)
+foreach ($s in $apiAuthSections) {
+    $out = & $appcmd set config "$SiteName/api" `
+        "/section:system.webServer/security/authentication/$($s.Name)" `
+        "/enabled:$($s.Enabled)" /commit:apphost 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw ("Failed to set $($s.Name) on '$SiteName/api' (appcmd exit $LASTEXITCODE): $out. This carves the " +
+               "token-authenticated API path out of Windows Auth; confirm you are running elevated.")
+    }
+}
+
 Restart-WebAppPool -Name $AppPoolName
 Start-Website -Name $SiteName -ErrorAction SilentlyContinue
 

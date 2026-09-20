@@ -1,0 +1,192 @@
+@page "/admin/api-tokens"
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@using IncidentManager.Application.ApiTokens
+@inject ApiTokenService Tokens
+@inject RoleService Roles
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<PageTitle>API tokens</PageTitle>
+
+<PageHeader Title="API tokens">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+<p class="text-muted">
+    <strong>System</strong> tokens are named machine identities for the import API (XSIAM/SOAR playbooks,
+    scripts) — grant each the roles it needs. API actions attribute to the token's name in the audit trail.
+    A token still only <strong>stages</strong> an import; a person confirms it. Tokens are shown once at
+    creation, then stored only as a hash. Personal tokens are self-managed by each user under their account.
+</p>
+
+@if (_created is not null)
+{
+    <div class="alert alert-success">
+        <div class="fw-semibold mb-1"><span class="bi bi-check2-circle me-1"></span>Token “@_created.Token.Name” created — copy it now</div>
+        <div class="small mb-2">This is the only time the token is shown. Store it in your SOAR/secret manager; CaseBook keeps only a hash.</div>
+        <div class="input-group input-group-sm" style="max-width:40rem">
+            <input class="form-control font-monospace" readonly value="@_created.Plaintext" @ref="_tokenBox" />
+            <button class="btn btn-outline-secondary" type="button" @onclick="CopyToken">
+                <span class="bi @(_copied ? "bi-check2" : "bi-clipboard") me-1"></span>@(_copied ? "Copied" : "Copy")
+            </button>
+        </div>
+        <button class="btn btn-sm btn-link p-0 mt-2" @onclick="() => _created = null">Dismiss</button>
+    </div>
+}
+
+<div class="d-flex align-items-center justify-content-between mt-3 mb-2">
+    <h4 class="mb-0">System tokens</h4>
+    <button class="btn btn-sm btn-primary" @onclick="BeginCreate" disabled="@_creating">
+        <span class="bi bi-plus-circle me-1"></span>New system token
+    </button>
+</div>
+
+@if (_creating)
+{
+    <div class="card mb-3 border-primary">
+        <div class="card-header">New system token</div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <label class="form-label">Name <span class="text-danger">*</span></label>
+                    <input class="form-control" @bind="_name" placeholder="e.g. XSIAM-Prod" />
+                    <div class="form-text">Identifies the integration in the audit trail. Must be unique.</div>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Expires <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" @bind="_expiresDate" />
+                    <div class="form-text">Required. Rotate by re-creating before it lapses.</div>
+                </div>
+            </div>
+            <label class="form-label mt-3">Roles <span class="text-danger">*</span></label>
+            <div class="row">
+                @foreach (var r in _roles)
+                {
+                    <div class="col-md-4">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="role-@r.Name"
+                                   checked="@_selectedRoles.Contains(r.Name)"
+                                   @onchange="e => ToggleRole(r.Name, (bool)(e.Value ?? false))" />
+                            <label class="form-check-label" for="role-@r.Name">
+                                @r.Name @if (r.IsSystem) { <span class="im-badge im-b-neutral ms-1">System</span> }
+                                <span class="text-muted small d-block">@string.Join(", ", r.GetPermissions().OrderBy(p => p.ToString()))</span>
+                            </label>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="card-footer d-flex gap-2">
+            <button class="btn btn-sm btn-primary" @onclick="CreateToken">Create token</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => _creating = false">Cancel</button>
+        </div>
+    </div>
+}
+
+@if (_tokens is null)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead><tr><th>Name</th><th>Kind</th><th>Roles</th><th>Owner</th><th>Last used (UTC)</th><th>Expires (UTC)</th><th>Status</th><th style="width:6rem"></th></tr></thead>
+        <tbody>
+            @foreach (var t in _tokens)
+            {
+                <tr class="@(t.IsActive ? "" : "opacity-75")">
+                    <td><span class="fw-semibold">@t.Name</span><div class="small text-muted font-monospace">@t.Prefix…</div></td>
+                    <td>@t.Kind</td>
+                    <td>@foreach (var r in t.Roles) { <span class="im-badge im-b-info me-1 mb-1">@r</span> }</td>
+                    <td class="small">@t.OwnerDisplayName</td>
+                    <td class="small text-muted">@(t.LastUsedAtUtc?.UtcDateTime.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                    <td class="small text-muted">@t.ExpiresAtUtc.UtcDateTime.ToString("yyyy-MM-dd")</td>
+                    <td>
+                        @if (t.RevokedAtUtc is not null) { <span class="im-badge im-b-danger">Revoked</span> }
+                        else if (!t.IsActive) { <span class="im-badge im-b-warn">Expired</span> }
+                        else { <span class="im-badge im-b-ok">Active</span> }
+                    </td>
+                    <td class="text-end">
+                        @if (t.RevokedAtUtc is null)
+                        {
+                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => Revoke(t)">Revoke</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Role> _roles = new();
+    private IReadOnlyList<ApiTokenView>? _tokens;
+    private bool _creating;
+    private string _name = "";
+    private DateTime _expiresDate = DateTime.UtcNow.Date.AddDays(90);
+    private readonly HashSet<string> _selectedRoles = new(StringComparer.OrdinalIgnoreCase);
+    private ApiTokenCreated? _created;
+    private bool _copied;
+    private ElementReference _tokenBox;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _roles = await Roles.ListRolesAsync();
+        _tokens = await Tokens.ListAllAsync();
+    }
+
+    private void BeginCreate()
+    {
+        _creating = true;
+        _name = "";
+        _expiresDate = DateTime.UtcNow.Date.AddDays(90);
+        _selectedRoles.Clear();
+    }
+
+    private void ToggleRole(string role, bool on)
+    {
+        if (on) _selectedRoles.Add(role); else _selectedRoles.Remove(role);
+    }
+
+    private async Task CreateToken()
+    {
+        try
+        {
+            var expiry = new DateTimeOffset(DateTime.SpecifyKind(_expiresDate, DateTimeKind.Utc), TimeSpan.Zero);
+            _created = await Tokens.CreateSystemAsync(_name, _selectedRoles, expiry);
+            _copied = false;
+            _creating = false;
+            await LoadAsync();
+            Toasts.Success($"System token “{_created.Token.Name}” created.");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task Revoke(ApiTokenView t)
+    {
+        try
+        {
+            await Tokens.RevokeAsync(t.Id);
+            await LoadAsync();
+            Toasts.Info($"Revoked “{t.Name}”.");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task CopyToken()
+    {
+        if (_created is null) return;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _created.Plaintext); _copied = true; }
+        catch { /* clipboard blocked; the field stays selectable */ }
+    }
+}

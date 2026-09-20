@@ -113,6 +113,16 @@ public static class SecurityEvents
         Actor = actor, ActorUpn = actorUpn, TargetType = "AdGroupMapping", Detail = detail
     };
 
+    public static SecurityEvent ApiTokenChanged(string action, string actor, string? actorUpn, string detail) => new()
+    {
+        EventId = SecurityEventIds.ApiTokenChanged,
+        Category = "Admin",
+        Action = action, // "ApiTokenCreated" / "ApiTokenRevoked"
+        Outcome = SecurityOutcome.Success,
+        Severity = SecuritySeverity.Warning,
+        Actor = actor, ActorUpn = actorUpn, TargetType = "ApiToken", Detail = detail
+    };
+
     public static SecurityEvent SettingChanged(string key, string actor, string? actorUpn) => new()
     {
         EventId = SecurityEventIds.SettingChanged,

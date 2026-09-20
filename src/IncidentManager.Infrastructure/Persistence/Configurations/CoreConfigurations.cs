@@ -517,6 +517,24 @@ public sealed class PinnedCaseConfiguration : IEntityTypeConfiguration<PinnedCas
     }
 }
 
+public sealed class ApiTokenConfiguration : IEntityTypeConfiguration<ApiToken>
+{
+    public void Configure(EntityTypeBuilder<ApiToken> b)
+    {
+        b.ToTable("ApiTokens");
+        b.Property(x => x.Name).HasMaxLength(100).IsRequired();
+        b.Property(x => x.OwnerUserId).HasMaxLength(200).IsRequired();
+        b.Property(x => x.OwnerDisplayName).HasMaxLength(200);
+        b.Property(x => x.RolesCsv).HasMaxLength(400);
+        b.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
+        b.Property(x => x.Prefix).HasMaxLength(20);
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.RevokedBy).HasMaxLength(200);
+        b.HasIndex(x => x.TokenHash).IsUnique(); // the lookup key
+        b.HasIndex(x => x.CreatedBy);
+    }
+}
+
 public sealed class PendingImportConfiguration : IEntityTypeConfiguration<PendingImport>
 {
     public void Configure(EntityTypeBuilder<PendingImport> b)
