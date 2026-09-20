@@ -21,6 +21,23 @@
     creation, then stored only as a hash. Personal tokens are self-managed by each user under their account.
 </p>
 
+<div class="im-card nc-card">
+    <div class="fw-semibold mb-2"><span class="bi bi-terminal me-1" aria-hidden="true"></span>Using the import API</div>
+    <p class="text-muted small mb-2">
+        Give a <strong>system</strong> token to a producer (an XSIAM/SOAR playbook or a script). Every submission
+        lands in the <a href="cases/import">import review queue</a> for a human to confirm — the API never writes
+        case state directly. Full reference: <code>docs/API.md</code>.
+    </p>
+    <ul class="small mb-2">
+        <li><span class="im-badge im-b-info">POST</span> <code>/api/import/cases</code> — submit a case-import document. Header <code>Authorization: Bearer &lt;token&gt;</code>.</li>
+        <li><span class="im-badge im-b-neutral">GET</span> <code>/api/import/cases/schema</code> — the JSON Schema for the document (no auth required).</li>
+    </ul>
+    <pre class="border rounded bg-body-tertiary p-2 small mb-0" style="overflow:auto"><code>curl -X POST https://your-casebook/api/import/cases \
+  -H "Authorization: Bearer &lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  --data @@case.json</code></pre>
+</div>
+
 @if (_created is not null)
 {
     <div class="alert alert-success">

@@ -45,7 +45,8 @@ seeds a **new or existing** case with a summary, timeline, indicators and tasks.
 **Step 1** generates a copy-paste prompt for your *own* tool (e.g. Copilot) that emits the exact schema, and
 **Step 2** shows an editable, validated preview you confirm. Producers (XSIAM/SOAR playbooks, scripts) can
 also submit over a **token-authenticated API**, landing in a review queue — a human always confirms before
-anything is written to a case.
+anything is written to a case. See [docs/API.md](docs/API.md) for the API reference and
+[docs/case-import.schema.json](docs/case-import.schema.json) for the document schema.
 
 ![Structured and AI-assisted import](docs/screenshots/case-import.png)
 
