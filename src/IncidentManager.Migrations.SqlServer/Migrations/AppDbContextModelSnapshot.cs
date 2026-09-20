@@ -1307,6 +1307,63 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("NotificationRules", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.PendingImport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("DecisionNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Origin")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("RawJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("ResolvedCaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ResolvedCaseNumber")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("SubmittedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SubmittedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<Guid?>("TargetCaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "SubmittedAtUtc");
+
+                    b.ToTable("PendingImports", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.PinnedCase", b =>
                 {
                     b.Property<Guid>("Id")

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Domain.Observables;
 using Microsoft.EntityFrameworkCore;
@@ -203,6 +204,102 @@ public sealed class CaseImportService
         }
 
         return new CaseImportResult(caseId, caseNumber, created, notes, timeline, entities, actionItems);
+    }
+
+    // ── Pending imports queue (PROD-33) ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Stages a programmatically-submitted document as a <see cref="PendingImport"/> awaiting human review —
+    /// the API never writes case state directly. The document is previewed for the response (so the caller
+    /// gets the item count + any warnings), then persisted verbatim so a human confirms it later.
+    /// </summary>
+    public async Task<(Guid Id, CaseImportPreview Preview)> SubmitAsync(string rawJson, CaseImportDocument doc,
+        CancellationToken ct = default)
+    {
+        var preview = await BuildPreviewAsync(doc, ct: ct);
+
+        var row = new PendingImport
+        {
+            SubmittedBy = _user.UserId,
+            SubmittedAtUtc = _clock.UtcNow,
+            Origin = string.IsNullOrWhiteSpace(doc.Origin) ? null : doc.Origin.Trim(),
+            Summary = SummariseForQueue(preview),
+            RawJson = rawJson,
+            TargetCaseId = doc.Target?.CaseId,
+            Status = PendingImportStatus.Pending
+        };
+
+        using var db = _factory.CreateDbContext();
+        db.PendingImports.Add(row);
+        await db.SaveChangesAsync(ct);
+        return (row.Id, preview);
+    }
+
+    /// <summary>The queue of imports awaiting review, newest first.</summary>
+    public async Task<IReadOnlyList<PendingImportSummary>> ListPendingAsync(CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        return await db.PendingImports.AsNoTracking()
+            .Where(p => p.Status == PendingImportStatus.Pending)
+            .OrderByDescending(p => p.SubmittedAtUtc)
+            .Select(p => new PendingImportSummary(p.Id, p.SubmittedBy, p.SubmittedAtUtc, p.Origin, p.Summary))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>How many imports are awaiting review — for a queue badge.</summary>
+    public async Task<int> CountPendingAsync(CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        return await db.PendingImports.CountAsync(p => p.Status == PendingImportStatus.Pending, ct);
+    }
+
+    /// <summary>Re-parses and previews a queued submission for the reviewer; null if it is gone or not pending.</summary>
+    public async Task<CaseImportPreview?> BuildPreviewForPendingAsync(Guid pendingId, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var row = await db.PendingImports.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == pendingId && p.Status == PendingImportStatus.Pending, ct);
+        if (row is null) return null;
+
+        var parsed = Parse(row.RawJson);
+        if (!parsed.Ok) return null; // validated at submit, so this is defensive
+        return await BuildPreviewAsync(parsed.Document!, intoCaseId: row.TargetCaseId, ct: ct);
+    }
+
+    /// <summary>Marks a queued submission applied, recording the reviewer and the resulting case.</summary>
+    public async Task MarkPendingAppliedAsync(Guid pendingId, CaseImportResult result, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var row = await db.PendingImports.FirstOrDefaultAsync(p => p.Id == pendingId, ct);
+        if (row is null || row.Status != PendingImportStatus.Pending) return;
+        row.Status = PendingImportStatus.Applied;
+        row.DecidedBy = _user.UserId;
+        row.DecidedAtUtc = _clock.UtcNow;
+        row.ResolvedCaseId = result.CaseId;
+        row.ResolvedCaseNumber = result.CaseNumber;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Discards a queued submission with an optional reason (nothing is written to any case).</summary>
+    public async Task RejectPendingAsync(Guid pendingId, string? note, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var row = await db.PendingImports.FirstOrDefaultAsync(p => p.Id == pendingId, ct);
+        if (row is null || row.Status != PendingImportStatus.Pending) return;
+        row.Status = PendingImportStatus.Rejected;
+        row.DecidedBy = _user.UserId;
+        row.DecidedAtUtc = _clock.UtcNow;
+        row.DecisionNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static string SummariseForQueue(CaseImportPreview p)
+    {
+        var target = p.TargetKind == CaseImportTargetKind.ExistingCase
+            ? $"Into {p.ExistingCaseNumber ?? "an existing case"}"
+            : $"New case: {(string.IsNullOrWhiteSpace(p.NewCase?.Title) ? "(untitled)" : p.NewCase!.Title)}";
+        var s = $"{target} — {p.IncludedItemCount} item(s)";
+        return s.Length <= 300 ? s : s[..300];
     }
 
     // ── Pure preview construction (no I/O) ───────────────────────────────────────────────────────

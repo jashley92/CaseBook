@@ -601,6 +601,33 @@ app.MapGet("/export/config-bundle.json", async (
     return Results.File(export.Content, "application/json", export.FileName);
 }).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
 
+// PROD-33: programmatic case import. A producer (an XSIAM/SOAR playbook, a script) POSTs a case-import
+// document; it is validated and STAGED as a pending import for a human to review and confirm in CaseBook —
+// the API never writes case state directly (the human gate). Requires EditCases (the caller authenticates as
+// a principal in the right role); rate-limited like the exports. Converges with PROD-05.
+app.MapPost("/api/import/cases", async (
+    HttpRequest request,
+    IncidentManager.Application.Import.CaseImportService import,
+    CancellationToken ct) =>
+{
+    using var reader = new StreamReader(request.Body);
+    var json = await reader.ReadToEndAsync(ct);
+
+    var parsed = IncidentManager.Application.Import.CaseImportService.Parse(json);
+    if (!parsed.Ok)
+        return Results.BadRequest(new { error = parsed.Error });
+
+    var (id, preview) = await import.SubmitAsync(json, parsed.Document!, ct);
+    return Results.Created($"/cases/import?pending={id}", new
+    {
+        pendingImportId = id,
+        status = "pending",
+        message = "Accepted for review. A human must confirm this import in CaseBook before anything is written.",
+        itemCount = preview.IncludedItemCount,
+        warnings = preview.Warnings
+    });
+}).RequireAuthorization(Policies.EditCases).RequireRateLimiting("downloads");
+
 app.Run();
 
 public partial class Program;

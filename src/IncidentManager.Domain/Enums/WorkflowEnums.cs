@@ -38,6 +38,18 @@ public enum TimelineEntryType
     RegulatoryNotification = 14    // a regulatory notification was made on this matter
 }
 
+/// <summary>
+/// Lifecycle of a programmatically-submitted case import (PROD-33). A submission is <see cref="Pending"/>
+/// until a human confirms it into a case (<see cref="Applied"/>) or discards it (<see cref="Rejected"/>) —
+/// the human gate that keeps the API from silently mutating case state.
+/// </summary>
+public enum PendingImportStatus
+{
+    Pending = 0,
+    Applied = 1,
+    Rejected = 2
+}
+
 /// <summary>Status of an after-action follow-up item.</summary>
 public enum ActionItemStatus
 {

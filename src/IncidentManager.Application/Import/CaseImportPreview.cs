@@ -94,6 +94,10 @@ public sealed class ImportActionItemRow
     public string? Warning { get; set; }
 }
 
+/// <summary>A queued programmatic import awaiting human review (PROD-33), for the pending-imports list.</summary>
+public sealed record PendingImportSummary(
+    Guid Id, string SubmittedBy, DateTimeOffset SubmittedAtUtc, string? Origin, string Summary);
+
 /// <summary>Counts written by an apply, plus the resulting case for navigation.</summary>
 public sealed record CaseImportResult(
     Guid CaseId, string CaseNumber, bool CaseCreated,

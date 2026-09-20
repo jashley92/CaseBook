@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
@@ -271,6 +272,88 @@ public sealed class CaseImportTests : IDisposable
         (await verify.Set<TimelineEntry>().CountAsync(t => t.CaseId == preview.CreatedCaseId)).Should().Be(1);
         (await verify.Set<AnalystNote>().CountAsync(n => n.CaseId == preview.CreatedCaseId)).Should().Be(1);
         (await verify.Set<ActionItem>().CountAsync(a => a.CaseId == preview.CreatedCaseId)).Should().Be(1);
+    }
+
+    // ── Pending imports queue (PROD-33) ──────────────────────────────────────────────────────────
+
+    private static string FullDocJson() => JsonSerializer.Serialize(FullDoc(), CaseImportJson.Options);
+
+    [Fact]
+    public async Task Submit_stages_a_pending_import_and_writes_nothing_yet()
+    {
+        Guid pid;
+        await using (var db = NewContext())
+        {
+            var svc = NewImportService(db);
+            var json = FullDocJson();
+            var submit = await svc.SubmitAsync(json, CaseImportService.Parse(json).Document!);
+            pid = submit.Id;
+            submit.Preview.IncludedItemCount.Should().Be(5);
+            (await svc.ListPendingAsync()).Should().ContainSingle(x => x.Id == pid);
+            (await svc.CountPendingAsync()).Should().Be(1);
+        }
+
+        await using (var verify = NewContext())
+        {
+            var row = await verify.Set<PendingImport>().FirstAsync(p => p.Id == pid);
+            row.Status.Should().Be(PendingImportStatus.Pending);
+            row.SubmittedBy.Should().Be("analyst1");
+            (await verify.Set<CaseEntity>().CountAsync()).Should().Be(0, "nothing is written until a human confirms");
+        }
+    }
+
+    [Fact]
+    public async Task Confirming_a_pending_import_applies_it_and_marks_it_applied()
+    {
+        Guid pid;
+        await using (var db = NewContext())
+        {
+            var json = FullDocJson();
+            (pid, _) = await NewImportService(db).SubmitAsync(json, CaseImportService.Parse(json).Document!);
+        }
+
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            var svc = NewImportService(db);
+            var preview = await svc.BuildPreviewForPendingAsync(pid);
+            preview.Should().NotBeNull();
+            var result = await svc.ApplyAsync(preview!);
+            await svc.MarkPendingAppliedAsync(pid, result);
+            caseId = result.CaseId;
+        }
+
+        await using (var verify = NewContext())
+        {
+            var row = await verify.Set<PendingImport>().FirstAsync(p => p.Id == pid);
+            row.Status.Should().Be(PendingImportStatus.Applied);
+            row.ResolvedCaseId.Should().Be(caseId);
+            (await verify.Set<CaseEntity>().CountAsync(e => e.CaseId == caseId)).Should().Be(2);
+            // It has left the pending queue.
+            (await NewImportService(verify).BuildPreviewForPendingAsync(pid)).Should().BeNull();
+        }
+    }
+
+    [Fact]
+    public async Task Rejecting_a_pending_import_writes_nothing()
+    {
+        Guid pid;
+        await using (var db = NewContext())
+        {
+            var json = FullDocJson();
+            var svc = NewImportService(db);
+            (pid, _) = await svc.SubmitAsync(json, CaseImportService.Parse(json).Document!);
+            await svc.RejectPendingAsync(pid, "duplicate of an existing case");
+        }
+
+        await using (var verify = NewContext())
+        {
+            var row = await verify.Set<PendingImport>().FirstAsync(p => p.Id == pid);
+            row.Status.Should().Be(PendingImportStatus.Rejected);
+            row.DecisionNote.Should().Be("duplicate of an existing case");
+            (await verify.Set<CaseEntity>().CountAsync()).Should().Be(0);
+            (await NewImportService(verify).CountPendingAsync()).Should().Be(0);
+        }
     }
 
     public void Dispose() => _connection.Dispose();

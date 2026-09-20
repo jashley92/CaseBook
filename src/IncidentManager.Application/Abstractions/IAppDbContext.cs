@@ -43,6 +43,7 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     DbSet<SavedView> SavedViews { get; }
     DbSet<PinnedCase> PinnedCases { get; }
     DbSet<CaseComment> CaseComments { get; }
+    DbSet<PendingImport> PendingImports { get; }
     DbSet<IntegritySeal> IntegritySeals { get; }
     DbSet<AppSetting> AppSettings { get; }
     DbSet<Role> Roles { get; }

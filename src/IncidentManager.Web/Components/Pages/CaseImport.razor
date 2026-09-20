@@ -13,6 +13,42 @@
 <PageHeader Title="Import case"
            Subtitle="Bring a structured case-import document into a new or existing case. Paste or upload the JSON, review an editable preview, then confirm — nothing is written until you apply." />
 
+@* PROD-33: programmatic submissions awaiting human review, and the reviewing banner. *@
+@if (_reviewingPendingId is not null)
+{
+    <div class="alert alert-info d-flex flex-wrap align-items-center gap-2">
+        <span class="bi bi-inbox" aria-hidden="true"></span>
+        <span>Reviewing a <strong>submitted</strong> import. Confirm it to write it into a case, or reject it — nothing has been written yet.</span>
+        <a class="btn btn-sm btn-outline-secondary ms-auto" href="cases/import">Back to queue</a>
+    </div>
+}
+else if (_pending.Count > 0)
+{
+    <div class="im-card nc-card">
+        <div class="fw-semibold mb-1"><span class="bi bi-inbox me-1" aria-hidden="true"></span>Pending imports <span class="im-badge im-b-info">@_pending.Count</span></div>
+        <p class="text-muted small mb-2">Submitted programmatically (e.g. by a SOAR playbook via the import API) and awaiting review. Nothing is written until you confirm.</p>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead><tr><th>Submission</th><th style="width:11rem">Origin</th><th style="width:11rem">Submitted by</th><th style="width:12rem">When (UTC)</th><th style="width:6rem"></th></tr></thead>
+                <tbody>
+                    @foreach (var pi in _pending)
+                    {
+                        <tr>
+                            <td>@pi.Summary</td>
+                            <td class="small text-muted">@(pi.Origin ?? "—")</td>
+                            <td class="small">@pi.SubmittedBy</td>
+                            <td class="small text-muted">@pi.SubmittedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td><a class="btn btn-sm btn-outline-primary" href="cases/import?pending=@pi.Id">Review</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@if (_reviewingPendingId is null)
+{
 @* Step 1 (PROD-32): generate a prompt for the analyst's own AI. CaseBook never calls an LLM. *@
 <div class="im-card nc-card">
     <div class="d-flex justify-content-between align-items-center">
@@ -92,6 +128,7 @@
         <pre class="border rounded bg-body-tertiary p-2 mt-2 small" style="max-height:16rem;overflow:auto">@SampleJson</pre>
     }
 </div>
+}
 
 @if (_preview is { } p)
 {
@@ -279,14 +316,63 @@
 
     <div class="nc-actions">
         <button class="btn btn-primary" @onclick="Apply" disabled="@(_applying || !CanApply(p))">
-            <span class="bi bi-check2-circle me-1" aria-hidden="true"></span>Apply import (@p.IncludedItemCount item(s))
+            <span class="bi bi-check2-circle me-1" aria-hidden="true"></span>@(_reviewingPendingId is null ? "Apply import" : "Confirm & apply") (@p.IncludedItemCount item(s))
         </button>
+        @if (_reviewingPendingId is not null)
+        {
+            <button class="btn btn-outline-danger" @onclick="Reject" disabled="@_applying">Reject</button>
+        }
         <a class="btn btn-outline-secondary" href="cases">Cancel</a>
     </div>
 }
 
 @code {
     [SupplyParameterFromQuery(Name = "into")] public Guid? IntoCaseId { get; set; }
+    [SupplyParameterFromQuery(Name = "pending")] public Guid? PendingId { get; set; }
+
+    // PROD-33: the pending programmatic-import queue + the one currently under review.
+    private Guid? _reviewingPendingId;
+    private List<PendingImportSummary> _pending = new();
+    private string? _rejectNote;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _pending = (await Import.ListPendingAsync()).ToList();
+
+        if (PendingId is { } pid)
+        {
+            if (pid != _reviewingPendingId)
+            {
+                var preview = await Import.BuildPreviewForPendingAsync(pid);
+                if (preview is null)
+                {
+                    Toasts.Error("That submitted import is no longer available.");
+                    Nav.NavigateTo("cases/import");
+                    return;
+                }
+                _reviewingPendingId = pid;
+                _preview = preview;
+                _text = null;
+                _error = null;
+            }
+        }
+        else if (_reviewingPendingId is not null)
+        {
+            _reviewingPendingId = null;
+            _preview = null;
+        }
+    }
+
+    private async Task Reject()
+    {
+        if (_reviewingPendingId is not { } pid) return;
+        await Import.RejectPendingAsync(pid, _rejectNote);
+        _preview = null;
+        _reviewingPendingId = null;
+        _rejectNote = null;
+        Toasts.Success("Import rejected — nothing was written.");
+        Nav.NavigateTo("cases/import");
+    }
 
     private string? _text;
     private CaseImportPreview? _preview;
@@ -414,6 +500,7 @@
         try
         {
             var result = await Import.ApplyAsync(p);
+            if (_reviewingPendingId is { } pid) await Import.MarkPendingAppliedAsync(pid, result);
             var what = result.CaseCreated ? $"Case {result.CaseNumber} created" : $"Imported into {result.CaseNumber}";
             Toasts.Success($"{what} — {result.Total} item(s) imported.");
             Nav.NavigateTo($"cases/{result.CaseId}");

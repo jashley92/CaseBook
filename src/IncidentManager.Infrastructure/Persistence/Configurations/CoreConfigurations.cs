@@ -516,3 +516,20 @@ public sealed class PinnedCaseConfiguration : IEntityTypeConfiguration<PinnedCas
         b.HasIndex(x => new { x.UserId, x.CaseId }).IsUnique();
     }
 }
+
+public sealed class PendingImportConfiguration : IEntityTypeConfiguration<PendingImport>
+{
+    public void Configure(EntityTypeBuilder<PendingImport> b)
+    {
+        b.ToTable("PendingImports");
+        b.Property(x => x.SubmittedBy).HasMaxLength(200).IsRequired();
+        b.Property(x => x.Origin).HasMaxLength(200);
+        b.Property(x => x.Summary).HasMaxLength(300);
+        b.Property(x => x.RawJson).IsRequired(); // document body — unbounded (nvarchar(max) / TEXT)
+        b.Property(x => x.DecidedBy).HasMaxLength(200);
+        b.Property(x => x.DecisionNote).HasMaxLength(2000);
+        b.Property(x => x.ResolvedCaseNumber).HasMaxLength(200);
+        // The queue reads Pending, newest first.
+        b.HasIndex(x => new { x.Status, x.SubmittedAtUtc });
+    }
+}
