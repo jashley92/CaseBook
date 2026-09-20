@@ -40,6 +40,19 @@ else
        beforeunload guard in markdown-editor.js covers refresh / tab-close / external nav; this covers a
        sidebar or case-link click the SPA router handles without a page unload. *@
     <NavigationLock OnBeforeInternalNavigation="OnBeforeInternalNav" />
+    @* REL-07: the case was archived/restricted out from under us while a composer held unsubmitted text.
+       Rather than swap to the "not found" page (which would discard the draft), we hold the last-known
+       workspace and warn so the viewer can copy their text out first. *@
+    @if (_accessLost)
+    {
+        <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+            <span class="bi bi-exclamation-triangle-fill mt-1" aria-hidden="true"></span>
+            <div>
+                <div class="fw-semibold">This case was archived or your access to it changed while you had it open.</div>
+                <div class="small mb-0">Your unsaved text is still on screen — copy anything you need now, as new changes can no longer be saved to this case. <a href="cases">Back to cases</a>.</div>
+            </div>
+        </div>
+    }
     @* FR-17: wrap so the action group (Advance / Actions) drops below the title on a phone instead of
        overflowing the row and forcing whole-page horizontal scroll. *@
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
@@ -624,6 +637,10 @@ else
     // FR-05: guard against leaving the case (in-app navigation) with unsubmitted composer text.
     private bool _confirmLeaveOpen;
     private string? _pendingLeave;
+    // REL-07: true once a live-collab reload found the case archived/restricted out from under a viewer who
+    // still holds unsaved composer text — we hold the (last-known) workspace and show a banner instead of
+    // swapping to the not-found page, so the draft can be copied out.
+    private bool _accessLost;
     private bool _leaveConfirmed;
 
     // Reports (UX-13: the tab is extracted to CaseReportTab; this state persists preview/profiles across re-mounts).
@@ -659,8 +676,25 @@ else
     {
         await InvokeAsync(async () =>
         {
+            if (_accessLost) return; // REL-07: already holding the workspace for a copy-out — don't churn it
+
+            var hadCase = _case is not null;
             var prevKnown = _knownIds; // U-30: snapshot before Reload re-seeds, so we can diff what appeared
-            await Reload();
+
+            // REL-07: a live-collab change can be an archive/restrict that removes this case from under the
+            // viewer. Peek before swapping the view: if it vanished while a composer still holds unsubmitted
+            // text, don't yank the workspace out to the "not found" page (which unmounts the editors and
+            // silently discards the draft — the FR-05 guard only covers navigation). Hold the workspace with
+            // a banner so the viewer can copy the text out first.
+            var refreshed = await Cases.GetDetailAsync(Id);
+            if (refreshed is null && hadCase && await AnyDraftDirtyAsync())
+            {
+                _accessLost = true;
+                StateHasChanged();
+                return;
+            }
+
+            await ReloadWith(refreshed);
             _liveRefresh++; // UX-13: signal extracted tabs to re-query the case (an in-progress edit in a
                             // tab component survives, since the component isn't re-created by a reload)
             await SetTab(_activeTab); // refresh the visible tab's data
@@ -766,9 +800,13 @@ else
         if (_draftsCaseId != Id) { _composerDrafts.Clear(); _draftsCaseId = Id; }
     }
 
-    private async Task Reload()
+    private async Task Reload() => await ReloadWith(await Cases.GetDetailAsync(Id));
+
+    // REL-07: reload from an already-fetched detail, so the live-collab path can peek at accessibility
+    // before deciding whether to swap the view away (see OnCaseChangedAsync).
+    private async Task ReloadWith(Case? detail)
     {
-        _case = await Cases.GetDetailAsync(Id);
+        _case = detail;
         _notFound = _case is null;
         // C-05: record the authorized case-detail open (best-effort; coalesced into a view-session).
         if (_case is not null)
@@ -975,14 +1013,19 @@ else
         var target = ctx.TargetLocation;
         if (target.Contains("session-expired", StringComparison.OrdinalIgnoreCase)) return;
         if (target.Contains($"cases/{Id}", StringComparison.OrdinalIgnoreCase)) return; // same case
-        bool dirty;
-        try { dirty = await JS.InvokeAsync<bool>("markdownEditor.anyDirty"); }
-        catch { dirty = false; } // if we can't tell, don't obstruct navigation
-        if (!dirty) return;
+        if (_accessLost) return; // REL-07: the case is gone; don't block leaving after a copy-out
+        if (!await AnyDraftDirtyAsync()) return;
         ctx.PreventNavigation();
         _pendingLeave = target;
         _confirmLeaveOpen = true;
         StateHasChanged();
+    }
+
+    // FR-05 / REL-07: whether any composer holds unsubmitted text (the JS editor is the source of truth).
+    private async Task<bool> AnyDraftDirtyAsync()
+    {
+        try { return await JS.InvokeAsync<bool>("markdownEditor.anyDirty"); }
+        catch { return false; } // if we can't tell, don't obstruct
     }
 
     private void CancelLeave()
