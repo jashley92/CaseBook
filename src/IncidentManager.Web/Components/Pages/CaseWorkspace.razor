@@ -279,6 +279,12 @@ else
        fade-in (U-22 motion). The key doesn't change on case/id navigation, so switching cases
        doesn't force an extra remount. *@
     <div class="tabbody" @key="_activeTab">
+    @* REL-01: a per-tab error boundary. Because .tabbody is @key'd on the active tab, switching tabs mounts
+       a fresh boundary — so a tab that throws shows a contained "this tab couldn't load" fallback (the case
+       header, tab bar and other tabs stay usable) and recovers when you switch away and back, with no manual
+       reset wiring. This sits inside the layout's page-level boundary, which catches anything outside a tab. *@
+    <ErrorBoundary>
+    <ChildContent>
     @if (_activeTab == "Overview")
     {
         @* UX-13: extracted to CaseOverviewTab. It owns the Summary EasyMDE editor (so the central reconcile
@@ -360,6 +366,11 @@ else
         <CaseAuditTab CaseNumber="@_case.CaseNumber" CaseId="_case.Id" CanViewAll="_canViewAll"
                       State="_auditFilter" RefreshToken="_liveRefresh" />
     }
+    </ChildContent>
+    <ErrorContent>
+        <ErrorFallback Scope="ErrorFallback.ErrorScope.Section" SectionName="@TabLabel(_activeTab)" />
+    </ErrorContent>
+    </ErrorBoundary>
     </div>@* /.tabbody *@
 
     @* Action modal — rendered outside the tab blocks so Actions works on every tab, not just Overview. *@

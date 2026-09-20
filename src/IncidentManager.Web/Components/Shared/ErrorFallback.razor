@@ -1,0 +1,59 @@
+@* REL-01: friendly, recover-in-place fallback rendered by an <ErrorBoundary> when a component throws
+   during render or a lifecycle method. Without a boundary such an exception tears down the whole Blazor
+   circuit and drops the user into the "session lost" overlay, losing in-flight work. This keeps the app
+   shell alive and offers a way forward. The exception itself is logged by the ErrorBoundary (and never
+   shown raw here — see REL-06); we show a generic, non-leaking message.
+
+   Scope controls the copy: "page" (the default, a whole routed page failed) vs. a named section such as a
+   case tab, so a per-tab boundary can say "This tab couldn't load" without implying the whole case broke. *@
+@inject NavigationManager Nav
+
+<div class="im-card">
+    <div class="empty-state">
+        <div class="empty-state-icon"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span></div>
+        <div class="empty-state-title">@Title</div>
+        <div class="empty-state-msg text-muted">
+            @Message Nothing you'd already saved is affected — the record is intact.
+        </div>
+        <div class="empty-state-actions">
+            <button type="button" class="btn btn-primary btn-sm" @onclick="Retry">
+                <span class="bi bi-arrow-clockwise me-1" aria-hidden="true"></span>@RetryLabel
+            </button>
+            @if (Scope == ErrorScope.Page)
+            {
+                <a class="btn btn-outline-secondary btn-sm" href="cases">Go to cases</a>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    public enum ErrorScope { Page, Section }
+
+    /// <summary>Whole routed page (default) vs. a named section (e.g. a case tab) that failed.</summary>
+    [Parameter] public ErrorScope Scope { get; set; } = ErrorScope.Page;
+
+    /// <summary>For <see cref="ErrorScope.Section"/>: the section's name, e.g. "Timeline" — used in the copy.</summary>
+    [Parameter] public string? SectionName { get; set; }
+
+    /// <summary>Optional hook to reset the owning boundary in place; if unset, Retry reloads the page.</summary>
+    [Parameter] public EventCallback OnRecover { get; set; }
+
+    private string Title => Scope == ErrorScope.Section
+        ? $"{SectionName ?? "This section"} couldn't be shown"
+        : "Something went wrong on this page";
+
+    private string Message => Scope == ErrorScope.Section
+        ? "An unexpected error interrupted this part of the page."
+        : "An unexpected error interrupted this page.";
+
+    private string RetryLabel => OnRecover.HasDelegate ? "Try again" : "Reload the page";
+
+    private async Task Retry()
+    {
+        if (OnRecover.HasDelegate)
+            await OnRecover.InvokeAsync();
+        else
+            Nav.NavigateTo(Nav.Uri, forceLoad: true);
+    }
+}

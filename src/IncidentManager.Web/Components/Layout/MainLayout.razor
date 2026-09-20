@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @inject TimeDisplay TimeDisp
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 @implements IDisposable
 
 @* UX-02: first focusable element on the page, so a keyboard/AT user can skip the sidebar. *@
@@ -42,8 +43,17 @@
         @* U-29: @key bumps on every time-mode change, forcing Blazor to rebuild the routed page subtree
            so every timestamp re-renders in the new zone (a layout StateHasChanged alone does not reach
            into @Body, and CascadingValue only reaches components that declare the parameter). *@
+        @* REL-01: a component that throws during render or a lifecycle method would otherwise tear down the
+           whole circuit and drop the user into the "session lost" overlay, losing in-flight work. This boundary
+           keeps the shell alive and shows a recover-in-place fallback. It resets on navigation (LocationChanged
+           → Recover), and the fallback's "Reload the page" is the hard escape hatch. *@
         <article id="main-content" tabindex="-1" class="content px-4" @key="_timeVersion">
-            @Body
+            <ErrorBoundary @ref="_errorBoundary">
+                <ChildContent>@Body</ChildContent>
+                <ErrorContent>
+                    <ErrorFallback Scope="ErrorFallback.ErrorScope.Page" />
+                </ErrorContent>
+            </ErrorBoundary>
         </article>
     </main>
 </div>
@@ -71,7 +81,20 @@
     // same Changed event.
     private int _timeVersion;
 
-    protected override void OnInitialized() => TimeDisp.Changed += OnTimeChanged;
+    // REL-01: the boundary persists across page navigations (it isn't keyed by route), so once it has caught
+    // an error it would keep showing the fallback even after the user navigates away. Recover on every
+    // location change to clear a caught error and render the newly-navigated page. Recover() is a no-op when
+    // nothing is caught, so this is safe to call unconditionally.
+    private ErrorBoundary? _errorBoundary;
+
+    protected override void OnInitialized()
+    {
+        TimeDisp.Changed += OnTimeChanged;
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+        => InvokeAsync(() => _errorBoundary?.Recover());
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -96,5 +119,9 @@
         StateHasChanged();
     });
 
-    public void Dispose() => TimeDisp.Changed -= OnTimeChanged;
+    public void Dispose()
+    {
+        TimeDisp.Changed -= OnTimeChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
 }
