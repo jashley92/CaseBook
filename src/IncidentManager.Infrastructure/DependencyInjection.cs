@@ -31,6 +31,8 @@ public static class DependencyInjection
         services.AddSingleton<IEmailSender, Notifications.EmailSender>();
         // E-03b: renders branded HTML emails from admin-editable templates + the console theme.
         services.AddSingleton<IEmailComposer, Notifications.EmailComposer>();
+        // PROD-16: per-user notification opt-downs, read by the singleton notifier (scope-per-lookup, like UserDirectory).
+        services.AddSingleton<Application.Abstractions.INotificationPreferenceProvider, Notifications.NotificationPreferenceProvider>();
         services.AddSingleton<ICaseNotifications, Notifications.CaseNotifications>();
         // PROD-02: team-chat (Slack/Teams) broadcast channel. Default is a no-op; the Web project registers
         // the real HTTP-backed ChatWebhookNotifier (it needs IHttpClientFactory), which supersedes this.

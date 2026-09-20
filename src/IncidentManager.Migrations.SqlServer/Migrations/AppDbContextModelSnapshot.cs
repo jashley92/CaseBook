@@ -1895,6 +1895,15 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<int>("DigestCadence")
                         .HasColumnType("int");
 
+                    b.Property<bool>("SuppressAssignment")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("SuppressDueSoon")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("SuppressOverdue")
+                        .HasColumnType("bit");
+
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset");
 

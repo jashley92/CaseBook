@@ -19,5 +19,18 @@ public class UserNotificationPreference : Entity
     /// <summary>How often to send the consolidated work digest. <see cref="DigestCadence.Off"/> = no digest.</summary>
     public DigestCadence DigestCadence { get; set; } = DigestCadence.Off;
 
+    // --- Per-type opt-down of personal email notifications (PROD-16). Default false = the user receives them
+    // (the current behaviour). An admin can mark a type mandatory, which overrides an opt-out. These gate only
+    // the personal EMAIL path — never the compliance breach→Legal distribution, and never the chat broadcast. ---
+
+    /// <summary>Opt out of the "you've been assigned to a case" email.</summary>
+    public bool SuppressAssignment { get; set; }
+
+    /// <summary>Opt out of per-item overdue after-action reminders (e.g. when relying on the digest).</summary>
+    public bool SuppressOverdue { get; set; }
+
+    /// <summary>Opt out of per-item due-soon after-action reminders (e.g. when relying on the digest).</summary>
+    public bool SuppressDueSoon { get; set; }
+
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }

@@ -91,6 +91,12 @@ public static class SettingsCatalog
             "When on, users who opt in (account menu → Notifications) receive a consolidated digest of their open follow-up items — overdue / due today / due this week — on their chosen daily or weekly cadence, in place of a scatter of per-item reminders. This is the master switch; each user still chooses their own cadence (default off). Read-only over case data. Takes effect within a few minutes of saving.", "false"),
         new SettingDefinition("Notifications:DigestScan:IntervalHours", "Digest scan interval (hours)", "Notifications", SettingKind.Int,
             "How often to check whether a user's digest is due. A digest still sends only once per period (day/week); a small interval just means it goes out promptly. Default 1. Takes effect within a few minutes of saving.", "1"),
+        new SettingDefinition("Notifications:Mandatory:Assignment", "Mandatory: assignment emails", "Notifications", SettingKind.Bool,
+            "When on, assignment emails are enforced org-wide — users cannot opt out of them under their own account preferences. Off = each user may turn their assignment emails off.", "false"),
+        new SettingDefinition("Notifications:Mandatory:Overdue", "Mandatory: overdue reminders", "Notifications", SettingKind.Bool,
+            "When on, per-item overdue after-action reminders are enforced org-wide — users cannot opt out (and a digest subscriber still gets them). Off = each user may turn them off (or rely on their digest).", "false"),
+        new SettingDefinition("Notifications:Mandatory:DueSoon", "Mandatory: due-soon reminders", "Notifications", SettingKind.Bool,
+            "When on, per-item due-soon after-action reminders are enforced org-wide — users cannot opt out. Off = each user may turn them off (or rely on their digest).", "false"),
         new SettingDefinition("App:BaseUrl", "Public base URL", "Notifications", SettingKind.Text,
             "Absolute URL of this deployment (e.g. https://casebook.corp.example), used to build direct links and the logo in notification emails. Blank = emails omit links and the hosted logo (they still render, branded, with a text wordmark). No trailing slash needed.", ""),
         // PROD-02: which notification types are also broadcast to the team chat channel. These only deliver

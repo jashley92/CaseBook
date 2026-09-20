@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @using IncidentManager.Application.Notifications
 @inject UserNotificationPreferenceService Prefs
+@inject IConfiguration Config
 @inject ToastService Toasts
 
 <PageTitle>Notification preferences</PageTitle>
@@ -9,16 +10,19 @@
 <PageHeader Title="Notification preferences"
            Subtitle="Choose how CaseBook keeps you posted on your own work. These settings apply only to you." />
 
-<div class="im-card nc-card" style="max-width:44rem">
-    <div class="fw-semibold mb-1"><span class="bi bi-envelope-paper me-1" aria-hidden="true"></span>Work digest</div>
-    <p class="text-muted small mb-3">
-        A single email summarising your open follow-up items — overdue, due today, and due this week — instead
-        of a separate reminder for each. Sent on the cadence you pick. You can turn it off anytime.
-    </p>
-
-    @if (_loaded)
-    {
-        <div class="mb-3">
+@if (!_loaded)
+{
+    <p><em>Loading&hellip;</em></p>
+}
+else
+{
+    <div class="im-card nc-card" style="max-width:44rem">
+        <div class="fw-semibold mb-1"><span class="bi bi-envelope-paper me-1" aria-hidden="true"></span>Work digest</div>
+        <p class="text-muted small mb-3">
+            A single email summarising your open follow-up items — overdue, due today, and due this week —
+            instead of a separate reminder for each. Sent on the cadence you pick. You can turn it off anytime.
+        </p>
+        <div class="mb-1">
             @foreach (var c in new[] { DigestCadence.Off, DigestCadence.Daily, DigestCadence.Weekly })
             {
                 <div class="form-check">
@@ -31,30 +35,56 @@
                 </div>
             }
         </div>
+    </div>
+
+    <div class="im-card nc-card mt-3" style="max-width:44rem">
+        <div class="fw-semibold mb-1"><span class="bi bi-bell me-1" aria-hidden="true"></span>Individual emails</div>
+        <p class="text-muted small mb-3">
+            Turn off the individual reminders you don't want. (Breach escalations to Legal/Privacy are a
+            compliance obligation and are always sent.)
+            @if (_cadence != DigestCadence.Off)
+            {
+                <span class="d-block mt-1"><span class="bi bi-info-circle me-1" aria-hidden="true"></span>
+                    Your digest already covers overdue and due-soon items, so you can safely turn those off here.</span>
+            }
+        </p>
+
+        @Toggle("New case assignments", "when you're assigned to a case", () => _receiveAssignment, v => _receiveAssignment = v, _mandAssignment)
+        @Toggle("Overdue reminders", "when one of your follow-up items passes its due date", () => _receiveOverdue, v => _receiveOverdue = v, _mandOverdue)
+        @Toggle("Due-soon reminders", "shortly before a follow-up item is due", () => _receiveDueSoon, v => _receiveDueSoon = v, _mandDueSoon)
+    </div>
+
+    <div class="mt-3">
         <button class="btn btn-sm btn-primary" @onclick="Save" disabled="@_saving">
             @if (_saving) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
-            Save preference
+            Save preferences
         </button>
-        <p class="text-muted small mt-3 mb-0">
-            <span class="bi bi-info-circle me-1" aria-hidden="true"></span>
-            Digests are delivered only when an administrator has enabled the feature for this deployment. Until
-            then your choice is saved and takes effect once it's turned on.
-        </p>
-    }
-    else
-    {
-        <p><em>Loading&hellip;</em></p>
-    }
-</div>
+    </div>
+    <p class="text-muted small mt-3 mb-0" style="max-width:44rem">
+        <span class="bi bi-info-circle me-1" aria-hidden="true"></span>
+        Emails are delivered only when an administrator has enabled the relevant feature for this deployment.
+        Until then your choices are saved and take effect once it's turned on.
+    </p>
+}
 
 @code {
     private DigestCadence _cadence = DigestCadence.Off;
+    private bool _receiveAssignment = true, _receiveOverdue = true, _receiveDueSoon = true;
+    private bool _mandAssignment, _mandOverdue, _mandDueSoon;
     private bool _loaded;
     private bool _saving;
 
     protected override async Task OnInitializedAsync()
     {
-        _cadence = await Prefs.GetMyDigestCadenceAsync();
+        _mandAssignment = Config.GetValue<bool>("Notifications:Mandatory:Assignment");
+        _mandOverdue = Config.GetValue<bool>("Notifications:Mandatory:Overdue");
+        _mandDueSoon = Config.GetValue<bool>("Notifications:Mandatory:DueSoon");
+
+        var p = await Prefs.GetMineAsync();
+        _cadence = p.DigestCadence;
+        _receiveAssignment = !p.SuppressAssignment;
+        _receiveOverdue = !p.SuppressOverdue;
+        _receiveDueSoon = !p.SuppressDueSoon;
         _loaded = true;
     }
 
@@ -63,14 +93,31 @@
         _saving = true;
         try
         {
-            await Prefs.SetMyDigestCadenceAsync(_cadence);
-            Toasts.Success(_cadence == DigestCadence.Off
-                ? "Work digest turned off."
-                : $"Work digest set to {CadenceLabel(_cadence).ToLowerInvariant()}.");
+            // A mandatory type can't be opted out — never store it as suppressed.
+            await Prefs.SetMineAsync(new NotificationPrefsView(
+                _cadence,
+                SuppressAssignment: !_mandAssignment && !_receiveAssignment,
+                SuppressOverdue: !_mandOverdue && !_receiveOverdue,
+                SuppressDueSoon: !_mandDueSoon && !_receiveDueSoon));
+            Toasts.Success("Notification preferences saved.");
         }
         catch (Exception ex) { Toasts.Error(ex.Message); }
         finally { _saving = false; }
     }
+
+    // A receive/don't-receive toggle. Mandatory types render checked + locked with an explanatory note.
+    private RenderFragment Toggle(string title, string hint, Func<bool> get, Action<bool> set, bool mandatory) => __builder =>
+    {
+        <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" role="switch"
+                   checked="@(mandatory || get())" disabled="@mandatory"
+                   @onchange="e => set((bool)(e.Value ?? false))" />
+            <label class="form-check-label">
+                <strong>@title</strong>
+                <span class="text-muted small d-block">@hint@(mandatory ? " · required by your organization" : "")</span>
+            </label>
+        </div>
+    };
 
     private static string CadenceLabel(DigestCadence c) => c switch
     {
@@ -83,6 +130,6 @@
     {
         DigestCadence.Daily => "One digest each day you have open items.",
         DigestCadence.Weekly => "One digest each week you have open items.",
-        _ => "No digest — you'll still get any individual reminders your team has enabled."
+        _ => "No digest — you'll still get any individual reminders enabled below."
     };
 }

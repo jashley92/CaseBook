@@ -10,6 +10,7 @@ using IncidentManager.Infrastructure.Realtime;
 using IncidentManager.Infrastructure.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace IncidentManager.IntegrationTests;
@@ -166,6 +167,59 @@ public sealed class DigestScannerTests : IDisposable
         await OptInAsync("bob", DigestCadence.Off);   // explicitly off
         var subs = await NewPrefs().ListSubscribersAsync();
         subs.Should().ContainSingle().Which.UserId.Should().Be("analyst1");
+    }
+
+    [Fact]
+    public async Task Full_preferences_round_trip()
+    {
+        (await NewPrefs().GetMineAsync()).Should().Be(new NotificationPrefsView(DigestCadence.Off, false, false, false));
+
+        await NewPrefs().SetMineAsync(new NotificationPrefsView(DigestCadence.Weekly, SuppressAssignment: true, SuppressOverdue: false, SuppressDueSoon: true));
+
+        (await NewPrefs().GetMineAsync()).Should().Be(
+            new NotificationPrefsView(DigestCadence.Weekly, true, false, true));
+    }
+
+    // --- PROD-16: the singleton provider the notifier reads (incl. the digest → per-item overlay) ---
+
+    private sealed class ScopeFactory(Func<AppDbContext> make) : IServiceScopeFactory, IServiceScope, IServiceProvider
+    {
+        public IServiceScope CreateScope() => this;
+        public IServiceProvider ServiceProvider => this;
+        public void Dispose() { }
+        public object? GetService(Type t) => t == typeof(AppDbContext) ? make() : null;
+    }
+
+    private IncidentManager.Infrastructure.Notifications.NotificationPreferenceProvider NewProvider() =>
+        new(new ScopeFactory(NewContext));
+
+    [Fact]
+    public async Task Provider_returns_nothing_suppressed_when_there_is_no_preference_row()
+    {
+        (await NewProvider().GetAsync("nobody")).Should().Be(NotificationSuppression.None);
+    }
+
+    [Fact]
+    public async Task Provider_reflects_explicit_opt_outs()
+    {
+        await NewPrefs().SetMineAsync(new NotificationPrefsView(DigestCadence.Off, SuppressAssignment: true, SuppressOverdue: false, SuppressDueSoon: true));
+
+        var s = await NewProvider().GetAsync("analyst1");
+        s.Assignment.Should().BeTrue();
+        s.Overdue.Should().BeFalse();
+        s.DueSoon.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Provider_folds_in_the_digest_overlay_suppressing_per_item_overdue_and_due_soon()
+    {
+        // On a digest, but no explicit per-item opt-outs → overdue/due-soon are still suppressed (the digest covers them).
+        await NewPrefs().SetMineAsync(new NotificationPrefsView(DigestCadence.Daily, SuppressAssignment: false, SuppressOverdue: false, SuppressDueSoon: false));
+
+        var s = await NewProvider().GetAsync("analyst1");
+        s.Overdue.Should().BeTrue();
+        s.DueSoon.Should().BeTrue();
+        s.Assignment.Should().BeFalse();   // assignment isn't a digest item, so it's unaffected
     }
 
     public void Dispose() => _connection.Dispose();

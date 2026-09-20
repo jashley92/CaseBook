@@ -1558,3 +1558,40 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920235541_AddNotificationOptOuts'
+)
+BEGIN
+    ALTER TABLE [UserNotificationPreferences] ADD [SuppressAssignment] bit NOT NULL DEFAULT CAST(0 AS bit);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920235541_AddNotificationOptOuts'
+)
+BEGIN
+    ALTER TABLE [UserNotificationPreferences] ADD [SuppressDueSoon] bit NOT NULL DEFAULT CAST(0 AS bit);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920235541_AddNotificationOptOuts'
+)
+BEGIN
+    ALTER TABLE [UserNotificationPreferences] ADD [SuppressOverdue] bit NOT NULL DEFAULT CAST(0 AS bit);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920235541_AddNotificationOptOuts'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260920235541_AddNotificationOptOuts', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

@@ -33,9 +33,20 @@ public class CaseNotificationsTests
     }
 
     private static CaseNotifications Build(CapturingEmailSender sender, EmailOptions options,
-        IUserDirectory? users = null, IChatNotifier? chat = null, IConfiguration? config = null) =>
+        IUserDirectory? users = null, IChatNotifier? chat = null, IConfiguration? config = null,
+        INotificationPreferenceProvider? prefs = null) =>
         new(sender, TestEmail.Composer(), users ?? new FakeUserDirectory(), config ?? TestEmail.EmptyConfig,
-            new TestOptionsMonitor<EmailOptions>(options), chat ?? new NullChatNotifier());
+            new TestOptionsMonitor<EmailOptions>(options), chat ?? new NullChatNotifier(), prefs ?? new FakePrefs());
+
+    /// <summary>A configurable per-user opt-out provider (PROD-16); default is "nothing suppressed".</summary>
+    private sealed class FakePrefs : INotificationPreferenceProvider
+    {
+        private readonly Dictionary<string, NotificationSuppression> _s = new(StringComparer.OrdinalIgnoreCase);
+        public FakePrefs Set(string userId, bool assignment = false, bool overdue = false, bool dueSoon = false)
+        { _s[userId] = new NotificationSuppression(assignment, overdue, dueSoon); return this; }
+        public Task<NotificationSuppression> GetAsync(string userId, CancellationToken ct = default) =>
+            Task.FromResult(_s.GetValueOrDefault(userId, NotificationSuppression.None));
+    }
 
     /// <summary>Captures chat broadcasts so PROD-02 tests can assert on them.</summary>
     private sealed class CapturingChatNotifier : IChatNotifier
@@ -92,7 +103,7 @@ public class CaseNotificationsTests
         var sender = new CapturingEmailSender();
         var monitor = new TestOptionsMonitor<EmailOptions>(
             new EmailOptions { LegalDistribution = ["old@insurer.example"] });
-        var notifications = new CaseNotifications(sender, TestEmail.Composer(), new FakeUserDirectory(), TestEmail.EmptyConfig, monitor, new NullChatNotifier());
+        var notifications = new CaseNotifications(sender, TestEmail.Composer(), new FakeUserDirectory(), TestEmail.EmptyConfig, monitor, new NullChatNotifier(), new FakePrefs());
 
         // Admin edits the Legal distribution after the service is already constructed.
         monitor.CurrentValue = new EmailOptions { LegalDistribution = ["new@insurer.example"] };
@@ -151,6 +162,67 @@ public class CaseNotificationsTests
         var notifications = Build(sender, new EmailOptions { AssignmentNotifications = true }, users);
 
         await notifications.OnAssignedAsync(NewCase(), "analyst1", "Alice", CaseAssignmentRole.Analyst, "ic1");
+
+        sender.Sent.Should().BeEmpty();
+    }
+
+    // --- Per-user opt-out (PROD-16) --------------------------------------------
+
+    [Fact]
+    public async Task Assignment_respects_the_assignees_opt_out()
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory().Add("analyst1", "Alice", "alice@insurer.example");
+        var prefs = new FakePrefs().Set("analyst1", assignment: true); // opted out of assignment emails
+        var n = Build(sender, new EmailOptions { AssignmentNotifications = true }, users, prefs: prefs);
+
+        await n.OnAssignedAsync(NewCase(), "analyst1", "Alice", CaseAssignmentRole.Analyst, "ic1");
+
+        sender.Sent.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_mandatory_type_overrides_the_users_opt_out()
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory().Add("analyst1", "Alice", "alice@insurer.example");
+        var prefs = new FakePrefs().Set("analyst1", assignment: true); // opted out...
+        var config = TestEmail.Config(("Notifications:Mandatory:Assignment", "true")); // ...but the org enforces it
+        var n = Build(sender, new EmailOptions { AssignmentNotifications = true }, users, config: config, prefs: prefs);
+
+        await n.OnAssignedAsync(NewCase(), "analyst1", "Alice", CaseAssignmentRole.Analyst, "ic1");
+
+        sender.Sent.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Overdue_skips_a_recipient_who_opted_out_but_still_emails_the_others()
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory()
+            .Add("alice", "Alice", "alice@insurer.example")
+            .Add("bob", "Bob", "bob@insurer.example");
+        var prefs = new FakePrefs().Set("alice", overdue: true); // Alice opted out (e.g. relies on her digest)
+        var n = Build(sender, new EmailOptions(), users, prefs: prefs);
+
+        await n.OnActionItemsOverdueAsync(
+        [
+            Overdue("2026-01", "alice", "ic1", "Task A"),
+            Overdue("2026-02", "bob", "ic1", "Task C"),
+        ]);
+
+        sender.Sent.Should().ContainSingle().Which.To.Should().Contain("bob@insurer.example");
+    }
+
+    [Fact]
+    public async Task Due_soon_respects_the_recipients_opt_out()
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory().Add("alice", "Alice", "alice@insurer.example");
+        var prefs = new FakePrefs().Set("alice", dueSoon: true);
+        var n = Build(sender, new EmailOptions(), users, prefs: prefs);
+
+        await n.OnActionItemsDueSoonAsync([DueSoon("2026-01", "alice", "ic1")], leadHours: 24);
 
         sender.Sent.Should().BeEmpty();
     }

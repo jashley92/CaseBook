@@ -24,9 +24,11 @@ public sealed class CaseNotifications : ICaseNotifications
     private readonly IConfiguration _config;
     private readonly IOptionsMonitor<EmailOptions> _options;
     private readonly IChatNotifier _chat;
+    private readonly INotificationPreferenceProvider _prefs;
 
     public CaseNotifications(IEmailSender email, IEmailComposer composer, IUserDirectory users,
-        IConfiguration config, IOptionsMonitor<EmailOptions> options, IChatNotifier chat)
+        IConfiguration config, IOptionsMonitor<EmailOptions> options, IChatNotifier chat,
+        INotificationPreferenceProvider prefs)
     {
         _email = email;
         _composer = composer;
@@ -34,7 +36,12 @@ public sealed class CaseNotifications : ICaseNotifications
         _config = config;
         _options = options;
         _chat = chat;
+        _prefs = prefs;
     }
+
+    // PROD-16: has this user opted out of a personal notification type — unless the org marks it mandatory?
+    // Applies to the per-user EMAIL path only (never the compliance breach→Legal distribution, never chat).
+    private bool Mandatory(string type) => _config.GetValue<bool>($"Notifications:Mandatory:{type}");
 
     private string BaseUrl => (_config["App:BaseUrl"] ?? "").TrimEnd('/');
     private string? CaseUrl(Guid id) => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases/{id}";
@@ -137,6 +144,8 @@ public sealed class CaseNotifications : ICaseNotifications
 
         var options = _options.CurrentValue;
         if (!options.AssignmentNotifications) return;
+        // PROD-16: honour the assignee's opt-out unless the org marks assignment notifications mandatory.
+        if (!Mandatory("Assignment") && (await _prefs.GetAsync(assigneeUserId, ct)).Assignment) return;
         var to = _users.EmailFor(assigneeUserId);
         if (string.IsNullOrWhiteSpace(to)) return;
 
@@ -170,18 +179,24 @@ public sealed class CaseNotifications : ICaseNotifications
                 OverdueUrl(), ChatUrgency.Alert), ct);
         }
 
+        // Group by recipient user (owner, else the case's incident commander), so opt-outs and address
+        // resolution are per person (PROD-16).
         var byRecipient = new Dictionary<string, List<OverdueActionItem>>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in items)
         {
-            var to = ResolveRecipient(item);
-            if (string.IsNullOrWhiteSpace(to)) continue;
-            if (!byRecipient.TryGetValue(to, out var list)) byRecipient[to] = list = [];
+            var uid = ResolveRecipientUserId(item.OwnerUserId, item.IncidentCommanderUserId);
+            if (uid is null) continue;
+            if (!byRecipient.TryGetValue(uid, out var list)) byRecipient[uid] = list = [];
             list.Add(item);
         }
 
         var overdueUrl = OverdueUrl();
-        foreach (var (to, list) in byRecipient)
+        var overdueMandatory = Mandatory("Overdue");
+        foreach (var (uid, list) in byRecipient)
         {
+            if (!overdueMandatory && (await _prefs.GetAsync(uid, ct)).Overdue) continue; // opted out / on digest
+            var to = _users.EmailFor(uid);
+            if (string.IsNullOrWhiteSpace(to)) continue;
             var ordered = list.OrderBy(i => i.DueAtUtc).ToList();
             var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -215,15 +230,19 @@ public sealed class CaseNotifications : ICaseNotifications
         var byRecipient = new Dictionary<string, List<DueSoonActionItem>>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in items)
         {
-            var to = ResolveRecipient(item.OwnerUserId, item.IncidentCommanderUserId);
-            if (string.IsNullOrWhiteSpace(to)) continue;
-            if (!byRecipient.TryGetValue(to, out var list)) byRecipient[to] = list = [];
+            var uid = ResolveRecipientUserId(item.OwnerUserId, item.IncidentCommanderUserId);
+            if (uid is null) continue;
+            if (!byRecipient.TryGetValue(uid, out var list)) byRecipient[uid] = list = [];
             list.Add(item);
         }
 
         var agendaUrl = AgendaUrl();
-        foreach (var (to, list) in byRecipient)
+        var dueSoonMandatory = Mandatory("DueSoon");
+        foreach (var (uid, list) in byRecipient)
         {
+            if (!dueSoonMandatory && (await _prefs.GetAsync(uid, ct)).DueSoon) continue; // opted out / on digest
+            var to = _users.EmailFor(uid);
+            if (string.IsNullOrWhiteSpace(to)) continue;
             var ordered = list.OrderBy(i => i.DueAtUtc).ToList();
             var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -428,16 +447,16 @@ public sealed class CaseNotifications : ICaseNotifications
         return "<ul>" + string.Join("", lis) + "</ul>";
     }
 
-    private string? ResolveRecipient(OverdueActionItem item) =>
-        ResolveRecipient(item.OwnerUserId, item.IncidentCommanderUserId);
-
-    private string? ResolveRecipient(string? ownerUserId, string? incidentCommanderUserId)
+    /// <summary>The user a reminder addresses: the owner when they have an address on file, else the case's
+    /// incident commander (when they do). Returns the user id — the caller resolves opt-outs and the email
+    /// from it. Null when nobody is reachable.</summary>
+    private string? ResolveRecipientUserId(string? ownerUserId, string? incidentCommanderUserId)
     {
-        var ownerEmail = string.IsNullOrWhiteSpace(ownerUserId) ? null : _users.EmailFor(ownerUserId);
-        if (!string.IsNullOrWhiteSpace(ownerEmail)) return ownerEmail;
-        return string.IsNullOrWhiteSpace(incidentCommanderUserId)
-            ? null
-            : _users.EmailFor(incidentCommanderUserId);
+        if (!string.IsNullOrWhiteSpace(ownerUserId) && !string.IsNullOrWhiteSpace(_users.EmailFor(ownerUserId)))
+            return ownerUserId;
+        if (!string.IsNullOrWhiteSpace(incidentCommanderUserId) && !string.IsNullOrWhiteSpace(_users.EmailFor(incidentCommanderUserId)))
+            return incidentCommanderUserId;
+        return null;
     }
 
     private static string Ui(CaseAssignmentRole role) => role switch
