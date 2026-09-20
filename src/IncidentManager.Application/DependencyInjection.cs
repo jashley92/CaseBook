@@ -59,6 +59,11 @@ public static class DependencyInjection
         // reminded for this band" survives between passes, like the other reminder trackers.
         services.AddScoped<Notifications.NotificationDeadlineScanner>();
         services.AddSingleton<Notifications.IDeadlineReminderTracker, Notifications.DeadlineReminderTracker>();
+        // PROD-38: stale-case nudge (open cases that have gone quiet past their severity's threshold). Same
+        // shape as the reminder scanners above; a singleton tracker so "already nudged this quiet spell"
+        // survives between passes and re-arms when the case sees new activity.
+        services.AddScoped<Notifications.StaleCaseScanner>();
+        services.AddSingleton<Notifications.IStaleCaseTracker, Notifications.StaleCaseTracker>();
 
         services.AddSingleton<IMarkdownService, MarkdownService>();
 

@@ -82,6 +82,11 @@ builder.Services.AddHostedService<DueSoonActionItemHostedService>();
 builder.Services.Configure<DeadlineReminderScanOptions>(builder.Configuration.GetSection("Notifications:DeadlineScan"));
 builder.Services.AddHostedService<NotificationDeadlineHostedService>();
 
+// --- PROD-38: periodic stale-case nudge (open cases quiet past their severity threshold). Read-only, never
+// mutates state; per-severity thresholds, off by default. ---
+builder.Services.Configure<StaleCaseScanOptions>(builder.Configuration.GetSection("Notifications:StaleScan"));
+builder.Services.AddHostedService<StaleCaseHostedService>();
+
 // --- F-18: outbound security-event stream. Transports fan out from a background dispatcher. ---
 builder.Services.AddHttpClient("siem");
 builder.Services.AddSingleton<IncidentManager.Infrastructure.Siem.ISecurityEventTransport, IncidentManager.Web.Siem.WebhookTransport>();

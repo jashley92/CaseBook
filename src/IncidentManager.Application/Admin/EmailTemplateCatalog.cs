@@ -122,6 +122,25 @@ public static class EmailTemplateCatalog
             CtaUrlToken: "DeadlinesUrl"),
 
         new EmailTemplateDefinition(
+            "stale-case",
+            "Stale-case nudge",
+            "Sent to a case's incident commander and assignees when an open case has had no recorded activity for longer than its severity's threshold (PROD-38). Requires the stale-case scan on.",
+            "{{ItemCount}} open case(s) with no recent activity",
+            """
+            <h1>Cases with no recent activity</h1>
+            <p>The following open case(s) have had no recorded activity for a while and may be stalled:</p>
+            {{ItemsList}}
+            <p>Open each case to record progress or move it forward. (This is a nudge only — nothing has changed on the case.)</p>
+            """,
+            new[]
+            {
+                new EmailToken("ItemCount", "How many stale cases there are for this recipient."),
+                new EmailToken("ItemsList", "The formatted list of stale cases (case, title, severity, days quiet). Rendered by the app."),
+            },
+            CtaLabel: "Review the case(s)",
+            CtaUrlToken: "StaleUrl"),
+
+        new EmailTemplateDefinition(
             "breach",
             "Breach escalation (Legal/Privacy)",
             "Sent to the Legal/Privacy distribution when a case is escalated to a Breach (E-03).",

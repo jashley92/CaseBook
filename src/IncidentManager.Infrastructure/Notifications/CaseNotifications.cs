@@ -298,6 +298,67 @@ public sealed class CaseNotifications : ICaseNotifications
         }
     }
 
+    public async Task OnCasesStaleAsync(IReadOnlyList<StaleCaseReminder> reminders, CancellationToken ct = default)
+    {
+        if (reminders.Count == 0) return;
+
+        // Chat broadcast (PROD-02): one summary to the shared channel, alongside the per-recipient emails.
+        if (ChatOn("StaleReminders"))
+        {
+            var caseCount = reminders.Select(r => r.CaseId).Distinct().Count();
+            await _chat.SendAsync(new ChatNotification(
+                $"{caseCount} case(s) with no recent activity",
+                "Open cases have gone quiet past their severity threshold. IC/owners emailed where reachable.",
+                CasesUrl()), ct);
+        }
+
+        // Group by recipient, so a person on several quiet cases gets one nudge listing them all.
+        var byRecipient = new Dictionary<string, List<StaleCaseReminder>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in reminders)
+        {
+            foreach (var uid in r.RecipientUserIds)
+            {
+                var to = _users.EmailFor(uid);
+                if (string.IsNullOrWhiteSpace(to)) continue;
+                if (!byRecipient.TryGetValue(to, out var list)) byRecipient[to] = list = [];
+                list.Add(r);
+            }
+        }
+
+        foreach (var (to, list) in byRecipient)
+        {
+            var ordered = list
+                .DistinctBy(r => r.CaseId)                          // IC who is also an assignee → list once
+                .OrderByDescending(r => r.DaysInactive)
+                .ThenBy(r => r.CaseNumber, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var cta = ordered.Count == 1 ? CaseUrl(ordered[0].CaseId) : CasesUrl();
+
+            var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ItemCount"] = ordered.Count.ToString(CultureInfo.InvariantCulture),
+                ["StaleUrl"] = cta ?? "",
+            };
+            var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ItemsList"] = RenderStaleList(ordered),
+            };
+
+            var message = await _composer.ComposeAsync("stale-case", [to], tokens, cta, htmlTokens, ct);
+            await _email.SendAsync(message, ct);
+        }
+    }
+
+    // Composer-rendered safe HTML: every case-supplied field is HTML-encoded here.
+    private static string RenderStaleList(IEnumerable<StaleCaseReminder> reminders)
+    {
+        var lis = reminders.Select(r =>
+            $"<li>{WebUtility.HtmlEncode(r.CaseNumber)} — {WebUtility.HtmlEncode(r.CaseTitle)} " +
+            $"({WebUtility.HtmlEncode(r.Severity.ToString())}: no activity for {r.DaysInactive} day(s))</li>");
+        return "<ul>" + string.Join("", lis) + "</ul>";
+    }
+
     // Composer-rendered safe HTML: every case-supplied field is HTML-encoded here.
     private static string RenderDeadlineList(IEnumerable<DeadlineReminder> reminders)
     {

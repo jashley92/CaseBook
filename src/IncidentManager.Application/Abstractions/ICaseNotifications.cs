@@ -53,6 +53,21 @@ public sealed record DeadlineReminder(
     TimeSpan? Remaining);
 
 /// <summary>
+/// An open case that has gone quiet — no recorded activity for longer than its severity's threshold —
+/// flattened for notification (PROD-38). Carries the resolved recipient user-ids (incident commander +
+/// assignees) and the quiet-spell facts for the email body.
+/// </summary>
+public sealed record StaleCaseReminder(
+    Guid CaseId,
+    string CaseNumber,
+    string CaseTitle,
+    Severity Severity,
+    IReadOnlyList<string> RecipientUserIds,
+    DateTimeOffset LastActivityAtUtc,
+    int DaysInactive,
+    int ThresholdDays);
+
+/// <summary>
 /// Case-lifecycle notifications (who to tell, and how) — kept out of the use-case layer so recipient
 /// configuration and the delivery channel live in Infrastructure. Implementations must not throw.
 /// </summary>
@@ -101,5 +116,16 @@ public interface ICaseNotifications
     /// Reminds only — a human still records the reported milestone; nothing here mutates case state.
     /// </summary>
     Task OnDeadlineApproachingAsync(IReadOnlyList<DeadlineReminder> reminders, CancellationToken ct = default)
+        => Task.CompletedTask;
+
+    /// <summary>
+    /// Called by the scheduled stale-case scan (PROD-38) with the open cases that have <em>newly</em> gone
+    /// quiet past their severity's threshold and have not yet been nudged for this quiet spell. Resolves each
+    /// case's recipients (incident commander + assignees), groups by recipient, and sends one nudge each. A
+    /// default no-op is provided so existing implementers (and test doubles) need not change; the real
+    /// <c>CaseNotifications</c> overrides it. Gated by config; a no-op when no recipients resolve. Nudges
+    /// only — nothing here mutates case state.
+    /// </summary>
+    Task OnCasesStaleAsync(IReadOnlyList<StaleCaseReminder> reminders, CancellationToken ct = default)
         => Task.CompletedTask;
 }
