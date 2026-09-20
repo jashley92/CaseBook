@@ -67,6 +67,23 @@ public sealed record StaleCaseReminder(
     int DaysInactive,
     int ThresholdDays);
 
+/// <summary>One open, dated follow-up item on a user's work digest (PROD-39), flattened for the email body.</summary>
+public sealed record DigestItem(string CaseNumber, string TaskTitle, Severity Severity, DateTimeOffset DueAtUtc);
+
+/// <summary>
+/// A single user's consolidated work digest (PROD-39): their open, dated follow-up items grouped into the
+/// familiar agenda bands. Sent on the cadence they chose, in place of a scatter of per-item reminders.
+/// </summary>
+public sealed record UserDigest(
+    string UserId,
+    DigestCadence Cadence,
+    IReadOnlyList<DigestItem> Overdue,
+    IReadOnlyList<DigestItem> DueToday,
+    IReadOnlyList<DigestItem> DueThisWeek)
+{
+    public int TotalItems => Overdue.Count + DueToday.Count + DueThisWeek.Count;
+}
+
 /// <summary>
 /// Case-lifecycle notifications (who to tell, and how) — kept out of the use-case layer so recipient
 /// configuration and the delivery channel live in Infrastructure. Implementations must not throw.
@@ -128,4 +145,13 @@ public interface ICaseNotifications
     /// </summary>
     Task OnCasesStaleAsync(IReadOnlyList<StaleCaseReminder> reminders, CancellationToken ct = default)
         => Task.CompletedTask;
+
+    /// <summary>
+    /// Called by the scheduled digest scan (PROD-39) with one user's consolidated work digest, on the cadence
+    /// they opted into. Resolves the user's address and sends a single grouped summary — the one email that
+    /// stands in for a scatter of per-item reminders. A default no-op is provided so existing implementers
+    /// (and test doubles) need not change; the real <c>CaseNotifications</c> overrides it. A no-op when the
+    /// user has no address on file. Reminds only — nothing here mutates case state.
+    /// </summary>
+    Task OnDigestAsync(UserDigest digest, CancellationToken ct = default) => Task.CompletedTask;
 }

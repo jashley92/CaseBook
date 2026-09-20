@@ -87,6 +87,11 @@ builder.Services.AddHostedService<NotificationDeadlineHostedService>();
 builder.Services.Configure<StaleCaseScanOptions>(builder.Configuration.GetSection("Notifications:StaleScan"));
 builder.Services.AddHostedService<StaleCaseHostedService>();
 
+// --- PROD-39: periodic consolidated work digest (one grouped email per opted-in user, on their cadence).
+// Read-only, never mutates state; master switch off by default, per-user opt-in via the account menu. ---
+builder.Services.Configure<DigestScanOptions>(builder.Configuration.GetSection("Notifications:DigestScan"));
+builder.Services.AddHostedService<DigestHostedService>();
+
 // --- F-18: outbound security-event stream. Transports fan out from a background dispatcher. ---
 builder.Services.AddHttpClient("siem");
 builder.Services.AddSingleton<IncidentManager.Infrastructure.Siem.ISecurityEventTransport, IncidentManager.Web.Siem.WebhookTransport>();

@@ -1882,6 +1882,30 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.ToTable("TimelineEntries", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.UserNotificationPreference", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("DigestCadence")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("UpdatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("UserNotificationPreferences", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.ActionItem", b =>
                 {
                     b.HasOne("IncidentManager.Domain.Entities.Case", null)

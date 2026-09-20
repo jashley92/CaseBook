@@ -58,6 +58,16 @@ public enum ApiTokenKind
     System = 1
 }
 
+/// <summary>How often a user wants the consolidated work digest (PROD-39). <see cref="Off"/> (the default)
+/// means no digest — the opt-in state; a user only receives one when they choose Daily or Weekly and an admin
+/// has enabled the digest feature.</summary>
+public enum DigestCadence
+{
+    Off = 0,
+    Daily = 1,
+    Weekly = 2
+}
+
 /// <summary>Status of an after-action follow-up item.</summary>
 public enum ActionItemStatus
 {

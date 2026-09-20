@@ -44,6 +44,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<AdGroupRoleMapping> RoleMappings => Set<AdGroupRoleMapping>();
     public DbSet<SavedView> SavedViews => Set<SavedView>();
     public DbSet<PinnedCase> PinnedCases => Set<PinnedCase>();
+    public DbSet<UserNotificationPreference> UserNotificationPreferences => Set<UserNotificationPreference>();
     public DbSet<CaseComment> CaseComments => Set<CaseComment>();
     public DbSet<PendingImport> PendingImports => Set<PendingImport>();
     public DbSet<ApiToken> ApiTokens => Set<ApiToken>();

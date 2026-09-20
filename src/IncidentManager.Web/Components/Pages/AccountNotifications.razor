@@ -1,0 +1,88 @@
+@page "/account/notifications"
+@attribute [Authorize]
+@using IncidentManager.Application.Notifications
+@inject UserNotificationPreferenceService Prefs
+@inject ToastService Toasts
+
+<PageTitle>Notification preferences</PageTitle>
+
+<PageHeader Title="Notification preferences"
+           Subtitle="Choose how CaseBook keeps you posted on your own work. These settings apply only to you." />
+
+<div class="im-card nc-card" style="max-width:44rem">
+    <div class="fw-semibold mb-1"><span class="bi bi-envelope-paper me-1" aria-hidden="true"></span>Work digest</div>
+    <p class="text-muted small mb-3">
+        A single email summarising your open follow-up items — overdue, due today, and due this week — instead
+        of a separate reminder for each. Sent on the cadence you pick. You can turn it off anytime.
+    </p>
+
+    @if (_loaded)
+    {
+        <div class="mb-3">
+            @foreach (var c in new[] { DigestCadence.Off, DigestCadence.Daily, DigestCadence.Weekly })
+            {
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="cadence" id="cadence-@c"
+                           checked="@(_cadence == c)" @onchange="() => _cadence = c" />
+                    <label class="form-check-label" for="cadence-@c">
+                        <strong>@CadenceLabel(c)</strong>
+                        <span class="text-muted small d-block">@CadenceHint(c)</span>
+                    </label>
+                </div>
+            }
+        </div>
+        <button class="btn btn-sm btn-primary" @onclick="Save" disabled="@_saving">
+            @if (_saving) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
+            Save preference
+        </button>
+        <p class="text-muted small mt-3 mb-0">
+            <span class="bi bi-info-circle me-1" aria-hidden="true"></span>
+            Digests are delivered only when an administrator has enabled the feature for this deployment. Until
+            then your choice is saved and takes effect once it's turned on.
+        </p>
+    }
+    else
+    {
+        <p><em>Loading&hellip;</em></p>
+    }
+</div>
+
+@code {
+    private DigestCadence _cadence = DigestCadence.Off;
+    private bool _loaded;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cadence = await Prefs.GetMyDigestCadenceAsync();
+        _loaded = true;
+    }
+
+    private async Task Save()
+    {
+        _saving = true;
+        try
+        {
+            await Prefs.SetMyDigestCadenceAsync(_cadence);
+            Toasts.Success(_cadence == DigestCadence.Off
+                ? "Work digest turned off."
+                : $"Work digest set to {CadenceLabel(_cadence).ToLowerInvariant()}.");
+        }
+        catch (Exception ex) { Toasts.Error(ex.Message); }
+        finally { _saving = false; }
+    }
+
+    private static string CadenceLabel(DigestCadence c) => c switch
+    {
+        DigestCadence.Daily => "Daily",
+        DigestCadence.Weekly => "Weekly",
+        _ => "Off"
+    };
+
+    private static string CadenceHint(DigestCadence c) => c switch
+    {
+        DigestCadence.Daily => "One digest each day you have open items.",
+        DigestCadence.Weekly => "One digest each week you have open items.",
+        _ => "No digest — you'll still get any individual reminders your team has enabled."
+    };
+}

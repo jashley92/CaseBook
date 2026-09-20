@@ -122,6 +122,26 @@ public static class EmailTemplateCatalog
             CtaUrlToken: "DeadlinesUrl"),
 
         new EmailTemplateDefinition(
+            "digest",
+            "Personal work digest",
+            "The consolidated digest a user opts into (account menu → Notifications): their open follow-up items grouped into overdue / due today / due this week, on a daily or weekly cadence (PROD-39). Replaces a scatter of per-item reminders for that user.",
+            "Your CaseBook work digest — {{ItemCount}} open item(s)",
+            """
+            <h1>Your work digest</h1>
+            <p>Here are your open follow-up items across the cases you're working, as of this {{Cadence}} digest:</p>
+            {{ItemsList}}
+            <p>Open <strong>My Work</strong> to progress or close them.</p>
+            """,
+            new[]
+            {
+                new EmailToken("ItemCount", "How many open items are in this digest."),
+                new EmailToken("Cadence", "The digest cadence — \"daily\" or \"weekly\"."),
+                new EmailToken("ItemsList", "The formatted, grouped list of items (overdue / due today / due this week). Rendered by the app."),
+            },
+            CtaLabel: "Open my work",
+            CtaUrlToken: "AgendaUrl"),
+
+        new EmailTemplateDefinition(
             "stale-case",
             "Stale-case nudge",
             "Sent to a case's incident commander and assignees when an open case has had no recorded activity for longer than its severity's threshold (PROD-38). Requires the stale-case scan on.",

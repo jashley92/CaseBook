@@ -350,6 +350,50 @@ public sealed class CaseNotifications : ICaseNotifications
         }
     }
 
+    public async Task OnDigestAsync(UserDigest digest, CancellationToken ct = default)
+    {
+        if (digest.TotalItems == 0) return;
+        var to = _users.EmailFor(digest.UserId);
+        if (string.IsNullOrWhiteSpace(to)) return; // no address on file → nothing to send
+
+        var agendaUrl = AgendaUrl();
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ItemCount"] = digest.TotalItems.ToString(CultureInfo.InvariantCulture),
+            ["Cadence"] = digest.Cadence == DigestCadence.Weekly ? "weekly" : "daily",
+            ["AgendaUrl"] = agendaUrl ?? "",
+        };
+        var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ItemsList"] = RenderDigest(digest),
+        };
+
+        var message = await _composer.ComposeAsync("digest", [to], tokens, agendaUrl, htmlTokens, ct);
+        await _email.SendAsync(message, ct);
+    }
+
+    // Composer-rendered safe HTML: every user-supplied field is HTML-encoded here.
+    private static string RenderDigest(UserDigest digest)
+    {
+        var sb = new System.Text.StringBuilder();
+        Section(sb, "Overdue", digest.Overdue);
+        Section(sb, "Due today", digest.DueToday);
+        Section(sb, "Due this week", digest.DueThisWeek);
+        return sb.ToString();
+
+        static void Section(System.Text.StringBuilder sb, string heading, IReadOnlyList<DigestItem> items)
+        {
+            if (items.Count == 0) return;
+            sb.Append("<p class=\"meta\"><strong>").Append(WebUtility.HtmlEncode(heading))
+              .Append(" (").Append(items.Count).Append(")</strong></p><ul>");
+            foreach (var i in items)
+                sb.Append("<li>").Append(WebUtility.HtmlEncode(i.CaseNumber)).Append(" — ")
+                  .Append(WebUtility.HtmlEncode(i.TaskTitle))
+                  .Append(" (due ").Append(WebUtility.HtmlEncode(i.DueAtUtc.ToString("u"))).Append(")</li>");
+            sb.Append("</ul>");
+        }
+    }
+
     // Composer-rendered safe HTML: every case-supplied field is HTML-encoded here.
     private static string RenderStaleList(IEnumerable<StaleCaseReminder> reminders)
     {

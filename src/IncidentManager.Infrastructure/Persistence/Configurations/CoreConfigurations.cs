@@ -517,6 +517,16 @@ public sealed class PinnedCaseConfiguration : IEntityTypeConfiguration<PinnedCas
     }
 }
 
+public sealed class UserNotificationPreferenceConfiguration : IEntityTypeConfiguration<UserNotificationPreference>
+{
+    public void Configure(EntityTypeBuilder<UserNotificationPreference> b)
+    {
+        b.ToTable("UserNotificationPreferences");
+        b.Property(x => x.UserId).HasMaxLength(200).IsRequired();
+        b.HasIndex(x => x.UserId).IsUnique(); // one preference row per user
+    }
+}
+
 public sealed class ApiTokenConfiguration : IEntityTypeConfiguration<ApiToken>
 {
     public void Configure(EntityTypeBuilder<ApiToken> b)

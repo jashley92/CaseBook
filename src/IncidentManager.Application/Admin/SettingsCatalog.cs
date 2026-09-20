@@ -87,6 +87,10 @@ public static class SettingsCatalog
             "Days of no activity before a Medium case is nudged as stale. 0 disables the nudge for Medium cases.", "10"),
         new SettingDefinition("Notifications:StaleScan:Days:Low", "Stale after — Low (days)", "Notifications", SettingKind.Int,
             "Days of no activity before a Low case is nudged as stale. 0 disables the nudge for Low cases.", "21"),
+        new SettingDefinition("Notifications:DigestScan:Enabled", "Personal work digests", "Notifications", SettingKind.Bool,
+            "When on, users who opt in (account menu → Notifications) receive a consolidated digest of their open follow-up items — overdue / due today / due this week — on their chosen daily or weekly cadence, in place of a scatter of per-item reminders. This is the master switch; each user still chooses their own cadence (default off). Read-only over case data. Takes effect within a few minutes of saving.", "false"),
+        new SettingDefinition("Notifications:DigestScan:IntervalHours", "Digest scan interval (hours)", "Notifications", SettingKind.Int,
+            "How often to check whether a user's digest is due. A digest still sends only once per period (day/week); a small interval just means it goes out promptly. Default 1. Takes effect within a few minutes of saving.", "1"),
         new SettingDefinition("App:BaseUrl", "Public base URL", "Notifications", SettingKind.Text,
             "Absolute URL of this deployment (e.g. https://casebook.corp.example), used to build direct links and the logo in notification emails. Blank = emails omit links and the hosted logo (they still render, branded, with a text wordmark). No trailing slash needed.", ""),
         // PROD-02: which notification types are also broadcast to the team chat channel. These only deliver

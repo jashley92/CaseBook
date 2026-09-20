@@ -9,11 +9,9 @@ END;
 GO
 
 BEGIN TRANSACTION;
-GO
-
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [AdGroupRoleMappings] (
@@ -26,11 +24,10 @@ BEGIN
         CONSTRAINT [PK_AdGroupRoleMappings] PRIMARY KEY ([Id])
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [AppSettings] (
@@ -43,11 +40,10 @@ BEGIN
         CONSTRAINT [PK_AppSettings] PRIMARY KEY ([Id])
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [AuditLog] (
@@ -68,11 +64,31 @@ BEGIN
         CONSTRAINT [PK_AuditLog] PRIMARY KEY ([Id])
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE TABLE [CaseAccessEvents] (
+        [Id] uniqueidentifier NOT NULL,
+        [ActorUserId] nvarchar(200) NOT NULL,
+        [CaseId] uniqueidentifier NULL,
+        [CaseNumber] nvarchar(200) NULL,
+        [AccessType] int NOT NULL,
+        [TargetId] uniqueidentifier NULL,
+        [TargetLabel] nvarchar(500) NULL,
+        [WasRestricted] bit NOT NULL,
+        [FirstSeenUtc] datetimeoffset NOT NULL,
+        [LastSeenUtc] datetimeoffset NOT NULL,
+        [Count] int NOT NULL,
+        CONSTRAINT [PK_CaseAccessEvents] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [CaseLinks] (
@@ -89,11 +105,61 @@ BEGIN
         CONSTRAINT [PK_CaseLinks] PRIMARY KEY ([Id])
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE TABLE [Cases] (
+        [Id] uniqueidentifier NOT NULL,
+        [Year] int NOT NULL,
+        [Sequence] int NOT NULL,
+        [DescriptiveName] nvarchar(200) NOT NULL,
+        [CaseNumber] nvarchar(200) NOT NULL,
+        [HasCustomNumber] bit NOT NULL,
+        [Title] nvarchar(300) NOT NULL,
+        [Classification] int NULL,
+        [Phase] int NOT NULL,
+        [Severity] int NOT NULL,
+        [Origin] int NOT NULL,
+        [Summary] nvarchar(max) NULL,
+        [ImpactedAssets] nvarchar(4000) NULL,
+        [DataTypesInvolved] nvarchar(4000) NULL,
+        [AffectedIndividualsCount] int NULL,
+        [AffectedStates] nvarchar(max) NULL,
+        [DetectionCaseId] nvarchar(100) NULL,
+        [ThirdParty_VendorName] nvarchar(300) NULL,
+        [ThirdParty_VendorContact] nvarchar(300) NULL,
+        [ThirdParty_VendorReference] nvarchar(200) NULL,
+        [Legal_IsReferred] bit NOT NULL,
+        [Legal_ReferredAtUtc] datetimeoffset NULL,
+        [Legal_ReferredBy] nvarchar(200) NULL,
+        [Legal_ReferredToContact] nvarchar(300) NULL,
+        [Legal_RelevanceNote] nvarchar(4000) NULL,
+        [IncidentCommander] nvarchar(200) NULL,
+        [IsRestricted] bit NOT NULL,
+        [IsArchived] bit NOT NULL,
+        [LegalHold] bit NOT NULL,
+        [ReportProfileId] uniqueidentifier NULL,
+        [OccurredAtUtc] datetimeoffset NULL,
+        [DetectedAtUtc] datetimeoffset NULL,
+        [ReportedAtUtc] datetimeoffset NULL,
+        [ContainedAtUtc] datetimeoffset NULL,
+        [ResolvedAtUtc] datetimeoffset NULL,
+        [ClosedAtUtc] datetimeoffset NULL,
+        [RowHash] nvarchar(64) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(200) NULL,
+        CONSTRAINT [PK_Cases] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [CaseTemplates] (
@@ -114,62 +180,32 @@ BEGIN
         CONSTRAINT [PK_CaseTemplates] PRIMARY KEY ([Id])
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
-    CREATE TABLE [Cases] (
+    CREATE TABLE [DataElements] (
         [Id] uniqueidentifier NOT NULL,
-        [Year] int NOT NULL,
-        [Sequence] int NOT NULL,
-        [DescriptiveName] nvarchar(200) NOT NULL,
-        [CaseNumber] nvarchar(200) NOT NULL,
-        [Title] nvarchar(300) NOT NULL,
-        [Classification] int NOT NULL,
-        [Phase] int NOT NULL,
-        [Severity] int NOT NULL,
-        [Origin] int NOT NULL,
-        [Summary] nvarchar(max) NULL,
-        [ImpactedAssets] nvarchar(4000) NULL,
-        [DataTypesInvolved] nvarchar(4000) NULL,
-        [AffectedIndividualsCount] int NULL,
-        [DataElements] int NOT NULL,
-        [AffectedStates] nvarchar(max) NULL,
-        [DetectionCaseId] nvarchar(100) NULL,
-        [ThirdParty_VendorName] nvarchar(300) NULL,
-        [ThirdParty_VendorContact] nvarchar(300) NULL,
-        [ThirdParty_VendorReference] nvarchar(200) NULL,
-        [Legal_IsReferred] bit NOT NULL,
-        [Legal_ReferredAtUtc] datetimeoffset NULL,
-        [Legal_ReferredBy] nvarchar(200) NULL,
-        [Legal_ReferredToContact] nvarchar(300) NULL,
-        [Legal_RelevanceNote] nvarchar(4000) NULL,
-        [IncidentCommander] nvarchar(200) NULL,
-        [IsRestricted] bit NOT NULL,
-        [IsArchived] bit NOT NULL,
-        [LegalHold] bit NOT NULL,
-        [OccurredAtUtc] datetimeoffset NULL,
-        [DetectedAtUtc] datetimeoffset NULL,
-        [ReportedAtUtc] datetimeoffset NULL,
-        [ContainedAtUtc] datetimeoffset NULL,
-        [ResolvedAtUtc] datetimeoffset NULL,
-        [ClosedAtUtc] datetimeoffset NULL,
+        [Key] nvarchar(100) NOT NULL,
+        [Label] nvarchar(200) NOT NULL,
+        [SortOrder] int NOT NULL,
+        [IsActive] bit NOT NULL,
+        [IsSystem] bit NOT NULL,
+        [NotificationJurisdictions] nvarchar(400) NULL,
         [RowHash] nvarchar(64) NULL,
         [CreatedAtUtc] datetimeoffset NOT NULL,
         [CreatedBy] nvarchar(200) NOT NULL,
         [ModifiedAtUtc] datetimeoffset NULL,
         [ModifiedBy] nvarchar(200) NULL,
-        CONSTRAINT [PK_Cases] PRIMARY KEY ([Id])
+        CONSTRAINT [PK_DataElements] PRIMARY KEY ([Id])
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [IntegritySeals] (
@@ -184,11 +220,31 @@ BEGIN
         CONSTRAINT [PK_IntegritySeals] PRIMARY KEY ([Id])
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE TABLE [ReportProfiles] (
+        [Id] uniqueidentifier NOT NULL,
+        [Name] nvarchar(200) NOT NULL,
+        [Description] nvarchar(2000) NULL,
+        [IsActive] bit NOT NULL,
+        [SortOrder] int NOT NULL,
+        [SectionLayout] nvarchar(1000) NULL,
+        [RowHash] nvarchar(64) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(max) NULL,
+        CONSTRAINT [PK_ReportProfiles] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [Roles] (
@@ -203,11 +259,31 @@ BEGIN
         CONSTRAINT [PK_Roles] PRIMARY KEY ([Id])
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE TABLE [StageGates] (
+        [Id] uniqueidentifier NOT NULL,
+        [Trigger] int NOT NULL,
+        [IsActive] bit NOT NULL,
+        [Name] nvarchar(200) NOT NULL,
+        [Description] nvarchar(2000) NULL,
+        [CommentaryMinLength] int NOT NULL,
+        [RowHash] nvarchar(64) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(max) NULL,
+        CONSTRAINT [PK_StageGates] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [Users] (
@@ -221,31 +297,10 @@ BEGIN
         CONSTRAINT [PK_Users] PRIMARY KEY ([Id])
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE TABLE [CaseTemplateSteps] (
-        [Id] uniqueidentifier NOT NULL,
-        [TemplateId] uniqueidentifier NOT NULL,
-        [Order] int NOT NULL,
-        [Title] nvarchar(400) NOT NULL,
-        [Description] nvarchar(4000) NULL,
-        [OwnerHint] nvarchar(200) NULL,
-        [DueOffsetHours] int NULL,
-        [RowHash] nvarchar(64) NULL,
-        CONSTRAINT [PK_CaseTemplateSteps] PRIMARY KEY ([Id]),
-        CONSTRAINT [FK_CaseTemplateSteps_CaseTemplates_TemplateId] FOREIGN KEY ([TemplateId]) REFERENCES [CaseTemplates] ([Id]) ON DELETE CASCADE
-    );
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [ActionItems] (
@@ -266,11 +321,10 @@ BEGIN
         CONSTRAINT [FK_ActionItems_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [AnalystNotes] (
@@ -289,11 +343,10 @@ BEGIN
         CONSTRAINT [FK_AnalystNotes_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [CaseAssignments] (
@@ -308,11 +361,24 @@ BEGIN
         CONSTRAINT [FK_CaseAssignments_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE TABLE [CaseDataElements] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [ElementKey] nvarchar(100) NOT NULL,
+        CONSTRAINT [PK_CaseDataElements] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_CaseDataElements_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [CaseEntities] (
@@ -333,11 +399,10 @@ BEGIN
         CONSTRAINT [FK_CaseEntities_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [CaseTechniques] (
@@ -355,11 +420,10 @@ BEGIN
         CONSTRAINT [FK_CaseTechniques_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [ClassificationChanges] (
@@ -374,11 +438,10 @@ BEGIN
         CONSTRAINT [FK_ClassificationChanges_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [EntityLayouts] (
@@ -391,11 +454,10 @@ BEGIN
         CONSTRAINT [FK_EntityLayouts_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [EntityRelationships] (
@@ -414,11 +476,10 @@ BEGIN
         CONSTRAINT [FK_EntityRelationships_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [Evidence] (
@@ -439,11 +500,31 @@ BEGIN
         CONSTRAINT [FK_Evidence_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE TABLE [GatePassages] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [Trigger] int NOT NULL,
+        [PassedAtUtc] datetimeoffset NOT NULL,
+        [PassedBy] nvarchar(200) NOT NULL,
+        [WasOverridden] bit NOT NULL,
+        [OverrideJustification] nvarchar(2000) NULL,
+        [Commentary] nvarchar(4000) NULL,
+        [Detail] nvarchar(max) NOT NULL,
+        [RowHash] nvarchar(64) NULL,
+        CONSTRAINT [PK_GatePassages] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_GatePassages_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [Reports] (
@@ -465,11 +546,10 @@ BEGIN
         CONSTRAINT [FK_Reports_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [SeverityChanges] (
@@ -484,11 +564,10 @@ BEGIN
         CONSTRAINT [FK_SeverityChanges_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [StatusChanges] (
@@ -503,11 +582,49 @@ BEGIN
         CONSTRAINT [FK_StatusChanges_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE TABLE [CaseTemplateSteps] (
+        [Id] uniqueidentifier NOT NULL,
+        [TemplateId] uniqueidentifier NOT NULL,
+        [Order] int NOT NULL,
+        [Title] nvarchar(400) NOT NULL,
+        [Description] nvarchar(4000) NULL,
+        [OwnerHint] nvarchar(200) NULL,
+        [DueOffsetHours] int NULL,
+        [RowHash] nvarchar(64) NULL,
+        CONSTRAINT [PK_CaseTemplateSteps] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_CaseTemplateSteps_CaseTemplates_TemplateId] FOREIGN KEY ([TemplateId]) REFERENCES [CaseTemplates] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE TABLE [StageGateRequirements] (
+        [Id] uniqueidentifier NOT NULL,
+        [GateId] uniqueidentifier NOT NULL,
+        [Order] int NOT NULL,
+        [Kind] int NOT NULL,
+        [CheckKey] nvarchar(100) NULL,
+        [CheckParam] int NULL,
+        [Label] nvarchar(400) NOT NULL,
+        [IsBlocking] bit NOT NULL,
+        [RowHash] nvarchar(64) NULL,
+        CONSTRAINT [PK_StageGateRequirements] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_StageGateRequirements_StageGates_GateId] FOREIGN KEY ([GateId]) REFERENCES [StageGates] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [TimelineEntries] (
@@ -521,6 +638,7 @@ BEGIN
         [TechniqueId] nvarchar(20) NULL,
         [ActorEntityId] uniqueidentifier NULL,
         [TargetEntityId] uniqueidentifier NULL,
+        [EvidenceId] uniqueidentifier NULL,
         [Version] int NOT NULL,
         [SupersedesEntryId] uniqueidentifier NULL,
         [IsCurrent] bit NOT NULL,
@@ -535,11 +653,10 @@ BEGIN
         CONSTRAINT [FK_TimelineEntries_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [ChainOfCustodyEvents] (
@@ -553,11 +670,10 @@ BEGIN
         CONSTRAINT [FK_ChainOfCustodyEvents_Evidence_EvidenceId] FOREIGN KEY ([EvidenceId]) REFERENCES [Evidence] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE TABLE [EventStepTactics] (
@@ -568,815 +684,876 @@ BEGIN
         CONSTRAINT [FK_EventStepTactics_TimelineEntries_TimelineEntryId] FOREIGN KEY ([TimelineEntryId]) REFERENCES [TimelineEntries] ([Id]) ON DELETE CASCADE
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE INDEX [IX_ActionItems_CaseId_Status] ON [ActionItems] ([CaseId], [Status]);
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE UNIQUE INDEX [IX_AdGroupRoleMappings_AdGroup_RoleName] ON [AdGroupRoleMappings] ([AdGroup], [RoleName]);
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE INDEX [IX_AdGroupRoleMappings_RoleName] ON [AdGroupRoleMappings] ([RoleName]);
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE INDEX [IX_AnalystNotes_CaseId_IsCurrent] ON [AnalystNotes] ([CaseId], [IsCurrent]);
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE UNIQUE INDEX [IX_AppSettings_Key] ON [AppSettings] ([Key]);
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE INDEX [IX_AuditLog_AtUtc] ON [AuditLog] ([AtUtc]);
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE INDEX [IX_AuditLog_CaseNumber] ON [AuditLog] ([CaseNumber]);
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE UNIQUE INDEX [IX_AuditLog_Sequence] ON [AuditLog] ([Sequence]);
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE UNIQUE INDEX [IX_CaseAssignments_CaseId_UserId] ON [CaseAssignments] ([CaseId], [UserId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_CaseAssignments_UserId] ON [CaseAssignments] ([UserId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_CaseEntities_CaseId] ON [CaseEntities] ([CaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_CaseEntities_CaseId_Type_Value] ON [CaseEntities] ([CaseId], [Type], [Value]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_CaseLinks_CaseId] ON [CaseLinks] ([CaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE UNIQUE INDEX [IX_CaseLinks_CaseId_RelatedCaseId_Type] ON [CaseLinks] ([CaseId], [RelatedCaseId], [Type]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_CaseLinks_RelatedCaseId] ON [CaseLinks] ([RelatedCaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_CaseTechniques_CaseId] ON [CaseTechniques] ([CaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE UNIQUE INDEX [IX_CaseTechniques_CaseId_TechniqueId] ON [CaseTechniques] ([CaseId], [TechniqueId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_CaseTemplateSteps_TemplateId] ON [CaseTemplateSteps] ([TemplateId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE UNIQUE INDEX [IX_CaseTemplates_Name] ON [CaseTemplates] ([Name]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE UNIQUE INDEX [IX_Cases_CaseNumber] ON [Cases] ([CaseNumber]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_Cases_Classification] ON [Cases] ([Classification]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_Cases_IsArchived] ON [Cases] ([IsArchived]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_Cases_Phase] ON [Cases] ([Phase]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE UNIQUE INDEX [IX_Cases_Year_Sequence] ON [Cases] ([Year], [Sequence]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_ChainOfCustodyEvents_EvidenceId] ON [ChainOfCustodyEvents] ([EvidenceId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_ClassificationChanges_CaseId] ON [ClassificationChanges] ([CaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_EntityLayouts_CaseId] ON [EntityLayouts] ([CaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE UNIQUE INDEX [IX_EntityLayouts_EntityId] ON [EntityLayouts] ([EntityId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_EntityRelationships_CaseId] ON [EntityRelationships] ([CaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_EntityRelationships_SourceEntityId] ON [EntityRelationships] ([SourceEntityId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_EntityRelationships_TargetEntityId] ON [EntityRelationships] ([TargetEntityId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_EventStepTactics_TimelineEntryId] ON [EventStepTactics] ([TimelineEntryId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_Evidence_CaseId] ON [Evidence] ([CaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_Evidence_Sha256] ON [Evidence] ([Sha256]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_IntegritySeals_SealedAtUtc] ON [IntegritySeals] ([SealedAtUtc]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_Reports_CaseId] ON [Reports] ([CaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE UNIQUE INDEX [IX_Roles_Name] ON [Roles] ([Name]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_SeverityChanges_CaseId] ON [SeverityChanges] ([CaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_StatusChanges_CaseId] ON [StatusChanges] ([CaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_TimelineEntries_ActorEntityId] ON [TimelineEntries] ([ActorEntityId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_TimelineEntries_CaseId] ON [TimelineEntries] ([CaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_TimelineEntries_CaseId_Kind_IsCurrent] ON [TimelineEntries] ([CaseId], [Kind], [IsCurrent]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_TimelineEntries_OccurredAtUtc] ON [TimelineEntries] ([OccurredAtUtc]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE INDEX [IX_TimelineEntries_TargetEntityId] ON [TimelineEntries] ([TargetEntityId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    CREATE UNIQUE INDEX [IX_Users_Sid] ON [Users] ([Sid]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260815005408_InitialCreate'
-)
-BEGIN
-    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N'20260815005408_InitialCreate', N'8.0.30');
-END;
-GO
-
-COMMIT;
-GO
-
-BEGIN TRANSACTION;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260816213314_AddComplexEventIntake'
-)
-BEGIN
-    DECLARE @var0 sysname;
-    SELECT @var0 = [d].[name]
-    FROM [sys].[default_constraints] [d]
-    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
-    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[Cases]') AND [c].[name] = N'Classification');
-    IF @var0 IS NOT NULL EXEC(N'ALTER TABLE [Cases] DROP CONSTRAINT [' + @var0 + '];');
-    ALTER TABLE [Cases] ALTER COLUMN [Classification] int NULL;
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260816213314_AddComplexEventIntake'
-)
-BEGIN
-    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N'20260816213314_AddComplexEventIntake', N'8.0.30');
-END;
-GO
-
-COMMIT;
-GO
-
-BEGIN TRANSACTION;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260816222923_AddStageGates'
-)
-BEGIN
-    CREATE TABLE [GatePassages] (
-        [Id] uniqueidentifier NOT NULL,
-        [CaseId] uniqueidentifier NOT NULL,
-        [Trigger] int NOT NULL,
-        [PassedAtUtc] datetimeoffset NOT NULL,
-        [PassedBy] nvarchar(200) NOT NULL,
-        [WasOverridden] bit NOT NULL,
-        [OverrideJustification] nvarchar(2000) NULL,
-        [Detail] nvarchar(max) NOT NULL,
-        [RowHash] nvarchar(64) NULL,
-        CONSTRAINT [PK_GatePassages] PRIMARY KEY ([Id]),
-        CONSTRAINT [FK_GatePassages_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
-    );
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260816222923_AddStageGates'
-)
-BEGIN
-    CREATE TABLE [StageGates] (
-        [Id] uniqueidentifier NOT NULL,
-        [Trigger] int NOT NULL,
-        [IsActive] bit NOT NULL,
-        [Name] nvarchar(200) NOT NULL,
-        [Description] nvarchar(2000) NULL,
-        [RowHash] nvarchar(64) NULL,
-        [CreatedAtUtc] datetimeoffset NOT NULL,
-        [CreatedBy] nvarchar(200) NOT NULL,
-        [ModifiedAtUtc] datetimeoffset NULL,
-        [ModifiedBy] nvarchar(max) NULL,
-        CONSTRAINT [PK_StageGates] PRIMARY KEY ([Id])
-    );
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260816222923_AddStageGates'
-)
-BEGIN
-    CREATE TABLE [StageGateRequirements] (
-        [Id] uniqueidentifier NOT NULL,
-        [GateId] uniqueidentifier NOT NULL,
-        [Order] int NOT NULL,
-        [Kind] int NOT NULL,
-        [Check] int NULL,
-        [Label] nvarchar(400) NOT NULL,
-        [IsBlocking] bit NOT NULL,
-        [RowHash] nvarchar(64) NULL,
-        CONSTRAINT [PK_StageGateRequirements] PRIMARY KEY ([Id]),
-        CONSTRAINT [FK_StageGateRequirements_StageGates_GateId] FOREIGN KEY ([GateId]) REFERENCES [StageGates] ([Id]) ON DELETE CASCADE
-    );
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260816222923_AddStageGates'
-)
-BEGIN
-    CREATE INDEX [IX_GatePassages_CaseId] ON [GatePassages] ([CaseId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260816222923_AddStageGates'
-)
-BEGIN
-    CREATE INDEX [IX_StageGateRequirements_GateId] ON [StageGateRequirements] ([GateId]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260816222923_AddStageGates'
-)
-BEGIN
-    CREATE INDEX [IX_StageGates_Trigger_IsActive] ON [StageGates] ([Trigger], [IsActive]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260816222923_AddStageGates'
-)
-BEGIN
-    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N'20260816222923_AddStageGates', N'8.0.30');
-END;
-GO
-
-COMMIT;
-GO
-
-BEGIN TRANSACTION;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260823170758_AddCaseNumberScheme'
-)
-BEGIN
-    DROP INDEX [IX_Cases_Year_Sequence] ON [Cases];
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260823170758_AddCaseNumberScheme'
-)
-BEGIN
-    ALTER TABLE [Cases] ADD [HasCustomNumber] bit NOT NULL DEFAULT CAST(0 AS bit);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260823170758_AddCaseNumberScheme'
-)
-BEGIN
-    CREATE INDEX [IX_Cases_Year_Sequence] ON [Cases] ([Year], [Sequence]);
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260823170758_AddCaseNumberScheme'
-)
-BEGIN
-    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N'20260823170758_AddCaseNumberScheme', N'8.0.30');
-END;
-GO
-
-COMMIT;
-GO
-
-BEGIN TRANSACTION;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260823220525_HardenCaseSequenceUniqueness'
-)
-BEGIN
-    DROP INDEX [IX_Cases_Year_Sequence] ON [Cases];
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260823220525_HardenCaseSequenceUniqueness'
-)
-BEGIN
-    EXEC(N'CREATE UNIQUE INDEX [IX_Cases_CeSequence] ON [Cases] ([Year], [Sequence]) WHERE Classification IS NULL AND HasCustomNumber = 0');
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260823220525_HardenCaseSequenceUniqueness'
-)
-BEGIN
-    EXEC(N'CREATE UNIQUE INDEX [IX_Cases_IrpSequence] ON [Cases] ([Year], [Sequence]) WHERE Classification IS NOT NULL AND HasCustomNumber = 0');
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260823220525_HardenCaseSequenceUniqueness'
-)
-BEGIN
-    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N'20260823220525_HardenCaseSequenceUniqueness', N'8.0.30');
-END;
-GO
-
-COMMIT;
-GO
-
-BEGIN TRANSACTION;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824012524_ComplexEventDateNumber'
-)
-BEGIN
-    DROP INDEX [IX_Cases_CeSequence] ON [Cases];
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824012524_ComplexEventDateNumber'
-)
-BEGIN
-    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N'20260824012524_ComplexEventDateNumber', N'8.0.30');
-END;
-GO
-
-COMMIT;
-GO
-
-BEGIN TRANSACTION;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824032316_AddCaseAccessLog'
-)
-BEGIN
-    CREATE TABLE [CaseAccessEvents] (
-        [Id] uniqueidentifier NOT NULL,
-        [ActorUserId] nvarchar(200) NOT NULL,
-        [CaseId] uniqueidentifier NULL,
-        [CaseNumber] nvarchar(200) NULL,
-        [AccessType] int NOT NULL,
-        [TargetId] uniqueidentifier NULL,
-        [TargetLabel] nvarchar(500) NULL,
-        [WasRestricted] bit NOT NULL,
-        [FirstSeenUtc] datetimeoffset NOT NULL,
-        [LastSeenUtc] datetimeoffset NOT NULL,
-        [Count] int NOT NULL,
-        CONSTRAINT [PK_CaseAccessEvents] PRIMARY KEY ([Id])
-    );
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824032316_AddCaseAccessLog'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE INDEX [IX_CaseAccessEvents_ActorUserId_CaseId_AccessType_LastSeenUtc] ON [CaseAccessEvents] ([ActorUserId], [CaseId], [AccessType], [LastSeenUtc]);
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824032316_AddCaseAccessLog'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE INDEX [IX_CaseAccessEvents_CaseId] ON [CaseAccessEvents] ([CaseId]);
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824032316_AddCaseAccessLog'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     CREATE INDEX [IX_CaseAccessEvents_LastSeenUtc] ON [CaseAccessEvents] ([LastSeenUtc]);
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824032316_AddCaseAccessLog'
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_CaseAssignments_CaseId_UserId] ON [CaseAssignments] ([CaseId], [UserId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_CaseAssignments_UserId] ON [CaseAssignments] ([UserId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_CaseDataElements_CaseId_ElementKey] ON [CaseDataElements] ([CaseId], [ElementKey]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_CaseEntities_CaseId] ON [CaseEntities] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_CaseEntities_CaseId_Type_Value] ON [CaseEntities] ([CaseId], [Type], [Value]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_CaseLinks_CaseId] ON [CaseLinks] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_CaseLinks_CaseId_RelatedCaseId_Type] ON [CaseLinks] ([CaseId], [RelatedCaseId], [Type]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_CaseLinks_RelatedCaseId] ON [CaseLinks] ([RelatedCaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_Cases_CaseNumber] ON [Cases] ([CaseNumber]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_Cases_Classification] ON [Cases] ([Classification]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    EXEC(N'CREATE UNIQUE INDEX [IX_Cases_IrpSequence] ON [Cases] ([Year], [Sequence]) WHERE Classification IS NOT NULL AND HasCustomNumber = 0');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_Cases_IsArchived] ON [Cases] ([IsArchived]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_Cases_Phase] ON [Cases] ([Phase]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_CaseTechniques_CaseId] ON [CaseTechniques] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_CaseTechniques_CaseId_TechniqueId] ON [CaseTechniques] ([CaseId], [TechniqueId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_CaseTemplates_Name] ON [CaseTemplates] ([Name]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_CaseTemplateSteps_TemplateId] ON [CaseTemplateSteps] ([TemplateId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_ChainOfCustodyEvents_EvidenceId] ON [ChainOfCustodyEvents] ([EvidenceId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_ClassificationChanges_CaseId] ON [ClassificationChanges] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_DataElements_Key] ON [DataElements] ([Key]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_EntityLayouts_CaseId] ON [EntityLayouts] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_EntityLayouts_EntityId] ON [EntityLayouts] ([EntityId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_EntityRelationships_CaseId] ON [EntityRelationships] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_EntityRelationships_SourceEntityId] ON [EntityRelationships] ([SourceEntityId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_EntityRelationships_TargetEntityId] ON [EntityRelationships] ([TargetEntityId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_EventStepTactics_TimelineEntryId] ON [EventStepTactics] ([TimelineEntryId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_Evidence_CaseId] ON [Evidence] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_Evidence_Sha256] ON [Evidence] ([Sha256]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_GatePassages_CaseId] ON [GatePassages] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_IntegritySeals_SealedAtUtc] ON [IntegritySeals] ([SealedAtUtc]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_ReportProfiles_Name] ON [ReportProfiles] ([Name]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_Reports_CaseId] ON [Reports] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_Roles_Name] ON [Roles] ([Name]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_SeverityChanges_CaseId] ON [SeverityChanges] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_StageGateRequirements_GateId] ON [StageGateRequirements] ([GateId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_StageGates_Trigger_IsActive] ON [StageGates] ([Trigger], [IsActive]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_StatusChanges_CaseId] ON [StatusChanges] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_TimelineEntries_ActorEntityId] ON [TimelineEntries] ([ActorEntityId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_TimelineEntries_CaseId] ON [TimelineEntries] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_TimelineEntries_CaseId_Kind_IsCurrent] ON [TimelineEntries] ([CaseId], [Kind], [IsCurrent]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_TimelineEntries_OccurredAtUtc] ON [TimelineEntries] ([OccurredAtUtc]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE INDEX [IX_TimelineEntries_TargetEntityId] ON [TimelineEntries] ([TargetEntityId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_Users_Sid] ON [Users] ([Sid]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260909194827_InitialCreate'
 )
 BEGIN
     INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N'20260824032316_AddCaseAccessLog', N'8.0.30');
+    VALUES (N'20260909194827_InitialCreate', N'10.0.12');
 END;
-GO
 
 COMMIT;
 GO
 
 BEGIN TRANSACTION;
-GO
-
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824163643_AddReportProfiles'
+    WHERE [MigrationId] = N'20260913055758_AddSavedViews'
 )
 BEGIN
-    ALTER TABLE [Cases] ADD [ReportProfileId] uniqueidentifier NULL;
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824163643_AddReportProfiles'
-)
-BEGIN
-    CREATE TABLE [ReportProfiles] (
+    CREATE TABLE [SavedViews] (
         [Id] uniqueidentifier NOT NULL,
-        [Name] nvarchar(200) NOT NULL,
-        [Description] nvarchar(2000) NULL,
-        [IsActive] bit NOT NULL,
-        [SortOrder] int NOT NULL,
-        [SectionLayout] nvarchar(1000) NULL,
+        [OwnerUserId] nvarchar(200) NOT NULL,
+        [Name] nvarchar(120) NOT NULL,
+        [Query] nvarchar(2000) NOT NULL,
+        [IsShared] bit NOT NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        CONSTRAINT [PK_SavedViews] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260913055758_AddSavedViews'
+)
+BEGIN
+    CREATE INDEX [IX_SavedViews_IsShared] ON [SavedViews] ([IsShared]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260913055758_AddSavedViews'
+)
+BEGIN
+    CREATE INDEX [IX_SavedViews_OwnerUserId] ON [SavedViews] ([OwnerUserId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260913055758_AddSavedViews'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_SavedViews_OwnerUserId_Name] ON [SavedViews] ([OwnerUserId], [Name]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260913055758_AddSavedViews'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260913055758_AddSavedViews', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260913130041_AddCaseComments'
+)
+BEGIN
+    CREATE TABLE [CaseComments] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [ParentId] uniqueidentifier NULL,
+        [Body] nvarchar(max) NOT NULL,
+        [MentionsCsv] nvarchar(2000) NOT NULL,
         [RowHash] nvarchar(64) NULL,
         [CreatedAtUtc] datetimeoffset NOT NULL,
         [CreatedBy] nvarchar(200) NOT NULL,
         [ModifiedAtUtc] datetimeoffset NULL,
         [ModifiedBy] nvarchar(max) NULL,
-        CONSTRAINT [PK_ReportProfiles] PRIMARY KEY ([Id])
+        CONSTRAINT [PK_CaseComments] PRIMARY KEY ([Id])
     );
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824163643_AddReportProfiles'
+    WHERE [MigrationId] = N'20260913130041_AddCaseComments'
 )
 BEGIN
-    CREATE UNIQUE INDEX [IX_ReportProfiles_Name] ON [ReportProfiles] ([Name]);
+    CREATE INDEX [IX_CaseComments_CaseId] ON [CaseComments] ([CaseId]);
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824163643_AddReportProfiles'
+    WHERE [MigrationId] = N'20260913130041_AddCaseComments'
+)
+BEGIN
+    CREATE INDEX [IX_CaseComments_ParentId] ON [CaseComments] ([ParentId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260913130041_AddCaseComments'
 )
 BEGIN
     INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N'20260824163643_AddReportProfiles', N'8.0.30');
+    VALUES (N'20260913130041_AddCaseComments', N'10.0.12');
 END;
-GO
 
 COMMIT;
 GO
 
 BEGIN TRANSACTION;
-GO
-
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824191648_AddTimelineEntryEvidence'
+    WHERE [MigrationId] = N'20260914014215_AddMaterialityDetermination'
 )
 BEGIN
-    ALTER TABLE [TimelineEntries] ADD [EvidenceId] uniqueidentifier NULL;
+    ALTER TABLE [Cases] ADD [Materiality_DecidedOnUtc] datetimeoffset NULL;
 END;
-GO
 
 IF NOT EXISTS (
     SELECT * FROM [__EFMigrationsHistory]
-    WHERE [MigrationId] = N'20260824191648_AddTimelineEntryEvidence'
+    WHERE [MigrationId] = N'20260914014215_AddMaterialityDetermination'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [Materiality_DecisionMaker] nvarchar(300) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260914014215_AddMaterialityDetermination'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [Materiality_Rationale] nvarchar(4000) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260914014215_AddMaterialityDetermination'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [Materiality_RecordedAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260914014215_AddMaterialityDetermination'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [Materiality_RecordedBy] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260914014215_AddMaterialityDetermination'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [Materiality_Status] int NOT NULL DEFAULT 0;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260914014215_AddMaterialityDetermination'
+)
+BEGIN
+    CREATE TABLE [MaterialityChanges] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [From] int NOT NULL,
+        [To] int NOT NULL,
+        [DecisionMaker] nvarchar(300) NULL,
+        [DecidedOnUtc] datetimeoffset NULL,
+        [Rationale] nvarchar(4000) NULL,
+        [ChangedBy] nvarchar(200) NOT NULL,
+        [ChangedAtUtc] datetimeoffset NOT NULL,
+        CONSTRAINT [PK_MaterialityChanges] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_MaterialityChanges_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260914014215_AddMaterialityDetermination'
+)
+BEGIN
+    CREATE INDEX [IX_MaterialityChanges_CaseId] ON [MaterialityChanges] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260914014215_AddMaterialityDetermination'
 )
 BEGIN
     INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N'20260824191648_AddTimelineEntryEvidence', N'8.0.30');
+    VALUES (N'20260914014215_AddMaterialityDetermination', N'10.0.12');
 END;
+
+COMMIT;
 GO
+
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260914032412_AddNotificationRules'
+)
+BEGIN
+    CREATE TABLE [NotificationRules] (
+        [Id] uniqueidentifier NOT NULL,
+        [Code] nvarchar(16) NOT NULL,
+        [Label] nvarchar(200) NOT NULL,
+        [WindowHours] int NOT NULL,
+        [IsActive] bit NOT NULL,
+        [IsSystem] bit NOT NULL,
+        [RowHash] nvarchar(64) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(200) NULL,
+        CONSTRAINT [PK_NotificationRules] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260914032412_AddNotificationRules'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_NotificationRules_Code] ON [NotificationRules] ([Code]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260914032412_AddNotificationRules'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260914032412_AddNotificationRules', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260918234125_AddPinnedCases'
+)
+BEGIN
+    CREATE TABLE [PinnedCases] (
+        [Id] uniqueidentifier NOT NULL,
+        [UserId] nvarchar(200) NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [PinnedAtUtc] datetimeoffset NOT NULL,
+        CONSTRAINT [PK_PinnedCases] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260918234125_AddPinnedCases'
+)
+BEGIN
+    CREATE INDEX [IX_PinnedCases_UserId] ON [PinnedCases] ([UserId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260918234125_AddPinnedCases'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_PinnedCases_UserId_CaseId] ON [PinnedCases] ([UserId], [CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260918234125_AddPinnedCases'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260918234125_AddPinnedCases', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260919000735_AddDefaultSavedView'
+)
+BEGIN
+    ALTER TABLE [SavedViews] ADD [IsDefault] bit NOT NULL DEFAULT CAST(0 AS bit);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260919000735_AddDefaultSavedView'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260919000735_AddDefaultSavedView', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920134054_AddPendingImports'
+)
+BEGIN
+    CREATE TABLE [PendingImports] (
+        [Id] uniqueidentifier NOT NULL,
+        [SubmittedBy] nvarchar(200) NOT NULL,
+        [SubmittedAtUtc] datetimeoffset NOT NULL,
+        [Origin] nvarchar(200) NULL,
+        [Summary] nvarchar(300) NOT NULL,
+        [RawJson] nvarchar(max) NOT NULL,
+        [TargetCaseId] uniqueidentifier NULL,
+        [Status] int NOT NULL,
+        [DecidedBy] nvarchar(200) NULL,
+        [DecidedAtUtc] datetimeoffset NULL,
+        [DecisionNote] nvarchar(2000) NULL,
+        [ResolvedCaseId] uniqueidentifier NULL,
+        [ResolvedCaseNumber] nvarchar(200) NULL,
+        CONSTRAINT [PK_PendingImports] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920134054_AddPendingImports'
+)
+BEGIN
+    CREATE INDEX [IX_PendingImports_Status_SubmittedAtUtc] ON [PendingImports] ([Status], [SubmittedAtUtc]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920134054_AddPendingImports'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260920134054_AddPendingImports', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920143522_AddApiTokens'
+)
+BEGIN
+    CREATE TABLE [ApiTokens] (
+        [Id] uniqueidentifier NOT NULL,
+        [Name] nvarchar(100) NOT NULL,
+        [Kind] int NOT NULL,
+        [OwnerUserId] nvarchar(200) NOT NULL,
+        [OwnerDisplayName] nvarchar(200) NOT NULL,
+        [RolesCsv] nvarchar(400) NOT NULL,
+        [TokenHash] nvarchar(64) NOT NULL,
+        [Prefix] nvarchar(20) NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [ExpiresAtUtc] datetimeoffset NOT NULL,
+        [RevokedAtUtc] datetimeoffset NULL,
+        [RevokedBy] nvarchar(200) NULL,
+        [LastUsedAtUtc] datetimeoffset NULL,
+        CONSTRAINT [PK_ApiTokens] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920143522_AddApiTokens'
+)
+BEGIN
+    CREATE INDEX [IX_ApiTokens_CreatedBy] ON [ApiTokens] ([CreatedBy]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920143522_AddApiTokens'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_ApiTokens_TokenHash] ON [ApiTokens] ([TokenHash]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920143522_AddApiTokens'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260920143522_AddApiTokens', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920233957_AddUserNotificationPreferences'
+)
+BEGIN
+    CREATE TABLE [UserNotificationPreferences] (
+        [Id] uniqueidentifier NOT NULL,
+        [UserId] nvarchar(200) NOT NULL,
+        [DigestCadence] int NOT NULL,
+        [UpdatedAtUtc] datetimeoffset NOT NULL,
+        CONSTRAINT [PK_UserNotificationPreferences] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920233957_AddUserNotificationPreferences'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_UserNotificationPreferences_UserId] ON [UserNotificationPreferences] ([UserId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260920233957_AddUserNotificationPreferences'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260920233957_AddUserNotificationPreferences', N'10.0.12');
+END;
 
 COMMIT;
 GO

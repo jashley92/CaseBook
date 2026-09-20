@@ -64,6 +64,13 @@ public static class DependencyInjection
         // survives between passes and re-arms when the case sees new activity.
         services.AddScoped<Notifications.StaleCaseScanner>();
         services.AddSingleton<Notifications.IStaleCaseTracker, Notifications.StaleCaseTracker>();
+        // PROD-39: per-user consolidated work digest. The preferences service backs the self-service opt-in;
+        // the scanner assembles each subscriber's agenda and sends one grouped email on their cadence. Scoped
+        // (DbContext + scoped AgendaService per pass); a singleton tracker so "already sent this period"
+        // survives between passes.
+        services.AddScoped<Notifications.UserNotificationPreferenceService>();
+        services.AddScoped<Notifications.DigestScanner>();
+        services.AddSingleton<Notifications.IDigestTracker, Notifications.DigestTracker>();
 
         services.AddSingleton<IMarkdownService, MarkdownService>();
 
