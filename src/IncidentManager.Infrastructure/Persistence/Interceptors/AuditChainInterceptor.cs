@@ -4,6 +4,7 @@ using IncidentManager.Application.Integrity;
 using IncidentManager.Domain.Common;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
+using IncidentManager.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -40,6 +41,11 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     // Cases touched by the in-flight save, captured before commit and broadcast once it succeeds.
     private readonly HashSet<Guid> _pendingCaseIds = new();
 
+    // REL-05: true when this save acquired the process-wide audit-chain gate in SavingChanges and must
+    // release it on completion (success, failure, or cancellation). The interceptor is scoped, so a
+    // context runs one save at a time — a single instance field is enough.
+    private bool _gateHeld;
+
     public AuditChainInterceptor(IHashChainService hasher, ICurrentUser user, IClock clock, ICaseChangeNotifier notifier)
     {
         _hasher = hasher;
@@ -50,6 +56,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 
     public override int SavedChanges(SaveChangesCompletedEventData eventData, int result)
     {
+        ReleaseGate();
         PublishPending();
         return base.SavedChanges(eventData, result);
     }
@@ -57,8 +64,46 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     public override ValueTask<int> SavedChangesAsync(
         SaveChangesCompletedEventData eventData, int result, CancellationToken ct = default)
     {
+        ReleaseGate();
         PublishPending();
         return base.SavedChangesAsync(eventData, result, ct);
+    }
+
+    // REL-05: a failed or cancelled save never reaches SavedChanges, so release the gate here too (and
+    // drop the pending broadcast — nothing committed).
+    public override void SaveChangesFailed(DbContextErrorEventData eventData)
+    {
+        ReleaseGate();
+        _pendingCaseIds.Clear();
+        base.SaveChangesFailed(eventData);
+    }
+
+    public override Task SaveChangesFailedAsync(DbContextErrorEventData eventData, CancellationToken ct = default)
+    {
+        ReleaseGate();
+        _pendingCaseIds.Clear();
+        return base.SaveChangesFailedAsync(eventData, ct);
+    }
+
+    public override void SaveChangesCanceled(DbContextEventData eventData)
+    {
+        ReleaseGate();
+        _pendingCaseIds.Clear();
+        base.SaveChangesCanceled(eventData);
+    }
+
+    public override Task SaveChangesCanceledAsync(DbContextEventData eventData, CancellationToken ct = default)
+    {
+        ReleaseGate();
+        _pendingCaseIds.Clear();
+        return base.SaveChangesCanceledAsync(eventData, ct);
+    }
+
+    private void ReleaseGate()
+    {
+        if (!_gateHeld) return;
+        _gateHeld = false;
+        AuditChainGate.Exit();
     }
 
     private void PublishPending()
@@ -71,18 +116,43 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {
-        if (eventData.Context is not null) Apply(eventData.Context);
+        if (eventData.Context is not null)
+        {
+            var prepared = Prepare(eventData.Context);
+            if (prepared is not null)
+            {
+                // REL-05: hold the gate from the head read through commit (released in the completion
+                // callbacks) so a concurrent append can't read the same head and fork the chain.
+                AuditChainGate.Enter();
+                _gateHeld = true;
+                AppendChain(eventData.Context, prepared);
+            }
+        }
         return result;
     }
 
-    public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+    public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
         DbContextEventData eventData, InterceptionResult<int> result, CancellationToken ct = default)
     {
-        if (eventData.Context is not null) Apply(eventData.Context);
-        return ValueTask.FromResult(result);
+        if (eventData.Context is not null)
+        {
+            var prepared = Prepare(eventData.Context);
+            if (prepared is not null)
+            {
+                await AuditChainGate.EnterAsync(ct);
+                _gateHeld = true;
+                AppendChain(eventData.Context, prepared);
+            }
+        }
+        return result;
     }
 
-    private void Apply(DbContext ctx)
+    /// <summary>
+    /// Phase 1 (no gate): detect changes, snapshot which cases the save touches, consume the change
+    /// reason, and refresh row hashes (each independent of the chain head). Returns the auditable
+    /// entries + context needed to append, or null when the save carries no forensic change.
+    /// </summary>
+    private PreparedAudit? Prepare(DbContext ctx)
     {
         ctx.ChangeTracker.DetectChanges();
 
@@ -108,7 +178,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             if (cid is { } id) _pendingCaseIds.Add(id);
         }
 
-        if (auditable.Count == 0) return;
+        if (auditable.Count == 0) return null;
 
         // Consume the analyst's optional "reason for change" for this unit of work, then clear it so a
         // later save on the same context doesn't inherit it. Only Update entries carry it (a correction).
@@ -119,14 +189,26 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             app.PendingChangeReason = null;
         }
 
-        // 1) Refresh row hashes for changed hashable entities (before snapshotting for audit).
+        // Refresh row hashes for changed hashable entities (before snapshotting for audit). These are
+        // per-row canonicals, independent of the chain head, so they don't need the gate.
         foreach (var e in auditable)
         {
             if (e.State is EntityState.Added or EntityState.Modified && e.Entity is IHashableEntity hashable)
                 hashable.RowHash = _hasher.ComputeRowHash(hashable);
         }
 
-        // 2) Build audit lines and chain them onto the current head.
+        return new PreparedAudit(auditable, caseNumbers, actor, now, reason);
+    }
+
+    /// <summary>
+    /// Phase 2 (under the gate): read the current chain head and append the chained audit lines. Called
+    /// only while <see cref="AuditChainGate"/> is held, so the head read and the append are atomic
+    /// against other writers.
+    /// </summary>
+    private void AppendChain(DbContext ctx, PreparedAudit p)
+    {
+        var (auditable, caseNumbers, actor, now, reason) = p;
+
         var head = ctx.Set<AuditLogEntry>().AsNoTracking().OrderByDescending(a => a.Sequence).FirstOrDefault();
         var newEntries = new List<AuditLogEntry>(auditable.Count);
 
@@ -170,6 +252,14 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 
         ctx.Set<AuditLogEntry>().AddRange(newEntries);
     }
+
+    /// <summary>Carries the phase-1 snapshot from <see cref="Prepare"/> to the gated <see cref="AppendChain"/>.</summary>
+    private sealed record PreparedAudit(
+        IReadOnlyList<EntityEntry> Auditable,
+        IReadOnlyDictionary<Guid, string> CaseNumbers,
+        string Actor,
+        DateTimeOffset Now,
+        string? Reason);
 
     private static readonly string[] NoFields = Array.Empty<string>();
 

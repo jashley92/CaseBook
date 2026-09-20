@@ -28,22 +28,32 @@ public sealed class AuditWriter : IAuditWriter
     public async Task RecordAsync(AuditAction action, string entityType, string? entityId,
         string? caseNumber, string summary, CancellationToken ct = default)
     {
-        var head = await _db.AuditLog.AsNoTracking()
-            .OrderByDescending(a => a.Sequence).FirstOrDefaultAsync(ct);
-
-        var entry = new AuditLogEntry
+        // REL-05: serialise head-read → append → commit with the interceptor's append path so two
+        // concurrent writers can't read the same head and fork the chain.
+        await AuditChainGate.EnterAsync(ct);
+        try
         {
-            AtUtc = _clock.UtcNow,
-            Actor = _user.IsAuthenticated ? _user.UserId : "system",
-            Action = action,
-            EntityType = entityType,
-            EntityId = entityId,
-            CaseNumber = caseNumber,
-            Summary = summary
-        };
-        _hasher.ChainAppend(entry, head);
+            var head = await _db.AuditLog.AsNoTracking()
+                .OrderByDescending(a => a.Sequence).FirstOrDefaultAsync(ct);
 
-        _db.AuditLog.Add(entry);
-        await _db.SaveChangesAsync(ct);
+            var entry = new AuditLogEntry
+            {
+                AtUtc = _clock.UtcNow,
+                Actor = _user.IsAuthenticated ? _user.UserId : "system",
+                Action = action,
+                EntityType = entityType,
+                EntityId = entityId,
+                CaseNumber = caseNumber,
+                Summary = summary
+            };
+            _hasher.ChainAppend(entry, head);
+
+            _db.AuditLog.Add(entry);
+            await _db.SaveChangesAsync(ct);
+        }
+        finally
+        {
+            AuditChainGate.Exit();
+        }
     }
 }
