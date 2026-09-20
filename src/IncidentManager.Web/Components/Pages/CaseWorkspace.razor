@@ -53,6 +53,20 @@ else
             </div>
         </div>
     }
+    @* REL-08: this user's permission to act on the case changed since it loaded (a live re-check, or the
+       server refusing an action). Edit controls are demoted; tell the viewer why and how to refresh. *@
+    @if (_permissionLost && !_accessLost)
+    {
+        <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+            <span class="bi bi-shield-lock mt-1" aria-hidden="true"></span>
+            <div>
+                <div class="fw-semibold">Your access to this case has changed.</div>
+                <div class="small mb-0">Some actions are no longer available to you.
+                    <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => Nav.NavigateTo(Nav.Uri, forceLoad: true)">Reload the page</button>
+                    to refresh your view.</div>
+            </div>
+        </div>
+    }
     @* FR-17: wrap so the action group (Advance / Actions) drops below the title on a phone instead of
        overflowing the row and forcing whole-page horizontal scroll. *@
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
@@ -642,6 +656,41 @@ else
     // swapping to the not-found page, so the draft can be copied out.
     private bool _accessLost;
     private bool _leaveConfirmed;
+    // REL-08: true once this user's permission to act on the case is found to have changed since it loaded —
+    // either a live re-check shows edit was revoked, or the server refuses an action (ForbiddenException).
+    // Drives a banner and demotes the header edit affordances so a stale control can't throw when clicked.
+    private bool _permissionLost;
+    private const string PermissionLostMessage =
+        "You no longer have permission to do that — your access to this case may have changed. Reload the page to refresh your view.";
+
+    // REL-08: (re-)evaluate the current user's action permissions from the live auth state. Called at load and
+    // on every live-collab refresh; if a re-check shows edit was revoked mid-session, demote + warn. Under the
+    // default (non-revalidating) auth-state provider the claims are fixed for the circuit, so a mid-session
+    // change surfaces on a reconnect or as a ForbiddenException — but this keeps the UI correct if the auth
+    // state is ever refreshed in place, and centralises the capture.
+    private async Task RefreshPermissionsAsync()
+    {
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        var couldEdit = _canEdit;
+        _canEdit = (await AuthZ.AuthorizeAsync(user, Policies.EditCases)).Succeeded;
+        _canReclassify = (await AuthZ.AuthorizeAsync(user, Policies.ChangeClassification)).Succeeded;
+        _canManageLegal = (await AuthZ.AuthorizeAsync(user, Policies.ManageLegal)).Succeeded;
+        _canAdmin = (await AuthZ.AuthorizeAsync(user, Policies.Administer)).Succeeded;
+        _canViewAll = (await AuthZ.AuthorizeAsync(user, Policies.ViewAllCases)).Succeeded;
+        if (couldEdit && !_canEdit) _permissionLost = true;
+    }
+
+    // REL-08: the server refused an action for lack of permission — the authoritative signal that this user's
+    // access changed since the case loaded. Demote the edit affordances and raise the banner rather than
+    // letting a raw ForbiddenException reach the error UI. (Composers are AuthorizeView-gated on the live
+    // claims, so clearing these flags never unmounts an in-progress draft.)
+    private void OnForbidden()
+    {
+        _permissionLost = true;
+        _canEdit = false;
+        _canReclassify = false;
+        _canManageLegal = false;
+    }
 
     // Reports (UX-13: the tab is extracted to CaseReportTab; this state persists preview/profiles across re-mounts).
     private readonly CaseReportState _reportState = new();
@@ -650,13 +699,7 @@ else
     {
         _dotNetRef = DotNetObjectReference.Create(this);
         _myId = CurrentUser.UserId;
-        var authState = await AuthState.GetAuthenticationStateAsync();
-        var user = authState.User;
-        _canEdit = (await AuthZ.AuthorizeAsync(user, Policies.EditCases)).Succeeded;
-        _canReclassify = (await AuthZ.AuthorizeAsync(user, Policies.ChangeClassification)).Succeeded;
-        _canManageLegal = (await AuthZ.AuthorizeAsync(user, Policies.ManageLegal)).Succeeded;
-        _canAdmin = (await AuthZ.AuthorizeAsync(user, Policies.Administer)).Succeeded;
-        _canViewAll = (await AuthZ.AuthorizeAsync(user, Policies.ViewAllCases)).Succeeded;
+        await RefreshPermissionsAsync();
 
         // Live collaboration: refresh when another analyst changes this case.
         _caseSub = Notifier.Subscribe(Id, OnCaseChangedAsync);
@@ -695,6 +738,7 @@ else
             }
 
             await ReloadWith(refreshed);
+            await RefreshPermissionsAsync(); // REL-08: demote the UI if this user's access was revoked mid-session
             _liveRefresh++; // UX-13: signal extracted tabs to re-query the case (an in-progress edit in a
                             // tab component survives, since the component isn't re-created by a reload)
             await SetTab(_activeTab); // refresh the visible tab's data
@@ -1196,6 +1240,13 @@ else
             await Reload();
             if (done.Length > 0) Toasts.Success(done);
         }
+        catch (ForbiddenException)
+        {
+            // REL-08: access was revoked since the case loaded — close the modal, demote the UI, and explain.
+            _activeModal = null;
+            OnForbidden();
+            Toasts.Error(PermissionLostMessage);
+        }
         catch (GateNotSatisfiedException ex)
         {
             _modalError = ex.Message;
@@ -1244,6 +1295,11 @@ else
             await Cases.ChangePhaseAsync(Id, phase, null);
             await Reload();
             Toasts.Success($"Status changed to {Ui.Label(phase)}");
+        }
+        catch (ForbiddenException)
+        {
+            OnForbidden(); // REL-08
+            Toasts.Error(PermissionLostMessage);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or GateNotSatisfiedException)
         {
@@ -1295,6 +1351,12 @@ else
             await Reload();
             Toasts.Success("Case number updated");
         }
+        catch (ForbiddenException)
+        {
+            _renumbering = false;
+            OnForbidden(); // REL-08
+            Toasts.Error(PermissionLostMessage);
+        }
         catch (Exception ex)
         {
             _renumberError = ex.Message;
@@ -1316,6 +1378,11 @@ else
             await Cases.AssignAsync(Id, _myId, CurrentUser.DisplayName, CaseAssignmentRole.Analyst);
             await Reload();
             Toasts.Success("Assigned to you.");
+        }
+        catch (ForbiddenException)
+        {
+            OnForbidden(); // REL-08
+            Toasts.Error(PermissionLostMessage);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
