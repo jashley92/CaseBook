@@ -29,6 +29,10 @@
             <span class="bi bi-shield-exclamation" aria-hidden="true"></span> Export IOC feed (CSV)
         </a>
         <AuthorizeView Policy="@Policies.EditCases">
+            <a class="btn btn-sm btn-outline-secondary" href="cases/import"
+               title="Import a structured case-import document (paste or upload JSON) into a new or existing case">
+                <span class="bi bi-box-arrow-in-down" aria-hidden="true"></span> Import
+            </a>
             <a class="btn btn-sm btn-primary" href="cases/new">
                 <span class="bi bi-plus-square" aria-hidden="true"></span> New Case
             </a>

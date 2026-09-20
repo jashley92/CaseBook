@@ -1,0 +1,246 @@
+using FluentAssertions;
+using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
+using IncidentManager.Application.Import;
+using IncidentManager.Domain.Entities;
+using IncidentManager.Domain.Enums;
+using IncidentManager.Infrastructure.Persistence;
+using IncidentManager.Infrastructure.Persistence.Interceptors;
+using IncidentManager.Infrastructure.Realtime;
+using IncidentManager.Infrastructure.Security;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Xunit;
+
+namespace IncidentManager.IntegrationTests;
+
+/// <summary>
+/// PROD-31: the structured case import. Parsing/preview treat the document as untrusted (format + schema
+/// guard, enum fallback, clamps, refang/dedupe, future-date exclusion); apply reuses the guarded/audited
+/// CaseService writes, stamps provenance, and is resume-safe.
+/// </summary>
+public sealed class CaseImportTests : IDisposable
+{
+    private readonly SqliteConnection _connection;
+    private readonly HashChainService _hasher = new();
+    private readonly FixedClock _clock = new(new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero));
+    private readonly TestCurrentUser _user = new() { UserId = "analyst1", RoleSet = [AppRole.SysAdmin] };
+
+    public CaseImportTests()
+    {
+        _connection = new SqliteConnection("Data Source=:memory:");
+        _connection.Open();
+        using var _ = NewContext();
+    }
+
+    private AppDbContext NewContext()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
+            .Options;
+        var db = new AppDbContext(options);
+        db.Database.EnsureCreated();
+        return db;
+    }
+
+    private IAppDbContextFactory NewFactory() =>
+        new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
+            .Options);
+
+    private CaseService NewCaseService(AppDbContext db) =>
+        new(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+
+    private CaseImportService NewImportService(AppDbContext db) =>
+        new(NewFactory(), _user, _clock, NewCaseService(db));
+
+    private sealed class NoOpNotifications : ICaseNotifications
+    {
+        public Task OnAssignedAsync(Case c, string a, string b, CaseAssignmentRole r, string d, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    // ── Parse (pure) ─────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Parse_rejects_bad_json_a_foreign_file_and_a_too_new_schema()
+    {
+        CaseImportService.Parse("{ not json").Ok.Should().BeFalse();
+        CaseImportService.Parse("{\"format\":\"something-else\"}").Error.Should().Contain("case-import document");
+        CaseImportService.Parse("{\"format\":\"casebook-case-import\",\"schemaVersion\":99}").Error
+            .Should().Contain("newer than this app supports");
+        CaseImportService.Parse("{\"format\":\"casebook-case-import\",\"schemaVersion\":1}").Ok.Should().BeTrue();
+    }
+
+    // ── Preview (pure) ───────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Preview_refangs_auto_types_and_dedupes_indicators_and_defaults_provenance()
+    {
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Origin = "AI-assisted (Copilot)",
+            Entities = new()
+            {
+                new() { Value = "1.1.1[.]1" },                          // defanged IP → refang + auto-type
+                new() { Value = "1.1.1.1" },                            // duplicate of the above once refanged
+                new() { Type = "EmailAddress", Value = "a@b.com" }
+            }
+        };
+
+        var p = CaseImportService.BuildPreviewCore(doc, _clock.UtcNow);
+
+        p.Entities.Should().HaveCount(2, "the defanged and live IP collapse to one");
+        var ip = p.Entities.Single(e => e.Type == EntityType.IpAddress);
+        ip.Value.Should().Be("1.1.1.1");
+        ip.Source.Should().Be("AI-assisted (Copilot)", "origin is the default provenance for each item");
+    }
+
+    [Fact]
+    public void Preview_falls_back_on_unknown_enums_and_flags_them()
+    {
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Timeline = new() { new() { OccurredAtUtc = _clock.UtcNow.AddHours(-1), Type = "Nonsense", Description = "x" } },
+            Entities = new() { new() { Type = "Bogus", Value = "10.0.0.5" } }
+        };
+
+        var p = CaseImportService.BuildPreviewCore(doc, _clock.UtcNow);
+
+        p.Timeline.Single().Type.Should().Be(TimelineEntryType.Communication);
+        p.Entities.Single().Type.Should().Be(EntityType.IpAddress, "an unknown type auto-detects from the value");
+        p.Warnings.Should().Contain(w => w.Contains("Nonsense"));
+        p.Warnings.Should().Contain(w => w.Contains("Bogus"));
+    }
+
+    [Fact]
+    public void Preview_excludes_future_timeline_and_defaults_a_missing_timestamp()
+    {
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Timeline = new()
+            {
+                new() { OccurredAtUtc = _clock.UtcNow.AddDays(1), Description = "future" },
+                new() { Description = "no timestamp" }
+            }
+        };
+
+        var p = CaseImportService.BuildPreviewCore(doc, _clock.UtcNow);
+
+        var future = p.Timeline.Single(t => t.Description == "future");
+        future.Include.Should().BeFalse("a future-dated entry is excluded until corrected");
+        var missing = p.Timeline.Single(t => t.Description == "no timestamp");
+        missing.OccurredAtUtc.Should().Be(_clock.UtcNow);
+        missing.Warning.Should().Contain("defaulted");
+    }
+
+    // ── Apply (integration) ──────────────────────────────────────────────────────────────────────
+
+    private static CaseImportDocument FullDoc() => new()
+    {
+        Format = CaseImportJson.FormatTag,
+        Origin = "manual",
+        Target = new() { NewCase = new() { Title = "Phishing wave", Classification = "Incident", Severity = "High" } },
+        Summary = "Assembled from the reporting email thread.",
+        Timeline = new() { new() { OccurredAtUtc = new DateTimeOffset(2026, 9, 19, 8, 0, 0, TimeSpan.Zero), Type = "Communication", Description = "User reported a suspicious email." } },
+        Entities = new() { new() { Value = "hxxp://evil[.]example[.]com/x" }, new() { Type = "EmailAddress", Value = "attacker@evil.example.com", Disposition = "Malicious" } },
+        ActionItems = new() { new() { Title = "Reset affected credentials", Owner = "soc" } }
+    };
+
+    [Fact]
+    public async Task Apply_into_a_new_case_writes_every_section_with_provenance_and_keeps_the_chain_valid()
+    {
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            var svc = NewImportService(db);
+            var preview = await svc.BuildPreviewAsync(FullDoc());
+            preview.TargetKind.Should().Be(CaseImportTargetKind.NewCase);
+
+            var result = await svc.ApplyAsync(preview);
+            result.CaseCreated.Should().BeTrue();
+            result.Notes.Should().Be(1);
+            result.Timeline.Should().Be(1);
+            result.Entities.Should().Be(2);
+            result.ActionItems.Should().Be(1);
+            caseId = result.CaseId;
+        }
+
+        await using (var verify = NewContext())
+        {
+            (await verify.Set<AnalystNote>().CountAsync(n => n.CaseId == caseId)).Should().Be(1);
+            (await verify.Set<ActionItem>().CountAsync(a => a.CaseId == caseId)).Should().Be(1);
+
+            var entities = await verify.Set<CaseEntity>().Where(e => e.CaseId == caseId).ToListAsync();
+            entities.Should().HaveCount(2);
+            entities.Should().OnlyContain(e => e.Source == "manual", "origin is stamped as the entity source");
+            entities.Should().Contain(e => e.Type == EntityType.Url && e.Value == "http://evil.example.com/x", "the URL was refanged");
+
+            var timeline = await verify.Set<TimelineEntry>().Where(t => t.CaseId == caseId).ToListAsync();
+            timeline.Should().ContainSingle().Which.Source.Should().Be("manual");
+
+            var chain = await verify.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+            _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task Apply_into_an_existing_case_adds_items_to_it()
+    {
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            var created = await NewCaseService(db).CreateAsync(new CreateCaseRequest
+            {
+                DescriptiveName = "Existing", Title = "Existing case",
+                Classification = Classification.Incident, Severity = Severity.Medium, Origin = CaseOrigin.InternalDetection
+            });
+            caseId = created.Id;
+        }
+
+        await using (var db = NewContext())
+        {
+            var svc = NewImportService(db);
+            var preview = await svc.BuildPreviewAsync(FullDoc(), intoCaseId: caseId);
+            preview.TargetKind.Should().Be(CaseImportTargetKind.ExistingCase);
+            preview.ExistingCaseId.Should().Be(caseId);
+
+            var result = await svc.ApplyAsync(preview);
+            result.CaseCreated.Should().BeFalse();
+            result.CaseId.Should().Be(caseId);
+            result.Total.Should().Be(5);
+        }
+
+        await using (var verify = NewContext())
+        {
+            (await verify.Set<CaseEntity>().CountAsync(e => e.CaseId == caseId)).Should().Be(2);
+            (await verify.Set<TimelineEntry>().CountAsync(t => t.CaseId == caseId)).Should().Be(1);
+        }
+    }
+
+    [Fact]
+    public async Task Apply_is_resume_safe_and_does_not_duplicate_on_a_second_call()
+    {
+        await using var db = NewContext();
+        var svc = NewImportService(db);
+        var preview = await svc.BuildPreviewAsync(FullDoc());
+
+        await svc.ApplyAsync(preview);
+        await svc.ApplyAsync(preview);   // a retry must not re-write already-applied items
+
+        await using var verify = NewContext();
+        (await verify.Set<TimelineEntry>().CountAsync(t => t.CaseId == preview.CreatedCaseId)).Should().Be(1);
+        (await verify.Set<AnalystNote>().CountAsync(n => n.CaseId == preview.CreatedCaseId)).Should().Be(1);
+        (await verify.Set<ActionItem>().CountAsync(a => a.CaseId == preview.CreatedCaseId)).Should().Be(1);
+    }
+
+    public void Dispose() => _connection.Dispose();
+}

@@ -1,0 +1,374 @@
+@page "/cases/import"
+@using IncidentManager.Application.Import
+@using Microsoft.Extensions.Logging
+@attribute [Authorize(Policy = Policies.EditCases)]
+@inject CaseImportService Import
+@inject ToastService Toasts
+@inject NavigationManager Nav
+@inject ILogger<CaseImport> Logger
+
+<PageTitle>Import case</PageTitle>
+
+<PageHeader Title="Import case"
+           Subtitle="Bring a structured case-import document into a new or existing case. Paste or upload the JSON, review an editable preview, then confirm — nothing is written until you apply." />
+
+<div class="im-card nc-card">
+    <p class="text-muted small mb-2">
+        The document is <strong>untrusted</strong> and reviewed before anything is written: indicators are refanged and
+        auto-typed, unknown values fall back to a safe default and are flagged, and each item can be edited or excluded.
+        Provenance (<code>origin</code>) is recorded on imported indicators and timeline entries. This never calls an
+        external AI — you produce the JSON elsewhere (see the <a href="#" @onclick="ToggleSample" @onclick:preventDefault>sample below</a>) and bring it here.
+    </p>
+
+    <label class="form-label">Paste the import JSON</label>
+    <textarea class="form-control font-monospace" rows="6" @bind="_text" @bind:event="oninput"
+              placeholder='{ "format": "casebook-case-import", "schemaVersion": 1, ... }'></textarea>
+
+    <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+        <button class="btn btn-sm btn-primary" @onclick="Preview" disabled="@(string.IsNullOrWhiteSpace(_text))">
+            <span class="bi bi-eye me-1" aria-hidden="true"></span>Preview import
+        </button>
+        <span class="text-muted small">or upload a file:</span>
+        <InputFile OnChange="OnFileSelected" accept=".json" class="form-control form-control-sm" style="max-width:20rem" />
+        @if (_preview is not null)
+        {
+            <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="Reset">Clear</button>
+        }
+    </div>
+
+    @if (_showSample)
+    {
+        <pre class="border rounded bg-body-tertiary p-2 mt-2 small" style="max-height:16rem;overflow:auto">@SampleJson</pre>
+    }
+</div>
+
+@if (_preview is { } p)
+{
+    @if (p.Warnings.Count > 0)
+    {
+        <div class="alert alert-warning py-2">
+            <div class="fw-semibold mb-1"><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>@p.Warnings.Count note(s) — review before applying</div>
+            <ul class="mb-0 small">@foreach (var w in p.Warnings) { <li>@w</li> }</ul>
+        </div>
+    }
+
+    @* Target *@
+    <div class="im-card nc-card">
+        <div class="fw-semibold mb-2">Target</div>
+        <div class="form-check">
+            <input class="form-check-input" type="radio" id="tgtNew" checked="@(p.TargetKind == CaseImportTargetKind.NewCase)"
+                   @onchange="() => p.TargetKind = CaseImportTargetKind.NewCase" />
+            <label class="form-check-label" for="tgtNew">Create a new case</label>
+        </div>
+        <div class="form-check mb-2">
+            <input class="form-check-input" type="radio" id="tgtExisting" checked="@(p.TargetKind == CaseImportTargetKind.ExistingCase)"
+                   @onchange="() => p.TargetKind = CaseImportTargetKind.ExistingCase" />
+            <label class="form-check-label" for="tgtExisting">Add to an existing case</label>
+        </div>
+
+        @if (p.TargetKind == CaseImportTargetKind.NewCase && p.NewCase is { } nc)
+        {
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label class="form-label small mb-1">Title <span class="text-danger">*</span></label>
+                    <input class="form-control form-control-sm" @bind="nc.Title" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Classification</label>
+                    <select class="form-select form-select-sm" value="@(nc.Classification?.ToString() ?? "")"
+                            @onchange="e => SetClassification(nc, e.Value?.ToString())">
+                        <option value="">Complex Event</option>
+                        @foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Severity</label>
+                    <select class="form-select form-select-sm" @bind="nc.Severity">
+                        @foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@s</option> }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Origin</label>
+                    <select class="form-select form-select-sm" @bind="nc.Origin">
+                        @foreach (var o in Enum.GetValues<CaseOrigin>()) { <option value="@o">@o</option> }
+                    </select>
+                </div>
+            </div>
+            @if (string.IsNullOrWhiteSpace(nc.Title))
+            {
+                <div class="form-text text-danger">A title is required to open a new case.</div>
+            }
+        }
+        else if (p.TargetKind == CaseImportTargetKind.ExistingCase)
+        {
+            @if (p.ExistingCaseId is not null)
+            {
+                <div class="alert alert-info py-2 mb-0">
+                    Importing into <code>@p.ExistingCaseNumber</code> — @p.ExistingTitle
+                    <button class="btn btn-link btn-sm p-0 ms-2 align-baseline" @onclick="() => ClearExisting(p)">change</button>
+                </div>
+            }
+            else
+            {
+                <div class="d-flex flex-wrap gap-2 align-items-end">
+                    <div>
+                        <label class="form-label small mb-1">Case number</label>
+                        <input class="form-control form-control-sm" style="max-width:16rem" @bind="_existingNumber"
+                               placeholder="e.g. 2026-04_Phishing_Wave" />
+                    </div>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="() => ResolveExisting(p)" disabled="@string.IsNullOrWhiteSpace(_existingNumber)">Find</button>
+                    @if (_existingError is not null) { <span class="text-danger small">@_existingError</span> }
+                </div>
+            }
+        }
+    </div>
+
+    @* Provenance + summary *@
+    <div class="im-card nc-card">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label small mb-1">Origin (provenance)</label>
+                <input class="form-control form-control-sm" @bind="p.Origin" placeholder="e.g. AI-assisted (Copilot), manual, XSIAM" />
+                <div class="form-text">Recorded as the source of imported indicators and timeline entries.</div>
+            </div>
+            <div class="col-md-6">
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" id="incSummary" @bind="p.IncludeSummary" disabled="@string.IsNullOrWhiteSpace(p.Summary)" />
+                    <label class="form-check-label small" for="incSummary">Import summary as an analyst note</label>
+                </div>
+                <textarea class="form-control form-control-sm" rows="2" @bind="p.Summary" placeholder="(no summary in the document)"></textarea>
+            </div>
+        </div>
+    </div>
+
+    @* Timeline *@
+    @if (p.Timeline.Count > 0)
+    {
+        <div class="im-card nc-card">
+            <div class="fw-semibold mb-2">Timeline <span class="text-muted small">(@p.Timeline.Count(r => r.Include) of @p.Timeline.Count)</span></div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead><tr><th style="width:2rem"></th><th style="width:12rem">When (UTC)</th><th style="width:8rem">Kind</th><th style="width:9rem">Type</th><th>Description</th><th style="width:10rem">Source</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in p.Timeline)
+                        {
+                            <tr class="@(t.Include ? "" : "opacity-50")">
+                                <td><input class="form-check-input" type="checkbox" @bind="t.Include" /></td>
+                                <td>
+                                    <input type="datetime-local" class="form-control form-control-sm"
+                                           value="@t.OccurredAtUtc.UtcDateTime.ToString("yyyy-MM-ddTHH:mm")"
+                                           @onchange="e => SetOccurred(t, e.Value?.ToString())" />
+                                    @if (t.Warning is not null) { <div class="form-text text-warning small">@t.Warning</div> }
+                                </td>
+                                <td><select class="form-select form-select-sm" @bind="t.Kind">@foreach (var k in Enum.GetValues<TimelineKind>()) { <option value="@k">@k</option> }</select></td>
+                                <td><select class="form-select form-select-sm" @bind="t.Type">@foreach (var ty in Enum.GetValues<TimelineEntryType>()) { <option value="@ty">@ty</option> }</select></td>
+                                <td><input class="form-control form-control-sm" @bind="t.Description" /></td>
+                                <td><input class="form-control form-control-sm" @bind="t.Source" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    @* Entities *@
+    @if (p.Entities.Count > 0)
+    {
+        <div class="im-card nc-card">
+            <div class="fw-semibold mb-2">Indicators / entities <span class="text-muted small">(@p.Entities.Count(r => r.Include) of @p.Entities.Count)</span></div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead><tr><th style="width:2rem"></th><th style="width:9rem">Type</th><th>Value</th><th style="width:9rem">Disposition</th><th style="width:10rem">Source</th></tr></thead>
+                    <tbody>
+                        @foreach (var e in p.Entities)
+                        {
+                            <tr class="@(e.Include ? "" : "opacity-50")">
+                                <td><input class="form-check-input" type="checkbox" @bind="e.Include" /></td>
+                                <td>
+                                    <select class="form-select form-select-sm" @bind="e.Type">@foreach (var ty in Enum.GetValues<EntityType>()) { <option value="@ty">@ty</option> }</select>
+                                    @if (e.Type == EntityType.Other) { <div class="form-text text-warning small">check type</div> }
+                                </td>
+                                <td><input class="form-control form-control-sm font-monospace" @bind="e.Value" /></td>
+                                <td><select class="form-select form-select-sm" @bind="e.Disposition">@foreach (var d in Enum.GetValues<EntityDisposition>()) { <option value="@d">@d</option> }</select></td>
+                                <td><input class="form-control form-control-sm" @bind="e.Source" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    @* Action items *@
+    @if (p.ActionItems.Count > 0)
+    {
+        <div class="im-card nc-card">
+            <div class="fw-semibold mb-2">Action items <span class="text-muted small">(@p.ActionItems.Count(r => r.Include) of @p.ActionItems.Count)</span></div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead><tr><th style="width:2rem"></th><th>Title</th><th style="width:12rem">Owner</th><th style="width:12rem">Due (UTC)</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in p.ActionItems)
+                        {
+                            <tr class="@(a.Include ? "" : "opacity-50")">
+                                <td><input class="form-check-input" type="checkbox" @bind="a.Include" /></td>
+                                <td><input class="form-control form-control-sm" @bind="a.Title" /></td>
+                                <td><input class="form-control form-control-sm" @bind="a.Owner" /></td>
+                                <td class="small text-muted">@(a.DueAtUtc?.UtcDateTime.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    @if (_error is not null) { <div class="alert alert-danger">@_error</div> }
+
+    <div class="nc-actions">
+        <button class="btn btn-primary" @onclick="Apply" disabled="@(_applying || !CanApply(p))">
+            <span class="bi bi-check2-circle me-1" aria-hidden="true"></span>Apply import (@p.IncludedItemCount item(s))
+        </button>
+        <a class="btn btn-outline-secondary" href="cases">Cancel</a>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "into")] public Guid? IntoCaseId { get; set; }
+
+    private string? _text;
+    private CaseImportPreview? _preview;
+    private bool _applying;
+    private string? _error;
+    private bool _showSample;
+    private string? _existingNumber;
+    private string? _existingError;
+
+    private void ToggleSample() => _showSample = !_showSample;
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            using var reader = new StreamReader(e.File.OpenReadStream(maxAllowedSize: 4 * 1024 * 1024));
+            _text = await reader.ReadToEndAsync();
+            await Preview();
+        }
+        catch (Exception ex)
+        {
+            _error = "The file couldn't be read.";
+            Logger.LogWarning(ex, "Case-import file read failed");
+        }
+    }
+
+    private async Task Preview()
+    {
+        _error = null;
+        var parsed = CaseImportService.Parse(_text);
+        if (!parsed.Ok)
+        {
+            _preview = null;
+            Toasts.Error(parsed.Error!);
+            return;
+        }
+        _preview = await Import.BuildPreviewAsync(parsed.Document!, IntoCaseId);
+    }
+
+    private void Reset()
+    {
+        _preview = null;
+        _text = null;
+        _error = null;
+        _existingNumber = null;
+        _existingError = null;
+    }
+
+    private static bool CanApply(CaseImportPreview p)
+    {
+        if (!p.HasAnything) return false;
+        return p.TargetKind == CaseImportTargetKind.NewCase
+            ? p.NewCase is { } nc && !string.IsNullOrWhiteSpace(nc.Title)
+            : p.ExistingCaseId is not null;
+    }
+
+    private void SetClassification(CreateCaseRequest nc, string? raw)
+        => nc.Classification = Enum.TryParse<Classification>(raw, out var c) ? c : null;
+
+    private void SetOccurred(ImportTimelineRow t, string? raw)
+    {
+        if (DateTime.TryParse(raw, out var dt))
+        {
+            t.OccurredAtUtc = new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc), TimeSpan.Zero);
+            t.Warning = null; // a manual correction clears the auto-note (e.g. future/no-timestamp)
+        }
+    }
+
+    private void ClearExisting(CaseImportPreview p)
+    {
+        p.ExistingCaseId = null;
+        p.ExistingCaseNumber = null;
+        p.ExistingTitle = null;
+        _existingNumber = null;
+        _existingError = null;
+    }
+
+    private async Task ResolveExisting(CaseImportPreview p)
+    {
+        _existingError = null;
+        var found = await Import.ResolveCaseByNumberAsync(_existingNumber ?? "");
+        if (found is { } c)
+        {
+            p.ExistingCaseId = c.Id;
+            p.ExistingCaseNumber = c.CaseNumber;
+            p.ExistingTitle = c.Title;
+        }
+        else
+        {
+            _existingError = "No case with that number is visible to you.";
+        }
+    }
+
+    private async Task Apply()
+    {
+        if (_preview is not { } p || !CanApply(p)) return;
+        _applying = true;
+        _error = null;
+        try
+        {
+            var result = await Import.ApplyAsync(p);
+            var what = result.CaseCreated ? $"Case {result.CaseNumber} created" : $"Imported into {result.CaseNumber}";
+            Toasts.Success($"{what} — {result.Total} item(s) imported.");
+            Nav.NavigateTo($"cases/{result.CaseId}");
+        }
+        catch (Exception ex)
+        {
+            // Domain/validation messages show verbatim; internal errors are replaced and logged. A retry
+            // resumes (already-applied items are skipped) rather than duplicating.
+            _error = UserFacingError.Describe(ex, Logger, "importing a case",
+                "The import couldn't be completed. Please try again.");
+        }
+        finally
+        {
+            _applying = false;
+        }
+    }
+
+    private const string SampleJson = @"{
+  ""format"": ""casebook-case-import"",
+  ""schemaVersion"": 1,
+  ""origin"": ""AI-assisted (Copilot)"",
+  ""target"": { ""newCase"": { ""title"": ""Phishing wave — Finance"", ""classification"": ""Incident"", ""severity"": ""High"" } },
+  ""summary"": ""Summary of the incident assembled from the email thread…"",
+  ""timeline"": [
+    { ""occurredAtUtc"": ""2026-09-18T13:05:00Z"", ""kind"": ""Investigation"", ""type"": ""Communication"", ""description"": ""User reported a suspicious email to the SOC."" }
+  ],
+  ""entities"": [
+    { ""value"": ""hxxp://evil[.]example[.]com/login"" },
+    { ""type"": ""EmailAddress"", ""value"": ""attacker@evil.example.com"", ""disposition"": ""Malicious"" }
+  ],
+  ""actionItems"": [
+    { ""title"": ""Reset credentials for affected users"", ""owner"": ""soc-analyst"" }
+  ]
+}";
+}
