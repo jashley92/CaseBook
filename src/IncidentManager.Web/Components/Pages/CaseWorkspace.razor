@@ -196,8 +196,8 @@ else
             var _tabNo = Array.IndexOf(_tabs, tab) + 1;   // U-14: the digit shortcut for this tab
             <li class="nav-item">
                 <button class="nav-link @(_activeTab == tab ? "active" : "")" @onclick="() => SetTab(tab)"
-                        title="@($"{tab} — press {_tabNo}")">
-                    @tab@{ var _tc = TabCount(tab); }@if (_tc is { } cnt) { <span class="im-badge im-b-neutral ms-1 im-bump" @key="@($"{tab}:{cnt}")">@cnt</span> }@if (TabHasNew(tab)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }
+                        title="@($"{TabLabel(tab)} — press {_tabNo}")">
+                    @TabLabel(tab)@{ var _tc = TabCount(tab); }@if (_tc is { } cnt) { <span class="im-badge im-b-neutral ms-1 im-bump" @key="@($"{tab}:{cnt}")">@cnt</span> }@if (TabHasNew(tab)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }
                 </button>
             </li>
         }
@@ -484,6 +484,15 @@ else
 
     private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Discussion", "Tasks", "Report", "Audit"];
     private string _activeTab = "Overview";
+
+    // UX-19: each tab string is the stable routing key (?tab=, inline "#"-chip deep-links, TabCount /
+    // SubmitAsync / feed keys), so it stays "Entities"; this maps a key to its display label so the bar can
+    // read in SOC vocabulary without touching any of that wiring.
+    private static string TabLabel(string tab) => tab switch
+    {
+        "Entities" => "IOCs & entities",
+        _ => tab,
+    };
 
     private Case? _case;
     private bool _notFound;
