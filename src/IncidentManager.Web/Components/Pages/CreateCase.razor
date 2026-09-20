@@ -221,11 +221,29 @@
 
         @if (_error is not null)
         {
-            <div class="alert alert-danger mb-0">@_error</div>
+            @* REL-04: distinguish "couldn't file the case" (red — nothing was created, safe to retry from
+               scratch) from "case was filed but a later setup step failed" (amber — retrying resumes the
+               remaining setup on the same case; it will not create a duplicate). *@
+            @if (_created is not null)
+            {
+                <div class="alert alert-warning mb-0">
+                    <div class="fw-semibold"><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>Case <code>@_created.CaseNumber</code> was filed, but its initial setup didn’t finish.</div>
+                    <div class="small mt-1">Click <strong>Finish filing</strong> to apply the rest — you won’t create a duplicate — or open the case and add them there.</div>
+                    <div class="small text-muted mt-1">Detail: @_error</div>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-danger mb-0">@_error</div>
+            }
         }
 
         <div class="nc-actions">
-            <button type="submit" class="btn btn-primary" disabled="@(_saving || _checking)">Create case</button>
+            <button type="submit" class="btn btn-primary" disabled="@(_saving || _checking)">@(_created is null ? "Create case" : "Finish filing")</button>
+            @if (_created is not null)
+            {
+                <a class="btn btn-outline-primary" href="cases/@_created.Id">Open case as-is</a>
+            }
             <a class="btn btn-outline-secondary" href="cases">Cancel</a>
         </div>
     </div>
@@ -235,6 +253,16 @@
     private readonly CreateCaseRequest _request = new();
     private bool _saving;
     private string? _error;
+
+    // REL-04: case creation is a multi-step sequence (create, then seed indicator entities, related-case
+    // links, and template steps). Once CreateAsync commits, the case exists — so if a later seeding step
+    // throws we must NOT leave the analyst on the form where a second "Create" would file a *duplicate*
+    // case. Instead we hold the created case and resume the remaining seeding on retry, with each step
+    // tracking its own progress so nothing is ever applied twice.
+    private Case? _created;
+    private int _entitiesSeeded;                            // indicator entities already added (loop index)
+    private readonly HashSet<Guid> _linksApplied = new();   // related cases already linked
+    private bool _templateApplied;
 
     // FR-03: intake detection/dwell timestamps entered as wall-clock in the viewer's display zone (U-29),
     // converted to UTC on submit. Detected defaults to now; initial-activity is optional.
@@ -395,8 +423,10 @@
         // is stale (typed then clicked Create without ever blurring / checking), run it now; if it surfaces
         // open cases sharing these indicators for the first time, pause once so the analyst can relate one —
         // then a second Create files. Filing is never blocked; this only guarantees the check is seen.
+        // REL-04: only gate on the overlap check before the case exists; once created, a retry is just
+        // resuming the seeding, so the pre-create duplicate/campaign prompt no longer applies.
         var lines = IndicatorLines(_indicators).ToList();
-        if (lines.Count > 0 && _checkedInput != _indicators)
+        if (_created is null && lines.Count > 0 && _checkedInput != _indicators)
         {
             await CheckOverlaps();
             if (_matches.Count > 0)
@@ -413,18 +443,32 @@
             // FR-03: fold the intake timestamps (entered as wall-clock) into the request as UTC.
             _request.DetectedAtUtc = _detectedWall is { } dw ? WallToUtc(dw) : null;
             _request.OccurredAtUtc = _occurredWall is { } ow ? WallToUtc(ow) : null;
-            var created = await Cases.CreateAsync(_request);
+            // REL-04: create exactly once — a retry after a partial-seed failure reuses this case rather
+            // than filing a duplicate.
+            _created ??= await Cases.CreateAsync(_request);
+
             // E-23: seed entered indicators as entities (best-effort typed; correctable on the Entities tab).
-            foreach (var raw in IndicatorLines(_indicators))
-                await Cases.AddEntityAsync(created.Id, IocObservable.DetectType(raw), raw, null,
+            // Skip any already added so a resumed run never duplicates them.
+            foreach (var raw in IndicatorLines(_indicators).Skip(_entitiesSeeded))
+            {
+                await Cases.AddEntityAsync(_created.Id, IocObservable.DetectType(raw), raw, null,
                     EntityDisposition.Unknown, null, "Filed at case creation");
-            // Apply the analyst's chosen relationships to the matched open cases (E-14).
+                _entitiesSeeded++;
+            }
+            // Apply the analyst's chosen relationships to the matched open cases (E-14), tracking which
+            // are done so a resume doesn't re-link.
             foreach (var (relatedCaseId, choice) in _linkChoice)
-                if (choice is { } type)
-                    await Cases.LinkCaseAsync(created.Id, relatedCaseId, type, "Linked at case creation (shared indicator)");
-            // Seed the template's playbook steps as action items on the fresh case.
-            if (_selectedTemplate is { Steps.Count: > 0 })
-                await Cases.ApplyTemplateAsync(created.Id, _selectedTemplate.Id);
+                if (choice is { } type && !_linksApplied.Contains(relatedCaseId))
+                {
+                    await Cases.LinkCaseAsync(_created.Id, relatedCaseId, type, "Linked at case creation (shared indicator)");
+                    _linksApplied.Add(relatedCaseId);
+                }
+            // Seed the template's playbook steps as action items on the fresh case (once).
+            if (_selectedTemplate is { Steps.Count: > 0 } && !_templateApplied)
+            {
+                await Cases.ApplyTemplateAsync(_created.Id, _selectedTemplate.Id);
+                _templateApplied = true;
+            }
             // PROD-26: remember this filing's severity/origin to prefill the next new case.
             try
             {
@@ -432,7 +476,7 @@
                 await JS.InvokeVoidAsync("localStorage.setItem", OriginKey, _request.Origin.ToString());
             }
             catch { /* non-fatal — the case is already created */ }
-            Nav.NavigateTo($"cases/{created.Id}");
+            Nav.NavigateTo($"cases/{_created.Id}");
         }
         catch (FluentValidation.ValidationException ex)
         {
