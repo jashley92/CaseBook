@@ -861,6 +861,22 @@ public class Case : AuditableEntity, IHashableEntity
         string.Join(',', DataElements.Select(d => d.ElementKey).OrderBy(k => k, StringComparer.Ordinal)),
         AffectedStates);
 
+    /// <summary>Signature of the "Legal referral" editor's fields (referral state, contact, relevance note).
+    /// See <see cref="ReferToLegal"/>. REL-02: extends the FR-06 optimistic-concurrency check to this
+    /// think-time modal so a concurrent referral edit isn't silently clobbered.</summary>
+    public string LegalReferralConcurrencyStamp() => string.Join(StampSep,
+        LegalReferral.IsReferred ? "1" : "0",
+        LegalReferral.ReferredToContact, LegalReferral.RegulatoryRelevanceNote);
+
+    /// <summary>Signature of the "Materiality determination" editor's fields (status, decision-maker,
+    /// decided-on, rationale). See <see cref="RecordMateriality"/>. REL-02: extends the FR-06
+    /// optimistic-concurrency check to this think-time modal (which carries a free-text rationale).</summary>
+    public string MaterialityConcurrencyStamp() => string.Join(StampSep,
+        ((int)Materiality.Status).ToString(CultureInfo.InvariantCulture),
+        Materiality.DecisionMaker,
+        Materiality.DecidedOnUtc?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? "",
+        Materiality.Rationale);
+
     public string BuildCanonicalContent() => string.Join('|',
         CaseNumber, Title, Classification is { } cls ? ((int)cls).ToString(CultureInfo.InvariantCulture) : "", (int)Phase, (int)Severity, (int)Origin,
         Summary, ImpactedAssets, DataTypesInvolved, DetectionCaseId,

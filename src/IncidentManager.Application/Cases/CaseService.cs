@@ -499,11 +499,17 @@ public sealed class CaseService
         c.RecordGatePassage(trigger, overridden, overrideJustification, reason, detail, _user.UserId, _clock.UtcNow);
     }
 
-    public async Task ReferToLegalAsync(Guid id, string? contact, string? relevanceNote, CancellationToken ct = default)
+    public async Task ReferToLegalAsync(Guid id, string? contact, string? relevanceNote,
+        string? expectedStamp = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        // REL-02: expected-value optimistic-concurrency (as on the details/impact editors). If the referral
+        // fields changed since the modal was opened, refuse rather than silently clobbering the other author.
+        if (expectedStamp is not null && c.LegalReferralConcurrencyStamp() != expectedStamp)
+            throw new StaleEditException(c.LegalReferralConcurrencyStamp(),
+                "Another author changed the Legal referral while you were editing.");
         c.ReferToLegal(_user.UserId, contact, relevanceNote, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
@@ -536,11 +542,16 @@ public sealed class CaseService
     /// only on Incidents/Breaches; a final call requires decision-maker, date and rationale.
     /// </summary>
     public async Task RecordMaterialityAsync(Guid id, MaterialityStatus status, string? decisionMaker,
-        DateTimeOffset? decidedOnUtc, string? rationale, CancellationToken ct = default)
+        DateTimeOffset? decidedOnUtc, string? rationale, string? expectedStamp = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        // REL-02: expected-value optimistic-concurrency (as on the details/impact editors). If the materiality
+        // determination changed since the modal was opened, refuse rather than silently clobbering the rationale.
+        if (expectedStamp is not null && c.MaterialityConcurrencyStamp() != expectedStamp)
+            throw new StaleEditException(c.MaterialityConcurrencyStamp(),
+                "Another author changed the materiality determination while you were editing.");
         c.RecordMateriality(status, decisionMaker, decidedOnUtc, rationale, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }

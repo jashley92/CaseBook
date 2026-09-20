@@ -552,6 +552,10 @@ else
     private CaseAssignmentRole _assignRole = CaseAssignmentRole.Analyst;
     private string? _legalContact;
     private string? _legalNote;
+    // REL-02: optimistic-concurrency baselines captured when the Legal-referral / materiality modal opens,
+    // sent back on apply so a concurrent edit surfaces a StaleEditException instead of silently clobbering.
+    private string? _legalBaseline;
+    private string? _materialityBaseline;
     // Materiality determination (PROD-18). Recorded by any case editor (FR-07); the decision itself may be
     // the SOC's or an external Legal/committee call, captured in the decision-maker field either way.
     private MaterialityStatus _materialityStatus = MaterialityStatus.UnderReview;
@@ -827,6 +831,15 @@ else
         // Open the assign form clean (a prior cancelled attempt may have left a stale selection).
         if (name == "assign") { _assignUserId = ""; _assignRole = CaseAssignmentRole.Analyst; }
 
+        // REL-02: prefill the Legal-referral form from the current referral (edit-in-place) and capture the
+        // optimistic-concurrency baseline, so a concurrent referral edit isn't silently overwritten.
+        if (name == "legal")
+        {
+            _legalContact = _case.LegalReferral.ReferredToContact;
+            _legalNote = _case.LegalReferral.RegulatoryRelevanceNote;
+            _legalBaseline = _case.LegalReferralConcurrencyStamp();
+        }
+
         // Prefill the materiality form from the current determination (edit-in-place); default a fresh one
         // to "Under review" rather than the Undetermined baseline the picker doesn't offer.
         if (name == "materiality")
@@ -836,6 +849,7 @@ else
             _materialityDecisionMaker = m.DecisionMaker;
             _materialityDecidedOn = m.DecidedOnUtc?.UtcDateTime.Date;
             _materialityRationale = m.Rationale;
+            _materialityBaseline = _case.MaterialityConcurrencyStamp(); // REL-02: optimistic-concurrency baseline
         }
 
         _attested.Clear();
@@ -1103,13 +1117,14 @@ else
                     done = $"Status changed to {Ui.Label(_newPhase)}";
                     break;
                 case "legal":
-                    await Cases.ReferToLegalAsync(Id, _legalContact, _legalNote);
+                    await Cases.ReferToLegalAsync(Id, _legalContact, _legalNote, _legalBaseline);
                     done = "Referred to Legal / Privacy";
                     break;
                 case "materiality":
                     DateTimeOffset? decidedOn = _materialityDecidedOn is { } d
                         ? new DateTimeOffset(DateTime.SpecifyKind(d.Date, DateTimeKind.Utc)) : null;
-                    await Cases.RecordMaterialityAsync(Id, _materialityStatus, _materialityDecisionMaker, decidedOn, _materialityRationale);
+                    await Cases.RecordMaterialityAsync(Id, _materialityStatus, _materialityDecisionMaker, decidedOn,
+                        _materialityRationale, _materialityBaseline);
                     done = $"Materiality: {MaterialityLabel(_materialityStatus)} recorded";
                     break;
                 case "archive":
@@ -1141,6 +1156,16 @@ else
         catch (GateNotSatisfiedException ex)
         {
             _modalError = ex.Message;
+        }
+        catch (StaleEditException ex)
+        {
+            // REL-02: another author changed the referral / materiality while this modal was open. Keep the
+            // modal open with the user's entries intact, refresh the rest of the workspace to the newer values,
+            // and re-baseline so a deliberate re-apply overwrites (mirrors the details/impact editors, FR-06).
+            if (_activeModal == "legal") _legalBaseline = ex.CurrentStamp;
+            else if (_activeModal == "materiality") _materialityBaseline = ex.CurrentStamp;
+            _modalError = ex.Message + " Your entries are unsaved — review the current values, then apply again to overwrite, or Cancel to discard yours.";
+            await Reload();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {

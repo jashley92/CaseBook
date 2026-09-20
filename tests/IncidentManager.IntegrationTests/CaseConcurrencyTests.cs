@@ -183,5 +183,67 @@ public sealed class CaseConcurrencyTests : IDisposable
         reloaded.AffectedIndividualsCount.Should().Be(500); // first author's assessment survives
     }
 
+    private async Task<string> LegalStampAsync(Guid id)
+    {
+        await using var db = NewContext();
+        return (await db.Cases.AsNoTracking().FirstAsync(c => c.Id == id)).LegalReferralConcurrencyStamp();
+    }
+
+    private async Task<string> MaterialityStampAsync(Guid id)
+    {
+        await using var db = NewContext();
+        return (await db.Cases.AsNoTracking().FirstAsync(c => c.Id == id)).MaterialityConcurrencyStamp();
+    }
+
+    // REL-02: the FR-06 optimistic-concurrency check now also covers the two remaining think-time modals —
+    // the Legal referral and the materiality determination — both of which carry free-text an author types
+    // over time (a relevance note / a rationale) and previously overwrote each other silently.
+
+    [Fact]
+    public async Task A_stale_legal_referral_save_is_rejected_and_the_other_authors_referral_survives()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+
+        var baseline = await LegalStampAsync(id); // both authors open the referral modal
+
+        // B refers first, against the shared baseline.
+        await svc.ReferToLegalAsync(id, "GC-B", "B relevance note", expectedStamp: baseline);
+
+        // A refers against the now-stale baseline — refused.
+        var act = async () => await svc.ReferToLegalAsync(id, "GC-A", "A relevance note", expectedStamp: baseline);
+        await act.Should().ThrowAsync<StaleEditException>();
+
+        var reloaded = await db.Cases.AsNoTracking().FirstAsync(c => c.Id == id);
+        reloaded.LegalReferral.ReferredToContact.Should().Be("GC-B"); // B's referral was not clobbered
+    }
+
+    [Fact]
+    public async Task A_stale_materiality_save_is_rejected_but_a_rebaselined_resave_succeeds()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc); // an Incident — materiality is allowed
+        var baseline = await MaterialityStampAsync(id);
+
+        // B records a determination first, against the shared baseline.
+        await svc.RecordMaterialityAsync(id, MaterialityStatus.Material, "Committee-B", _clock.UtcNow,
+            "B: reasonable likelihood of harm.", expectedStamp: baseline);
+
+        // A records against the stale baseline — refused, and B's determination survives.
+        var ex = await Assert.ThrowsAsync<StaleEditException>(() =>
+            svc.RecordMaterialityAsync(id, MaterialityStatus.NotMaterial, "Committee-A", _clock.UtcNow,
+                "A: no material impact.", expectedStamp: baseline));
+        (await db.Cases.AsNoTracking().FirstAsync(c => c.Id == id)).Materiality.Status
+            .Should().Be(MaterialityStatus.Material);
+
+        // Re-baselined to the stamp the exception carries → a deliberate overwrite goes through.
+        await svc.RecordMaterialityAsync(id, MaterialityStatus.NotMaterial, "Committee-A", _clock.UtcNow,
+            "A: no material impact.", expectedStamp: ex.CurrentStamp);
+        (await db.Cases.AsNoTracking().FirstAsync(c => c.Id == id)).Materiality.Status
+            .Should().Be(MaterialityStatus.NotMaterial);
+    }
+
     public void Dispose() => _connection.Dispose();
 }
