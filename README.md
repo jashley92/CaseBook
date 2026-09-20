@@ -118,7 +118,7 @@ an element no case uses can be deleted outright. Every change is audited.
 
 ![Data elements](docs/screenshots/data-elements.png)
 
-### Notification deadlines
+### Regulatory deadlines
 Per-jurisdiction **regulatory notification deadlines** (e.g. New York / NYDFS Part 500 = 72h) as
 admin-managed reference data — add, retime, or archive **without a release**. Each rule's code is matched
 against the notification jurisdictions on the case's data elements, so a case's involved data determines
@@ -128,7 +128,7 @@ detection). The countdown surfaces on the case (a header badge and a per-jurisdi
 one-click **"Mark reported"**) and aggregates on the leadership dashboard (detected→reported mean,
 awaiting-report, and at-risk/overdue) — reminders only, never an automatic state change.
 
-![Notification deadlines](docs/screenshots/notification-rules.png)
+![Regulatory deadlines](docs/screenshots/regulatory-deadlines.png)
 
 ### Configuration bundle
 Export an instance's **editable configuration** — operational & taxonomy settings, roles & AD mappings,
