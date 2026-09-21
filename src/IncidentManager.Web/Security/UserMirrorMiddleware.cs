@@ -38,7 +38,9 @@ public sealed class UserMirrorMiddleware
                     .Where(v => Enum.TryParse<AppRole>(v, out _))
                     .Distinct(StringComparer.OrdinalIgnoreCase));
 
-                await directory.TouchAsync(userId, display, upn, email, roles);
+                // S8949: flow the request's cancellation token — the mirror is a best-effort, throttled
+                // convenience write, so abandon it if the client disconnects rather than doing dead work.
+                await directory.TouchAsync(userId, display, upn, email, roles, context.RequestAborted);
             }
         }
 
