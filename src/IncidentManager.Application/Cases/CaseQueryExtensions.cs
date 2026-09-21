@@ -26,4 +26,14 @@ public static class CaseQueryExtensions
             || c.IncidentCommander == uid
             || c.Assignments.Any(a => a.UserId == uid));
     }
+
+    /// <summary>
+    /// PROD-43: drops tabletop/exercise cases. Applied at every org-posture aggregate, automated reminder,
+    /// pushed feed, and cross-case IOC-correlation query, so a drill never pollutes real metrics or gets
+    /// suggested for linking to a live case. Deliberately NOT part of <see cref="ForUser"/> — an exercise
+    /// case must stay fully visible in its own workspace and (on request) the case list; this only strips it
+    /// from the aggregate/automation surfaces.
+    /// </summary>
+    public static IQueryable<Case> ExcludingExercises(this IQueryable<Case> query) =>
+        query.Where(c => !c.IsExercise);
 }

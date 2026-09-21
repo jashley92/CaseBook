@@ -109,7 +109,7 @@ public sealed class AgendaService
             from a in db.ActionItems.AsNoTracking()
             where a.DueAtUtc != null
                   && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled
-            join c in db.Cases.AsNoTracking() on a.CaseId equals c.Id
+            join c in db.Cases.AsNoTracking().ExcludingExercises() on a.CaseId equals c.Id // PROD-43: drills off the digest / calendar feed
             where !c.IsArchived
                   && (!c.IsRestricted || c.IncidentCommander == userId || c.Assignments.Any(x => x.UserId == userId))
             select new Row(
@@ -132,7 +132,7 @@ public sealed class AgendaService
     private IQueryable<Row> OpenItems(IAppDbContext db) =>
         from a in db.ActionItems.AsNoTracking()
         where a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled
-        join c in db.Cases.AsNoTracking().ForUser(_user) on a.CaseId equals c.Id
+        join c in db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises() on a.CaseId equals c.Id // PROD-43: drills off the agenda
         where !c.IsArchived
         select new Row(
             c.Id, c.CaseNumber, c.Title, c.Severity, c.IsRestricted, c.IncidentCommander,

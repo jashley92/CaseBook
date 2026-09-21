@@ -128,6 +128,8 @@ public sealed class CaseService
         var q = Scoped(db.Cases.AsNoTracking());
 
         if (!filter.IncludeClosed) q = q.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived);
+        // PROD-43: tabletop/exercise cases stay out of the working queue unless explicitly requested.
+        if (!filter.IncludeExercises) q = q.ExcludingExercises();
         if (filter.Classification is { } cl) q = q.Where(c => c.Classification == cl);
         if (filter.Phase is { } ph) q = q.Where(c => c.Phase == ph);
         if (filter.MinSeverity is { } sev) q = q.Where(c => c.Severity >= sev);
@@ -222,7 +224,7 @@ public sealed class CaseService
             .Select(c => new CaseListItem(
                 c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, c.Severity, c.Origin,
                 c.IsRestricted, c.LegalReferral.IsReferred, c.LegalHold, c.CreatedAtUtc, c.IncidentCommander,
-                c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc))
+                c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.IsExercise))
             .ToListAsync(ct);
 
         return new CasePage(items, total, page, size);
@@ -312,7 +314,8 @@ public sealed class CaseService
                 ? await _caseNumbers.NextSequenceAsync(year, ct) + attempt
                 : 0;
             var c = Case.Open(year, seq, request.DescriptiveName, request.Title,
-                request.Classification, request.Severity, request.Origin, _user.UserId, now);
+                request.Classification, request.Severity, request.Origin, _user.UserId, now,
+                isExercise: request.IsExercise);   // PROD-43: fixed at creation
             if (custom is not null) c.AssignCustomNumber(custom, _user.UserId, now);
             else if (isComplexEvent && attempt > 0) c.SetComplexEventNumber(now, attempt + 1);
 
@@ -724,7 +727,7 @@ public sealed class CaseService
         var others = await (
             from e in db.CaseEntities.AsNoTracking()
             where e.CaseId != caseId && values.Contains(e.Value)
-            join c in Scoped(db.Cases.AsNoTracking()) on e.CaseId equals c.Id
+            join c in Scoped(db.Cases.AsNoTracking()).ExcludingExercises() on e.CaseId equals c.Id
             select new { e.Type, e.Value, OtherCaseId = c.Id, c.CaseNumber }
         ).ToListAsync(ct);
 
@@ -767,7 +770,7 @@ public sealed class CaseService
 #pragma warning disable CA1304, CA1311 // EF Core translates ToLower() to SQL; the invariant overload doesn't translate.
         var hits = await (
             from e in db.CaseEntities.AsNoTracking()
-            join c in Scoped(db.Cases.AsNoTracking()) on e.CaseId equals c.Id
+            join c in Scoped(db.Cases.AsNoTracking()).ExcludingExercises() on e.CaseId equals c.Id
             where c.Phase != CasePhase.Closed && !c.IsArchived && wanted.Contains(e.Value.ToLower())
             select new { c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, e.Value }
         ).ToListAsync(ct);
@@ -812,7 +815,7 @@ public sealed class CaseService
 #pragma warning disable CA1304, CA1311
         var hits = await (
             from e in db.CaseEntities.AsNoTracking()
-            join c in Scoped(db.Cases.AsNoTracking()) on e.CaseId equals c.Id
+            join c in Scoped(db.Cases.AsNoTracking()).ExcludingExercises() on e.CaseId equals c.Id
             where c.Id != caseId && c.Phase != CasePhase.Closed && !c.IsArchived
                   && wanted.Contains(e.Value.ToLower())
             select new { c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, e.Value }

@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Compliance;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -37,7 +38,7 @@ public sealed class NotificationDeadlineScanner(
         // on the IRP ladder (a Complex Event can't have started a clock under either basis). The precise
         // start/trigger test is left to NotificationDeadlineService, the single source of truth — this is
         // just a cheap pre-filter. Elevated-events-only intake keeps this set small.
-        var candidates = await db.Cases.AsNoTracking()
+        var candidates = await db.Cases.AsNoTracking().ExcludingExercises() // PROD-43: no real-clock reminders for drills
             .Where(c => !c.IsArchived && c.Phase != CasePhase.Closed
                         && c.ReportedAtUtc == null && c.Classification != null)
             .Select(c => new Candidate(

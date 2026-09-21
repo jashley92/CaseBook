@@ -178,6 +178,10 @@
             <input class="form-check-input" type="checkbox" id="closed" @bind="_includeClosed" @bind:after="ApplyFilters" />
             <label class="form-check-label small" for="closed">Include closed</label>
         </div>
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="exercises" @bind="_includeExercises" @bind:after="ApplyFilters" />
+            <label class="form-check-label small" for="exercises" title="Tabletop / exercise (drill) cases are hidden by default">Show exercises</label>
+        </div>
     </div>
     @* FR-16: the four status roll-up toggles collapse behind "More filters" to cut the density; they auto-
        reveal whenever one is active so a set filter is never hidden (and each also shows as a chip below). *@
@@ -383,6 +387,7 @@ else
                         <a href="cases/@c.Id" class="link-body-emphasis text-decoration-none fw-medium case-title">@c.Title</a>
                         @if (c.LegalReferred) { <span class="im-badge im-b-neutral ms-1" title="Referred to Legal / Privacy">Legal</span> }
                         @if (c.LegalHold) { <span class="im-badge im-b-danger ms-1" title="Under a legal hold — preserve, do not delete">Hold</span> }
+                        @if (c.IsExercise) { <span class="im-badge im-b-info ms-1" title="Tabletop / exercise (drill) case — excluded from dashboards, reminders and feeds">Exercise</span> }
                     </td>
                     <td><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
                     <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
@@ -561,6 +566,7 @@ else
     [SupplyParameterFromQuery(Name = "origin")] public string? QOrigin { get; set; }
     [SupplyParameterFromQuery(Name = "q")] public string? QSearch { get; set; }
     [SupplyParameterFromQuery(Name = "closed")] public bool QClosed { get; set; }
+    [SupplyParameterFromQuery(Name = "exercises")] public bool QExercises { get; set; }
     [SupplyParameterFromQuery(Name = "overdue")] public bool QOverdue { get; set; }
     [SupplyParameterFromQuery(Name = "sla")] public bool QSla { get; set; }
     [SupplyParameterFromQuery(Name = "referred")] public bool QReferred { get; set; }
@@ -586,6 +592,7 @@ else
     private string _origin = "";
     private string _search = "";
     private bool _includeClosed;
+    private bool _includeExercises;
     private bool _overdueOnly;
     private bool _slaAtRiskOnly;
     private bool _referredOnly;
@@ -604,7 +611,7 @@ else
 
     private bool _hasActiveFilter => !(string.IsNullOrEmpty(_classification) && string.IsNullOrEmpty(_phase)
         && string.IsNullOrEmpty(_minSeverity) && string.IsNullOrEmpty(_origin)
-        && string.IsNullOrEmpty(_search) && !_includeClosed && !_overdueOnly && !_slaAtRiskOnly
+        && string.IsNullOrEmpty(_search) && !_includeClosed && !_includeExercises && !_overdueOnly && !_slaAtRiskOnly
         && !_referredOnly && !_onHoldOnly && _openedLabel is null && _assignee is null);
 
     // FR-16: whether the collapsed "More filters" (status roll-up toggles) group is expanded.
@@ -690,6 +697,7 @@ else
         _origin = QOrigin ?? "";
         _search = QSearch ?? "";
         _includeClosed = QClosed;
+        _includeExercises = QExercises;
         _overdueOnly = QOverdue;
         _slaAtRiskOnly = QSla;
         _referredOnly = QReferred;
@@ -736,6 +744,7 @@ else
         ["origin"] = Blank(_origin),
         ["q"] = Blank(_search),
         ["closed"] = _includeClosed ? "true" : null,
+        ["exercises"] = _includeExercises ? "true" : null,
         ["overdue"] = _overdueOnly ? "true" : null,
         ["sla"] = _slaAtRiskOnly ? "true" : null,
         ["referred"] = _referredOnly ? "true" : null,
@@ -779,6 +788,7 @@ else
         if (!string.IsNullOrWhiteSpace(_search))
             yield return ($"Search: “{_search}”", () => _search = "");
         if (_includeClosed) yield return ("Including closed", () => _includeClosed = false);
+        if (_includeExercises) yield return ("Including exercises", () => _includeExercises = false);
         if (_overdueOnly) yield return ("Overdue only", () => _overdueOnly = false);
         if (_slaAtRiskOnly) yield return ("SLA at risk", () => _slaAtRiskOnly = false);
         if (_referredOnly) yield return ("Referred to Legal", () => _referredOnly = false);
@@ -903,6 +913,7 @@ else
         _filter.Origin = Enum.TryParse<CaseOrigin>(_origin, out var o) ? o : null;
         _filter.Search = _search;
         _filter.IncludeClosed = _includeClosed;
+        _filter.IncludeExercises = _includeExercises;
         _filter.OverdueOnly = _overdueOnly;
         _filter.SlaAtRiskOnly = _slaAtRiskOnly;
         _filter.ReferredOnly = _referredOnly;

@@ -31,7 +31,7 @@ public sealed class TeamWorkloadService
     {
         using var db = _factory.CreateDbContext();
 
-        var rows = await db.Cases.AsNoTracking().ForUser(_user)
+        var rows = await db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises() // PROD-43: exclude drills
             .Where(c => c.Phase != CasePhase.Closed && !c.IsArchived)
             .Select(c => new WorkloadCaseRow(
                 c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc,

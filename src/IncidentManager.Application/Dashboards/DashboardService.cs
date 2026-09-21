@@ -76,7 +76,7 @@ public sealed class DashboardService
     public async Task<DashboardMetrics> GetAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var cases = db.Cases.AsNoTracking().ForUser(_user);
+        var cases = db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises(); // PROD-43: drills stay out of posture metrics
 
         var open = cases.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived);
 

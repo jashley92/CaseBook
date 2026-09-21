@@ -76,6 +76,18 @@ public class Case : AuditableEntity, IHashableEntity
     public bool IsRestricted { get; set; }
     public bool IsArchived { get; set; }
 
+    /// <summary>
+    /// PROD-43: a tabletop / IRP-exercise case (NYDFS 500.16 testing), not a real matter. Set at creation
+    /// and immutable thereafter (no mutator — an exercise can never be relabelled as a live case, or a live
+    /// case as a drill). It is fully usable in its own workspace, but is deliberately excluded from every
+    /// org-posture aggregate, automated reminder, and pushed feed (dashboards, team workload, the reminder
+    /// scanners, the personal digest / calendar feed, the outbound IOC feed) and from cross-case IOC
+    /// correlation suggestions, so a drill never pollutes real metrics or gets linked to a real case. It
+    /// remains in the tamper-evident audit chain — that chain must stay complete to verify — where its
+    /// entries are attributable to the exercise case number. Part of the canonical, so the flag is hashed.
+    /// </summary>
+    public bool IsExercise { get; private set; }
+
     /// <summary>Legal hold blocks archival/retention purge.</summary>
     public bool LegalHold { get; set; }
 
@@ -123,7 +135,7 @@ public class Case : AuditableEntity, IHashableEntity
     /// it enters the ladder later via <see cref="Reclassify"/>.</summary>
     public static Case Open(int year, int sequence, string descriptiveName, string title,
         Classification? classification, Severity severity, CaseOrigin origin,
-        string actor, DateTimeOffset nowUtc)
+        string actor, DateTimeOffset nowUtc, bool isExercise = false)
     {
         var c = new Case
         {
@@ -135,6 +147,7 @@ public class Case : AuditableEntity, IHashableEntity
             Phase = CasePhase.New,
             Severity = severity,
             Origin = origin,
+            IsExercise = isExercise,   // PROD-43: fixed at creation; there is no mutator to change it later
             CreatedAtUtc = nowUtc,
             CreatedBy = actor,
             DetectedAtUtc = nowUtc
@@ -882,7 +895,7 @@ public class Case : AuditableEntity, IHashableEntity
         Summary, ImpactedAssets, DataTypesInvolved, DetectionCaseId,
         AffectedIndividualsCount, string.Join(',', DataElements.Select(d => d.ElementKey).OrderBy(k => k, StringComparer.Ordinal)), AffectedStates,
         ThirdParty?.ToCanonical(), LegalReferral.ToCanonical(), Materiality.ToCanonical(),
-        IncidentCommander, IsRestricted, IsArchived, LegalHold,
+        IncidentCommander, IsRestricted, IsArchived, LegalHold, IsExercise,
         OccurredAtUtc?.ToString("o"), DetectedAtUtc?.ToString("o"), ReportedAtUtc?.ToString("o"),
         ContainedAtUtc?.ToString("o"), ResolvedAtUtc?.ToString("o"), ClosedAtUtc?.ToString("o"),
         CreatedBy, CreatedAtUtc.ToString("o"));

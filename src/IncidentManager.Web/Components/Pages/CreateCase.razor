@@ -96,6 +96,21 @@
                     </div>
                 }
 
+                @* PROD-43: mark a drill so it never pollutes real metrics. Fixed at creation. *@
+                <div class="col-12">
+                    <div class="form-check">
+                        <InputCheckbox class="form-check-input" id="isExercise" @bind-Value="_request.IsExercise" />
+                        <label class="form-check-label" for="isExercise">
+                            <span class="bi bi-mortarboard me-1" aria-hidden="true"></span>Tabletop / exercise case
+                        </label>
+                    </div>
+                    <div class="form-text">
+                        A drill for IRP testing (NYDFS 500.16). It runs through the normal workflow but is excluded
+                        from dashboards, reminders, the IOC feed and cross-case correlation, and is clearly badged.
+                        This <strong>can't be changed</strong> once the case is created.
+                    </div>
+                </div>
+
                 @* FR-03: capture the real detection time at intake — it anchors the response-SLA clock and
                    the dwell metric. Defaults to now (in the viewer's display zone); set it back to when the
                    matter was actually detected, not when the case is being filed. *@

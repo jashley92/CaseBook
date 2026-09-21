@@ -34,6 +34,10 @@ public sealed class CreateCaseRequest
     public string? VendorName { get; set; }
     public string? VendorContact { get; set; }
     public string? VendorReference { get; set; }
+
+    /// <summary>PROD-43: open this as a tabletop / IRP-exercise case (excluded from dashboards, reminders and
+    /// feeds). Fixed at creation — it cannot be changed once the case exists.</summary>
+    public bool IsExercise { get; set; }
 }
 
 /// <summary>Lightweight row for case lists and queues.</summary>
@@ -53,7 +57,9 @@ public sealed record CaseListItem(
     // Lifecycle stamps carried so the list can compute the SLA status per row (E-16) without a second query.
     DateTimeOffset? DetectedAtUtc,
     DateTimeOffset? ContainedAtUtc,
-    DateTimeOffset? ResolvedAtUtc);
+    DateTimeOffset? ResolvedAtUtc,
+    // PROD-43: a tabletop/exercise case, so the list can badge it.
+    bool IsExercise = false);
 
 /// <summary>Filter for listing cases.</summary>
 public sealed class CaseFilter
@@ -64,6 +70,10 @@ public sealed class CaseFilter
     public CaseOrigin? Origin { get; set; }
     public bool IncludeClosed { get; set; }
     public bool OnlyMine { get; set; }
+
+    /// <summary>PROD-43: include tabletop/exercise cases in the results. Off by default, so drills stay out of
+    /// the working queue and are surfaced only when explicitly requested.</summary>
+    public bool IncludeExercises { get; set; }
 
     /// <summary>Only cases that have at least one overdue, still-open action item.</summary>
     public bool OverdueOnly { get; set; }

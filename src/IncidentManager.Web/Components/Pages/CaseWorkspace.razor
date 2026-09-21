@@ -133,6 +133,7 @@ else
                 @if (_case.IsRestricted) { <span class="im-badge im-b-warn">Restricted</span> }
                 @if (_case.LegalHold) { <span class="im-badge im-b-danger">Legal hold</span> }
                 @if (_case.IsArchived) { <span class="im-badge im-b-neutral">Archived</span> }
+                @if (_case.IsExercise) { <span class="im-badge im-b-info" title="Tabletop / exercise (drill) case">Exercise</span> }
             </div>
         </div>
         <div class="d-flex align-items-center gap-2">

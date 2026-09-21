@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,7 +29,7 @@ public sealed class OverdueActionItemScanner(
             from a in db.ActionItems.AsNoTracking()
             where a.DueAtUtc != null && a.DueAtUtc < now
                   && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled
-            join c in db.Cases.AsNoTracking() on a.CaseId equals c.Id
+            join c in db.Cases.AsNoTracking().ExcludingExercises() on a.CaseId equals c.Id // PROD-43: skip drills
             select new OverdueActionItem(
                 c.Id, c.CaseNumber, c.Title, c.IncidentCommander,
                 a.Id, a.Title, a.DueAtUtc!.Value, a.Owner))

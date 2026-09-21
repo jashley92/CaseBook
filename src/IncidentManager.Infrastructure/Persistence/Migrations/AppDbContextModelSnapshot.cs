@@ -430,6 +430,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsArchived")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("IsExercise")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsRestricted")
                         .HasColumnType("INTEGER");
 

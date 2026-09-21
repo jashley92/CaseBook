@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
@@ -53,7 +54,7 @@ public sealed class StaleCaseScanner(
         // The audit chain records every unit of case work, so this is a complete "when did anything last
         // happen here" signal without enumerating each child collection. Elevated-events-only intake keeps
         // the open-case set small, so the correlated MAX is cheap on this cadence.
-        var candidates = await db.Cases.AsNoTracking()
+        var candidates = await db.Cases.AsNoTracking().ExcludingExercises() // PROD-43: no reminders for drills
             .Where(c => !c.IsArchived && c.Phase != CasePhase.Closed)
             .Select(c => new Candidate(
                 c.Id, c.CaseNumber, c.Title, c.Severity, c.IncidentCommander, c.CreatedAtUtc,

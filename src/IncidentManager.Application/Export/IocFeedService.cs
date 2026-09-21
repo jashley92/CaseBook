@@ -52,7 +52,7 @@ public sealed class IocFeedService
         var rows = await (
             from e in db.CaseEntities.AsNoTracking()
             where e.Disposition == EntityDisposition.Malicious && IocTypes.Contains(e.Type)
-            join c in db.Cases.AsNoTracking().ForUser(_user) on e.CaseId equals c.Id
+            join c in db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises() on e.CaseId equals c.Id // PROD-43: no drill IOCs in the pushed feed
             select new { e.Type, e.Value, e.Source, e.CreatedAtUtc, c.CaseNumber }
         ).ToListAsync(ct);
 

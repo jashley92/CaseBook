@@ -1595,3 +1595,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260921054724_AddCaseExerciseFlag'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [IsExercise] bit NOT NULL DEFAULT CAST(0 AS bit);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260921054724_AddCaseExerciseFlag'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260921054724_AddCaseExerciseFlag', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
