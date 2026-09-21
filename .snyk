@@ -1,0 +1,14 @@
+# Snyk (https://snyk.io) policy file.
+# Excludes and ignores for Snyk Code / Open Source scanning.
+version: v1.25.0
+
+# Files excluded from Snyk Code analysis.
+exclude:
+  code:
+    # Developer-only, build-time codegen utility — regenerates the embedded ATT&CK catalogue from a
+    # locally downloaded MITRE STIX bundle (node generate-catalog.mjs <path>). Its only "input" is a
+    # path the developer types on their own machine against their own files; there is no server,
+    # request, or untrusted boundary, and nothing here runs at application runtime. Snyk's CWE-23
+    # path-traversal finding on readFileSync(process.argv[2]) is a false positive for this class of
+    # local tooling. (Shipped browser scripts under wwwroot are deliberately NOT excluded.)
+    - src/IncidentManager.Application/Mitre/generate-catalog.mjs
