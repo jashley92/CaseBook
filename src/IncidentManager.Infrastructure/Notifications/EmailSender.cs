@@ -39,7 +39,9 @@ public sealed class EmailSender : IEmailSender
         var o = _options.CurrentValue;
         if (!o.Enabled)
         {
-            _log.LogInformation("Email delivery disabled; not sending '{Subject}' to {To}", subject, string.Join(", ", to));
+            // Never log the subject or recipient addresses: both carry personal/case data and the app log is a
+            // wider-audience sink than the mailbox (CWE-359). The recipient count keeps the operational signal.
+            _log.LogInformation("Email delivery disabled; not sending to {RecipientCount} recipient(s).", to.Count);
             return;
         }
 
@@ -65,7 +67,9 @@ public sealed class EmailSender : IEmailSender
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Failed to send notification email '{Subject}' to {To}", subject, string.Join(", ", to));
+            // As above (CWE-359): the exception is the actionable signal for an SMTP problem; the subject and
+            // recipient addresses would only leak personal/case data into the log, so log a count instead.
+            _log.LogError(ex, "Failed to send notification email to {RecipientCount} recipient(s).", to.Count);
         }
     }
 }
