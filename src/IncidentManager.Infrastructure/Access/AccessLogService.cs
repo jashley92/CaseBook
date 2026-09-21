@@ -1,5 +1,6 @@
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Access;
+using IncidentManager.Application.Common;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -47,6 +48,11 @@ public sealed class AccessLogService : IAccessLogService
     public async Task RecordArtifactAsync(AccessType type, Guid? caseId, string? label, Guid? targetId = null,
         CancellationToken ct = default)
     {
+        // The label is outsider-influenced (an uploaded evidence file name reaches here as the label, then
+        // flows into the SIEM field, the stored C-05 row, and any diagnostic log below). Flatten it to a
+        // single control-char-free line up front so it can never forge a second log line (CWE-117) or
+        // corrupt a record — legitimate file names pass through unchanged.
+        label = LogSanitizer.Clean(label);
         try
         {
             string? caseNumber = null;
