@@ -276,7 +276,8 @@
     {
         _customError = null;
         var id = (_customId ?? "").Trim().ToUpperInvariant();
-        if (!System.Text.RegularExpressions.Regex.IsMatch(id, @"^T\d{4}(\.\d{3})?$"))
+        if (!System.Text.RegularExpressions.Regex.IsMatch(id, @"^T\d{4}(\.\d{3})?$",
+                System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1)))  // S6444: bounded
         {
             _customError = "Expected e.g. T1234 or T1234.001.";
             return;

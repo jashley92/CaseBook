@@ -130,7 +130,9 @@
             ? Array.Empty<MitreTactic>()
             : AllTactics.Where(t => Ui.Label(t).Contains(q, StringComparison.OrdinalIgnoreCase)
                                     || Ui.TacticId(t).Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
-        _customId = System.Text.RegularExpressions.Regex.IsMatch(q, @"^[Tt]\d{4}(\.\d{3})?$") && AttackCatalog.Find(q) is null
+        _customId = System.Text.RegularExpressions.Regex.IsMatch(q, @"^[Tt]\d{4}(\.\d{3})?$",
+                        System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1))  // S6444: bounded
+                    && AttackCatalog.Find(q) is null
             ? q.ToUpperInvariant() : null;
         _open = _techResults.Count > 0 || _tacResults.Count > 0 || _customId is not null;
     }
