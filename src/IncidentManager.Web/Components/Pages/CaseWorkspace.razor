@@ -908,7 +908,27 @@ else
         var seen = _flash.Where(kv => string.Equals(kv.Value.Tab, tab, StringComparison.OrdinalIgnoreCase))
                          .Select(kv => kv.Key).ToList();
         if (seen.Count > 0) _ = ClearFlashesAfter(seen);
+        // Reflect the active tab in the URL (?tab=) so a refresh / bookmark reopens the same tab instead of
+        // snapping back to Overview. We use history.replaceState rather than NavigationManager so this doesn't
+        // fire a Blazor navigation (which would reload the whole case on every tab click). The one-shot
+        // ?entity= deep-link is cleared once consumed. No-ops during prerender (JS not yet available).
+        await SyncTabUrl(tab);
         // Overview, Audit, Report, Entities, and Tasks self-load in their extracted tab components (UX-13).
+    }
+
+    private async Task SyncTabUrl(string tab)
+    {
+        try
+        {
+            var url = Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+            {
+                ["tab"] = tab,
+                ["entity"] = null,
+            });
+            await JS.InvokeVoidAsync("history.replaceState", null, "", url);
+        }
+        catch (JSException) { /* circuit/JS not ready */ }
+        catch (InvalidOperationException) { /* prerendering — JS interop unavailable */ }
     }
 
     private async Task OpenModal(string name)
