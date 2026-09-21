@@ -382,7 +382,11 @@ public sealed class CaseService
 
     private static async Task<Case> LoadTrackedAsync(IAppDbContext db, Guid id, CancellationToken ct)
     {
+        // S8733: same many-collection Cartesian explosion as GetDetailAsync. Split into one correlated query
+        // per collection; EF stitches them onto the tracked root via the change tracker, and case work is
+        // human-gated (one attributable act at a time) so the cross-query consistency trade-off is moot.
         var c = await db.Cases
+            .AsSplitQuery()
             .Include(x => x.ClassificationChanges)
             .Include(x => x.MaterialityChanges)
             .Include(x => x.StatusChanges)

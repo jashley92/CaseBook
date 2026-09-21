@@ -228,7 +228,11 @@ public sealed class ReportService
     }
 
     private static Task<Case?> LoadFullCaseAsync(IAppDbContext db, Guid caseId, CancellationToken ct) =>
+        // S8733: eager-loading many independent collections in one query is a Cartesian explosion (row count =
+        // the product of every collection's size). Split into one correlated query per collection. Read-only
+        // AsNoTracking snapshot for report generation, so the split-query consistency trade-off is moot.
         db.Cases.AsNoTracking()
+            .AsSplitQuery()
             .Include(x => x.ClassificationChanges)
             .Include(x => x.SeverityChanges)
             .Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics)
