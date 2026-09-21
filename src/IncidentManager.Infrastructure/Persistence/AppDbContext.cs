@@ -19,6 +19,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<Evidence> Evidence => Set<Evidence>();
     public DbSet<ChainOfCustodyEvent> CustodyEvents => Set<ChainOfCustodyEvent>();
     public DbSet<ActionItem> ActionItems => Set<ActionItem>();
+    public DbSet<ActionItemComment> ActionItemComments => Set<ActionItemComment>();
     public DbSet<CaseAssignment> Assignments => Set<CaseAssignment>();
     public DbSet<CaseEntity> CaseEntities => Set<CaseEntity>();
     public DbSet<EntityRelationship> EntityRelationships => Set<EntityRelationship>();

@@ -490,6 +490,19 @@ public sealed class CaseCommentConfiguration : IEntityTypeConfiguration<CaseComm
     }
 }
 
+public sealed class ActionItemCommentConfiguration : IEntityTypeConfiguration<ActionItemComment>
+{
+    public void Configure(EntityTypeBuilder<ActionItemComment> b)
+    {
+        b.ToTable("ActionItemComments");
+        b.Property(x => x.Body).HasMaxLength(8000).IsRequired();
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.HasIndex(x => x.ActionItemId);
+        b.HasIndex(x => x.CaseId);
+    }
+}
+
 public sealed class SavedViewConfiguration : IEntityTypeConfiguration<SavedView>
 {
     public void Configure(EntityTypeBuilder<SavedView> b)

@@ -81,5 +81,6 @@ public static class CaseActionPermissions
             [nameof(CaseService.AddActionItemAsync)] = Permission.EditCases,
             [nameof(CaseService.ApplyTemplateAsync)] = Permission.EditCases,
             [nameof(CaseService.SetActionItemStatusAsync)] = Permission.EditCases,
+            [nameof(CaseService.SetActionItemOwnerAsync)] = Permission.EditCases,
         };
 }

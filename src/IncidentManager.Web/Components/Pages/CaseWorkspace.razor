@@ -377,7 +377,7 @@ else
         @* UX-13: extracted to CaseTasksTab. Self-loads its playbooks and builds due-dates; the parent keeps
            the flash and hotkey dispatch (@ref) and reloads the case after a write. *@
         <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
-                      OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" />
+                      OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh" />
     }
     else if (_activeTab == "Report")
     {

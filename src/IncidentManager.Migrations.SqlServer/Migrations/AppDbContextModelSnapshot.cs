@@ -77,6 +77,49 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("ActionItems", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.ActionItemComment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ActionItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActionItemId");
+
+                    b.HasIndex("CaseId");
+
+                    b.ToTable("ActionItemComments", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.AdGroupRoleMapping", b =>
                 {
                     b.Property<Guid>("Id")

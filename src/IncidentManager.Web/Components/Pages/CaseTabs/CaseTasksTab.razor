@@ -3,6 +3,7 @@
    Self-contained — it loads its own playbook templates and builds due-dates itself; the parent threads
    the live-collab flash (delegates), a Reload after a write (OnChanged), and Ctrl+Enter (SubmitAsync via @ref). *@
 @inject CaseService Cases
+@inject IncidentManager.Application.Cases.ActionItemCommentService Comments
 @inject IncidentManager.Application.Admin.CaseTemplateService Templates
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IClock Clock
@@ -150,6 +151,7 @@ else
             <button class="btn btn-sm btn-link p-0" @onclick="() => _selected.Clear()">Clear selection</button>
         </div>
     }
+    var colCount = CanEdit ? 6 : 5;
     <table class="table table-sm align-middle">
         <thead>
             <tr>
@@ -169,6 +171,8 @@ else
             @foreach (var t in Case.ActionItems.OrderBy(x => x.Status).ThenBy(x => x.DueAtUtc))
             {
                 var isOpen = t.Status != ActionItemStatus.Done && t.Status != ActionItemStatus.Cancelled;
+                var threadOpen = _openThreads.Contains(t.Id);
+                var comments = CommentsFor(t.Id);
                 <tr class="im-enter @(t.IsOverdue(Clock.UtcNow) ? "table-danger" : "") @FlashClass?.Invoke(t.Id)" style="@FlashStyle?.Invoke(t.Id)" @key="t.Id">
                     @if (CanEdit)
                     {
@@ -183,23 +187,92 @@ else
                     }
                     <td>@t.Title</td>
                     <td>
-                        @if (string.IsNullOrWhiteSpace(t.Owner))
+                        @if (CanEdit)
+                        {
+                            @* Reassign inline — the team directory plus Unassigned; an external/free-text owner
+                               not in the directory is preserved as its own option so it isn't silently dropped. *@
+                            <select class="form-select form-select-sm im-task-owner" title="Reassign this task"
+                                    aria-label="@($"Reassign task: {t.Title}")"
+                                    value="@(t.Owner ?? "")" @onchange="e => SetOwner(t.Id, e.Value?.ToString())">
+                                <option value="">— Unassigned —</option>
+                                @foreach (var u in Users.All())
+                                {
+                                    <option value="@u.UserId">@u.DisplayName</option>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(t.Owner) && Users.All().All(u => !string.Equals(u.UserId, t.Owner, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    <option value="@t.Owner">@t.Owner (external)</option>
+                                }
+                            </select>
+                        }
+                        else if (string.IsNullOrWhiteSpace(t.Owner))
                         {
                             <span class="im-badge im-b-warn" title="No owner assigned">Unassigned</span>
                         }
                         else { @Users.DisplayFor(t.Owner) }
                     </td>
                     <td>@(t.DueAtUtc is { } due ? TimeDisp.Short(due) : "—")</td>
-                    <td>@t.Status</td>
                     <td>
-                        <AuthorizeView Policy="@Policies.EditCases">
-                            @if (t.Status != ActionItemStatus.Done)
-                            {
-                                <button class="btn btn-sm btn-outline-success" @onclick="() => MarkTaskDone(t.Id)">Mark done</button>
-                            }
-                        </AuthorizeView>
+                        @if (CanEdit)
+                        {
+                            @* Inline status — includes reopening a Done/Cancelled task back to an open state. *@
+                            <select class="form-select form-select-sm im-task-status" title="Change status"
+                                    aria-label="@($"Status for task: {t.Title}")"
+                                    value="@t.Status" @onchange="e => SetStatus(t.Id, e.Value?.ToString())">
+                                @foreach (var s in Enum.GetValues<ActionItemStatus>())
+                                {
+                                    <option value="@s">@StatusLabel(s)</option>
+                                }
+                            </select>
+                        }
+                        else { @StatusLabel(t.Status) }
+                    </td>
+                    <td class="text-end">
+                        <button class="btn btn-sm @(threadOpen ? "btn-secondary" : "btn-outline-secondary")"
+                                title="@(comments.Count == 0 ? "Add a comment" : $"{comments.Count} comment{(comments.Count == 1 ? "" : "s")}")"
+                                aria-expanded="@threadOpen" @onclick="() => ToggleThread(t.Id)">
+                            <span class="bi bi-chat-left-text" aria-hidden="true"></span>
+                            @if (comments.Count > 0) { <span class="ms-1">@comments.Count</span> }
+                        </button>
                     </td>
                 </tr>
+                @if (threadOpen)
+                {
+                    <tr class="im-task-thread" @key="@($"thread-{t.Id}")">
+                        <td colspan="@colCount" class="bg-body-tertiary">
+                            @if (comments.Count == 0)
+                            {
+                                <p class="text-muted small mb-2">No comments yet. Add the first progress note or hand-off context.</p>
+                            }
+                            else
+                            {
+                                <ul class="list-unstyled mb-2">
+                                    @foreach (var c in comments)
+                                    {
+                                        <li class="mb-2">
+                                            <div class="small text-muted">
+                                                <span class="fw-semibold text-body">@c.AuthorName</span>
+                                                · <span title="@TimeDisp.Long(c.CreatedAtUtc)">@TimeDisp.Short(c.CreatedAtUtc)</span>
+                                            </div>
+                                            <div style="white-space:pre-wrap">@c.Body</div>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                            <AuthorizeView Policy="@Policies.EditCases">
+                                <div class="d-flex align-items-start gap-2">
+                                    <textarea class="form-control form-control-sm" rows="2" placeholder="Add a comment…"
+                                              aria-label="@($"Comment on task: {t.Title}")"
+                                              value="@CommentDraft(t.Id)"
+                                              @oninput="e => SetCommentDraft(t.Id, e.Value?.ToString())"></textarea>
+                                    <button class="btn btn-sm btn-primary text-nowrap"
+                                            disabled="@string.IsNullOrWhiteSpace(CommentDraft(t.Id))"
+                                            @onclick="() => AddComment(t.Id)">Comment</button>
+                                </div>
+                            </AuthorizeView>
+                        </td>
+                    </tr>
+                }
             }
         </tbody>
     </table>
@@ -214,6 +287,8 @@ else
     /// <summary>Live-collab flash hooks (parent owns the flash state).</summary>
     [Parameter] public Func<Guid, string?>? FlashClass { get; set; }
     [Parameter] public Func<Guid, string?>? FlashStyle { get; set; }
+    /// <summary>Bumped by the parent on a live-collab change so task comments re-load when a collaborator posts one.</summary>
+    [Parameter] public int RefreshToken { get; set; }
 
     // Add-a-task form
     private string _taskTitle = "";
@@ -230,8 +305,94 @@ else
     private readonly HashSet<Guid> _applySelected = [];
     private string? _applyDefaultOwner; // U-45: default owner for hint-less steps when the case has no IC yet
 
+    // Append-only task commentary: all comments on this case's tasks, grouped by task id. Loaded on first
+    // parameters-set and re-loaded whenever RefreshToken changes (a live-collab edit) or after a post.
+    private readonly HashSet<Guid> _openThreads = new();
+    private readonly Dictionary<Guid, string> _commentDrafts = new();
+    private ILookup<Guid, ActionItemCommentView> _commentsByTask =
+        Array.Empty<ActionItemCommentView>().ToLookup(c => c.ActionItemId);
+    private int _seenRefresh = -1;
+
     protected override async Task OnInitializedAsync()
         => _applyTemplates ??= await Templates.ListActiveAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (RefreshToken != _seenRefresh)
+        {
+            _seenRefresh = RefreshToken;
+            await ReloadComments();
+        }
+    }
+
+    private async Task ReloadComments()
+    {
+        var all = await Comments.ListForCaseAsync(CaseId);
+        _commentsByTask = all.ToLookup(c => c.ActionItemId);
+    }
+
+    private IReadOnlyList<ActionItemCommentView> CommentsFor(Guid taskId) => _commentsByTask[taskId].ToList();
+
+    private void ToggleThread(Guid taskId)
+    {
+        if (!_openThreads.Remove(taskId)) _openThreads.Add(taskId);
+    }
+
+    private string CommentDraft(Guid taskId) => _commentDrafts.GetValueOrDefault(taskId, "");
+    private void SetCommentDraft(Guid taskId, string? text) => _commentDrafts[taskId] = text ?? "";
+
+    private async Task AddComment(Guid taskId)
+    {
+        var body = CommentDraft(taskId);
+        if (string.IsNullOrWhiteSpace(body)) return;
+        try
+        {
+            await Comments.AddAsync(CaseId, taskId, body);
+            _commentDrafts[taskId] = "";
+            await ReloadComments();
+            _openThreads.Add(taskId);
+            Toasts.Success("Comment added");
+            await OnChanged.InvokeAsync(); // refresh the rest of the workspace (audit trail, live-collab)
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private static string StatusLabel(ActionItemStatus s) => s switch
+    {
+        ActionItemStatus.InProgress => "In progress",
+        _ => s.ToString()
+    };
+
+    private async Task SetStatus(Guid taskId, string? value)
+    {
+        if (!Enum.TryParse<ActionItemStatus>(value, out var status)) return;
+        try
+        {
+            await Cases.SetActionItemStatusAsync(CaseId, taskId, status);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task SetOwner(Guid taskId, string? owner)
+    {
+        try
+        {
+            await Cases.SetActionItemOwnerAsync(CaseId, taskId, owner);
+            Toasts.Success(string.IsNullOrWhiteSpace(owner) ? "Task unassigned" : "Task reassigned");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
 
     /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — add the follow-up in the composer.</summary>
     public async Task SubmitAsync()
@@ -265,13 +426,6 @@ else
         var wall = DateTime.SpecifyKind(d.Date + (_taskDueTime ?? new TimeOnly(23, 59)).ToTimeSpan(), DateTimeKind.Unspecified);
         try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(wall, TimeDisp.Zone), TimeSpan.Zero); }
         catch { return new DateTimeOffset(DateTime.SpecifyKind(wall, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
-    }
-
-    private async Task MarkTaskDone(Guid actionItemId)
-    {
-        await Cases.SetActionItemStatusAsync(CaseId, actionItemId, ActionItemStatus.Done);
-        await OnChanged.InvokeAsync();
-        Toasts.Success("Task completed");
     }
 
     // PROD-21: multi-select complete.

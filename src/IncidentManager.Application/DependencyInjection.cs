@@ -15,6 +15,7 @@ public static class DependencyInjection
     {
         services.AddScoped<CaseService>();
         services.AddScoped<CaseCommentService>();            // PROD-04: durable threaded case discussion
+        services.AddScoped<ActionItemCommentService>();      // append-only commentary on follow-up tasks
         services.AddScoped<Admin.AdminSettingsService>();
         services.AddScoped<Admin.RoleService>();
         services.AddScoped<Admin.CaseTemplateService>();

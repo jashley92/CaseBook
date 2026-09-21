@@ -1194,7 +1194,25 @@ public sealed class CaseService
         item.Status = status;
         item.ModifiedBy = _user.UserId;
         item.ModifiedAtUtc = _clock.UtcNow;
-        if (status == ActionItemStatus.Done) item.CompletedAtUtc = _clock.UtcNow;
+        // Completed only while Done — reopening a task (back to Open/InProgress/Blocked) clears the
+        // completion timestamp so it re-enters the open queues and metrics stay accurate.
+        item.CompletedAtUtc = status == ActionItemStatus.Done ? _clock.UtcNow : null;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Reassigns a task's owner. A directory user id or free-text external name, or null/blank
+    /// to leave it Unassigned. Change is audited/hash-chained like any other edit.</summary>
+    public async Task SetActionItemOwnerAsync(Guid caseId, Guid actionItemId, string? owner,
+        CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, caseId, ct);
+        var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
+                   ?? throw new InvalidOperationException("Action item not found.");
+        item.Owner = string.IsNullOrWhiteSpace(owner) ? null : owner.Trim();
+        item.ModifiedBy = _user.UserId;
+        item.ModifiedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
     }
 }

@@ -21,6 +21,7 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     DbSet<Domain.Entities.Evidence> Evidence { get; }
     DbSet<ChainOfCustodyEvent> CustodyEvents { get; }
     DbSet<ActionItem> ActionItems { get; }
+    DbSet<ActionItemComment> ActionItemComments { get; }
     DbSet<CaseAssignment> Assignments { get; }
     DbSet<CaseEntity> CaseEntities { get; }
     DbSet<EntityRelationship> EntityRelationships { get; }

@@ -1616,3 +1616,51 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260921223520_AddActionItemComments'
+)
+BEGIN
+    CREATE TABLE [ActionItemComments] (
+        [Id] uniqueidentifier NOT NULL,
+        [ActionItemId] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [Body] nvarchar(max) NOT NULL,
+        [RowHash] nvarchar(64) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(max) NULL,
+        CONSTRAINT [PK_ActionItemComments] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260921223520_AddActionItemComments'
+)
+BEGIN
+    CREATE INDEX [IX_ActionItemComments_ActionItemId] ON [ActionItemComments] ([ActionItemId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260921223520_AddActionItemComments'
+)
+BEGIN
+    CREATE INDEX [IX_ActionItemComments_CaseId] ON [ActionItemComments] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260921223520_AddActionItemComments'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260921223520_AddActionItemComments', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
