@@ -228,11 +228,13 @@
 </div>
 
 @* FR-16: removable active-filter chips, so it's obvious what's applied and a zero-row result can be
-   unwound one filter at a time instead of reasoning backward about which of ten filters killed it. *@
+   unwound one filter at a time instead of reasoning backward about which of ten filters killed it. The
+   row is always rendered (with a reserved height and a muted hint when empty) so toggling a filter never
+   shifts the table down — it fills the reserved space instead of inserting a new row. *@
 @{ var chips = ActiveFilterChips().ToList(); }
-@if (chips.Count > 0)
-{
-    <div class="im-chips mb-3">
+<div class="im-chips mb-3" style="min-height: 2rem;">
+    @if (chips.Count > 0)
+    {
         @foreach (var chip in chips)
         {
             <span class="im-chip" title="Remove this filter">
@@ -244,8 +246,12 @@
         {
             <button type="button" class="btn btn-sm btn-link p-0 ms-1 align-baseline" @onclick="ClearFilters">Clear all</button>
         }
-    </div>
-}
+    }
+    else
+    {
+        <span class="text-muted small">No filters applied</span>
+    }
+</div>
 
 @if (_assignee is not null)
 {
