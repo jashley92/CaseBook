@@ -2,6 +2,8 @@
 @page "/cases/mine"
 @using IncidentManager.Application.Views
 @attribute [Authorize(Policy = Policies.ViewCases)]
+@implements IDisposable
+@inject IncidentManager.Application.Abstractions.ICaseChangeNotifier Changes
 @inject CaseService CaseSvc
 @inject DashboardService Dashboard
 @inject SavedViewService Views
@@ -110,7 +112,7 @@
                     <label class="form-check-label small" for="view-share" title="Everyone on the team sees this view">Share with team</label>
                 </div>
                 <button class="btn btn-sm btn-primary" @onclick="SaveView" disabled="@string.IsNullOrWhiteSpace(_newViewName)">Save</button>
-                <button class="btn btn-sm btn-outline-secondary" @onclick="() => _savingView = false">Cancel</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="CancelSaveView">Cancel</button>
             </div>
             @* FR-15: a name that matches one of the user's own views overwrites it — confirm before clobbering. *@
             @if (_confirmOverwrite)
@@ -630,12 +632,23 @@ else
     private bool _newViewShared;
 
     // The caseload-summary tiles are a stable overview, so load them once (not on every filter change).
+    // Live collaboration: another analyst opening or editing a case updates this list without a manual
+    // refresh. The change-notifier broadcasts on every committed case change (a new case included); we
+    // coalesce bursts through a short debounce and reload the current query.
+    private IDisposable? _liveSub;
+    private System.Threading.Timer? _liveDebounce;
+    private bool _liveRefreshPending;
+
     protected override async Task OnInitializedAsync()
     {
         var auth = await AuthState.GetAuthenticationStateAsync();
         _canEdit = (await Authz.AuthorizeAsync(auth.User, Policies.EditCases)).Succeeded;
         _dash = await Dashboard.GetAsync();
         await ReloadViews();
+
+        _liveDebounce = new System.Threading.Timer(_ => _ = InvokeAsync(LiveReload), null,
+            Timeout.Infinite, Timeout.Infinite);
+        _liveSub = Changes.SubscribeAll((_, _) => { _liveDebounce?.Change(600, Timeout.Infinite); return Task.CompletedTask; });
 
         // PROD-24: a bare /cases load (fresh mount from elsewhere) lands on the user's default view, if set.
         // Only the exact "cases" path with no query — /cases/mine and any ?filter= are explicit, so left alone.
@@ -814,7 +827,10 @@ else
         _savingView = !_savingView;
         _confirmOverwrite = false;
         if (_savingView) { _newViewName = ""; _newViewShared = false; }
+        else _ = ApplyPendingLiveRefresh();
     }
+
+    private void CancelSaveView() { _savingView = false; _ = ApplyPendingLiveRefresh(); }
 
     private async Task OnSaveKeyDown(KeyboardEventArgs e)
     {
@@ -840,6 +856,7 @@ else
             _confirmOverwrite = false;
             await ReloadViews();
             Toasts.Success($"Saved view “{name}”.");
+            await ApplyPendingLiveRefresh();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
@@ -934,6 +951,34 @@ else
         _selected.Clear();
     }
 
+    // A debounced live reload of the current query. Deferred while the analyst is mid-interaction (a bulk
+    // selection, an open bulk modal, or the save-view form open) so the list isn't yanked out from under
+    // them and their selection isn't silently cleared; it applies the moment they finish.
+    private async Task LiveReload()
+    {
+        if (_bulkVerb != BulkVerb.None || _selected.Count > 0 || _savingView)
+        {
+            _liveRefreshPending = true;
+            return;
+        }
+        _liveRefreshPending = false;
+        await Reload();
+        StateHasChanged();
+    }
+
+    private async Task ApplyPendingLiveRefresh()
+    {
+        if (!_liveRefreshPending) return;
+        if (_bulkVerb != BulkVerb.None || _selected.Count > 0 || _savingView) return;
+        await LiveReload();
+    }
+
+    public void Dispose()
+    {
+        _liveSub?.Dispose();
+        _liveDebounce?.Dispose();
+    }
+
     // --- E-18 / U-15: metered bulk-select + bulk actions ---------------------
     // Metering: (1) scope-gated — bulk is offered only over a coherent cohort (a filter is set, or the Mine
     // scope), never the naked All queue; (2) hard count cap; (3) enumerate-and-confirm before any write;
@@ -968,7 +1013,7 @@ else
         else foreach (var i in p.Items) _selected.Remove(i.Id);
     }
 
-    private void ClearSelection() => _selected.Clear();
+    private void ClearSelection() { _selected.Clear(); _ = ApplyPendingLiveRefresh(); }
 
     private void OpenBulk(BulkVerb verb)
     {
@@ -980,7 +1025,7 @@ else
         _bulkReferNote = null;
     }
 
-    private void CloseBulk() { _bulkVerb = BulkVerb.None; _bulkConfirm = false; }
+    private void CloseBulk() { _bulkVerb = BulkVerb.None; _bulkConfirm = false; _ = ApplyPendingLiveRefresh(); }
 
     private void ProceedBulk()
     {
