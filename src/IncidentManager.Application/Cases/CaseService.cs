@@ -505,7 +505,9 @@ public sealed class CaseService
             if ((reason?.Trim().Length ?? 0) < min)
                 throw new InvalidOperationException(
                     $"Gate '{eval.GateName}' requires a reason of at least {min} characters.");
-            if (overridden && (overrideJustification?.Trim().Length ?? 0) < min)
+            // overrideJustification is non-null here: line 497 already threw if the move was overridden
+            // without one, so the earlier null-coalescing guard was unreachable (S2589).
+            if (overridden && overrideJustification!.Trim().Length < min)
                 throw new InvalidOperationException(
                     $"Gate '{eval.GateName}' requires an override justification of at least {min} characters.");
         }
