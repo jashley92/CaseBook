@@ -232,7 +232,12 @@ public sealed class CaseService
     public async Task<Case?> GetDetailAsync(Guid id, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
+        // S8733: eager-loading many independent collections in ONE query is a Cartesian explosion — the row
+        // count is the product of every collection's size (e.g. notes × evidence × action items × entities …).
+        // Split it into one correlated query per collection instead. This is a read-only AsNoTracking snapshot
+        // for the workspace and the app is human-gated, so the minor cross-query consistency trade-off is moot.
         var c = await Scoped(db.Cases.AsNoTracking())
+            .AsSplitQuery()
             .Include(x => x.ClassificationChanges)
             .Include(x => x.MaterialityChanges)
             .Include(x => x.StatusChanges)
