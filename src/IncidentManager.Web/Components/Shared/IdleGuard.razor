@@ -91,7 +91,7 @@
     private async Task StaySignedInAsync()
     {
         _warning = false;
-        _countdownCts?.Cancel();
+        if (_countdownCts is not null) await _countdownCts.CancelAsync();   // S6966
         try { await JS.InvokeVoidAsync("imIdle.reset"); }
         catch (JSDisconnectedException) { }
     }
@@ -100,7 +100,7 @@
     {
         if (_expired) return;
         _expired = true;
-        _countdownCts?.Cancel();
+        if (_countdownCts is not null) await _countdownCts.CancelAsync();   // S6966
         try { await JS.InvokeVoidAsync("imIdle.stop"); }
         catch (JSDisconnectedException) { }
         // FR-05: this is a deliberate security teardown — suppress the unsaved-changes beforeunload prompt so
@@ -113,7 +113,7 @@
 
     public async ValueTask DisposeAsync()
     {
-        _countdownCts?.Cancel();
+        if (_countdownCts is not null) await _countdownCts.CancelAsync();   // S6966
         _countdownCts?.Dispose();
         try { await JS.InvokeVoidAsync("imIdle.stop"); }
         catch (JSDisconnectedException) { }

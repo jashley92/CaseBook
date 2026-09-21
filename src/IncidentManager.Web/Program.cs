@@ -659,6 +659,6 @@ app.MapGet("/api/import/cases/schema", () =>
         Results.Text(IncidentManager.Application.Import.CaseImportSchema.Build(), "application/json"))
     .AllowAnonymous().RequireRateLimiting("downloads");
 
-app.Run();
+await app.RunAsync();   // S6966: async host run
 
 public partial class Program;
