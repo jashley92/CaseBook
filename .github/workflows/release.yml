@@ -1,0 +1,66 @@
+name: Release
+
+# Build a deployable bundle and publish it as a GitHub Release whenever a version
+# tag (v*) is pushed, e.g. `git tag v2.4.0 && git push origin v2.4.0`.
+# The bundle is what deploy/Upgrade-CaseBook.ps1 consumes, so ops upgrades never
+# need the .NET SDK or NuGet access on the server.
+on:
+  push:
+    tags: [ 'v*' ]
+
+# Only keep the latest run per tag.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the GitHub Release and upload assets
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      # Framework-dependent, portable publish (no RID) — the same shape Install-CaseBook.ps1
+      # produces, so the app runs under IIS in-process with the .NET 10 Hosting Bundle.
+      - name: Publish web app
+        run: dotnet publish src/IncidentManager.Web -c Release -o publish/app --nologo
+
+      - name: Assemble release bundle
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          root="bundle/casebook-${version}"
+          mkdir -p "$root"
+          cp -r publish/app "$root/app"
+          cp -r deploy "$root/deploy"
+          # Migration-ID manifest — Upgrade-CaseBook.ps1 compares this against the target DB's
+          # __EFMigrationsHistory to detect a lineage mismatch BEFORE it deploys (the failure mode
+          # that crashes the app on startup when an old DB meets a newer migration set).
+          ls src/IncidentManager.Migrations.SqlServer/Migrations \
+            | grep -E '^[0-9]+_.*\.cs$' | grep -v '\.Designer\.cs$' \
+            | sed 's/\.cs$//' | sort > "$root/migrations-sqlserver.txt"
+          printf 'Version: %s\nCommit:  %s\nBuilt:   %s\n' \
+            "$version" "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$root/VERSION.txt"
+          ( cd bundle && zip -qr "casebook-${version}.zip" "casebook-${version}" \
+            && sha256sum "casebook-${version}.zip" > "casebook-${version}.zip.sha256" )
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          gh release create "$version" \
+            "bundle/casebook-${version}.zip" \
+            "bundle/casebook-${version}.zip.sha256" \
+            --title "CaseBook ${version}" \
+            --generate-notes

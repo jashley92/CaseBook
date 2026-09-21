@@ -2,7 +2,8 @@
 
 End-to-end procedure to stand up a fresh production instance. For ongoing operations
 (backup/DR, key rotation, host hardening) see **[OPERATIONS.md](OPERATIONS.md)**; that runbook's
-**Deploy-time Checklist** (§4) is the sign-off list for this install.
+**Deploy-time Checklist** (§4) is the sign-off list for this install. To move an **existing** instance
+to a newer build later, see **[UPGRADE.md](UPGRADE.md)** (`deploy/Upgrade-CaseBook.ps1`).
 
 > Development uses zero-install SQLite and needs none of this — just
 > `dotnet run --project src/IncidentManager.Web`. This document is production only.

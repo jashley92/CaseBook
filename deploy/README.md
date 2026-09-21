@@ -10,6 +10,7 @@ Follow the full runbook in **[../docs/INSTALL.md](../docs/INSTALL.md)** (which i
 | `casebook.config.template.psd1` | Answers-file template to copy/fill by hand instead of running the generator. |
 | `Install-Database.ps1` | Provision the SQL DB + app-pool login (Windows auth). Run first, as SQL sysadmin. |
 | `Install-CaseBook.ps1` | Publish the app, create the IIS site/app-pool, write prod config, ACL the data dirs. Run as local admin. |
+| `Upgrade-CaseBook.ps1` | **Upgrade an existing site** to a newer build (from a release bundle, an app folder, or `-Build`). Backs up DB + config + binaries, runs a migration-compatibility preflight, swaps binaries without touching config/data, and rolls back on failure. See **[../docs/UPGRADE.md](../docs/UPGRADE.md)**. |
 | `Verify-Install.ps1` | Readiness + smoke test: `-ConfigFile` validates the answers file resolves (account/groups/cert/paths/SQL) **before** installing; `-Url` is the post-install smoke test. |
 | `appsettings.Production.template.json` | Production config template; the installer substitutes `__PLACEHOLDERS__`. |
 | `sql/01-Create-Database.sql` | The DDL the DB installer runs (database, recovery model, login/user, grants). |
