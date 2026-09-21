@@ -546,19 +546,27 @@ else
 
     private async Task CheckRenumberAvailable()
     {
+        // Retire the previous keystroke's check (cancel + dispose its source) before starting a new one, so
+        // a burst of typing doesn't leak a CancellationTokenSource per keystroke (S2930). The token below is
+        // captured into a local so this method never touches a source a later call may have disposed.
         _renumberCheckCts?.Cancel();
-        var cts = _renumberCheckCts = new CancellationTokenSource();
+        _renumberCheckCts?.Dispose();
+        _renumberCheckCts = null;
+
         var v = _editNumber?.Trim();
         if (string.IsNullOrEmpty(v) || string.Equals(v, _case.CaseNumber, StringComparison.Ordinal))
         {
             _renumberAvailable = null;
             return;
         }
+
+        var cts = _renumberCheckCts = new CancellationTokenSource();
+        var token = cts.Token;
         try
         {
-            await Task.Delay(350, cts.Token); // debounce keystrokes
-            var ok = await Cases.IsCaseNumberAvailableAsync(v, _case.Id, cts.Token);
-            if (!cts.Token.IsCancellationRequested) { _renumberAvailable = ok; StateHasChanged(); }
+            await Task.Delay(350, token); // debounce keystrokes
+            var ok = await Cases.IsCaseNumberAvailableAsync(v, _case.Id, token);
+            if (!token.IsCancellationRequested) { _renumberAvailable = ok; StateHasChanged(); }
         }
         catch (OperationCanceledException) { /* superseded by a newer keystroke */ }
     }
@@ -1613,6 +1621,8 @@ else
     public async ValueTask DisposeAsync()
     {
         _caseSub?.Dispose();
+        _renumberCheckCts?.Cancel();   // S2930: dispose the last in-flight renumber-availability check
+        _renumberCheckCts?.Dispose();
         PaletteActions.Clear(this); // PROD-19: stop offering this case's actions (only if we're still the owner)
         if (_relativeTimeTicker is not null) await _relativeTimeTicker.DisposeAsync();
         // EasyMDE editors and the entity graph are torn down by their own tab components (UX-13).
