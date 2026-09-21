@@ -62,7 +62,9 @@ public sealed class EmailSender : IEmailSender
                     htmlBody, null, MediaTypeNames.Text.Html));
             }
 
-            using var client = new SmtpClient(o.SmtpHost, o.SmtpPort);
+            // S4423: encrypt the connection by default (Email:EnableSsl, server-side). Only a deliberately
+            // configured relay that does its own TLS turns this off.
+            using var client = new SmtpClient(o.SmtpHost, o.SmtpPort) { EnableSsl = o.EnableSsl };
             await client.SendMailAsync(message, ct);
         }
         catch (Exception ex)

@@ -8,6 +8,15 @@ public sealed class EmailOptions
 
     public string SmtpHost { get; set; } = "";
     public int SmtpPort { get; set; } = 25;
+
+    /// <summary>
+    /// Encrypt the SMTP connection (STARTTLS). True by default — notifications carry personal/case data,
+    /// so mail must not leave in cleartext. Server-side config only (with the relay host/port, not the
+    /// admin settings catalog); set false only for a relay that terminates TLS itself, e.g. a trusted
+    /// localhost submission agent on a port that doesn't offer STARTTLS.
+    /// </summary>
+    public bool EnableSsl { get; set; } = true;
+
     public string From { get; set; } = "incident-manager@localhost";
 
     /// <summary>Recipients notified when a case is escalated to a Breach (Legal/Privacy distribution).</summary>
