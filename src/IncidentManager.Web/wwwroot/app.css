@@ -1019,6 +1019,14 @@ h1:focus {
 .session-locked-card .btn, .error-notice-card .btn { margin-top: 0.5rem; }
 
 /* --- Timeline rail (U-08) — the "hero" chronological view, theme-aware --- */
+/* A padded panel around the rail so the chronology reads as a contained view rather than text floating at
+   the page edge — especially with only a few entries (a short timeline no longer looks unanchored). */
+.tl-panel {
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: 0.5rem;
+    background: var(--bs-body-bg);
+}
 .tl {
     list-style: none;
     margin: 0;
