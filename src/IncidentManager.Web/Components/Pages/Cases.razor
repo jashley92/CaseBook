@@ -377,7 +377,7 @@ else
             @for (var i = 0; i < _page.Items.Count; i++)
             {
                 var c = _page.Items[i];
-                <tr class="@(i == _cursor ? "table-active" : "") @(_selected.Contains(c.Id) ? "im-row-selected" : "")">
+                <tr @key="c.Id" class="@(i == _cursor ? "table-active" : "") @(_selected.Contains(c.Id) ? "im-row-selected" : "") @(_flashCaseIds.Contains(c.Id) ? "im-enter im-flash" : "")">
                     @if (BulkEligible)
                     {
                         var atCap = !_selected.Contains(c.Id) && _selected.Count >= MaxBulk;
@@ -638,6 +638,10 @@ else
     private IDisposable? _liveSub;
     private System.Threading.Timer? _liveDebounce;
     private bool _liveRefreshPending;
+    // The case ids currently shown (baseline), and the ids that just arrived via a live reload — the latter
+    // get a one-shot "pop-in" flash so a collaborator's new/changed case reads as new, not a silent swap.
+    private HashSet<Guid> _knownCaseIds = new();
+    private readonly HashSet<Guid> _flashCaseIds = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -945,6 +949,10 @@ else
         _filter.AssigneeUserId = _assignee == "none" ? null : _assignee;
         _targets = SlaProvider.Current;
         _page = await CaseSvc.ListAsync(_filter);
+        // Baseline the known ids for live-reload diffing; a plain reload (filter/page change) is a fresh
+        // cohort, so any pending pop-in flash is dropped (only a live reload re-populates it).
+        _knownCaseIds = _page?.Items.Select(i => i.Id).ToHashSet() ?? new();
+        _flashCaseIds.Clear();
         _cursor = -1; // PROD-25: a fresh result set clears the keyboard row cursor
         // E-18: a new cohort (filter/page/scope change) invalidates the selection — never carry a bulk
         // selection across cohorts, and never leave a stale id from a page we've navigated away from.
@@ -962,8 +970,27 @@ else
             return;
         }
         _liveRefreshPending = false;
-        await Reload();
+        var prevKnown = _knownCaseIds;
+        await Reload(); // re-baselines _knownCaseIds and clears any prior flash
+        // Flash the rows that appeared since the last view (a new case, or one that moved onto this page).
+        if (prevKnown.Count > 0 && _page is { Items.Count: > 0 } p)
+        {
+            foreach (var item in p.Items)
+                if (!prevKnown.Contains(item.Id)) _flashCaseIds.Add(item.Id);
+            if (_flashCaseIds.Count > 0) _ = ClearFlashAfter(_flashCaseIds.ToList());
+        }
         StateHasChanged();
+    }
+
+    private async Task ClearFlashAfter(List<Guid> ids)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(4)); // outlast the ~3.6s flash, then drop the class
+        await InvokeAsync(() =>
+        {
+            var changed = false;
+            foreach (var id in ids) changed |= _flashCaseIds.Remove(id);
+            if (changed) StateHasChanged();
+        });
     }
 
     private async Task ApplyPendingLiveRefresh()
