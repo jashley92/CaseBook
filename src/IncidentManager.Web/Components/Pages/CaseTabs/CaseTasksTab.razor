@@ -185,49 +185,30 @@ else
                             }
                         </td>
                     }
-                    <td>@t.Title</td>
                     <td>
-                        @if (CanEdit)
+                        @t.Title
+                        @if (!string.IsNullOrWhiteSpace(t.Description))
                         {
-                            @* Reassign inline — the team directory plus Unassigned; an external/free-text owner
-                               not in the directory is preserved as its own option so it isn't silently dropped. *@
-                            <select class="form-select form-select-sm im-task-owner" title="Reassign this task"
-                                    aria-label="@($"Reassign task: {t.Title}")"
-                                    value="@(t.Owner ?? "")" @onchange="e => SetOwner(t.Id, e.Value?.ToString())">
-                                <option value="">— Unassigned —</option>
-                                @foreach (var u in Users.All())
-                                {
-                                    <option value="@u.UserId">@u.DisplayName</option>
-                                }
-                                @if (!string.IsNullOrWhiteSpace(t.Owner) && Users.All().All(u => !string.Equals(u.UserId, t.Owner, StringComparison.OrdinalIgnoreCase)))
-                                {
-                                    <option value="@t.Owner">@t.Owner (external)</option>
-                                }
-                            </select>
+                            <div class="small text-muted" style="white-space:pre-wrap">@t.Description</div>
                         }
-                        else if (string.IsNullOrWhiteSpace(t.Owner))
+                    </td>
+                    <td>
+                        @if (string.IsNullOrWhiteSpace(t.Owner))
                         {
                             <span class="im-badge im-b-warn" title="No owner assigned">Unassigned</span>
                         }
                         else { @Users.DisplayFor(t.Owner) }
                     </td>
                     <td>@(t.DueAtUtc is { } due ? TimeDisp.Short(due) : "—")</td>
-                    <td>
+                    <td>@StatusLabel(t.Status)</td>
+                    <td class="text-end text-nowrap">
                         @if (CanEdit)
                         {
-                            @* Inline status — includes reopening a Done/Cancelled task back to an open state. *@
-                            <select class="form-select form-select-sm im-task-status" title="Change status"
-                                    aria-label="@($"Status for task: {t.Title}")"
-                                    value="@t.Status" @onchange="e => SetStatus(t.Id, e.Value?.ToString())">
-                                @foreach (var s in Enum.GetValues<ActionItemStatus>())
-                                {
-                                    <option value="@s">@StatusLabel(s)</option>
-                                }
-                            </select>
+                            <button class="btn btn-sm btn-outline-secondary me-1" title="Edit this task"
+                                    aria-label="@($"Edit task: {t.Title}")" @onclick="() => BeginEdit(t)">
+                                <span class="bi bi-pencil" aria-hidden="true"></span>
+                            </button>
                         }
-                        else { @StatusLabel(t.Status) }
-                    </td>
-                    <td class="text-end">
                         <button class="btn btn-sm @(threadOpen ? "btn-secondary" : "btn-outline-secondary")"
                                 title="@(comments.Count == 0 ? "Add a comment" : $"{comments.Count} comment{(comments.Count == 1 ? "" : "s")}")"
                                 aria-expanded="@threadOpen" @onclick="() => ToggleThread(t.Id)">
@@ -236,6 +217,62 @@ else
                         </button>
                     </td>
                 </tr>
+                @if (_editingTaskId == t.Id)
+                {
+                    <tr class="im-task-edit" @key="@($"edit-{t.Id}")">
+                        <td colspan="@colCount" class="bg-body-tertiary">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-4">
+                                    <label class="form-label small mb-0">Task</label>
+                                    <input class="form-control form-control-sm" @bind="_editTitle" @bind:event="oninput" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small mb-0">Owner</label>
+                                    <select class="form-select form-select-sm" @bind="_editOwner">
+                                        <option value="">— Unassigned —</option>
+                                        @foreach (var u in Users.All())
+                                        {
+                                            <option value="@u.UserId">@u.DisplayName</option>
+                                        }
+                                        <option value="@ExternalOwnerSentinel">External / other…</option>
+                                    </select>
+                                    @if (_editOwner == ExternalOwnerSentinel)
+                                    {
+                                        <input class="form-control form-control-sm mt-1" @bind="_editOwnerExternal" @bind:event="oninput"
+                                               placeholder="External owner name" />
+                                    }
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-0">Status</label>
+                                    <select class="form-select form-select-sm" @bind="_editStatus">
+                                        @foreach (var s in Enum.GetValues<ActionItemStatus>())
+                                        {
+                                            <option value="@s">@StatusLabel(s)</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-0">Due date</label>
+                                    <input type="date" class="form-control form-control-sm" @bind="_editDueDate" />
+                                </div>
+                                <div class="col-md-1">
+                                    <label class="form-label small mb-0">Time</label>
+                                    <input type="time" class="form-control form-control-sm" @bind="_editDueTime"
+                                           title="Entered in @TimeDisp.Label. Leave blank for end of day." />
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small mb-0">Description <span class="text-muted">(optional)</span></label>
+                                    <textarea class="form-control form-control-sm" rows="2" @bind="_editDescription" @bind:event="oninput"></textarea>
+                                </div>
+                                <div class="col-12 d-flex gap-2">
+                                    <button class="btn btn-sm btn-primary" @onclick="SaveEdit"
+                                            disabled="@string.IsNullOrWhiteSpace(_editTitle)">Save changes</button>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEdit">Cancel</button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
                 @if (threadOpen)
                 {
                     <tr class="im-task-thread" @key="@($"thread-{t.Id}")">
@@ -366,27 +403,56 @@ else
         _ => s.ToString()
     };
 
-    private async Task SetStatus(Guid taskId, string? value)
+    // --- Edit a task (all fields, behind the Edit button) — consistent with how IOCs/entities are edited;
+    // each save is one audited change (before → after) rather than a separate version chain. ---
+    private Guid? _editingTaskId;
+    private string _editTitle = "";
+    private string? _editOwner;
+    private string? _editOwnerExternal;
+    private ActionItemStatus _editStatus;
+    private DateTime? _editDueDate;
+    private TimeOnly? _editDueTime;
+    private string? _editDescription;
+
+    private void BeginEdit(ActionItem t)
     {
-        if (!Enum.TryParse<ActionItemStatus>(value, out var status)) return;
-        try
+        _editingTaskId = t.Id;
+        _editTitle = t.Title;
+        _editStatus = t.Status;
+        _editDescription = t.Description;
+        // Seed the owner picker: a directory user shows as itself, a free-text/external owner via the sentinel.
+        if (string.IsNullOrWhiteSpace(t.Owner)) { _editOwner = ""; _editOwnerExternal = null; }
+        else if (Users.All().Any(u => string.Equals(u.UserId, t.Owner, StringComparison.OrdinalIgnoreCase)))
+        { _editOwner = t.Owner; _editOwnerExternal = null; }
+        else { _editOwner = ExternalOwnerSentinel; _editOwnerExternal = t.Owner; }
+        // Seed the due date/time in the viewer's active display zone (what they see is what they picked).
+        if (t.DueAtUtc is { } due)
         {
-            await Cases.SetActionItemStatusAsync(CaseId, taskId, status);
-            await OnChanged.InvokeAsync();
+            var wall = TimeZoneInfo.ConvertTime(due, TimeDisp.Zone);
+            _editDueDate = wall.Date;
+            _editDueTime = TimeOnly.FromTimeSpan(wall.TimeOfDay);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-        {
-            Toasts.Error(ex.Message);
-        }
+        else { _editDueDate = null; _editDueTime = null; }
     }
 
-    private async Task SetOwner(Guid taskId, string? owner)
+    private void CancelEdit() => _editingTaskId = null;
+
+    private async Task SaveEdit()
     {
+        if (_editingTaskId is not { } id || string.IsNullOrWhiteSpace(_editTitle)) return;
+        var owner = _editOwner switch
+        {
+            ExternalOwnerSentinel => string.IsNullOrWhiteSpace(_editOwnerExternal) ? null : _editOwnerExternal.Trim(),
+            null or "" => null,
+            var u => u
+        };
         try
         {
-            await Cases.SetActionItemOwnerAsync(CaseId, taskId, owner);
-            Toasts.Success(string.IsNullOrWhiteSpace(owner) ? "Task unassigned" : "Task reassigned");
+            await Cases.UpdateActionItemAsync(CaseId, id, _editTitle, owner,
+                ToDueUtc(_editDueDate, _editDueTime), _editStatus, _editDescription);
+            _editingTaskId = null;
             await OnChanged.InvokeAsync();
+            Toasts.Success("Task updated");
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
@@ -420,10 +486,13 @@ else
     // A due deadline is entered in the viewer's active display zone (U-29) — so "what you pick is what you
     // see" round-trips through the UTC/Local toggle without shifting a day. Time is optional: a bare date
     // means "by end of that day" (23:59 local). Stored as a UTC instant like every other timestamp (F-20).
-    private DateTimeOffset? ResolveDueUtc()
+    private DateTimeOffset? ResolveDueUtc() => ToDueUtc(_taskDueDate, _taskDueTime);
+
+    // Shared by the add and edit forms: convert a picked wall date/time (viewer zone) to a stored UTC instant.
+    private DateTimeOffset? ToDueUtc(DateTime? date, TimeOnly? time)
     {
-        if (_taskDueDate is not { } d) return null;
-        var wall = DateTime.SpecifyKind(d.Date + (_taskDueTime ?? new TimeOnly(23, 59)).ToTimeSpan(), DateTimeKind.Unspecified);
+        if (date is not { } d) return null;
+        var wall = DateTime.SpecifyKind(d.Date + (time ?? new TimeOnly(23, 59)).ToTimeSpan(), DateTimeKind.Unspecified);
         try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(wall, TimeDisp.Zone), TimeSpan.Zero); }
         catch { return new DateTimeOffset(DateTime.SpecifyKind(wall, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
     }

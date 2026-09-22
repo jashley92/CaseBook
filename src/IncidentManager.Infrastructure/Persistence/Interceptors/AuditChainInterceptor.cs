@@ -240,6 +240,9 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                 EntityType = type,
                 EntityId = entity.Id.ToString(),
                 CaseNumber = caseNumber,
+                // A human identity for the changed thing, captured now so the trail reads "Update ActionItem —
+                // Rotate exposed credentials" instead of an opaque type + GUID (folded into the hash only when set).
+                EntityLabel = LabelFor(entity),
                 // Name the fields that actually moved (e.g. "Update Case — Legal hold") so the trail reads as
                 // what changed, not just that "something" did. The full before/after is in the JSON below.
                 Summary = AuditChangeDetail.ComposeSummary(action, type, changedFields),
@@ -347,5 +350,35 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         if (prop is null) return null;
         var val = e.CurrentValues[prop];
         return val is Guid g ? g : null;
+    }
+
+    /// <summary>
+    /// A short human identity for the changed entity, captured at write time so an audit line names <em>what</em>
+    /// was changed. Structured records use their natural key (a task's title, an IOC's value); free-text records
+    /// use their opening words. Entities with no cheap self-label (e.g. a relationship between two IDs) return
+    /// null and are still identified by the resolved reference values in the diff.
+    /// </summary>
+    private static string? LabelFor(Entity entity) => entity switch
+    {
+        Case c => c.Title,
+        ActionItem a => a.Title,
+        ActionItemComment aic => Snippet(aic.Body),
+        TimelineEntry t => Snippet(t.Description),
+        AnalystNote n => Snippet(n.Body),
+        CaseComment cc => Snippet(cc.Body),
+        CaseEntity ce => string.IsNullOrWhiteSpace(ce.Label) ? ce.Value : $"{ce.Label} ({ce.Value})",
+        Evidence ev => ev.OriginalFileName,
+        CaseAssignment asg => string.IsNullOrWhiteSpace(asg.UserDisplayName) ? asg.UserId : asg.UserDisplayName,
+        CaseTechnique tech => tech.TechniqueId,
+        _ => null
+    };
+
+    // First line of a free-text body, trimmed to a headline length (fits the audit column and the label column).
+    private static string? Snippet(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var firstLine = text.TrimStart().Split('\n', 2)[0].Trim();
+        const int max = 120;
+        return firstLine.Length <= max ? firstLine : firstLine[..(max - 1)] + "…";
     }
 }

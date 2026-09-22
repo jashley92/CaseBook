@@ -149,5 +149,30 @@ public sealed class AuditChangeVerbosityTests : IDisposable
             .Contain(x => x.Label == "Referred to Legal" && x.Before == "No" && x.After == "Yes");
     }
 
+    [Fact]
+    public void A_reference_guid_in_a_diff_resolves_to_its_label()
+    {
+        var actorId = Guid.NewGuid();
+        var entry = new IncidentManager.Domain.Entities.AuditLogEntry
+        {
+            Action = AuditAction.Update,
+            EntityType = "TimelineEntry",
+            BeforeJson = "{\"ActorEntityId\":null}",
+            AfterJson = $"{{\"ActorEntityId\":\"{actorId}\"}}",
+        };
+
+        // No resolver: the field is named, but the value is the raw GUID.
+        var raw = AuditChangeDetail.Changes(entry).Single();
+        raw.Label.Should().Be("Actor");
+        raw.After.Should().Be(actorId.ToString());
+
+        // With a resolver: the GUID renders as the IOC's label.
+        var resolved = AuditChangeDetail.Changes(entry,
+            id => id == actorId.ToString() ? "203.0.113.66" : null).Single();
+        resolved.Label.Should().Be("Actor");
+        resolved.Before.Should().Be("—");
+        resolved.After.Should().Be("203.0.113.66");
+    }
+
     public void Dispose() => _connection.Dispose();
 }

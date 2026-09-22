@@ -34,6 +34,7 @@ public sealed class CaseActionPermissionsTests
         nameof(CaseService.FindRelatedOpenCasesAsync),
         nameof(CaseService.GetCaseLinksAsync),
         nameof(CaseService.SearchLinkableCasesAsync),
+        nameof(CaseService.GetEntityLabelsAsync),
     };
 
     private static IEnumerable<string> PublicUseCaseMethods() =>

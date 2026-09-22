@@ -20,6 +20,15 @@ public class AuditLogEntry : Entity
 
     /// <summary>Denormalized case number for fast filtering of the audit trail.</summary>
     public string? CaseNumber { get; set; }
+
+    /// <summary>
+    /// A human identity for the changed thing, captured at write time (e.g. a task's title, a timeline
+    /// entry's opening words, an IOC's value) so the trail reads "Update ActionItem — Rotate exposed
+    /// credentials" rather than an opaque type + GUID. Self-contained: it reflects the entity as it was
+    /// when the change happened and never depends on re-resolving mutable current state.
+    /// </summary>
+    public string? EntityLabel { get; set; }
+
     public string? Summary { get; set; }
     public string? BeforeJson { get; set; }
     public string? AfterJson { get; set; }
@@ -41,7 +50,11 @@ public class AuditLogEntry : Entity
         var content = string.Join('|',
             Sequence, AtUtc.ToString("o"), Actor, (int)Action, EntityType, EntityId, CaseNumber, Summary, BeforeJson, AfterJson);
         // A reason is tamper-evident too, but only entries that carry one extend the canonical, so the
-        // vast majority of (reason-less) historical entries hash exactly as before.
-        return Reason is null ? content : string.Join('|', content, Reason);
+        // vast majority of (reason-less) historical entries hash exactly as before. The entity label extends
+        // it the same way, appended after the reason — so a historical entry (no label, with or without a
+        // reason) hashes exactly as it did before this field existed.
+        if (Reason is not null) content = string.Join('|', content, Reason);
+        if (EntityLabel is not null) content = string.Join('|', content, EntityLabel);
+        return content;
     }
 }

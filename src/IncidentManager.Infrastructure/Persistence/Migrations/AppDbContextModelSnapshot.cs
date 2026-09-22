@@ -372,6 +372,10 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("EntityLabel")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("EntityType")
                         .IsRequired()
                         .HasMaxLength(100)

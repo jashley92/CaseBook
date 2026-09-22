@@ -5,6 +5,7 @@
 @inject IntegrityService Integrity
 @inject IncidentManager.Application.Access.IAccessLogService AccessLog
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject CaseService Cases
 @inject TimeDisplay TimeDisp
 
 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
@@ -98,7 +99,13 @@ else
                         <td class="small">@a.AtUtc.ToString("u")</td>
                         <td>@Users.DisplayFor(a.Actor)</td>
                         <td>@a.Action</td>
-                        <td>@a.EntityType</td>
+                        <td>
+                            @a.EntityType
+                            @if (!string.IsNullOrWhiteSpace(a.EntityLabel))
+                            {
+                                <div class="small text-muted" title="@a.EntityLabel">@Trunc(a.EntityLabel!, 40)</div>
+                            }
+                        </td>
                         <td class="small">@ChangeCell(a)</td>
                         <td class="small">@(string.IsNullOrWhiteSpace(a.Reason) ? "" : a.Reason)</td>
                     </tr>
@@ -181,6 +188,9 @@ else
 
     private const int AuditPageSize = 500;
     private List<AuditLogEntry>? _audit;
+    // Case entity id -> display label, so the diff can resolve a reference field (a timeline entry's
+    // Actor/Target) from an opaque GUID to a human name. Loaded with the trail.
+    private IReadOnlyDictionary<Guid, string> _entityLabels = new Dictionary<Guid, string>();
     private IReadOnlyList<CaseAccessEvent>? _viewedBy;
     private int _loadedToken = int.MinValue;
     // Sequences whose raw before/after JSON is expanded in the GUI (per-viewer, reset on each (re)load).
@@ -208,6 +218,7 @@ else
             State.FacetsLoaded = true;
         }
         _audit = await Integrity.QueryAsync(BuildAuditFilter(), AuditPageSize);
+        _entityLabels = await Cases.GetEntityLabelsAsync(CaseId); // resolve reference GUIDs in the diff to IOC labels
         // C-05: leads/admins see who has read this case (coalesced view-sessions).
         if (CanViewAll)
             _viewedBy = await AccessLog.ForCaseAsync(CaseId);
@@ -249,9 +260,18 @@ else
     // The "what changed" cell: the field-level before/after diff parsed from the entry's captured snapshots
     // (the detail was always recorded — this surfaces it). Long values are truncated with the full text on
     // hover. Create/delete have no diff, so they read as a short verb.
+    // Resolve a stored reference value for the diff renderer: an entity GUID → its IOC label, or a directory
+    // user id (an owner / incident commander) → that person's display name. Returns null for anything else,
+    // so the raw value stands.
+    private string? ResolveRef(string value)
+    {
+        if (Guid.TryParse(value, out var g) && _entityLabels.TryGetValue(g, out var label)) return label;
+        return Users.Resolve(value) is { } u ? u.DisplayName : null;
+    }
+
     private RenderFragment ChangeCell(AuditLogEntry a) => __builder =>
     {
-        var changes = AuditChangeDetail.Changes(a);
+        var changes = AuditChangeDetail.Changes(a, ResolveRef);
         if (changes.Count == 0)
         {
             var verb = a.Action switch

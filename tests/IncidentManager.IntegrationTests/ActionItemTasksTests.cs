@@ -1,6 +1,7 @@
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Application.Integrity;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Infrastructure.Persistence.Interceptors;
@@ -77,6 +78,49 @@ public sealed class ActionItemTasksTests : IDisposable
         var reopened = await db.ActionItems.AsNoTracking().FirstAsync(a => a.Id == taskId);
         reopened.Status.Should().Be(ActionItemStatus.Open);
         reopened.CompletedAtUtc.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Editing_a_task_updates_all_fields_in_one_audited_change()
+    {
+        var (caseId, taskId) = await SeededCaseWithTaskAsync();
+        await using var db = NewContext();
+        var svc = NewCaseService(db);
+
+        var due = new DateTimeOffset(2026, 9, 1, 17, 0, 0, TimeSpan.Zero);
+        await svc.UpdateActionItemAsync(caseId, taskId, "Rotate exposed credentials (all)", "analyst1",
+            due, ActionItemStatus.InProgress, "Coordinated with IAM.");
+
+        var item = await db.ActionItems.AsNoTracking().FirstAsync(a => a.Id == taskId);
+        item.Title.Should().Be("Rotate exposed credentials (all)");
+        item.Owner.Should().Be("analyst1");
+        item.DueAtUtc.Should().Be(due);
+        item.Status.Should().Be(ActionItemStatus.InProgress);
+        item.Description.Should().Be("Coordinated with IAM.");
+        item.CompletedAtUtc.Should().BeNull(); // not Done
+    }
+
+    [Fact]
+    public async Task An_audited_task_change_names_the_task_and_reads_the_status_in_words()
+    {
+        var (caseId, taskId) = await SeededCaseWithTaskAsync();
+        await using (var db = NewContext())
+            await NewCaseService(db).SetActionItemStatusAsync(caseId, taskId, ActionItemStatus.Done);
+
+        await using var read = NewContext();
+        var entry = await read.AuditLog.AsNoTracking()
+            .Where(a => a.EntityType == "ActionItem" && a.Action == AuditAction.Update)
+            .OrderByDescending(a => a.Sequence)
+            .FirstAsync();
+
+        // Identity: the trail says WHICH task, captured at write time.
+        entry.EntityLabel.Should().Be("Rotate exposed credentials");
+        // Value: the status enum reads as words, not a raw number.
+        AuditChangeDetail.Changes(entry).Should()
+            .Contain(x => x.Label == "Status" && x.Before == "Open" && x.After == "Done");
+        // The chain still verifies (the new label extends the canonical only where present).
+        var chain = await read.AuditLog.OrderBy(a => a.Sequence).ToListAsync();
+        _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
     }
 
     [Fact]

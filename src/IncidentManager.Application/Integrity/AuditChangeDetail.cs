@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -56,6 +57,15 @@ public static class AuditChangeDetail
         ["ThirdParty.VendorName"] = "Vendor name",
         ["ThirdParty.VendorContact"] = "Vendor contact",
         ["ThirdParty.VendorReference"] = "Vendor reference",
+        // Follow-up tasks (ActionItem) and timeline reference fields — so a task/timeline edit reads cleanly.
+        ["DueAtUtc"] = "Due",
+        ["CompletedAtUtc"] = "Completed",
+        ["OccurredAtUtc"] = "Occurred",
+        ["ActorEntityId"] = "Actor",
+        ["TargetEntityId"] = "Target",
+        ["SourceEntityId"] = "Source entity",
+        ["EvidenceId"] = "Attached evidence",
+        ["TechniqueId"] = "ATT&CK technique",
     };
 
     // For the one-line summary, owned value-object fields collapse to their group so a materiality change
@@ -76,6 +86,14 @@ public static class AuditChangeDetail
         ("Case", "Phase") => typeof(CasePhase),
         ("Case", "Origin") => typeof(CaseOrigin),
         ("Case", "Materiality.Status") => typeof(MaterialityStatus),
+        ("ActionItem", "Status") => typeof(ActionItemStatus),
+        ("TimelineEntry", "Type") => typeof(TimelineEntryType),
+        ("TimelineEntry", "Kind") => typeof(TimelineKind),
+        ("CaseEntity", "Type") => typeof(EntityType),
+        ("CaseEntity", "Disposition") => typeof(EntityDisposition),
+        ("EntityRelationship", "Type") => typeof(EntityRelationshipType),
+        ("CaseAssignment", "Role") => typeof(CaseAssignmentRole),
+        ("CaseLink", "Type") => typeof(CaseLinkType),
         _ => null
     };
 
@@ -113,7 +131,12 @@ public static class AuditChangeDetail
     /// The field-level diff for an <em>update</em> entry, parsed from its before/after JSON (empty for
     /// create/delete, or when only bookkeeping moved). Never throws on malformed JSON — returns empty.
     /// </summary>
-    public static IReadOnlyList<FieldChange> Changes(AuditLogEntry entry)
+    /// <param name="resolveRef">
+    /// Optional resolver from a stored reference value (a GUID string, e.g. a timeline entry's ActorEntityId)
+    /// to a human label (the IOC's value/label). Lets "Actor: — → 3fb9669b…" read as "Actor: — → 203.0.113.66".
+    /// Returns null when it can't resolve (the raw value is then shown), so it's always safe to omit.
+    /// </param>
+    public static IReadOnlyList<FieldChange> Changes(AuditLogEntry entry, Func<string, string?>? resolveRef = null)
     {
         if (entry.Action != AuditAction.Update ||
             string.IsNullOrWhiteSpace(entry.BeforeJson) || string.IsNullOrWhiteSpace(entry.AfterJson))
@@ -137,8 +160,8 @@ public static class AuditChangeDetail
         {
             if (!IsMeaningful(key)) continue;
             var enumType = EnumTypeFor(entry.EntityType, key);
-            var from = before.TryGetValue(key, out var b) ? Format(b, enumType) : "—";
-            var to = after.TryGetValue(key, out var a) ? Format(a, enumType) : "—";
+            var from = before.TryGetValue(key, out var b) ? Format(b, enumType, resolveRef) : "—";
+            var to = after.TryGetValue(key, out var a) ? Format(a, enumType, resolveRef) : "—";
             if (from == to) continue; // unchanged (e.g. a field re-serialised but not actually moved)
             changes.Add(new FieldChange(Label(key), from, to));
         }
@@ -149,7 +172,7 @@ public static class AuditChangeDetail
     public static string ToLine(IReadOnlyList<FieldChange> changes) =>
         string.Join("; ", changes.Select(c => $"{c.Label}: {c.Before} → {c.After}"));
 
-    private static string Format(JsonElement value, Type? enumType = null)
+    private static string Format(JsonElement value, Type? enumType = null, Func<string, string?>? resolveRef = null)
     {
         // A known enum field stored as a number → its member name (humanised), e.g. 2 → "Containment".
         if (enumType is not null && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var iv)
@@ -161,10 +184,26 @@ public static class AuditChangeDetail
             JsonValueKind.Null or JsonValueKind.Undefined => "—",
             JsonValueKind.True => "Yes",
             JsonValueKind.False => "No",
-            JsonValueKind.String => value.GetString() is { Length: > 0 } s ? s : "—",
+            JsonValueKind.String => value.GetString() is { Length: > 0 } s ? FormatString(s, resolveRef) : "—",
             JsonValueKind.Number => value.GetRawText(),
             _ => value.GetRawText(),
         };
+    }
+
+    // A stored string value, made legible: first a resolver hit (an entity id → its IOC label, a user id →
+    // a display name), then an ISO timestamp → a readable UTC form, else the raw string. The resolver is
+    // free to return null for anything it doesn't recognise, so the raw value always survives as a fallback.
+    private static string FormatString(string s, Func<string, string?>? resolveRef)
+    {
+        if (resolveRef?.Invoke(s) is { Length: > 0 } label) return label;
+
+        // A stored DateTimeOffset (e.g. a due date) serialises as "2026-09-28T22:39:32.84+00:00" — show the
+        // UTC instant to the minute rather than the raw microsecond ISO string.
+        if (s.Length >= 19 && s[10] == 'T'
+            && DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dto))
+            return dto.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture);
+
+        return s;
     }
 
     // "LegalHold" → "Legal hold"; "IsRestricted" → "Restricted"; "AffectedStates" → "Affected states".

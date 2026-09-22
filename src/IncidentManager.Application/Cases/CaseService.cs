@@ -1200,6 +1200,56 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// A map of a case's entity ids to a short display label (its friendly label, else its value). Used by
+    /// the Audit tab to resolve reference fields (a timeline entry's Actor/Target) from an opaque GUID to a
+    /// human name. Read-only and gated by case visibility (need-to-know); empty when the case isn't accessible.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, string>> GetEntityLabelsAsync(Guid caseId, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        if (!await Scoped(db.Cases.AsNoTracking()).AnyAsync(x => x.Id == caseId, ct))
+            return new Dictionary<Guid, string>();
+
+        var rows = await db.CaseEntities.AsNoTracking()
+            .Where(e => e.CaseId == caseId)
+            .Select(e => new { e.Id, e.Label, e.Value })
+            .ToListAsync(ct);
+
+        return rows.ToDictionary(
+            r => r.Id,
+            r => string.IsNullOrWhiteSpace(r.Label) ? r.Value : $"{r.Label} ({r.Value})");
+    }
+
+    /// <summary>
+    /// Edits a task's fields in one audited change (title, owner, due date, status, description) — the
+    /// consolidated edit behind the Tasks tab's Edit button. Owner is a directory id, a free-text external
+    /// name, or null/blank for Unassigned; a status away from Done clears the completion timestamp. Captured
+    /// by the audit trail (before → after) like any structured-record edit.
+    /// </summary>
+    public async Task UpdateActionItemAsync(Guid caseId, Guid actionItemId, string title, string? owner,
+        DateTimeOffset? dueAtUtc, ActionItemStatus status, string? description, CancellationToken ct = default)
+    {
+        Require();
+        var cleanTitle = (title ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(cleanTitle)) throw new ArgumentException("A task needs a title.");
+
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, caseId, ct);
+        var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
+                   ?? throw new InvalidOperationException("Action item not found.");
+
+        item.Title = cleanTitle;
+        item.Owner = string.IsNullOrWhiteSpace(owner) ? null : owner.Trim();
+        item.DueAtUtc = dueAtUtc;
+        item.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        item.Status = status;
+        item.CompletedAtUtc = status == ActionItemStatus.Done ? (item.CompletedAtUtc ?? _clock.UtcNow) : null;
+        item.ModifiedBy = _user.UserId;
+        item.ModifiedAtUtc = _clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+    }
+
     /// <summary>Reassigns a task's owner. A directory user id or free-text external name, or null/blank
     /// to leave it Unassigned. Change is audited/hash-chained like any other edit.</summary>
     public async Task SetActionItemOwnerAsync(Guid caseId, Guid actionItemId, string? owner,

@@ -394,6 +394,7 @@ public sealed class AuditLogEntryConfiguration : IEntityTypeConfiguration<AuditL
         b.Property(x => x.EntityType).HasMaxLength(100);
         b.Property(x => x.EntityId).HasMaxLength(100);
         b.Property(x => x.CaseNumber).HasMaxLength(200);
+        b.Property(x => x.EntityLabel).HasMaxLength(300);
         b.Property(x => x.Summary).HasMaxLength(2000);
         b.Property(x => x.Reason).HasMaxLength(2000);
         b.Property(x => x.PrevHash).HasMaxLength(64);
