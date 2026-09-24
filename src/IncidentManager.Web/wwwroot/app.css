@@ -444,6 +444,31 @@ h1:focus {
 .atkm-custom { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; padding: .5rem 1rem; border-top: 1px solid var(--bs-border-color); }
 .atkm-custom-in { width: auto; display: inline-block; }
 .atkm-foot { display: flex; align-items: center; gap: .5rem; padding: .6rem 1rem; border-top: 1px solid var(--bs-border-color); }
+
+/* PROD-42: program-wide ATT&CK heatmap — tactic columns (same tactic colours as the picker), cells shaded by
+   how many cases saw the technique (--heat, 18–85% of the tactic colour over the page background). */
+.atkh-grid { display: flex; gap: .5rem; overflow-x: auto; padding-bottom: .5rem; align-items: flex-start; contain: inline-size; } /* scrolls in the card, never widens the page */
+.atkh-col { flex: 0 0 11.5rem; display: flex; flex-direction: column; border: 1px solid var(--bs-border-color); border-radius: .4rem; overflow: hidden; background: var(--bs-body-bg); }
+.atkh-col-none { opacity: .6; }
+.atkh-colhead {
+    display: flex; align-items: center; gap: .35rem; padding: .4rem .5rem; font-size: .76rem; font-weight: 600;
+    background: color-mix(in srgb, var(--tac) 16%, var(--bs-body-bg)); border-bottom: 2px solid var(--tac);
+}
+.atkh-colname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atkh-colcount { margin-left: auto; font-size: .7rem; background: var(--tac); color: #fff; border-radius: 999px; padding: 0 .4rem; }
+.atkh-cells { display: flex; flex-direction: column; gap: .2rem; padding: .3rem; }
+.atkh-empty { color: var(--bs-secondary-color); font-size: .74rem; text-align: center; padding: .4rem 0; font-style: italic; }
+.atkh-cell {
+    display: flex; align-items: center; gap: .3rem; width: 100%; text-align: left; font-size: .74rem; line-height: 1.2;
+    padding: .25rem .35rem; border-radius: .3rem; border: 1px solid transparent; color: var(--bs-body-color);
+    background: color-mix(in srgb, var(--tac) var(--heat), var(--bs-body-bg));
+}
+.atkh-cell:hover { border-color: var(--tac); }
+.atkh-cell:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: 1px; }
+.atkh-sel { border-color: var(--bs-body-color); box-shadow: inset 0 0 0 1px var(--bs-body-color); }
+.atkh-tid { flex: 0 0 auto; font-size: .7rem; color: inherit; }
+.atkh-tname { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atkh-n { flex: 0 0 auto; font-weight: 700; font-size: .7rem; }
 .atkm-summary { flex: 0 0 auto; }
 
 /* Stage-gate readiness checklist (C-07) — shown in the reclassify/close modals and the Overview card. */
