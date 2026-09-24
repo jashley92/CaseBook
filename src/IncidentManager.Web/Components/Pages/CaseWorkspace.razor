@@ -202,7 +202,15 @@ else
                             }
                             else
                             {
-                                <button class="dropdown-item" @onclick="() => SetLegalHold(!_case.LegalHold)">@(_case.LegalHold ? "Release legal hold" : "Place legal hold")</button>
+                                @* S-15: releasing asks first and needs a reason; placing a hold (protective) stays one click. *@
+                                @if (_case.LegalHold)
+                                {
+                                    <button class="dropdown-item" @onclick='() => OpenModal("holdrelease")'>Release legal hold…</button>
+                                }
+                                else
+                                {
+                                    <button class="dropdown-item" @onclick="() => SetLegalHold(true)">Place legal hold</button>
+                                }
                             }
                         }
                         @if (_canAdmin)
@@ -567,8 +575,17 @@ else
                         }
                         else if (_activeModal == "holdrelease")
                         {
-                            <p class="small text-muted mb-2">Two-person control is on: this asks for the hold to be lifted. Someone else with
-                                Manage Legal approves it from the case; until then the hold stays in force.</p>
+                            @if (Cases.LegalHoldReleaseNeedsSecondApprover)
+                            {
+                                <p class="small text-muted mb-2">Two-person control is on: this asks for the hold to be lifted. Someone else with
+                                    Manage Legal approves it from the case; until then the hold stays in force.</p>
+                            }
+                            else
+                            {
+                                <p class="small mb-2">Once released, an administrator can archive this case and it's no longer exempt from your
+                                    retention policy. Release it only once counsel confirms preservation is no longer required. The reason is
+                                    recorded in the audit trail.</p>
+                            }
                             <label class="form-label small" for="hold-release-reason">Reason</label>
                             <textarea id="hold-release-reason" class="form-control" rows="3" maxlength="1000" @bind="_holdReleaseReason" @bind:event="oninput"
                                       placeholder="e.g. Litigation settled; counsel confirmed preservation is no longer required"></textarea>
@@ -1120,6 +1137,8 @@ else
         _newSeverity = _case.Severity;
         _newPhase = _case.Phase;
 
+        if (name == "holdrelease") _holdReleaseReason = null;   // don't carry a cancelled attempt's text over
+
         if (name is "restrict" or "unrestrict")
         {
             _restrictReason = null;
@@ -1344,7 +1363,7 @@ else
         "severity" => "Change severity",
         "status" => "Change status",
         "legal" => "Refer to Legal / Privacy",
-        "holdrelease" => "Request legal hold release",
+        "holdrelease" => Cases.LegalHoldReleaseNeedsSecondApprover ? "Request legal hold release" : "Release legal hold",
         "supersede" => "Supersede as a duplicate",
         "restrict" => "Restrict to need-to-know",
         "unrestrict" => "Lift restriction",
@@ -1379,7 +1398,7 @@ else
         "archive" => "Archive",
         "assign" => "Assign",
         "reopen" => "Reopen",
-        "holdrelease" => "Request release",
+        "holdrelease" => Cases.LegalHoldReleaseNeedsSecondApprover ? "Request release" : "Release hold",
         "supersede" => "Supersede",
         "restrict" => "Restrict",
         "unrestrict" => "Lift restriction",
@@ -1461,10 +1480,15 @@ else
                     _restrictReason = null;
                     done = "Restriction lifted";
                     break;
-                case "holdrelease":
+                case "holdrelease" when Cases.LegalHoldReleaseNeedsSecondApprover:
                     await Cases.RequestLegalHoldReleaseAsync(Id, _holdReleaseReason ?? "");
                     _holdReleaseReason = null;
                     done = "Release requested. A second person with Manage Legal approves it.";
+                    break;
+                case "holdrelease":
+                    await Cases.SetLegalHoldAsync(Id, false, _holdReleaseReason);
+                    _holdReleaseReason = null;
+                    done = "Legal hold released";
                     break;
                 case "legal":
                     await Cases.ReferToLegalAsync(Id, _legalContact, _legalNote, _legalBaseline);
@@ -1702,7 +1726,7 @@ else
     {
         _actionsOpen = false;
         _retentionMsg = null;
-        await Cases.SetLegalHoldAsync(Id, held);
+        await Cases.SetLegalHoldAsync(Id, held, reason: null);
         await Reload();
         Toasts.Success(held ? "Legal hold placed" : "Legal hold released");
     }
@@ -1772,8 +1796,9 @@ else
             }
             else
             {
-                list.Add(new(_case.LegalHold ? "Release legal hold" : "Place legal hold",
-                    _case.LegalHold ? "bi-unlock" : "bi-lock", RunThenRender(() => SetLegalHold(!_case.LegalHold))));
+                list.Add(_case.LegalHold
+                    ? new("Release legal hold…", "bi-unlock", () => OpenModalFromPalette("holdrelease"))
+                    : new("Place legal hold", "bi-lock", RunThenRender(() => SetLegalHold(true))));
             }
         }
 

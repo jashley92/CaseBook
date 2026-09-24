@@ -141,7 +141,7 @@ public sealed class CaseActionAuthorizationTests : IDisposable
         await reclassify.Should().NotThrowAsync();
         await hold.Should().NotThrowAsync();
         // Archiving is refused while a hold is in force (domain rule), so release first, then archive.
-        await svc.SetLegalHoldAsync(id, held: false);
+        await svc.SetLegalHoldAsync(id, held: false, reason: "Matter settled");
         await archive.Should().NotThrowAsync();
     }
 

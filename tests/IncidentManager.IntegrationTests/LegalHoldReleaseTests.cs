@@ -116,9 +116,14 @@ public sealed class LegalHoldReleaseTests : IDisposable
         var (db, svc, id) = await HeldCaseAsync();
         await using var _ = db;
 
-        await svc.SetLegalHoldAsync(id, false);
+        // S-15: a single-person release still needs a reason, and the reason lands on the audit entry.
+        await svc.Invoking(s => s.SetLegalHoldAsync(id, false, "  ")).Should().ThrowAsync<ArgumentException>();
+        (await Reload(id)).LegalHold.Should().BeTrue();
+
+        await svc.SetLegalHoldAsync(id, false, "Matter settled");
 
         (await Reload(id)).LegalHold.Should().BeFalse();
+        (await db.AuditLog.AsNoTracking().AnyAsync(a => a.Reason == "Matter settled")).Should().BeTrue();
     }
 
     [Fact]

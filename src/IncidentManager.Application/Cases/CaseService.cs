@@ -1157,10 +1157,15 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Places or releases a legal hold on the case (blocks archival while held).</summary>
-    public async Task SetLegalHoldAsync(Guid id, bool held, CancellationToken ct = default)
+    /// <summary>
+    /// Places or releases a legal hold on the case (blocks archival while held). Releasing needs a reason (S-15),
+    /// recorded on the audit entry; a reason given when placing is recorded too.
+    /// </summary>
+    public async Task SetLegalHoldAsync(Guid id, bool held, string? reason = null, CancellationToken ct = default)
     {
         Require();
+        reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (reason is { Length: > 1000 }) throw new ArgumentException("Keep the reason to 1000 characters or fewer.");
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         if (held) c.PlaceLegalHold(_user.UserId, _clock.UtcNow);
@@ -1170,8 +1175,11 @@ public sealed class CaseService
             if (c.LegalHold && LegalHoldReleaseNeedsSecondApprover)
                 throw new InvalidOperationException(
                     "Releasing a legal hold needs a second approver. Request the release; someone else with Manage Legal approves it.");
+            if (c.LegalHold && reason is null)
+                throw new ArgumentException("Say why the legal hold is being released.");
             c.ReleaseLegalHold(_user.UserId, _clock.UtcNow);
         }
+        db.PendingChangeReason = reason;
         await db.SaveChangesAsync(ct);
         _siem?.Emit(Security.SecurityEvents.LegalHold(held, _user.UserId, _user.UserPrincipalName, c.CaseNumber));
     }

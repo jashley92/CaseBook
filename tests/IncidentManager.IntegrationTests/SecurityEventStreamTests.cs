@@ -296,7 +296,7 @@ public sealed class SecurityEventEmitSiteTests : IDisposable
         {
             var svc = NewCaseService(db);
             await svc.SetLegalHoldAsync(id, held: true);
-            await svc.SetLegalHoldAsync(id, held: false);
+            await svc.SetLegalHoldAsync(id, held: false, reason: "Matter settled");
         }
 
         _siem.Events.Should().ContainSingle(e => e.EventId == SecurityEventIds.LegalHoldPlaced);
