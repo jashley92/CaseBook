@@ -1,0 +1,246 @@
+@page "/indicators"
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@* PROD-10: the cross-case indicator pivot. Every IOC/entity analysts have recorded, deduped by type + value
+   across the cases the viewer can see, most-shared first — "this indicator appears in N cases" as a first-class
+   surface instead of a badge buried inside one case. Read-only: entities are edited on their case's IOCs tab.
+   A case's IOC table links here by entity id (?entity=…) so the indicator value never rides in a URL. *@
+@using IncidentManager.Application.Intel
+@using IncidentManager.Domain.Observables
+@inject IndicatorService Indicators
+@inject TimeDisplay TimeDisp
+@implements IDisposable
+
+<PageTitle>Indicators</PageTitle>
+
+<PageHeader Title="Indicators"
+            Subtitle="Every indicator recorded on your cases, deduplicated, so a repeat IP, domain or hash shows up as a pattern." />
+
+@if (_library is null)
+{
+    <span class="visually-hidden" role="status">Loading indicators…</span>
+    <section class="im-card"><SkeletonTable Rows="5" Columns="5" TableClass="table-sm" /></section>
+    return;
+}
+
+<div class="im-tiles mb-3">
+    <StatTile Icon="bi-crosshair" Value="_library.Summary.Indicators" Label="Indicators" Tone="accent" />
+    <StatTile Icon="bi-intersect" Value="_library.Summary.Shared" Label="Seen in 2+ cases"
+              Tone="@(_library.Summary.Shared > 0 ? "warn" : "neutral")" />
+    <StatTile Icon="bi-bug" Value="_library.Summary.Malicious" Label="Malicious" Tone="danger" />
+    <StatTile Icon="bi-folder2-open" Value="_library.Summary.InOpenCases" Label="In open cases" Tone="neutral" />
+</div>
+
+<section class="im-card">
+    <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+        <div style="min-width:16rem">
+            <label class="form-label small mb-0" for="ind-search">Search</label>
+            <input id="ind-search" class="form-control form-control-sm" placeholder="IP, domain, URL, hash… (defanged is fine)"
+                   value="@_search" @oninput="OnSearch" />
+        </div>
+        <div>
+            <label class="form-label small mb-0" for="ind-type">Type</label>
+            <select id="ind-type" class="form-select form-select-sm" value="@_typeKey" @onchange="OnTypeChanged">
+                <option value="ioc">Indicators (IP, domain, URL, hash)</option>
+                <option value="all">All entity types</option>
+                @foreach (var t in Enum.GetValues<EntityType>())
+                {
+                    <option value="@t">@Ui.Label(t)</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label class="form-label small mb-0" for="ind-verdict">Worst verdict</label>
+            <select id="ind-verdict" class="form-select form-select-sm" value="@(_disposition?.ToString() ?? "")" @onchange="OnVerdictChanged">
+                <option value="">Any</option>
+                @foreach (var d in Enum.GetValues<EntityDisposition>().OrderByDescending(IndicatorService.Severity))
+                {
+                    <option value="@d">@Ui.Label(d)</option>
+                }
+            </select>
+        </div>
+        <div class="form-check mb-1">
+            <input class="form-check-input" type="checkbox" id="ind-shared" checked="@_sharedOnly" @onchange="OnSharedChanged" />
+            <label class="form-check-label small" for="ind-shared">Seen in 2+ cases only</label>
+        </div>
+        <div class="form-check mb-1">
+            <input class="form-check-input" type="checkbox" id="ind-exercises" checked="@_includeExercises" @onchange="OnExercisesChanged" />
+            <label class="form-check-label small" for="ind-exercises">Include exercise cases</label>
+        </div>
+        <div class="ms-auto d-flex align-items-end gap-2">
+            <span class="seg" role="radiogroup" aria-label="Indicator display"
+                  title="Defanged renders network/URL indicators as hxxp://evil[.]com so they're safe to copy out of the tool.">
+                <button type="button" class="seg-opt @(!_defang ? "on" : "")" role="radio" aria-checked="@(!_defang)"
+                        @onclick="() => _defang = false">Live</button>
+                <button type="button" class="seg-opt @(_defang ? "on" : "")" role="radio" aria-checked="@_defang"
+                        @onclick="() => _defang = true">Defanged</button>
+            </span>
+            <a class="btn btn-sm btn-outline-primary" href="export/iocs.csv" download
+               title="The flat blocklist of confirmed-malicious indicators across your cases, for SIEM / firewall / EDR">
+                <span class="bi bi-filetype-csv me-1" aria-hidden="true"></span>Malicious IOC feed
+            </a>
+        </div>
+    </div>
+
+    @if (_library.Rows.Count == 0)
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon"><span class="bi bi-crosshair" aria-hidden="true"></span></div>
+            <div class="empty-state-title">@(Filtered ? "No indicators match" : "No indicators yet")</div>
+            <div class="empty-state-msg">
+                @if (Filtered)
+                {
+                    <text>Try a shorter search, another type, or clear the filters.</text>
+                }
+                else
+                {
+                    <text>Indicators appear here as analysts add them on a case's <em>IOCs &amp; entities</em> tab.</text>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <table class="table table-sm align-middle im-table mb-0">
+            <thead>
+                <tr><th>Indicator</th><th>Worst verdict</th><th>Cases</th><th>First seen</th><th>Last seen</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _library.Rows)
+                {
+                    var key = RowKey(r);
+                    var open = _expanded.Contains(key);
+                    <tr @key="key">
+                        <td>
+                            <span class="text-nowrap small text-muted me-1">@Ui.EntityGlyph(r.Type) @Ui.Label(r.Type)</span>
+                            <code class="small text-break">@Display(r)</code>
+                        </td>
+                        <td><span class="@Ui.DispositionBadge(r.WorstDisposition)">@Ui.Label(r.WorstDisposition)</span></td>
+                        <td class="text-nowrap">
+                            <span class="im-badge @(r.CaseCount > 1 ? "im-b-warn" : "im-b-neutral")">@r.CaseCount</span>
+                            @if (r.OpenCaseCount > 0) { <span class="small text-muted ms-1">@r.OpenCaseCount open</span> }
+                        </td>
+                        <td class="small text-nowrap">@TimeDisp.DateOnly(r.FirstSeenUtc)</td>
+                        <td class="small text-nowrap">@TimeDisp.DateOnly(r.LastSeenUtc)</td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => Toggle(key)"
+                                    aria-expanded="@(open ? "true" : "false")" title="Show the cases this indicator appears on">
+                                <span class="bi @(open ? "bi-chevron-up" : "bi-chevron-down")" aria-hidden="true"></span> Cases
+                            </button>
+                        </td>
+                    </tr>
+                    @if (open)
+                    {
+                        <tr class="im-custody-row">
+                            <td colspan="6" class="bg-body-tertiary">
+                                <table class="table table-sm mb-0 im-table">
+                                    <thead><tr><th>Case</th><th>Classification</th><th>Phase</th><th>Verdict on this case</th><th>Added</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var c in r.Cases)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <a href="@($"cases/{c.CaseId}?tab=Entities")"><code class="small">@c.CaseNumber</code></a>
+                                                    @if (c.IsExercise) { <span class="im-badge im-b-neutral ms-1">Exercise</span> }
+                                                    <div class="small text-muted text-truncate" style="max-width:22rem" title="@c.Title">@c.Title</div>
+                                                </td>
+                                                <td><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
+                                                <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
+                                                <td><span class="@Ui.DispositionBadge(c.Disposition)">@Ui.Label(c.Disposition)</span></td>
+                                                <td class="small text-nowrap">@TimeDisp.DateOnly(c.AddedAtUtc)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+        @if (_library.Truncated)
+        {
+            <p class="small text-muted mt-2 mb-0">Showing the first @IndicatorService.MaxRows. Search or filter to narrow the list.</p>
+        }
+    }
+</section>
+
+@code {
+    /// <summary>Pivot from a case's IOC table: the entity id is resolved server-side (need-to-know scoped).</summary>
+    [SupplyParameterFromQuery(Name = "entity")] public Guid? EntityId { get; set; }
+
+    private IndicatorLibrary? _library;
+    private string _search = "";
+    private string _typeKey = "ioc";
+    private EntityDisposition? _disposition;
+    private bool _sharedOnly;
+    private bool _includeExercises;
+    private bool _defang;
+    private readonly HashSet<string> _expanded = new();
+    private CancellationTokenSource? _searchDebounce;
+
+    private bool Filtered => _search.Length > 0 || _typeKey != "ioc" || _disposition is not null || _sharedOnly;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (EntityId is { } id && await Indicators.ResolveEntityAsync(id) is { } hit)
+        {
+            _search = hit.Value;
+            _typeKey = hit.Type.ToString();
+        }
+        await Load();
+        // A pivot lands on one indicator: open its case list straight away.
+        if (EntityId is not null && _library is { Rows.Count: 1 }) _expanded.Add(RowKey(_library.Rows[0]));
+    }
+
+    private async Task Load()
+    {
+        var (scope, type) = _typeKey switch
+        {
+            "ioc" => (IndicatorTypeScope.Indicators, (EntityType?)null),
+            "all" => (IndicatorTypeScope.AllTypes, null),
+            var k => (IndicatorTypeScope.AllTypes, Enum.TryParse<EntityType>(k, out var t) ? t : (EntityType?)null),
+        };
+        _library = await Indicators.SearchAsync(new IndicatorFilter(_search, scope, type, _sharedOnly, _disposition, _includeExercises));
+    }
+
+    private static string RowKey(IndicatorRow r) => $"{r.Type}|{r.Value.ToLowerInvariant()}";
+
+    private void Toggle(string key)
+    {
+        if (!_expanded.Add(key)) _expanded.Remove(key);
+    }
+
+    private string Display(IndicatorRow r) =>
+        _defang && IocObservable.IsRefangable(r.Type) ? IocObservable.Defang(r.Value) : r.Value;
+
+    private async Task OnTypeChanged(ChangeEventArgs e) { _typeKey = e.Value?.ToString() ?? "ioc"; await Load(); }
+
+    private async Task OnVerdictChanged(ChangeEventArgs e)
+    {
+        _disposition = Enum.TryParse<EntityDisposition>(e.Value?.ToString(), out var d) ? d : null;
+        await Load();
+    }
+
+    private async Task OnSharedChanged(ChangeEventArgs e) { _sharedOnly = e.Value is true; await Load(); }
+
+    private async Task OnExercisesChanged(ChangeEventArgs e) { _includeExercises = e.Value is true; await Load(); }
+
+    // Debounced so typing doesn't re-query on every keystroke.
+    private async Task OnSearch(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? "";
+        _searchDebounce?.Cancel();
+        _searchDebounce?.Dispose();
+        _searchDebounce = new CancellationTokenSource();
+        var token = _searchDebounce.Token;
+        try { await Task.Delay(250, token); }
+        catch (TaskCanceledException) { return; }
+        await Load();
+    }
+
+    public void Dispose()
+    {
+        _searchDebounce?.Cancel();
+        _searchDebounce?.Dispose();
+    }
+}

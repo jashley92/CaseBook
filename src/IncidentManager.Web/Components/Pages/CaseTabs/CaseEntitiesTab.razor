@@ -297,6 +297,10 @@ else
                                         {
                                             <a class="ms-1" href="cases/@o.OtherCaseId"><code class="small">@o.OtherCaseNumber</code></a>
                                         }
+                                        @* PROD-10: pivot to every case carrying it (by id, so the value stays out of the URL). *@
+                                        <a class="ms-2" href="indicators?entity=@e.Id" title="Every case this indicator appears on">
+                                            <span class="bi bi-crosshair" aria-hidden="true"></span> All cases
+                                        </a>
                                     </small>
                                 }
                             </td>

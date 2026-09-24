@@ -70,6 +70,12 @@
                 <span class="bi bi-diagram-3" aria-hidden="true"></span><span class="nav-text">Campaigns</span>
             </NavLink>
         </div>
+        @* PROD-10: the cross-case indicator pivot — every recorded IOC, deduped, most-shared first. *@
+        <div class="nav-item">
+            <NavLink class="nav-link" href="indicators" Match="NavLinkMatch.All" title="Indicators">
+                <span class="bi bi-crosshair" aria-hidden="true"></span><span class="nav-text">Indicators</span>
+            </NavLink>
+        </div>
         @* E-26/PROD-41: the cross-case register of follow-up work from post-incident reviews. *@
         <div class="nav-item">
             <NavLink class="nav-link" href="improvement-actions" Match="NavLinkMatch.All" title="Improvement actions">

@@ -46,6 +46,7 @@ public static class DependencyInjection
         services.AddScoped<Integrity.EvidenceIntegrityVerifier>();
         services.AddScoped<Compliance.ComplianceBundleService>();
         services.AddScoped<Export.IocFeedService>();
+        services.AddScoped<Intel.IndicatorService>();        // PROD-10: cross-case indicator pivot
         services.AddScoped<Export.StixExportService>();   // E-07: per-case entity graph → STIX 2.1 bundle
         services.AddScoped<ReportService>();
         // E-03b: overdue after-action scan. Scoped (creates a DbContext per pass, driven by the hosted
