@@ -2,6 +2,7 @@ using System.Globalization;
 using IncidentManager.Application.Reporting;
 using MigraDoc.DocumentObjectModel;
 using MigraDoc.Rendering;
+using PdfSharp.Drawing;
 using PdfSharp.Fonts;
 
 namespace IncidentManager.Infrastructure.Reporting;
@@ -114,7 +115,7 @@ public sealed partial class ReportGenerator
                         x.TechniqueId ?? "",
                         x.Description
                     }).ToList(),
-                    [0.8, 2.6, 2.6, 3.0, 1.8, 5.2]);
+                    [0.7, 2.6, 2.5, 3.0, 2.1, 5.1]);
                 break;
 
             case ReportSection.InvestigationTimeline:
@@ -132,7 +133,7 @@ public sealed partial class ReportGenerator
                     section.AddParagraph($"Impacted assets: {m.ImpactedAssets}");
                 PdfTable(section, ["Type", "Value", "Label", "Disposition", "Source"],
                     m.Entities.Select(x => new[] { x.Type, x.Value, x.Label ?? "", x.Disposition, x.Source ?? "" }).ToList(),
-                    [2.6, 5.0, 2.6, 2.2, 2.6]);
+                    [2.4, 5.2, 2.6, 2.6, 2.4]);
                 break;
 
             case ReportSection.Recommendations:
@@ -220,12 +221,12 @@ public sealed partial class ReportGenerator
         SubHeading(section, "D. Classification history");
         PdfTable(section, ["When (UTC)", "From", "To", "Reason", "By"],
             m.ClassificationHistory.Select(x => new[] { x.AtUtc.ToString("u"), x.From, x.To, x.Reason, x.By }).ToList(),
-            [2.8, 2.0, 2.0, 6.2, 3.0]);
+            [2.8, 2.5, 2.5, 5.2, 3.0]);
 
         SubHeading(section, "E. Severity history");
         PdfTable(section, ["When (UTC)", "From", "To", "Reason", "By"],
             m.SeverityHistory.Select(x => new[] { x.AtUtc.ToString("u"), x.From, x.To, x.Reason, x.By }).ToList(),
-            [2.8, 2.0, 2.0, 6.2, 3.0]);
+            [2.8, 2.5, 2.5, 5.2, 3.0]);
 
         SubHeading(section, "F. Evidence index");
         PdfTable(section, ["File", "Size", "SHA-256", "Uploaded", "By"],
@@ -276,7 +277,10 @@ public sealed partial class ReportGenerator
                     a.Title, a.RelatedArea ?? "", CaseReportModel.ActionDetail(a), a.Owner,
                     a.TargetDateUtc?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "", a.Status
                 }).ToList(),
-                [4.0, 2.4, 4.4, 2.2, 1.6, 1.4]);
+                // MigraDoc can't break a single word, so Target and Status are sized to fit "2026-09-20" and
+                // "Completed" whole (≈2 cm at 9 pt); the free-text columns absorb the rest. Sums to 16.8 cm of
+                // the 17 cm printable width.
+                [3.8, 2.4, 4.0, 2.2, 2.2, 2.2]);
     }
 
     private static void BuildHeaderFooter(Section section, CaseReportModel m, string? logoPath)
@@ -346,6 +350,11 @@ public sealed partial class ReportGenerator
     private static void Caption(Section section, string text) =>
         section.AddParagraph(text).Format.Font.Italic = true;
 
+    // MigraDoc's default cell padding (1.2 mm each side) and the report body font (see GeneratePdf).
+    private const double CellPaddingPt = 2 * 1.2 / 10 / 2.54 * 72;
+    private const string BodyFont = "DejaVu Sans";
+    private const double BodyFontSize = 9;
+
     private static void PdfTable(Section section, string[] headers, List<string[]> rows, double[] widthsCm)
     {
         var table = section.AddTable();
@@ -353,10 +362,18 @@ public sealed partial class ReportGenerator
         for (var i = 0; i < headers.Length; i++)
             table.AddColumn(Unit.FromCentimeter(widthsCm[i]));
 
+        // MigraDoc only wraps at spaces and hyphens, so a token wider than its column (a SHA-256, a URL, a long
+        // label) would print across the neighbouring cells. Measure with the real font and break such tokens.
+        var gfx = XGraphics.CreateMeasureContext(new XSize(2000, 2000), XGraphicsUnit.Point, XPageDirection.Downwards);
+        var regular = new XFont(BodyFont, BodyFontSize);
+        var bold = new XFont(BodyFont, BodyFontSize, XFontStyleEx.Bold);
+        double Inner(int col) => Unit.FromCentimeter(widthsCm[col]).Point - CellPaddingPt;
+
         var headerRow = table.AddRow();
         headerRow.Format.Font.Bold = true;
+        headerRow.HeadingFormat = true;   // repeat the header row when a table spans pages
         for (var i = 0; i < headers.Length; i++)
-            headerRow.Cells[i].AddParagraph(headers[i]);
+            AddWrapped(headerRow.Cells[i].AddParagraph(), headers[i], Inner(i), gfx, bold);
 
         if (rows.Count == 0)
         {
@@ -367,7 +384,55 @@ public sealed partial class ReportGenerator
         {
             var r = table.AddRow();
             for (var i = 0; i < headers.Length && i < row.Length; i++)
-                r.Cells[i].AddParagraph(row[i] ?? "");
+                AddWrapped(r.Cells[i].AddParagraph(), row[i] ?? "", Inner(i), gfx, regular);
         }
+    }
+
+    /// <summary>
+    /// Adds <paramref name="text"/> to a cell paragraph, inserting a line break inside any single word too wide
+    /// for <paramref name="maxWidthPt"/> (preferring to break after '/', '.', '-', '\\' or '_' so URLs and
+    /// paths split readably). Ordinary words are left for MigraDoc to wrap at spaces. Real line breaks, never
+    /// invisible zero-width characters, so a hash copied out of the PDF isn't silently corrupted.
+    /// </summary>
+    private static void AddWrapped(Paragraph p, string text, double maxWidthPt, XGraphics gfx, XFont font)
+    {
+        var words = text.Split(' ');
+        for (var w = 0; w < words.Length; w++)
+        {
+            if (w > 0) p.AddText(" ");
+            var word = words[w];
+            if (word.Length == 0 || gfx.MeasureString(word, font).Width <= maxWidthPt)
+            {
+                p.AddText(word);
+                continue;
+            }
+            var chunks = SplitToWidth(word, maxWidthPt, gfx, font);
+            for (var c = 0; c < chunks.Count; c++)
+            {
+                if (c > 0) p.AddLineBreak();
+                p.AddText(chunks[c]);
+            }
+        }
+    }
+
+    internal static List<string> SplitToWidth(string word, double maxWidthPt, XGraphics gfx, XFont font)
+    {
+        var chunks = new List<string>();
+        var start = 0;
+        while (start < word.Length)
+        {
+            // The longest prefix of the remainder that fits (at least one character, so progress is guaranteed).
+            var end = start + 1;
+            while (end < word.Length && gfx.MeasureString(word[start..(end + 1)], font).Width <= maxWidthPt) end++;
+            if (end < word.Length)
+            {
+                // Prefer a natural break point in the back half of the chunk.
+                var natural = word.LastIndexOfAny(['/', '.', '-', '\\', '_'], end - 1, end - start);
+                if (natural >= start + (end - start) / 2) end = natural + 1;
+            }
+            chunks.Add(word[start..end]);
+            start = end;
+        }
+        return chunks;
     }
 }
