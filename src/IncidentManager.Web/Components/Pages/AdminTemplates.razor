@@ -172,7 +172,7 @@ else
 @code {
     private ConfirmDialog _confirm = null!;
 
-    private void ConfirmDeleteTemplate(TemplateView t) => _confirm.Ask("Delete template",
+    private void ConfirmDeleteTemplate(TemplateView t) => _confirm.Ask(this, "Delete template",
         $"Delete the “{t.Name}” template? It won't be offered for new cases. Cases that already used it keep their tasks.",
         "Delete template", () => DeleteTemplate(t));
 

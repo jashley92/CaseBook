@@ -1,7 +1,8 @@
 @* S-23: a shared "are you sure?" step for destructive admin actions. Same markup as the case workspace's confirm
    (modal + scrim + focus trap), but the page states the consequence and names the button for the action, so the
    person reads what will happen before it happens. Usage: <ConfirmDialog @ref="_confirm" /> then
-   _confirm.Ask("Delete role", "…what happens…", "Delete role", () => DeleteRole(r)). *@
+   _confirm.Ask(this, "Delete role", "…what happens…", "Delete role", () => DeleteRole(r)). The action runs as an
+   event on the owning component (`this`), so the page re-renders with its result. *@
 @inject IJSRuntime JS
 
 @if (_open)
@@ -32,15 +33,18 @@
     private string _title = "";
     private string _message = "";
     private string _confirmLabel = "";
-    private Func<Task>? _onConfirm;
+    private EventCallback _onConfirm;
 
-    /// <summary>Opens the dialog. <paramref name="confirmLabel"/> names the action ("Delete role"), not "OK".</summary>
-    public void Ask(string title, string message, string confirmLabel, Func<Task> onConfirm)
+    /// <summary>
+    /// Opens the dialog. <paramref name="owner"/> is the component asking (pass <c>this</c>): the action is dispatched as
+    /// its event, so it re-renders afterwards. <paramref name="confirmLabel"/> names the action ("Delete role"), not "OK".
+    /// </summary>
+    public void Ask(IHandleEvent owner, string title, string message, string confirmLabel, Func<Task> onConfirm)
     {
         _title = title;
         _message = message;
         _confirmLabel = confirmLabel;
-        _onConfirm = onConfirm;
+        _onConfirm = EventCallback.Factory.Create(owner, onConfirm);
         _busy = false;
         _open = true;
         StateHasChanged();
@@ -50,7 +54,7 @@
     {
         if (_busy) return;
         _open = false;
-        _onConfirm = null;
+        _onConfirm = default;
     }
 
     private void OnKeyDown(KeyboardEventArgs e)
@@ -70,14 +74,14 @@
 
     private async Task Run()
     {
-        if (_onConfirm is null) return;
+        if (!_onConfirm.HasDelegate) return;
         _busy = true;
-        try { await _onConfirm(); }
+        try { await _onConfirm.InvokeAsync(); }
         finally
         {
             _busy = false;
             _open = false;
-            _onConfirm = null;
+            _onConfirm = default;
         }
     }
 }

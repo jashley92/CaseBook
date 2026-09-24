@@ -267,12 +267,12 @@ else
 @code {
     private ConfirmDialog _confirm = null!;
 
-    private void ConfirmDeleteRole(Role r) => _confirm.Ask("Delete role",
+    private void ConfirmDeleteRole(Role r) => _confirm.Ask(this, "Delete role",
         $"Delete the role “{r.Name}”? Its AD group mappings are removed too, and people who get access only " +
         "through it lose that access the next time they open CaseBook. API tokens that carry it lose its permissions.",
         "Delete role", () => DeleteRole(r));
 
-    private void ConfirmRemoveMapping(AdGroupRoleMapping m) => _confirm.Ask("Remove mapping",
+    private void ConfirmRemoveMapping(AdGroupRoleMapping m) => _confirm.Ask(this, "Remove mapping",
         $"Stop granting {Ui.RoleLabel(m.RoleName)} to members of {m.AdGroup}? They lose that access the next time they open CaseBook, " +
         "unless another of their groups grants it.",
         "Remove mapping", () => RemoveMapping(m));

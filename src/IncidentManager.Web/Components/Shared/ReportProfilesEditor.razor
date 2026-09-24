@@ -125,7 +125,7 @@
 @code {
     private ConfirmDialog _confirm = null!;
 
-    private void ConfirmDelete(ReportProfileView p) => _confirm.Ask("Delete report profile",
+    private void ConfirmDelete(ReportProfileView p) => _confirm.Ask(this, "Delete report profile",
         $"Delete the “{p.Name}” report profile? Cases set to it use the default report sections from now on.",
         "Delete profile", () => Delete(p));
 

@@ -116,7 +116,7 @@ else
 @code {
     private ConfirmDialog _confirm = null!;
 
-    private void ConfirmRevoke(ApiTokenView t) => _confirm.Ask("Revoke token",
+    private void ConfirmRevoke(ApiTokenView t) => _confirm.Ask(this, "Revoke token",
         $"Revoke “{t.Name}”? Anything using it (a playbook, a script) is refused from now on. This can't be undone; " +
         "create a new token if it's still needed.",
         "Revoke token", () => Revoke(t));

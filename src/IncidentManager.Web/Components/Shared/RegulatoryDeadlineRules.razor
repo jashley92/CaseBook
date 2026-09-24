@@ -120,7 +120,7 @@ else
 @code {
     private ConfirmDialog _confirm = null!;
 
-    private void ConfirmDelete(Guid id, string label) => _confirm.Ask("Delete rule",
+    private void ConfirmDelete(Guid id, string label) => _confirm.Ask(this, "Delete rule",
         $"Permanently delete the “{label}” rule? Cases stop getting its deadline. This can't be undone. " +
         "(Archiving keeps it restorable.)",
         "Delete rule", () => Delete(id));

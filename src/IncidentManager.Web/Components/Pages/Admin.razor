@@ -721,7 +721,7 @@
 @code {
     private ConfirmDialog _confirm = null!;
 
-    private void ConfirmRemoveLogo() => _confirm.Ask("Remove logo",
+    private void ConfirmRemoveLogo() => _confirm.Ask(this, "Remove logo",
         "Remove the report logo? Reports generated from now on won't show it; reports already generated keep it.",
         "Remove logo", RemoveLogo);
 

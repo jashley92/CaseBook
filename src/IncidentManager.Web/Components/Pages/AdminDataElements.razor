@@ -125,7 +125,7 @@ else
 @code {
     private ConfirmDialog _confirm = null!;
 
-    private void ConfirmDelete(Guid id, string label) => _confirm.Ask("Delete data element",
+    private void ConfirmDelete(Guid id, string label) => _confirm.Ask(this, "Delete data element",
         $"Permanently delete “{label}”? This can't be undone. (Archiving keeps it restorable.)",
         "Delete", () => Delete(id));
 

@@ -195,7 +195,7 @@ else
 @code {
     private ConfirmDialog _confirm = null!;
 
-    private void ConfirmDeleteGate(StageGateView g) => _confirm.Ask("Delete gate",
+    private void ConfirmDeleteGate(StageGateView g) => _confirm.Ask(this, "Delete gate",
         $"Delete the “{g.Name}” gate? Cases stop being checked against its requirements at that transition. " +
         "Past checks and overrides stay in the audit trail.",
         "Delete gate", () => DeleteGate(g));
