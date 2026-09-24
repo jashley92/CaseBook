@@ -223,7 +223,7 @@
                                         <InputFile class="form-control form-control-sm mb-2" accept="image/png,image/jpeg" OnChange="OnLogoSelected" />
                                         @if (_logoDataUri is not null)
                                         {
-                                            <button class="btn btn-outline-danger btn-sm" @onclick="RemoveLogo">Remove logo</button>
+                                            <button class="btn btn-outline-danger btn-sm" @onclick="ConfirmRemoveLogo">Remove logo</button>
                                         }
                                         @if (_logoError is not null)
                                         {
@@ -714,7 +714,17 @@
             </table>
         }
 
+
+@* S-23: destructive actions state their consequence and ask first. *@
+<ConfirmDialog @ref="_confirm" />
+
 @code {
+    private ConfirmDialog _confirm = null!;
+
+    private void ConfirmRemoveLogo() => _confirm.Ask("Remove logo",
+        "Remove the report logo? Reports generated from now on won't show it; reports already generated keep it.",
+        "Remove logo", RemoveLogo);
+
     // This page renders the Configuration and System sections of the admin hub; the shared AdminLayout owns
     // the index rail. The active section comes from the route: /admin is Identity & branding, and
     // /admin/settings/{section} selects the rest. Settings sections carry the catalog Groups they render;

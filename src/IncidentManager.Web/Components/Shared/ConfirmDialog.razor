@@ -1,0 +1,83 @@
+@* S-23: a shared "are you sure?" step for destructive admin actions. Same markup as the case workspace's confirm
+   (modal + scrim + focus trap), but the page states the consequence and names the button for the action, so the
+   person reads what will happen before it happens. Usage: <ConfirmDialog @ref="_confirm" /> then
+   _confirm.Ask("Delete role", "…what happens…", "Delete role", () => DeleteRole(r)). *@
+@inject IJSRuntime JS
+
+@if (_open)
+{
+    <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true"
+         aria-labelledby="im-confirm-dlg-title" style="background:var(--im-scrim)"
+         @onclick="Cancel" @onkeydown="OnKeyDown">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="im-confirm-dlg-title">@_title</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="Cancel"></button>
+                </div>
+                <div class="modal-body"><p class="mb-0">@_message</p></div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" @onclick="Cancel" disabled="@_busy">Cancel</button>
+                    <button class="btn btn-danger" @onclick="Run" disabled="@_busy">@_confirmLabel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _open;
+    private bool _armed;   // whether imModal (UX-01 focus trap) currently holds focus in this dialog
+    private bool _busy;
+    private string _title = "";
+    private string _message = "";
+    private string _confirmLabel = "";
+    private Func<Task>? _onConfirm;
+
+    /// <summary>Opens the dialog. <paramref name="confirmLabel"/> names the action ("Delete role"), not "OK".</summary>
+    public void Ask(string title, string message, string confirmLabel, Func<Task> onConfirm)
+    {
+        _title = title;
+        _message = message;
+        _confirmLabel = confirmLabel;
+        _onConfirm = onConfirm;
+        _busy = false;
+        _open = true;
+        StateHasChanged();
+    }
+
+    private void Cancel()
+    {
+        if (_busy) return;
+        _open = false;
+        _onConfirm = null;
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") Cancel();
+    }
+
+    // Move focus into the dialog when it opens (so Escape and Tab work) and give it back when it closes.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_open == _armed) return;
+        _armed = _open;
+        try { await JS.InvokeVoidAsync(_open ? "imModal.arm" : "imModal.release"); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { } // prerendering: no JS yet
+    }
+
+    private async Task Run()
+    {
+        if (_onConfirm is null) return;
+        _busy = true;
+        try { await _onConfirm(); }
+        finally
+        {
+            _busy = false;
+            _open = false;
+            _onConfirm = null;
+        }
+    }
+}

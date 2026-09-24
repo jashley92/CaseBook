@@ -100,7 +100,7 @@ else
                                         <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => Restore(r.Id)">Restore</button>
                                         @if (r.IsDeletable)
                                         {
-                                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => Delete(r.Id)">Delete</button>
+                                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => ConfirmDelete(r.Id, r.Label)">Delete</button>
                                         }
                                     </td>
                                 </tr>
@@ -113,7 +113,18 @@ else
     }
 }
 
+
+@* S-23: destructive actions state their consequence and ask first. *@
+<ConfirmDialog @ref="_confirm" />
+
 @code {
+    private ConfirmDialog _confirm = null!;
+
+    private void ConfirmDelete(Guid id, string label) => _confirm.Ask("Delete rule",
+        $"Permanently delete the “{label}” rule? Cases stop getting its deadline. This can't be undone. " +
+        "(Archiving keeps it restorable.)",
+        "Delete rule", () => Delete(id));
+
     private List<NotificationRuleView>? _all;
     private bool _showArchived;
 

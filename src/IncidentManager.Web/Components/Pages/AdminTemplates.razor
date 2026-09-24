@@ -157,7 +157,7 @@ else
                     <td><span class="im-badge im-b-info">@t.Steps.Count</span></td>
                     <td class="text-end">
                         <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => BeginEdit(t)">Edit</button>
-                        <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => DeleteTemplate(t)">Delete</button>
+                        <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => ConfirmDeleteTemplate(t)">Delete</button>
                     </td>
                 </tr>
             }
@@ -165,7 +165,17 @@ else
     </table>
 }
 
+
+@* S-23: destructive actions state their consequence and ask first. *@
+<ConfirmDialog @ref="_confirm" />
+
 @code {
+    private ConfirmDialog _confirm = null!;
+
+    private void ConfirmDeleteTemplate(TemplateView t) => _confirm.Ask("Delete template",
+        $"Delete the “{t.Name}” template? It won't be offered for new cases. Cases that already used it keep their tasks.",
+        "Delete template", () => DeleteTemplate(t));
+
     private List<TemplateView>? _templates;
     private TemplateEdit? _edit;
 

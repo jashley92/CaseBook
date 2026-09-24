@@ -106,7 +106,7 @@ else
                         @if (!r.IsSystem)
                         {
                             <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => BeginEdit(r)">Edit</button>
-                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => DeleteRole(r)">Delete</button>
+                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => ConfirmDeleteRole(r)">Delete</button>
                         }
                         else
                         {
@@ -162,7 +162,7 @@ else
                     <td><code class="small">@m.AdGroup</code></td>
                     <td>@m.RoleName</td>
                     <td class="text-end">
-                        <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => RemoveMapping(m)">Remove</button>
+                        <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => ConfirmRemoveMapping(m)">Remove</button>
                     </td>
                 </tr>
             }
@@ -260,7 +260,23 @@ else
     }
 }
 
+
+@* S-23: destructive actions state their consequence and ask first. *@
+<ConfirmDialog @ref="_confirm" />
+
 @code {
+    private ConfirmDialog _confirm = null!;
+
+    private void ConfirmDeleteRole(Role r) => _confirm.Ask("Delete role",
+        $"Delete the role “{r.Name}”? Its AD group mappings are removed too, and people who get access only " +
+        "through it lose that access the next time they open CaseBook. API tokens that carry it lose its permissions.",
+        "Delete role", () => DeleteRole(r));
+
+    private void ConfirmRemoveMapping(AdGroupRoleMapping m) => _confirm.Ask("Remove mapping",
+        $"Stop granting {Ui.RoleLabel(m.RoleName)} to members of {m.AdGroup}? They lose that access the next time they open CaseBook, " +
+        "unless another of their groups grants it.",
+        "Remove mapping", () => RemoveMapping(m));
+
     private List<Role>? _roles;
     private List<AdGroupRoleMapping>? _mappings;
     private AccessReview? _review;

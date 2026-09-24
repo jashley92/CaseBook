@@ -108,7 +108,7 @@
                             <td class="small">@SectionSummary(p.SectionLayout)</td>
                             <td class="text-end">
                                 <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => BeginEdit(p)">Edit</button>
-                                <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => Delete(p)">Delete</button>
+                                <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => ConfirmDelete(p)">Delete</button>
                             </td>
                         </tr>
                     }
@@ -118,7 +118,17 @@
     </div>
 </div>
 
+
+@* S-23: destructive actions state their consequence and ask first. *@
+<ConfirmDialog @ref="_confirm" />
+
 @code {
+    private ConfirmDialog _confirm = null!;
+
+    private void ConfirmDelete(ReportProfileView p) => _confirm.Ask("Delete report profile",
+        $"Delete the “{p.Name}” report profile? Cases set to it use the default report sections from now on.",
+        "Delete profile", () => Delete(p));
+
     private List<ReportProfileView>? _profiles;
     private ProfileEdit? _edit;
 

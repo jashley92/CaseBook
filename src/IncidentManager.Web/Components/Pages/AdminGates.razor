@@ -180,7 +180,7 @@ else
                     </td>
                     <td class="text-end">
                         <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => BeginEdit(g)">Edit</button>
-                        <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => DeleteGate(g)">Delete</button>
+                        <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => ConfirmDeleteGate(g)">Delete</button>
                     </td>
                 </tr>
             }
@@ -188,7 +188,18 @@ else
     </table>
 }
 
+
+@* S-23: destructive actions state their consequence and ask first. *@
+<ConfirmDialog @ref="_confirm" />
+
 @code {
+    private ConfirmDialog _confirm = null!;
+
+    private void ConfirmDeleteGate(StageGateView g) => _confirm.Ask("Delete gate",
+        $"Delete the “{g.Name}” gate? Cases stop being checked against its requirements at that transition. " +
+        "Past checks and overrides stay in the audit trail.",
+        "Delete gate", () => DeleteGate(g));
+
     private List<StageGateView>? _gates;
     private GateEdit? _edit;
 

@@ -128,7 +128,7 @@ else
                     <td class="text-end">
                         @if (t.RevokedAtUtc is null)
                         {
-                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => Revoke(t)">Revoke</button>
+                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => ConfirmRevoke(t)">Revoke</button>
                         }
                     </td>
                 </tr>
@@ -137,7 +137,18 @@ else
     </table>
 }
 
+
+@* S-23: destructive actions state their consequence and ask first. *@
+<ConfirmDialog @ref="_confirm" />
+
 @code {
+    private ConfirmDialog _confirm = null!;
+
+    private void ConfirmRevoke(ApiTokenView t) => _confirm.Ask("Revoke token",
+        $"Revoke “{t.Name}”? Anything using it (a playbook, a script) is refused from now on. This can't be undone; " +
+        "create a new token if it's still needed.",
+        "Revoke token", () => Revoke(t));
+
     private List<Role> _roles = new();
     private IReadOnlyList<ApiTokenView>? _tokens;
     private bool _creating;
