@@ -571,7 +571,7 @@
     /// <summary>Reload the case after a write so the rest of the workspace refreshes.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
     /// <summary>Ask the parent's shared confirm dialog to guard a destructive action.</summary>
-    [Parameter] public EventCallback<(string Message, Func<Task> OnConfirm)> RequestConfirm { get; set; }
+    [Parameter] public EventCallback<(string Message, string Verb, Func<Task> OnConfirm)> RequestConfirm { get; set; }
     /// <summary>Open one of the parent's action modals (used for the assign modal).</summary>
     [Parameter] public EventCallback<string> OnOpenModal { get; set; }
     /// <summary>Bumped by the parent on a collaborator change, to re-pull related cases.</summary>
@@ -707,7 +707,7 @@
     }
 
     private async Task ClearReported() =>
-        await RequestConfirm.InvokeAsync(("Clear the reported milestone? The notification countdown will resume.",
+        await RequestConfirm.InvokeAsync(("Clear the reported milestone? The notification countdown will resume.", "Clear",
             async () =>
             {
                 await Cases.ClearReportedAsync(CaseId);
@@ -771,7 +771,7 @@
         if (CanEdit && _editingDetails) await SaveDetails();
     }
 
-    private Task Confirm(string message, Func<Task> action) => RequestConfirm.InvokeAsync((message, action));
+    private Task Confirm(string message, Func<Task> action, string verb = "Remove") => RequestConfirm.InvokeAsync((message, verb, action));
 
     // One response-SLA vital for the vitals strip (E-16): containment or resolution, badge + timing.
     private RenderFragment SlaVital(SlaStatus st) =>

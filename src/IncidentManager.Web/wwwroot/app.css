@@ -2019,6 +2019,12 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
    badges, so the case you want is tappable without scrolling sideways.
    ============================================================================ */
 .im-case-list > tbody > tr { position: relative; }
+.im-case-list .case-cell-title { min-width: 12rem; }
+.im-case-list .case-num { max-width: 11rem; }
+/* Laptop widths: Origin (also a filter) is the column that gives way so the rest fits without clipping. */
+@media (min-width: 641px) and (max-width: 1399.98px) {
+    .im-case-list .case-cell-origin { display: none; }
+}
 .im-case-list .case-title::after { content: ""; position: absolute; inset: 0; }
 .im-case-list .case-title:focus-visible { outline: none; }
 .im-case-list .case-title:focus-visible::after { box-shadow: inset 0 0 0 2px var(--im-accent-strong); border-radius: 2px; }
@@ -2047,4 +2053,22 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
     .im-stat-ic { display: none; }
     .im-stat-value { font-size: var(--im-text-lg); }
     .im-stat-label { font-size: var(--im-text-xs); }
+}
+
+/* Case header: long generated case numbers wrap at any character instead of breaking after the year
+   prefix, and shrink on phones; the human title under it reads as the subtitle it is. */
+.im-casehead-num { overflow-wrap: anywhere; }
+.im-casehead-title { font-size: var(--im-text-md); font-weight: 500; color: var(--im-text); }
+@media (max-width: 640px) {
+    h1 .im-casehead-num { font-size: 1.3rem; }
+}
+@media (max-width: 575.98px) {
+    .im-phone-collapsed { display: none !important; }
+}
+
+/* Phones: the phase rail shows only the current phase next to the Advance button,
+   instead of seven chips wrapping over two rows. */
+@media (max-width: 640px) {
+    .im-phase-rail .im-phase-other { display: none; }
+    .im-phase-rail .im-phase-cur::before { content: "Phase: "; font-weight: 400; opacity: .8; }
 }

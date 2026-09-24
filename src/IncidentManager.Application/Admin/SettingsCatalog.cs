@@ -20,7 +20,11 @@ public sealed record SettingDefinition(
     SettingKind Kind,
     string Description,
     string? Default = null,
-    bool CustomEditor = false);
+    bool CustomEditor = false,
+    IReadOnlyList<SettingOption>? Options = null);
+
+/// <summary>One allowed value of a fixed-choice text setting, shown as a dropdown instead of a free-text box.</summary>
+public sealed record SettingOption(string Value, string Label);
 
 /// <summary>
 /// The whitelist of operational settings that may be administered in the web console (A-02).
@@ -199,8 +203,9 @@ public static class SettingsCatalog
             "Master switch for the per-jurisdiction notification-deadline countdown, for example 72 hours for NYDFS Part 500. " +
             "When on, breach and material cases show a deadline for each triggered jurisdiction. It only displays and reminds; it never notifies anyone.", "false"),
         new SettingDefinition("Compliance:NotificationDeadlines:StartBasis", "Clock starts from", "Deadline clock", SettingKind.Text,
-            "\"Determination\" (default) starts the clock when a case is determined Material (NYDFS 500.17(a), SEC Item 1.05). " +
-            "\"Detection\" starts it at detection, for Breach-classified cases.", "Determination"),
+            "Determination starts the clock when a case is determined Material (NYDFS 500.17(a), SEC Item 1.05). " +
+            "Detection starts it at detection, for Breach-classified cases.", "Determination",
+            Options: [new("Determination", "Materiality determination"), new("Detection", "Detection")]),
         new SettingDefinition("Compliance:NotificationDeadlines:DefaultWindowHours", "Default window (hours)", "Deadline clock", SettingKind.Int,
             "Window used for any triggered jurisdiction without its own rule below.", "72"),
         new SettingDefinition("Compliance:NotificationDeadlines:AtRiskThresholdPercent", "At-risk threshold (%)", "Deadline clock", SettingKind.Int,
@@ -218,8 +223,9 @@ public static class SettingsCatalog
             "Display name shown for the Informational severity.", "Informational"),
 
         new SettingDefinition("Access:LogScope", "Access-log scope", "Access logging", SettingKind.Text,
-            "Off, RestrictedOnly (restricted-case opens plus all artifact and export access) or All (every case open " +
-            "plus artifact and export access). This log sits outside the audit chain and can be pruned. Default All.", "All"),
+            "Which views are logged. Artifact and export access is always logged unless this is off. " +
+            "This log sits outside the audit chain and can be pruned.", "All",
+            Options: [new("All", "Every case open"), new("RestrictedOnly", "Restricted-case opens only"), new("Off", "Off")]),
         new SettingDefinition("Access:CoalesceWindowMinutes", "Access-log coalesce window (minutes)", "Access logging", SettingKind.Int,
             "Repeat views of the same case or artifact by the same user within this window fold into one row " +
             "with a count. Default 30.", "30"),
@@ -232,7 +238,8 @@ public static class SettingsCatalog
         new SettingDefinition("Reporting:DefangIndicators", "Defang indicators in reports", "Report defaults", SettingKind.Bool,
             "Prints URLs, domains, IPs and email addresses defanged (hxxp://, [.], [at]) in case and lessons-learned reports so they can't become live links. IOC CSV, STIX and import files keep live values.", "true"),
         new SettingDefinition("Reporting:DefaultTlp", "Default TLP marking", "Report defaults", SettingKind.Text,
-            "TLP marking for new reports unless the analyst picks another: CLEAR, GREEN, AMBER, AMBER+STRICT or RED. Printed on every page.", "AMBER"),
+            "TLP marking for new reports unless the analyst picks another. Printed on every page.", "AMBER",
+            Options: [new("CLEAR", "TLP:CLEAR"), new("GREEN", "TLP:GREEN"), new("AMBER", "TLP:AMBER"), new("AMBER+STRICT", "TLP:AMBER+STRICT"), new("RED", "TLP:RED")]),
         new SettingDefinition("Reporting:SectionLayout", "Report sections", "Report defaults", SettingKind.Text,
             "Which report sections appear, and in what order. Edited with the layout designer below.", "", CustomEditor: true),
     };

@@ -140,32 +140,42 @@
                     <div class="card mb-3">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <span>@group</span>
-                            <button class="btn btn-sm btn-primary" @onclick="() => SaveGroup(group)">Save @group</button>
+                            <button class="btn btn-sm btn-primary" @onclick="() => SaveGroup(group)" aria-label="@($"Save {group}")">Save</button>
                         </div>
                         <div class="card-body">
                             @foreach (var s in _effective.Where(e => e.Definition.Group == group && !e.Definition.CustomEditor))
                             {
                                 var def = s.Definition;
                                 <div class="row mb-3 align-items-start">
-                                    <div class="col-md-4">
+                                    <div class="col-md-6 col-xl-5">
                                         <label class="form-label mb-0 fw-semibold" for="@def.Key">@DisplayLabel(def)</label>
                                         <div class="small text-muted">@def.Description</div>
-                                        <div class="mt-1">
-                                            @if (s.IsOverridden)
-                                            {
-                                                <span class="im-badge im-b-info">Database override</span>
+                                        @* Only a changed setting is marked; the default is the unremarkable state. *@
+                                        @if (s.IsOverridden)
+                                        {
+                                            <div class="mt-1">
+                                                <span class="im-badge im-b-info">Changed in CaseBook</span>
                                                 <button class="btn btn-link btn-sm p-0 ms-2 align-baseline"
                                                         @onclick="() => ResetOne(def.Key)">Reset to default</button>
-                                            }
-                                            else
-                                            {
-                                                <span class="im-badge im-b-neutral">Default</span>
-                                            }
-                                        </div>
+                                            </div>
+                                        }
                                     </div>
-                                    <div class="col-md-8">
+                                    <div class="col-md-6 col-xl-7">
                                         @switch (def.Kind)
                                         {
+                                            case SettingKind.Text when def.Options is { } opts:
+                                                <select class="form-select" id="@def.Key" style="max-width:20rem"
+                                                        value="@_form[def.Key]" @onchange="e => _form[def.Key] = e.Value?.ToString()">
+                                                    @if (!opts.Any(o => string.Equals(o.Value, _form[def.Key], StringComparison.OrdinalIgnoreCase)) && !string.IsNullOrEmpty(_form[def.Key]))
+                                                    {
+                                                        <option value="@_form[def.Key]">@_form[def.Key] (not recognized)</option>
+                                                    }
+                                                    @foreach (var o in opts)
+                                                    {
+                                                        <option value="@o.Value" selected="@string.Equals(o.Value, _form[def.Key], StringComparison.OrdinalIgnoreCase)">@o.Label</option>
+                                                    }
+                                                </select>
+                                                break;
                                             case SettingKind.Bool:
                                                 <div class="form-check form-switch">
                                                     <input class="form-check-input" type="checkbox" id="@def.Key"
@@ -898,8 +908,17 @@
         var to = _testRecipient?.Trim();
         if (string.IsNullOrWhiteSpace(to)) { Toasts.Warning("Enter a recipient address."); return; }
 
-        await Email.SendAsync([to], "[CaseBook] Test notification",
-            "This is a test notification from CaseBook confirming the email configuration.");
+        // Admins need the relay's actual complaint to fix the configuration, so the reason is shown here.
+        try
+        {
+            await Email.SendAsync([to], "[CaseBook] Test notification",
+                "This is a test notification from CaseBook confirming the email configuration.");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Couldn't send the test email: {ex.Message} Check the relay host, port and credentials.");
+            return;
+        }
 
         Toasts.Success(Config.GetValue<bool>("Email:Enabled")
             ? $"Test email sent to {to}."
@@ -912,10 +931,18 @@
         if (!Chat.Enabled) { Toasts.Warning("No chat webhook is configured. Set Chat:Webhook on the host."); return; }
 
         var baseUrl = (Config["App:BaseUrl"] ?? "").TrimEnd('/');
-        await Chat.SendAsync(new IncidentManager.Application.Abstractions.ChatNotification(
-            "CaseBook test message",
-            "This is a test notification confirming the chat webhook configuration.",
-            baseUrl.Length == 0 ? null : baseUrl));
+        try
+        {
+            await Chat.SendAsync(new IncidentManager.Application.Abstractions.ChatNotification(
+                "CaseBook test message",
+                "This is a test notification confirming the chat webhook configuration.",
+                baseUrl.Length == 0 ? null : baseUrl));
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Couldn't post the test message: {ex.Message} Check the webhook URL on the host.");
+            return;
+        }
 
         Toasts.Success("Test chat message posted to the configured channel.");
     }

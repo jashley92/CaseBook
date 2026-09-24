@@ -456,7 +456,7 @@ else
     /// <summary>Reload the case after an entity/relationship write so the rest of the workspace refreshes.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
     /// <summary>Ask the parent's shared confirm dialog to guard a destructive action.</summary>
-    [Parameter] public EventCallback<(string Message, Func<Task> OnConfirm)> RequestConfirm { get; set; }
+    [Parameter] public EventCallback<(string Message, string Verb, Func<Task> OnConfirm)> RequestConfirm { get; set; }
     /// <summary>Live-collab flash hooks (parent owns the flash state).</summary>
     [Parameter] public Func<Guid, string?>? FlashClass { get; set; }
     [Parameter] public Func<Guid, string?>? FlashStyle { get; set; }
@@ -583,7 +583,7 @@ else
         catch (Exception ex) { Toasts.Error(ex.Message); }
     }
 
-    private Task Confirm(string message, Func<Task> action) => RequestConfirm.InvokeAsync((message, action));
+    private Task Confirm(string message, Func<Task> action, string verb = "Remove") => RequestConfirm.InvokeAsync((message, verb, action));
 
     private string DisplayValue(CaseEntity e) =>
         _defangView && IocObservable.IsRefangable(e.Type) ? IocObservable.Defang(e.Value) : e.Value;

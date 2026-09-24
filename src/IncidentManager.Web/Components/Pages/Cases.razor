@@ -26,7 +26,7 @@
             <button type="button" class="btn @(!_onlyMine ? "active" : "")"
                     @onclick="() => SetScope(false)" aria-pressed="@(!_onlyMine)" title="All cases you can see">All</button>
         </div>
-        <a class="btn btn-sm btn-outline-secondary" href="export/iocs.csv" download
+        <a class="btn btn-sm btn-outline-secondary d-none d-sm-inline-block" href="export/iocs.csv" download
            title="Confirmed-malicious IOCs from your visible cases, as a blocklist for SIEM, firewall or EDR">
             <span class="bi bi-shield-exclamation" aria-hidden="true"></span> Export IOC feed (CSV)
         </a>
@@ -60,7 +60,7 @@
 
 @* PROD-09: saved / shared case-queue views. Each view is a name + the current filter query string;
    personal by default, or shared to the whole team. *@
-<div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+<div class="d-flex flex-wrap align-items-center gap-2 mt-3 @(_views is { Count: > 0 } ? "" : "im-phone-collapsed")">
     <span class="text-muted small"><span class="bi bi-bookmark-star" aria-hidden="true"></span> Views</span>
     @if (_views is { Count: > 0 })
     {
@@ -131,7 +131,13 @@
     </div>
 }
 
-<div class="row g-2 align-items-end my-3">
+@* Phones: the filter form folds behind one button so the case list starts near the top; the chips below
+   still show what's applied. Desktop always shows the form. *@
+<button type="button" class="btn btn-sm btn-outline-secondary mt-3 d-sm-none" aria-expanded="@_filtersOpen"
+        @onclick="() => _filtersOpen = !_filtersOpen">
+    <span class="bi bi-funnel me-1" aria-hidden="true"></span>@(_filtersOpen ? "Hide filters" : "Filters")
+</button>
+<div class="row g-2 align-items-end my-3 @(_filtersOpen ? "" : "im-phone-collapsed")">
     <div class="col-auto">
         <label class="form-label small mb-0">Classification</label>
         <select class="form-select form-select-sm" @bind="_classification" @bind:after="ApplyFilters">
@@ -368,7 +374,7 @@ else
                 <th>Phase</th>
                 <th>Severity</th>
                 <th>SLA</th>
-                <th>Origin</th>
+                <th class="case-cell-origin">Origin</th>
                 <th>Opened</th>
             </tr>
         </thead>
@@ -614,6 +620,8 @@ else
 
     // The administered SLA targets, refreshed each reload so an admin change is reflected on next load.
     private SlaTargets _targets = SlaTargets.Empty;
+
+    private bool _filtersOpen;
 
     private bool _hasActiveFilter => !(string.IsNullOrEmpty(_classification) && string.IsNullOrEmpty(_phase)
         && string.IsNullOrEmpty(_minSeverity) && string.IsNullOrEmpty(_origin)

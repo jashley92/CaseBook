@@ -131,11 +131,12 @@ public static class Ui
     {
         var def = t switch
         {
-            EntityType.IpAddress => "IP Address",
-            EntityType.FileHash => "File Hash",
-            EntityType.FileName => "File Name",
-            EntityType.EmailAddress => "Email Address",
-            EntityType.RegistryKey => "Registry Key",
+            EntityType.IpAddress => "IP address",
+            EntityType.FileHash => "File hash",
+            EntityType.FileName => "File name",
+            EntityType.EmailAddress => "Email address",
+            EntityType.RegistryKey => "Registry key",
+            EntityType.Url => "URL",
             _ => t.ToString()
         };
         return Tax("EntityType", t.ToString(), def);

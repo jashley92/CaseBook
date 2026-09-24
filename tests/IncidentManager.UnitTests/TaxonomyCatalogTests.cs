@@ -41,7 +41,7 @@ public class TaxonomyCatalogTests
     [Fact]
     public void Default_label_helper_returns_the_catalog_default_and_falls_back_to_the_member()
     {
-        TaxonomyCatalog.DefaultLabel("EntityType", "IpAddress").Should().Be("IP Address");
+        TaxonomyCatalog.DefaultLabel("EntityType", "IpAddress").Should().Be("IP address");
         TaxonomyCatalog.DefaultLabel("EntityType", "Nonexistent").Should().Be("Nonexistent");
         TaxonomyCatalog.DefaultLabel("Nonexistent", "Whatever").Should().Be("Whatever");
     }

@@ -6,6 +6,9 @@
 
 main {
     flex: 1;
+    /* Without this a wide table or code block widens main instead of scrolling inside it, and the flex row
+       shrinks the sidebar to make room (nav labels wrap). */
+    min-width: 0;
 }
 
 .sidebar {
@@ -59,6 +62,7 @@ main {
 
     .sidebar {
         width: 250px;
+        flex-shrink: 0;
         height: 100vh;
         position: sticky;
         top: 0;

@@ -82,7 +82,7 @@ else
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
         <div>
             <h1 class="mb-1">
-                <code>@_case.CaseNumber</code>
+                <code class="im-casehead-num">@_case.CaseNumber</code>
                 @if (_canEdit && !_renumbering)
                 {
                     <button class="btn btn-sm btn-link p-0 ms-1 align-baseline" title="Change case number" @onclick="StartRenumber">
@@ -112,7 +112,7 @@ else
             {
                 <div class="text-danger small mb-2">@_renumberError</div>
             }
-            <div class="mb-2">@_case.Title</div>
+            <div class="mb-2 im-casehead-title">@_case.Title</div>
             <div>
                 <span class="@Ui.ClassificationBadge(_case.Classification)">@Ui.Label(_case.Classification)</span>
                 <span class="@Ui.SeverityBadge(_case.Severity)">@SevLabels.For(_case.Severity)</span>
@@ -240,14 +240,15 @@ else
         </div>
     </div>
 
-    <div class="d-flex align-items-center flex-wrap gap-1 my-3">
+    <div class="d-flex align-items-center flex-wrap gap-1 my-3 im-phase-rail" role="list" aria-label="Case phase">
         @{ var _phases = Enum.GetValues<CasePhase>(); var _curIdx = Array.IndexOf(_phases, _case.Phase); }
         @for (var i = 0; i < _phases.Length; i++)
         {
             var isDone = i < _curIdx;
             var isCur = i == _curIdx;
-            <span class="im-badge rounded-pill @(isCur ? "im-b-info" : isDone ? "im-b-ok" : "im-b-neutral")">@Ui.Label(_phases[i])</span>
-            @if (i < _phases.Length - 1) { <span class="text-muted small">›</span> }
+            <span role="listitem" aria-current="@(isCur ? "step" : null)"
+                  class="im-badge rounded-pill @(isCur ? "im-b-info im-phase-cur" : isDone ? "im-b-ok im-phase-other" : "im-b-neutral im-phase-other")">@Ui.Label(_phases[i])</span>
+            @if (i < _phases.Length - 1) { <span class="text-muted small im-phase-other" aria-hidden="true">›</span> }
         }
         @if (_canEdit && NextPhase() is { } np)
         {
@@ -599,8 +600,10 @@ else
                         }
                         else if (_activeModal == "legal")
                         {
-                            <input class="form-control mb-2" placeholder="Legal contact" aria-label="Legal contact" @bind="_legalContact" />
-                            <input class="form-control" placeholder="Regulatory relevance (e.g. NY NPI)" aria-label="Regulatory relevance" @bind="_legalNote" />
+                            <label class="form-label small" for="legal-contact">Legal contact <span class="text-muted">(optional)</span></label>
+                            <input id="legal-contact" class="form-control mb-2" placeholder="Name or team" @bind="_legalContact" />
+                            <label class="form-label small" for="legal-note">Regulatory relevance <span class="text-muted">(optional)</span></label>
+                            <input id="legal-note" class="form-control" placeholder="e.g. NY NPI" @bind="_legalNote" />
                         }
                         else if (_activeModal == "materiality")
                         {
@@ -852,10 +855,10 @@ else
     private bool _canAdmin;
     private bool _canAnyAction => _canEdit || _canReclassify || _canManageLegal || _canAdmin;
     private IDisposable? _caseSub;
-    private (string Message, Func<Task> OnConfirm)? _confirm;
+    private (string Message, string Verb, Func<Task> OnConfirm)? _confirm;
 
     // UX-13: the extracted Entities tab raises this to use the parent-owned confirm dialog.
-    private void OnChildRequestConfirm((string Message, Func<Task> OnConfirm) req) => AskConfirm(req.Message, req.OnConfirm);
+    private void OnChildRequestConfirm((string Message, string Verb, Func<Task> OnConfirm) req) => AskConfirm(req.Message, req.OnConfirm, req.Verb);
 
     // Evidence: the tab is extracted to CaseEvidenceTab (UX-13). The screenshot lightbox (OpenShot) and the
     // live-collab flash it renders stay here, shared with the Timeline; the child manages its own upload/custody state.
@@ -1314,12 +1317,12 @@ else
     }
 
     // Generic confirm for destructive removes: capture a message + the action to run on confirm.
-    private void AskConfirm(string message, Func<Task> onConfirm) => _confirm = (message, onConfirm);
+    private void AskConfirm(string message, Func<Task> onConfirm, string verb = "Remove") => _confirm = (message, verb, onConfirm);
 
     // The shared confirm serves removes and "Clear the reported milestone?"; label the button with the verb the
     // message leads with so it never reads "Remove" for a clear.
-    private string ConfirmVerb => _confirm?.Message.StartsWith("Clear", StringComparison.Ordinal) == true ? "Clear" : "Remove";
-    private string ConfirmTitle => ConfirmVerb == "Clear" ? "Confirm clear" : "Confirm removal";
+    private string ConfirmVerb => _confirm?.Verb ?? "Remove";
+    private string ConfirmTitle => ConfirmVerb == "Clear" ? "Clear reported milestone" : "Remove from case";
     private void CancelConfirm() => _confirm = null;
 
     // FR-05: intercept in-app navigation away from this case when a composer still holds unsubmitted text,

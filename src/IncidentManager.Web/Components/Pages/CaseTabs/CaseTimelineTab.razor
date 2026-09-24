@@ -17,12 +17,12 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 
-<div class="btn-group mb-2" role="group" aria-label="Timeline lens">
-    <button class="btn btn-sm @(_tlLens is null ? "btn-primary" : "btn-outline-primary")"
+<div class="im-seg mb-2" role="group" aria-label="Timeline lens">
+    <button class="btn btn-sm @(_tlLens is null ? "active" : "")" aria-pressed="@(_tlLens is null)"
             @onclick="() => SwitchLens(null)">All</button>
-    <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "btn-primary" : "btn-outline-primary")"
+    <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "active" : "")" aria-pressed="@(_tlLens == TimelineKind.Event)"
             @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Disclosure" : "Event")</button>
-    <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation ? "btn-primary" : "btn-outline-primary")"
+    <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation ? "active" : "")" aria-pressed="@(_tlLens == TimelineKind.Investigation)"
             @onclick="() => SwitchLens(TimelineKind.Investigation)">Investigation</button>
 </div>
 <p class="text-muted small">
@@ -74,10 +74,10 @@
                 @* All lens: the composer serves both timelines, so pick which to add. *@
                 <div class="d-flex align-items-center gap-2 mb-2">
                     <span class="text-muted small">Add:</span>
-                    <div class="btn-group btn-group-sm" role="group" aria-label="What to add">
-                        <button type="button" class="btn @(_tlAddKind == TimelineKind.Event ? "btn-secondary" : "btn-outline-secondary")"
+                    <div class="im-seg" role="group" aria-label="What to add">
+                        <button type="button" class="btn @(_tlAddKind == TimelineKind.Event ? "active" : "")" aria-pressed="@(_tlAddKind == TimelineKind.Event)"
                                 @onclick="() => SetAddKind(TimelineKind.Event)">@(IsThirdParty ? "Disclosure step" : "Event step")</button>
-                        <button type="button" class="btn @(_tlAddKind == TimelineKind.Investigation ? "btn-secondary" : "btn-outline-secondary")"
+                        <button type="button" class="btn @(_tlAddKind == TimelineKind.Investigation ? "active" : "")" aria-pressed="@(_tlAddKind == TimelineKind.Investigation)"
                                 @onclick="() => SetAddKind(TimelineKind.Investigation)">Investigation entry</button>
                     </div>
                 </div>
@@ -88,10 +88,10 @@
                 {
                     @* FR-24: optionally switch this third-party Event composer between a disclosure milestone and
                        a vendor-provided attack (ATT&CK) step. Disclosure is the default. *@
-                    <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Event step type">
-                        <button type="button" class="btn @(!_evtAttackMode ? "btn-secondary" : "btn-outline-secondary")"
+                    <div class="im-seg mb-2" role="group" aria-label="Event step type">
+                        <button type="button" class="btn @(!_evtAttackMode ? "active" : "")" aria-pressed="@(!_evtAttackMode)"
                                 @onclick="() => _evtAttackMode = false">Disclosure milestone</button>
-                        <button type="button" class="btn @(_evtAttackMode ? "btn-secondary" : "btn-outline-secondary")"
+                        <button type="button" class="btn @(_evtAttackMode ? "active" : "")" aria-pressed="@(_evtAttackMode)"
                                 @onclick="() => _evtAttackMode = true" title="Record the vendor's attack breakdown (MITRE ATT&CK)">Attack step (ATT&amp;CK)</button>
                     </div>
                 }
@@ -830,6 +830,8 @@ else
     {
         if (_tlEditId is not { } id || string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = WallToUtc(_tlWhen);
+        // Captured before CancelTimelineEdit resets the composer mode, so the toast names what was edited.
+        var savedLabel = IsThirdParty && !_evtAttackMode ? "Disclosure step updated" : IsThirdParty ? "Attack step updated" : "Event step updated";
         try
         {
             if (IsThirdParty && !_evtAttackMode)
@@ -845,14 +847,14 @@ else
                 await Cases.EditEventStepAsync(CaseId, id, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, _tlReason);
             }
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             Toasts.Error(ex.Message);
             return;
         }
         await CancelTimelineEdit();
         await OnChanged.InvokeAsync();
-        Toasts.Success(IsThirdParty ? "Disclosure step updated" : "Event step updated");
+        Toasts.Success(savedLabel);
     }
 
     // Load an Investigation entry into the Markdown composer to edit; saving creates a new version.
