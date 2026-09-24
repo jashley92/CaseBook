@@ -51,7 +51,12 @@ public sealed class AttackCoverageService
     }
 
     /// <param name="months">Look-back window by detection date (else open date); null = all time.</param>
-    public async Task<AttackCoverage> GetAsync(int? months = 12, bool includeExercises = false, CancellationToken ct = default)
+    public Task<AttackCoverage> GetAsync(int? months = 12, bool includeExercises = false, CancellationToken ct = default) =>
+        GetForPeriodAsync(months is { } m ? _clock.UtcNow.AddMonths(-m) : null, null, includeExercises, ct);
+
+    /// <summary>E-31: the same aggregation over cases detected in [<paramref name="since"/>, <paramref name="until"/>).</summary>
+    public async Task<AttackCoverage> GetForPeriodAsync(DateTimeOffset? since, DateTimeOffset? until,
+        bool includeExercises = false, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var q = db.Cases.AsNoTracking().ForUser(_user);
@@ -59,9 +64,9 @@ public sealed class AttackCoverageService
 
         var caseRows = await q.Select(c => new { c.Id, c.CaseNumber, c.Title, c.DetectedAtUtc, c.CreatedAtUtc }).ToListAsync(ct);
         // Window filter in memory: DateTimeOffset comparison stays off SQLite (F-08).
-        var since = months is { } m ? _clock.UtcNow.AddMonths(-m) : (DateTimeOffset?)null;
         var inPeriod = caseRows
-            .Where(c => since is null || (c.DetectedAtUtc ?? c.CreatedAtUtc) >= since)
+            .Where(c => (since is null || (c.DetectedAtUtc ?? c.CreatedAtUtc) >= since)
+                        && (until is null || (c.DetectedAtUtc ?? c.CreatedAtUtc) < until))
             .ToDictionary(c => c.Id, c => new CoverageCase(c.Id, c.CaseNumber, c.Title));
         var ids = inPeriod.Keys.ToList();
 

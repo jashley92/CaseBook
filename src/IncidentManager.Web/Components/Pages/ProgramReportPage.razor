@@ -1,0 +1,271 @@
+@page "/program-report"
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@* E-31: the quarterly program-metrics report for leadership, board and exam packs (the CISO's 500.4 report):
+   volumes, response timing, SLA attainment, regulatory reporting, post-incident follow-through and the ATT&CK
+   techniques faced, each against the previous quarter. Read-only and need-to-know scoped; exports as CSV and
+   prints cleanly to PDF (print styles hide the app chrome). Neutral wording: these figures are discoverable. *@
+@using IncidentManager.Application.Dashboards
+@using IncidentManager.Application.Sla
+@inject ProgramReportService Program
+@inject ISeverityLabels SevLabels
+@inject IClock Clock
+@inject IJSRuntime JS
+
+<PageTitle>Program report</PageTitle>
+
+<div class="no-print">
+    <PageHeader Title="Program report"
+                Subtitle="Quarterly roll-up of case volumes, response times, SLA attainment and post-incident follow-through, against the previous quarter." />
+</div>
+
+@if (_report is not { } r)
+{
+    <span class="visually-hidden" role="status">Loading program report…</span>
+    <section class="im-card"><SkeletonTable Rows="6" Columns="4" TableClass="table-sm" /></section>
+    return;
+}
+
+<section class="im-card no-print">
+    <div class="d-flex flex-wrap gap-2 align-items-end">
+        <div>
+            <label class="form-label small mb-0" for="pr-quarter">Quarter</label>
+            <select id="pr-quarter" class="form-select form-select-sm" value="@QuarterKey(_period)" @onchange="OnQuarterChanged">
+                @foreach (var q in Quarters)
+                {
+                    <option value="@QuarterKey(q)">@q.Label@(q == Current ? " (in progress)" : "")</option>
+                }
+            </select>
+        </div>
+        <div class="form-check mb-1">
+            <input class="form-check-input" type="checkbox" id="pr-exercises" checked="@_includeExercises" @onchange="OnExercisesChanged" />
+            <label class="form-check-label small" for="pr-exercises">Include exercise cases</label>
+        </div>
+        <div class="ms-auto d-flex gap-2">
+            <a class="btn btn-sm btn-outline-primary" href="@CsvHref" download>
+                <span class="bi bi-filetype-csv me-1" aria-hidden="true"></span>Export CSV
+            </a>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Print">
+                <span class="bi bi-printer me-1" aria-hidden="true"></span>Print / save as PDF
+            </button>
+        </div>
+    </div>
+</section>
+
+<div class="pr-report">
+    <h2 class="h5 mb-1">Program report · @r.Period.Label</h2>
+    <p class="small text-muted mb-3">
+        @r.Period.Start.UtcDateTime.ToString("yyyy-MM-dd") to @r.Period.End.AddDays(-1).UtcDateTime.ToString("yyyy-MM-dd") (UTC), compared with @r.Period.Previous.Label.
+        Cases you're entitled to see@(r.IncludesExercises ? ", including exercise cases" : ", excluding exercise cases").
+        Generated @r.GeneratedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
+        @if (_period == Current) { <strong>This quarter is still in progress.</strong> }
+    </p>
+
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <section class="im-card h-100">
+                <h3 class="h6">Case volume</h3>
+                <table class="table table-sm im-table mb-0">
+                    @Head()
+                    <tbody>
+                        @Row("Opened", r.Current.Opened, r.Previous.Opened)
+                        @Row("Closed", r.Current.Closed, r.Previous.Closed)
+                        @Row("Open at quarter end", r.Current.OpenAtEnd, r.Previous.OpenAtEnd)
+                        @Group("Opened by classification")
+                        @foreach (var k in r.Current.OpenedByClassification.Select(x => x.Key).Union(r.Previous.OpenedByClassification.Select(x => x.Key)))
+                        {
+                            @Row(Ui.Label(k), Count(r.Current.OpenedByClassification, k), Count(r.Previous.OpenedByClassification, k))
+                        }
+                        @Group("Opened by severity")
+                        @foreach (var k in r.Current.OpenedBySeverity.Select(x => x.Key).Union(r.Previous.OpenedBySeverity.Select(x => x.Key)).OrderByDescending(x => x))
+                        {
+                            @Row(SevLabels.For(k), Count(r.Current.OpenedBySeverity, k), Count(r.Previous.OpenedBySeverity, k))
+                        }
+                    </tbody>
+                </table>
+            </section>
+        </div>
+
+        <div class="col-lg-6">
+            <section class="im-card h-100">
+                <h3 class="h6">Response times <span class="text-muted small fw-normal">(hours, median · mean)</span></h3>
+                <table class="table table-sm im-table mb-2">
+                    @Head()
+                    <tbody>
+                        @HoursRow("Time to detect", r.Current.TimeToDetect, r.Previous.TimeToDetect)
+                        @HoursRow("Time to contain", r.Current.TimeToContain, r.Previous.TimeToContain)
+                        @HoursRow("Time to resolve", r.Current.TimeToResolve, r.Previous.TimeToResolve)
+                    </tbody>
+                </table>
+                <p class="small text-muted mb-3">Over cases that reached the milestone in the quarter. Lower is better.</p>
+
+                <h3 class="h6">SLA attainment <span class="text-muted small fw-normal">(within target)</span></h3>
+                <table class="table table-sm im-table mb-0">
+                    @Head()
+                    <tbody>
+                        @foreach (var s in r.Current.Sla)
+                        {
+                            var ps = r.Previous.Sla.First(x => x.Clock == s.Clock);
+                            <tr>
+                                <td>@Ui.SlaClockLabel(s.Clock)</td>
+                                <td class="text-end">@Pct(s)</td>
+                                <td class="text-end text-muted">@Pct(ps)</td>
+                                <td class="text-end small">@Delta(s.Percent, ps.Percent, higherIsBetter: true, suffix: " pts")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        </div>
+
+        <div class="col-lg-6">
+            <section class="im-card h-100">
+                <h3 class="h6">Regulatory</h3>
+                <table class="table table-sm im-table mb-0">
+                    @Head()
+                    <tbody>
+                        @Row("Cases classified as breach", r.Current.BreachesOpened, r.Previous.BreachesOpened)
+                        @Row("Reported to regulators", r.Current.ReportedToRegulators, r.Previous.ReportedToRegulators)
+                        @HoursRow("Detection to report", r.Current.DetectToReport, r.Previous.DetectToReport)
+                    </tbody>
+                </table>
+            </section>
+        </div>
+
+        <div class="col-lg-6">
+            <section class="im-card h-100">
+                <h3 class="h6">Post-incident follow-through</h3>
+                <table class="table table-sm im-table mb-2">
+                    @Head()
+                    <tbody>
+                        @Row("Reviews recorded", r.Current.ReviewsRecorded, r.Previous.ReviewsRecorded)
+                        @Row("Improvement actions opened", r.Current.ActionsOpened, r.Previous.ActionsOpened)
+                        @Row("Completed", r.Current.ActionsCompleted, r.Previous.ActionsCompleted)
+                        @Row("Not pursued", r.Current.ActionsNotPursued, r.Previous.ActionsNotPursued)
+                        @Row("Open at quarter end", r.Current.ActionsOpenAtEnd, r.Previous.ActionsOpenAtEnd)
+                        @Row("Past target at quarter end", r.Current.ActionsPastTargetAtEnd, r.Previous.ActionsPastTargetAtEnd)
+                    </tbody>
+                </table>
+                @if (r.Current.ActionAreas.Count > 0)
+                {
+                    <div class="small fw-semibold text-muted text-uppercase mt-2">Areas of actions opened this quarter</div>
+                    <div class="d-flex flex-wrap gap-1 mt-1">
+                        @foreach (var a in r.Current.ActionAreas) { <span class="im-badge im-b-neutral">@a.Key · @a.Count</span> }
+                    </div>
+                }
+            </section>
+        </div>
+
+        <div class="col-12">
+            <section class="im-card">
+                <h3 class="h6">ATT&amp;CK techniques faced <span class="text-muted small fw-normal">(cases detected this quarter)</span></h3>
+                @if (r.TopTechniques.Count == 0)
+                {
+                    <p class="text-muted small mb-0">No techniques recorded on this quarter's cases.</p>
+                }
+                else
+                {
+                    <table class="table table-sm im-table mb-0">
+                        <thead><tr><th>Technique</th><th class="text-end">Cases</th></tr></thead>
+                        <tbody>
+                            @foreach (var t in r.TopTechniques)
+                            {
+                                <tr><td><code>@t.TechniqueId</code> @t.Name</td><td class="text-end">@t.Cases</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                    <p class="small text-muted mt-2 mb-0 no-print">The full matrix is on <a href="attack-coverage">ATT&amp;CK coverage</a>.</p>
+                }
+            </section>
+        </div>
+    </div>
+</div>
+
+@code {
+    private ProgramReport? _report;
+    private ProgramPeriod _period = null!;
+    private bool _includeExercises;
+
+    private ProgramPeriod Current => ProgramPeriod.Containing(Clock.UtcNow);
+
+    // The in-progress quarter and the seven before it.
+    private IEnumerable<ProgramPeriod> Quarters
+    {
+        get
+        {
+            var q = Current;
+            for (var i = 0; i < 8; i++) { yield return q; q = q.Previous; }
+        }
+    }
+
+    private static string QuarterKey(ProgramPeriod p) => $"{p.Year}-{p.Quarter}";
+
+    private string CsvHref =>
+        $"export/program-report.csv?year={_period.Year}&quarter={_period.Quarter}&exercises={_includeExercises.ToString().ToLowerInvariant()}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Default to the last completed quarter: the one a board pack reports on.
+        _period = Current.Previous;
+        await Load();
+    }
+
+    private async Task Load() => _report = await Program.BuildAsync(_period, _includeExercises);
+
+    private async Task OnQuarterChanged(ChangeEventArgs e)
+    {
+        var parts = (e.Value?.ToString() ?? "").Split('-');
+        if (parts.Length == 2 && int.TryParse(parts[0], out var y) && int.TryParse(parts[1], out var q)
+            && ProgramPeriod.TryCreate(y, q) is { } p)
+        {
+            _period = p;
+            await Load();
+        }
+    }
+
+    private async Task OnExercisesChanged(ChangeEventArgs e)
+    {
+        _includeExercises = e.Value is true;
+        await Load();
+    }
+
+    private async Task Print()
+    {
+        try { await JS.InvokeVoidAsync("print"); } catch (JSException) { /* browser blocked it */ }
+    }
+
+    private static int Count<T>(IReadOnlyList<CountBy<T>> list, T key) =>
+        list.FirstOrDefault(x => EqualityComparer<T>.Default.Equals(x.Key, key))?.Count ?? 0;
+
+    private static string Pct(SlaAttainment s) => s.Percent is { } p ? $"{p}% ({s.Met}/{s.Met + s.Missed})" : "—";
+
+    private static RenderFragment Group(string label) =>
+        @<tr><th colspan="4" class="small text-muted text-uppercase pt-3">@label</th></tr>;
+
+    private static RenderFragment Head() => @<thead><tr><th></th><th class="text-end">This quarter</th><th class="text-end">Previous</th><th class="text-end">Change</th></tr></thead>;
+
+    // Counts carry no better/worse judgement — the change column just says which way it moved.
+    private static RenderFragment Row(string label, int cur, int prev) =>
+        @<tr><td>@label</td><td class="text-end">@cur</td><td class="text-end text-muted">@prev</td><td class="text-end small text-muted">@(cur == prev ? "—" : (cur > prev ? $"+{cur - prev}" : $"{cur - prev}"))</td></tr>;
+
+    private static RenderFragment HoursRow(string label, Interval cur, Interval prev) =>
+        @<tr>
+            <td>@label</td>
+            <td class="text-end">@Hours(cur)</td>
+            <td class="text-end text-muted">@Hours(prev)</td>
+            <td class="text-end small">@Delta(cur.MedianHours, prev.MedianHours, higherIsBetter: false, suffix: "h")</td>
+        </tr>;
+
+    private static string Hours(Interval i) =>
+        i.MedianHours is { } m ? $"{m:0.#} · {i.MeanHours:0.#}" : "—";
+
+    private static RenderFragment Delta(double? cur, double? prev, bool higherIsBetter, string suffix) => __builder =>
+    {
+        if (cur is not { } c || prev is not { } p || Math.Abs(c - p) < 0.05)
+        {
+            <span class="text-muted">—</span>
+            return;
+        }
+        var better = higherIsBetter ? c > p : c < p;
+        <span class="@(better ? "text-success" : "text-warning")">@(c > p ? "+" : "")@((c - p).ToString("0.#"))@suffix</span>
+    };
+}

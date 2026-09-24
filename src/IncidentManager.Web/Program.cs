@@ -510,6 +510,26 @@ app.MapGet("/export/metrics.csv", async (
     return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
+// --- E-31: quarterly program-metrics report as a two-period CSV (board / exam packs). Need-to-know scoped by
+// the service; access-logged and rate-limited like every export. ---
+app.MapGet("/export/program-report.csv", async (
+    int year, int quarter, bool? exercises,
+    IncidentManager.Application.Dashboards.ProgramReportService program,
+    IncidentManager.Application.Access.IAccessLogService access,
+    IncidentManager.Application.Abstractions.ISeverityLabels sevLabels,
+    CancellationToken ct) =>
+{
+    if (IncidentManager.Application.Dashboards.ProgramPeriod.TryCreate(year, quarter) is not { } period)
+        return Results.BadRequest("Unknown quarter.");
+    var report = await program.BuildAsync(period, exercises ?? false, ct);
+    var csv = IncidentManager.Application.Dashboards.ProgramReportService.ToCsv(report,
+        c => c switch { null => "Complex Event", IncidentManager.Domain.Enums.Classification.AdverseEvent => "Adverse Event", var x => x.ToString()! },
+        sevLabels.For);
+    var fileName = $"program-report-{period.Year}-Q{period.Quarter}.csv";
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
+    return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+
 // --- Improvement-action register (E-26/PROD-41): the cross-case follow-up register as CSV, honouring the
 // page's scope + exercise filters (free-text search is deliberately not a URL parameter — it would land in
 // request logs). Need-to-know scoped by LessonsService; access-logged like every export. Plain attachment.

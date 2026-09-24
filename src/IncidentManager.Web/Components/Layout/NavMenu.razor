@@ -118,6 +118,12 @@
                 <span class="bi bi-download" aria-hidden="true"></span><span class="nav-text">Exports</span>
             </NavLink>
         </div>
+        @* E-31: quarterly program-metrics roll-up for leadership / board / exam packs. *@
+        <div class="nav-item">
+            <NavLink class="nav-link" href="program-report" Match="NavLinkMatch.All" title="Program report">
+                <span class="bi bi-clipboard-data" aria-hidden="true"></span><span class="nav-text">Program report</span>
+            </NavLink>
+        </div>
 
         <AuthorizeView Policy="@Policies.Administer">
             <div class="nav-group-label">Administration</div>
