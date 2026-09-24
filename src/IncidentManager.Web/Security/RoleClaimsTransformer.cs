@@ -26,18 +26,7 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
         if (principal.Identity?.IsAuthenticated != true)
             return Task.FromResult(principal);
 
-        // Windows groups arrive as Role/GroupSid claims whose VALUES are SIDs, but the AD-group->role
-        // mapping is configured by NAME ("SOC-AppAdmins"). Match on both: the raw SID and the SID's
-        // resolved name, with and without the DOMAIN\ prefix, so name-based config resolves.
-        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var c in principal.Claims)
-        {
-            if (c.Type != ClaimTypes.Role && c.Type != ClaimTypes.GroupSid) continue;
-            candidates.Add(c.Value);
-            foreach (var name in NamesForSid(c.Value)) candidates.Add(name);
-        }
-
-        var roleNames = _directory.RolesForGroups(candidates);
+        var roleNames = _directory.RolesForGroups(GroupCandidates(principal));
         if (roleNames.Count == 0)
             return Task.FromResult(principal);
 
@@ -57,6 +46,24 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
 
         principal.AddIdentity(identity);
         return Task.FromResult(principal);
+    }
+
+    /// <summary>
+    /// The AD group identifiers on a Windows principal to match against the group→role mappings. Windows groups arrive
+    /// as Role/GroupSid claims whose VALUES are SIDs, but mappings are configured by NAME ("SOC-AppAdmins"), so this
+    /// yields both the raw SID and its resolved name, with and without the DOMAIN\ prefix. Shared with the S-10
+    /// session re-check so both resolve groups identically.
+    /// </summary>
+    public static IReadOnlySet<string> GroupCandidates(ClaimsPrincipal principal)
+    {
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var c in principal.Claims)
+        {
+            if (c.Type != ClaimTypes.Role && c.Type != ClaimTypes.GroupSid) continue;
+            candidates.Add(c.Value);
+            foreach (var name in NamesForSid(c.Value)) candidates.Add(name);
+        }
+        return candidates;
     }
 
     /// <summary>The account name(s) for a group SID: "DOMAIN\Group" and the bare "Group". Empty for a

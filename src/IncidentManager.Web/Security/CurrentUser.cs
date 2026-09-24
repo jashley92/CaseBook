@@ -27,6 +27,8 @@ public sealed class CurrentUser : ICurrentUser
         _http = http;
         _authState = authState;
         _roles = () => services.GetService<IRoleDirectory>();
+        // S-10: the circuit's principal can be refreshed in place (roles/permissions re-derived); drop the cached one.
+        _authState.AuthenticationStateChanged += _ => _cached = null;
     }
 
     private ClaimsPrincipal Principal

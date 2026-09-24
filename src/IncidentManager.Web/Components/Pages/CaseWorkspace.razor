@@ -907,6 +907,8 @@ else
         _dotNetRef = DotNetObjectReference.Create(this);
         _myId = CurrentUser.UserId;
         await RefreshPermissionsAsync();
+        // S-10: an open session's permissions can be refreshed in place; re-check the edit affordances when they are.
+        AuthState.AuthenticationStateChanged += OnAuthStateChanged;
 
         // Live collaboration: refresh when another analyst changes this case.
         _caseSub = Notifier.Subscribe(Id, OnCaseChangedAsync);
@@ -1952,8 +1954,12 @@ else
         }
     }
 
+    private void OnAuthStateChanged(Task<AuthenticationState> state) =>
+        _ = InvokeAsync(async () => { await RefreshPermissionsAsync(); StateHasChanged(); });
+
     public async ValueTask DisposeAsync()
     {
+        AuthState.AuthenticationStateChanged -= OnAuthStateChanged;
         _caseSub?.Dispose();
         // S2930/S6966: cancel + dispose the last in-flight renumber-availability check.
         if (_renumberCheckCts is not null)

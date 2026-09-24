@@ -233,6 +233,12 @@ builder.Services.AddAuthorization(options =>
     options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
 });
 builder.Services.AddCascadingAuthenticationState();
+// S-10: re-derive an open session's roles/permissions from the current role directory every couple of minutes, so
+// removing an AD mapping or editing a role reaches signed-in users without them reconnecting.
+builder.Services.AddSingleton(sp => new SessionPermissionRefresher(
+    () => sp.GetRequiredService<IncidentManager.Application.Abstractions.IRoleDirectory>(), useWindows));
+builder.Services.AddScoped<Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider,
+    PermissionRevalidatingAuthStateProvider>();
 
 // --- H-09: health/readiness probes for IIS / load balancer / uptime monitoring ---
 // Two anonymous endpoints (mapped below): /health/live is a bare liveness signal (the process is up and
