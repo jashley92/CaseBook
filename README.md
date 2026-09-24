@@ -110,7 +110,12 @@ bridges two campaigns for someone who can't see it.
 
 ### Reporting — Word draft &amp; locked PDF
 Generate an editable **Word** working draft and a finalized, **locked PDF** carrying an embedded
-**SHA-256 content hash** — the version, final flag, hash, and author are recorded per artifact.
+**SHA-256 content hash** — the version, final flag, hash, and author are recorded per artifact. Reports
+**draw the attack chain** across ATT&amp;CK tactic lanes and the **entity relationship graph**, list
+**indicators of compromise** apart from everything examined, **defang** indicators so a forwarded report
+can't be clicked through, and carry a **TLP 2.0** marking on every page. Admins can give a report profile
+their own **Word template** with `{{…}}` fields; uploads with macros, embedded objects or externally
+loaded content are refused.
 
 ![Reporting](docs/screenshots/report.png)
 
