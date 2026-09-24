@@ -159,6 +159,88 @@ public sealed class EvidenceUploadTests : IDisposable
             .Should().BeEquivalentTo("Uploaded", "Downloaded");
     }
 
+    private async Task<(EvidenceService Svc, Guid CaseId, Guid EvidenceId)> SeedEvidenceAsync()
+    {
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+        }
+        var svc = NewEvidenceService();
+        await using var s = new MemoryStream(Encoding.UTF8.GetBytes("bytes"));
+        return (svc, caseId, (await svc.UploadAsync(caseId, "shot.png", "image/png", s, null)).Id);
+    }
+
+    [Fact]
+    public async Task Opening_the_preview_records_one_viewed_event_per_person_per_window(/* PROD-13 */)
+    {
+        var (svc, _, evId) = await SeedEvidenceAsync();
+
+        (await svc.RecordViewedAsync(evId)).Should().BeTrue();
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(3);
+        (await svc.RecordViewedAsync(evId)).Should().BeFalse("a re-open inside the window folds into the first view");
+
+        _user.UserId = "ic2";   // someone else looking always records
+        (await svc.RecordViewedAsync(evId)).Should().BeTrue();
+
+        _user.UserId = "analyst1";
+        _clock.UtcNow = _clock.UtcNow + EvidenceService.ViewDedupWindow;
+        (await svc.RecordViewedAsync(evId)).Should().BeTrue("the window has passed");
+
+        var custody = await svc.GetCustodyAsync(evId);
+        custody.Select(e => e.Action).Should().Equal("Uploaded", "Viewed", "Viewed", "Viewed");
+        custody.Where(e => e.Action == "Viewed").Select(e => e.Actor).Should().Equal("analyst1", "ic2", "analyst1");
+    }
+
+    [Fact]
+    public async Task A_recorded_transfer_names_recipient_method_and_purpose_and_keeps_the_chain_valid(/* PROD-13 */)
+    {
+        var (svc, _, evId) = await SeedEvidenceAsync();
+
+        await svc.RecordTransferAsync(evId, "  Outside counsel (Smith LLP) ", "Encrypted SFTP", "Privileged review");
+        await svc.RecordTransferAsync(evId, "NYPD Cyber", null, "Criminal referral");
+
+        var transfers = (await svc.GetCustodyAsync(evId)).Where(e => e.Action == "Transferred").ToList();
+        transfers.Select(t => t.Details).Should().Equal(
+            "To Outside counsel (Smith LLP) via Encrypted SFTP. Purpose: Privileged review",
+            "To NYPD Cyber. Purpose: Criminal referral");
+
+        await using var db = NewContext();
+        var entries = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+        _hasher.VerifyChain(entries).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_transfer_needs_a_recipient_a_purpose_and_edit_rights(/* PROD-13 */)
+    {
+        var (svc, _, evId) = await SeedEvidenceAsync();
+
+        await svc.Invoking(x => x.RecordTransferAsync(evId, " ", null, "why")).Should().ThrowAsync<ArgumentException>();
+        await svc.Invoking(x => x.RecordTransferAsync(evId, "who", null, "")).Should().ThrowAsync<ArgumentException>();
+
+        _user.RoleSet = [AppRole.Manager];
+        await svc.Invoking(x => x.RecordTransferAsync(evId, "who", null, "why"))
+            .Should().ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
+    }
+
+    [Fact]
+    public async Task Custody_of_a_restricted_case_is_neither_readable_nor_writable_without_need_to_know(/* PROD-13 */)
+    {
+        var (svc, caseId, evId) = await SeedEvidenceAsync();
+        await using (var db = NewContext())
+        {
+            (await db.Cases.FirstAsync(c => c.Id == caseId)).IsRestricted = true;
+            await db.SaveChangesAsync();
+        }
+
+        _user.UserId = "outsider";
+        _user.RoleSet = [AppRole.Analyst];
+        (await svc.GetCustodyAsync(evId)).Should().BeEmpty();
+        await svc.Invoking(x => x.RecordViewedAsync(evId)).Should().ThrowAsync<InvalidOperationException>();
+        await svc.Invoking(x => x.RecordTransferAsync(evId, "who", null, "why")).Should().ThrowAsync<InvalidOperationException>();
+    }
+
     public void Dispose()
     {
         _connection.Dispose();

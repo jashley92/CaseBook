@@ -1,13 +1,16 @@
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
+using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace IncidentManager.Application.Evidence;
 
 /// <summary>
 /// Attaches and retrieves evidence. Uploads are hashed and recorded immutably with a chain-of-
-/// custody entry; downloads append a custody entry too. Files are streamed, never executed.
+/// custody entry; downloads, in-app views and recorded hand-offs append custody entries too (PROD-13).
+/// Files are streamed, never executed.
 /// </summary>
 public sealed class EvidenceService
 {
@@ -85,9 +88,90 @@ public sealed class EvidenceService
         return (evidence, stream);
     }
 
+    /// <summary>
+    /// Repeat views by the same person inside this window collapse into the first one, so flicking a preview
+    /// open and closed doesn't bury the custody record in noise. A view by someone else always records.
+    /// </summary>
+    public static readonly TimeSpan ViewDedupWindow = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// PROD-13: records a "Viewed" custody event when a person deliberately opens evidence in the app (the
+    /// preview lightbox). Deliberately <em>not</em> tied to the <c>/inline</c> image fetch — thumbnails load
+    /// passively whenever a tab renders, and an examiner must be able to read every entry as a human act
+    /// (the same reasoning as S-03). Need-to-know on the parent case applies. Returns false when the view was
+    /// folded into a recent one (<see cref="ViewDedupWindow"/>).
+    /// </summary>
+    public async Task<bool> RecordViewedAsync(Guid evidenceId, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var evidence = await LoadScopedAsync(db, evidenceId, ct);
+
+        var since = _clock.UtcNow - ViewDedupWindow;
+        var recent = await db.CustodyEvents.AsNoTracking()
+            .Where(e => e.EvidenceId == evidenceId && e.Actor == _user.UserId && e.Action == "Viewed")
+            .Select(e => e.AtUtc)
+            .ToListAsync(ct);   // DateTimeOffset comparison stays client-side for SQLite
+        if (recent.Any(t => t >= since)) return false;
+
+        evidence.CustodyEvents.Add(new ChainOfCustodyEvent
+        {
+            EvidenceId = evidence.Id, AtUtc = _clock.UtcNow, Actor = _user.UserId, Action = "Viewed",
+            Details = "Previewed in CaseBook"
+        });
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    /// <summary>
+    /// PROD-13: records a hand-off of a copy of the evidence outside CaseBook (outside counsel, law
+    /// enforcement, a forensics firm, a regulator). No export ships evidence bytes, so a transfer is always a
+    /// real-world act the analyst attests to here: who received it, how, and why. Requires
+    /// <see cref="Permission.EditCases"/> and need-to-know on the case; the entry is hash-chained like any
+    /// other custody event.
+    /// </summary>
+    public async Task<ChainOfCustodyEvent> RecordTransferAsync(Guid evidenceId, string recipient, string? method,
+        string purpose, CancellationToken ct = default)
+    {
+        if (!_user.Has(Permission.EditCases)) throw new ForbiddenException(Permission.EditCases, nameof(RecordTransferAsync));
+        recipient = (recipient ?? "").Trim();
+        purpose = (purpose ?? "").Trim();
+        method = string.IsNullOrWhiteSpace(method) ? null : method.Trim();
+        if (recipient.Length == 0) throw new ArgumentException("Say who received the evidence.");
+        if (purpose.Length == 0) throw new ArgumentException("Give the purpose of the transfer.");
+        if (recipient.Length > 200 || purpose.Length > 500 || method?.Length > 100)
+            throw new ArgumentException("Keep the recipient, method and purpose brief.");
+
+        using var db = _factory.CreateDbContext();
+        var evidence = await LoadScopedAsync(db, evidenceId, ct);
+
+        var custody = new ChainOfCustodyEvent
+        {
+            EvidenceId = evidence.Id, AtUtc = _clock.UtcNow, Actor = _user.UserId, Action = "Transferred",
+            Details = method is null ? $"To {recipient}. Purpose: {purpose}" : $"To {recipient} via {method}. Purpose: {purpose}"
+        };
+        evidence.CustodyEvents.Add(custody);
+        await db.SaveChangesAsync(ct);
+        return custody;
+    }
+
+    /// <summary>Loads evidence for a write, enforcing need-to-know on the parent case ("not found" either way).</summary>
+    private async Task<Domain.Entities.Evidence> LoadScopedAsync(IAppDbContext db, Guid evidenceId, CancellationToken ct)
+    {
+        var evidence = await db.Evidence.FirstOrDefaultAsync(e => e.Id == evidenceId, ct)
+                       ?? throw new InvalidOperationException("Evidence not found.");
+        var canAccess = await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == evidence.CaseId, ct);
+        if (!canAccess) throw new InvalidOperationException("Evidence not found.");
+        return evidence;
+    }
+
     public async Task<List<ChainOfCustodyEvent>> GetCustodyAsync(Guid evidenceId, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
+        // Same need-to-know scope as the file itself: a restricted case's custody trail isn't readable by GUID.
+        var caseId = await db.Evidence.AsNoTracking().Where(e => e.Id == evidenceId).Select(e => (Guid?)e.CaseId)
+            .FirstOrDefaultAsync(ct);
+        if (caseId is null || !await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct))
+            return new List<ChainOfCustodyEvent>();
         return await db.CustodyEvents.AsNoTracking()
             .Where(e => e.EvidenceId == evidenceId)
             .OrderBy(e => e.AtUtc)

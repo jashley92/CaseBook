@@ -125,6 +125,44 @@
                                 {
                                     <span class="small text-muted">No custody events recorded.</span>
                                 }
+                                <AuthorizeView Policy="@Policies.EditCases" Context="xfer">
+                                    @if (_transferFor == ev.Id)
+                                    {
+                                        @* PROD-13: a hand-off outside CaseBook is attested here, since no export ships evidence bytes. *@
+                                        <div class="border rounded p-2 mt-2 bg-body">
+                                            <div class="small fw-semibold mb-1">Record a transfer</div>
+                                            <div class="small text-muted mb-2">A copy left CaseBook's custody: who received it, how, and why. Added to the chain of custody and the audit trail.</div>
+                                            <div class="row g-2">
+                                                <div class="col-md-4">
+                                                    <label class="form-label small mb-0" for="xfer-to-@ev.Id">Recipient</label>
+                                                    <input id="xfer-to-@ev.Id" class="form-control form-control-sm" maxlength="200" @bind="_xferTo"
+                                                           placeholder="e.g. Outside counsel (Smith LLP)" />
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label small mb-0" for="xfer-how-@ev.Id">Method <span class="text-muted">(optional)</span></label>
+                                                    <input id="xfer-how-@ev.Id" class="form-control form-control-sm" maxlength="100" @bind="_xferHow"
+                                                           placeholder="e.g. Encrypted SFTP" />
+                                                </div>
+                                                <div class="col-md-5">
+                                                    <label class="form-label small mb-0" for="xfer-why-@ev.Id">Purpose</label>
+                                                    <input id="xfer-why-@ev.Id" class="form-control form-control-sm" maxlength="500" @bind="_xferWhy"
+                                                           placeholder="e.g. Forensic analysis under engagement letter" />
+                                                </div>
+                                            </div>
+                                            @if (_xferError is not null) { <div class="text-danger small mt-1">@_xferError</div> }
+                                            <div class="mt-2 d-flex gap-2">
+                                                <button class="btn btn-sm btn-primary" @onclick="() => SaveTransfer(ev.Id)" disabled="@_xferBusy">Record transfer</button>
+                                                <button class="btn btn-sm btn-outline-secondary" @onclick="CancelTransfer">Cancel</button>
+                                            </div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm btn-link p-0 mt-2" @onclick="() => StartTransfer(ev.Id)">
+                                            <span class="bi bi-arrow-left-right me-1" aria-hidden="true"></span>Record a transfer
+                                        </button>
+                                    }
+                                </AuthorizeView>
                             </td>
                         </tr>
                     }
@@ -229,15 +267,56 @@
         }
     }
 
-    // U-26: show/hide an evidence item's chain of custody, loading it on first expand.
+    // U-26: show/hide an evidence item's chain of custody, loading it on each expand (a preview or a transfer
+    // since the last look adds entries, PROD-13); the previous list stays visible while it refreshes.
     private async Task ToggleCustody(Guid evidenceId)
     {
         if (!_custodyOpen.Add(evidenceId)) { _custodyOpen.Remove(evidenceId); return; }
-        if (_custody.ContainsKey(evidenceId)) return;
-        _custodyLoading.Add(evidenceId);
+        await LoadCustody(evidenceId);
+    }
+
+    private async Task LoadCustody(Guid evidenceId)
+    {
+        if (!_custody.ContainsKey(evidenceId)) _custodyLoading.Add(evidenceId);
         try { _custody[evidenceId] = await Evidence.GetCustodyAsync(evidenceId); }
         catch { _custody[evidenceId] = new(); }
         finally { _custodyLoading.Remove(evidenceId); }
+    }
+
+    // PROD-13: record a hand-off outside CaseBook.
+    private Guid? _transferFor;
+    private string? _xferTo, _xferHow, _xferWhy, _xferError;
+    private bool _xferBusy;
+
+    private void StartTransfer(Guid evidenceId)
+    {
+        _transferFor = evidenceId;
+        _xferTo = _xferHow = _xferWhy = _xferError = null;
+    }
+
+    private void CancelTransfer() => _transferFor = null;
+
+    private async Task SaveTransfer(Guid evidenceId)
+    {
+        if (_xferBusy) return;
+        _xferError = null;
+        _xferBusy = true;
+        try
+        {
+            await Evidence.RecordTransferAsync(evidenceId, _xferTo ?? "", _xferHow, _xferWhy ?? "");
+            _transferFor = null;
+            await LoadCustody(evidenceId);
+            Toasts.Success("Transfer recorded in the chain of custody");
+        }
+        catch (Exception ex)
+        {
+            _xferError = UserFacingError.Describe(ex, Logger, "recording an evidence transfer",
+                "The transfer couldn't be recorded. Please try again.");
+        }
+        finally
+        {
+            _xferBusy = false;
+        }
     }
 
     // Only image evidence can be previewed inline (the /inline endpoint serves image/* only).

@@ -20,6 +20,7 @@
 @inject IncidentManager.Application.Access.IAccessLogService AccessLog
 @inject IncidentManager.Web.Services.CaseCommandRegistry PaletteActions
 @inject IncidentManager.Application.Cases.CaseShortcutService Shortcuts
+@inject IncidentManager.Application.Evidence.EvidenceService EvidenceSvc
 
 <PageTitle>@(_case?.CaseNumber ?? "Case")</PageTitle>
 
@@ -1440,7 +1441,15 @@ else
                 .Where(u => _case.Assignments.All(a => !string.Equals(a.UserId, u.UserId, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
 
-    private void OpenShot(Guid evidenceId) => _previewShotId = evidenceId;
+    private async Task OpenShot(Guid evidenceId)
+    {
+        _previewShotId = evidenceId;
+        // PROD-13: opening the preview is a deliberate look at the evidence, so it lands in the chain of custody
+        // as "Viewed" (the thumbnails that load on their own never do). Best-effort: a failed write must not
+        // stop the person seeing the image.
+        try { await EvidenceSvc.RecordViewedAsync(evidenceId); }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.EntityFrameworkCore.DbUpdateException) { }
+    }
     private void CloseShot() => _previewShotId = null;
 
     private async Task SetLegalHold(bool held)
