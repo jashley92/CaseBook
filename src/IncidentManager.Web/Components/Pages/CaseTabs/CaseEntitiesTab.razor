@@ -239,10 +239,23 @@ else
 {
     <div class="card mb-3">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <span>Relationship graph</span>
+            <span class="d-flex align-items-center gap-2">
+                <span>Relationship graph</span>
+                @* PROD-29: this case's own graph, or how it connects to other cases through shared indicators and links. *@
+                <span class="seg" role="radiogroup" aria-label="Graph view">
+                    <button type="button" class="seg-opt @(!_crossView ? "on" : "")" role="radio" aria-checked="@(!_crossView)"
+                            @onclick="() => SetCrossView(false)">This case</button>
+                    <button type="button" class="seg-opt @(_crossView ? "on" : "")" role="radio" aria-checked="@_crossView"
+                            @onclick="() => SetCrossView(true)"
+                            title="This case, the indicators it shares with other cases you can see, and its case links">Across cases</button>
+                </span>
+            </span>
             <div class="btn-group btn-group-sm">
-                <button class="btn @(_showAttackEdges ? "btn-primary" : "btn-outline-secondary")" @onclick="ToggleAttackEdges"
-                        title="Overlay event steps (actor → target) as dashed, tactic-coloured attack edges">Attack steps</button>
+                @if (!_crossView)
+                {
+                    <button class="btn @(_showAttackEdges ? "btn-primary" : "btn-outline-secondary")" @onclick="ToggleAttackEdges"
+                            title="Overlay event steps (actor → target) as dashed, tactic-coloured attack edges">Attack steps</button>
+                }
                 <button class="btn btn-outline-secondary" @onclick="GraphFit" title="Fit graph to view">Fit</button>
                 <button class="btn btn-outline-secondary" @onclick="GraphTogglePhysics">
                     @(_physicsOn ? "Freeze" : "Physics")
@@ -255,7 +268,30 @@ else
             </div>
         </div>
         <div class="card-body">
-            <div id="@GraphContainerId" style="height:460px;border:1px solid var(--bs-border-color);border-radius:.375rem;background:var(--bs-body-bg);"></div>
+            @if (_crossView && _overlaps.Count == 0 && _links.Count == 0)
+            {
+                <div class="empty-state">
+                    <div class="empty-state-icon"><span class="bi bi-intersect" aria-hidden="true"></span></div>
+                    <div class="empty-state-title">Not connected to other cases yet</div>
+                    <div class="empty-state-msg">Nothing here is shared with another case you can see, and the case has no links.
+                        Shared indicators and linked cases (including campaigns) appear here as they're recorded.</div>
+                </div>
+            }
+            else
+            {
+                <div id="@ActiveGraphId" @key="ActiveGraphId" style="height:460px;border:1px solid var(--bs-border-color);border-radius:.375rem;background:var(--bs-body-bg);"></div>
+            }
+            @if (_crossView)
+            {
+                <div class="d-flex flex-wrap gap-3 mt-2 small text-muted align-items-center">
+                    <span><span class="bi bi-square-fill" style="color:var(--im-accent-strong)" aria-hidden="true"></span> This case</span>
+                    <span><span class="bi bi-square" aria-hidden="true"></span> Other cases</span>
+                    <span>Indicators coloured by verdict · dashed = case link (gold = campaign)</span>
+                    <span class="ms-auto fst-italic">Read-only view · open other cases from the "also in" links below or the Overview's related cases</span>
+                </div>
+            }
+            else
+            {
             <div class="d-flex flex-wrap gap-3 mt-2 small text-muted align-items-center">
                 <span>Disposition:</span>
                 @* UX-05: dots share one source of truth with the graph via Ui.DispositionColor(). *@
@@ -265,6 +301,7 @@ else
                 }
                 <span class="ms-auto fst-italic">Drag nodes to arrange · scroll to zoom · drag background to pan</span>
             </div>
+            }
         </div>
     </div>
 
@@ -466,6 +503,12 @@ else
 
     // Interactive graph (vis-network via JS interop) — owned by this tab.
     private string GraphContainerId => $"entity-graph-{CaseId}";
+    private string CrossGraphId => $"cross-graph-{CaseId}";
+    private string ActiveGraphId => _crossView ? CrossGraphId : GraphContainerId;
+
+    // PROD-29: the cross-case view and the case links it draws.
+    private bool _crossView;
+    private IReadOnlyList<CaseLinkView> _links = [];
     private bool _physicsOn = true;
     private bool _showAttackEdges = true;   // overlay event steps as attack edges on the entity graph
     private bool _graphNeedsPush;
@@ -491,6 +534,7 @@ else
             _loadedToken = RefreshToken;
             await LoadOverlaps();
             await LoadRelated();
+            try { _links = await Cases.GetCaseLinksAsync(CaseId); } catch (InvalidOperationException) { _links = []; }
         }
     }
 
@@ -779,14 +823,22 @@ else
         // The graph container only exists when there are entities to draw.
         if (Case.Entities.Count == 0) return;
 
-        var sig = GraphSignature();
+        var sig = _crossView ? "x:" + CrossSignature() : GraphSignature();
         if (!_graphNeedsPush && sig == _lastGraphSig) return;
 
         _graphNeedsPush = false;
         _lastGraphSig = sig;
         try
         {
-            await JS.InvokeVoidAsync("entityGraph.render", GraphContainerId, GraphNodes(), GraphEdges(), _graphRef, CanEdit);
+            if (_crossView)
+            {
+                if (_overlaps.Count > 0 || _links.Count > 0)
+                    await JS.InvokeVoidAsync("entityGraph.render", CrossGraphId, CrossNodes(), CrossEdges(), null, false);
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("entityGraph.render", GraphContainerId, GraphNodes(), GraphEdges(), _graphRef, CanEdit);
+            }
         }
         catch (JSException) { /* graph is a progressive enhancement; ignore transient interop errors */ }
     }
@@ -799,18 +851,83 @@ else
         await Cases.SaveGraphLayoutAsync(CaseId, positions);
     }
 
-    private async Task GraphFit() => await SafeGraphCall("entityGraph.fit", GraphContainerId);
+    private async Task GraphFit() => await SafeGraphCall("entityGraph.fit", ActiveGraphId);
+
+    private async Task SetCrossView(bool cross)
+    {
+        if (_crossView == cross) return;
+        // The other view's container leaves the DOM; drop its network so a later switch back rebuilds cleanly.
+        await SafeGraphCall("entityGraph.destroy", ActiveGraphId);
+        _crossView = cross;
+        _physicsOn = true;
+        _graphNeedsPush = true;
+    }
+
+    private string CrossSignature() => string.Concat(
+        string.Join("|", _overlaps.OrderBy(k => k.Key).Select(k => $"{k.Key:N}>" + string.Join(",", k.Value.Select(o => o.OtherCaseId.ToString("N"))))),
+        "#", string.Join("|", _links.Select(l => $"{l.LinkId:N}:{(int)l.Type}")));
+
+    /// <summary>PROD-29: this case (accent box), its shared indicators, the other cases carrying them, and linked cases.</summary>
+    // Cross-view nodes carry their own label colour: a dark label on the gold "this case" box for contrast.
+    private sealed record GraphFont(string Color);
+    private sealed record CrossNodeDto(string Id, string Label, string Title, string Shape, GraphColor Color, GraphFont? Font);
+
+    private IReadOnlyList<CrossNodeDto> CrossNodes()
+    {
+        var accent = "#e0af12";
+        var light = new GraphFont("#f8f9fa");
+        var nodes = new List<CrossNodeDto>
+        {
+            new($"case-{CaseId:N}", $"◆ {Case.CaseNumber}", $"This case: {Case.Title}", "box", new GraphColor(accent, accent), new GraphFont("#212529")),
+        };
+        var others = new Dictionary<Guid, string>();
+        foreach (var (entityId, list) in _overlaps)
+        {
+            if (Case.Entities.FirstOrDefault(e => e.Id == entityId) is not { } e) continue;
+            var label = e.Label ?? e.Value;
+            if (label.Length > 22) label = label[..21] + "…";
+            var color = Ui.DispositionColor(e.Disposition);
+            nodes.Add(new($"ioc-{entityId:N}", $"{Ui.EntityGlyph(e.Type)} {label}",
+                $"{Ui.Label(e.Type)}: {e.Value} · shared with {list.Count} other case(s)", ShapeFor(e.Type), new GraphColor(color, color),
+                null));   // indicators keep the theme-aware default label colour
+            foreach (var o in list) others.TryAdd(o.OtherCaseId, o.OtherCaseNumber);
+        }
+        foreach (var l in _links) others.TryAdd(l.OtherCaseId, l.OtherCaseNumber);
+        foreach (var (id, number) in others)
+        {
+            var title = _links.FirstOrDefault(l => l.OtherCaseId == id) is { } link ? $"{number}: {link.OtherTitle}" : number;
+            nodes.Add(new($"case-{id:N}", number, title, "box", new GraphColor("#6c757d", "#6c757d"), light));
+        }
+        return nodes;
+    }
+
+    private IReadOnlyList<GraphEdgeDto> CrossEdges()
+    {
+        var self = $"case-{CaseId:N}";
+        var edges = new List<GraphEdgeDto>();
+        foreach (var (entityId, list) in _overlaps)
+        {
+            if (Case.Entities.All(e => e.Id != entityId)) continue;
+            edges.Add(new($"has-{entityId:N}", self, $"ioc-{entityId:N}", "", null, false));
+            foreach (var o in list)
+                edges.Add(new($"also-{entityId:N}-{o.OtherCaseId:N}", $"ioc-{entityId:N}", $"case-{o.OtherCaseId:N}", "", null, false));
+        }
+        foreach (var l in _links)
+            edges.Add(new($"link-{l.LinkId:N}", l.Outgoing ? self : $"case-{l.OtherCaseId:N}", l.Outgoing ? $"case-{l.OtherCaseId:N}" : self,
+                Ui.CaseLinkLabel(l.Type, true), l.Type == CaseLinkType.PartOfCampaign ? "#e0af12" : "#6c757d", true));
+        return edges;
+    }
 
     private async Task GraphTogglePhysics()
     {
         _physicsOn = !_physicsOn;
-        await SafeGraphCall("entityGraph.setPhysics", GraphContainerId, _physicsOn);
+        await SafeGraphCall("entityGraph.setPhysics", ActiveGraphId, _physicsOn);
     }
 
     private async Task GraphRelayout()
     {
         _physicsOn = true;
-        await SafeGraphCall("entityGraph.relayout", GraphContainerId);
+        await SafeGraphCall("entityGraph.relayout", ActiveGraphId);
     }
 
     private void ToggleAttackEdges()
@@ -827,7 +944,7 @@ else
 
     public async ValueTask DisposeAsync()
     {
-        try { await JS.InvokeVoidAsync("entityGraph.destroy", GraphContainerId); }
+        try { await JS.InvokeVoidAsync("entityGraph.destroy", GraphContainerId); await JS.InvokeVoidAsync("entityGraph.destroy", CrossGraphId); }
         catch { /* circuit may already be gone during teardown */ }
         _graphRef?.Dispose();
     }

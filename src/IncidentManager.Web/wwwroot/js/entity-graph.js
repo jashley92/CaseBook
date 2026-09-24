@@ -49,6 +49,7 @@ window.entityGraph = (function () {
     // during stabilization so only the un-placed newcomers flow.
     function prepareForBuild(n) {
         const m = Object.assign({}, n);
+        if (m.font == null) delete m.font;   // an explicit per-node label colour is optional (cross-case view)
         if (hasCoords(m)) { m.fixed = { x: true, y: true }; }
         else { delete m.x; delete m.y; }
         return m;
@@ -99,6 +100,7 @@ window.entityGraph = (function () {
                 ds.update({ id: n.id, label: n.label, title: n.title, shape: n.shape, color: n.color });
             } else {
                 const m = Object.assign({}, n);
+                if (m.font == null) delete m.font;
                 if (!hasCoords(m)) { delete m.x; delete m.y; }
                 ds.add(m);
             }
