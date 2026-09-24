@@ -432,6 +432,17 @@
                         </td>
                     </tr>
                     <tr>
+                        <td>SIEM stream — Windows Event Log</td>
+                        <td>
+                            @StatusBadge(Config.GetValue<bool>("Siem:EventLog:Enabled"), "Enabled", "Disabled")
+                            @if (Config.GetValue<bool>("Siem:EventLog:Enabled"))
+                            {
+                                <code class="small ms-2">@(Config["Siem:EventLog:LogName"] ?? "Application") / @(Config["Siem:EventLog:Source"] ?? "CaseBook")</code>
+                                @if (!OperatingSystem.IsWindows()) { <span class="ms-2">@StatusBadge(false, "", "Not Windows: inactive")</span> }
+                            }
+                        </td>
+                    </tr>
+                    <tr>
                         <td>Team chat — webhook</td>
                         <td>
                             @StatusBadge(Config.GetValue<bool>("Chat:Webhook:Enabled"), "Enabled", "Disabled")

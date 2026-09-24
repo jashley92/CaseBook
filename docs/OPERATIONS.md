@@ -258,15 +258,15 @@ CaseBook can emit a single, structured **security-event stream** to a SIEM (or a
 SOC can build detection rules over app activity — reads, downloads, exports, authorization denials,
 role/mapping changes, and case-governance actions — alongside the existing audit-chain tamper alarm.
 
-**Transports: webhook (JSON) and syslog (CEF).** Events queue in memory once and a background dispatcher
-**fans each out to every enabled transport**:
+**Transports: webhook (JSON), syslog (CEF) and the Windows Event Log.** Events queue in memory once and a
+background dispatcher **fans each out to every enabled transport**:
 - **Webhook** — HTTPS `POST` of a JSON body to the SIEM's HTTP collector.
 - **Syslog** — a **CEF** message over syslog (UDP or TCP) to a syslog collector.
+- **Windows Event Log** — one entry per event on the app server, for Windows Event Forwarding or an agent.
 
 Delivery is **best-effort and non-blocking**: a slow or unreachable collector never adds latency to, or
 fails, a user action, and one failing transport never stops the others. The tamper-evident audit chain
-remains the system of record; a dropped event is not a data-integrity concern. (A Windows Event Log
-transport is the remaining planned option — the sink is pluggable.) Enable either or both.
+remains the system of record; a dropped event is not a data-integrity concern. Enable any combination.
 
 ### Configuration (`Siem:*`, server-side only)
 
@@ -310,6 +310,26 @@ Syslog emits one **CEF** record per event, wrapped in an RFC 5424 line
 (`<PRI>1 TIMESTAMP HOST APP - - - CEF:0|CaseBook|CaseBook|…`). CEF/syslog severities map from the event
 severity; the CEF extension carries `suser`, `act`, `outcome`, `cat`, `cs1`=case number, `cs2`=target,
 `msg`=detail, `dvchost`.
+
+**Windows Event Log** (`Siem:EventLog`, Windows hosts only):
+
+| Key | Meaning | Default |
+|-----|---------|---------|
+| `Enabled` | On/off | `false` |
+| `Source` | Event source name | `CaseBook` |
+| `LogName` | Log the source is registered in | `Application` |
+
+Each event is written with its catalog id (below) as the **Event ID**; entry type is Error for High/Critical,
+Warning for Warning or a denied/failed outcome, else Information. The message is a one-line summary followed
+by the same JSON body as the webhook. **Register the source once, as an administrator**, before enabling —
+the app runs without the rights to create it and won't try:
+
+```powershell
+New-EventLog -LogName Application -Source CaseBook
+```
+
+If the source is missing, the transport logs one warning and stays off until the app restarts; the other
+transports are unaffected.
 
 ### Event payload (stable parse contract)
 
