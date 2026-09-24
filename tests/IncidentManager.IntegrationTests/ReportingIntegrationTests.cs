@@ -423,6 +423,64 @@ public sealed class ReportingIntegrationTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task A_profile_with_a_Word_template_prints_Word_reports_from_it()
+    {
+        // PROD-47: upload through the service (checked), pick the profile on the case, generate.
+        _user.RoleSet = [AppRole.SysAdmin];
+        var engine = new WordTemplateEngine();
+        var templateStore = new FileReportTemplateStore(Options.Create(new ReportTemplateOptions { RootPath = Path.Combine(_reportDir, "templates") }));
+        Guid caseId, profileId;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+            var profiles = new IncidentManager.Application.Admin.ReportProfileService(NewFactory(), _user, _clock, engine, templateStore);
+            profileId = await profiles.CreateAsync(new IncidentManager.Application.Admin.ReportProfileInput("House style", null, true, 9, null));
+
+            var rejected = await profiles.UploadTemplateAsync(profileId, "bad.docx", "not a docx"u8.ToArray());
+            rejected.Ok.Should().BeFalse();
+            await profiles.Invoking(p => p.UploadTemplateAsync(profileId, "macro.docm", engine.Starter()))
+                .Should().ThrowAsync<ArgumentException>();
+
+            (await profiles.UploadTemplateAsync(profileId, "house-style.docx", engine.Starter())).Ok.Should().BeTrue();
+            (await profiles.GetAsync(profileId))!.TemplateFileName.Should().Be("house-style.docx");
+
+            var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
+                new CaseNumberGenerator(db), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(),
+                new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            await cases.SetReportProfileAsync(caseId, profileId);
+        }
+
+        await using (var db = NewContext())
+        {
+            var store = new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = _reportDir }));
+            var branding = new FileReportBrandingStore(Options.Create(new ReportBrandingOptions { RootPath = Path.Combine(_reportDir, "branding") }));
+            var svc = new ReportService(NewFactory(), new ReportGenerator(), store, _hasher, _user, _clock,
+                new IncidentManager.Application.Content.MarkdownService(), _reporting, branding, new StubUserDirectory(),
+                new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()),
+                diagrams: new SkiaReportDiagrams(), templates: engine, templateStore: templateStore);
+
+            var word = await svc.GenerateAsync(caseId, ReportFormat.Word);
+            var (_, stream) = await svc.OpenAsync(word.Id);
+            using var ms = new MemoryStream();
+            await using (stream) await stream.CopyToAsync(ms);
+            ms.Position = 0;
+            using var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false);
+            var body = doc.MainDocumentPart!.Document.Body!.InnerText;
+
+            body.Should().Contain("Business impact", "the template's own headings print")
+                .And.NotContain("Systems Reviewed", "not the built-in layout")
+                .And.Contain("2026-01_Phishing_Wave").And.Contain("203[.]0[.]113[.]66").And.NotContain("{{");
+            doc.MainDocumentPart.ImageParts.Should().NotBeEmpty("the attack chain and entity graph pictures are filled in");
+            new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(doc).Should().BeEmpty("Word opens it without repair");
+
+            // PDF keeps the built-in layout.
+            var pdf = await svc.GenerateAsync(caseId, ReportFormat.Pdf);
+            pdf.FileName.Should().EndWith(".pdf");
+        }
+    }
+
     public void Dispose()
     {
         _connection.Dispose();

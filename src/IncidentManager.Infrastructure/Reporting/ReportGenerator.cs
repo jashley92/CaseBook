@@ -258,7 +258,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         }
     }
 
-    private static Paragraph P(string text, bool bold = false, bool italic = false, int size = 22)
+    internal static Paragraph P(string text, bool bold = false, bool italic = false, int size = 22)
     {
         var runProps = new RunProperties();
         if (bold) runProps.Append(new Bold());
@@ -276,7 +276,7 @@ public sealed partial class ReportGenerator : IReportGenerator
     }
 
     /// <summary>A section heading in the house style: bold, underlined, slate.</summary>
-    private static Paragraph Heading(string text, int size = 26)
+    internal static Paragraph Heading(string text, int size = 26)
     {
         // Schema order within rPr: b, color, sz, u.
         var runProps = new RunProperties(
@@ -296,7 +296,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         return new Paragraph(new ParagraphProperties(new SpacingBetweenLines { Before = "160", After = "40" }), run);
     }
 
-    private static Table WordTable(string[] headers, IEnumerable<string[]> rows)
+    internal static Table WordTable(string[] headers, IEnumerable<string[]> rows)
     {
         var table = new Table();
         table.AppendChild(new TableProperties(new TableBorders(
@@ -391,7 +391,7 @@ public sealed partial class ReportGenerator : IReportGenerator
             new Run(runProps, new Text(text) { Space = SpaceProcessingModeValues.Preserve }));
     }
 
-    private static Paragraph PageNumberParagraph() => new(
+    internal static Paragraph PageNumberParagraph() => new(
         new ParagraphProperties(new Justification { Val = JustificationValues.Center }),
         new Run(new FieldChar { FieldCharType = FieldCharValues.Begin }),
         new Run(new FieldCode(" PAGE ") { Space = SpaceProcessingModeValues.Preserve }),
@@ -402,7 +402,7 @@ public sealed partial class ReportGenerator : IReportGenerator
     /// <summary>
     /// PROD-46: a PNG picture at the text width (6.3 in), keeping its proportions, with alt text for screen readers.
     /// </summary>
-    private static Paragraph BodyPicture(MainDocumentPart main, byte[] png, string name, string alt)
+    internal static Paragraph BodyPicture(MainDocumentPart main, byte[] png, string name, string alt)
     {
         var imagePart = main.AddImagePart(ImagePartType.Png);
         using (var stream = new MemoryStream(png)) imagePart.FeedData(stream);

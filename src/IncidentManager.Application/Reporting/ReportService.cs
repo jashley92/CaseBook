@@ -27,12 +27,17 @@ public sealed class ReportService
     private readonly ITaxonomyDisplay? _taxonomy;
 
     private readonly IReportDiagrams? _diagrams;   // PROD-46: report pictures (null = tables only)
+    private readonly IReportTemplateEngine? _templates;      // PROD-47
+    private readonly IReportTemplateStore? _templateStore;   // PROD-47
 
     public ReportService(IAppDbContextFactory factory, IReportGenerator generator, IReportStore store,
         IHashChainService hasher, ICurrentUser user, IClock clock, Content.IMarkdownService markdown,
         IOptionsMonitor<ReportingOptions> reporting, IReportBrandingStore branding, IUserDirectory users,
-        ISeverityLabels severityLabels, ITaxonomyDisplay? taxonomy = null, IReportDiagrams? diagrams = null)
+        ISeverityLabels severityLabels, ITaxonomyDisplay? taxonomy = null, IReportDiagrams? diagrams = null,
+        IReportTemplateEngine? templates = null, IReportTemplateStore? templateStore = null)
     {
+        _templates = templates;
+        _templateStore = templateStore;
         _diagrams = diagrams;
         _factory = factory;
         _generator = generator;
@@ -97,7 +102,13 @@ public sealed class ReportService
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
         var model = BuildModel(c, now, logo, sections, elemSummary, triggers, tlp);
 
-        return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.Case, format, model, now, ct);
+        // PROD-47: a Word report from a profile with a customer-designed template is rendered from that template.
+        // PDFs keep the built-in layout (converting Word to PDF would need Word or LibreOffice on the server).
+        byte[]? rendered = null;
+        if (format == ReportFormat.Word && await TemplateForAsync(db, c.ReportProfileId, ct) is { } template)
+            rendered = _templates!.Render(template, model);
+
+        return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.Case, format, model, now, ct, rendered);
     }
 
     /// <summary>
@@ -119,10 +130,19 @@ public sealed class ReportService
     }
 
     /// <summary>Renders, stores and records a report; versions number per case + kind + format.</summary>
-    private async Task<Report> StoreAsync(IAppDbContext db, Guid caseId, string caseNumber, ReportKind kind,
-        ReportFormat format, CaseReportModel model, DateTimeOffset now, CancellationToken ct)
+    /// <summary>PROD-47: the Word template of the (active) profile a case prints with, or null for the built-in layout.</summary>
+    private async Task<byte[]?> TemplateForAsync(IAppDbContext db, Guid? profileId, CancellationToken ct)
     {
-        var bytes = format == ReportFormat.Word ? _generator.GenerateWord(model) : _generator.GeneratePdf(model);
+        if (_templates is null || _templateStore is null || profileId is not { } id) return null;
+        var hasTemplate = await db.ReportProfiles.AsNoTracking()
+            .AnyAsync(p => p.Id == id && p.IsActive && p.TemplateFileName != null, ct);
+        return hasTemplate ? await _templateStore.GetAsync(id, ct) : null;
+    }
+
+    private async Task<Report> StoreAsync(IAppDbContext db, Guid caseId, string caseNumber, ReportKind kind,
+        ReportFormat format, CaseReportModel model, DateTimeOffset now, CancellationToken ct, byte[]? rendered = null)
+    {
+        var bytes = rendered ?? (format == ReportFormat.Word ? _generator.GenerateWord(model) : _generator.GeneratePdf(model));
         var ext = format == ReportFormat.Word ? "docx" : "pdf";
         var version = await db.Reports.CountAsync(r => r.CaseId == caseId && r.Kind == kind && r.Format == format, ct) + 1;
         var fileName = kind == ReportKind.LessonsLearned

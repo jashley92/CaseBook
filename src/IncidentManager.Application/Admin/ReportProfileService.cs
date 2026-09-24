@@ -7,7 +7,8 @@ namespace IncidentManager.Application.Admin;
 
 /// <summary>A report profile resolved for the case picker and the admin editor.</summary>
 public sealed record ReportProfileView(
-    Guid Id, string Name, string? Description, bool IsActive, int SortOrder, string? SectionLayout);
+    Guid Id, string Name, string? Description, bool IsActive, int SortOrder, string? SectionLayout,
+    string? TemplateFileName = null);
 
 /// <summary>The fields to create a report profile with, or replace an existing one's content.</summary>
 public sealed record ReportProfileInput(
@@ -24,12 +25,76 @@ public sealed class ReportProfileService
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
+    private readonly Reporting.IReportTemplateEngine? _templates;
+    private readonly Reporting.IReportTemplateStore? _templateStore;
 
-    public ReportProfileService(IAppDbContextFactory factory, ICurrentUser user, IClock clock)
+    /// <summary>PROD-47: the largest Word template accepted.</summary>
+    public const int MaxTemplateBytes = 5 * 1024 * 1024;
+
+    public ReportProfileService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
+        Reporting.IReportTemplateEngine? templates = null, Reporting.IReportTemplateStore? templateStore = null)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
+        _templates = templates;
+        _templateStore = templateStore;
+    }
+
+    /// <summary>
+    /// PROD-47: attaches a customer-designed Word template to a profile, after checking it (a plain .docx — no
+    /// macros, embedded objects or externally loaded content — using only known placeholders). Returns the check;
+    /// nothing is stored unless it passes.
+    /// </summary>
+    public async Task<Reporting.TemplateCheck> UploadTemplateAsync(Guid id, string fileName, byte[] docx, CancellationToken ct = default)
+    {
+        AdminActionPermissions.Require<ReportProfileService>(_user);
+        if (_templates is null || _templateStore is null) throw new InvalidOperationException("Report templates aren't available.");
+        if (docx.Length == 0) throw new ArgumentException("The file is empty.");
+        if (docx.Length > MaxTemplateBytes) throw new ArgumentException($"A template must be {MaxTemplateBytes / 1024 / 1024} MB or smaller.");
+        if (!fileName.EndsWith(".docx", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Upload a Word document (.docx). Macro-enabled files (.docm) aren't accepted.");
+
+        var check = _templates.Check(docx);
+        if (!check.Ok) return check;
+
+        using var db = _factory.CreateDbContext();
+        var profile = await db.ReportProfiles.FirstOrDefaultAsync(p => p.Id == id, ct)
+                      ?? throw new InvalidOperationException("Report profile not found.");
+        await _templateStore.SaveAsync(id, docx, ct);
+        profile.TemplateFileName = Path.GetFileName(fileName);
+        profile.TemplateSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(docx)).ToLowerInvariant();
+        profile.ModifiedBy = _user.UserId;
+        profile.ModifiedAtUtc = _clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return check;
+    }
+
+    /// <summary>PROD-47: detaches the template, so the profile's Word reports use the built-in layout again.</summary>
+    public async Task RemoveTemplateAsync(Guid id, CancellationToken ct = default)
+    {
+        AdminActionPermissions.Require<ReportProfileService>(_user);
+        using var db = _factory.CreateDbContext();
+        var profile = await db.ReportProfiles.FirstOrDefaultAsync(p => p.Id == id, ct)
+                      ?? throw new InvalidOperationException("Report profile not found.");
+        if (profile.TemplateFileName is null) return;
+        profile.TemplateFileName = null;
+        profile.TemplateSha256 = null;
+        profile.ModifiedBy = _user.UserId;
+        profile.ModifiedAtUtc = _clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+        if (_templateStore is not null) await _templateStore.DeleteAsync(id, ct);
+    }
+
+    /// <summary>PROD-47: the profile's uploaded template file (for an admin to download and edit), or null.</summary>
+    public async Task<(string FileName, byte[] Bytes)?> GetTemplateAsync(Guid id, CancellationToken ct = default)
+    {
+        if (_templateStore is null) return null;
+        using var db = _factory.CreateDbContext();
+        var name = await db.ReportProfiles.AsNoTracking().Where(p => p.Id == id).Select(p => p.TemplateFileName).FirstOrDefaultAsync(ct);
+        if (name is null) return null;
+        var bytes = await _templateStore.GetAsync(id, ct);
+        return bytes is null ? null : (name, bytes);
     }
 
     /// <summary>Active profiles for the case picker, ordered for display.</summary>
@@ -101,6 +166,7 @@ public sealed class ReportProfileService
         if (profile is null) return;
         db.ReportProfiles.Remove(profile);
         await db.SaveChangesAsync(ct);
+        if (_templateStore is not null) await _templateStore.DeleteAsync(id, ct);   // PROD-47
     }
 
     private static void ApplyContent(ReportProfile p, ReportProfileInput input)
@@ -118,7 +184,7 @@ public sealed class ReportProfileService
         profiles.Select(Project).ToList();
 
     private static ReportProfileView Project(ReportProfile p) =>
-        new(p.Id, p.Name, p.Description, p.IsActive, p.SortOrder, p.SectionLayout);
+        new(p.Id, p.Name, p.Description, p.IsActive, p.SortOrder, p.SectionLayout, p.TemplateFileName);
 
     private static string? Trim(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }

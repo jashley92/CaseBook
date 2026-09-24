@@ -244,7 +244,7 @@ if ($SkipPublish) {
 
 # --- 2. Data root (outside web root) + subfolders -----------------------------
 Write-Step "Creating ACL-restricted data root at $DataRoot"
-$dataDirs = @('evidence-store','report-output','branding','keys','seals','ops','dp-keys') | ForEach-Object { Join-Path $DataRoot $_ }
+$dataDirs = @('evidence-store','report-output','branding','report-templates','keys','seals','ops','dp-keys') | ForEach-Object { Join-Path $DataRoot $_ }
 foreach ($d in @($DataRoot) + $dataDirs) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 
 # --- 3. appsettings.Production.json from template -----------------------------

@@ -19,6 +19,7 @@ public static class DependencyInjection
         services.Configure<EvidenceStoreOptions>(config.GetSection("EvidenceStore"));
         services.Configure<ReportOutputOptions>(config.GetSection("ReportOutput"));
         services.Configure<ReportBrandingOptions>(config.GetSection("ReportBranding"));
+        services.Configure<ReportTemplateOptions>(config.GetSection("ReportTemplates"));   // PROD-47
         services.Configure<RoleMappingOptions>(config.GetSection("RoleMapping"));
         services.Configure<SealSigningOptions>(config.GetSection("Integrity"));
         services.Configure<Notifications.EmailOptions>(config.GetSection("Email"));
@@ -88,6 +89,8 @@ public static class DependencyInjection
         services.AddSingleton<IReportBrandingStore, FileReportBrandingStore>();
         services.AddSingleton<IReportGenerator, ReportGenerator>();
         services.AddSingleton<Application.Reporting.IReportDiagrams, SkiaReportDiagrams>();   // PROD-46: attack chain + entity graph pictures
+        services.AddSingleton<Application.Reporting.IReportTemplateEngine, WordTemplateEngine>();   // PROD-47
+        services.AddSingleton<Application.Reporting.IReportTemplateStore, FileReportTemplateStore>();
         services.AddSingleton<IRoleDirectory, Security.RoleDirectory>();
         services.AddSingleton<IUserDirectory, Security.UserDirectory>();
         // E-39: signs/validates the per-user agenda calendar (ICS) feed token. Stateless (HMAC over the

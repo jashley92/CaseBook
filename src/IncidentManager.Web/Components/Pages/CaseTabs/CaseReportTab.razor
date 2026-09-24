@@ -44,6 +44,14 @@
                 </div>
             </div>
 
+            @* PROD-47: say when this profile's Word reports come from an uploaded template. *@
+            @if (State.Profiles?.FirstOrDefault(p => p.Id == _selectedProfileId)?.TemplateFileName is { } templateName)
+            {
+                <div class="small text-muted mb-2">
+                    <span class="bi bi-file-earmark-word me-1" aria-hidden="true"></span>Word drafts use this profile's template
+                    (<strong>@templateName</strong>); the preview and PDFs show the built-in layout.
+                </div>
+            }
             @* PROD-45: the TLP marking printed on every page of the report generated next. *@
             <div class="d-flex align-items-center gap-2 mb-2">
                 <label class="form-label small mb-0" for="report-tlp">Sharing (TLP)</label>

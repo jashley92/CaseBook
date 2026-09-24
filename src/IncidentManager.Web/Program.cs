@@ -689,6 +689,19 @@ app.MapGet("/export/config-bundle.json", async (
     return Results.File(export.Content, "application/json", export.FileName);
 }).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
 
+// PROD-47: Word report templates — the starter template, and a profile's uploaded template (to edit and re-upload).
+// Administer-gated like the other admin downloads; plain attachments.
+app.MapGet("/export/report-template-starter.docx",
+    (IncidentManager.Application.Reporting.IReportTemplateEngine templates) =>
+        Results.File(templates.Starter(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "casebook-report-template-starter.docx"))
+    .RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
+app.MapGet("/export/report-templates/{id:guid}", async (Guid id,
+    IncidentManager.Application.Admin.ReportProfileService profiles, CancellationToken ct) =>
+    await profiles.GetTemplateAsync(id, ct) is { } t
+        ? Results.File(t.Bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", t.FileName)
+        : Results.NotFound())
+    .RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
+
 // PROD-33: programmatic case import. A producer (an XSIAM/SOAR playbook, a script) POSTs a case-import
 // document; it is validated and STAGED as a pending import for a human to review and confirm in CaseBook —
 // the API never writes case state directly (the human gate). Requires EditCases (the caller authenticates as

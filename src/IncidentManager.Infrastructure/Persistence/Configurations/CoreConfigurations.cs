@@ -238,6 +238,8 @@ public sealed class ReportProfileConfiguration : IEntityTypeConfiguration<Report
         b.Property(x => x.Name).HasMaxLength(200).IsRequired();
         b.Property(x => x.Description).HasMaxLength(2000);
         b.Property(x => x.SectionLayout).HasMaxLength(1000);
+        b.Property(x => x.TemplateFileName).HasMaxLength(260);   // PROD-47
+        b.Property(x => x.TemplateSha256).HasMaxLength(64);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.RowHash).HasMaxLength(64);
         b.HasIndex(x => x.Name).IsUnique();
