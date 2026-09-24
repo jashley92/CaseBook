@@ -176,6 +176,11 @@ else
                                 <button class="dropdown-item" @onclick='() => OpenModal("materiality")'>Record materiality determination…</button>
                             }
                         }
+                        @if (_canEdit && _case.Phase != CasePhase.Closed)
+                        {
+                            @* PROD-11: supersede this case by the one work continues on (link + optional IOC copy + notes). *@
+                            <button class="dropdown-item" @onclick='() => OpenModal("supersede")'>Supersede as a duplicate…</button>
+                        }
                         @if (_canManageLegal)
                         {
                             @if (_case.LegalHold && Cases.LegalHoldReleaseNeedsSecondApprover)
@@ -484,6 +489,47 @@ else
                             @RationaleHint(_phaseReason)
                             @GateModalSection()
                         }
+                        else if (_activeModal == "supersede")
+                        {
+                            <p class="small text-muted mb-2">Marks this case a duplicate of the case work continues on: links the two, can copy this
+                                case's indicators across (existing ones are left alone), and notes both cases. You then close this case through the
+                                normal close step.</p>
+                            <label class="form-label small mb-1">Case to keep</label>
+                            @if (_supersedeTargetId is not null)
+                            {
+                                <div class="alert alert-info py-1 px-2 small d-flex align-items-center gap-2 mb-2">
+                                    <span>Keeping <code>@_supersedeTargetNumber</code></span>
+                                    <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick="() => _supersedeTargetId = null">change</button>
+                                </div>
+                            }
+                            else
+                            {
+                                @foreach (var l in _supersedeLinked)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" @onclick="() => PickSupersedeTarget(l.OtherCaseId, l.OtherCaseNumber)">
+                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> @l.OtherCaseNumber <span class="text-muted">(@Ui.CaseLinkLabel(l.Type, l.Outgoing))</span>
+                                    </button>
+                                }
+                                <div class="input-group input-group-sm mb-1">
+                                    <input class="form-control" placeholder="Search by case number or title" @bind="_supersedeQuery" @bind:event="oninput"
+                                           @onkeydown="@(async e => { if (e.Key == "Enter") await SearchSupersede(); })" />
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="SearchSupersede">Search</button>
+                                </div>
+                                @foreach (var r in _supersedeResults)
+                                {
+                                    <button type="button" class="btn btn-sm btn-link d-block text-start p-0 mb-1" @onclick="() => PickSupersedeTarget(r.Id, r.CaseNumber)">
+                                        <code>@r.CaseNumber</code> <span class="text-muted">@r.Title</span>
+                                    </button>
+                                }
+                            }
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="supersede-copy" @bind="_supersedeCopy" />
+                                <label class="form-check-label small" for="supersede-copy">Copy this case's indicators to the kept case</label>
+                            </div>
+                            <label class="form-label small mt-2" for="supersede-reason">Why it's a duplicate</label>
+                            <textarea id="supersede-reason" class="form-control" rows="2" @bind="_supersedeReason" @bind:event="oninput"
+                                      placeholder="e.g. Same phishing wave; the user report and the SIEM alert were filed separately"></textarea>
+                        }
                         else if (_activeModal == "holdrelease")
                         {
                             <p class="small text-muted mb-2">Two-person control is on: this asks for the hold to be lifted. Someone else with
@@ -647,6 +693,25 @@ else
     private CaseAssignmentRole _assignRole = CaseAssignmentRole.Analyst;
     private string? _legalContact;
     private string? _holdReleaseReason;   // F-12
+
+    // PROD-11: supersede-as-duplicate modal state.
+    private Guid? _supersedeTargetId;
+    private string? _supersedeTargetNumber;
+    private string? _supersedeQuery;
+    private string? _supersedeReason;
+    private bool _supersedeCopy = true;
+    private IReadOnlyList<LinkableCase> _supersedeResults = [];
+    private IReadOnlyList<CaseLinkView> _supersedeLinked = [];
+    private string? _closeAfterSupersede;
+
+    private void PickSupersedeTarget(Guid id, string number)
+    {
+        _supersedeTargetId = id;
+        _supersedeTargetNumber = number;
+    }
+
+    private async Task SearchSupersede() =>
+        _supersedeResults = await Cases.SearchLinkableCasesAsync(Id, _supersedeQuery, take: 8);
     private string? _legalNote;
     // REL-02: optimistic-concurrency baselines captured when the Legal-referral / materiality modal opens,
     // sent back on apply so a concurrent edit surfaces a StaleEditException instead of silently clobbering.
@@ -1001,6 +1066,15 @@ else
         _newSeverity = _case.Severity;
         _newPhase = _case.Phase;
 
+        if (name == "supersede")
+        {
+            _supersedeTargetId = null; _supersedeTargetNumber = null; _supersedeQuery = null; _supersedeReason = null;
+            _supersedeCopy = true; _supersedeResults = [];
+            // Cases already linked to this one are the likely "keep" candidates (a DuplicateOf link first).
+            _supersedeLinked = (await Cases.GetCaseLinksAsync(Id))
+                .OrderByDescending(l => l.Type == CaseLinkType.DuplicateOf && l.Outgoing).ToList();
+        }
+
         // Open the assign form clean (a prior cancelled attempt may have left a stale selection).
         if (name == "assign") { _assignUserId = ""; _assignRole = CaseAssignmentRole.Analyst; }
 
@@ -1208,6 +1282,7 @@ else
         "status" => "Change status",
         "legal" => "Refer to Legal / Privacy",
         "holdrelease" => "Request legal hold release",
+        "supersede" => "Supersede as a duplicate",
         "materiality" => "Record materiality determination",
         "archive" => "Archive case",
         "assign" => "Assign someone to this case",
@@ -1240,6 +1315,7 @@ else
         "assign" => "Assign",
         "reopen" => "Reopen",
         "holdrelease" => "Request release",
+        "supersede" => "Supersede",
         _ => "Apply"
     };
 
@@ -1251,6 +1327,7 @@ else
         "assign" => string.IsNullOrEmpty(_assignUserId),
         "reopen" => string.IsNullOrWhiteSpace(_reopenReason),
         "holdrelease" => string.IsNullOrWhiteSpace(_holdReleaseReason),
+        "supersede" => _supersedeTargetId is null || string.IsNullOrWhiteSpace(_supersedeReason),
         // A final call needs decision-maker, date and rationale; "Under review" needs none of them.
         "materiality" => _materialityStatus is MaterialityStatus.Material or MaterialityStatus.NotMaterial
             && (string.IsNullOrWhiteSpace(_materialityDecisionMaker) || _materialityDecidedOn is null
@@ -1297,6 +1374,14 @@ else
                     _phaseReason = null;
                     done = $"Status changed to {Ui.Label(_newPhase)}";
                     break;
+                case "supersede":
+                {
+                    var res = await Cases.SupersedeAsync(Id, _supersedeTargetId!.Value, _supersedeCopy, _supersedeReason ?? "");
+                    _closeAfterSupersede = $"Duplicate of {res.PrimaryCaseNumber}: {_supersedeReason?.Trim()}";
+                    done = $"Superseded by {res.PrimaryCaseNumber}" + (_supersedeCopy ? $" · {res.IndicatorsCopied} indicator(s) copied" : "")
+                           + ". Close this case to finish.";
+                    break;
+                }
                 case "holdrelease":
                     await Cases.RequestLegalHoldReleaseAsync(Id, _holdReleaseReason ?? "");
                     _holdReleaseReason = null;
@@ -1338,6 +1423,13 @@ else
             _activeModal = null;
             await Reload();
             if (done.Length > 0) Toasts.Success(done);
+            // PROD-11: after superseding, hand straight to the gated close step with the reason filled in.
+            if (_closeAfterSupersede is { } closeReason)
+            {
+                _closeAfterSupersede = null;
+                await AdvanceTo(CasePhase.Closed);
+                _phaseReason = closeReason;
+            }
         }
         catch (ForbiddenException)
         {
@@ -1584,6 +1676,9 @@ else
             if (_case.Phase == CasePhase.Closed)
                 list.Add(new("Reopen case…", "bi-arrow-counterclockwise", () => OpenModalFromPalette("reopen")));
         }
+
+        if (_canEdit && _case.Phase != CasePhase.Closed)
+            list.Add(new("Supersede as a duplicate…", "bi-files", () => OpenModalFromPalette("supersede")));
 
         if (_canManageLegal)
         {

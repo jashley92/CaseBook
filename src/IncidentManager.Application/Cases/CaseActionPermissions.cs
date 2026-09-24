@@ -67,6 +67,7 @@ public static class CaseActionPermissions
             // Case linking (E-14)
             [nameof(CaseService.LinkCaseAsync)] = Permission.EditCases,
             [nameof(CaseService.RemoveCaseLinkAsync)] = Permission.EditCases,
+            [nameof(CaseService.SupersedeAsync)] = Permission.EditCases,
 
             // Techniques
             [nameof(CaseService.AddTechniqueAsync)] = Permission.EditCases,

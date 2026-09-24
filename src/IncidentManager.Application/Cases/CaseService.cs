@@ -26,6 +26,9 @@ public sealed record CaseLinkView(
 /// <summary>A visible case that can be linked to the one in view (picker option, E-14).</summary>
 public sealed record LinkableCase(Guid Id, string CaseNumber, string Title, Classification? Classification, CasePhase Phase);
 
+/// <summary>PROD-11: what superseding a duplicate did — the kept case, indicators copied, and whether a link was added.</summary>
+public sealed record SupersedeResult(Guid PrimaryCaseId, string PrimaryCaseNumber, int IndicatorsCopied, bool LinkAdded);
+
 /// <summary>
 /// A visible <em>open</em> case whose entities already include one or more of the indicators being
 /// entered on a new case — surfaced before filing so a campaign isn't fragmented across cases (E-23).
@@ -933,6 +936,71 @@ public sealed class CaseService
         db.CaseLinks.Add(link);
         await db.SaveChangesAsync(ct);
         return link.Id;
+    }
+
+    /// <summary>
+    /// PROD-11: supersedes a duplicate case by the case work continues on. Records the <c>DuplicateOf</c> link
+    /// (duplicate → primary) when the pair isn't already linked, optionally copies the duplicate's indicators that
+    /// the primary doesn't have yet (source noted as copied from the duplicate; existing ones are never
+    /// overwritten), and adds a cross-referencing note to both cases with the reason — one save, so it all lands
+    /// or none of it does. It deliberately does <b>not</b> close the duplicate: closing stays a separate human act
+    /// through the normal close gate. Both cases must be visible to the caller.
+    /// </summary>
+    public async Task<SupersedeResult> SupersedeAsync(Guid duplicateId, Guid primaryId, bool copyIndicators, string reason,
+        CancellationToken ct = default)
+    {
+        Require();
+        if (duplicateId == primaryId) throw new ArgumentException("A case can't supersede itself.");
+        reason = (reason ?? "").Trim();
+        if (reason.Length == 0) throw new ArgumentException("Say why this case is a duplicate.");
+
+        using var db = _factory.CreateDbContext();
+        var visible = await Scoped(db.Cases.AsNoTracking())
+            .Where(c => c.Id == duplicateId || c.Id == primaryId).Select(c => c.Id).ToListAsync(ct);
+        if (!visible.Contains(duplicateId) || !visible.Contains(primaryId))
+            throw new InvalidOperationException("Both cases must exist and be visible to you.");
+
+        var dup = await LoadTrackedAsync(db, duplicateId, ct);
+        var primary = await LoadTrackedAsync(db, primaryId, ct);
+        var now = _clock.UtcNow;
+
+        var linked = await db.CaseLinks.AsNoTracking().AnyAsync(l =>
+            (l.CaseId == duplicateId && l.RelatedCaseId == primaryId) || (l.CaseId == primaryId && l.RelatedCaseId == duplicateId), ct);
+        if (!linked)
+            db.CaseLinks.Add(new CaseLink
+            {
+                CaseId = duplicateId, RelatedCaseId = primaryId, Type = CaseLinkType.DuplicateOf,
+                Description = reason.Length > 500 ? reason[..500] : reason, CreatedBy = _user.UserId, CreatedAtUtc = now
+            });
+
+        var copied = 0;
+        if (copyIndicators)
+        {
+            foreach (var e in dup.Entities.OrderBy(e => e.CreatedAtUtc))
+            {
+                var have = primary.Entities.Any(p => p.Type == e.Type && string.Equals(p.Value, e.Value, StringComparison.OrdinalIgnoreCase));
+                if (have) continue;
+                var source = $"Copied from {dup.CaseNumber}" + (string.IsNullOrWhiteSpace(e.Source) ? "" : $" ({e.Source})");
+                primary.AddEntity(e.Type, e.Value, e.Label, e.Disposition, e.Description,
+                    source.Length > 200 ? source[..200] : source, _user.UserId, now);
+                copied++;
+            }
+        }
+
+        dup.Notes.Add(new AnalystNote
+        {
+            CaseId = dup.Id, CreatedBy = _user.UserId, CreatedAtUtc = now,
+            Body = $"**Superseded by {primary.CaseNumber}.** Work continues on that case.\n\nReason: {reason}",
+        });
+        primary.Notes.Add(new AnalystNote
+        {
+            CaseId = primary.Id, CreatedBy = _user.UserId, CreatedAtUtc = now,
+            Body = $"**Supersedes duplicate {dup.CaseNumber}.**" + (copyIndicators ? $" {copied} indicator(s) copied across." : "")
+                   + $"\n\nReason: {reason}",
+        });
+
+        await db.SaveChangesAsync(ct);
+        return new SupersedeResult(primary.Id, primary.CaseNumber, copied, !linked);
     }
 
     /// <summary>Removes a case link. No-op unless the link touches <paramref name="caseId"/> and the caller can see it.</summary>
