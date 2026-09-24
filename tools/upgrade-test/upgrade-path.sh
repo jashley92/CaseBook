@@ -32,6 +32,10 @@ repo="$(git rev-parse --show-toplevel)"
 work="$(mktemp -d)"
 db="CaseBookUpg_$(printf %s "$from_ref" | tr -c 'A-Za-z0-9' '_')_$$"
 conn="${CASEBOOK_TEST_SQL%;};Database=$db"
+# A data root shared by both builds, as the installer's DataRoot is in production (it persists across
+# upgrades). Pre-created so the /health evidence-store check sees it, even on a fresh CI checkout.
+evidence="$work/data/evidence-store"
+mkdir -p "$evidence"
 app_pid=""
 
 log()  { printf '==> %s\n' "$*"; }
@@ -63,6 +67,7 @@ start_app() {
   log "Starting $label against [$db]"
   ( cd "$dir/src/IncidentManager.Web" && \
     ASPNETCORE_ENVIRONMENT=Development Database__Provider=SqlServer ConnectionStrings__Default="$conn" \
+    EvidenceStore__RootPath="$evidence" \
     exec dotnet "$dll" --urls "http://127.0.0.1:$port" ) >"$applog" 2>&1 &
   app_pid=$!
   for _ in $(seq 1 120); do
@@ -115,7 +120,8 @@ build "$to_dir" "$to_label"
 start_app "$to_dir" "$to_label"
 ready="$(curl -sS "http://127.0.0.1:$port/health" || true)"
 stop_app
-[ "$ready" = "Healthy" ] || fail "$to_label started but /health reported '$ready'"
+[ "$ready" = "Healthy" ] || { grep -iE "health|unhealthy|fail" "$work/app-$to_label.log" | tail -20; \
+  fail "$to_label started but /health reported '$ready'"; }
 
 # --- 3. Assertions -------------------------------------------------------------------------------
 expected="$(migrations_in "$to_dir")"
