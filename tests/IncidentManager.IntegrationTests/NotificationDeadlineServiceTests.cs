@@ -143,6 +143,52 @@ public sealed class NotificationDeadlineServiceTests : IDisposable
         _hasher.VerifyChain(await db.AuditLog.OrderBy(a => a.Sequence).ToListAsync()).IsValid.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task The_legal_register_lists_obligated_cases_with_their_deadline(/* PROD-12 */)
+    {
+        await SeedMaterialBreachAsync();
+        await NewRules().SaveAsync(null, "NY", "New York (NYDFS Part 500)", 72);
+        _settings.Current = new NotificationDeadlineSettings(true, NotificationStartBasis.Determination, 72, 80);
+        await using (var db = NewContext())
+        {
+            // No legal-facing obligation → not in the register.
+            db.Cases.Add(Case.Open(2026, 2, "Quiet", "Routine adverse event", Classification.AdverseEvent, Severity.Low,
+                CaseOrigin.InternalDetection, "alice", _clock.UtcNow));
+            // A referral with a formula-looking note: listed, and the note is neutralised in the CSV.
+            var referred = Case.Open(2026, 3, "Ref", "Referred incident", Classification.Incident, Severity.Medium,
+                CaseOrigin.InternalDetection, "alice", _clock.UtcNow);
+            referred.ReferToLegal("alice", "counsel@firm.example", "=HYPERLINK(\"x\")", _clock.UtcNow);
+            referred.PlaceLegalHold("alice", _clock.UtcNow);
+            db.Cases.Add(referred);
+            await db.SaveChangesAsync();
+        }
+
+        var register = new LegalRegisterService(NewFactory(), _user, NewService(), new StubUserDirectory());
+        var rows = await register.BuildAsync();
+
+        rows.Select(r => r.Title).Should().Equal("Breach case", "Referred incident");
+        var breach = rows[0];
+        breach.Materiality.Should().Be(MaterialityStatus.Material);
+        breach.DeadlineJurisdiction.Should().Be("New York (NYDFS Part 500)");
+        breach.DeadlineState.Should().Be("OnTrack");
+        breach.AffectedIndividuals.Should().Be(500);
+        rows[1].LegalHold.Should().BeTrue();
+
+        var csv = LegalRegisterService.ToCsv(rows, _clock.UtcNow);
+        csv.Should().Contain("case_number,title,classification");
+        csv.Should().Contain("'=HYPERLINK").And.NotContain(",=HYPERLINK");
+    }
+
+    private sealed class StubUserDirectory : IUserDirectory
+    {
+        public Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, CancellationToken ct = default) => Task.CompletedTask;
+        public IReadOnlyList<UserSummary> All() => [];
+        public UserSummary? Resolve(string userId) => null;
+        public string DisplayFor(string? userId) => userId ?? "—";
+        public string? EmailFor(string userId) => null;
+        public void Invalidate() { }
+    }
+
     private sealed class StubSettings : INotificationDeadlineSettingsProvider
     {
         public NotificationDeadlineSettings Current { get; set; } = NotificationDeadlineSettings.Off;

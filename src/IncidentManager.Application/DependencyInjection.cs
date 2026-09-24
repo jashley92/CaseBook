@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<Admin.DataElementService>();
         services.AddScoped<Admin.NotificationRuleService>();          // PROD-07: per-jurisdiction deadline rules
         services.AddScoped<Compliance.NotificationDeadlineService>(); // PROD-07: per-case deadline evaluation
+        services.AddScoped<Compliance.LegalRegisterService>();        // PROD-12: Legal/Privacy obligations register export
         services.AddScoped<Config.ConfigBundleService>();
         services.AddScoped<Import.CaseImportService>();    // PROD-31: structured case import (schema + importer)
         services.AddScoped<ApiTokens.ApiTokenService>();   // PROD-34: API-token auth (personal + system tokens)

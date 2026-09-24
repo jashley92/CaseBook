@@ -514,6 +514,20 @@ app.MapGet("/export/metrics.csv", async (
     return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
+// --- PROD-12: the Legal/Privacy obligations register. Legal doesn't use the app — this CSV is their interface.
+// Need-to-know scoped by the service; access-logged and rate-limited like every export. ---
+app.MapGet("/export/legal-register.csv", async (
+    IncidentManager.Application.Compliance.LegalRegisterService register,
+    IncidentManager.Application.Access.IAccessLogService access,
+    IClock clock, CancellationToken ct) =>
+{
+    var rows = await register.BuildAsync(ct);
+    var csv = IncidentManager.Application.Compliance.LegalRegisterService.ToCsv(rows, clock.UtcNow);
+    var fileName = $"legal-obligations-register-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
+    return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+
 // --- E-31: quarterly program-metrics report as a two-period CSV (board / exam packs). Need-to-know scoped by
 // the service; access-logged and rate-limited like every export. ---
 app.MapGet("/export/program-report.csv", async (
