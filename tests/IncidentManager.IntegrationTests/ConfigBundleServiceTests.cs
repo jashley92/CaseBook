@@ -370,5 +370,75 @@ public sealed class ConfigBundleServiceTests : IDisposable
         _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
     }
 
+    // ── S-18: import is an admin action whose access changes are streamed and take effect immediately ──
+
+    private sealed class CountingDirectory : IRoleDirectory
+    {
+        public int Invalidations { get; private set; }
+        public IReadOnlySet<Permission> PermissionsForRoles(IEnumerable<string> roleNames) => new HashSet<Permission>();
+        public IReadOnlySet<string> RolesForGroups(IEnumerable<string> adGroups) => new HashSet<string>();
+        public void Invalidate() => Invalidations++;
+    }
+
+    private sealed class CountingReloader : ISettingsReloader
+    {
+        public int Reloads { get; private set; }
+        public void Reload() => Reloads++;
+    }
+
+    [Fact]
+    public async Task Only_an_administrator_can_import_or_export()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var bundle = await svc.BuildBundleAsync();
+        _user.RoleSet = [AppRole.IncidentCommander];
+
+        await svc.Invoking(s => s.ImportAsync(bundle)).Should()
+            .ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
+        await svc.Invoking(s => s.ExportAsync()).Should()
+            .ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
+    }
+
+    [Fact]
+    public async Task Imported_roles_mappings_and_settings_are_streamed_and_applied_immediately()
+    {
+        await using var db = NewContext();
+        var sink = new CapturingSecurityEventSink();
+        var directory = new CountingDirectory();
+        var reloader = new CountingReloader();
+        var svc = new ConfigBundleService(NewFactory(), _signer, new AuditWriter(db, _hasher, _user, _clock), _user, _clock,
+            reloader, directory, sink);
+        var live = await svc.BuildBundleAsync();
+        var incoming = live with
+        {
+            Roles = live.Roles.Append(new ConfigRole("Shadow Admin", null, false, "ViewCases,Administer")).ToList(),
+            RoleMappings = live.RoleMappings.Append(new ConfigRoleMapping("Some-Group", "Shadow Admin")).ToList(),
+            Settings = live.Settings.Append(new ConfigSetting("Security:IdleTimeoutMinutes", "0")).ToList(),
+        };
+
+        await svc.ImportAsync(incoming);
+
+        sink.Events.Select(e => e.Action).Should().Contain(["RoleImported", "AdGroupMappingImported", "SettingChanged"]);
+        sink.Events.Should().Contain(e => e.Detail == "Some-Group → Shadow Admin");
+        directory.Invalidations.Should().Be(1);
+        reloader.Reloads.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task An_imported_setting_is_validated_like_the_settings_page()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var incoming = live with
+        {
+            Settings = live.Settings.Append(new ConfigSetting("Security:IdleTimeoutMinutes", "not a number")).ToList()
+        };
+
+        await svc.Invoking(s => s.ImportAsync(incoming)).Should().ThrowAsync<Exception>();
+        (await db.AppSettings.AsNoTracking().AnyAsync(x => x.Key == "Security:IdleTimeoutMinutes")).Should().BeFalse();
+    }
+
     public void Dispose() => _connection.Dispose();
 }

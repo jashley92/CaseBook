@@ -27,6 +27,7 @@ public static class AdminActionPermissions
         typeof(AdminSettingsService), typeof(CaseTemplateService), typeof(DataElementService),
         typeof(EmailTemplateAdminService), typeof(NotificationRuleService), typeof(ReportProfileService),
         typeof(RoleService), typeof(StageGateService), typeof(TaxonomyAdminService), typeof(IntegrityService),
+        typeof(Config.ConfigBundleService),
     ];
 
     public static readonly IReadOnlyDictionary<string, Permission> Required =
@@ -70,6 +71,10 @@ public static class AdminActionPermissions
             // Integrity ops: an on-demand seal. (SealIfDueAsync is the background job's system path — see the
             // read-only/system allowlist in the unit test.)
             [Key<IntegrityService>(nameof(IntegrityService.SealAsync))] = Permission.Administer,
+
+            // Configuration bundle (S-18): import can grant roles and AD mappings; export carries the whole config.
+            [Key<Config.ConfigBundleService>(nameof(Config.ConfigBundleService.ImportAsync))] = Permission.Administer,
+            [Key<Config.ConfigBundleService>(nameof(Config.ConfigBundleService.ExportAsync))] = Permission.Administer,
         };
 
     /// <summary>

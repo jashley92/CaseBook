@@ -1,7 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Admin;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -131,6 +133,12 @@ public sealed partial class ConfigBundleService
     /// </summary>
     public async Task<ConfigImportResult> ImportAsync(ConfigBundle bundle, CancellationToken ct = default)
     {
+        // S-18: an import can grant roles and AD mappings, so it's asserted here, not just by the Administer page.
+        AdminActionPermissions.Require<ConfigBundleService>(_user);
+        var changedSettings = new List<string>();
+        var changedRoles = new List<string>();
+        var addedMappings = new List<string>();
+
         using var db = _factory.CreateDbContext();
         var now = _clock.UtcNow;
         var actor = _user.UserId;
@@ -141,15 +149,19 @@ public sealed partial class ConfigBundleService
         var settings = await db.AppSettings.ToDictionaryAsync(s => s.Key, StringComparer.OrdinalIgnoreCase, ct);
         foreach (var s in bundle.Settings.Where(IsImportableSetting))
         {
+            // S-18: validate an operational setting exactly as the settings page does, so a bundle can't write a
+            // value the page would refuse. (Taxonomy labels are free text.)
+            var value = SettingsCatalog.ByKey.TryGetValue(s.Key, out var def) ? SettingsCatalog.Normalize(def, s.Value) : s.Value;
             if (settings.TryGetValue(s.Key, out var row))
             {
-                var changed = row.Value != s.Value;
-                if (changed) { row.Value = s.Value; row.UpdatedAtUtc = now; row.UpdatedBy = actor; }
+                var changed = row.Value != value;
+                if (changed) { row.Value = value; row.UpdatedAtUtc = now; row.UpdatedBy = actor; changedSettings.Add(s.Key); }
                 Tally(false, changed);
             }
             else
             {
-                db.AppSettings.Add(new AppSetting { Key = s.Key, Value = s.Value, UpdatedAtUtc = now, UpdatedBy = actor });
+                db.AppSettings.Add(new AppSetting { Key = s.Key, Value = value, UpdatedAtUtc = now, UpdatedBy = actor });
+                changedSettings.Add(s.Key);
                 Tally(true, true);
             }
         }
@@ -163,13 +175,14 @@ public sealed partial class ConfigBundleService
             {
                 db.Roles.Add(new Role { Name = r.Name, Description = r.Description, IsSystem = false,
                     PermissionsCsv = r.PermissionsCsv, UpdatedAtUtc = now, UpdatedBy = actor });
+                changedRoles.Add(r.Name);
                 Tally(true, true);
             }
             else if (existing.IsSystem) { unchanged++; }   // never touch a system role via import
             else
             {
                 var changed = existing.Description != r.Description || existing.PermissionsCsv != r.PermissionsCsv;
-                if (changed) { existing.Description = r.Description; existing.PermissionsCsv = r.PermissionsCsv; existing.UpdatedAtUtc = now; existing.UpdatedBy = actor; }
+                if (changed) { existing.Description = r.Description; existing.PermissionsCsv = r.PermissionsCsv; existing.UpdatedAtUtc = now; existing.UpdatedBy = actor; changedRoles.Add(r.Name); }
                 Tally(false, changed);
             }
         }
@@ -182,6 +195,7 @@ public sealed partial class ConfigBundleService
             if (!exists)
             {
                 db.RoleMappings.Add(new AdGroupRoleMapping { AdGroup = m.AdGroup, RoleName = m.RoleName, UpdatedAtUtc = now, UpdatedBy = actor });
+                addedMappings.Add($"{m.AdGroup} → {m.RoleName}");
                 Tally(true, true);
             }
             else unchanged++;
@@ -319,6 +333,17 @@ public sealed partial class ConfigBundleService
         await db.SaveChangesAsync(ct);
         await _audit.RecordAsync(AuditAction.Update, "ConfigBundle", null, null,
             $"Imported configuration bundle ({added} added, {updated} updated, {unchanged} unchanged)", ct);
+
+        // S-18: take effect now (as the settings and roles pages do) rather than at the next restart, and stream each
+        // access-affecting change to the SIEM exactly as the per-item pages would, so an import can't hide one.
+        if (changedSettings.Count > 0) _reloader?.Reload();
+        if (changedRoles.Count > 0 || addedMappings.Count > 0) _roles?.Invalidate();
+        foreach (var key in changedSettings)
+            _siem?.Emit(SecurityEvents.SettingChanged(key, _user.UserId, _user.UserPrincipalName));
+        foreach (var role in changedRoles)
+            _siem?.Emit(SecurityEvents.RoleChanged("RoleImported", _user.UserId, _user.UserPrincipalName, role));
+        foreach (var mapping in addedMappings)
+            _siem?.Emit(SecurityEvents.MappingChanged("AdGroupMappingImported", _user.UserId, _user.UserPrincipalName, mapping));
 
         return new ConfigImportResult(added, updated, unchanged);
     }

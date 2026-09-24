@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Admin;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -26,15 +27,22 @@ public sealed partial class ConfigBundleService
     private readonly IAuditWriter _audit;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
+    private readonly ISettingsReloader? _reloader;
+    private readonly IRoleDirectory? _roles;
+    private readonly ISecurityEventSink? _siem;
 
     public ConfigBundleService(IAppDbContextFactory factory, ISealSigner signer, IAuditWriter audit,
-        ICurrentUser user, IClock clock)
+        ICurrentUser user, IClock clock, ISettingsReloader? reloader = null, IRoleDirectory? roles = null,
+        ISecurityEventSink? siem = null)
     {
         _factory = factory;
         _signer = signer;
         _audit = audit;
         _user = user;
         _clock = clock;
+        _reloader = reloader;
+        _roles = roles;
+        _siem = siem;
     }
 
     /// <summary>Gathers the editable configuration into a deterministically-ordered <see cref="ConfigBundle"/>.</summary>
@@ -89,6 +97,7 @@ public sealed partial class ConfigBundleService
     /// <summary>Builds, signs, and packages the bundle for download, recording the export in the audit trail.</summary>
     public async Task<ConfigExport> ExportAsync(CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<ConfigBundleService>(_user);   // S-18
         var bundle = await BuildBundleAsync(ct);
 
         var signature = _signer.Sign(ConfigBundleJson.Canonicalize(bundle));
