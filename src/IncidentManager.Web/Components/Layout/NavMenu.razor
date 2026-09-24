@@ -70,6 +70,12 @@
                 <span class="bi bi-diagram-3" aria-hidden="true"></span><span class="nav-text">Campaigns</span>
             </NavLink>
         </div>
+        @* E-26/PROD-41: the cross-case register of follow-up work from post-incident reviews. *@
+        <div class="nav-item">
+            <NavLink class="nav-link" href="improvement-actions" Match="NavLinkMatch.All" title="Improvement actions">
+                <span class="bi bi-arrow-up-right-circle" aria-hidden="true"></span><span class="nav-text">Improvement actions</span>
+            </NavLink>
+        </div>
         <AuthorizeView Policy="@Policies.EditCases">
             <div class="nav-item">
                 <NavLink class="nav-link" href="cases/new" title="New Case">

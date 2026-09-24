@@ -60,6 +60,10 @@ public static class GateCheckKeys
     /// <summary>PROD-18: a materiality determination has been recorded. Self-scoping — vacuously satisfied
     /// below the Incident rung, so it only bites on Incidents/Breaches (e.g. on the close gate).</summary>
     public const string MaterialityDetermined = nameof(MaterialityDetermined);
+    /// <summary>E-26 / PROD-41: a post-incident review is recorded — what happened, plus either at least one
+    /// improvement action or an explicit "no actions identified". Self-scoping like
+    /// <see cref="MaterialityDetermined"/>: vacuously satisfied below the Incident rung.</summary>
+    public const string LessonsCaptured = nameof(LessonsCaptured);
 }
 
 /// <summary>
@@ -107,6 +111,11 @@ public static class GateCheckRegistry
         new(GateCheckKeys.MaterialityDetermined,
             _ => "Materiality determination recorded (Incidents & Breaches)",
             (f, _) => f.Classification is not (Classification.Incident or Classification.Breach) || f.MaterialityDetermined),
+        // Self-scoping the same way: requiring it on the close gate forces a lessons-learned record on
+        // Incidents & Breaches (NYDFS 500.16 post-event review) without burdening minor cases (E-26/PROD-41).
+        new(GateCheckKeys.LessonsCaptured,
+            _ => "Post-incident review recorded (Incidents & Breaches)",
+            (f, _) => f.Classification is not (Classification.Incident or Classification.Breach) || f.LessonsCaptured),
     ];
 
     private static readonly IReadOnlyDictionary<string, GateCheckDescriptor> _byKey =

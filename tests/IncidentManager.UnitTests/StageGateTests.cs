@@ -1,5 +1,6 @@
 using FluentAssertions;
 using IncidentManager.Application.StageGates;
+using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Xunit;
 
@@ -30,7 +31,7 @@ public class StageGateTests
     [Fact]
     public void The_registry_exposes_every_built_in_check_and_ignores_unknown_keys()
     {
-        GateCheckRegistry.All.Should().HaveCount(12);
+        GateCheckRegistry.All.Should().HaveCount(13);
         GateCheckRegistry.IsKnown(GateCheckKeys.SummaryPresent).Should().BeTrue();
         GateCheckRegistry.IsKnown("NotARealCheck").Should().BeFalse();
         // An unknown key never passes a gate and is labelled for review, rather than throwing.
@@ -84,6 +85,39 @@ public class StageGateTests
             Empty with { Classification = Classification.Breach }).Should().BeFalse();
         GateCheckRegistry.IsSatisfied(GateCheckKeys.MaterialityDetermined,
             Empty with { Classification = Classification.Incident, MaterialityDetermined = true }).Should().BeTrue();
+    }
+
+    [Fact]
+    public void LessonsCaptured_check_only_bites_on_incidents_and_breaches()
+    {
+        // Self-scoping like materiality (E-26/PROD-41): a Complex Event or Adverse Event never needs a review…
+        GateCheckRegistry.IsSatisfied(GateCheckKeys.LessonsCaptured, Empty).Should().BeTrue("null classification");
+        GateCheckRegistry.IsSatisfied(GateCheckKeys.LessonsCaptured,
+            Empty with { Classification = Classification.AdverseEvent }).Should().BeTrue();
+
+        // …but an Incident or Breach does, until one is captured.
+        GateCheckRegistry.IsSatisfied(GateCheckKeys.LessonsCaptured,
+            Empty with { Classification = Classification.Breach }).Should().BeFalse();
+        GateCheckRegistry.IsSatisfied(GateCheckKeys.LessonsCaptured,
+            Empty with { Classification = Classification.Incident, LessonsCaptured = true }).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Improvement_action_is_past_target_only_while_open()
+    {
+        var now = new DateTimeOffset(2026, 9, 24, 12, 0, 0, TimeSpan.Zero);
+        var action = new ImprovementAction { Title = "x", TargetDateUtc = now.AddDays(-1) };
+        action.IsPastTarget(now).Should().BeTrue();
+
+        action.Status = ImprovementActionStatus.InProgress;
+        action.IsPastTarget(now).Should().BeTrue("in progress is still open");
+
+        action.Status = ImprovementActionStatus.Completed;
+        action.IsPastTarget(now).Should().BeFalse("a closed action is never past target");
+
+        action.Status = ImprovementActionStatus.NotPursued;
+        action.IsClosed.Should().BeTrue();
+        new ImprovementAction { Title = "no date" }.IsPastTarget(now).Should().BeFalse();
     }
 
     [Fact]

@@ -1,0 +1,160 @@
+@page "/improvement-actions"
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@* PROD-41: the cross-case improvement-action register. Every action logged by a post-incident review, across
+   the cases the viewer can see, tracked to closure — program evidence for the CISO's 500.04 report and the
+   500.17 certification. Read-only here: actions are edited on their case's Lessons learned tab. Exercise
+   (tabletop) cases are left out unless asked for. Neutral wording by design; these records are discoverable. *@
+@using IncidentManager.Application.Lessons
+@inject LessonsService Lessons
+@inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@implements IDisposable
+
+<PageTitle>Improvement actions</PageTitle>
+
+<PageHeader Title="Improvement actions"
+            Subtitle="Follow-up work identified by post-incident reviews, tracked to closure across cases." />
+
+@if (_register is null)
+{
+    <span class="visually-hidden" role="status">Loading improvement actions…</span>
+    <section class="im-card"><SkeletonTable Rows="4" Columns="6" TableClass="table-sm" /></section>
+    return;
+}
+
+<div class="im-tiles mb-3">
+    <StatTile Icon="bi-arrow-up-right-circle" Value="_register.Summary.Open" Label="Open" Tone="accent" />
+    <StatTile Icon="bi-calendar-x" Value="_register.Summary.PastTarget" Label="Past target date"
+              Tone="@(_register.Summary.PastTarget > 0 ? "warn" : "ok")" />
+    <StatTile Icon="bi-check2-circle" Value="_register.Summary.CompletedLast12Months" Label="Completed (12 mo)" Tone="ok" />
+    <StatTile Icon="bi-dash-circle" Value="_register.Summary.NotPursuedLast12Months" Label="Not pursued (12 mo)" Tone="neutral" />
+</div>
+
+<section class="im-card">
+    <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+        <div>
+            <label class="form-label small mb-0" for="ia-scope">Show</label>
+            <select id="ia-scope" class="form-select form-select-sm" value="@_scope" @onchange="OnScopeChanged">
+                <option value="@RegisterScope.Open">Open</option>
+                <option value="@RegisterScope.PastTarget">Past target date</option>
+                <option value="@RegisterScope.Closed">Closed</option>
+                <option value="@RegisterScope.All">All</option>
+            </select>
+        </div>
+        <div style="min-width:16rem">
+            <label class="form-label small mb-0" for="ia-search">Search</label>
+            <input id="ia-search" class="form-control form-control-sm" placeholder="Action, area, owner, case…"
+                   value="@_search" @oninput="OnSearch" />
+        </div>
+        <div class="form-check mb-1">
+            <input class="form-check-input" type="checkbox" id="ia-exercises" checked="@_includeExercises" @onchange="OnExercisesChanged" />
+            <label class="form-check-label small" for="ia-exercises">Include exercise cases</label>
+        </div>
+        <div class="ms-auto">
+            <a class="btn btn-sm btn-outline-primary" href="@CsvHref" download
+               title="Exports the current Show and exercise filters (search text is not applied)">
+                <span class="bi bi-filetype-csv me-1" aria-hidden="true"></span>Export CSV
+            </a>
+        </div>
+    </div>
+
+    @if (_register.Rows.Count == 0)
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon"><span class="bi bi-arrow-up-right-circle" aria-hidden="true"></span></div>
+            <div class="empty-state-title">No improvement actions to show</div>
+            <div class="empty-state-msg">
+                Improvement actions are logged on a case's <em>Lessons learned</em> tab as part of its post-incident review.
+            </div>
+        </div>
+    }
+    else
+    {
+        <table class="table table-sm table-hover align-middle im-table mb-0">
+            <thead>
+                <tr><th>Case</th><th>Improvement action</th><th>Related area</th><th>Owner</th><th>Target</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _register.Rows)
+                {
+                    var a = r.Action;
+                    <tr class="@(a.IsPastTarget ? "table-warning" : "")" @key="a.Id">
+                        <td class="text-nowrap">
+                            <a href="@($"cases/{a.CaseId}?tab=Review")"><code>@r.CaseNumber</code></a>
+                            @if (r.IsExercise) { <span class="im-badge im-b-neutral ms-1">Exercise</span> }
+                            <div class="small text-muted text-truncate" style="max-width:14rem" title="@r.CaseTitle">@r.CaseTitle</div>
+                        </td>
+                        <td>
+                            @a.Title
+                            @if (!string.IsNullOrWhiteSpace(a.OutcomeNote))
+                            {
+                                <div class="small text-muted"><span class="fw-semibold">Outcome:</span> @Md.ToPlainText(a.OutcomeNote)</div>
+                            }
+                        </td>
+                        <td>@(a.RelatedArea ?? "—")</td>
+                        <td>
+                            @if (a.OwnerId is null) { <span class="im-badge im-b-warn">Unassigned</span> }
+                            else { @a.OwnerName }
+                        </td>
+                        <td class="text-nowrap">
+                            @TimeDisp.DateOnly(a.TargetDateUtc)
+                            @if (a.IsPastTarget) { <span class="im-badge im-b-warn ms-1">Past target</span> }
+                        </td>
+                        <td class="text-nowrap">
+                            <ImprovementActionStatusBadge Status="a.Status" />
+                            @if (a.ClosedAtUtc is { } closed) { <div class="small text-muted">@TimeDisp.DateOnly(closed)</div> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+    private ImprovementActionRegister? _register;
+    private RegisterScope _scope = RegisterScope.Open;
+    private string _search = "";
+    private bool _includeExercises;
+    private CancellationTokenSource? _searchDebounce;
+
+    // Search text stays out of the URL (it would land in server request logs); the export applies scope + exercises.
+    private string CsvHref =>
+        $"export/improvement-actions.csv?scope={_scope}&exercises={_includeExercises.ToString().ToLowerInvariant()}";
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load() =>
+        _register = await Lessons.GetRegisterAsync(new RegisterFilter(_scope, _search, _includeExercises));
+
+    private async Task OnScopeChanged(ChangeEventArgs e)
+    {
+        _scope = Enum.TryParse<RegisterScope>(e.Value?.ToString(), out var s) ? s : RegisterScope.Open;
+        await Load();
+    }
+
+    private async Task OnExercisesChanged(ChangeEventArgs e)
+    {
+        _includeExercises = e.Value is true;
+        await Load();
+    }
+
+    // Debounced so typing doesn't re-query on every keystroke.
+    private async Task OnSearch(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? "";
+        _searchDebounce?.Cancel();
+        _searchDebounce?.Dispose();
+        _searchDebounce = new CancellationTokenSource();
+        var token = _searchDebounce.Token;
+        try { await Task.Delay(250, token); }
+        catch (TaskCanceledException) { return; }
+        await Load();
+    }
+
+    public void Dispose()
+    {
+        _searchDebounce?.Cancel();
+        _searchDebounce?.Dispose();
+    }
+}

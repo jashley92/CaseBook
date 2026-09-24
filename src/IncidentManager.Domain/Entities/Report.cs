@@ -8,6 +8,9 @@ public class Report : AuditableEntity
 {
     public Guid CaseId { get; set; }
     public int Version { get; set; }
+
+    /// <summary>Case report (default) or the separate lessons-learned report. Versions number per kind + format.</summary>
+    public ReportKind Kind { get; set; } = ReportKind.Case;
     public ReportFormat Format { get; set; }
     public string FileName { get; set; } = string.Empty;
     public string StoragePath { get; set; } = string.Empty;

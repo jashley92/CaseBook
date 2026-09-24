@@ -128,6 +128,45 @@ public static class DevDataSeeder
                 "Vendor-confirmed exposure of policyholder NPI.", "legal1", now.AddDays(-2));
             vendor.MarkReported(now.AddDays(-2).AddHours(20), "legal1", now.AddDays(-2).AddHours(20));
             await db.SaveChangesAsync(ct);
+
+            // 5) E-26/PROD-41: a post-incident review with improvement actions (one open, one past its target,
+            //    one completed), so the Lessons learned tab, the register, and the lessons report have content.
+            if (!await db.PostIncidentReviews.AnyAsync(r => r.CaseId == vendor.Id, ct))
+            {
+                db.PostIncidentReviews.Add(new PostIncidentReview
+                {
+                    CaseId = vendor.Id,
+                    WhatHappened = "The vendor's SaaS tenant was accessed with a reused administrator credential. Policyholder records synchronised to the tenant were exported before the vendor detected the activity.",
+                    ContributingFactors = "The vendor portal accepted password-only sign-in. Our data-sharing inventory did not list this tenant, so its notification contact was out of date.",
+                    WhatWorkedWell = "The vendor disclosure reached the SOC within hours, and Legal had a materiality call inside two days.",
+                    OpportunitiesToImprove = "Require MFA attestation from vendors holding policyholder data, and keep the data-sharing inventory current.",
+                    CreatedBy = "analyst1", CreatedAtUtc = now.AddDays(-1)
+                });
+                db.ImprovementActions.AddRange(
+                    new ImprovementAction
+                    {
+                        CaseId = vendor.Id, Title = "Add MFA attestation to the vendor security questionnaire",
+                        RelatedArea = "Third-party risk", Owner = "analyst1", TargetDateUtc = now.AddDays(30),
+                        Status = ImprovementActionStatus.InProgress, CreatedBy = "analyst1", CreatedAtUtc = now.AddDays(-1)
+                    },
+                    new ImprovementAction
+                    {
+                        CaseId = vendor.Id, Title = "Reconcile the data-sharing inventory against active vendor integrations",
+                        RelatedArea = "Asset & data inventory", Owner = "Vendor Management Office",
+                        Details = "Include each vendor's current incident-notification contact.",
+                        TargetDateUtc = now.AddDays(-2), Status = ImprovementActionStatus.Open,
+                        CreatedBy = "analyst1", CreatedAtUtc = now.AddDays(-1)
+                    },
+                    new ImprovementAction
+                    {
+                        CaseId = vendor.Id, Title = "Rotate the shared integration credentials for this vendor",
+                        RelatedArea = "Identity & access", Owner = "analyst1", TargetDateUtc = now.AddDays(-1),
+                        Status = ImprovementActionStatus.Completed, ClosedAtUtc = now.AddHours(-6),
+                        OutcomeNote = "Rotated and vaulted; confirmed with the vendor.",
+                        CreatedBy = "analyst1", CreatedAtUtc = now.AddDays(-1)
+                    });
+                await db.SaveChangesAsync(ct);
+            }
         }
     }
 

@@ -221,7 +221,7 @@ else
     <ul class="nav nav-tabs mb-3 im-workspace-tabs">
         @foreach (var tab in _tabs)
         {
-            var _tabNo = Array.IndexOf(_tabs, tab) + 1;   // U-14: the digit shortcut for this tab
+            var _tabNo = (Array.IndexOf(_tabs, tab) + 1) % 10;   // U-14: the digit shortcut for this tab (the 10th is 0)
             <li class="nav-item">
                 <button class="nav-link @(_activeTab == tab ? "active" : "")" @onclick="() => SetTab(tab)"
                         title="@($"{TabLabel(tab)} — press {_tabNo}")">
@@ -379,6 +379,13 @@ else
         <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
                       OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh" />
     }
+    else if (_activeTab == "Review")
+    {
+        @* E-26/PROD-41: post-incident review + improvement actions + the separate lessons-learned report.
+           Self-loading; RefreshToken re-loads it on a collaborator's change. *@
+        <CaseReviewTab @ref="_reviewTab" CaseId="_case.Id" Classification="_case.Classification" CanEdit="_canEdit"
+                       Entities="_case.Entities" OnChanged="Reload" RefreshToken="_liveRefresh" />
+    }
     else if (_activeTab == "Report")
     {
         @* UX-13: extracted to CaseReportTab. Self-lists reports/profiles; _reportState (parent-held) keeps
@@ -521,7 +528,7 @@ else
     /// focuses that row on the Entities tab.</summary>
     [SupplyParameterFromQuery(Name = "entity")] public Guid? QEntity { get; set; }
 
-    private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Discussion", "Tasks", "Report", "Audit"];
+    private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Discussion", "Tasks", "Review", "Report", "Audit"];
     private string _activeTab = "Overview";
 
     // UX-19: each tab string is the stable routing key (?tab=, inline "#"-chip deep-links, TabCount /
@@ -530,6 +537,7 @@ else
     private static string TabLabel(string tab) => tab switch
     {
         "Entities" => "IOCs & entities",
+        "Review" => "Lessons learned",
         _ => tab,
     };
 
@@ -625,6 +633,8 @@ else
 
     // Tasks: the tab is extracted to CaseTasksTab (UX-13), which owns the add-task + apply-playbook flow.
     private CaseTasksTab? _tasksTab;
+    // Lessons learned (E-26/PROD-41): owns its review + action editors; the parent routes Ctrl+Enter to it.
+    private CaseReviewTab? _reviewTab;
 
     // Retention guard message for legal-hold / archive actions (not notes).
     private string? _retentionMsg;
@@ -1583,7 +1593,7 @@ else
             }
             catch (JSException) { /* progressive enhancement — the manual picker still works */ }
 
-            // U-14: case-local keyboard shortcuts (digit 1..8 = tab, n = new note).
+            // U-14: case-local keyboard shortcuts (digit 1..9 / 0 = tab, n = new note).
             try { await JS.InvokeVoidAsync("imCaseHotkeys.register", _dotNetRef); }
             catch (JSException) { /* shortcuts are a progressive enhancement */ }
         }
@@ -1621,13 +1631,16 @@ else
                     break;
                 case "Entities": if (_entitiesTab is not null) await _entitiesTab.SubmitAsync(); break;
                 case "Tasks": if (_tasksTab is not null) await _tasksTab.SubmitAsync(); break;
+                case "Review": if (_reviewTab is not null) await _reviewTab.SubmitAsync(); break;
                 case "Overview": if (_overviewTab is not null) await _overviewTab.SubmitAsync(); break;
             }
             return;
         }
 
+        // Digits 1–9 pick tabs 1–9; 0 picks the 10th.
         if (cmd.StartsWith("tab:", StringComparison.Ordinal)
-            && int.TryParse(cmd.AsSpan(4), out var n) && n >= 1 && n <= _tabs.Length)
+            && int.TryParse(cmd.AsSpan(4), out var digit) && (digit == 0 ? 10 : digit) is var n
+            && n >= 1 && n <= _tabs.Length)
         {
             await SetTab(_tabs[n - 1]);
             StateHasChanged();

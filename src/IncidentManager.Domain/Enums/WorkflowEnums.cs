@@ -78,6 +78,23 @@ public enum ActionItemStatus
     Cancelled = 4
 }
 
+/// <summary>Lifecycle of an improvement action from a post-incident review (PROD-41).</summary>
+public enum ImprovementActionStatus
+{
+    Open = 0,
+    InProgress = 1,
+    /// <summary>Done; the outcome note records what was done.</summary>
+    Completed = 2,
+    /// <summary>Decided against (or raised in error); the outcome note records why and who decided.</summary>
+    NotPursued = 3
+}
+
+public static class ImprovementActionStatusExtensions
+{
+    public static bool IsClosed(this ImprovementActionStatus s) =>
+        s is ImprovementActionStatus.Completed or ImprovementActionStatus.NotPursued;
+}
+
 /// <summary>A user's role within a specific case (distinct from their app-wide role).</summary>
 public enum CaseAssignmentRole
 {

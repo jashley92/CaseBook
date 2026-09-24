@@ -1,0 +1,16 @@
+@* Status chip for an improvement action (E-26/PROD-41): open states neutral/info, closed states ok/muted. *@
+@using IncidentManager.Application.Lessons
+
+<span class="im-badge @Css">@LessonsService.StatusLabel(Status)</span>
+
+@code {
+    [Parameter, EditorRequired] public ImprovementActionStatus Status { get; set; }
+
+    private string Css => Status switch
+    {
+        ImprovementActionStatus.InProgress => "im-b-info",
+        ImprovementActionStatus.Completed => "im-b-ok",
+        ImprovementActionStatus.NotPursued => "im-b-neutral",
+        _ => "im-b-warn"
+    };
+}

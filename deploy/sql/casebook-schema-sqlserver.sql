@@ -1685,3 +1685,97 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924044617_AddPostIncidentReview'
+)
+BEGIN
+    ALTER TABLE [Reports] ADD [Kind] int NOT NULL DEFAULT 0;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924044617_AddPostIncidentReview'
+)
+BEGIN
+    CREATE TABLE [ImprovementActions] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [Title] nvarchar(400) NOT NULL,
+        [RelatedArea] nvarchar(200) NULL,
+        [Details] nvarchar(4000) NULL,
+        [Owner] nvarchar(200) NULL,
+        [TargetDateUtc] datetimeoffset NULL,
+        [Status] int NOT NULL,
+        [ClosedAtUtc] datetimeoffset NULL,
+        [OutcomeNote] nvarchar(4000) NULL,
+        [RowHash] nvarchar(64) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(200) NULL,
+        CONSTRAINT [PK_ImprovementActions] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_ImprovementActions_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924044617_AddPostIncidentReview'
+)
+BEGIN
+    CREATE TABLE [PostIncidentReviews] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [WhatHappened] nvarchar(4000) NULL,
+        [ContributingFactors] nvarchar(4000) NULL,
+        [WhatWorkedWell] nvarchar(4000) NULL,
+        [OpportunitiesToImprove] nvarchar(4000) NULL,
+        [NoActionsIdentified] bit NOT NULL,
+        [RowHash] nvarchar(64) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(200) NULL,
+        CONSTRAINT [PK_PostIncidentReviews] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_PostIncidentReviews_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924044617_AddPostIncidentReview'
+)
+BEGIN
+    CREATE INDEX [IX_ImprovementActions_CaseId] ON [ImprovementActions] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924044617_AddPostIncidentReview'
+)
+BEGIN
+    CREATE INDEX [IX_ImprovementActions_Status_TargetDateUtc] ON [ImprovementActions] ([Status], [TargetDateUtc]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924044617_AddPostIncidentReview'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_PostIncidentReviews_CaseId] ON [PostIncidentReviews] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924044617_AddPostIncidentReview'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260924044617_AddPostIncidentReview', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

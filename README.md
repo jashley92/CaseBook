@@ -20,7 +20,7 @@ export (incl. monthly & quarterly rollups) for board / regulatory packs.
 
 ### Case workspace
 The analyst's hub: a NIST SP 800-61 lifecycle bar, tabbed **Overview / Timeline / Entities /
-Evidence / Notes / Discussion / Tasks / Report / Audit**, true **detected / occurred** timestamps (with
+Evidence / Notes / Discussion / Tasks / Lessons learned / Report / Audit**, true **detected / occurred** timestamps (with
 dwell-before-detection and per-severity SLA targets), **links to related cases**, and a structured
 impact assessment (affected individuals, data-element taxonomy, and jurisdictions). The header carries
 at-a-glance status badges — SLA, **materiality** (material / not material, a Legal/committee decision the
@@ -92,6 +92,15 @@ Generate an editable **Word** working draft and a finalized, **locked PDF** carr
 **SHA-256 content hash** — the version, final flag, hash, and author are recorded per artifact.
 
 ![Reporting](docs/screenshots/report.png)
+
+### Lessons learned &amp; improvement actions
+A structured **post-incident review** per case (what happened, contributing factors, what worked well,
+opportunities to improve — Markdown, like notes) and the **improvement actions** it identifies, each with
+an owner and target date and tracked to closure (closing needs an outcome note). Actions stay editable after
+the case closes and roll up into a cross-case **Improvement actions** register with CSV export. An optional
+**Lessons captured** check can be required on the Close gate for Incidents and Breaches. The review prints in
+its own stored, hashed **lessons-learned report**, never in the case report, with an optional admin-set
+confidentiality legend on every page. Wording is deliberately neutral, since these records are discoverable.
 
 ### Integrity &amp; audit
 The tamper-evident spine: an append-only, SHA-256 hash-chained audit trail with one-click chain

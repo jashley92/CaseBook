@@ -68,11 +68,20 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
         var maliciousCount = await db.CaseEntities
             .CountAsync(e => e.CaseId == caseId && e.Disposition == EntityDisposition.Malicious, ct);
         var evidenceCount = await db.Evidence.CountAsync(e => e.CaseId == caseId, ct);
-        var reportCount = await db.Reports.CountAsync(r => r.CaseId == caseId, ct);
+        // Only case reports count: the separate lessons-learned report is not the examiner-facing record.
+        var reportCount = await db.Reports.CountAsync(r => r.CaseId == caseId && r.Kind == ReportKind.Case, ct);
+
+        // E-26/PROD-41: what happened is recorded, and the follow-up question answered — actions logged or "none identified".
+        var review = await db.PostIncidentReviews.AsNoTracking()
+            .Where(r => r.CaseId == caseId)
+            .Select(r => new { r.WhatHappened, r.NoActionsIdentified })
+            .FirstOrDefaultAsync(ct);
+        var lessonsCaptured = review is not null && !string.IsNullOrWhiteSpace(review.WhatHappened)
+            && (review.NoActionsIdentified || await db.ImprovementActions.AnyAsync(a => a.CaseId == caseId, ct));
 
         return new GateCaseFacts(
             c.HasSummary, c.HasAffectedCount, c.HasDataElements, c.HasAffectedStates, c.HasDetectionCaseId,
             entityCount, maliciousCount, evidenceCount, reportCount, c.HasIncidentCommander,
-            c.AffectedIndividualsCount, c.Classification, c.MaterialityDetermined);
+            c.AffectedIndividualsCount, c.Classification, c.MaterialityDetermined, lessonsCaptured);
     }
 }

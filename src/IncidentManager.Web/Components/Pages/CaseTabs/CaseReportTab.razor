@@ -71,52 +71,7 @@
     }
 </AuthorizeView>
 
-@if (_reports is null)
-{
-    <p><em>Loading&hellip;</em></p>
-}
-else if (_reports.Count == 0)
-{
-    <p class="text-muted">No reports generated yet.</p>
-}
-else
-{
-    <table class="table table-sm align-middle">
-        <thead><tr><th>File</th><th>Format</th><th>Ver</th><th>Status</th><th>SHA-256</th><th>Generated</th><th></th></tr></thead>
-        <tbody>
-            @foreach (var r in _reports)
-            {
-                <tr>
-                    <td>@r.FileName</td>
-                    <td>@r.Format</td>
-                    <td>@r.Version</td>
-                    <td>
-                        @if (r.IsFinal)
-                        {
-                            <span class="im-badge im-b-ok">Final</span>
-                            <div class="small text-muted">@Users.DisplayFor(r.ApprovedBy) · @TimeDisp.Long(r.ApprovedAtUtc)</div>
-                        }
-                        else
-                        {
-                            <span class="im-badge im-b-neutral">Draft</span>
-                        }
-                    </td>
-                    <td><code class="small">@r.ContentSha256[..16]…</code></td>
-                    <td class="small text-muted">@TimeDisp.Long(r.CreatedAtUtc)<br />@Users.DisplayFor(r.CreatedBy)</td>
-                    <td>
-                        <a class="btn btn-sm btn-outline-primary" href="reports/@r.Id" target="_blank">Download</a>
-                        @if (!r.IsFinal && r.Format == ReportFormat.Pdf)
-                        {
-                            <AuthorizeView Policy="@Policies.ApproveReports" Context="ap">
-                                <button class="btn btn-sm btn-dark" @onclick="() => ApproveReport(r.Id)">Approve &amp; finalize</button>
-                            </AuthorizeView>
-                        }
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-}
+<StoredReportTable Reports="_reports" OnApprove="ApproveReport" />
 
 @code {
     [Parameter, EditorRequired] public Guid CaseId { get; set; }

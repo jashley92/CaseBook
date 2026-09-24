@@ -1,6 +1,6 @@
 // Case-workspace keyboard shortcuts (U-14). CSP-safe: one delegated keydown listener from this external
-// file, forwarded to the open CaseWorkspace Blazor component, which owns all behaviour. Bare digit 1..9
-// switches tabs (one per tab, incl. Audit); 'n' focuses the note composer. Suppressed while typing (inputs/textarea/editor keep their
+// file, forwarded to the open CaseWorkspace Blazor component, which owns all behaviour. Bare digit 1..9, 0
+// switches tabs (one per tab; 0 is the 10th, Audit); 'n' focuses the note composer. Suppressed while typing (inputs/textarea/editor keep their
 // own keys) and while a global 'g …' go-to sequence is in flight (that belongs to imHotkeys). Registration
 // is idempotent so a circuit reconnect can't stack duplicate listeners; the listener stays attached but
 // inert once the case page unregisters (dotnet == null).
@@ -45,7 +45,7 @@ window.imCaseHotkeys = (function () {
         if (gPending) { clearG(); return; }
         if (e.key === 'g') { gPending = true; gTimer = setTimeout(clearG, 1200); return; }
 
-        if (e.key >= '1' && e.key <= '9') { e.preventDefault(); send('tab:' + e.key); return; }
+        if (e.key >= '0' && e.key <= '9') { e.preventDefault(); send('tab:' + e.key); return; }
         if (e.key === 'n' || e.key === 'N') { e.preventDefault(); send('note'); return; }
     }
 

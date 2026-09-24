@@ -1,0 +1,567 @@
+@* Case workspace — Lessons learned tab (E-26 / PROD-41). The structured post-incident review (what happened,
+   contributing factors, what worked well, opportunities to improve), the improvement actions it identified
+   (tracked to closure, and still editable after the case closes), and the separate lessons-learned report.
+   Wording is neutral by design: these records are discoverable. The review is kept out of the case report.
+   Long text fields are Markdown, edited with the shared EasyMDE editor like Notes and the Summary: the review
+   renders read-only until "Edit review", so editors are mounted only while editing (the workspace's
+   unsaved-changes guard treats any non-empty mounted editor as unsaved). This tab owns its editors (own
+   reconcile + teardown). Self-loading; re-loads when the parent bumps RefreshToken on a live-collab change. *@
+@using IncidentManager.Application.Lessons
+@implements IAsyncDisposable
+@inject LessonsService Lessons
+@inject ReportService Reports
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+@if (_view is null)
+{
+    <p class="text-muted">Loading…</p>
+    return;
+}
+
+<p class="small text-muted mb-3">
+    Capture what this case taught the team and any improvements to follow up. Improvement actions stay tracked in the
+    <a href="improvement-actions">improvement-action register</a> after the case closes. This review is not part of the
+    case report; it prints in its own lessons-learned report below.
+    @if (NeedsReview)
+    {
+        @if (IsComplete)
+        {
+            <span class="im-badge im-b-ok ms-1"><span class="bi bi-check2 me-1" aria-hidden="true"></span>Review complete</span>
+        }
+        else
+        {
+            <span class="im-badge im-b-warn ms-1" title="Record what happened, then log the improvement actions (or tick “No improvement actions identified”). A Close gate can require this.">Review incomplete</span>
+        }
+    }
+</p>
+
+@* ---- The review ---------------------------------------------------------------------------------- *@
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center gap-2">
+        <span><span class="bi bi-journal-check me-1" aria-hidden="true"></span>Post-incident review</span>
+        <span class="d-flex align-items-center gap-2">
+            @if (_view.Review is { } r)
+            {
+                <span class="small text-muted" title="@TimeDisp.Long(r.LastEditedAtUtc)">Last edited by @r.LastEditedBy · @TimeDisp.Short(r.LastEditedAtUtc)</span>
+            }
+            @if (CanEdit && !_editingReview)
+            {
+                <button class="btn btn-sm btn-outline-secondary" @onclick="BeginReviewEdit">
+                    <span class="bi bi-pencil me-1" aria-hidden="true"></span>@(_view.Review is null ? "Start review" : "Edit review")
+                </button>
+            }
+        </span>
+    </div>
+    <div class="card-body">
+        @if (_editingReview)
+        {
+            <p class="small text-muted mb-2">Markdown: headings, <strong>**bold**</strong>, lists, links · <code>#</code> to tag an entity</p>
+            @foreach (var f in Fields)
+            {
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold mb-0" for="@FieldEditorId(f.Key)">@f.Label</label>
+                    <div class="form-text mt-0 mb-1">@f.Hint</div>
+                    @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Save. *@
+                    <textarea id="@FieldEditorId(f.Key)" class="form-control"></textarea>
+                </div>
+            }
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="pir-noactions" @bind="_noActions"
+                       disabled="@(ActiveActionCount > 0)" />
+                <label class="form-check-label" for="pir-noactions">No improvement actions identified</label>
+            </div>
+            <div class="form-text mt-0 mb-3">
+                @(ActiveActionCount > 0
+                    ? "Not available: this case has improvement actions logged below."
+                    : "Tick this if the review found nothing to follow up, so the record shows the question was answered.")
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-primary" title="Save — Ctrl / ⌘ + Enter" @onclick="SaveReview" disabled="@_saving">Save review</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="CancelReviewEdit" disabled="@_saving">Cancel</button>
+            </div>
+        }
+        else if (_view.Review is null)
+        {
+            <p class="text-muted mb-0">No post-incident review has been recorded.</p>
+        }
+        else
+        {
+            @foreach (var f in Fields)
+            {
+                var text = f.Get(_view.Review);
+                <div class="mb-3">
+                    <div class="small fw-semibold text-muted text-uppercase">@f.Label</div>
+                    @if (string.IsNullOrWhiteSpace(text))
+                    {
+                        <div class="text-muted">—</div>
+                    }
+                    else
+                    {
+                        <div class="md-body">@((MarkupString)Md.ToHtml(text, CaseId))</div>
+                    }
+                </div>
+            }
+            @if (_view.Review.NoActionsIdentified)
+            {
+                <p class="mb-0"><span class="bi bi-check2 me-1" aria-hidden="true"></span>No improvement actions identified.</p>
+            }
+        }
+    </div>
+</div>
+
+@* ---- Improvement actions ------------------------------------------------------------------------- *@
+<h6 class="mb-2"><span class="bi bi-arrow-up-right-circle me-1" aria-hidden="true"></span>Improvement actions</h6>
+
+@if (CanEdit)
+{
+    <div class="card mb-3">
+        <div class="card-body row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small mb-0" for="ia-new-title">Improvement action</label>
+                <input id="ia-new-title" class="form-control form-control-sm" maxlength="400" @bind="_new.Title" @bind:event="oninput"
+                       placeholder="e.g. Extend MFA to the vendor VPN portal" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-0" for="ia-new-area">Related area</label>
+                <input id="ia-new-area" class="form-control form-control-sm" maxlength="200" @bind="_new.Area" @bind:event="oninput"
+                       placeholder="e.g. Remote access" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-0" for="ia-new-owner">Owner</label>
+                <OwnerSelect Id="ia-new-owner" @bind-Owner="_new.Owner" @bind-External="_new.OwnerExternal" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-0" for="ia-new-target">Target date</label>
+                <input id="ia-new-target" type="date" class="form-control form-control-sm" @bind="_new.Target" />
+            </div>
+            <div class="col-md-1">
+                <button class="btn btn-sm btn-primary w-100" @onclick="AddAction" disabled="@(string.IsNullOrWhiteSpace(_new.Title) || _saving)">Add</button>
+            </div>
+            <div class="col-12">
+                <label class="form-label small mb-0" for="@NewDetailsEditorId">Details <span class="text-muted">(optional · Markdown)</span></label>
+                <textarea id="@NewDetailsEditorId" class="form-control"></textarea>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_view.Actions.Count == 0)
+{
+    <p class="text-muted">No improvement actions logged.</p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr><th>Improvement action</th><th>Related area</th><th>Owner</th><th>Target</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var a in _view.Actions)
+            {
+                <tr class="@(a.IsPastTarget ? "table-warning" : "")" @key="a.Id">
+                    <td>
+                        @a.Title
+                        @if (!string.IsNullOrWhiteSpace(a.Details))
+                        {
+                            <div class="md-body small text-muted">@((MarkupString)Md.ToHtml(a.Details, CaseId))</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(a.OutcomeNote))
+                        {
+                            <div class="small fw-semibold mt-1">Outcome</div>
+                            <div class="md-body small">@((MarkupString)Md.ToHtml(a.OutcomeNote, CaseId))</div>
+                        }
+                    </td>
+                    <td>@(a.RelatedArea ?? "—")</td>
+                    <td>
+                        @if (a.OwnerId is null) { <span class="im-badge im-b-warn" title="No owner assigned">Unassigned</span> }
+                        else { @a.OwnerName }
+                    </td>
+                    <td class="text-nowrap">
+                        @TimeDisp.DateOnly(a.TargetDateUtc)
+                        @if (a.IsPastTarget) { <span class="im-badge im-b-warn ms-1">Past target date</span> }
+                    </td>
+                    <td class="text-nowrap"><ImprovementActionStatusBadge Status="a.Status" /></td>
+                    <td class="text-end">
+                        @if (CanEdit && _editingId != a.Id)
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" title="Edit this improvement action"
+                                    aria-label="@($"Edit improvement action: {a.Title}")" @onclick="() => BeginEdit(a)">
+                                <span class="bi bi-pencil" aria-hidden="true"></span>
+                            </button>
+                        }
+                    </td>
+                </tr>
+                @if (_editingId == a.Id)
+                {
+                    <tr @key="@($"edit-{a.Id}")">
+                        <td colspan="6" class="bg-body-tertiary">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-4">
+                                    <label class="form-label small mb-0" for="ia-edit-title">Improvement action</label>
+                                    <input id="ia-edit-title" class="form-control form-control-sm" maxlength="400" @bind="_edit.Title" @bind:event="oninput" />
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small mb-0" for="ia-edit-area">Related area</label>
+                                    <input id="ia-edit-area" class="form-control form-control-sm" maxlength="200" @bind="_edit.Area" @bind:event="oninput" />
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-0" for="ia-edit-owner">Owner</label>
+                                    <OwnerSelect Id="ia-edit-owner" @bind-Owner="_edit.Owner" @bind-External="_edit.OwnerExternal" />
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-0" for="ia-edit-target">Target date</label>
+                                    <input id="ia-edit-target" type="date" class="form-control form-control-sm" @bind="_edit.Target" />
+                                </div>
+                                <div class="col-md-1">
+                                    <label class="form-label small mb-0" for="ia-edit-status">Status</label>
+                                    <select id="ia-edit-status" class="form-select form-select-sm" @bind="_edit.Status">
+                                        @foreach (var s in Enum.GetValues<ImprovementActionStatus>())
+                                        {
+                                            <option value="@s">@LessonsService.StatusLabel(s)</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small mb-0" for="@EditDetailsEditorId(a.Id)">Details <span class="text-muted">(Markdown)</span></label>
+                                    <textarea id="@EditDetailsEditorId(a.Id)" class="form-control"></textarea>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small mb-0" for="@EditOutcomeEditorId(a.Id)">
+                                        Outcome note <span class="text-muted">(Markdown)</span>
+                                        @if (_edit.Status.IsClosed()) { <span class="text-danger">· required: @OutcomeHint(_edit.Status)</span> }
+                                    </label>
+                                    <textarea id="@EditOutcomeEditorId(a.Id)" class="form-control"></textarea>
+                                </div>
+                                <div class="col-12 d-flex gap-2">
+                                    <button class="btn btn-sm btn-primary" @onclick="SaveEdit"
+                                            disabled="@(string.IsNullOrWhiteSpace(_edit.Title) || _saving)">
+                                        Save changes
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEdit">Cancel</button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+@* ---- The separate lessons-learned report --------------------------------------------------------- *@
+<h6 class="mt-4 mb-2"><span class="bi bi-file-earmark-text me-1" aria-hidden="true"></span>Lessons-learned report</h6>
+<p class="small text-muted mb-2">
+    A separate document containing only this review and its improvement actions, stored and hashed like the case report.
+    It is never included in the case report.
+</p>
+<AuthorizeView Policy="@Policies.EditCases">
+    <div class="d-flex gap-2 mb-2">
+        <button class="btn btn-sm btn-outline-primary" @onclick="() => GenerateReport(ReportFormat.Word)" disabled="@_saving">Generate Word draft</button>
+        <button class="btn btn-sm btn-primary" @onclick="() => GenerateReport(ReportFormat.Pdf)" disabled="@_saving">Generate PDF draft</button>
+    </div>
+</AuthorizeView>
+<StoredReportTable Reports="_reports" EmptyText="No lessons-learned report generated yet." OnApprove="ApproveReport" />
+
+@code {
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    [Parameter] public Classification? Classification { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    /// <summary>The case's entities, offered as inline "#" tag candidates in the editors (like Notes).</summary>
+    [Parameter] public IReadOnlyList<CaseEntity>? Entities { get; set; }
+    /// <summary>Reload the workspace after a write (audit trail, live-collab, tab badge).</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>Bumped by the parent on a live-collab change so a collaborator's edit shows here.</summary>
+    [Parameter] public int RefreshToken { get; set; }
+
+    private sealed record Field(string Key, string Label, string Hint, Func<PostIncidentReviewView, string?> Get);
+    private static readonly Field[] Fields =
+    [
+        new("happened", "What happened", "A factual account of the event and how it unfolded.", r => r.WhatHappened),
+        new("factors", "Contributing factors", "Conditions that contributed to the event or its impact.", r => r.ContributingFactors),
+        new("worked", "What worked well", "Detection and response strengths worth keeping.", r => r.WhatWorkedWell),
+        new("improve", "Opportunities to improve", "Changes to people, process, or technology to consider.", r => r.OpportunitiesToImprove),
+    ];
+
+    private string FieldEditorId(string key) => $"pir-{key}-{CaseId}";
+    private string NewDetailsEditorId => $"ia-new-details-{CaseId}";
+    private static string EditDetailsEditorId(Guid id) => $"ia-edit-details-{id}";
+    private static string EditOutcomeEditorId(Guid id) => $"ia-edit-outcome-{id}";
+    private readonly HashSet<string> _mdEditors = new();   // element ids of currently-mounted EasyMDE instances
+
+    private CaseLessonsView? _view;
+    private List<Report>? _reports;
+    private int _seenRefresh = -1;
+    private bool _saving;
+
+    // Review edit: the stamp and values captured when editing began (seeds the editors; guards the save).
+    private bool _editingReview;
+    private string? _reviewStamp;
+    private readonly Dictionary<string, string> _reviewSeed = new();
+    private bool _noActions;
+
+    private sealed class ActionForm
+    {
+        public string Title { get; set; } = "";
+        public string? Area { get; set; }
+        public string? Owner { get; set; }
+        public string? OwnerExternal { get; set; }
+        public DateTime? Target { get; set; }
+        public ImprovementActionStatus Status { get; set; } = ImprovementActionStatus.Open;
+        public string? DetailsSeed { get; set; }
+        public string? OutcomeSeed { get; set; }
+    }
+
+    private ActionForm _new = new();
+    private ActionForm _edit = new();
+    private Guid? _editingId;
+
+    private bool NeedsReview => Classification is Domain.Enums.Classification.Incident or Domain.Enums.Classification.Breach;
+    private int ActiveActionCount => _view?.Actions.Count(a => a.Status != ImprovementActionStatus.NotPursued) ?? 0;
+    private bool IsComplete => _view?.Review is { IsRecorded: true } r && (r.NoActionsIdentified || _view.Actions.Count > 0);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (RefreshToken == _seenRefresh) return;
+        _seenRefresh = RefreshToken;
+        // A collaborator's change refreshes the read-only view; open editors keep this user's unsaved text
+        // (they are JS-owned), and the stamp check on save catches a conflicting review edit.
+        await Load();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) => await ReconcileEditors();
+
+    private async Task Load()
+    {
+        _view = await Lessons.GetForCaseAsync(CaseId);
+        _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
+    }
+
+    // Reconcile this tab's EasyMDE editors against what's on screen: the add-action Details composer, the
+    // four review fields while editing the review, and an action's Details + Outcome while editing it.
+    // Id-keyed via the shared markdownEditor JS API; the seed applies on first mount only.
+    private async Task ReconcileEditors()
+    {
+        var desired = new Dictionary<string, string>();
+        if (CanEdit && _view is not null)
+        {
+            desired[NewDetailsEditorId] = "";
+            if (_editingReview)
+                foreach (var f in Fields) desired[FieldEditorId(f.Key)] = _reviewSeed.GetValueOrDefault(f.Key, "");
+            if (_editingId is { } id)
+            {
+                desired[EditDetailsEditorId(id)] = _edit.DetailsSeed ?? "";
+                desired[EditOutcomeEditorId(id)] = _edit.OutcomeSeed ?? "";
+            }
+        }
+
+        foreach (var id in _mdEditors.Where(id => !desired.ContainsKey(id)).ToList())
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); } catch (JSException) { /* ignore */ }
+            _mdEditors.Remove(id);
+        }
+        foreach (var (id, seed) in desired)
+        {
+            if (_mdEditors.Contains(id)) continue;
+            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed, new { entities = EntityCandidates }); _mdEditors.Add(id); }
+            catch (JSException) { /* editor is a progressive enhancement */ }
+        }
+    }
+
+    // The case's entities as inline "#" tag candidates ({id, value, hint} for the editor JS), as in Notes.
+    private object[] EntityCandidates =>
+        (Entities ?? Array.Empty<CaseEntity>())
+            .Select(e => (object)new
+            {
+                id = e.Id.ToString(),
+                value = string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!,
+                hint = e.Type.ToString()
+            })
+            .ToArray();
+
+    private async Task<string> EditorValue(string id)
+    {
+        try { return await JS.InvokeAsync<string>("markdownEditor.getValue", id) ?? ""; }
+        catch (JSException) { return ""; }
+    }
+
+    private async Task ClearEditor(string id)
+    {
+        try { await JS.InvokeVoidAsync("markdownEditor.setValue", id, ""); } catch (JSException) { /* best effort */ }
+    }
+
+    /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — save whichever edit is open.</summary>
+    public async Task SubmitAsync()
+    {
+        if (!CanEdit) return;
+        if (_editingReview) await SaveReview();
+        else if (_editingId is not null) await SaveEdit();
+        else if (!string.IsNullOrWhiteSpace(_new.Title)) await AddAction();
+    }
+
+    // ---- Review --------------------------------------------------------------------------------------
+
+    private void BeginReviewEdit()
+    {
+        var r = _view?.Review;
+        _reviewStamp = r?.Stamp;
+        _reviewSeed.Clear();
+        foreach (var f in Fields) _reviewSeed[f.Key] = r is null ? "" : f.Get(r) ?? "";
+        _noActions = r?.NoActionsIdentified ?? false;
+        _editingReview = true;
+    }
+
+    private void CancelReviewEdit() => _editingReview = false;
+
+    private async Task SaveReview()
+    {
+        _saving = true;
+        try
+        {
+            var values = new Dictionary<string, string>();
+            foreach (var f in Fields) values[f.Key] = await EditorValue(FieldEditorId(f.Key));
+            await Lessons.SaveReviewAsync(CaseId,
+                new PostIncidentReviewInput(values["happened"], values["factors"], values["worked"], values["improve"], _noActions),
+                _reviewStamp);
+            _editingReview = false;
+            await Load();
+            Toasts.Success("Review saved");
+            await OnChanged.InvokeAsync();
+        }
+        catch (StaleEditException ex)
+        {
+            // The editors stay open with this user's text, so nothing is lost; they can copy it, then reload.
+            Toasts.Error(ex.Message);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally { _saving = false; }
+    }
+
+    // ---- Improvement actions -------------------------------------------------------------------------
+
+    private async Task AddAction()
+    {
+        if (string.IsNullOrWhiteSpace(_new.Title)) return;
+        _saving = true;
+        try
+        {
+            var details = await EditorValue(NewDetailsEditorId);
+            await Lessons.AddActionAsync(CaseId, ToInput(_new, details, null));
+            _new = new ActionForm();
+            await ClearEditor(NewDetailsEditorId);
+            _noActions = false;   // logging an action clears "none identified" server-side too
+            await Load();
+            Toasts.Success("Improvement action logged");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally { _saving = false; }
+    }
+
+    private void BeginEdit(ImprovementActionView a)
+    {
+        _editingId = a.Id;
+        var inDirectory = a.OwnerId is not null
+            && Users.All().Any(u => string.Equals(u.UserId, a.OwnerId, StringComparison.OrdinalIgnoreCase));
+        _edit = new ActionForm
+        {
+            Title = a.Title, Area = a.RelatedArea,
+            Owner = a.OwnerId is null ? "" : inDirectory ? a.OwnerId : OwnerSelect.ExternalSentinel,
+            OwnerExternal = inDirectory ? null : a.OwnerId,
+            Target = a.TargetDateUtc is { } t ? TimeZoneInfo.ConvertTime(t, TimeDisp.Zone).Date : null,
+            Status = a.Status, DetailsSeed = a.Details, OutcomeSeed = a.OutcomeNote
+        };
+    }
+
+    private void CancelEdit() => _editingId = null;
+
+    private async Task SaveEdit()
+    {
+        if (_editingId is not { } id) return;
+        _saving = true;
+        try
+        {
+            var details = await EditorValue(EditDetailsEditorId(id));
+            var outcome = await EditorValue(EditOutcomeEditorId(id));
+            await Lessons.UpdateActionAsync(CaseId, id, ToInput(_edit, details, outcome));
+            _editingId = null;
+            await Load();
+            Toasts.Success("Improvement action updated");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally { _saving = false; }
+    }
+
+    private ImprovementActionInput ToInput(ActionForm f, string? details, string? outcome) => new(
+        f.Title, f.Area, details, OwnerSelect.Resolve(f.Owner, f.OwnerExternal), ToTargetUtc(f.Target),
+        f.Status, outcome);
+
+    // A target date is picked in the viewer's display zone and means "by end of that day" — stored as UTC.
+    private DateTimeOffset? ToTargetUtc(DateTime? date)
+    {
+        if (date is not { } d) return null;
+        var wall = DateTime.SpecifyKind(d.Date + new TimeSpan(23, 59, 0), DateTimeKind.Unspecified);
+        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(wall, TimeDisp.Zone), TimeSpan.Zero); }
+        catch { return new DateTimeOffset(DateTime.SpecifyKind(wall, DateTimeKind.Utc), TimeSpan.Zero); }
+    }
+
+    private static string OutcomeHint(ImprovementActionStatus s) => s == ImprovementActionStatus.NotPursued
+        ? "why it isn't being pursued, and who decided"
+        : "what was done (e.g. change ticket or test reference)";
+
+    // ---- Lessons-learned report ----------------------------------------------------------------------
+
+    private async Task GenerateReport(ReportFormat format)
+    {
+        _saving = true;
+        try
+        {
+            var r = await Reports.GenerateLessonsAsync(CaseId, format);
+            _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
+            Toasts.Success($"Generated {r.FileName}");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task ApproveReport(Guid reportId)
+    {
+        try
+        {
+            var r = await Reports.ApproveAsync(reportId);
+            Toasts.Success($"Approved {r.FileName} as the locked final");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            Toasts.Error(ex.Message);
+        }
+        _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var id in _mdEditors)
+        {
+            try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }
+            catch { /* circuit may already be gone during teardown */ }
+        }
+        _mdEditors.Clear();
+    }
+}

@@ -1,0 +1,38 @@
+@* Owner picker: a directory user, Unassigned, or a free-text external name (U-45 pattern from the Tasks tab).
+   Binds the picker value (a user id, "" for unassigned, or ExternalSentinel) and the external name separately;
+   Resolve() turns the pair into the stored owner string. *@
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+
+<select id="@Id" class="form-select form-select-sm" value="@(Owner ?? "")" @onchange="OnOwnerChanged">
+    <option value="">— Unassigned —</option>
+    @foreach (var u in Users.All())
+    {
+        <option value="@u.UserId">@u.DisplayName</option>
+    }
+    <option value="@ExternalSentinel">External / other…</option>
+</select>
+@if (Owner == ExternalSentinel)
+{
+    <input class="form-control form-control-sm mt-1" value="@External" placeholder="External owner name"
+           aria-label="External owner name" @oninput="e => ExternalChanged.InvokeAsync(e.Value?.ToString())" />
+}
+
+@code {
+    public const string ExternalSentinel = "__external__";
+
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string? Owner { get; set; }
+    [Parameter] public EventCallback<string?> OwnerChanged { get; set; }
+    [Parameter] public string? External { get; set; }
+    [Parameter] public EventCallback<string?> ExternalChanged { get; set; }
+
+    private Task OnOwnerChanged(ChangeEventArgs e) => OwnerChanged.InvokeAsync(e.Value?.ToString());
+
+    /// <summary>The stored owner: a directory id, the trimmed external name, or null for unassigned.</summary>
+    public static string? Resolve(string? owner, string? external) => owner switch
+    {
+        ExternalSentinel => string.IsNullOrWhiteSpace(external) ? null : external.Trim(),
+        null or "" => null,
+        var u => u
+    };
+}

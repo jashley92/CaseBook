@@ -27,6 +27,13 @@ public sealed class ReportingOptions
     public string? TeamName { get; set; }
 
     /// <summary>
+    /// Optional legend printed at the top of every page of the lessons-learned report (E-26/PROD-41) — e.g. a
+    /// privilege or confidentiality marking whose wording counsel has approved. Blank prints nothing. Note a
+    /// legend alone does not make a document privileged.
+    /// </summary>
+    public string? LessonsLegend { get; set; }
+
+    /// <summary>
     /// The report body section layout — a comma-separated list of <see cref="ReportSection"/> tokens in
     /// print order, each optionally prefixed with '!' to hide it (e.g. "Summary,!Outcome,Appendix").
     /// Parsed by <see cref="ReportLayout"/>, which is tolerant of unknown/missing tokens so the default

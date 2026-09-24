@@ -366,6 +366,8 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         TimelineEntry t => Snippet(t.Description),
         AnalystNote n => Snippet(n.Body),
         CaseComment cc => Snippet(cc.Body),
+        ImprovementAction ia => ia.Title,
+        PostIncidentReview => "Post-incident review",
         CaseEntity ce => string.IsNullOrWhiteSpace(ce.Label) ? ce.Value : $"{ce.Label} ({ce.Value})",
         Evidence ev => ev.OriginalFileName,
         CaseAssignment asg => string.IsNullOrWhiteSpace(asg.UserDisplayName) ? asg.UserId : asg.UserDisplayName,

@@ -491,6 +491,42 @@ public sealed class CaseCommentConfiguration : IEntityTypeConfiguration<CaseComm
     }
 }
 
+public sealed class PostIncidentReviewConfiguration : IEntityTypeConfiguration<PostIncidentReview>
+{
+    public void Configure(EntityTypeBuilder<PostIncidentReview> b)
+    {
+        b.ToTable("PostIncidentReviews");
+        b.Property(x => x.WhatHappened).HasMaxLength(4000);
+        b.Property(x => x.ContributingFactors).HasMaxLength(4000);
+        b.Property(x => x.WhatWorkedWell).HasMaxLength(4000);
+        b.Property(x => x.OpportunitiesToImprove).HasMaxLength(4000);
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.ModifiedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.HasOne<Case>().WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => x.CaseId).IsUnique();   // one review per case
+    }
+}
+
+public sealed class ImprovementActionConfiguration : IEntityTypeConfiguration<ImprovementAction>
+{
+    public void Configure(EntityTypeBuilder<ImprovementAction> b)
+    {
+        b.ToTable("ImprovementActions");
+        b.Property(x => x.Title).HasMaxLength(400).IsRequired();
+        b.Property(x => x.RelatedArea).HasMaxLength(200);
+        b.Property(x => x.Details).HasMaxLength(4000);
+        b.Property(x => x.Owner).HasMaxLength(200);
+        b.Property(x => x.OutcomeNote).HasMaxLength(4000);
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.ModifiedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.HasOne<Case>().WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => x.CaseId);
+        b.HasIndex(x => new { x.Status, x.TargetDateUtc });   // the register's open / past-target view
+    }
+}
+
 public sealed class ActionItemCommentConfiguration : IEntityTypeConfiguration<ActionItemComment>
 {
     public void Configure(EntityTypeBuilder<ActionItemComment> b)

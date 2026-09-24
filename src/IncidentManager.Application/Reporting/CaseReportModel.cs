@@ -1,3 +1,5 @@
+using IncidentManager.Domain.Enums;
+
 namespace IncidentManager.Application.Reporting;
 
 public sealed record ReportClassificationItem(DateTimeOffset AtUtc, string From, string To, string Reason, string By);
@@ -6,6 +8,12 @@ public sealed record ReportEvidenceItem(string FileName, long SizeBytes, string 
 public sealed record ReportNoteItem(DateTimeOffset AtUtc, string Author, string Body);
 public sealed record ReportActionItemRow(string Title, string? Owner, DateTimeOffset? DueAtUtc, string Status);
 public sealed record ReportAssignmentRow(string User, string Role);
+/// <summary>E-26: the post-incident review, as printed in the lessons-learned report.</summary>
+public sealed record ReportReview(string? WhatHappened, string? ContributingFactors, string? WhatWorkedWell,
+    string? OpportunitiesToImprove, bool NoActionsIdentified);
+/// <summary>PROD-41: one improvement action row in the lessons-learned report.</summary>
+public sealed record ReportImprovementActionRow(string Title, string? RelatedArea, string? Details, string Owner,
+    DateTimeOffset? TargetDateUtc, string Status, string? OutcomeNote);
 public sealed record ReportEntityRow(string Type, string Value, string? Label, string Disposition, string? Description, string? Source);
 public sealed record ReportRelationshipRow(string Source, string Relationship, string Target, string? Description);
 public sealed record ReportTechniqueRow(string TechniqueId, string Name, string Tactic);
@@ -23,6 +31,21 @@ public sealed class CaseReportModel
     /// <summary>Raw logo image bytes for the header, or null. Paired with <see cref="LogoContentType"/>.</summary>
     public byte[]? LogoBytes { get; init; }
     public string? LogoContentType { get; init; }
+
+    /// <summary>
+    /// Which document this model renders. <see cref="ReportKind.Case"/> is the examiner-facing case report
+    /// (sections below); <see cref="ReportKind.LessonsLearned"/> renders only the review + improvement actions
+    /// (E-26/PROD-41), kept as a separate document so it can be handled and shared on its own terms.
+    /// </summary>
+    public ReportKind Kind { get; init; } = ReportKind.Case;
+
+    public bool IsLessonsLearned => Kind == ReportKind.LessonsLearned;
+
+    /// <summary>
+    /// Optional confidentiality legend printed at the top of every page (lessons-learned report only). Admin-set
+    /// wording (e.g. a privilege marking counsel has approved); null prints nothing.
+    /// </summary>
+    public string? Legend { get; init; }
 
     /// <summary>Enabled body sections in print order (from the administered layout). Empty = default all.</summary>
     public IReadOnlyList<ReportSection> Sections { get; init; } = Enum.GetValues<ReportSection>();
@@ -79,6 +102,30 @@ public sealed class CaseReportModel
     public IReadOnlyList<ReportEvidenceItem> Evidence { get; init; } = [];
     public IReadOnlyList<ReportNoteItem> Notes { get; init; } = [];
     public IReadOnlyList<ReportActionItemRow> ActionItems { get; init; } = [];
+
+    // Lessons-learned report only (Kind == LessonsLearned).
+    public ReportReview? Review { get; init; }
+    public IReadOnlyList<ReportImprovementActionRow> ImprovementActions { get; init; } = [];
+
+    /// <summary>The review's labelled paragraphs in print order, skipping blanks — shared by both renderers.</summary>
+    public IReadOnlyList<(string Label, string Text)> ReviewParagraphs => Review is null ? [] :
+        new (string Label, string? Text)[]
+        {
+            ("What happened", Review.WhatHappened), ("Contributing factors", Review.ContributingFactors),
+            ("What worked well", Review.WhatWorkedWell), ("Opportunities to improve", Review.OpportunitiesToImprove)
+        }.Where(p => !string.IsNullOrWhiteSpace(p.Text)).Select(p => (p.Label, p.Text!)).ToList();
+
+    /// <summary>What prints when there are no improvement actions: an explicit "none identified", else "(none recorded)".</summary>
+    public string NoActionsText => Review?.NoActionsIdentified == true
+        ? "The review identified no improvement actions." : "(none recorded)";
+
+    /// <summary>An action's detail cell: the plan, plus the outcome note once it is closed.</summary>
+    public static string ActionDetail(ReportImprovementActionRow a) =>
+        string.Join(" ", new[] { a.Details, a.OutcomeNote is null ? null : $"Outcome: {a.OutcomeNote}" }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
+
+    /// <summary>The provenance stamp's hash label — the lessons report hashes its own content, not the case row.</summary>
+    public string ContentHashLabel => IsLessonsLearned ? "Review content hash" : "Case content hash";
     public IReadOnlyList<ReportAssignmentRow> Assignments { get; init; } = [];
     public IReadOnlyList<ReportEntityRow> Entities { get; init; } = [];
     public IReadOnlyList<ReportRelationshipRow> Relationships { get; init; } = [];

@@ -64,10 +64,12 @@ public sealed class ReportService
         return _taxonomy?.Label(kind, member, def) ?? def;
     }
 
-    public async Task<List<Report>> ListAsync(Guid caseId, CancellationToken ct = default)
+    /// <summary>A case's stored reports of one kind, newest first. The case report and the separate
+    /// lessons-learned report are listed (and versioned) independently.</summary>
+    public async Task<List<Report>> ListAsync(Guid caseId, ReportKind kind = ReportKind.Case, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        return await db.Reports.AsNoTracking().Where(r => r.CaseId == caseId)
+        return await db.Reports.AsNoTracking().Where(r => r.CaseId == caseId && r.Kind == kind)
             .OrderByDescending(r => r.CreatedAtUtc).ToListAsync(ct);
     }
 
@@ -87,16 +89,44 @@ public sealed class ReportService
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
         var model = BuildModel(c, now, logo, sections, elemSummary, triggers);
 
+        return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.Case, format, model, now, ct);
+    }
+
+    /// <summary>
+    /// Generates the separate lessons-learned report (E-26/PROD-41): the post-incident review and its
+    /// improvement actions, and nothing else from the case. A <b>working draft</b> like the case report, stored,
+    /// hashed and approvable through the same path, but listed and versioned on its own so it is never mixed
+    /// into the examiner-facing case report. Prints the admin-set legend (if any) on every page.
+    /// </summary>
+    public async Task<Report> GenerateLessonsAsync(Guid caseId, ReportFormat format, CancellationToken ct = default)
+    {
+        if (!_user.Has(Permission.EditCases)) throw new Security.ForbiddenException(Permission.EditCases);
+        using var db = _factory.CreateDbContext();
+        var c = await db.Cases.AsNoTracking().ForUser(_user).FirstOrDefaultAsync(x => x.Id == caseId, ct)
+            ?? throw new InvalidOperationException("Case not found.");
+
+        var now = _clock.UtcNow;
+        var model = await BuildLessonsModelAsync(db, c, now, ct);
+        return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.LessonsLearned, format, model, now, ct);
+    }
+
+    /// <summary>Renders, stores and records a report; versions number per case + kind + format.</summary>
+    private async Task<Report> StoreAsync(IAppDbContext db, Guid caseId, string caseNumber, ReportKind kind,
+        ReportFormat format, CaseReportModel model, DateTimeOffset now, CancellationToken ct)
+    {
         var bytes = format == ReportFormat.Word ? _generator.GenerateWord(model) : _generator.GeneratePdf(model);
         var ext = format == ReportFormat.Word ? "docx" : "pdf";
-        var version = await db.Reports.CountAsync(r => r.CaseId == caseId && r.Format == format, ct) + 1;
-        var fileName = $"{c.CaseNumber}_v{version}.{ext}";
+        var version = await db.Reports.CountAsync(r => r.CaseId == caseId && r.Kind == kind && r.Format == format, ct) + 1;
+        var fileName = kind == ReportKind.LessonsLearned
+            ? $"{caseNumber}_lessons-learned_v{version}.{ext}"
+            : $"{caseNumber}_v{version}.{ext}";
 
         var stored = await _store.SaveAsync(caseId, fileName, bytes, ct);
 
         var report = new Report
         {
             CaseId = caseId,
+            Kind = kind,
             Version = version,
             Format = format,
             FileName = fileName,
@@ -298,6 +328,52 @@ public sealed class ReportService
         }
         return ReportLayout.Resolve(_reporting.CurrentValue.SectionLayout);
     }
+
+    /// <summary>
+    /// The lessons-learned report model: case identity + branding, the review, and the improvement actions.
+    /// Its provenance hash covers the review and actions (their canonical content), not the case row.
+    /// </summary>
+    private async Task<CaseReportModel> BuildLessonsModelAsync(IAppDbContext db, Case c, DateTimeOffset now, CancellationToken ct)
+    {
+        var review = await db.PostIncidentReviews.AsNoTracking().FirstOrDefaultAsync(x => x.CaseId == c.Id, ct);
+        var actions = Lessons.LessonsService.Ordered(
+            await db.ImprovementActions.AsNoTracking().Where(x => x.CaseId == c.Id).ToListAsync(ct)).ToList();
+        var logo = await _branding.GetLogoAsync(ct);
+        var opts = _reporting.CurrentValue;
+
+        var canonical = string.Join('\n',
+            new[] { review?.BuildCanonicalContent() ?? "" }.Concat(actions.Select(a => a.BuildCanonicalContent())));
+
+        return new CaseReportModel
+        {
+            Kind = ReportKind.LessonsLearned,
+            Legend = string.IsNullOrWhiteSpace(opts.LessonsLegend) ? null : opts.LessonsLegend.Trim(),
+            OrganizationName = string.IsNullOrWhiteSpace(opts.OrganizationName) ? null : opts.OrganizationName.Trim(),
+            TeamName = string.IsNullOrWhiteSpace(opts.TeamName) ? null : opts.TeamName.Trim(),
+            LogoBytes = logo?.Bytes,
+            LogoContentType = logo?.ContentType,
+            Sections = [],
+            CaseNumber = c.CaseNumber,
+            Title = c.Title,
+            Classification = ClassificationLabel(c.Classification),
+            Phase = PhaseLabel(c.Phase),
+            Severity = _severityLabels.For(c.Severity),
+            Origin = c.Origin == CaseOrigin.ThirdParty ? "Third-party / vendor" : "Internal detection",
+            ClosedAtUtc = c.ClosedAtUtc,
+            // The long fields are Markdown (edited like Notes/Summary); flatten to plain text for print, as the
+            // case report does for its Summary.
+            Review = review is null ? null : new ReportReview(Plain(review.WhatHappened), Plain(review.ContributingFactors),
+                Plain(review.WhatWorkedWell), Plain(review.OpportunitiesToImprove), review.NoActionsIdentified),
+            ImprovementActions = actions.Select(a => new ReportImprovementActionRow(a.Title, a.RelatedArea, Plain(a.Details),
+                a.Owner is null ? "Unassigned" : _users.DisplayFor(a.Owner), a.TargetDateUtc,
+                Lessons.LessonsService.StatusLabel(a.Status), Plain(a.OutcomeNote))).ToList(),
+            GeneratedBy = _users.DisplayFor(_user.UserId),
+            GeneratedAtUtc = now,
+            ContentHash = _hasher.Hash(canonical)
+        };
+    }
+
+    private string? Plain(string? markdown) => string.IsNullOrWhiteSpace(markdown) ? null : _markdown.ToPlainText(markdown);
 
     private CaseReportModel BuildModel(Case c, DateTimeOffset now, ReportLogo? logo, IReadOnlyList<ReportSection> sections,
         string? dataElementsSummary, string? notificationTriggersSummary)

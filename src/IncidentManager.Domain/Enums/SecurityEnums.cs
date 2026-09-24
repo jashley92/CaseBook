@@ -32,6 +32,16 @@ public enum AuditAction
 }
 
 /// <summary>Output format of a generated report.</summary>
+/// <summary>
+/// Which document a stored <see cref="Entities.Report"/> is. The case report is the examiner-facing record;
+/// the lessons-learned report (E-26/PROD-41) is kept separate so it can be handled and shared on its own terms.
+/// </summary>
+public enum ReportKind
+{
+    Case = 0,
+    LessonsLearned = 1
+}
+
 public enum ReportFormat
 {
     Word = 0,
