@@ -100,6 +100,24 @@ public sealed class WriteNeedToKnowTests : IDisposable
     }
 
     [Fact]
+    public async Task View_only_roles_can_comment_on_cases_they_can_see()
+    {
+        // S-16: discussion is open to anyone who can see the case — deliberately ViewCases, not EditCases.
+        var (id, itemId) = await SeedRestrictedAsync();
+        _user.UserId = "ic-1";                 // on the case, so it's visible
+        _user.RoleSet = [AppRole.Manager];     // view-only
+        var discussion = new CaseCommentService(Factory(), _user, _clock, new StubUserDirectory(), new NoOpCaseNotifications());
+        var taskComments = new ActionItemCommentService(Factory(), _user, _clock, new StubUserDirectory());
+
+        (await discussion.AddAsync(id, "question for the team", null, null)).Should().NotBeEmpty();
+        (await taskComments.AddAsync(id, itemId, "who owns this?")).Should().NotBeEmpty();
+
+        _user.RoleSet = [];                     // no CaseBook role at all
+        await FluentActions.Awaiting(() => discussion.AddAsync(id, "hi", null, null))
+            .Should().ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
+    }
+
+    [Fact]
     public async Task Evidence_upload_is_scoped_and_needs_edit_rights()
     {
         var (id, _) = await SeedRestrictedAsync();

@@ -1,4 +1,6 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
+using IncidentManager.Domain.Enums;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -47,8 +49,20 @@ public sealed class ActionItemCommentService
     }
 
     /// <summary>Posts a comment on a task. Append-only; returns the new id.</summary>
+
+    /// <summary>
+    /// S-16: commenting needs <see cref="Permission.ViewCases"/> — deliberately not EditCases. Discussion is open to
+    /// everyone who can see the case, view-only roles included (a manager asking a question, a hand-off note), while
+    /// changes to the case record stay with editors. Need-to-know scoping (who can see the case) applies on top.
+    /// </summary>
+    private void RequireCommenter([System.Runtime.CompilerServices.CallerMemberName] string action = "")
+    {
+        if (!_user.Has(Permission.ViewCases)) throw new ForbiddenException(Permission.ViewCases, action);
+    }
+
     public async Task<Guid> AddAsync(Guid caseId, Guid actionItemId, string body, CancellationToken ct = default)
     {
+        RequireCommenter();
         var text = (body ?? "").Trim();
         if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("A comment can't be empty.");
         if (text.Length > 8000) throw new ArgumentException("A comment must be 8000 characters or fewer.");

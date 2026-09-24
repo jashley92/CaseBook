@@ -1,4 +1,6 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
+using IncidentManager.Domain.Enums;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -73,9 +75,21 @@ public sealed class CaseCommentService
     /// Posts a comment (optionally a reply, and optionally @mentioning teammates). Returns the new id.
     /// Replies are normalised to a single level. Mentioned users are notified after the comment persists.
     /// </summary>
+
+    /// <summary>
+    /// S-16: commenting needs <see cref="Permission.ViewCases"/> — deliberately not EditCases. Discussion is open to
+    /// everyone who can see the case, view-only roles included (a manager asking a question, a hand-off note), while
+    /// changes to the case record stay with editors. Need-to-know scoping (who can see the case) applies on top.
+    /// </summary>
+    private void RequireCommenter([System.Runtime.CompilerServices.CallerMemberName] string action = "")
+    {
+        if (!_user.Has(Permission.ViewCases)) throw new ForbiddenException(Permission.ViewCases, action);
+    }
+
     public async Task<Guid> AddAsync(Guid caseId, string body, Guid? parentId,
         IReadOnlyCollection<string>? mentionUserIds, CancellationToken ct = default)
     {
+        RequireCommenter();
         var text = (body ?? "").Trim();
         if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("A comment can't be empty.");
         if (text.Length > 8000) throw new ArgumentException("A comment must be 8000 characters or fewer.");
