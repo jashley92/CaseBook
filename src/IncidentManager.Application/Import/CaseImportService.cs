@@ -1,6 +1,7 @@
 using System.Text.Json;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Domain.Observables;
@@ -269,6 +270,7 @@ public sealed class CaseImportService
     /// <summary>Marks a queued submission applied, recording the reviewer and the resulting case.</summary>
     public async Task MarkPendingAppliedAsync(Guid pendingId, CaseImportResult result, CancellationToken ct = default)
     {
+        RequireEdit();
         using var db = _factory.CreateDbContext();
         var row = await db.PendingImports.FirstOrDefaultAsync(p => p.Id == pendingId, ct);
         if (row is null || row.Status != PendingImportStatus.Pending) return;
@@ -283,6 +285,7 @@ public sealed class CaseImportService
     /// <summary>Discards a queued submission with an optional reason (nothing is written to any case).</summary>
     public async Task RejectPendingAsync(Guid pendingId, string? note, CancellationToken ct = default)
     {
+        RequireEdit();
         using var db = _factory.CreateDbContext();
         var row = await db.PendingImports.FirstOrDefaultAsync(p => p.Id == pendingId, ct);
         if (row is null || row.Status != PendingImportStatus.Pending) return;
@@ -291,6 +294,12 @@ public sealed class CaseImportService
         row.DecidedAtUtc = _clock.UtcNow;
         row.DecisionNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>S-09: deciding a queued import is a case edit (the page is EditCases-gated; this is the backstop).</summary>
+    private void RequireEdit([System.Runtime.CompilerServices.CallerMemberName] string action = "")
+    {
+        if (!_user.Has(Permission.EditCases)) throw new ForbiddenException(Permission.EditCases, action);
     }
 
     private static string SummariseForQueue(CaseImportPreview p)

@@ -33,7 +33,11 @@ public sealed class EvidenceService
     public async Task<Domain.Entities.Evidence> UploadAsync(Guid caseId, string fileName, string contentType,
         Stream content, string? description, CancellationToken ct = default)
     {
+        // S-09: uploading is a case edit, and only onto a case the caller can see (checked before any bytes are stored).
+        if (!_user.Has(Permission.EditCases)) throw new ForbiddenException(Permission.EditCases, nameof(UploadAsync));
         using var db = _factory.CreateDbContext();
+        if (!await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct))
+            throw new InvalidOperationException("Case not found or not accessible.");
         var stored = await _store.SaveAsync(caseId, content, ct);
 
         var evidence = new Domain.Entities.Evidence

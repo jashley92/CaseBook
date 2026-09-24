@@ -400,12 +400,15 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
-    private static async Task<Case> LoadTrackedAsync(IAppDbContext db, Guid id, CancellationToken ct)
+    private async Task<Case> LoadTrackedAsync(IAppDbContext db, Guid id, CancellationToken ct)
     {
+        // S-09: every write loads through need-to-know scoping, so a write can never reach a case the caller
+        // can't see (e.g. someone removed from a restricted case while it's open, or a future non-UI caller).
+        // Not-visible and not-found are the same answer, so the error leaks nothing.
         // S8733: same many-collection Cartesian explosion as GetDetailAsync. Split into one correlated query
         // per collection; EF stitches them onto the tracked root via the change tracker, and case work is
         // human-gated (one attributable act at a time) so the cross-query consistency trade-off is moot.
-        var c = await db.Cases
+        var c = await Scoped(db.Cases)
             .AsSplitQuery()
             .Include(x => x.ClassificationChanges)
             .Include(x => x.MaterialityChanges)
@@ -421,7 +424,7 @@ public sealed class CaseService
             .Include(x => x.Techniques)
             .Include(x => x.DataElements)
             .FirstOrDefaultAsync(x => x.Id == id, ct)
-            ?? throw new InvalidOperationException($"Case {id} not found.");
+            ?? throw new InvalidOperationException("Case not found or not accessible.");
         return c;
     }
 

@@ -38,6 +38,8 @@ public sealed class CaseCommentService
     public async Task<List<CaseCommentView>> ListAsync(Guid caseId, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
+        // S-09: need-to-know — a case the caller can't see has no visible discussion.
+        if (!await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct)) return [];
         var rows = await db.CaseComments.AsNoTracking()
             .Where(c => c.CaseId == caseId)
             .OrderBy(c => c.CreatedAtUtc)
@@ -63,8 +65,9 @@ public sealed class CaseCommentService
 
         // Track the case row (no includes) so the audit line carries its case number, and so we have the
         // case fields for the mention notification. Cheap — no aggregate load.
-        var caseRow = await db.Cases.FirstOrDefaultAsync(c => c.Id == caseId, ct)
-                      ?? throw new InvalidOperationException("Case not found.");
+        // S-09: scoped, so a comment can't land on a case the caller can't see.
+        var caseRow = await db.Cases.ForUser(_user).FirstOrDefaultAsync(c => c.Id == caseId, ct)
+                      ?? throw new InvalidOperationException("Case not found or not accessible.");
 
         // Normalise a reply to one level: a reply to a reply attaches to the top-level thread.
         Guid? effectiveParent = null;

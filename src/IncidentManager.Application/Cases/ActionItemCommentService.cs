@@ -34,6 +34,8 @@ public sealed class ActionItemCommentService
     public async Task<List<ActionItemCommentView>> ListForCaseAsync(Guid caseId, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
+        // S-09: need-to-know — a case the caller can't see has no visible task comments.
+        if (!await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct)) return [];
         var rows = await db.ActionItemComments.AsNoTracking()
             .Where(c => c.CaseId == caseId)
             .OrderBy(c => c.CreatedAtUtc)
@@ -55,8 +57,9 @@ public sealed class ActionItemCommentService
 
         // Track the case row (no includes) so the save interceptor stamps the audit line with its case
         // number — mirrors CaseCommentService. Cheap: no aggregate load.
-        var caseRow = await db.Cases.FirstOrDefaultAsync(c => c.Id == caseId, ct)
-                      ?? throw new InvalidOperationException("Case not found.");
+        // S-09: scoped, so a comment can't land on a case the caller can't see.
+        var caseRow = await db.Cases.ForUser(_user).FirstOrDefaultAsync(c => c.Id == caseId, ct)
+                      ?? throw new InvalidOperationException("Case not found or not accessible.");
 
         // The task must exist and belong to the case (which the hosting workspace has already gated).
         var exists = await db.ActionItems.AsNoTracking()
