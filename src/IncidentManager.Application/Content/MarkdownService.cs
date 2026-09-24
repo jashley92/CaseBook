@@ -25,8 +25,9 @@ public interface IMarkdownService
 
 public sealed class MarkdownService : IMarkdownService
 {
-    // DisableHtml: any raw HTML the analyst types is emitted as escaped text, not live markup.
-    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
+    // DisableHtml: any raw HTML the analyst types is emitted as escaped text, not live markup. Shared with
+    // RichText (the report renderers) so screen and paper interpret Markdown identically.
+    internal static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .DisableHtml()
         .UseAutoLinks()
         .Build();

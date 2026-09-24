@@ -54,8 +54,7 @@ public sealed class LessonsLearnedTests : IDisposable
 
     private IAppDbContextFactory NewFactory() => new TestDbContextFactory(Options());
 
-    private LessonsService Lessons() => new(NewFactory(), _user, _clock, new IdUserDirectory(),
-        new IncidentManager.Application.Content.MarkdownService());
+    private LessonsService Lessons() => new(NewFactory(), _user, _clock, new IdUserDirectory());
 
     private CaseService Cases(AppDbContext db) =>
         new(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
@@ -258,8 +257,10 @@ public sealed class LessonsLearnedTests : IDisposable
     public async Task The_lessons_report_is_stored_separately_from_the_case_report_and_carries_the_legend()
     {
         var id = await NewCaseAsync("Report Case");
-        // The long fields are Markdown (edited like Notes); the report prints them as plain text.
-        await Lessons().SaveReviewAsync(id, new PostIncidentReviewInput("## Timeline\n**What** happened.", null, null, null, false), null);
+        // The long fields are Markdown (edited like Notes); the report keeps the formatting, not the syntax.
+        await Lessons().SaveReviewAsync(id, new PostIncidentReviewInput(
+            "## Timeline\n**What** happened.\n\n- Credential reused\n  - from a *prior* breach\n\n1. Detect\n2. Contain\n\n> Vendor statement\n\n```\nrclone copy tenant:/ ./out\n```",
+            null, null, null, false), null);
         await Lessons().AddActionAsync(id, Action("Extend MFA"));
         _reporting.CurrentValue.LessonsLegend = "Confidential - Prepared at the Direction of Counsel";
 
@@ -281,13 +282,70 @@ public sealed class LessonsLearnedTests : IDisposable
         var lessonsText = DocxText(lessonsStream);
         var caseText = DocxText(caseStream);
         lessonsText.Should().Contain("What happened.").And.Contain("Extend MFA");
-        lessonsText.Should().NotContain("**").And.NotContain("## ", "Markdown syntax is flattened for print");
+        lessonsText.Should().NotContain("**").And.NotContain("## ", "Markdown syntax never prints");
+        lessonsText.Should().Contain("•").And.Contain("Credential reused");
+        lessonsText.Should().Contain("◦").And.Contain("2.").And.Contain("rclone copy tenant:/ ./out");
+        var (_, again) = await reports.OpenAsync(lessons.Id);
+        DocxBoldRuns(again).Should().Contain("What").And.Contain("Timeline", "emphasis and headings print bold");
+
+        // Schema-valid, so Word opens it without an "unreadable content" repair prompt.
+        var (_, forValidation) = await reports.OpenAsync(lessons.Id);
+        DocxSchemaErrors(forValidation).Should().BeEmpty();
+        var (_, caseForValidation) = await reports.OpenAsync(caseReport.Id);
+        DocxSchemaErrors(caseForValidation).Should().BeEmpty("the case report shares the same Word helpers");
+
+        // The PDF renders the same content without error.
+        var pdf = await reports.GenerateLessonsAsync(id, ReportFormat.Pdf);
+        pdf.Kind.Should().Be(ReportKind.LessonsLearned);
         lessonsText.Should().Contain("Prepared at the Direction of Counsel");
         caseText.Should().NotContain("Extend MFA").And.NotContain("Prepared at the Direction of Counsel");
 
         // The gate's report count only counts case reports.
         await using var db = NewContext();
         (await db.Reports.CountAsync(r => r.CaseId == id && r.Kind == ReportKind.Case)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_full_case_report_is_schema_valid_Word()
+    {
+        Guid id;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            id = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+        }
+
+        var reports = Reports();
+        var report = await reports.GenerateAsync(id, ReportFormat.Word);
+        var (_, stream) = await reports.OpenAsync(report.Id);
+
+        DocxSchemaErrors(stream).Should().BeEmpty("Word should open the report without a repair prompt");
+    }
+
+    /// <summary>Open XML schema validation errors for a .docx (empty = Word opens it cleanly).</summary>
+    private static List<string> DocxSchemaErrors(Stream s)
+    {
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+        s.Dispose();
+        ms.Position = 0;
+        using var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false);
+        return new DocumentFormat.OpenXml.Validation.OpenXmlValidator()
+            .Validate(doc).Select(e => $"{e.Path?.XPath}: {e.Description}").ToList();
+    }
+
+    /// <summary>The text of every bold run in a .docx body.</summary>
+    private static List<string> DocxBoldRuns(Stream s)
+    {
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+        s.Dispose();
+        ms.Position = 0;
+        using var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false);
+        return doc.MainDocumentPart!.Document.Body!.Descendants<DocumentFormat.OpenXml.Wordprocessing.Run>()
+            .Where(r => r.RunProperties?.Bold is not null)
+            .Select(r => r.InnerText)
+            .ToList();
     }
 
     /// <summary>Body + header text of a .docx (headers are separate parts).</summary>

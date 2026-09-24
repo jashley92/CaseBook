@@ -70,16 +70,13 @@ public sealed class LessonsService
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
     private readonly IUserDirectory _users;
-    private readonly Content.IMarkdownService _markdown;
 
-    public LessonsService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, IUserDirectory users,
-        Content.IMarkdownService markdown)
+    public LessonsService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, IUserDirectory users)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
         _users = users;
-        _markdown = markdown;
     }
 
     // ---- Per case ----------------------------------------------------------------------------------
@@ -328,7 +325,7 @@ public sealed class LessonsService
         Contains(r.CaseNumber, term) || Contains(r.CaseTitle, term) || Contains(r.Action.Title, term)
         || Contains(r.Action.RelatedArea, term) || Contains(r.Action.Details, term) || Contains(r.Action.OwnerName, term);
 
-    private string Plain(string? markdown) => string.IsNullOrWhiteSpace(markdown) ? "" : _markdown.ToPlainText(markdown);
+    private static string Plain(string? markdown) => string.IsNullOrWhiteSpace(markdown) ? "" : Content.RichText.ToText(markdown);
 
     private static bool Contains(string? s, string term) => s?.Contains(term, StringComparison.OrdinalIgnoreCase) == true;
 

@@ -360,10 +360,11 @@ public sealed class ReportService
             Severity = _severityLabels.For(c.Severity),
             Origin = c.Origin == CaseOrigin.ThirdParty ? "Third-party / vendor" : "Internal detection",
             ClosedAtUtc = c.ClosedAtUtc,
-            // The long fields are Markdown (edited like Notes/Summary); flatten to plain text for print, as the
-            // case report does for its Summary.
-            Review = review is null ? null : new ReportReview(Plain(review.WhatHappened), Plain(review.ContributingFactors),
-                Plain(review.WhatWorkedWell), Plain(review.OpportunitiesToImprove), review.NoActionsIdentified),
+            // The long fields are Markdown (edited like Notes/Summary): the review keeps its formatting as blocks;
+            // action details/outcome sit in table cells, so they print as list-aware plain text.
+            Review = review is null ? null : new ReportReview(Content.RichText.Parse(review.WhatHappened),
+                Content.RichText.Parse(review.ContributingFactors), Content.RichText.Parse(review.WhatWorkedWell),
+                Content.RichText.Parse(review.OpportunitiesToImprove), review.NoActionsIdentified),
             ImprovementActions = actions.Select(a => new ReportImprovementActionRow(a.Title, a.RelatedArea, Plain(a.Details),
                 a.Owner is null ? "Unassigned" : _users.DisplayFor(a.Owner), a.TargetDateUtc,
                 Lessons.LessonsService.StatusLabel(a.Status), Plain(a.OutcomeNote))).ToList(),
@@ -373,7 +374,8 @@ public sealed class ReportService
         };
     }
 
-    private string? Plain(string? markdown) => string.IsNullOrWhiteSpace(markdown) ? null : _markdown.ToPlainText(markdown);
+    // Table cells can't carry styling: keep list markers and line breaks, drop emphasis.
+    private static string? Plain(string? markdown) => string.IsNullOrWhiteSpace(markdown) ? null : Content.RichText.ToText(markdown);
 
     private CaseReportModel BuildModel(Case c, DateTimeOffset now, ReportLogo? logo, IReadOnlyList<ReportSection> sections,
         string? dataElementsSummary, string? notificationTriggersSummary)
@@ -396,6 +398,7 @@ public sealed class ReportService
             VendorName = c.ThirdParty?.VendorName,
             DetectionCaseId = c.DetectionCaseId,
             Summary = _markdown.ToPlainText(c.Summary),
+            SummaryBlocks = Content.RichText.Parse(c.Summary),
             DataTypesInvolved = c.DataTypesInvolved,
             ImpactedAssets = c.ImpactedAssets,
             AffectedIndividualsCount = c.AffectedIndividualsCount,
@@ -448,7 +451,7 @@ public sealed class ReportService
                 .Where(x => x.Kind == TimelineKind.Investigation && x.IsCurrent)
                 .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
                 // Investigation descriptions are Markdown; flatten to readable plain text for the report.
-                .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), _markdown.ToPlainText(x.Description), x.Source))
+                .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), Content.RichText.ToText(x.Description), x.Source))
                 .ToList(),
             Evidence = c.Evidence
                 .OrderBy(x => x.CreatedAtUtc)
@@ -457,7 +460,7 @@ public sealed class ReportService
             Notes = c.Notes.Where(x => x.IsCurrent)
                 .OrderBy(x => x.CreatedAtUtc)
                 // Notes are Markdown (U-35); flatten to readable plain text for the report.
-                .Select(x => new ReportNoteItem(x.CreatedAtUtc, x.CreatedBy, _markdown.ToPlainText(x.Body)))
+                .Select(x => new ReportNoteItem(x.CreatedAtUtc, x.CreatedBy, _markdown.ToPlainText(x.Body), Content.RichText.Parse(x.Body)))
                 .ToList(),
             ActionItems = c.ActionItems
                 .OrderBy(x => x.Status)

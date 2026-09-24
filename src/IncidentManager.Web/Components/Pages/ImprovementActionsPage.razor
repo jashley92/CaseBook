@@ -7,7 +7,6 @@
 @using IncidentManager.Application.Lessons
 @inject LessonsService Lessons
 @inject TimeDisplay TimeDisp
-@inject IncidentManager.Application.Content.IMarkdownService Md
 @implements IDisposable
 
 <PageTitle>Improvement actions</PageTitle>
@@ -88,7 +87,7 @@
                             @a.Title
                             @if (!string.IsNullOrWhiteSpace(a.OutcomeNote))
                             {
-                                <div class="small text-muted"><span class="fw-semibold">Outcome:</span> @Md.ToPlainText(a.OutcomeNote)</div>
+                                <div class="small text-muted" style="white-space:pre-line"><span class="fw-semibold">Outcome:</span> @IncidentManager.Application.Content.RichText.ToText(a.OutcomeNote)</div>
                             }
                         </td>
                         <td>@(a.RelatedArea ?? "—")</td>

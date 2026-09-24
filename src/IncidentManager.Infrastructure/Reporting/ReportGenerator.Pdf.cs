@@ -94,7 +94,7 @@ public sealed partial class ReportGenerator
         {
             case ReportSection.Summary:
                 Heading(section, "Summary");
-                section.AddParagraph(string.IsNullOrWhiteSpace(m.Summary) ? "(not provided)" : m.Summary);
+                AppendRich(section, m.SummaryBlocks);
                 break;
 
             case ReportSection.BusinessImpact:
@@ -239,7 +239,8 @@ public sealed partial class ReportGenerator
         {
             var p = section.AddParagraph($"[{n.AtUtc:u}] {n.Author}");
             p.Format.Font.Bold = true;
-            section.AddParagraph(n.Body);
+            if (n.Blocks is { Count: > 0 } blocks) AppendRich(section, blocks);
+            else section.AddParagraph(n.Body);
         }
     }
 
@@ -258,13 +259,14 @@ public sealed partial class ReportGenerator
         Heading(section, "Review");
         if (m.Review is null)
             section.AddParagraph("(no post-incident review recorded)");
-        foreach (var (label, text) in m.ReviewParagraphs)
+        foreach (var (label, blocks) in m.ReviewParagraphs)
         {
             var h = section.AddParagraph(label);
             h.Format.Font.Bold = true;
             h.Format.Font.Color = Slate;
             h.Format.SpaceBefore = Unit.FromCentimeter(0.15);
-            section.AddParagraph(text);
+            h.Format.KeepWithNext = true;
+            AppendRich(section, blocks);
         }
 
         Heading(section, "Improvement Actions");
@@ -350,6 +352,72 @@ public sealed partial class ReportGenerator
     private static void Caption(Section section, string text) =>
         section.AddParagraph(text).Format.Font.Italic = true;
 
+    /// <summary>
+    /// PDF rendering of analyst Markdown (Summary, notes, the post-incident review) with its formatting kept —
+    /// mirrors the Word renderer (ReportGenerator.Rich.cs): headings, bold/italic, nested bulleted/numbered lists
+    /// with a printed marker and hanging indent, quotes, and code (indented + shaded; no monospace face is
+    /// embedded, so it stays in the report font).
+    /// </summary>
+    private static void AppendRich(Section section, IReadOnlyList<Application.Content.RichBlock> blocks, string empty = "(not provided)")
+    {
+        if (blocks.Count == 0)
+        {
+            section.AddParagraph(empty);
+            return;
+        }
+        const double indentCm = 0.5;
+        foreach (var b in blocks)
+        {
+            var p = section.AddParagraph();
+            p.Format.SpaceAfter = Unit.FromCentimeter(0.1);
+            switch (b.Kind)
+            {
+                case Application.Content.RichBlockKind.Heading:
+                    // Subordinate to the report's own slate headings/labels: bold, dark, a step above body size.
+                    p.Format.Font.Bold = true;
+                    p.Format.Font.Size = b.Level switch { 1 => 10.5, 2 => 10, _ => 9.5 };
+                    p.Format.SpaceBefore = Unit.FromCentimeter(0.15);
+                    p.Format.KeepWithNext = true;
+                    break;
+                case Application.Content.RichBlockKind.Bullet or Application.Content.RichBlockKind.Numbered:
+                    var left = Unit.FromCentimeter((b.Level + 1) * indentCm);
+                    p.Format.LeftIndent = left;
+                    p.Format.FirstLineIndent = Unit.FromCentimeter(-indentCm);
+                    p.Format.TabStops.AddTabStop(left);
+                    p.Format.SpaceAfter = Unit.FromCentimeter(0.05);
+                    p.AddText(b.Marker ?? "•");
+                    p.AddTab();
+                    break;
+                case Application.Content.RichBlockKind.Paragraph when b.Level > 0:   // continues a list item
+                    p.Format.LeftIndent = Unit.FromCentimeter(b.Level * indentCm);
+                    break;
+                case Application.Content.RichBlockKind.Quote:
+                    p.Format.LeftIndent = Unit.FromCentimeter(indentCm);
+                    p.Format.Font.Italic = true;
+                    p.Format.Font.Color = new Color(0x59, 0x59, 0x59);
+                    break;
+                case Application.Content.RichBlockKind.Code:
+                    p.Format.LeftIndent = Unit.FromCentimeter(indentCm / 2);
+                    p.Format.Font.Size = 8;
+                    p.Format.Shading.Color = new Color(0xF2, 0xF2, 0xF2);
+                    break;
+            }
+
+            foreach (var r in b.Runs)
+            {
+                var lines = r.Text.Split('\n');
+                for (var i = 0; i < lines.Length; i++)
+                {
+                    if (i > 0) p.AddLineBreak();
+                    if (lines[i].Length == 0) continue;
+                    var ft = p.AddFormattedText(lines[i]);
+                    if (r.Bold) ft.Bold = true;
+                    if (r.Italic) ft.Italic = true;
+                }
+            }
+        }
+    }
+
     // MigraDoc's default cell padding (1.2 mm each side) and the report body font (see GeneratePdf).
     private const double CellPaddingPt = 2 * 1.2 / 10 / 2.54 * 72;
     private const string BodyFont = "DejaVu Sans";
@@ -395,6 +463,17 @@ public sealed partial class ReportGenerator
     /// invisible zero-width characters, so a hash copied out of the PDF isn't silently corrupted.
     /// </summary>
     private static void AddWrapped(Paragraph p, string text, double maxWidthPt, XGraphics gfx, XFont font)
+    {
+        // Embedded newlines (list-aware cell text: one bullet per line) become real line breaks.
+        var lines = text.Split('\n');
+        for (var l = 0; l < lines.Length; l++)
+        {
+            if (l > 0) p.AddLineBreak();
+            AddWrappedLine(p, lines[l], maxWidthPt, gfx, font);
+        }
+    }
+
+    private static void AddWrappedLine(Paragraph p, string text, double maxWidthPt, XGraphics gfx, XFont font)
     {
         var words = text.Split(' ');
         for (var w = 0; w < words.Length; w++)

@@ -37,7 +37,7 @@ else
                 @switch (section)
                 {
                     case ReportSection.Summary:
-                        <p class="mb-0 @Muted(Model.Summary)">@Prose(Model.Summary)</p>
+                        <RichBlocksView Blocks="Model.SummaryBlocks" />
                         break;
 
                     case ReportSection.BusinessImpact:
@@ -207,8 +207,6 @@ else
         || Model.LegalHold
         || Model.MaterialityStatus is not null;
 
-    private static string Muted(string? text) => string.IsNullOrWhiteSpace(text) ? "text-muted fst-italic" : "";
-    private static string Prose(string? text) => string.IsNullOrWhiteSpace(text) ? "(not provided)" : text!;
 
     private static string Heading(ReportSection s) => s switch
     {

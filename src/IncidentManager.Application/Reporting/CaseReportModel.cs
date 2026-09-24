@@ -1,3 +1,4 @@
+using IncidentManager.Application.Content;
 using IncidentManager.Domain.Enums;
 
 namespace IncidentManager.Application.Reporting;
@@ -5,12 +6,13 @@ namespace IncidentManager.Application.Reporting;
 public sealed record ReportClassificationItem(DateTimeOffset AtUtc, string From, string To, string Reason, string By);
 public sealed record ReportTimelineItem(DateTimeOffset OccurredAtUtc, string Type, string Description, string? Source);
 public sealed record ReportEvidenceItem(string FileName, long SizeBytes, string Sha256, DateTimeOffset UploadedAtUtc, string UploadedBy);
-public sealed record ReportNoteItem(DateTimeOffset AtUtc, string Author, string Body);
+/// <summary>An analyst note: <see cref="Body"/> is plain text; <see cref="Blocks"/> keeps its Markdown formatting for print.</summary>
+public sealed record ReportNoteItem(DateTimeOffset AtUtc, string Author, string Body, IReadOnlyList<RichBlock>? Blocks = null);
 public sealed record ReportActionItemRow(string Title, string? Owner, DateTimeOffset? DueAtUtc, string Status);
 public sealed record ReportAssignmentRow(string User, string Role);
-/// <summary>E-26: the post-incident review, as printed in the lessons-learned report.</summary>
-public sealed record ReportReview(string? WhatHappened, string? ContributingFactors, string? WhatWorkedWell,
-    string? OpportunitiesToImprove, bool NoActionsIdentified);
+/// <summary>E-26: the post-incident review, as printed in the lessons-learned report (Markdown kept as blocks).</summary>
+public sealed record ReportReview(IReadOnlyList<RichBlock> WhatHappened, IReadOnlyList<RichBlock> ContributingFactors,
+    IReadOnlyList<RichBlock> WhatWorkedWell, IReadOnlyList<RichBlock> OpportunitiesToImprove, bool NoActionsIdentified);
 /// <summary>PROD-41: one improvement action row in the lessons-learned report.</summary>
 public sealed record ReportImprovementActionRow(string Title, string? RelatedArea, string? Details, string Owner,
     DateTimeOffset? TargetDateUtc, string Status, string? OutcomeNote);
@@ -59,6 +61,8 @@ public sealed class CaseReportModel
     public string? VendorName { get; init; }
     public string? DetectionCaseId { get; init; }
     public string? Summary { get; init; }
+    /// <summary>The Summary with its Markdown formatting kept (headings, emphasis, lists) for print.</summary>
+    public IReadOnlyList<RichBlock> SummaryBlocks { get; init; } = [];
     public string? DataTypesInvolved { get; init; }
     public string? ImpactedAssets { get; init; }
 
@@ -107,13 +111,13 @@ public sealed class CaseReportModel
     public ReportReview? Review { get; init; }
     public IReadOnlyList<ReportImprovementActionRow> ImprovementActions { get; init; } = [];
 
-    /// <summary>The review's labelled paragraphs in print order, skipping blanks — shared by both renderers.</summary>
-    public IReadOnlyList<(string Label, string Text)> ReviewParagraphs => Review is null ? [] :
-        new (string Label, string? Text)[]
+    /// <summary>The review's labelled sections in print order, skipping empty ones — shared by every renderer.</summary>
+    public IReadOnlyList<(string Label, IReadOnlyList<RichBlock> Blocks)> ReviewParagraphs => Review is null ? [] :
+        new (string Label, IReadOnlyList<RichBlock> Blocks)[]
         {
             ("What happened", Review.WhatHappened), ("Contributing factors", Review.ContributingFactors),
             ("What worked well", Review.WhatWorkedWell), ("Opportunities to improve", Review.OpportunitiesToImprove)
-        }.Where(p => !string.IsNullOrWhiteSpace(p.Text)).Select(p => (p.Label, p.Text!)).ToList();
+        }.Where(p => p.Blocks.Count > 0).ToList();
 
     /// <summary>What prints when there are no improvement actions: an explicit "none identified", else "(none recorded)".</summary>
     public string NoActionsText => Review?.NoActionsIdentified == true

@@ -67,7 +67,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         {
             case ReportSection.Summary:
                 body.AppendChild(Heading("Summary"));
-                body.AppendChild(P(string.IsNullOrWhiteSpace(m.Summary) ? "(not provided)" : m.Summary));
+                AppendRich(body, m.SummaryBlocks);
                 break;
 
             case ReportSection.BusinessImpact:
@@ -143,10 +143,10 @@ public sealed partial class ReportGenerator : IReportGenerator
         body.AppendChild(Heading("Review"));
         if (m.Review is null)
             body.AppendChild(P("(no post-incident review recorded)"));
-        foreach (var (label, text) in m.ReviewParagraphs)
+        foreach (var (label, blocks) in m.ReviewParagraphs)
         {
             body.AppendChild(SubHeading(label));
-            body.AppendChild(P(text));
+            AppendRich(body, blocks);
         }
 
         body.AppendChild(Heading("Improvement Actions"));
@@ -238,7 +238,8 @@ public sealed partial class ReportGenerator : IReportGenerator
         foreach (var n in m.Notes)
         {
             body.AppendChild(P($"[{n.AtUtc:u}] {n.Author}", bold: true, size: 18));
-            body.AppendChild(P(n.Body));
+            if (n.Blocks is { Count: > 0 } blocks) AppendRich(body, blocks);
+            else body.AppendChild(P(n.Body));
         }
     }
 
@@ -248,18 +249,26 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (bold) runProps.Append(new Bold());
         if (italic) runProps.Append(new Italic());
         runProps.Append(new FontSize { Val = size.ToString(CultureInfo.InvariantCulture) });
-        var run = new Run(runProps, new Text(text ?? "") { Space = SpaceProcessingModeValues.Preserve });
-        return new Paragraph(run);
+        // Embedded newlines (list-aware cell text, multi-line values) become Word line breaks.
+        var paragraph = new Paragraph();
+        var lines = (text ?? "").Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (i > 0) paragraph.AppendChild(new Run(new Break()));
+            paragraph.AppendChild(new Run((RunProperties)runProps.CloneNode(true), new Text(lines[i]) { Space = SpaceProcessingModeValues.Preserve }));
+        }
+        return paragraph;
     }
 
     /// <summary>A section heading in the house style: bold, underlined, slate.</summary>
     private static Paragraph Heading(string text, int size = 26)
     {
+        // Schema order within rPr: b, color, sz, u.
         var runProps = new RunProperties(
             new Bold(),
-            new Underline { Val = UnderlineValues.Single },
             new Color { Val = HeadingColor },
-            new FontSize { Val = size.ToString(CultureInfo.InvariantCulture) });
+            new FontSize { Val = size.ToString(CultureInfo.InvariantCulture) },
+            new Underline { Val = UnderlineValues.Single });
         var run = new Run(runProps, new Text(text) { Space = SpaceProcessingModeValues.Preserve });
         return new Paragraph(new ParagraphProperties(new SpacingBetweenLines { Before = "240", After = "60" }), run);
     }
@@ -276,13 +285,17 @@ public sealed partial class ReportGenerator : IReportGenerator
     {
         var table = new Table();
         table.AppendChild(new TableProperties(new TableBorders(
+            // Schema order: top, left, bottom, right, insideH, insideV.
             new TopBorder { Val = BorderValues.Single, Size = 4 },
-            new BottomBorder { Val = BorderValues.Single, Size = 4 },
             new LeftBorder { Val = BorderValues.Single, Size = 4 },
+            new BottomBorder { Val = BorderValues.Single, Size = 4 },
             new RightBorder { Val = BorderValues.Single, Size = 4 },
             new InsideHorizontalBorder { Val = BorderValues.Single, Size = 4 },
             new InsideVerticalBorder { Val = BorderValues.Single, Size = 4 })));
 
+        // The schema requires <w:tblGrid> (one gridCol per column) before the rows; without it the document is
+        // invalid and stricter readers may repair or reject it.
+        table.AppendChild(new TableGrid(headers.Select(_ => new GridColumn())));
         table.AppendChild(WordRow(headers, bold: true));
 
         var any = false;
