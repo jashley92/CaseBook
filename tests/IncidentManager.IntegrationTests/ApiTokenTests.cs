@@ -185,6 +185,57 @@ public sealed class ApiTokenTests : IDisposable
     }
 
     [Fact]
+    public async Task Token_lifetimes_are_capped()
+    {
+        // S-11: personal ≤ 90 days, system ≤ 1 year.
+        await using var db = NewContext();
+        await NewService(db, Analyst()).Invoking(s => s.CreatePersonalAsync("long", ["Analyst"], _clock.UtcNow.AddDays(120)))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*90 days*");
+        await NewService(db, Admin()).Invoking(s => s.CreateSystemAsync("Forever", ["Analyst"], _clock.UtcNow.AddYears(3)))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*365 days*");
+        (await NewService(db, Admin()).CreateSystemAsync("Annual", ["Analyst"], _clock.UtcNow.AddDays(365))).Plaintext
+            .Should().StartWith("cbk_");
+    }
+
+    private sealed class MirrorDirectory : IUserDirectory
+    {
+        public Dictionary<string, string> Roles { get; } = new();
+        public Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, CancellationToken ct = default) => Task.CompletedTask;
+        public IReadOnlyList<UserSummary> All() => [];
+        public UserSummary? Resolve(string userId) =>
+            Roles.TryGetValue(userId, out var csv) ? new UserSummary(userId, userId, null, null, csv) : null;
+        public string DisplayFor(string? userId) => userId ?? "—";
+        public string? EmailFor(string userId) => null;
+        public void Invalidate() { }
+    }
+
+    [Fact]
+    public async Task A_personal_token_only_carries_roles_its_owner_still_holds()
+    {
+        // S-11: token roles are intersected with the owner's current roles (the user mirror).
+        await using var db = NewContext();
+        var mirror = new MirrorDirectory();
+        mirror.Roles["analyst1"] = "Analyst,IncidentCommander";
+        var owner = Analyst();
+        owner.RoleSet = [AppRole.Analyst, AppRole.IncidentCommander];
+        var svc = new ApiTokenService(NewFactory(owner), owner, _clock, new FakeRoleDirectory(),
+            new AuditWriter(db, _hasher, owner, _clock), users: mirror);
+        var created = await svc.CreatePersonalAsync("mine", ["Analyst", "IncidentCommander"], _clock.UtcNow.AddDays(30));
+
+        (await svc.AuthenticateAsync(created.Plaintext))!.Permissions.Should().Contain(Permission.ApproveReports);
+
+        mirror.Roles["analyst1"] = "Analyst";   // lost Incident Commander in AD
+        var auth = await svc.AuthenticateAsync(created.Plaintext);
+        auth!.Permissions.Should().Contain(Permission.EditCases).And.NotContain(Permission.ApproveReports);
+
+        mirror.Roles["analyst1"] = "";          // no CaseBook roles left
+        (await svc.AuthenticateAsync(created.Plaintext)).Should().BeNull();
+
+        mirror.Roles.Remove("analyst1");        // unknown to the directory
+        (await svc.AuthenticateAsync(created.Plaintext)).Should().BeNull();
+    }
+
+    [Fact]
     public async Task Only_an_admin_can_create_a_system_token()
     {
         await using var db = NewContext();

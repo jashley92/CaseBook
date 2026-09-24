@@ -35,9 +35,16 @@ public sealed class ApiTokenService
     private readonly IRoleDirectory _directory;
     private readonly IAuditWriter _audit;
     private readonly ISecurityEventSink? _siem;
+    private readonly IUserDirectory? _users;
+
+    /// <summary>S-11: the longest a personal token may live — it acts as a person, whose access can change.</summary>
+    public static readonly TimeSpan MaxPersonalLifetime = TimeSpan.FromDays(90);
+
+    /// <summary>S-11: the longest a system (integration) token may live before it must be re-issued.</summary>
+    public static readonly TimeSpan MaxSystemLifetime = TimeSpan.FromDays(365);
 
     public ApiTokenService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
-        IRoleDirectory directory, IAuditWriter audit, ISecurityEventSink? siem = null)
+        IRoleDirectory directory, IAuditWriter audit, ISecurityEventSink? siem = null, IUserDirectory? users = null)
     {
         _factory = factory;
         _user = user;
@@ -45,6 +52,7 @@ public sealed class ApiTokenService
         _directory = directory;
         _audit = audit;
         _siem = siem;
+        _users = users;
     }
 
     // ── Validation of a presented token (called by the auth handler) ──────────────────────────────
@@ -60,11 +68,25 @@ public sealed class ApiTokenService
         var row = await db.ApiTokens.FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
         if (row is null || !row.IsActive(_clock.UtcNow)) return null;
 
+        // S-11: a personal token acts as its owner, so it carries only the roles the owner still holds (as of their
+        // latest sign-in, per the user mirror). An owner who has lost a role loses it on their tokens too; an owner
+        // the directory no longer knows can't authenticate by token at all.
+        var roles = row.GetRoles();
+        if (row.Kind == ApiTokenKind.Personal && _users is not null)
+        {
+            var owner = _users.Resolve(row.OwnerUserId);
+            if (owner is null) return null;
+            var current = owner.RolesCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            roles = roles.Where(current.Contains).ToList();
+            if (roles.Count == 0) return null;
+        }
+
         row.LastUsedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
 
-        var perms = _directory.PermissionsForRoles(row.GetRoles());
-        if (perms.Count == 0) perms = RoleDefinitions.PermissionsForRoleNames(row.GetRoles());
+        var perms = _directory.PermissionsForRoles(roles);
+        if (perms.Count == 0) perms = RoleDefinitions.PermissionsForRoleNames(roles);
         return new ApiTokenAuth(row.OwnerUserId, row.OwnerDisplayName, perms);
     }
 
@@ -78,7 +100,7 @@ public sealed class ApiTokenService
             throw new ForbiddenException(Permission.Administer, nameof(CreateSystemAsync));
         var n = Clean(name);
         var roles = CleanRoles(roleNames);
-        ValidateExpiry(expiresAtUtc);
+        ValidateExpiry(expiresAtUtc, MaxSystemLifetime);
         if (roles.Count == 0) throw new ArgumentException("Grant the token at least one role.");
         await EnsureRolesExistAsync(roles, ct);
         await EnsureSystemNameFreeAsync(n, ct);
@@ -94,7 +116,7 @@ public sealed class ApiTokenService
             throw new ForbiddenException(Permission.ViewCases, nameof(CreatePersonalAsync));
         var n = Clean(name);
         var roles = CleanRoles(roleNames);
-        ValidateExpiry(expiresAtUtc);
+        ValidateExpiry(expiresAtUtc, MaxPersonalLifetime);
         if (roles.Count == 0) throw new ArgumentException("Select at least one of your roles for the token.");
 
         var mine = _user.RoleNames.ToHashSet(StringComparer.OrdinalIgnoreCase);   // S-14: custom roles count too
@@ -189,10 +211,13 @@ public sealed class ApiTokenService
     public static string HashToken(string token) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 
-    private void ValidateExpiry(DateTimeOffset expiresAtUtc)
+    private void ValidateExpiry(DateTimeOffset expiresAtUtc, TimeSpan maxLifetime)
     {
         if (expiresAtUtc <= _clock.UtcNow)
             throw new ArgumentException("The expiry date must be in the future.");
+        // S-11: a day's grace so picking the last allowed date in the form (midnight UTC) is never refused.
+        if (expiresAtUtc > _clock.UtcNow + maxLifetime + TimeSpan.FromDays(1))
+            throw new ArgumentException($"A token can last at most {maxLifetime.TotalDays:0} days. Re-issue it before it lapses.");
     }
 
     private static string Clean(string name)
