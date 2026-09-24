@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace IncidentManager.Web.Services;
 
 /// <summary>Whether on-screen absolute timestamps render in UTC or the viewer's local time zone.</summary>
@@ -18,6 +20,12 @@ public sealed class TimeDisplay
     /// <summary>Active display mode. Defaults to UTC until the circuit is configured from the browser.</summary>
     public TimeDisplayMode Mode { get; private set; } = TimeDisplayMode.Utc;
 
+    /// <summary>
+    /// U-48: render times on a 12-hour AM/PM clock instead of the default 24-hour one. Display-only, like the
+    /// zone: reports, exports and the audit/integrity views keep a fixed 24-hour UTC format for examiners.
+    /// </summary>
+    public bool TwelveHourClock { get; private set; }
+
     /// <summary>True once the browser preference/zone has been read for this circuit (guards re-init on refresh).</summary>
     public bool Initialized { get; private set; }
 
@@ -31,11 +39,12 @@ public sealed class TimeDisplay
     public TimeZoneInfo Zone => Mode == TimeDisplayMode.Local ? _zone : TimeZoneInfo.Utc;
 
     /// <summary>Push the browser-detected zone and stored mode into this circuit.</summary>
-    public void Configure(string? ianaZoneId, TimeDisplayMode mode)
+    public void Configure(string? ianaZoneId, TimeDisplayMode mode, bool twelveHourClock = false)
     {
         BrowserZoneId = ianaZoneId;
         _zone = Resolve(ianaZoneId);
         Mode = mode;
+        TwelveHourClock = twelveHourClock;
         Initialized = true;
         Changed?.Invoke();
     }
@@ -47,6 +56,18 @@ public sealed class TimeDisplay
         Initialized = true;
         Changed?.Invoke();
     }
+
+    /// <summary>U-48: switch between the 24-hour and 12-hour clock.</summary>
+    public void SetClock(bool twelveHour)
+    {
+        TwelveHourClock = twelveHour;
+        Changed?.Invoke();
+    }
+
+    // Time-of-day patterns for the active clock. Invariant culture so AM/PM reads the same for everyone.
+    private string Hm => TwelveHourClock ? "h:mm tt" : "HH:mm";
+    private string Hms => TwelveHourClock ? "h:mm:ss tt" : "HH:mm:ss";
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     private static TimeZoneInfo Resolve(string? id)
     {
@@ -81,7 +102,7 @@ public sealed class TimeDisplay
     public string Long(DateTimeOffset ts)
     {
         var z = ToZone(ts);
-        return $"{z:yyyy-MM-dd HH:mm:ss} {OffsetLabel(z.Offset)}";
+        return $"{z.ToString("yyyy-MM-dd " + Hms, Inv)} {OffsetLabel(z.Offset)}";
     }
 
     public string Long(DateTimeOffset? ts, string dash = "—") => ts is { } t ? Long(t) : dash;
@@ -90,14 +111,14 @@ public sealed class TimeDisplay
     public string Short(DateTimeOffset ts)
     {
         var z = ToZone(ts);
-        return $"{z:MMM d, HH:mm} {OffsetLabel(z.Offset)}";
+        return $"{z.ToString("MMM d, " + Hm, Inv)} {OffsetLabel(z.Offset)}";
     }
 
     /// <summary>Time of day only, with a zone label (e.g. "04:57 UTC") — for the dashboard "as of" line.</summary>
     public string TimeOnly(DateTimeOffset ts)
     {
         var z = ToZone(ts);
-        return $"{z:HH:mm} {OffsetLabel(z.Offset)}";
+        return $"{z.ToString(Hm, Inv)} {OffsetLabel(z.Offset)}";
     }
 
     /// <summary>Calendar date in the active zone (no time), for due dates and month labels.</summary>

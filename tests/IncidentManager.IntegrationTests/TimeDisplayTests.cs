@@ -36,6 +36,25 @@ public class TimeDisplayTests
     }
 
     [Fact]
+    public void Twelve_hour_clock_reformats_times_but_not_dates(/* U-48 */)
+    {
+        var t = new TimeDisplay();
+        t.Configure("Etc/GMT+5", TimeDisplayMode.Local, twelveHourClock: true);
+
+        t.Long(Instant).Should().Be("2026-08-16 7:33:00 PM UTC-05:00");
+        t.Short(Instant).Should().Be("Aug 16, 7:33 PM UTC-05:00");
+        t.TimeOnly(Instant).Should().Be("7:33 PM UTC-05:00");
+        t.DateOnly(Instant).Should().Be("2026-08-16");
+
+        var changed = 0;
+        t.Changed += () => changed++;
+        t.SetClock(false);
+        changed.Should().Be(1);
+        t.TimeOnly(Instant).Should().Be("19:33 UTC-05:00");
+        new TimeDisplay().TwelveHourClock.Should().BeFalse("24-hour is the default");
+    }
+
+    [Fact]
     public void Positive_offset_zone_labels_with_a_plus_sign()
     {
         var t = new TimeDisplay();

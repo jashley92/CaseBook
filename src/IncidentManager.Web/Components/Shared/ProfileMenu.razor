@@ -84,7 +84,20 @@
                             @onclick="() => SetTimeZone(TimeDisplayMode.Local)">Local</button>
                 </span>
             </div>
-            <div class="profile-seg-hint">Local is @TimeDisp.LocalLabel. Reports, exports and the audit trail always stay in UTC.</div>
+            @* U-48: 12h / 24h clock, same segmented pattern; display only. *@
+            <div class="profile-seg-row" role="group" aria-label="Clock format">
+                <span class="bi bi-alarm" aria-hidden="true"></span>
+                <span class="profile-seg-label">Clock</span>
+                <span class="seg" role="radiogroup" aria-label="Clock format">
+                    <button type="button" class="seg-opt @(!TimeDisp.TwelveHourClock ? "on" : "")"
+                            role="radio" aria-checked="@(!TimeDisp.TwelveHourClock)"
+                            @onclick="() => SetClock(false)">24h</button>
+                    <button type="button" class="seg-opt @(TimeDisp.TwelveHourClock ? "on" : "")"
+                            role="radio" aria-checked="@TimeDisp.TwelveHourClock"
+                            @onclick="() => SetClock(true)">12h</button>
+                </span>
+            </div>
+            <div class="profile-seg-hint">Local is @TimeDisp.LocalLabel. Reports, exports and the audit trail always stay in 24-hour UTC.</div>
 
             <button type="button" class="profile-item" role="menuitem" @onclick="() => _about = !_about" aria-expanded="@_about">
                 <span class="bi bi-info-circle" aria-hidden="true"></span>
@@ -160,6 +173,15 @@
         if (_dark == dark) return;
         try { await JS.InvokeVoidAsync("imTheme.apply", dark ? "dark" : "light"); _dark = dark; }
         catch { /* no-op if interop unavailable */ }
+    }
+
+    // U-48: switch the on-screen clock and remember it in the browser; Changed re-renders every stamp.
+    private async Task SetClock(bool twelveHour)
+    {
+        if (TimeDisp.TwelveHourClock == twelveHour) return;
+        TimeDisp.SetClock(twelveHour);
+        try { await JS.InvokeVoidAsync("imTime.setClock", twelveHour ? "12" : "24"); }
+        catch { /* preference just won't persist across reloads */ }
     }
 
     // U-29: set the on-screen display to a specific mode (UTC or local), persist the choice in the browser,

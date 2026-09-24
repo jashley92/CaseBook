@@ -103,8 +103,9 @@
         {
             var zone = await JS.InvokeAsync<string>("imTime.zone");
             var mode = await JS.InvokeAsync<string>("imTime.mode");
+            var clock = await JS.InvokeAsync<string>("imTime.clock");
             TimeDisp.Configure(zone, string.Equals(mode, "local", StringComparison.OrdinalIgnoreCase)
-                ? TimeDisplayMode.Local : TimeDisplayMode.Utc);
+                ? TimeDisplayMode.Local : TimeDisplayMode.Utc, clock == "12");
         }
         catch
         {

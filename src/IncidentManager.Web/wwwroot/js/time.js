@@ -9,8 +9,16 @@ window.imTime = (function () {
     function setMode(m) {
         try { localStorage.setItem(TIME_PREF, m === 'local' ? 'local' : 'utc'); } catch (e) { /* private mode */ }
     }
+    // U-48: 12h / 24h clock preference (display only; default 24h).
+    const CLOCK_PREF = 'im-time-clock';
+    function clock() {
+        try { return localStorage.getItem(CLOCK_PREF) === '12' ? '12' : '24'; } catch (e) { return '24'; }
+    }
+    function setClock(c) {
+        try { localStorage.setItem(CLOCK_PREF, c === '12' ? '12' : '24'); } catch (e) { /* private mode */ }
+    }
     function zone() {
         try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { return 'UTC'; }
     }
-    return { mode: mode, setMode: setMode, zone: zone };
+    return { mode: mode, setMode: setMode, zone: zone, clock: clock, setClock: setClock };
 })();
