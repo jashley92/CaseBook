@@ -54,7 +54,12 @@
 
     @if (EvidenceItems.Count == 0)
     {
-        <p class="text-muted">No evidence attached.</p>
+        <div class="empty-state">
+            <div class="empty-state-icon"><span class="bi bi-file-earmark-lock" aria-hidden="true"></span></div>
+            <div class="empty-state-title">No evidence attached</div>
+            <div class="empty-state-msg">Upload, paste or drop files here. Each is hashed on arrival and gets its own chain of custody,
+                so you can later show it hasn't changed and who handled it.</div>
+        </div>
     }
     else
     {
@@ -100,6 +105,11 @@
                                 <div class="small fw-semibold mb-2">
                                     <span class="bi bi-shield-check me-1" aria-hidden="true"></span>Chain of custody
                                 </div>
+                                <WhyThisMatters Class="mb-2">
+                                    Each file's SHA-256 is recorded at upload and re-checked on a schedule, and every download, preview and
+                                    hand-off is logged with who and when. That unbroken record is what lets the evidence be relied on later:
+                                    by counsel, an insurer, law enforcement or a regulator.
+                                </WhyThisMatters>
                                 @if (_custodyLoading.Contains(ev.Id))
                                 {
                                     <span class="skel skel-line" style="width:40%;display:block"></span>

@@ -10,6 +10,15 @@
 @* The persistent tamper banner is rendered app-wide for admins from MainLayout, so it already
    appears above this page — no page-level copy needed. The card below shows on-demand results. *@
 
+<WhyThisMatters Class="mb-3">
+    <p class="mb-1">Every change to a case is written to an append-only log where each entry carries a hash of the one before it,
+        so altering, inserting or deleting any past entry breaks the chain from that point on. <strong>Verify</strong> recomputes it end to end.</p>
+    <p class="mb-1">Periodic <strong>seals</strong> sign the chain head with a key held outside the database, so even a full rewrite
+        by someone with database access is detectable against the last seal.</p>
+    <p>This is what lets you show an examiner or a court that the case record is complete and unaltered, in line with
+        NYDFS Part 500's expectation of audit trails that can reconstruct what happened.</p>
+</WhyThisMatters>
+
 <div class="row g-3 mb-4">
     <div class="col-md-4">
         <div class="card">

@@ -1926,6 +1926,15 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
 }
 
 
+/* PROD-30: collapsed "why this matters" explainers. */
+.im-why { font-size: .82rem; color: var(--bs-secondary-color); }
+.im-why > summary { cursor: pointer; width: fit-content; list-style: none; color: var(--im-accent-text); }
+.im-why > summary::-webkit-details-marker { display: none; }
+.im-why > summary:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: 2px; border-radius: .2rem; }
+.im-why-body { margin-top: .35rem; padding: .5rem .7rem; border-left: 3px solid var(--im-accent-strong);
+    background: var(--bs-tertiary-bg); border-radius: 0 .3rem .3rem 0; color: var(--bs-body-color); }
+.im-why-body p:last-child, .im-why-body ul:last-child { margin-bottom: 0; }
+
 /* E-31: print-to-PDF for report pages (the program report first). Hides the app chrome and anything marked
    .no-print, prints on white whatever the theme, and keeps cards from splitting across pages. */
 @media print {

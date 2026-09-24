@@ -26,7 +26,12 @@
 
 @if (Notes.Count == 0)
 {
-    <p class="text-muted">No notes yet.</p>
+    <div class="empty-state">
+        <div class="empty-state-icon"><span class="bi bi-journal-text" aria-hidden="true"></span></div>
+        <div class="empty-state-title">No notes yet</div>
+        <div class="empty-state-msg">Notes are the investigation record: findings and reasoning, printed in the case report. Edits keep
+            every prior version, so the record shows how the understanding developed.</div>
+    </div>
 }
 else
 {

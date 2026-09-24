@@ -1,0 +1,14 @@
+@* PROD-30: a short, collapsed "why this matters" explainer on the integrity / compliance surfaces that are
+   unfamiliar even to seasoned analysts (audit chain, chain of custody, materiality, the notification clock).
+   Native <details>, so it's keyboard- and screen-reader-friendly with no JS, and closed by default so it
+   never nags someone who already knows. Not a product tour. *@
+<details class="im-why @Class">
+    <summary><span class="bi bi-lightbulb me-1" aria-hidden="true"></span>@Title</summary>
+    <div class="im-why-body">@ChildContent</div>
+</details>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Why this matters";
+    [Parameter] public string? Class { get; set; }
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+}

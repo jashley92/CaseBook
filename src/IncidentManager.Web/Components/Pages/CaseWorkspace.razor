@@ -458,6 +458,11 @@ else
                         else if (_activeModal == "materiality")
                         {
                             <p class="small text-muted mb-2">Record the materiality decision for the case file. It may be the SOC's own call or one made by Legal / Privacy or a disclosure committee — capture <strong>who</strong> decided in the decision-maker field either way. A final call requires the decision-maker, the date, and a rationale. A case can't close with this left open (Incidents &amp; Breaches).</p>
+                            <WhyThisMatters Class="mb-2">
+                                Materiality decides what disclosure follows and when: a determination can start regulatory clocks (for SEC
+                                registrants, a Form 8-K within four business days of it), and your notification-deadline settings may count from it.
+                                Recording who decided, when and why is the evidence that the call was made deliberately and on time.
+                            </WhyThisMatters>
                             <label class="form-label small">Determination</label>
                             <select class="form-select mb-2" @bind="_materialityStatus">
                                 <option value="@MaterialityStatus.UnderReview">Under review (with Legal / committee)</option>
