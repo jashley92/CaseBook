@@ -30,6 +30,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # release tags, for the released-migrations check
 
       - name: Set up .NET 8
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -52,6 +54,19 @@ jobs:
       - name: Test
         run: dotnet test --no-build -c Release --verbosity minimal
 
+      # Upgrade safety (see docs/UPGRADE.md). A migration that shipped in a release must never be edited,
+      # removed, or regenerated — databases from that release would stop upgrading. And the model must not
+      # drift from the migrations: EF refuses to Migrate() with un-migrated model changes, so the app would
+      # fail to start on upgrade.
+      - name: Released migrations are immutable
+        run: bash tools/ci/check-migrations-immutable.sh
+
+      - name: No un-migrated model changes (SQL Server + SQLite)
+        run: |
+          dotnet tool restore
+          IM_MIGRATIONS_PROVIDER=SqlServer dotnet ef migrations has-pending-model-changes --no-build --configuration Release             --project src/IncidentManager.Migrations.SqlServer --startup-project src/IncidentManager.Web --context AppDbContext
+          dotnet ef migrations has-pending-model-changes --no-build --configuration Release             --project src/IncidentManager.Infrastructure --startup-project src/IncidentManager.Web --context AppDbContext
+
       # H-05: fail the build on any known-vulnerable NuGet package (direct or transitive), so a
       # supply-chain advisory can't land silently. Deprecated packages are reported but not fatal.
       - name: Vulnerable package scan (H-05)
@@ -67,6 +82,56 @@ jobs:
       - name: Deprecated package report (informational)
         if: always()
         run: dotnet list package --deprecated 2>&1 | tee deprecated.log || true
+
+  # Real upgrade test on SQL Server 2022: install each recent release into a fresh database (migrate + seed
+  # demo cases), then start THIS build against the same database and require it to upgrade in place with
+  # every case and audit row intact. Catches lineage breaks, migrations that fail on existing data, and
+  # startup seeders that break on a populated database — before a release ships.
+  upgrade-path:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SA_PASSWORD: Upg!${{ github.run_id }}x   # throwaway container; not a secret
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: Upg!${{ github.run_id }}x
+        ports: [ '1433:1433' ]
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'Upg!${{ github.run_id }}x' -Q 'SELECT 1' || exit 1"
+          --health-interval 10s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # release tags to upgrade from
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Upgrade from recent releases
+        env:
+          CASEBOOK_TEST_SQL: Server=localhost,1433;User Id=sa;Password=${{ env.SA_PASSWORD }};TrustServerCertificate=True;Encrypt=False
+          SQLCMD: docker exec ${{ job.services.mssql.id }} /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P ${{ env.SA_PASSWORD }}
+        run: |
+          # The three newest releases reachable from this commit (every supported "upgrade from" point).
+          tags="$(git tag --list 'v[0-9]*' --merged HEAD --sort=-v:refname | head -3)"
+          if [ -z "$tags" ]; then echo "No release tags yet; nothing to upgrade from."; exit 0; fi
+          for tag in $tags; do
+            [ "$(git rev-parse "$tag^{commit}")" = "$(git rev-parse HEAD)" ] && continue
+            bash tools/upgrade-test/upgrade-path.sh "$tag"
+          done
 
   # NOTE: CodeQL static analysis runs via GitHub's managed **default setup** (Settings → Code security),
   # not a workflow here — the two can't coexist (an advanced workflow's SARIF upload is rejected while

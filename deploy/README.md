@@ -51,6 +51,11 @@ Prod uses **SQL Server**, in a separate assembly so both can coexist:
 
 ### Regenerate the SQL Server migration / DDL after a model change
 
+> **Only ever add migrations.** A migration that has shipped in a release tag must never be edited,
+> removed, regenerated, or squashed. Databases installed from that release would no longer upgrade.
+> CI enforces this (`tools/ci/check-migrations-immutable.sh`); see
+> [docs/UPGRADE.md](../docs/UPGRADE.md#how-upgrades-stay-safe-across-releases).
+
 ```powershell
 # From the repo root. The env var flips AppDbContextFactory to the SQL Server provider.
 $env:IM_MIGRATIONS_PROVIDER = 'SqlServer'

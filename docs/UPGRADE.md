@@ -60,7 +60,11 @@ CaseBook builds its schema with EF Core migrations. If the database's recorded m
 > `HTTP Error 500.30` … `There is already an object named 'AdGroupRoleMappings' in the database.`
 
 This happens when the deployed version predates a change in the migration lineage (e.g. migrations
-were regenerated between releases). The upgrade script **detects this before deploying** by comparing
+were regenerated between releases). It happened once, for real: before the repo went public (2026-09-09) the
+13 SQL Server migrations `20260815005408_InitialCreate` … `20260909191659_X06GateCommentary` were squashed
+into a single regenerated `20260909194827_InitialCreate`, so every database created before that could not
+upgrade. CI now prevents a repeat (see [How upgrades stay safe](#how-upgrades-stay-safe-across-releases)).
+The upgrade script **detects this before deploying** by comparing
 the DB's applied migrations against the release manifest, and stops with a clear message instead of
 leaving you with a dead site. You will see one of:
 
@@ -100,6 +104,32 @@ GO
 Then start the app pool and browse to the site — the app migrates into the empty database and starts
 clean. (Dropping the tables needs only `db_owner`; it avoids the sysadmin-only `DROP DATABASE` and the
 single-user lock.)
+
+---
+
+## How upgrades stay safe across releases
+
+Any release can upgrade in place to any later release (v1.0.0 → v1.4.0 directly, no stepping stones):
+EF applies whichever migrations the database hasn't seen yet. That only works while the migration
+lineage stays stable, so these checks enforce it on every push and before every release:
+
+| Guard | Where | What it catches |
+|---|---|---|
+| **Released migrations are immutable** (`tools/ci/check-migrations-immutable.sh`) | CI + Release | A migration that shipped in any `v*` tag was edited, deleted, renamed, regenerated, or squashed, which would strand every database installed from that release. |
+| **No un-migrated model changes** (`dotnet ef migrations has-pending-model-changes`, both providers) | CI | Someone changed the model without adding a migration. EF refuses to `Migrate()` in that state, so the upgraded app would fail to start. |
+| **Upgrade path on real SQL Server** (`tools/upgrade-test/upgrade-path.sh`) | CI (`upgrade-path` job) | Installs each of the 3 newest releases into a fresh SQL Server 2022 database (migrated + seeded with demo cases and an audit chain), then starts the new build against the same database. It must come up healthy with every migration applied and every case/audit row intact. |
+
+**Rule for schema changes:** only ever *add* migrations. Never edit, delete, or regenerate one that has
+shipped in a tag. To undo or reshape something an old migration created, add a new migration that alters it.
+
+To run the upgrade test locally (Git Bash + Docker Desktop):
+
+```bash
+docker run -d --name casebook-sql -e ACCEPT_EULA=Y -e 'MSSQL_SA_PASSWORD=Local!Test2026' -p 14333:1433 mcr.microsoft.com/mssql/server:2022-latest
+export CASEBOOK_TEST_SQL='Server=localhost,14333;User Id=sa;Password=Local!Test2026;TrustServerCertificate=True;Encrypt=False'
+export SQLCMD='docker exec casebook-sql /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P Local!Test2026'
+tools/upgrade-test/upgrade-path.sh v1.0.0          # v1.0.0 -> your working tree
+```
 
 ---
 

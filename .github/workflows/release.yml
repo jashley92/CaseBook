@@ -20,6 +20,13 @@ jobs:
       contents: write   # create the GitHub Release and upload assets
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # earlier release tags, for the released-migrations check
+
+      # Refuse to ship a release that edits/removes a migration an earlier release shipped — databases
+      # installed from that release could not upgrade to this one (docs/UPGRADE.md).
+      - name: Released migrations are immutable
+        run: bash tools/ci/check-migrations-immutable.sh
 
       - name: Set up .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0

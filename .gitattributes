@@ -5,3 +5,6 @@
 *.cmd  text eol=crlf
 *.bat  text eol=crlf
 *.sql  text eol=crlf
+
+# Shell scripts (CI + tools/) run under bash, which chokes on CR: keep LF everywhere.
+*.sh   text eol=lf
