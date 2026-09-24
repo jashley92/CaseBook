@@ -697,6 +697,13 @@ app.MapPost("/api/import/cases", async (
     IncidentManager.Application.Import.CaseImportService import,
     CancellationToken ct) =>
 {
+    // S-20: an import document is text; cap it well under the server default (~30 MB) so a producer bug or a
+    // hostile token holder can't push huge bodies through the parser. Oversize → 413 before the body is read.
+    const long maxImportBytes = 5 * 1024 * 1024;
+    if (request.ContentLength > maxImportBytes)
+        return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+    if (request.HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+        limit.MaxRequestBodySize = maxImportBytes;
     using var reader = new StreamReader(request.Body);
     var json = await reader.ReadToEndAsync(ct);
 

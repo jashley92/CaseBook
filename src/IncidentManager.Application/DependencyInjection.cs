@@ -43,6 +43,7 @@ public static class DependencyInjection
         services.AddScoped<CaseShortcutService>();         // PROD-20: recent + pinned cases for the palette / My Work
         services.AddScoped<Activity.ActivityFeedService>();
         services.AddScoped<IntegrityService>();
+        services.AddSingleton<Integrity.OnDemandVerificationGate>();   // S-20: one shared "Verify now" gate per process
         // F-17: re-hashes evidence at rest and alarms on drift. Scoped (creates a DbContext per pass);
         // driven by the EvidenceIntegrityHostedService and reusable by a future "verify now" action.
         services.AddScoped<Integrity.EvidenceIntegrityVerifier>();

@@ -19,11 +19,13 @@ public sealed class IntegrityService
     private readonly IClock _clock;
     private readonly IIntegrityMonitor _monitor;
     private readonly IIntegrityAlertNotifier _alerts;
+    private readonly OnDemandVerificationGate _gate;
 
     public IntegrityService(IAppDbContextFactory factory, IHashChainService hasher, ISealSigner signer,
         ISealStore sealStore, ICurrentUser user, IClock clock, IIntegrityMonitor monitor,
-        IIntegrityAlertNotifier alerts)
+        IIntegrityAlertNotifier alerts, OnDemandVerificationGate? gate = null)
     {
+        _gate = gate ?? new OnDemandVerificationGate();
         _factory = factory;
         _hasher = hasher;
         _signer = signer;
@@ -47,6 +49,13 @@ public sealed class IntegrityService
     /// and by the manual "Verify now" action, so any detection path raises the same alert exactly once
     /// per broken episode. The notifier never throws, so a notification failure can't hide the break.
     /// </summary>
+    /// <summary>
+    /// S-20: the page's "Verify now" — a full <see cref="VerifyAndTrackAsync"/>, but single-flight and reusing a result
+    /// under a minute old (<see cref="OnDemandVerificationGate"/>), since any case viewer can press it.
+    /// </summary>
+    public Task<OnDemandVerification> VerifyOnDemandAsync(CancellationToken ct = default) =>
+        _gate.RunAsync(VerifyAndTrackAsync, _clock.UtcNow, ct);
+
     public async Task<ChainVerificationResult> VerifyAndTrackAsync(CancellationToken ct = default)
     {
         var result = await VerifyAsync(ct);
