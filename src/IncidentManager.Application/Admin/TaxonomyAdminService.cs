@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -86,6 +87,7 @@ public sealed class TaxonomyAdminService
     /// </summary>
     public async Task SetLabelAsync(string kind, string member, string? label, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<TaxonomyAdminService>(_user);
         var k = TaxonomyCatalog.Kinds.FirstOrDefault(x => x.Id == kind)
             ?? throw new InvalidOperationException($"'{kind}' is not a known taxonomy.");
         var def = k.Members.FirstOrDefault(m => m.Value == member)
@@ -123,6 +125,7 @@ public sealed class TaxonomyAdminService
     /// </summary>
     public async Task SetVisibilityOrderAsync(string kind, IReadOnlyList<string> orderedMembers, IReadOnlyCollection<string> hiddenMembers, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<TaxonomyAdminService>(_user);
         var k = TaxonomyCatalog.Kinds.FirstOrDefault(x => x.Id == kind)
             ?? throw new InvalidOperationException($"'{kind}' is not a known taxonomy.");
         if (!k.AllowVisibilityOrder)
@@ -194,6 +197,9 @@ public sealed class TaxonomyAdminService
         });
 
     /// <summary>Removes a member's override so it reverts to the built-in default. Audited. No-op if unset.</summary>
-    public Task ResetAsync(string kind, string member, CancellationToken ct = default) =>
-        SetLabelAsync(kind, member, null, ct);
+    public Task ResetAsync(string kind, string member, CancellationToken ct = default)
+    {
+        AdminActionPermissions.Require<TaxonomyAdminService>(_user);
+        return SetLabelAsync(kind, member, null, ct);
+    }
 }

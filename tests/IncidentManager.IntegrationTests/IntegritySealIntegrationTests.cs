@@ -1,3 +1,4 @@
+using IncidentManager.Domain.Enums;
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Integrity;
@@ -21,7 +22,7 @@ public sealed class IntegritySealIntegrationTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly HashChainService _hasher = new();
     private readonly FixedClock _clock = new(new DateTimeOffset(2026, 8, 8, 0, 0, 0, TimeSpan.Zero));
-    private readonly TestCurrentUser _user = new();
+    private readonly TestCurrentUser _user = new() { RoleSet = [AppRole.SysAdmin] }; // admin/config writes assert Administer (F-23)
     private readonly string _workDir = Path.Combine(Path.GetTempPath(), "im-seal-tests", Guid.NewGuid().ToString("N"));
     private readonly RsaSealSigner _signer;
     private readonly FileSealStore _store;

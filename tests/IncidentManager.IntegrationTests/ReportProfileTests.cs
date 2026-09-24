@@ -30,7 +30,7 @@ public sealed class ReportProfileTests : IDisposable
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
         _reportDir = Path.Combine(Path.GetTempPath(), "im-report-profile-tests", Guid.NewGuid().ToString("N"));
-        _user.RoleSet = [AppRole.IncidentCommander];
+        _user.RoleSet = [AppRole.IncidentCommander, AppRole.SysAdmin]; // profile admin writes assert Administer (F-23)
         using (NewContext()) { } // build the schema on the shared in-memory connection
     }
 

@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Application.StageGates;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -59,6 +60,7 @@ public sealed class StageGateService
 
     public async Task<Guid> CreateAsync(StageGateInput input, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<StageGateService>(_user);
         using var db = _factory.CreateDbContext();
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A gate name is required.");
@@ -73,6 +75,7 @@ public sealed class StageGateService
 
     public async Task UpdateAsync(Guid id, StageGateInput input, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<StageGateService>(_user);
         using var db = _factory.CreateDbContext();
         var gate = await db.StageGates.Include(g => g.Requirements).FirstOrDefaultAsync(g => g.Id == id, ct)
                    ?? throw new InvalidOperationException("Gate not found.");
@@ -96,6 +99,7 @@ public sealed class StageGateService
 
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<StageGateService>(_user);
         using var db = _factory.CreateDbContext();
         var gate = await db.StageGates.Include(g => g.Requirements).FirstOrDefaultAsync(g => g.Id == id, ct);
         if (gate is null) return;

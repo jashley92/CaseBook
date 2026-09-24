@@ -20,7 +20,7 @@ public sealed class DataElementServiceTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly HashChainService _hasher = new();
     private readonly FixedClock _clock = new(new DateTimeOffset(2026, 9, 8, 12, 0, 0, TimeSpan.Zero));
-    private readonly TestCurrentUser _user = new();
+    private readonly TestCurrentUser _user = new() { RoleSet = [AppRole.SysAdmin] }; // admin/config writes assert Administer (F-23)
 
     public DataElementServiceTests()
     {
@@ -160,6 +160,19 @@ public sealed class DataElementServiceTests : IDisposable
         var act = () => svc.SaveAsync(rows);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*unique*");
+    }
+
+    [Fact]
+    public async Task A_non_admin_cannot_change_the_reference_set(/* F-23 */)
+    {
+        var svc = NewService();
+        var rows = RowsFrom(await svc.ListAllAsync());   // reads stay open: case pages list active elements
+        _user.RoleSet = [AppRole.IncidentCommander];
+
+        var act = () => svc.SaveAsync(rows);
+
+        (await act.Should().ThrowAsync<IncidentManager.Application.Security.ForbiddenException>())
+            .Which.Required.Should().Be(Permission.Administer);
     }
 
     [Fact]

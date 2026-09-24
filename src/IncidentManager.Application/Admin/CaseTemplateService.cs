@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -67,6 +68,7 @@ public sealed class CaseTemplateService
 
     public async Task<Guid> CreateAsync(TemplateInput input, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<CaseTemplateService>(_user);
         using var db = _factory.CreateDbContext();
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A template name is required.");
@@ -82,6 +84,7 @@ public sealed class CaseTemplateService
 
     public async Task UpdateAsync(Guid id, TemplateInput input, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<CaseTemplateService>(_user);
         using var db = _factory.CreateDbContext();
         var template = await db.CaseTemplates.Include(t => t.Steps).FirstOrDefaultAsync(t => t.Id == id, ct)
                        ?? throw new InvalidOperationException("Template not found.");
@@ -105,6 +108,7 @@ public sealed class CaseTemplateService
 
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<CaseTemplateService>(_user);
         using var db = _factory.CreateDbContext();
         var template = await db.CaseTemplates.Include(t => t.Steps).FirstOrDefaultAsync(t => t.Id == id, ct);
         if (template is null) return;

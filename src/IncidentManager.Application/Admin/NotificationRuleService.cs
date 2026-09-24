@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Application.Compliance;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -65,6 +66,7 @@ public sealed class NotificationRuleService
     /// is uppercased and must be unique. Audited.</summary>
     public async Task SaveAsync(Guid? id, string code, string label, int windowHours, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<NotificationRuleService>(_user);
         code = (code ?? "").Trim().ToUpperInvariant();
         label = (label ?? "").Trim();
         if (string.IsNullOrWhiteSpace(code)) throw new ArgumentException("A jurisdiction code is required.");
@@ -104,6 +106,7 @@ public sealed class NotificationRuleService
     /// default window then covers its jurisdiction. Audited.</summary>
     public async Task SetArchivedAsync(Guid id, bool archived, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<NotificationRuleService>(_user);
         using var db = _factory.CreateDbContext();
         var rule = await db.NotificationRules.FirstOrDefaultAsync(r => r.Id == id, ct)
             ?? throw new InvalidOperationException("Notification rule not found.");
@@ -117,6 +120,7 @@ public sealed class NotificationRuleService
     /// <summary>Permanently deletes a non-built-in rule; built-in ones must be archived. Audited.</summary>
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<NotificationRuleService>(_user);
         using var db = _factory.CreateDbContext();
         var rule = await db.NotificationRules.FirstOrDefaultAsync(r => r.Id == id, ct);
         if (rule is null) return;

@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -54,6 +55,7 @@ public sealed class ReportProfileService
 
     public async Task<Guid> CreateAsync(ReportProfileInput input, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<ReportProfileService>(_user);
         using var db = _factory.CreateDbContext();
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A profile name is required.");
@@ -69,6 +71,7 @@ public sealed class ReportProfileService
 
     public async Task UpdateAsync(Guid id, ReportProfileInput input, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<ReportProfileService>(_user);
         using var db = _factory.CreateDbContext();
         var profile = await db.ReportProfiles.FirstOrDefaultAsync(p => p.Id == id, ct)
                       ?? throw new InvalidOperationException("Report profile not found.");
@@ -92,6 +95,7 @@ public sealed class ReportProfileService
     /// </summary>
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<ReportProfileService>(_user);
         using var db = _factory.CreateDbContext();
         var profile = await db.ReportProfiles.FirstOrDefaultAsync(p => p.Id == id, ct);
         if (profile is null) return;

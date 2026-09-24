@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -74,6 +75,7 @@ public sealed class EmailTemplateAdminService
     /// <summary>Saves a template's subject + body. A value equal to the default is stored as no override. Audited.</summary>
     public async Task SaveAsync(string id, string subject, string body, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<EmailTemplateAdminService>(_user);
         var def = EmailTemplateCatalog.ById(id) ?? throw new InvalidOperationException($"'{id}' is not a known email template.");
         subject = (subject ?? "").Trim();
         body = (body ?? "").Trim();
@@ -91,6 +93,7 @@ public sealed class EmailTemplateAdminService
     /// <summary>Removes both overrides so the template reverts to its built-in default. Audited; no-op if unset.</summary>
     public async Task ResetAsync(string id, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<EmailTemplateAdminService>(_user);
         var def = EmailTemplateCatalog.ById(id) ?? throw new InvalidOperationException($"'{id}' is not a known email template.");
         using var db = _factory.CreateDbContext();
         var rows = await db.AppSettings

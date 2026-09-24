@@ -44,6 +44,7 @@ public sealed class RoleService
 
     public async Task CreateRoleAsync(string name, string? description, IEnumerable<Permission> permissions, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<RoleService>(_user);
         using var db = _factory.CreateDbContext();
         name = (name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A role name is required.");
@@ -61,6 +62,7 @@ public sealed class RoleService
 
     public async Task UpdateRoleAsync(Guid id, string? description, IEnumerable<Permission> permissions, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<RoleService>(_user);
         using var db = _factory.CreateDbContext();
         var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == id, ct)
                    ?? throw new InvalidOperationException("Role not found.");
@@ -75,6 +77,7 @@ public sealed class RoleService
 
     public async Task DeleteRoleAsync(Guid id, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<RoleService>(_user);
         using var db = _factory.CreateDbContext();
         var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == id, ct)
                    ?? throw new InvalidOperationException("Role not found.");
@@ -94,6 +97,7 @@ public sealed class RoleService
 
     public async Task AddMappingAsync(string adGroup, string roleName, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<RoleService>(_user);
         using var db = _factory.CreateDbContext();
         adGroup = (adGroup ?? "").Trim();
         roleName = (roleName ?? "").Trim();
@@ -117,6 +121,7 @@ public sealed class RoleService
 
     public async Task RemoveMappingAsync(Guid id, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<RoleService>(_user);
         using var db = _factory.CreateDbContext();
         var mapping = await db.RoleMappings.FirstOrDefaultAsync(m => m.Id == id, ct);
         if (mapping is null) return;

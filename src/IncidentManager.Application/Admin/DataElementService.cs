@@ -1,5 +1,6 @@
 using System.Text;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -72,6 +73,7 @@ public sealed class DataElementService
     /// </summary>
     public async Task SaveAsync(IReadOnlyList<DataElementRow> rows, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<DataElementService>(_user);
         var labels = new List<string>(rows.Count);
         foreach (var r in rows)
         {
@@ -134,6 +136,7 @@ public sealed class DataElementService
     /// Archiving drops it from the impact picker but keeps it on any case that already recorded it. Audited.</summary>
     public async Task SetArchivedAsync(Guid id, bool archived, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<DataElementService>(_user);
         using var db = _factory.CreateDbContext();
         var el = await db.DataElements.FirstOrDefaultAsync(e => e.Id == id, ct)
             ?? throw new InvalidOperationException("Data element not found.");
@@ -151,6 +154,7 @@ public sealed class DataElementService
     /// </summary>
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<DataElementService>(_user);
         using var db = _factory.CreateDbContext();
         var el = await db.DataElements.FirstOrDefaultAsync(e => e.Id == id, ct);
         if (el is null) return;

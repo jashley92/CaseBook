@@ -27,7 +27,7 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly HashChainService _hasher = new();
     private readonly FixedClock _clock = new(new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero));
-    private readonly TestCurrentUser _user = new();
+    private readonly TestCurrentUser _user = new() { RoleSet = [AppRole.SysAdmin] }; // admin/config writes assert Administer (F-23)
     private readonly StubSettings _settings = new();
 
     public NotificationDeadlineScannerTests()

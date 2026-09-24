@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -102,7 +103,9 @@ public sealed class IntegrityService
     {
         if (await LatestSealAtUtc(ct) is { } last && _clock.UtcNow - last < minInterval)
             return null;
-        return await SealAsync(ct);
+        // The background job's system path: the scheduled cadence isn't an admin action, so it bypasses the
+        // F-23 assertion that guards the on-demand SealAsync.
+        return await SealCoreAsync(ct);
     }
 
     public async Task<int> AuditCountAsync(CancellationToken ct = default)
@@ -166,7 +169,13 @@ public sealed class IntegrityService
     /// signed with an asymmetric key (<see cref="ISealSigner"/>) so its authenticity can be verified
     /// independently of the database later.
     /// </summary>
-    public async Task<IntegritySeal?> SealAsync(CancellationToken ct = default)
+    public Task<IntegritySeal?> SealAsync(CancellationToken ct = default)
+    {
+        AdminActionPermissions.Require<IntegrityService>(_user);
+        return SealCoreAsync(ct);
+    }
+
+    private async Task<IntegritySeal?> SealCoreAsync(CancellationToken ct)
     {
         using var db = _factory.CreateDbContext();
         var head = await db.AuditLog.AsNoTracking().OrderByDescending(a => a.Sequence).FirstOrDefaultAsync(ct);
