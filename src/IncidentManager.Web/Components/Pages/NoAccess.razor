@@ -9,4 +9,9 @@
 
 <PageTitle>No access — CaseBook</PageTitle>
 
-<AccessDenied />
+<AccessDenied Path="@From" />
+
+@code {
+    // S-22: the refused path (set by the 403 redirect), used only to name the permission that page needs.
+    [SupplyParameterFromQuery(Name = "from")] private string? From { get; set; }
+}

@@ -346,7 +346,8 @@ app.UseStatusCodePages(context =>
             http.User?.FindFirst(System.Security.Claims.ClaimTypes.Upn)?.Value,
             http.Request.Path.Value ?? ""));
 
-        http.Response.Redirect("/access-denied");
+        // S-22: pass the refused path so the page can say which permission it needs (display only, never a link).
+        http.Response.Redirect("/access-denied?from=" + Uri.EscapeDataString(http.Request.Path.Value ?? ""));
     }
     return Task.CompletedTask;
 });

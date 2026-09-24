@@ -1,0 +1,81 @@
+@* S-24: "what my role can do" — the signed-in user's CaseBook roles and, in plain words, what each permission they
+   hold lets them do. Shared by the access-denied page and Account → My access, so both explain access the same way. *@
+@using IncidentManager.Domain.Enums
+@inject ICurrentUser CurrentUser
+
+<div class="access-summary">
+    <div class="access-denied-grant-row">
+        <span class="access-denied-grant-label">Your role@(CurrentUser.RoleNames.Count == 1 ? "" : "s")</span>
+        <span class="access-denied-grant-chips">
+            @if (CurrentUser.RoleNames.Count == 0)
+            {
+                <span class="text-muted small">none yet</span>
+            }
+            @foreach (var r in Ui.OrderRoles(CurrentUser.RoleNames))
+            {
+                <span class="im-badge im-b-info">@Ui.RoleLabel(r)</span>
+            }
+        </span>
+    </div>
+    @if (Detailed)
+    {
+        <ul class="access-summary-list small mb-0">
+            @foreach (var p in Enum.GetValues<Permission>())
+            {
+                var held = CurrentUser.Has(p);
+                <li class="@(held ? "" : "text-muted")">
+                    <span class="bi @(held ? "bi-check-circle-fill text-success" : "bi-dash-circle")" aria-hidden="true"></span>
+                    <strong>@Label(p)</strong> — @Meaning(p)
+                    <span class="visually-hidden">@(held ? "(you have this)" : "(you don't have this)")</span>
+                </li>
+            }
+        </ul>
+    }
+    else
+    {
+        <div class="access-denied-grant-row">
+            <span class="access-denied-grant-label">Which grant</span>
+            <span class="access-denied-grant-chips">
+                @if (CurrentUser.Permissions.Count == 0)
+                {
+                    <span class="text-muted small">no permissions</span>
+                }
+                @foreach (var p in CurrentUser.Permissions.OrderBy(p => (int)p))
+                {
+                    <span class="im-badge im-b-neutral" title="@Meaning(p)">@Label(p)</span>
+                }
+            </span>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>List every permission with what it means and whether the user holds it (vs. just chips of held ones).</summary>
+    [Parameter] public bool Detailed { get; set; }
+
+    public static string Label(Permission p) => p switch
+    {
+        Permission.ViewCases => "View cases",
+        Permission.ViewAllCases => "View all cases",
+        Permission.EditCases => "Edit cases",
+        Permission.ChangeClassification => "Change classification",
+        Permission.ApproveReports => "Approve reports",
+        Permission.ViewRestricted => "View restricted",
+        Permission.ManageLegal => "Manage Legal / Privacy",
+        Permission.Administer => "Administer",
+        _ => p.ToString()
+    };
+
+    public static string Meaning(Permission p) => p switch
+    {
+        Permission.ViewCases => "open and search cases, and post in their Discussion",
+        Permission.ViewAllCases => "see every case, restricted ones included, plus team workload",
+        Permission.EditCases => "create cases and change their record: timeline, notes, IOCs, evidence, tasks",
+        Permission.ChangeClassification => "promote or reclassify a case",
+        Permission.ApproveReports => "approve generated case reports",
+        Permission.ViewRestricted => "open restricted (need-to-know) cases you aren't assigned to",
+        Permission.ManageLegal => "record Legal referrals and place or release legal holds",
+        Permission.Administer => "administration: settings, roles and AD mappings, integrations, the access log",
+        _ => ""
+    };
+}

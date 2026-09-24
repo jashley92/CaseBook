@@ -31,50 +31,34 @@
                 </div>
                 <div class="empty-state-msg text-muted">
                     Access is granted through your Active Directory group membership. Ask a CaseBook
-                    administrator to add you to the appropriate security group for your team, then sign out
-                    and back in for it to take effect.
+                    administrator to add you to the security group for your team. A new AD group takes effect
+                    after you next sign in to Windows.
                 </div>
             }
             else
             {
                 <div class="empty-state-title">You don't have access to that</div>
                 <div class="empty-state-msg">
-                    You're signed in as <strong>@CurrentUser.DisplayName</strong>@_identityHint. Your account
-                    has a role in CaseBook, but that page or action needs a permission your current
-                    role@(CurrentUser.RoleNames.Count == 1 ? "" : "s") don't grant.
+                    You're signed in as <strong>@CurrentUser.DisplayName</strong>@_identityHint.
+                    @if (_required is { } need)
+                    {
+                        <span>That page needs the <strong>@AccessSummary.Label(need)</strong> permission
+                            (@AccessSummary.Meaning(need)), which your role@(CurrentUser.RoleNames.Count == 1 ? " doesn't" : "s don't") grant.</span>
+                    }
+                    else
+                    {
+                        <span>That page or action needs a permission your role@(CurrentUser.RoleNames.Count == 1 ? " doesn't" : "s don't") grant.</span>
+                    }
                 </div>
 
                 <div class="access-denied-grant">
-                    <div class="access-denied-grant-row">
-                        <span class="access-denied-grant-label">Your role@(CurrentUser.RoleNames.Count == 1 ? "" : "s")</span>
-                        <span class="access-denied-grant-chips">
-                            @foreach (var r in Ui.OrderRoles(CurrentUser.RoleNames))
-                            {
-                                <span class="im-badge im-b-info">@Ui.RoleLabel(r)</span>
-                            }
-                        </span>
-                    </div>
-                    <div class="access-denied-grant-row">
-                        <span class="access-denied-grant-label">Which grant</span>
-                        <span class="access-denied-grant-chips">
-                            @if (CurrentUser.Permissions.Count == 0)
-                            {
-                                <span class="text-muted small">no permissions</span>
-                            }
-                            else
-                            {
-                                @foreach (var p in CurrentUser.Permissions.OrderBy(p => (int)p))
-                                {
-                                    <span class="im-badge im-b-neutral">@PermissionLabel(p)</span>
-                                }
-                            }
-                        </span>
-                    </div>
+                    <AccessSummary />
                 </div>
 
                 <div class="empty-state-msg text-muted">
-                    If you need this, ask a CaseBook administrator to grant your team the required role,
-                    then sign out and back in for it to take effect.
+                    If you need it, ask a CaseBook administrator. A change to what your role grants reaches you within a
+                    few minutes; a new AD group takes effect after you next sign in to Windows.
+                    <a href="account/access">See everything your role can do</a>.
                 </div>
             }
         </div>
@@ -85,6 +69,13 @@
     // A muted parenthetical to help an admin identify the exact account — the UPN when Windows auth
     // supplies one, otherwise the stable id. Suppressed when it would just repeat the display name.
     private MarkupString _identityHint;
+
+    /// <summary>S-22: the path that was refused, so the page can name the permission it needs.</summary>
+    [Parameter] public string? Path { get; set; }
+
+    private Permission? _required;
+
+    protected override void OnParametersSet() => _required = IncidentManager.Web.Security.PagePolicies.RequiredFor(Path);
 
     protected override void OnInitialized()
     {
@@ -100,16 +91,4 @@
             : (MarkupString)$" <span class=\"text-muted\">({System.Net.WebUtility.HtmlEncode(hint)})</span>";
     }
 
-    private static string PermissionLabel(Permission p) => p switch
-    {
-        Permission.ViewCases => "View cases",
-        Permission.ViewAllCases => "View all cases",
-        Permission.EditCases => "Edit cases",
-        Permission.ChangeClassification => "Change classification",
-        Permission.ApproveReports => "Approve reports",
-        Permission.ViewRestricted => "View restricted",
-        Permission.ManageLegal => "Manage Legal / Privacy",
-        Permission.Administer => "Administer",
-        _ => p.ToString()
-    };
 }
