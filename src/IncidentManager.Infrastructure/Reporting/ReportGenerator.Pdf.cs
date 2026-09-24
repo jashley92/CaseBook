@@ -128,7 +128,8 @@ public sealed partial class ReportGenerator
 
             case ReportSection.SystemsReviewed:
                 Heading(section, "Systems Reviewed");
-                Caption(section, "Entities and indicators examined during the investigation.");
+                Caption(section, "Entities and indicators examined during the investigation."
+                    + (m.IndicatorsDefanged ? " " + CaseReportModel.DefangNote : ""));
                 if (!string.IsNullOrWhiteSpace(m.ImpactedAssets))
                     section.AddParagraph($"Impacted assets: {m.ImpactedAssets}");
                 PdfTable(section, ["Type", "Value", "Label", "Disposition", "Source"],

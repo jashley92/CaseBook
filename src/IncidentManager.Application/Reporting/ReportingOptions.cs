@@ -40,4 +40,10 @@ public sealed class ReportingOptions
     /// (all sections, enum order) applies when blank and new sections appear enabled after an upgrade.
     /// </summary>
     public string? SectionLayout { get; set; }
+
+    /// <summary>
+    /// PROD-44: defang indicators (URLs, domains, IPs, email addresses) in the case and lessons-learned reports so a
+    /// forwarded report can't become clickable malicious links. On by default. Machine exports are never defanged.
+    /// </summary>
+    public bool DefangIndicators { get; set; } = true;
 }

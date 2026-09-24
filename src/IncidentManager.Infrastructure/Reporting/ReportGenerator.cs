@@ -101,7 +101,8 @@ public sealed partial class ReportGenerator : IReportGenerator
 
             case ReportSection.SystemsReviewed:
                 body.AppendChild(Heading("Systems Reviewed"));
-                body.AppendChild(P("Entities and indicators examined during the investigation.", italic: true, size: 18));
+                body.AppendChild(P("Entities and indicators examined during the investigation."
+                    + (m.IndicatorsDefanged ? " " + CaseReportModel.DefangNote : ""), italic: true, size: 18));
                 if (!string.IsNullOrWhiteSpace(m.ImpactedAssets))
                     body.AppendChild(P($"Impacted assets: {m.ImpactedAssets}"));
                 body.AppendChild(WordTable(

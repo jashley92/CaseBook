@@ -116,7 +116,7 @@ else
                         break;
 
                     case ReportSection.SystemsReviewed:
-                        <p class="small fst-italic text-muted mb-1">Entities and indicators examined during the investigation.</p>
+                        <p class="small fst-italic text-muted mb-1">Entities and indicators examined during the investigation.@(Model.IndicatorsDefanged ? " " + CaseReportModel.DefangNote : "")</p>
                         @if (!string.IsNullOrWhiteSpace(Model.ImpactedAssets))
                         {
                             <p class="small mb-1">Impacted assets: @Model.ImpactedAssets</p>

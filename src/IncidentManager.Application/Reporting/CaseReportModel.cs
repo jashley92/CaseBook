@@ -49,6 +49,13 @@ public sealed class CaseReportModel
     /// </summary>
     public string? Legend { get; init; }
 
+    /// <summary>PROD-44: indicators in this report are defanged; the renderers print a one-line explanation.</summary>
+    public bool IndicatorsDefanged { get; init; }
+
+    /// <summary>The explanation printed wherever indicators appear, when <see cref="IndicatorsDefanged"/>.</summary>
+    public const string DefangNote =
+        "Indicators are defanged (hxxp://, [.], [at]) so they can't be clicked. Restore them before using them in security tools.";
+
     /// <summary>Enabled body sections in print order (from the administered layout). Empty = default all.</summary>
     public IReadOnlyList<ReportSection> Sections { get; init; } = Enum.GetValues<ReportSection>();
 

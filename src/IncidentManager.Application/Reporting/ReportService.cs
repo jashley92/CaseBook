@@ -346,6 +346,8 @@ public sealed class ReportService
             await db.ImprovementActions.AsNoTracking().Where(x => x.CaseId == c.Id).ToListAsync(ct)).ToList();
         var logo = await _branding.GetLogoAsync(ct);
         var opts = _reporting.CurrentValue;
+        var d = ReportDefanger.For(
+            await db.CaseEntities.AsNoTracking().Where(e => e.CaseId == c.Id).ToListAsync(ct), opts.DefangIndicators);
 
         var canonical = string.Join('\n',
             new[] { review?.BuildCanonicalContent() ?? "" }.Concat(actions.Select(a => a.BuildCanonicalContent())));
@@ -353,6 +355,7 @@ public sealed class ReportService
         return new CaseReportModel
         {
             Kind = ReportKind.LessonsLearned,
+            IndicatorsDefanged = d.Enabled,
             Legend = string.IsNullOrWhiteSpace(opts.LessonsLegend) ? null : opts.LessonsLegend.Trim(),
             OrganizationName = string.IsNullOrWhiteSpace(opts.OrganizationName) ? null : opts.OrganizationName.Trim(),
             TeamName = string.IsNullOrWhiteSpace(opts.TeamName) ? null : opts.TeamName.Trim(),
@@ -368,12 +371,12 @@ public sealed class ReportService
             ClosedAtUtc = c.ClosedAtUtc,
             // The long fields are Markdown (edited like Notes/Summary): the review keeps its formatting as blocks;
             // action details/outcome sit in table cells, so they print as list-aware plain text.
-            Review = review is null ? null : new ReportReview(Content.RichText.Parse(review.WhatHappened),
-                Content.RichText.Parse(review.ContributingFactors), Content.RichText.Parse(review.WhatWorkedWell),
-                Content.RichText.Parse(review.OpportunitiesToImprove), review.NoActionsIdentified),
-            ImprovementActions = actions.Select(a => new ReportImprovementActionRow(a.Title, a.RelatedArea, Plain(a.Details),
+            Review = review is null ? null : new ReportReview(d.Blocks(Content.RichText.Parse(review.WhatHappened)),
+                d.Blocks(Content.RichText.Parse(review.ContributingFactors)), d.Blocks(Content.RichText.Parse(review.WhatWorkedWell)),
+                d.Blocks(Content.RichText.Parse(review.OpportunitiesToImprove)), review.NoActionsIdentified),
+            ImprovementActions = actions.Select(a => new ReportImprovementActionRow(d.Text(a.Title), a.RelatedArea, d.NullableText(Plain(a.Details)),
                 a.Owner is null ? "Unassigned" : _users.DisplayFor(a.Owner), a.TargetDateUtc,
-                Lessons.LessonsService.StatusLabel(a.Status), Plain(a.OutcomeNote))).ToList(),
+                Lessons.LessonsService.StatusLabel(a.Status), d.NullableText(Plain(a.OutcomeNote)))).ToList(),
             GeneratedBy = _users.DisplayFor(_user.UserId),
             GeneratedAtUtc = now,
             ContentHash = _hasher.Hash(canonical)
@@ -388,8 +391,10 @@ public sealed class ReportService
     {
         var contentHash = _hasher.Hash(c.BuildCanonicalContent());
         var opts = _reporting.CurrentValue;
+        var d = ReportDefanger.For(c.Entities, opts.DefangIndicators);   // PROD-44
         return new CaseReportModel
         {
+            IndicatorsDefanged = d.Enabled,
             OrganizationName = string.IsNullOrWhiteSpace(opts.OrganizationName) ? null : opts.OrganizationName.Trim(),
             TeamName = string.IsNullOrWhiteSpace(opts.TeamName) ? null : opts.TeamName.Trim(),
             LogoBytes = logo?.Bytes,
@@ -403,10 +408,10 @@ public sealed class ReportService
             Origin = c.Origin == CaseOrigin.ThirdParty ? "Third-party / vendor" : "Internal detection",
             VendorName = c.ThirdParty?.VendorName,
             DetectionCaseId = c.DetectionCaseId,
-            Summary = _markdown.ToPlainText(c.Summary),
-            SummaryBlocks = Content.RichText.Parse(c.Summary),
-            DataTypesInvolved = c.DataTypesInvolved,
-            ImpactedAssets = c.ImpactedAssets,
+            Summary = d.Text(_markdown.ToPlainText(c.Summary)),
+            SummaryBlocks = d.Blocks(Content.RichText.Parse(c.Summary)),
+            DataTypesInvolved = d.NullableText(c.DataTypesInvolved),
+            ImpactedAssets = d.NullableText(c.ImpactedAssets),
             AffectedIndividualsCount = c.AffectedIndividualsCount,
             DataElementsSummary = dataElementsSummary,
             NotificationTriggersSummary = notificationTriggersSummary,
@@ -436,7 +441,7 @@ public sealed class ReportService
             EventTimeline = c.TimelineEntries
                 .Where(x => x.Kind == TimelineKind.Event)
                 .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
-                .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), x.Description, x.Source))
+                .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), d.Text(x.Description), x.Source))
                 .ToList(),
             // The attack chain (ATT&CK tactics + actor→target in our estate) only applies to a first-party
             // case. A third-party/vendor case (E-32) has no adversary kill-chain here — its event steps are
@@ -448,16 +453,16 @@ public sealed class ReportService
                     i + 1,
                     x.OccurredAtUtc,
                     string.Join(", ", x.Tactics.Select(t => t.Tactic.ToString()).OrderBy(s => s)),
-                    EntityName(c, x.ActorEntityId),
-                    EntityName(c, x.TargetEntityId),
+                    d.Text(EntityName(c, x.ActorEntityId)),
+                    d.Text(EntityName(c, x.TargetEntityId)),
                     x.TechniqueId,
-                    x.Description))
+                    d.Text(x.Description)))
                 .ToList(),
             InvestigationTimeline = c.TimelineEntries
                 .Where(x => x.Kind == TimelineKind.Investigation && x.IsCurrent)
                 .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
                 // Investigation descriptions are Markdown; flatten to readable plain text for the report.
-                .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), Content.RichText.ToText(x.Description), x.Source))
+                .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), d.Text(Content.RichText.ToText(x.Description)), x.Source))
                 .ToList(),
             Evidence = c.Evidence
                 .OrderBy(x => x.CreatedAtUtc)
@@ -466,7 +471,7 @@ public sealed class ReportService
             Notes = c.Notes.Where(x => x.IsCurrent)
                 .OrderBy(x => x.CreatedAtUtc)
                 // Notes are Markdown (U-35); flatten to readable plain text for the report.
-                .Select(x => new ReportNoteItem(x.CreatedAtUtc, x.CreatedBy, _markdown.ToPlainText(x.Body), Content.RichText.Parse(x.Body)))
+                .Select(x => new ReportNoteItem(x.CreatedAtUtc, x.CreatedBy, d.Text(_markdown.ToPlainText(x.Body)), d.Blocks(Content.RichText.Parse(x.Body))))
                 .ToList(),
             ActionItems = c.ActionItems
                 .OrderBy(x => x.Status)
@@ -482,14 +487,14 @@ public sealed class ReportService
                 .ToList(),
             Entities = c.Entities
                 .OrderBy(x => x.Type).ThenBy(x => x.Value)
-                .Select(x => new ReportEntityRow(TaxLabel("EntityType", x.Type.ToString()), x.Value, x.Label,
-                    TaxLabel("EntityDisposition", x.Disposition.ToString()), x.Description, x.Source))
+                .Select(x => new ReportEntityRow(TaxLabel("EntityType", x.Type.ToString()), d.Value(x.Type, x.Value), d.NullableText(x.Label),
+                    TaxLabel("EntityDisposition", x.Disposition.ToString()), d.NullableText(x.Description), x.Source))
                 .ToList(),
             Relationships = c.EntityRelationships
                 .OrderBy(x => x.CreatedAtUtc)
                 .Select(x => new ReportRelationshipRow(
-                    EntityDisplay(c, x.SourceEntityId), TaxLabel("EntityRelationshipType", x.Type.ToString()),
-                    EntityDisplay(c, x.TargetEntityId), x.Description))
+                    d.Text(EntityDisplay(c, x.SourceEntityId)), TaxLabel("EntityRelationshipType", x.Type.ToString()),
+                    d.Text(EntityDisplay(c, x.TargetEntityId)), d.NullableText(x.Description)))
                 .ToList(),
             Techniques = c.Techniques
                 .OrderBy(x => x.Tactic).ThenBy(x => x.TechniqueId)
