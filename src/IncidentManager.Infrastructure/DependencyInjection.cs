@@ -87,6 +87,7 @@ public static class DependencyInjection
         services.AddSingleton<IReportStore, FileReportStore>();
         services.AddSingleton<IReportBrandingStore, FileReportBrandingStore>();
         services.AddSingleton<IReportGenerator, ReportGenerator>();
+        services.AddSingleton<Application.Reporting.IReportDiagrams, SkiaReportDiagrams>();   // PROD-46: attack chain + entity graph pictures
         services.AddSingleton<IRoleDirectory, Security.RoleDirectory>();
         services.AddSingleton<IUserDirectory, Security.UserDirectory>();
         // E-39: signs/validates the per-user agenda calendar (ICS) feed token. Stateless (HMAC over the

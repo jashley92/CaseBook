@@ -194,25 +194,7 @@ public static class Ui
     };
 
     /// <summary>ATT&amp;CK matrix position (1-based) — display order, since enum values are frozen for storage.</summary>
-    public static int TacticRank(MitreTactic t) => t switch
-    {
-        MitreTactic.Reconnaissance => 1,
-        MitreTactic.ResourceDevelopment => 2,
-        MitreTactic.InitialAccess => 3,
-        MitreTactic.Execution => 4,
-        MitreTactic.Persistence => 5,
-        MitreTactic.PrivilegeEscalation => 6,
-        MitreTactic.Stealth => 7,
-        MitreTactic.DefenseImpairment => 8,
-        MitreTactic.CredentialAccess => 9,
-        MitreTactic.Discovery => 10,
-        MitreTactic.LateralMovement => 11,
-        MitreTactic.Collection => 12,
-        MitreTactic.CommandAndControl => 13,
-        MitreTactic.Exfiltration => 14,
-        MitreTactic.Impact => 15,
-        _ => 99 // Unspecified / unknown sort last.
-    };
+    public static int TacticRank(MitreTactic t) => IncidentManager.Application.Reporting.DiagramPalette.TacticRank(t);
 
     /// <summary>The official MITRE ATT&amp;CK Enterprise tactic ID (TA00xx) for cross-reference.</summary>
     public static string TacticId(MitreTactic t) => t switch
@@ -259,27 +241,7 @@ public static class Ui
     };
 
     /// <summary>Hex accent for a tactic, laid out along the kill-chain (warm early → red at impact).</summary>
-    public static string TacticColor(MitreTactic t) => t switch
-    {
-        // Slate for a tactic-less event — intentional and distinct, not the dull fallback grey.
-        MitreTactic.Unspecified => "#64748b",
-        MitreTactic.Reconnaissance => "#6c757d",
-        MitreTactic.ResourceDevelopment => "#6f42c1",
-        MitreTactic.InitialAccess => "#0d6efd",
-        MitreTactic.Execution => "#0dcaf0",
-        MitreTactic.Persistence => "#20c997",
-        MitreTactic.PrivilegeEscalation => "#198754",
-        MitreTactic.Stealth => "#84cc16",
-        MitreTactic.DefenseImpairment => "#65a30d",
-        MitreTactic.CredentialAccess => "#ffc107",
-        MitreTactic.Discovery => "#fd7e14",
-        MitreTactic.LateralMovement => "#f97316",
-        MitreTactic.Collection => "#e8590c",
-        MitreTactic.CommandAndControl => "#d63384",
-        MitreTactic.Exfiltration => "#dc3545",
-        MitreTactic.Impact => "#b02a37",
-        _ => "#6c757d"
-    };
+    public static string TacticColor(MitreTactic t) => IncidentManager.Application.Reporting.DiagramPalette.TacticColor(t);
 
     /// <summary>One-line description of a tactic — reference text shown in the ATT&amp;CK picker.</summary>
     public static string TacticDescription(MitreTactic t) => t switch
@@ -383,14 +345,7 @@ public static class Ui
     };
 
     /// <summary>Hex fill for a graph node, keyed to the entity's disposition.</summary>
-    public static string DispositionColor(EntityDisposition d) => d switch
-    {
-        EntityDisposition.Malicious => "#dc3545",
-        EntityDisposition.Compromised => "#9333ea",   // purple: a taken-over legit asset (E-35)
-        EntityDisposition.Suspicious => "#fd7e14",
-        EntityDisposition.Benign => "#198754",
-        _ => "#6c757d"
-    };
+    public static string DispositionColor(EntityDisposition d) => IncidentManager.Application.Reporting.DiagramPalette.DispositionColor(d);
 
     /// <summary>Short human label for an SLA state (E-16).</summary>
     public static string SlaLabel(SlaState s) => s switch

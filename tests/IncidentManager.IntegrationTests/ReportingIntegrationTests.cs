@@ -56,7 +56,8 @@ public sealed class ReportingIntegrationTests : IDisposable
         var branding = new FileReportBrandingStore(Options.Create(new ReportBrandingOptions { RootPath = Path.Combine(_reportDir, "branding") }));
         return new ReportService(NewFactory(), new ReportGenerator(), store, _hasher, _user, _clock,
             new IncidentManager.Application.Content.MarkdownService(), _reporting, branding, new StubUserDirectory(),
-            new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()));
+            new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()),
+            diagrams: new IncidentManager.Infrastructure.Reporting.SkiaReportDiagrams());   // PROD-46: real pictures
     }
 
     /// <summary>Identity directory stub: resolves ids to themselves — enough for the report footer/owner columns.</summary>
@@ -104,6 +105,8 @@ public sealed class ReportingIntegrationTests : IDisposable
 
             documentXml.Should().Contain("Event Timeline");
             documentXml.Should().Contain("LateralMovement");
+            // PROD-46: the attack chain and entity graph are embedded as pictures with alt text.
+            documentXml.Should().Contain("descr=\"Attack chain").And.Contain("descr=\"Entity relationship graph");
             documentXml.Should().Contain("Pivoted to the finance account jdoe");
             documentXml.Should().Contain("T1021");
         }

@@ -31,6 +31,7 @@ public sealed partial class ReportGenerator
         // MigraDoc loads header images from a file path (its in-memory source handling is unreliable
         // across formats); stage the logo to a temp file for the duration of the render, then clean up.
         var logoPath = StageLogo(m);
+        var pictures = StagePictures(m);   // PROD-46: attack chain + entity graph, staged the same way
 
         var section = doc.AddSection();
         section.PageSetup.LeftMargin = Unit.FromCentimeter(2);
@@ -60,7 +61,7 @@ public sealed partial class ReportGenerator
                 AppendFacts(section, m);
 
                 foreach (var s in m.Sections)
-                    RenderSection(section, s, m);
+                    RenderSection(section, s, m, pictures);
             }
 
             // Integrity provenance stamp — always rendered.
@@ -79,6 +80,7 @@ public sealed partial class ReportGenerator
         finally
         {
             if (logoPath is not null) { try { File.Delete(logoPath); } catch { /* best effort */ } }
+            foreach (var path in pictures.All) { try { File.Delete(path); } catch { /* best effort */ } }
         }
     }
 
@@ -91,7 +93,38 @@ public sealed partial class ReportGenerator
         catch { return null; }
     }
 
-    private static void RenderSection(Section section, ReportSection which, CaseReportModel m)
+    /// <summary>PROD-46: the report pictures written to temp PNGs for MigraDoc (deleted after rendering).</summary>
+    private sealed record StagedPictures(IReadOnlyList<string> AttackChain, string? EntityGraph)
+    {
+        public IEnumerable<string> All => EntityGraph is null ? AttackChain : AttackChain.Append(EntityGraph);
+    }
+
+    private static StagedPictures StagePictures(CaseReportModel m)
+    {
+        string? Stage(byte[] png)
+        {
+            var path = Path.Combine(Path.GetTempPath(), $"casebook-diagram-{Guid.NewGuid():N}.png");
+            try { File.WriteAllBytes(path, png); return path; }
+            catch { return null; }   // a picture that can't be staged is skipped; the table still prints
+        }
+        return new StagedPictures(
+            m.AttackChainImages.Select(Stage).OfType<string>().ToList(),
+            m.EntityGraphImage is { } g ? Stage(g) : null);
+    }
+
+    /// <summary>A staged picture at the printable width (17 cm), keeping its proportions.</summary>
+    private static void AddPicture(Section section, string path)
+    {
+        var para = section.AddParagraph();
+        para.Format.Alignment = ParagraphAlignment.Center;
+        para.Format.SpaceBefore = Unit.FromCentimeter(0.1);
+        para.Format.SpaceAfter = Unit.FromCentimeter(0.25);
+        var img = para.AddImage(path);
+        img.Width = Unit.FromCentimeter(17);
+        img.LockAspectRatio = true;
+    }
+
+    private static void RenderSection(Section section, ReportSection which, CaseReportModel m, StagedPictures pictures)
     {
         switch (which)
         {
@@ -108,6 +141,7 @@ public sealed partial class ReportGenerator
             case ReportSection.EventTimeline:
                 Heading(section, "Event Timeline");
                 Caption(section, "The reconstructed adversary activity, in order — ATT&CK tactic(s), actor → target, and technique.");
+                foreach (var picture in pictures.AttackChain) AddPicture(section, picture);
                 PdfTable(section, ["#", "When (UTC)", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
                     m.AttackChain.Select(x => new[]
                     {
@@ -133,6 +167,7 @@ public sealed partial class ReportGenerator
                 Heading(section, "Systems Reviewed");
                 Caption(section, "Entities and indicators examined during the investigation."
                     + (m.IndicatorsDefanged ? " " + CaseReportModel.DefangNote : ""));
+                if (pictures.EntityGraph is { } graph) AddPicture(section, graph);
                 if (!string.IsNullOrWhiteSpace(m.ImpactedAssets))
                     section.AddParagraph($"Impacted assets: {m.ImpactedAssets}");
                 PdfTable(section, ["Type", "Value", "Label", "Disposition", "Source"],
@@ -374,6 +409,7 @@ public sealed partial class ReportGenerator
         p.Format.Font.Color = Slate;
         p.Format.SpaceBefore = Unit.FromCentimeter(0.35);
         p.Format.SpaceAfter = Unit.FromCentimeter(0.1);
+        p.Format.KeepWithNext = true;   // never strand a heading at the foot of a page
     }
 
     private static void SubHeading(Section section, string text)
@@ -386,8 +422,12 @@ public sealed partial class ReportGenerator
         p.Format.SpaceAfter = Unit.FromCentimeter(0.05);
     }
 
-    private static void Caption(Section section, string text) =>
-        section.AddParagraph(text).Format.Font.Italic = true;
+    private static void Caption(Section section, string text)
+    {
+        var p = section.AddParagraph(text);
+        p.Format.Font.Italic = true;
+        p.Format.KeepWithNext = true;   // keep the caption with the picture/table it introduces
+    }
 
     /// <summary>
     /// PDF rendering of analyst Markdown (Summary, notes, the post-incident review) with its formatting kept —

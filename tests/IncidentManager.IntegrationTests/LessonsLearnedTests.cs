@@ -66,7 +66,8 @@ public sealed class LessonsLearnedTests : IDisposable
             _hasher, _user, _clock, new IncidentManager.Application.Content.MarkdownService(), _reporting,
             new FileReportBrandingStore(Microsoft.Extensions.Options.Options.Create(new ReportBrandingOptions { RootPath = Path.Combine(_reportDir, "branding") })),
             new IdUserDirectory(),
-            new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()));
+            new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()),
+            diagrams: new IncidentManager.Infrastructure.Reporting.SkiaReportDiagrams());   // PROD-46: real pictures
 
     private async Task<Guid> NewCaseAsync(string name, Classification classification = Classification.Incident, bool exercise = false)
     {

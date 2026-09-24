@@ -74,6 +74,10 @@ else
 
                     case ReportSection.EventTimeline:
                         <p class="small fst-italic text-muted mb-1">Reconstructed adversary activity: tactic(s), actor → target, technique.</p>
+                        @foreach (var png in Model.AttackChainImages)
+                        {
+                            <img class="img-fluid border rounded mb-2" src="@Png(png)" alt="@CaseReportModel.AttackChainAlt" />
+                        }
                         @if (Model.AttackChain.Count == 0)
                         {
                             <p class="mb-0 text-muted fst-italic">(none)</p>
@@ -122,6 +126,10 @@ else
 
                     case ReportSection.SystemsReviewed:
                         <p class="small fst-italic text-muted mb-1">Entities and indicators examined during the investigation.@(Model.IndicatorsDefanged ? " " + CaseReportModel.DefangNote : "")</p>
+                        @if (Model.EntityGraphImage is { } graph)
+                        {
+                            <img class="img-fluid border rounded mb-2" src="@Png(graph)" alt="@CaseReportModel.EntityGraphAlt" />
+                        }
                         @if (!string.IsNullOrWhiteSpace(Model.ImpactedAssets))
                         {
                             <p class="small mb-1">Impacted assets: @Model.ImpactedAssets</p>
@@ -245,6 +253,9 @@ else
         ReportSection.Appendix => "Appendix",
         _ => s.ToString()
     };
+
+    // PROD-46: the report pictures, inline (the same PNGs the Word/PDF embed).
+    private static string Png(byte[] bytes) => $"data:image/png;base64,{Convert.ToBase64String(bytes)}";
 
     private static string LogoDataUri(CaseReportModel m) =>
         $"data:{(string.IsNullOrWhiteSpace(m.LogoContentType) ? "image/png" : m.LogoContentType)};base64,{Convert.ToBase64String(m.LogoBytes!)}";

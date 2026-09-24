@@ -453,12 +453,6 @@ public static class DevDataSeeder
 
         c1.TimelineEntries.Add(new TimelineEntry
         {
-            CaseId = c1.Id, Kind = TimelineKind.Event, OccurredAtUtc = now.AddDays(-6), Type = TimelineEntryType.Detection,
-            Description = "12 inbound look-alike domains delivered O365 phishing lures; 3 finance users clicked.",
-            Source = "SIEM", CreatedBy = actor, CreatedAtUtc = now.AddDays(-6)
-        });
-        c1.TimelineEntries.Add(new TimelineEntry
-        {
             CaseId = c1.Id, Kind = TimelineKind.Investigation, OccurredAtUtc = now.AddDays(-5).AddHours(2),
             Type = TimelineEntryType.Analysis,
             Description = "Reviewed mailbox audit logs; confirmed one session established from a foreign ASN.",
@@ -506,6 +500,18 @@ public static class DevDataSeeder
         c1.LinkEntities(acct.Id, host.Id, EntityRelationshipType.LoggedInTo, null, actor, now.AddDays(-5));
         c1.LinkEntities(url.Id, ip.Id, EntityRelationshipType.ResolvedTo, null, actor, now.AddDays(-5));
         c1.LinkEntities(host.Id, ip.Id, EntityRelationshipType.CommunicatedWith, "Outbound session to the attacker IP.", actor, now.AddDays(-5));
+
+        // The attack chain (Event timeline): each step mapped to ATT&CK with actor → target, so the report's
+        // attack-chain picture (PROD-46) has a realistic example.
+        c1.AddEventStep(now.AddDays(-6), [MitreTactic.InitialAccess], "T1566.002", url.Id, acct.Id,
+            "12 inbound look-alike domains delivered O365 phishing lures; 3 finance users clicked.", "SIEM",
+            actor, now.AddDays(-6), type: TimelineEntryType.Detection);
+        c1.AddEventStep(now.AddDays(-6).AddMinutes(20), [MitreTactic.CredentialAccess], "T1056.003", url.Id, acct.Id,
+            "jdoe entered credentials on the look-alike O365 sign-in page.", "SIEM", actor, now.AddDays(-6).AddMinutes(20));
+        c1.AddEventStep(now.AddDays(-5).AddHours(-3), [MitreTactic.InitialAccess], "T1078.004", ip.Id, acct.Id,
+            "Sign-in to jdoe's mailbox from a foreign ASN using the captured credentials.", "SIEM", actor, now.AddDays(-5).AddHours(-3));
+        c1.AddEventStep(now.AddDays(-5).AddHours(-2), [MitreTactic.Collection], "T1114.002", ip.Id, acct.Id,
+            "Mailbox searched; messages with NPI attachments opened.", "SIEM", actor, now.AddDays(-5).AddHours(-2));
         await db.SaveChangesAsync(ct);
 
         // Case 2 — third-party/vendor breach we are managing.

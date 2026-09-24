@@ -26,11 +26,14 @@ public sealed class ReportService
     private readonly ISeverityLabels _severityLabels;
     private readonly ITaxonomyDisplay? _taxonomy;
 
+    private readonly IReportDiagrams? _diagrams;   // PROD-46: report pictures (null = tables only)
+
     public ReportService(IAppDbContextFactory factory, IReportGenerator generator, IReportStore store,
         IHashChainService hasher, ICurrentUser user, IClock clock, Content.IMarkdownService markdown,
         IOptionsMonitor<ReportingOptions> reporting, IReportBrandingStore branding, IUserDirectory users,
-        ISeverityLabels severityLabels, ITaxonomyDisplay? taxonomy = null)
+        ISeverityLabels severityLabels, ITaxonomyDisplay? taxonomy = null, IReportDiagrams? diagrams = null)
     {
+        _diagrams = diagrams;
         _factory = factory;
         _generator = generator;
         _store = store;
@@ -236,6 +239,35 @@ public sealed class ReportService
     private static string HashBytes(byte[] bytes) =>
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
 
+    /// <summary>PROD-46: the attack chain drawn across tactic lanes — first-party cases with at least one mapped tactic.</summary>
+    private IReadOnlyList<byte[]> AttackChainImages(Case c, ReportDefanger d)
+    {
+        if (_diagrams is null || c.Origin == CaseOrigin.ThirdParty) return [];
+        var steps = c.TimelineEntries
+            .Where(x => x.Kind == TimelineKind.Event)
+            .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
+            .Select((x, i) => new DiagramStep(i + 1, x.OccurredAtUtc, x.Tactics.Select(t => t.Tactic).ToList(), x.TechniqueId,
+                d.Text(EntityName(c, x.ActorEntityId)), d.Text(EntityName(c, x.TargetEntityId))))
+            .ToList();
+        // Nothing mapped to ATT&CK means one "Unmapped" lane — the table already says that better.
+        return steps.Any(s => s.Tactics.Any(t => t != MitreTactic.Unspecified)) ? _diagrams.AttackChain(steps) : [];
+    }
+
+    /// <summary>PROD-46: the relationship graph, laid out as the analyst arranged it on the IOCs tab when saved.</summary>
+    private byte[]? EntityGraphImage(Case c, ReportDefanger d)
+    {
+        if (_diagrams is null || c.EntityRelationships.Count == 0) return null;
+        var layout = c.EntityLayouts.ToDictionary(l => l.EntityId);
+        var nodes = c.Entities.Select(e => new DiagramNode(e.Id,
+                string.IsNullOrWhiteSpace(e.Label) ? d.Value(e.Type, e.Value) : d.Text(e.Label!), e.Type, e.Disposition,
+                layout.TryGetValue(e.Id, out var p) ? p.X : null, layout.TryGetValue(e.Id, out var q) ? q.Y : null))
+            .ToList();
+        var edges = c.EntityRelationships
+            .Select(r => new DiagramEdge(r.SourceEntityId, r.TargetEntityId, TaxLabel("EntityRelationshipType", r.Type.ToString())))
+            .ToList();
+        return _diagrams.EntityGraph(nodes, edges);
+    }
+
     private static string EntityName(Case c, Guid? entityId)
     {
         if (entityId is not { } id) return "";
@@ -279,6 +311,7 @@ public sealed class ReportService
             .Include(x => x.Assignments)
             .Include(x => x.Entities)
             .Include(x => x.EntityRelationships)
+            .Include(x => x.EntityLayouts)   // PROD-46: the analyst's graph arrangement for the report picture
             .Include(x => x.Techniques)
             .Include(x => x.DataElements)
             .FirstOrDefaultAsync(x => x.Id == caseId, ct);
@@ -513,6 +546,8 @@ public sealed class ReportService
                 .OrderBy(x => x.Tactic).ThenBy(x => x.TechniqueId)
                 .Select(x => new ReportTechniqueRow(x.TechniqueId, x.Name, Humanize(x.Tactic.ToString())))
                 .ToList(),
+            AttackChainImages = sections.Contains(ReportSection.EventTimeline) ? AttackChainImages(c, d) : [],
+            EntityGraphImage = sections.Contains(ReportSection.SystemsReviewed) ? EntityGraphImage(c, d) : null,
             GeneratedBy = _users.DisplayFor(_user.UserId),
             GeneratedAtUtc = now,
             ContentHash = contentHash

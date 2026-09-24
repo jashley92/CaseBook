@@ -46,7 +46,7 @@ public sealed partial class ReportGenerator : IReportGenerator
 
                 // Administered body sections, in the configured order.
                 foreach (var section in m.Sections)
-                    RenderSection(body, section, m);
+                    RenderSection(main, body, section, m);
             }
 
             // Integrity provenance stamp — always rendered, never toggleable.
@@ -62,7 +62,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         return ms.ToArray();
     }
 
-    private static void RenderSection(Body body, ReportSection section, CaseReportModel m)
+    private static void RenderSection(MainDocumentPart main, Body body, ReportSection section, CaseReportModel m)
     {
         switch (section)
         {
@@ -79,6 +79,8 @@ public sealed partial class ReportGenerator : IReportGenerator
             case ReportSection.EventTimeline:
                 body.AppendChild(Heading("Event Timeline"));
                 body.AppendChild(P("The reconstructed adversary activity, in order — MITRE ATT&CK tactic(s), actor → target, and technique.", italic: true, size: 18));
+                foreach (var png in m.AttackChainImages)
+                    body.AppendChild(BodyPicture(main, png, "Attack chain", CaseReportModel.AttackChainAlt));
                 body.AppendChild(WordTable(
                     ["#", "When (UTC)", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
                     m.AttackChain.Select(x => new[]
@@ -104,6 +106,8 @@ public sealed partial class ReportGenerator : IReportGenerator
                 body.AppendChild(Heading("Systems Reviewed"));
                 body.AppendChild(P("Entities and indicators examined during the investigation."
                     + (m.IndicatorsDefanged ? " " + CaseReportModel.DefangNote : ""), italic: true, size: 18));
+                if (m.EntityGraphImage is { } graph)
+                    body.AppendChild(BodyPicture(main, graph, "Entity relationship graph", CaseReportModel.EntityGraphAlt));
                 if (!string.IsNullOrWhiteSpace(m.ImpactedAssets))
                     body.AppendChild(P($"Impacted assets: {m.ImpactedAssets}"));
                 body.AppendChild(WordTable(
@@ -392,6 +396,56 @@ public sealed partial class ReportGenerator : IReportGenerator
         new Run(new FieldChar { FieldCharType = FieldCharValues.Begin }),
         new Run(new FieldCode(" PAGE ") { Space = SpaceProcessingModeValues.Preserve }),
         new Run(new FieldChar { FieldCharType = FieldCharValues.End }));
+
+    private static uint _pictureId = 100;   // drawing ids only need to be unique within a document
+
+    /// <summary>
+    /// PROD-46: a PNG picture at the text width (6.3 in), keeping its proportions, with alt text for screen readers.
+    /// </summary>
+    private static Paragraph BodyPicture(MainDocumentPart main, byte[] png, string name, string alt)
+    {
+        var imagePart = main.AddImagePart(ImagePartType.Png);
+        using (var stream = new MemoryStream(png)) imagePart.FeedData(stream);
+        var relId = main.GetIdOfPart(imagePart);
+
+        const long cx = 5_760_720L;   // 6.3 in × 914,400 EMU per inch
+        var cy = cx * 9 / 16;
+        if (TryGetImageSize(png, out var iw, out var ih) && iw > 0 && ih > 0)
+            cy = (long)Math.Round(cx * (double)ih / iw);
+        var id = System.Threading.Interlocked.Increment(ref _pictureId);
+
+        var drawing = new Drawing(
+            new DW.Inline(
+                new DW.Extent { Cx = cx, Cy = cy },
+                new DW.EffectExtent { LeftEdge = 0, TopEdge = 0, RightEdge = 0, BottomEdge = 0 },
+                new DW.DocProperties { Id = id, Name = name, Description = alt },
+                new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }),
+                new A.Graphic(new A.GraphicData(
+                    new PIC.Picture(
+                        new PIC.NonVisualPictureProperties(
+                            new PIC.NonVisualDrawingProperties { Id = 0U, Name = name },
+                            new PIC.NonVisualPictureDrawingProperties()),
+                        new PIC.BlipFill(
+                            new A.Blip { Embed = relId },
+                            new A.Stretch(new A.FillRectangle())),
+                        new PIC.ShapeProperties(
+                            new A.Transform2D(
+                                new A.Offset { X = 0L, Y = 0L },
+                                new A.Extents { Cx = cx, Cy = cy }),
+                            new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }))
+                )
+                { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" }))
+            {
+                DistanceFromTop = 0U,
+                DistanceFromBottom = 0U,
+                DistanceFromLeft = 0U,
+                DistanceFromRight = 0U
+            });
+
+        return new Paragraph(
+            new ParagraphProperties(new Justification { Val = JustificationValues.Center }),
+            new Run(drawing));
+    }
 
     private static Paragraph LogoParagraph(HeaderPart headerPart, byte[] bytes, string? contentType)
     {
