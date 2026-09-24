@@ -16,8 +16,13 @@ public sealed class DevAuthOptions
     public string Upn { get; set; } = "dev.analyst@contoso-insurance.example";
     public string Email { get; set; } = "dev.analyst@contoso-insurance.example";
 
-    /// <summary>Roles granted to the dev user (AppRole names). Defaults to full access for local testing.</summary>
-    public string[] Roles { get; set; } = ["Analyst", "IncidentCommander", "Manager", "LegalPrivacy", "SysAdmin"];
+    /// <summary>
+    /// Roles granted to the dev user (role names), from <c>DevAuth:Roles</c> — appsettings.json grants every built-in
+    /// role for local testing. No default here: the configuration binder appends to an array's initial value rather
+    /// than replacing it, so a code default made it impossible to sign in with fewer roles (e.g. to try a view-only
+    /// Manager in appsettings.Development.json).
+    /// </summary>
+    public string[] Roles { get; set; } = [];
 }
 
 /// <summary>
