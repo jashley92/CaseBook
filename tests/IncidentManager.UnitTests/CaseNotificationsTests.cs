@@ -430,6 +430,28 @@ public class CaseNotificationsTests
     }
 
     [Fact]
+    public async Task Chat_about_a_restricted_case_names_no_case_details()
+    {
+        // S-13: the shared channel isn't a restricted case's audience — no number, title or comment text.
+        var chat = new CapturingChatNotifier();
+        var n = Build(new CapturingEmailSender(), new EmailOptions(), chat: chat,
+            config: ChatConfig("BreachEscalations", "Mentions", "Assignments"));
+        var c = NewCase();
+        c.IsRestricted = true;
+
+        await n.OnReclassifiedAsync(c, Classification.Incident, Classification.Breach);
+        await n.OnMentionedAsync(c, "author", ["alice"], "the insider is J. Smith");
+        await n.OnAssignedAsync(c, "bob", "Bob", CaseAssignmentRole.Analyst, "author");
+
+        chat.Sent.Should().HaveCount(3);
+        foreach (var m in chat.Sent)
+        {
+            (m.Title + " " + m.Text).Should().Contain("restricted case")
+                .And.NotContain(c.CaseNumber).And.NotContain(c.Title).And.NotContain("J. Smith");
+        }
+    }
+
+    [Fact]
     public async Task Breach_escalation_does_not_post_to_chat_when_the_type_is_off()
     {
         var sender = new CapturingEmailSender();

@@ -23,15 +23,34 @@ public sealed class CaseCommentService
     private readonly IClock _clock;
     private readonly IUserDirectory _users;
     private readonly ICaseNotifications _notifications;
+    private readonly IRoleDirectory? _roles;
 
     public CaseCommentService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
-        IUserDirectory users, ICaseNotifications notifications)
+        IUserDirectory users, ICaseNotifications notifications, IRoleDirectory? roles = null)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
         _users = users;
         _notifications = notifications;
+        _roles = roles;
+    }
+
+    /// <summary>
+    /// S-13: the people who may be @mentioned on this case — everyone who can see it except the caller. On a restricted
+    /// case that's its incident commander, team and cleared roles, so a mention never reaches someone outside it.
+    /// </summary>
+    public async Task<IReadOnlyList<UserSummary>> MentionableAsync(Guid caseId, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var c = await db.Cases.AsNoTracking().ForUser(_user).Where(x => x.Id == caseId)
+            .Select(x => new { x.IsRestricted, x.IncidentCommander, Team = x.Assignments.Select(a => a.UserId).ToList() })
+            .FirstOrDefaultAsync(ct);
+        if (c is null) return [];
+        return _users.All()
+            .Where(u => !string.Equals(u.UserId, _user.UserId, StringComparison.OrdinalIgnoreCase))
+            .Where(u => _roles is null || CaseAudience.CanSee(c.IsRestricted, c.IncidentCommander, c.Team, u, _roles))
+            .ToList();
     }
 
     /// <summary>Every comment on a case, oldest first (the UI threads replies under their parent).</summary>
@@ -83,6 +102,16 @@ public sealed class CaseCommentService
             .Where(id => !string.IsNullOrWhiteSpace(id) && !string.Equals(id, _user.UserId, StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+        // S-13: never notify someone who can't see the case (the picker only offers those who can; this is the
+        // backstop). On a restricted case that keeps the comment excerpt inside its audience.
+        if (_roles is not null && mentions.Count > 0)
+        {
+            var team = await db.Assignments.AsNoTracking().Where(a => a.CaseId == caseId).Select(a => a.UserId).ToListAsync(ct);
+            mentions = mentions
+                .Where(id => CaseAudience.CanSee(caseRow.IsRestricted, caseRow.IncidentCommander, team, _users.Resolve(id), _roles))
+                .ToList();
+        }
 
         var comment = new CaseComment
         {

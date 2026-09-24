@@ -60,10 +60,14 @@ public sealed class CaseNotifications : ICaseNotifications
         // Chat broadcast (PROD-02): independent of the Legal email distribution — the SOC channel should
         // learn of a breach escalation even when no Legal recipients are configured.
         if (ChatOn("BreachEscalations"))
-            await _chat.SendAsync(new ChatNotification(
-                $"Breach escalation — {c.CaseNumber}",
-                $"{c.Title} · severity {c.Severity}, phase {c.Phase}.",
-                CaseUrl(c.Id), ChatUrgency.Alert), ct);
+            await _chat.SendAsync(c.IsRestricted
+                ? new ChatNotification("Breach escalation — restricted case",
+                    "A restricted case was escalated to Breach. Details are limited to its team; open it in CaseBook.",
+                    CaseUrl(c.Id), ChatUrgency.Alert)
+                : new ChatNotification(
+                    $"Breach escalation — {c.CaseNumber}",
+                    $"{c.Title} · severity {c.Severity}, phase {c.Phase}.",
+                    CaseUrl(c.Id), ChatUrgency.Alert), ct);
 
         var options = _options.CurrentValue;
         if (options.LegalDistribution.Length == 0) return;
@@ -103,10 +107,10 @@ public sealed class CaseNotifications : ICaseNotifications
         if (ChatOn("Mentions"))
         {
             var who = string.Join(", ", recipients.Select(_users.DisplayFor));
-            await _chat.SendAsync(new ChatNotification(
-                $"Mention — {c.CaseNumber}",
-                $"{byName} mentioned {who}: {excerpt}",
-                CaseUrl(c.Id)), ct);
+            // S-13: the shared channel isn't a restricted case's audience — say who, not what or where.
+            await _chat.SendAsync(c.IsRestricted
+                ? new ChatNotification("Mention — restricted case", $"{byName} mentioned {who} on a restricted case.", CaseUrl(c.Id))
+                : new ChatNotification($"Mention — {c.CaseNumber}", $"{byName} mentioned {who}: {excerpt}", CaseUrl(c.Id)), ct);
         }
 
         foreach (var id in recipients)
@@ -137,10 +141,14 @@ public sealed class CaseNotifications : ICaseNotifications
         // Chat broadcast (PROD-02): posts to the shared channel independent of the per-assignee email
         // toggle and of whether the assignee has an address on file.
         if (ChatOn("Assignments"))
-            await _chat.SendAsync(new ChatNotification(
-                $"Case assigned — {c.CaseNumber}",
-                $"{assigneeDisplayName} assigned as {Ui(role)} by {_users.DisplayFor(assignedByUserId)} · {c.Title}.",
-                CaseUrl(c.Id)), ct);
+            await _chat.SendAsync(c.IsRestricted
+                ? new ChatNotification("Case assigned — restricted case",
+                    $"{assigneeDisplayName} assigned as {Ui(role)} by {_users.DisplayFor(assignedByUserId)} to a restricted case.",
+                    CaseUrl(c.Id))
+                : new ChatNotification(
+                    $"Case assigned — {c.CaseNumber}",
+                    $"{assigneeDisplayName} assigned as {Ui(role)} by {_users.DisplayFor(assignedByUserId)} · {c.Title}.",
+                    CaseUrl(c.Id)), ct);
 
         var options = _options.CurrentValue;
         if (!options.AssignmentNotifications) return;

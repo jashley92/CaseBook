@@ -75,12 +75,11 @@ else
     private string ComposerId => $"discuss-md-{CaseId}";
     private bool _editorMounted;
 
-    // Everyone in the directory except the current user, as inline-@mention candidates ({id, name} for JS).
+    // S-13: people who can see this case (all of it on a restricted one: IC, team, cleared roles), except the current
+    // user, as inline-@mention candidates ({id, name} for JS).
+    private IReadOnlyList<IncidentManager.Application.Abstractions.UserSummary> _mentionable = [];
     private object[] MentionCandidates =>
-        Users.All()
-            .Where(u => !string.Equals(u.UserId, Me.UserId, StringComparison.OrdinalIgnoreCase))
-            .Select(u => (object)new { id = u.UserId, name = u.DisplayName })
-            .ToArray();
+        _mentionable.Select(u => (object)new { id = u.UserId, name = u.DisplayName }).ToArray();
 
     // The case's entities as inline "#" tag candidates ({id, value, hint} for JS).
     private object[] EntityCandidates =>
@@ -101,7 +100,12 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        if (CaseId != _loadedCaseId) { _loadedCaseId = CaseId; await Load(); }
+        if (CaseId != _loadedCaseId)
+        {
+            _loadedCaseId = CaseId;
+            _mentionable = await Comments.MentionableAsync(CaseId);
+            await Load();
+        }
     }
 
     private async Task Load() => _comments = await Comments.ListAsync(CaseId);
