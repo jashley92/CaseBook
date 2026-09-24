@@ -429,7 +429,8 @@ public sealed class ReportingIntegrationTests : IDisposable
         // PROD-47: upload through the service (checked), pick the profile on the case, generate.
         _user.RoleSet = [AppRole.SysAdmin];
         var engine = new WordTemplateEngine();
-        var templateStore = new FileReportTemplateStore(Options.Create(new ReportTemplateOptions { RootPath = Path.Combine(_reportDir, "templates") }));
+        var templateStore = new FileReportTemplateStore(Options.Create(new ReportTemplateOptions { RootPath = Path.Combine(_reportDir, "templates") }),
+            Options.Create(new ReportBrandingOptions()));
         Guid caseId, profileId;
         await using (var db = NewContext())
         {
