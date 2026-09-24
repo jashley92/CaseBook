@@ -53,7 +53,7 @@ else
                                 @if (Model.NotificationTriggersSummary is not null) { <li>Notification triggers: @Model.NotificationTriggersSummary</li> }
                                 @if (!string.IsNullOrWhiteSpace(Model.AffectedStates)) { <li>Affected jurisdictions: @Model.AffectedStates</li> }
                                 @if (!string.IsNullOrWhiteSpace(Model.ImpactedAssets)) { <li>Impacted assets: @Model.ImpactedAssets</li> }
-                                @if (Model.DataTypesInvolved is not null) { <li>Data types involved: @Model.DataTypesInvolved</li> }
+                                @if (Model.DataTypesInvolved is not null) { <li>Data context (analyst notes): @Model.DataTypesInvolved</li> }
                                 @if (Model.LegalReferred) { <li>Legal/Privacy referral recorded. @Model.LegalNote</li> }
                                 @if (Model.LegalHold) { <li>Legal hold in effect — case data must be preserved (do not delete).</li> }
                                 @if (Model.MaterialityStatus is { } ms)

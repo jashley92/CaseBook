@@ -74,7 +74,7 @@ public static class CaseImportSchema
                         ["summary"] = Str("The case's own summary field (distinct from the top-level summary note)."),
                         ["detectedAtUtc"] = DateTime("When the matter was detected (defaults to now; not in the future)."),
                         ["occurredAtUtc"] = DateTime("When activity began (must not be after detection)."),
-                        ["dataTypesInvolved"] = Str(null),
+                        ["dataTypesInvolved"] = Str("Free-text data context (notes). Regulated data elements are recorded in the impact assessment, not here."),
                         ["impactedAssets"] = Str(null),
                     },
                 },

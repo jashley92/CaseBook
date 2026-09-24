@@ -161,7 +161,7 @@ public sealed partial class ReportGenerator
         section.AddParagraph($"Classification: {m.Classification}    Phase: {m.Phase}    Severity: {m.Severity}");
         section.AddParagraph($"Origin: {m.Origin}{(m.VendorName is null ? "" : $" ({m.VendorName})")}");
         if (m.DetectionCaseId is not null) section.AddParagraph($"Detection case: {m.DetectionCaseId}");
-        if (m.DataTypesInvolved is not null) section.AddParagraph($"Data types involved: {m.DataTypesInvolved}");
+        if (m.DataTypesInvolved is not null) section.AddParagraph($"Data context (analyst notes): {m.DataTypesInvolved}");
         if (m.LegalReferred) section.AddParagraph($"Legal/Privacy referral recorded. {m.LegalNote}");
         if (m.LegalHold) section.AddParagraph("Legal hold in effect — case data must be preserved (do not delete).");
     }
@@ -174,7 +174,7 @@ public sealed partial class ReportGenerator
         if (m.NotificationTriggersSummary is not null) { section.AddParagraph($"Notification triggers: {m.NotificationTriggersSummary}"); any = true; }
         if (!string.IsNullOrWhiteSpace(m.AffectedStates)) { section.AddParagraph($"Affected jurisdictions: {m.AffectedStates}"); any = true; }
         if (!string.IsNullOrWhiteSpace(m.ImpactedAssets)) { section.AddParagraph($"Impacted assets: {m.ImpactedAssets}"); any = true; }
-        if (m.DataTypesInvolved is not null) { section.AddParagraph($"Data types involved: {m.DataTypesInvolved}"); any = true; }
+        if (m.DataTypesInvolved is not null) { section.AddParagraph($"Data context (analyst notes): {m.DataTypesInvolved}"); any = true; }
         if (m.LegalReferred) { section.AddParagraph($"Legal/Privacy referral recorded. {m.LegalNote}"); any = true; }
         if (m.LegalHold) { section.AddParagraph("Legal hold in effect — case data must be preserved (do not delete)."); any = true; }
         if (m.MaterialityStatus is { } ms)

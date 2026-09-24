@@ -81,8 +81,9 @@
                         <input class="form-control form-control-sm" @bind="_edDetection" />
                     </div>
                     <div class="mb-2">
-                        <label class="form-label small mb-0">Data types involved</label>
+                        <label class="form-label small mb-0">Data context <span class="text-muted">(notes)</span></label>
                         <input class="form-control form-control-sm" @bind="_edDataTypes" />
+                        <div class="form-text mt-0">Free text. The Impact assessment's data elements are the authoritative list.</div>
                     </div>
                     <div class="mb-2">
                         <label class="form-label small mb-0">Impacted assets</label>
@@ -132,7 +133,7 @@
                                 <a class="btn btn-sm btn-outline-secondary py-0 ms-2" href="@detectionUrl" target="_blank" rel="noopener noreferrer">Open in @DetectionLabel</a>
                             }
                         </dd>
-                        <dt class="col-sm-4">Data types</dt>
+                        <dt class="col-sm-4">Data context</dt>
                         <dd class="col-sm-8">@(Case.DataTypesInvolved ?? "—")</dd>
                         <dt class="col-sm-4">Impacted assets</dt>
                         <dd class="col-sm-8">@(Case.ImpactedAssets ?? "—")</dd>

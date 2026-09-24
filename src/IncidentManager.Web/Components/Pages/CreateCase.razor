@@ -130,8 +130,10 @@
                     <InputText class="form-control" @bind-Value="_request.DetectionCaseId" placeholder="@($"e.g. {DetectionLabel}-40122")" />
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Data types involved</label>
+                    <label class="form-label">Data context <span class="text-muted">(notes, optional)</span></label>
                     <InputText class="form-control" @bind-Value="_request.DataTypesInvolved" placeholder="@(_dataTypesPrompt ?? "e.g. PII, PHI, credentials")" />
+                    @* E-36: the structured data elements (Impact assessment) are the authoritative record. *@
+                    <div class="form-text">Free-text context. Record the regulated data elements in the case's Impact assessment; notification decisions use those.</div>
                 </div>
 
                 <div class="col-12">

@@ -38,7 +38,7 @@ public static class AuditChangeDetail
         ["CaseNumber"] = "Case number",
         ["IncidentCommander"] = "Incident commander",
         ["ImpactedAssets"] = "Impacted assets",
-        ["DataTypesInvolved"] = "Data types involved",
+        ["DataTypesInvolved"] = "Data context (notes)",
         ["AffectedIndividualsCount"] = "Affected individuals",
         ["AffectedStates"] = "Affected states",
         ["DetectionCaseId"] = "Detection case ID",

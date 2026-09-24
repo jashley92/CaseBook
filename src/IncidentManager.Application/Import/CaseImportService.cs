@@ -444,7 +444,7 @@ public sealed class CaseImportService
             Summary = Clamp(nc?.Summary, MaxSummary, "Case summary", warnings),
             DetectedAtUtc = nc?.DetectedAtUtc,
             OccurredAtUtc = nc?.OccurredAtUtc,
-            DataTypesInvolved = Clamp(nc?.DataTypesInvolved, MaxLabel, "Data types", warnings),
+            DataTypesInvolved = Clamp(nc?.DataTypesInvolved, MaxLabel, "Data context", warnings),
             ImpactedAssets = Clamp(nc?.ImpactedAssets, MaxSummary, "Impacted assets", warnings)
         };
     }

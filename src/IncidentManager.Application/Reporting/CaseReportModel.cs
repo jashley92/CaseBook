@@ -63,6 +63,7 @@ public sealed class CaseReportModel
     public string? Summary { get; init; }
     /// <summary>The Summary with its Markdown formatting kept (headings, emphasis, lists) for print.</summary>
     public IReadOnlyList<RichBlock> SummaryBlocks { get; init; } = [];
+    /// <summary>E-36: free-text data context. Printed as analyst notes, beneath the authoritative data elements.</summary>
     public string? DataTypesInvolved { get; init; }
     public string? ImpactedAssets { get; init; }
 
