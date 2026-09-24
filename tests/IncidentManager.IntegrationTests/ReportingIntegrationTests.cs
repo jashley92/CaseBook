@@ -171,6 +171,10 @@ public sealed class ReportingIntegrationTests : IDisposable
         var report = await svc.GenerateAsync(caseId, ReportFormat.Pdf);
         report.IsFinal.Should().BeFalse("generation now produces a draft (E-15)");
 
+        // An analyst can generate but not approve: the service asserts ApproveReports, not just the UI.
+        await Assert.ThrowsAsync<IncidentManager.Application.Security.ForbiddenException>(() => svc.ApproveAsync(report.Id));
+
+        _user.RoleSet = [AppRole.IncidentCommander];
         var approved = await svc.ApproveAsync(report.Id);
         approved.IsFinal.Should().BeTrue();
         approved.ApprovedBy.Should().Be(_user.UserId);
@@ -238,6 +242,29 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task Generating_a_report_enforces_need_to_know_and_edit_permission()
+    {
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);
+        var svc = NewReportService(db);
+        var theCase = await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave");
+        theCase.IsRestricted = true;
+        await db.SaveChangesAsync();
+
+        // An unrelated analyst can't generate (and so read) a restricted case's report by GUID.
+        _user.UserId = "outsider";
+        _user.RoleSet = [AppRole.Analyst];
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => svc.GenerateAsync(theCase.Id, ReportFormat.Pdf));
+        ex.Message.Should().Be("Case not found.");
+
+        // A manager sees every case but holds no EditCases, so generation is refused outright.
+        _user.RoleSet = [AppRole.Manager];
+        await Assert.ThrowsAsync<IncidentManager.Application.Security.ForbiddenException>(
+            () => svc.GenerateAsync(theCase.Id, ReportFormat.Pdf));
+        (await db.Reports.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task The_report_groups_data_elements_by_the_jurisdiction_they_trigger_notification_in(/* X-03 slice C */)
     {
         await using var db = NewContext();
@@ -292,6 +319,7 @@ public sealed class ReportingIntegrationTests : IDisposable
     [Fact]
     public async Task Approving_a_word_draft_is_rejected_only_a_pdf_can_be_the_final()
     {
+        _user.RoleSet = [AppRole.IncidentCommander];
         await using var db = NewContext();
         await DevDataSeeder.SeedAsync(db, _clock);
         var svc = NewReportService(db);
@@ -305,6 +333,7 @@ public sealed class ReportingIntegrationTests : IDisposable
     [Fact]
     public async Task Approving_an_already_final_report_is_rejected()
     {
+        _user.RoleSet = [AppRole.IncidentCommander];
         await using var db = NewContext();
         await DevDataSeeder.SeedAsync(db, _clock);
         var svc = NewReportService(db);
@@ -320,7 +349,7 @@ public sealed class ReportingIntegrationTests : IDisposable
     public async Task Separation_of_duties_blocks_the_generator_but_a_different_user_can_approve()
     {
         _reporting.CurrentValue = new ReportingOptions { RequireSeparateApprover = true };
-        _user.RoleSet = [AppRole.Manager]; // need-to-know across all cases
+        _user.RoleSet = [AppRole.Manager, AppRole.IncidentCommander]; // need-to-know across all cases + approve
         _user.UserId = "maker";
 
         await using var db = NewContext();

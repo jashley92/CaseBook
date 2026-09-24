@@ -79,7 +79,12 @@ public sealed class ReportService
     /// </summary>
     public async Task<Report> GenerateAsync(Guid caseId, ReportFormat format, CancellationToken ct = default)
     {
+        if (!_user.Has(Permission.EditCases)) throw new Security.ForbiddenException(Permission.EditCases);
         using var db = _factory.CreateDbContext();
+        // Need-to-know on the parent case, same "not found" message as the preview so a restricted case's
+        // existence isn't leaked by generating against its GUID.
+        var canAccess = await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(x => x.Id == caseId, ct);
+        if (!canAccess) throw new InvalidOperationException("Case not found.");
         var c = await LoadFullCaseAsync(db, caseId, ct)
             ?? throw new InvalidOperationException("Case not found.");
 
@@ -146,10 +151,11 @@ public sealed class ReportService
     /// <summary>
     /// Approves and finalizes a generated PDF draft (E-15) — stamps the approver + timestamp and marks it
     /// the locked final. Enforces need-to-know on the parent case and, when configured, separation of
-    /// duties (approver ≠ generator). The <c>ApproveReports</c> policy is enforced at the web layer.
+    /// duties (approver ≠ generator). Asserts <c>ApproveReports</c> here too, not only via the web-layer policy.
     /// </summary>
     public async Task<Report> ApproveAsync(Guid reportId, CancellationToken ct = default)
     {
+        if (!_user.Has(Permission.ApproveReports)) throw new Security.ForbiddenException(Permission.ApproveReports);
         using var db = _factory.CreateDbContext();
         var report = await db.Reports.FirstOrDefaultAsync(r => r.Id == reportId, ct)
                      ?? throw new InvalidOperationException("Report not found.");
