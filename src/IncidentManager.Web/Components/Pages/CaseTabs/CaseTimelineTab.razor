@@ -215,6 +215,10 @@
                     <label class="form-label small mb-1">
                         Notes <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, bullet/numbered lists, links</span>
                     </label>
+                    @if (_tlEditId is null)
+                    {
+                        <ComposerHint>What the team did and when (actions, decisions, meetings), printed in the report's investigation timeline. Doesn't notify anyone.</ComposerHint>
+                    }
                     @* EasyMDE enhances this textarea (managed in this tab's OnAfterRenderAsync); value pulled on Add/Save. *@
                     <textarea id="@InvEditorId" class="form-control"></textarea>
                     @if (_tlEditId is not null)

@@ -26,6 +26,7 @@
             @(_replyTo is null ? "Add a comment" : "Reply")
             <span class="text-muted">· Markdown &mdash; <code>@@</code> to mention a teammate, <code>#</code> to tag an entity</span>
         </label>
+        <ComposerHint>Team conversation and handoffs. <code>@@</code>mentioned teammates are notified. Not printed in the case report; record findings in <strong>Notes</strong>.</ComposerHint>
         @* EasyMDE enhances this textarea (toolbar + inline @mention autocomplete); managed in OnAfterRenderAsync. *@
         <textarea id="@ComposerId" class="form-control mb-2" placeholder="Share an update, a question, or a handoff…"></textarea>
 

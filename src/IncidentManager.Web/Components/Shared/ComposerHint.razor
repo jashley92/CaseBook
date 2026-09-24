@@ -1,0 +1,9 @@
+@* FR-08: one line under a prose composer saying what the surface is for, whether it lands in the case report,
+   and whether it notifies anyone — so "@Alex please look" goes in Discussion (notifies), not Notes (doesn't). *@
+<div class="small text-muted mb-1">
+    <span class="bi bi-info-circle me-1" aria-hidden="true"></span>@ChildContent
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+}

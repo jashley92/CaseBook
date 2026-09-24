@@ -17,6 +17,7 @@
         <div class="card-body">
             <label class="form-label small mb-1">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links · <code>#</code> to tag an entity</span></label>
             @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add. *@
+            <ComposerHint>Your investigation record: findings and reasoning, printed in the case report. Doesn't notify anyone. To hand off or ask a teammate, use <strong>Discussion</strong>.</ComposerHint>
             <textarea id="@NoteAddEditorId" class="form-control mb-2"></textarea>
             <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddNote">Add note</button>
         </div>
