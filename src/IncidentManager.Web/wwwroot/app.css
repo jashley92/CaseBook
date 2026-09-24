@@ -890,6 +890,9 @@ h1:focus {
 .access-denied { display: flex; justify-content: center; padding: 2rem 1rem; }
 .access-denied-card { width: 100%; max-width: 34rem; }
 .access-denied-card .empty-state { padding: 2rem 1.5rem; gap: 0.5rem; }
+/* S-24: My access — one line per permission, held ones emphasised. */
+.access-summary-list { list-style: none; padding: 0; margin-top: .75rem; display: grid; gap: .35rem; }
+.access-summary-list .bi { margin-right: .35rem; }
 
 /* UX-09: the Downloads page — one row per export artifact (icon · name+purpose · download button). */
 .dl-list { display: flex; flex-direction: column; }
@@ -1940,6 +1943,11 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
     background: var(--bs-tertiary-bg); color: var(--bs-secondary-color); }
 .im-visibility.is-restricted { background: var(--im-warn-bg); color: var(--bs-body-color); }
 .im-visibility.is-restricted > .bi { color: var(--im-warn); }
+
+/* S-21: the case workspace's "view only" note for roles without edit rights. */
+.im-viewonly { display: flex; gap: .45rem; align-items: baseline; padding: .4rem .7rem; border-radius: .3rem;
+    background: var(--bs-tertiary-bg); color: var(--bs-secondary-color); border-left: 3px solid var(--bs-border-color); }
+.im-viewonly strong { color: var(--bs-body-color); }
 
 /* E-31: print-to-PDF for report pages (the program report first). Hides the app chrome and anything marked
    .no-print, prints on white whatever the theme, and keeps cards from splitting across pages. */

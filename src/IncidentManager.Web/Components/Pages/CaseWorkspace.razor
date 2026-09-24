@@ -68,6 +68,15 @@ else
             </div>
         </div>
     }
+    @* S-21: a view-only role sees the case without edit controls; say so, rather than leave them wondering where the
+       controls went, and say who can change things. *@
+    @if (!_canEdit && !_permissionLost && !_accessLost)
+    {
+        <div class="im-viewonly small mb-2" role="note">
+            <span class="bi bi-eye" aria-hidden="true"></span>
+            <span><strong>View only.</strong> @ViewOnlyText</span>
+        </div>
+    }
     @* FR-17: wrap so the action group (Advance / Actions) drops below the title on a phone instead of
        overflowing the row and forcing whole-page horizontal scroll. *@
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
@@ -750,6 +759,19 @@ else
     private CaseAssignmentRole _assignRole = CaseAssignmentRole.Analyst;
     private string? _legalContact;
     private string? _holdReleaseReason;   // F-12
+
+    // S-21: the view-only note — which role(s) the user has, what they can still do here, and who can change the case.
+    private string ViewOnlyText
+    {
+        get
+        {
+            var roles = Ui.OrderRoles(CurrentUser.RoleNames).Select(Ui.RoleLabel).ToList();
+            var who = roles.Count switch { 0 => "Your access", 1 => $"Your role ({roles[0]})", _ => $"Your roles ({string.Join(", ", roles)})" };
+            var legal = _canManageLegal ? " Legal actions (referral, legal hold) are in the Actions menu." : "";
+            return $"{who} can read this case and post in its Discussion, but not change the case record.{legal} " +
+                   "The incident commander or a CaseBook administrator can make changes or grant edit access.";
+        }
+    }
 
     // S-08: need-to-know restriction.
     private string? _restrictReason;
