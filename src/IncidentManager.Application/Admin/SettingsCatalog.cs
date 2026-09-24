@@ -98,6 +98,9 @@ public static class SettingsCatalog
             "When on, users who opt in (account menu → Notifications) receive a consolidated digest of their open follow-up items — overdue / due today / due this week — on their chosen daily or weekly cadence, in place of a scatter of per-item reminders. This is the master switch; each user still chooses their own cadence (default off). Read-only over case data. Takes effect within a few minutes of saving.", "false"),
         new SettingDefinition("Notifications:DigestScan:IntervalHours", "Digest scan interval (hours)", "Notifications", SettingKind.Int,
             "How often to check whether a user's digest is due. A digest still sends only once per period (day/week); a small interval just means it goes out promptly. Default 1. Takes effect within a few minutes of saving.", "1"),
+        // PROD-15: quarterly executive report email to managers (the E-31 program report's headline figures).
+        new SettingDefinition("Notifications:ExecutiveReport:Enabled", "Quarterly executive report email", "Notifications", SettingKind.Bool,
+            "In the first week of each quarter, email everyone with the Manager role last quarter's headline figures (volumes, response times, SLA attainment, regulatory reporting, follow-through) with a link to the full program report.", "false"),
         new SettingDefinition("Notifications:Mandatory:Assignment", "Mandatory: assignment emails", "Notifications", SettingKind.Bool,
             "When on, assignment emails are enforced org-wide — users cannot opt out of them under their own account preferences. Off = each user may turn their assignment emails off.", "false"),
         new SettingDefinition("Notifications:Mandatory:Overdue", "Mandatory: overdue reminders", "Notifications", SettingKind.Bool,

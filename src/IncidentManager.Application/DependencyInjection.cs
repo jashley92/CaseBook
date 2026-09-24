@@ -76,6 +76,8 @@ public static class DependencyInjection
         services.AddScoped<Notifications.UserNotificationPreferenceService>();
         services.AddScoped<Notifications.DigestScanner>();
         services.AddSingleton<Notifications.IDigestTracker, Notifications.DigestTracker>();
+        services.AddScoped<Notifications.ExecutiveReportScanner>();       // PROD-15: quarterly executive report email
+        services.AddSingleton<Notifications.IExecutiveReportTracker, Notifications.ExecutiveReportTracker>();
 
         services.AddSingleton<IMarkdownService, MarkdownService>();
 

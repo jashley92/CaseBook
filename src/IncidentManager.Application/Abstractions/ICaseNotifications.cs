@@ -178,4 +178,11 @@ public interface ICaseNotifications
     /// user has no address on file. Reminds only — nothing here mutates case state.
     /// </summary>
     Task OnDigestAsync(UserDigest digest, CancellationToken ct = default) => Task.CompletedTask;
+
+    /// <summary>
+    /// PROD-15: the scheduled executive report — last quarter's program headline figures (E-31) for the managers,
+    /// with a link to the full report. Default no-op so existing implementers and test doubles need not change.
+    /// </summary>
+    Task OnExecutiveReportAsync(IncidentManager.Application.Dashboards.ProgramReport report, CancellationToken ct = default)
+        => Task.CompletedTask;
 }

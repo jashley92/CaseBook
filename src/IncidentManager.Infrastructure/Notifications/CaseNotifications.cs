@@ -281,6 +281,50 @@ public sealed class CaseNotifications : ICaseNotifications
         }
     }
 
+    public async Task OnExecutiveReportAsync(IncidentManager.Application.Dashboards.ProgramReport report, CancellationToken ct = default)
+    {
+        var to = _users.All()
+            .Where(u => u.RolesCsv.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Contains(nameof(AppRole.Manager), StringComparer.OrdinalIgnoreCase))
+            .Select(u => _users.EmailFor(u.UserId))
+            .Where(e => !string.IsNullOrWhiteSpace(e))
+            .Select(e => e!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (to.Count == 0) return;
+
+        var c = report.Current;
+        var p = report.Previous;
+        static string H(double? h) => h is { } v ? $"{v:0.#} h" : "—";
+        static string P(IncidentManager.Application.Dashboards.SlaAttainment s) => s.Percent is { } v ? $"{v}%" : "—";
+        var rows = new (string Label, string Cur, string Prev)[]
+        {
+            ("Cases opened", c.Opened.ToString(CultureInfo.InvariantCulture), p.Opened.ToString(CultureInfo.InvariantCulture)),
+            ("Cases closed", c.Closed.ToString(CultureInfo.InvariantCulture), p.Closed.ToString(CultureInfo.InvariantCulture)),
+            ("Open at quarter end", c.OpenAtEnd.ToString(CultureInfo.InvariantCulture), p.OpenAtEnd.ToString(CultureInfo.InvariantCulture)),
+            ("Classified as breach", c.BreachesOpened.ToString(CultureInfo.InvariantCulture), p.BreachesOpened.ToString(CultureInfo.InvariantCulture)),
+            ("Reported to regulators", c.ReportedToRegulators.ToString(CultureInfo.InvariantCulture), p.ReportedToRegulators.ToString(CultureInfo.InvariantCulture)),
+            ("Median time to contain", H(c.TimeToContain.MedianHours), H(p.TimeToContain.MedianHours)),
+            ("Containment within target", P(c.Sla.First(s => s.Clock == SlaClock.Containment)), P(p.Sla.First(s => s.Clock == SlaClock.Containment))),
+            ("Improvement actions open at quarter end", c.ActionsOpenAtEnd.ToString(CultureInfo.InvariantCulture), p.ActionsOpenAtEnd.ToString(CultureInfo.InvariantCulture)),
+            ("… of which past target", c.ActionsPastTargetAtEnd.ToString(CultureInfo.InvariantCulture), p.ActionsPastTargetAtEnd.ToString(CultureInfo.InvariantCulture)),
+        };
+        var table = "<table cellpadding=\"4\" style=\"border-collapse:collapse\"><tr><th align=\"left\"></th>" +
+                    $"<th align=\"right\">{WebUtility.HtmlEncode(report.Period.Label)}</th><th align=\"right\">{WebUtility.HtmlEncode(report.Period.Previous.Label)}</th></tr>" +
+                    string.Join("", rows.Select(r => $"<tr><td>{WebUtility.HtmlEncode(r.Label)}</td><td align=\"right\">{WebUtility.HtmlEncode(r.Cur)}</td><td align=\"right\">{WebUtility.HtmlEncode(r.Prev)}</td></tr>")) +
+                    "</table>";
+        var reportUrl = BaseUrl.Length == 0 ? null : $"{BaseUrl}/program-report";
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Quarter"] = report.Period.Label,
+            ["PreviousQuarter"] = report.Period.Previous.Label,
+            ["ReportUrl"] = reportUrl ?? "",
+        };
+        var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["SummaryTable"] = table };
+        var message = await _composer.ComposeAsync("executive-report", to, tokens, reportUrl, htmlTokens, ct);
+        await _email.SendAsync(message, ct);
+    }
+
     private static string OverdueSpan(double hours) =>
         hours >= 48 ? $"{Math.Floor(hours / 24):0} days" : $"{Math.Floor(hours):0} hours";
 

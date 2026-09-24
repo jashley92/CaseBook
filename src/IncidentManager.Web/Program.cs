@@ -92,6 +92,10 @@ builder.Services.AddHostedService<StaleCaseHostedService>();
 builder.Services.Configure<DigestScanOptions>(builder.Configuration.GetSection("Notifications:DigestScan"));
 builder.Services.AddHostedService<DigestHostedService>();
 
+// --- PROD-15: quarterly executive report email (last quarter's program figures to managers). Off by default. ---
+builder.Services.Configure<ExecutiveReportOptions>(builder.Configuration.GetSection("Notifications:ExecutiveReport"));
+builder.Services.AddHostedService<ExecutiveReportHostedService>();
+
 // --- F-18: outbound security-event stream. Transports fan out from a background dispatcher. ---
 builder.Services.AddHttpClient("siem");
 builder.Services.AddSingleton<IncidentManager.Infrastructure.Siem.ISecurityEventTransport, IncidentManager.Web.Siem.WebhookTransport>();

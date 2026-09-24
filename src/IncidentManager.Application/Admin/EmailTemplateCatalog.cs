@@ -103,6 +103,26 @@ public static class EmailTemplateCatalog
             CtaUrlToken: "OverdueUrl"),
 
         new EmailTemplateDefinition(
+            "executive-report",
+            "Quarterly executive report",
+            "Sent to managers in the first week of each quarter with last quarter's program figures (PROD-15 / E-31).",
+            "Program report {{Quarter}}",
+            """
+            <h1>Program report: {{Quarter}}</h1>
+            <p>Headline figures for {{Quarter}}, compared with {{PreviousQuarter}}. Cases in all scopes; exercise cases excluded.</p>
+            {{SummaryTable}}
+            <p>The full report, with the breakdowns and a CSV export, is in CaseBook.</p>
+            """,
+            new[]
+            {
+                new EmailToken("Quarter", "The quarter reported on, e.g. Q3 2026."),
+                new EmailToken("PreviousQuarter", "The quarter it's compared with."),
+                new EmailToken("SummaryTable", "The headline figures table. Rendered by the app."),
+            },
+            CtaLabel: "Open the program report",
+            CtaUrlToken: "ReportUrl"),
+
+        new EmailTemplateDefinition(
             "action-item-due-soon",
             "After-action due-soon reminder",
             "Sent to an item's owner (or the case's incident commander) ahead of the deadline, when a follow-up item is due within the lead window (E-03d).",

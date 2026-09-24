@@ -180,6 +180,26 @@ public class CaseNotificationsTests
     }
 
     [Fact]
+    public async Task The_executive_report_goes_to_every_manager_with_the_headline_figures(/* PROD-15 */)
+    {
+        var sender = new CapturingEmailSender();
+        var notifications = Build(sender, new EmailOptions(), Team());
+        var snap = new IncidentManager.Application.Dashboards.ProgramSnapshot(12, 9, 5, [], [],
+            new(null, null, 0), new(3, 2.5, 4), new(null, null, 0),
+            [new(IncidentManager.Application.Sla.SlaClock.Containment, 3, 1)],
+            1, 1, new(null, null, 0), 2, 3, 1, 0, 4, 1, []);
+        var report = new IncidentManager.Application.Dashboards.ProgramReport(
+            new IncidentManager.Application.Dashboards.ProgramPeriod(2026, 2), snap, snap, [], false, Now);
+
+        await notifications.OnExecutiveReportAsync(report);
+
+        sender.Sent.Should().ContainSingle();
+        sender.Sent[0].To.Should().BeEquivalentTo("mia@insurer.example", "max@insurer.example");
+        sender.Sent[0].Subject.Should().Contain("Q2 2026");
+        sender.Sent[0].HtmlBody.Should().Contain("Cases opened").And.Contain(">12<").And.Contain("75%").And.Contain("2.5 h");
+    }
+
+    [Fact]
     public async Task Assignment_emails_the_assignee_when_enabled()
     {
         var sender = new CapturingEmailSender();

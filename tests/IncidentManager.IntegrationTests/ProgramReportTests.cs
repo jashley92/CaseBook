@@ -137,5 +137,46 @@ public sealed class ProgramReportTests : IDisposable
         ProgramPeriod.TryCreate(2026, 5).Should().BeNull();
     }
 
+    // ---- PROD-15: the scheduled executive report ----
+
+    private sealed class CapturingNotifications : IncidentManager.Application.Abstractions.ICaseNotifications
+    {
+        public List<ProgramReport> Reports { get; } = [];
+        public Task OnExecutiveReportAsync(ProgramReport report, CancellationToken ct = default) { Reports.Add(report); return Task.CompletedTask; }
+        public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnAssignedAsync(Case c, string a, string b, CaseAssignmentRole role, string by, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnActionItemsOverdueAsync(IReadOnlyList<IncidentManager.Application.Abstractions.OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnActionItemsDueSoonAsync(IReadOnlyList<IncidentManager.Application.Abstractions.DueSoonActionItem> items, int leadHours, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task The_executive_report_goes_once_in_the_first_week_of_a_quarter_with_manager_visibility()
+    {
+        await SeedAsync();
+        await using (var db = new AppDbContext(Options()))
+        {
+            // A restricted Q2 case: the scheduled report (Manager visibility, like its recipients) still counts it.
+            var hidden = Case.Open(2026, 9, "H", "Restricted", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic", Apr(28));
+            hidden.IsRestricted = true;
+            db.Cases.Add(hidden);
+            await db.SaveChangesAsync();
+        }
+        var sent = new CapturingNotifications();
+        var tracker = new IncidentManager.Application.Notifications.ExecutiveReportTracker();
+        IncidentManager.Application.Notifications.ExecutiveReportScanner Scanner() =>
+            new(new TestDbContextFactory(Options()), new TestSlaTargets(), sent, tracker, _clock);
+
+        _clock.UtcNow = new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero);     // too late in Q3
+        (await Scanner().ScanAndSendAsync()).Should().BeFalse();
+
+        _clock.UtcNow = new DateTimeOffset(2026, 7, 2, 9, 0, 0, TimeSpan.Zero);      // first week of Q3
+        (await Scanner().ScanAndSendAsync()).Should().BeTrue();
+        (await Scanner().ScanAndSendAsync()).Should().BeFalse("once per quarter");
+
+        sent.Reports.Should().ContainSingle();
+        sent.Reports[0].Period.Should().Be(Q2);
+        sent.Reports[0].Current.Opened.Should().Be(3, "A, B and the restricted case; the drill stays out");
+    }
+
     public void Dispose() => _connection.Dispose();
 }
