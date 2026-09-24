@@ -6,7 +6,9 @@ a, .btn-link {
     color: var(--im-accent-text);
 }
 
-[data-bs-theme="dark"] a, [data-bs-theme="dark"] .btn-link {
+/* :not(.btn) so a link styled as a button keeps its button colors; the theme-scoped selector would
+   otherwise outrank .btn-outline-secondary and turn every anchor button gold in dark mode. */
+[data-bs-theme="dark"] a:not(.btn), [data-bs-theme="dark"] .btn-link {
     color: var(--im-accent-text);
 }
 
@@ -50,6 +52,23 @@ a, .btn-link {
     --bs-btn-disabled-color: var(--im-text-muted);
     --bs-btn-disabled-bg: transparent;
     --bs-btn-disabled-border-color: var(--im-border-strong);
+}
+
+/* Neutral secondary action. Bootstrap's stock grey (#6c757d) reads as disabled on the dark surface, so it
+   follows the text/border tokens instead: full-contrast label, quiet border, surface wash on hover. */
+.btn-outline-secondary {
+    --bs-btn-color: var(--im-text);
+    --bs-btn-border-color: var(--im-border-strong);
+    --bs-btn-hover-color: var(--im-text);
+    --bs-btn-hover-bg: var(--im-surface-2);
+    --bs-btn-hover-border-color: var(--im-text-muted);
+    --bs-btn-focus-shadow-rgb: 224, 175, 18;
+    --bs-btn-active-color: var(--im-text);
+    --bs-btn-active-bg: var(--im-surface-2);
+    --bs-btn-active-border-color: var(--im-text-muted);
+    --bs-btn-disabled-color: var(--im-text-muted);
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: var(--im-border);
 }
 
 /* Code-ish text (case numbers, config keys, technique IDs) in a quiet slate instead of Bootstrap's pink,

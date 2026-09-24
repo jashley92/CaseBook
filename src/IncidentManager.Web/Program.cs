@@ -349,6 +349,20 @@ app.UseStatusCodePages(context =>
         // S-22: pass the refused path so the page can say which permission it needs (display only, never a link).
         http.Response.Redirect("/access-denied?from=" + Uri.EscapeDataString(http.Request.Path.Value ?? ""));
     }
+    // A browser asking for a page CaseBook doesn't have gets the friendly not-found page instead of a blank
+    // one. Only HTML page GETs: API calls, downloads, static files and the circuit keep their plain 404.
+    else if (http.Response.StatusCode == StatusCodes.Status404NotFound
+        && HttpMethods.IsGet(http.Request.Method)
+        && http.Request.Headers.Accept.ToString().Contains("text/html", StringComparison.OrdinalIgnoreCase)
+        && !Path.HasExtension(http.Request.Path.Value)
+        && !http.Request.Path.StartsWithSegments("/_blazor")
+        && !http.Request.Path.StartsWithSegments("/_framework")
+        && !http.Request.Path.StartsWithSegments("/api")
+        && !http.Request.Path.StartsWithSegments("/export")
+        && !http.Request.Path.StartsWithSegments("/not-found"))
+    {
+        http.Response.Redirect("/not-found?from=" + Uri.EscapeDataString(http.Request.Path.Value ?? ""));
+    }
     return Task.CompletedTask;
 });
 
