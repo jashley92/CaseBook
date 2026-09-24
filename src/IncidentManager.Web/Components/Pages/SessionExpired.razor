@@ -14,8 +14,15 @@
         <div class="session-locked-icon" aria-hidden="true"><span class="bi bi-lock-fill"></span></div>
         <h1 class="session-locked-title">Session locked</h1>
         <p class="session-locked-text">
-            You were signed out here because of inactivity. Anything you saved is safe; an edit you were still
-            typing when the session locked may need to be redone.
+            @if (Locked)
+            {
+                <span>You locked this session. Anything you saved is safe.</span>
+            }
+            else
+            {
+                <span>You were signed out here because of inactivity. Anything you saved is safe; an edit you were still
+                    typing when the session locked may need to be redone.</span>
+            }
         </p>
         <p class="session-locked-text session-locked-muted">
             This is a security measure for unattended workstations. Please also lock your computer when you step away.
@@ -23,3 +30,10 @@
         <a href="/" class="btn btn-primary">Resume session</a>
     </div>
 </div>
+
+@code {
+    // S-24: set when the user locked the session themselves (profile menu → Lock now) rather than idling out.
+    // A string, not a bool: this page is anonymous, and a malformed value must not be able to break it.
+    [SupplyParameterFromQuery(Name = "locked")] private string? LockedQuery { get; set; }
+    private bool Locked => LockedQuery is "1" or "true";
+}
