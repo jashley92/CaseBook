@@ -60,6 +60,7 @@ public static class CaseActionPermissions
             [nameof(CaseService.AddEntityAsync)] = Permission.EditCases,
             [nameof(CaseService.EditEntityAsync)] = Permission.EditCases,
             [nameof(CaseService.RemoveEntityAsync)] = Permission.EditCases,
+            [nameof(CaseService.SetEntityTlpAsync)] = Permission.EditCases,
             [nameof(CaseService.LinkEntitiesAsync)] = Permission.EditCases,
             [nameof(CaseService.UnlinkAsync)] = Permission.EditCases,
             [nameof(CaseService.SaveGraphLayoutAsync)] = Permission.EditCases,

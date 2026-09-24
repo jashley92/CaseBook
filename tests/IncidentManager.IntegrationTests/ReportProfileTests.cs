@@ -86,7 +86,7 @@ public sealed class ReportProfileTests : IDisposable
 
     // "Summary + Outcome only" — every other section explicitly hidden.
     private const string ExecLayout =
-        "Summary,Outcome,!BusinessImpact,!EventTimeline,!InvestigationTimeline,!SystemsReviewed,!Recommendations,!Appendix";
+        "Summary,Outcome,!BusinessImpact,!EventTimeline,!InvestigationTimeline,!SystemsReviewed,!Indicators,!Recommendations,!Appendix";
 
     [Fact]
     public async Task Create_rejects_a_duplicate_name_and_update_round_trips()

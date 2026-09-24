@@ -19,6 +19,9 @@ public sealed record ReportImprovementActionRow(string Title, string? RelatedAre
 public sealed record ReportEntityRow(string Type, string Value, string? Label, string Disposition, string? Description, string? Source);
 public sealed record ReportRelationshipRow(string Source, string Relationship, string Target, string? Description);
 public sealed record ReportTechniqueRow(string TechniqueId, string Name, string Tactic);
+/// <summary>PROD-45: one indicator of compromise (malicious or suspicious), value defanged when reports defang.</summary>
+public sealed record ReportIocRow(string Type, string Value, string Verdict, string? Tlp, DateTimeOffset AddedAtUtc,
+    string? Source, string? Description);
 
 /// <summary>One ordered step of the reconstructed attack narrative (Event timeline), for the report.</summary>
 public sealed record ReportAttackStep(int Order, DateTimeOffset OccurredAtUtc, string Tactics, string Actor,
@@ -142,6 +145,24 @@ public sealed class CaseReportModel
     public IReadOnlyList<ReportEntityRow> Entities { get; init; } = [];
     public IReadOnlyList<ReportRelationshipRow> Relationships { get; init; } = [];
     public IReadOnlyList<ReportTechniqueRow> Techniques { get; init; } = [];
+
+    /// <summary>PROD-45: the indicators-of-compromise table (malicious and suspicious entities).</summary>
+    public IReadOnlyList<ReportIocRow> Iocs { get; init; } = [];
+
+    /// <summary>PROD-45: the report's TLP marking, printed on every page (null only for legacy callers).</summary>
+    public TlpLevel? Tlp { get; init; }
+
+    /// <summary>PROD-45: the marking text ("TLP:AMBER"), or null.</summary>
+    public string? TlpLabel => Tlp is { } t ? Domain.Enums.Tlp.Label(t) : null;
+
+    /// <summary>PROD-45: the one-line sharing statement printed with the case facts.</summary>
+    public string? SharingLine => Tlp is { } t ? $"Sharing: {Domain.Enums.Tlp.Label(t)}. {Domain.Enums.Tlp.Meaning(t)}" : null;
+
+    /// <summary>PROD-45: the caption under the Indicators of Compromise heading.</summary>
+    public string IocCaption =>
+        "Indicators judged malicious or suspicious, for blocking and hunting. Every entity examined is listed under Systems Reviewed."
+        + (Iocs.Any(i => i.Tlp is not null) ? " A TLP value on an indicator applies to that indicator in place of the report's marking." : "")
+        + (IndicatorsDefanged ? " " + DefangNote : "");
 
     public required string GeneratedBy { get; init; }
     public required DateTimeOffset GeneratedAtUtc { get; init; }

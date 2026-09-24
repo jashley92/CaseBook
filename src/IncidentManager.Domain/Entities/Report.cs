@@ -18,6 +18,9 @@ public class Report : AuditableEntity
     /// <summary>SHA-256 of the generated file, embedded in the PDF and verifiable later.</summary>
     public string ContentSha256 { get; set; } = string.Empty;
 
+    /// <summary>PROD-45: the TLP marking printed on this report (null for reports generated before markings).</summary>
+    public TlpLevel? Tlp { get; set; }
+
     /// <summary>True for the locked, approved final; false for editable working drafts.</summary>
     public bool IsFinal { get; set; }
     public string? ApprovedBy { get; set; }

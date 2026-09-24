@@ -25,6 +25,12 @@ public class CaseEntity : AuditableEntity, IHashableEntity
     /// <summary>Where this entity came from, e.g. "SIEM", "VirusTotal", analyst name.</summary>
     public string? Source { get; set; }
 
+    /// <summary>
+    /// PROD-45: an optional TLP marking for sharing this indicator; null = the report's marking applies. Kept out of
+    /// the row hash (so existing rows still verify); changes are still recorded in the hash-chained audit trail.
+    /// </summary>
+    public TlpLevel? Tlp { get; set; }
+
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',

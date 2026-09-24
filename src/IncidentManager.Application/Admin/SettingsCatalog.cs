@@ -235,6 +235,8 @@ public static class SettingsCatalog
             "Optional text printed at the top of every page of the lessons-learned report, e.g. \"Privileged & Confidential — Prepared at the Direction of Counsel\". Use wording your counsel has approved; a legend alone does not make a document privileged. Blank prints nothing. The case report is unaffected.", ""),
         new SettingDefinition("Reporting:DefangIndicators", "Defang indicators in reports", "Report defaults", SettingKind.Bool,
             "When on, URLs, domains, IP addresses and email addresses in the case and lessons-learned reports print defanged (hxxp://, [.], [at]) so a forwarded report can't turn them into clickable links. The report says so. IOC CSV, STIX and import files always carry live values for tooling. On by default.", "true"),
+        new SettingDefinition("Reporting:DefaultTlp", "Default TLP marking", "Report defaults", SettingKind.Text,
+            "The Traffic Light Protocol marking reports are generated with unless the analyst picks another: CLEAR, GREEN, AMBER, AMBER+STRICT or RED. It prints on every page. Default AMBER (share on a need-to-know basis).", "AMBER"),
         new SettingDefinition("Reporting:SectionLayout", "Report sections", "Report defaults", SettingKind.Text,
             "Which report body sections are included, and in what order. Edited with the layout designer below; the document title, header/footer and integrity stamp always appear.", "", CustomEditor: true),
     };

@@ -882,6 +882,16 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>PROD-45: sets or clears (null) an indicator's TLP sharing marking.</summary>
+    public async Task SetEntityTlpAsync(Guid id, Guid entityId, TlpLevel? tlp, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.SetEntityTlp(entityId, tlp, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task RemoveEntityAsync(Guid id, Guid entityId, CancellationToken ct = default)
     {
         Require();

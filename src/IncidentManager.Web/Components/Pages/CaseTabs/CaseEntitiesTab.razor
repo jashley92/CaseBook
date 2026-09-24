@@ -110,8 +110,18 @@
                     <button class="btn btn-sm btn-primary w-100" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddEntity" disabled="@string.IsNullOrWhiteSpace(_enValue)">Add</button>
                 </div>
             }
-            <div class="col-12">
+            <div class="col-md-9">
                 <input class="form-control form-control-sm" @bind="_enDescription" placeholder="Description / context (optional)" />
+            </div>
+            @* PROD-45: an optional TLP marking for sharing this indicator; blank = the report's marking applies. *@
+            <div class="col-md-3">
+                <select class="form-select form-select-sm" @bind="_enTlp" aria-label="TLP sharing marking" title="TLP sharing marking for this indicator">
+                    <option value="">TLP: same as report</option>
+                    @foreach (var t in Enum.GetValues<TlpLevel>())
+                    {
+                        <option value="@t">@Tlp.Label(t)</option>
+                    }
+                </select>
             </div>
             @if (_enEditId is not null)
             {
@@ -344,7 +354,8 @@ else
                                 }
                             </td>
                             <td class="small">@(e.Label ?? "—")</td>
-                            <td><span class="@Ui.DispositionBadge(e.Disposition)">@Ui.Label(e.Disposition)</span></td>
+                            <td class="text-nowrap"><span class="@Ui.DispositionBadge(e.Disposition)">@Ui.Label(e.Disposition)</span>
+                                @if (e.Tlp is { } tlp) { <span class="im-tlp im-tlp-sm ms-1" style="color:#@Tlp.Color(tlp)">@Tlp.Label(tlp)</span> }</td>
                             <td class="small text-muted">@(e.Source ?? "—")</td>
                             <td class="text-nowrap">
                                 @{ var vtUrl = VirusTotalUrl(e); }
@@ -460,6 +471,7 @@ else
     private string _enValue = "";
     private string? _enLabel;
     private EntityDisposition _enDisposition = EntityDisposition.Suspicious;
+    private TlpLevel? _enTlp;   // PROD-45
     private string? _enSource;
     private string? _enDescription;
     private string? _entityError;
@@ -589,8 +601,9 @@ else
         try
         {
             var addedVal = _enValue;
-            await Cases.AddEntityAsync(CaseId, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource);
-            _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null;
+            var newId = await Cases.AddEntityAsync(CaseId, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource);
+            if (_enTlp is not null) await Cases.SetEntityTlpAsync(CaseId, newId, _enTlp);   // PROD-45
+            _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null; _enTlp = null;
             await OnChanged.InvokeAsync();
             await LoadOverlaps(); // the new IOC may correlate with another case — surface "also in" now
             _relatedDismissed = false; // a new IOC may reveal a related case — re-surface the suggestion (PROD-40)
@@ -667,12 +680,13 @@ else
         _enDisposition = e.Disposition;
         _enSource = e.Source;
         _enDescription = e.Description;
+        _enTlp = e.Tlp;
     }
 
     private void CancelEntityEdit()
     {
         _enEditId = null; _enReason = null; _entityError = null;
-        _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null;
+        _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null; _enTlp = null;
     }
 
     private async Task SaveEntityEdit()
@@ -681,7 +695,9 @@ else
         _entityError = null;
         try
         {
+            var tlpChanged = Case.Entities.FirstOrDefault(x => x.Id == id)?.Tlp != _enTlp;
             await Cases.EditEntityAsync(CaseId, id, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource, _enReason);
+            if (tlpChanged) await Cases.SetEntityTlpAsync(CaseId, id, _enTlp);   // PROD-45
             CancelEntityEdit();
             await OnChanged.InvokeAsync();
             await LoadOverlaps(); // a changed value/type may change cross-case correlation

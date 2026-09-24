@@ -9,6 +9,7 @@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
+@inject Microsoft.Extensions.Options.IOptionsMonitor<IncidentManager.Application.Reporting.ReportingOptions> ReportingOpts
 
 <AuthorizeView Policy="@Policies.EditCases">
     <div class="card mb-3">
@@ -41,6 +42,18 @@
                         <span class="small text-muted">Reports use this profile's sections. Manage profiles in Admin → Reports.</span>
                     }
                 </div>
+            </div>
+
+            @* PROD-45: the TLP marking printed on every page of the report generated next. *@
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <label class="form-label small mb-0" for="report-tlp">Sharing (TLP)</label>
+                <select id="report-tlp" class="form-select form-select-sm w-auto" value="@_tlp" @onchange="OnTlpChanged">
+                    @foreach (var t in Enum.GetValues<TlpLevel>())
+                    {
+                        <option value="@t">@Tlp.Label(t)</option>
+                    }
+                </select>
+                <span class="small text-muted">@Tlp.Meaning(_tlp)</span>
             </div>
 
             <button class="btn btn-sm btn-outline-secondary" @onclick="TogglePreview">
@@ -90,6 +103,14 @@
     private bool _profileDirty;         // selection changed but not yet saved to the case
     private IncidentManager.Application.Reporting.CaseReportModel? _previewModel;
     private int _loadedToken = int.MinValue;
+    private TlpLevel? _tlpChoice;   // PROD-45: the analyst's pick; null = the admin default
+    private TlpLevel _tlp => _tlpChoice ?? ReportingOpts.CurrentValue.EffectiveDefaultTlp;
+
+    private async Task OnTlpChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<TlpLevel>(e.Value?.ToString(), out var t)) _tlpChoice = t;
+        if (State.ShowPreview) await RefreshPreview();
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -138,7 +159,7 @@
     {
         try
         {
-            _previewModel = await Reports.BuildPreviewModelAsync(CaseId, _selectedProfileId);
+            _previewModel = await Reports.BuildPreviewModelAsync(CaseId, _selectedProfileId, _tlp);
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
@@ -152,7 +173,7 @@
     {
         // Persist a changed profile choice first so the generated report matches the selection on screen.
         if (_profileDirty) await SaveProfile();
-        var report = await Reports.GenerateAsync(CaseId, format);
+        var report = await Reports.GenerateAsync(CaseId, format, _tlp);
         _reportMsg = $"Generated draft {report.FileName} (SHA-256 {report.ContentSha256[..12]}…)";
         await LoadReports();
         await OnCaseChanged.InvokeAsync();

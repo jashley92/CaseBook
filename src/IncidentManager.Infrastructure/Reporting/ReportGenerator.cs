@@ -1,3 +1,4 @@
+using IncidentManager.Domain.Enums;
 using System.Globalization;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -110,6 +111,14 @@ public sealed partial class ReportGenerator : IReportGenerator
                     m.Entities.Select(x => new[] { x.Type, x.Value, x.Label ?? "", x.Disposition, x.Source ?? "" })));
                 break;
 
+            case ReportSection.Indicators:
+                body.AppendChild(Heading("Indicators of Compromise"));
+                body.AppendChild(P(m.IocCaption, italic: true, size: 18));
+                body.AppendChild(WordTable(
+                    ["Type", "Indicator", "Verdict", "TLP", "Added (UTC)", "Context"],
+                    m.Iocs.Select(x => new[] { x.Type, x.Value, x.Verdict, x.Tlp ?? "—", x.AddedAtUtc.ToString("yyyy-MM-dd"), x.Description ?? "" })));
+                break;
+
             case ReportSection.Recommendations:
                 body.AppendChild(Heading("Recommendations"));
                 body.AppendChild(P("After-action items and follow-up tasks.", italic: true, size: 18));
@@ -168,6 +177,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         body.AppendChild(P($"Classification: {m.Classification}    Phase: {m.Phase}    Severity: {m.Severity}", size: 20));
         body.AppendChild(P($"Origin: {m.Origin}{(m.VendorName is null ? "" : $" ({m.VendorName})")}", size: 20));
         if (m.DetectionCaseId is not null) body.AppendChild(P($"Detection case: {m.DetectionCaseId}", size: 20));
+        if (m.SharingLine is { } sharing) body.AppendChild(P(sharing, size: 20));
         if (m.DataTypesInvolved is not null) body.AppendChild(P($"Data context (analyst notes): {m.DataTypesInvolved}", size: 20));
         if (m.LegalReferred) body.AppendChild(P($"Legal/Privacy referral recorded. {m.LegalNote}", size: 20));
         if (m.LegalHold) body.AppendChild(P("Legal hold in effect — case data must be preserved (do not delete).", size: 20));
@@ -332,6 +342,9 @@ public sealed partial class ReportGenerator : IReportGenerator
         var org = string.IsNullOrWhiteSpace(m.OrganizationName) ? "[Company Name]" : m.OrganizationName!;
         var team = string.IsNullOrWhiteSpace(m.TeamName) ? "[Team Name]" : m.TeamName!;
 
+        // PROD-45: the TLP marking, right-aligned in the header and footer of every page (TLP 2.0 guidance).
+        if (m.Tlp is { } tlp) header.AppendChild(TlpMarking(tlp));
+
         // An admin-set legend (e.g. a counsel-approved confidentiality marking) heads every page.
         if (!string.IsNullOrWhiteSpace(m.Legend))
             header.AppendChild(CenteredRun(m.Legend, bold: true, size: 18));
@@ -347,13 +360,22 @@ public sealed partial class ReportGenerator : IReportGenerator
         var headerId = main.GetIdOfPart(headerPart);
 
         var footerPart = main.AddNewPart<FooterPart>();
-        footerPart.Footer = new Footer(PageNumberParagraph());
+        footerPart.Footer = m.Tlp is { } footTlp ? new Footer(TlpMarking(footTlp), PageNumberParagraph()) : new Footer(PageNumberParagraph());
         var footerId = main.GetIdOfPart(footerPart);
 
         body.AppendChild(new SectionProperties(
             new HeaderReference { Type = HeaderFooterValues.Default, Id = headerId },
             new FooterReference { Type = HeaderFooterValues.Default, Id = footerId }));
     }
+
+    /// <summary>PROD-45: "TLP:AMBER" in the marking's colour on black, right-aligned.</summary>
+    private static Paragraph TlpMarking(TlpLevel tlp) => new(
+        new ParagraphProperties(new Justification { Val = JustificationValues.Right }),
+        new Run(
+            // Schema order (CT_RPr): b, color, sz, shd — Word flags anything else as needing repair.
+            new RunProperties(new Bold(), new Color { Val = Tlp.Color(tlp) }, new FontSize { Val = "18" },
+                new Shading { Val = ShadingPatternValues.Clear, Color = "auto", Fill = "000000" }),
+            new Text($" {Tlp.Label(tlp)} ") { Space = SpaceProcessingModeValues.Preserve }));
 
     private static Paragraph CenteredRun(string text, bool bold, int size)
     {

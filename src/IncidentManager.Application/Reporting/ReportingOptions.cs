@@ -1,3 +1,5 @@
+using IncidentManager.Domain.Enums;
+
 namespace IncidentManager.Application.Reporting;
 
 /// <summary>
@@ -46,4 +48,13 @@ public sealed class ReportingOptions
     /// forwarded report can't become clickable malicious links. On by default. Machine exports are never defanged.
     /// </summary>
     public bool DefangIndicators { get; set; } = true;
+
+    /// <summary>
+    /// PROD-45: the TLP marking a report is generated with unless the analyst picks another (CLEAR, GREEN, AMBER,
+    /// AMBER+STRICT or RED). Default AMBER: incident reports are normally shared on a need-to-know basis.
+    /// </summary>
+    public string? DefaultTlp { get; set; } = "AMBER";
+
+    /// <summary>The effective default marking (AMBER if the setting is blank or unrecognised).</summary>
+    public TlpLevel EffectiveDefaultTlp => Tlp.Parse(DefaultTlp) ?? TlpLevel.Amber;
 }

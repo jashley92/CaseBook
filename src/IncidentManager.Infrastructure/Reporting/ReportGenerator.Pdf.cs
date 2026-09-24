@@ -1,6 +1,8 @@
 using System.Globalization;
 using IncidentManager.Application.Reporting;
+using IncidentManager.Domain.Enums;
 using MigraDoc.DocumentObjectModel;
+using MigraDoc.DocumentObjectModel.Tables;
 using MigraDoc.Rendering;
 using PdfSharp.Drawing;
 using PdfSharp.Fonts;
@@ -38,7 +40,8 @@ public sealed partial class ReportGenerator
         // The header (org/team, plus an optional ~1.2cm logo) lives in the top margin — widen it so the
         // body clears the header instead of printing under it.
         section.PageSetup.TopMargin = Unit.FromCentimeter((logoPath is not null ? 4.2 : 2.8)
-            + (string.IsNullOrWhiteSpace(m.Legend) ? 0 : 0.6));
+            + (string.IsNullOrWhiteSpace(m.Legend) ? 0 : 0.6)
+            + (m.Tlp is null ? 0 : 0.6));   // PROD-45: room for the TLP marking line
         try
         {
             BuildHeaderFooter(section, m, logoPath);
@@ -137,6 +140,14 @@ public sealed partial class ReportGenerator
                     [2.4, 5.2, 2.6, 2.6, 2.4]);
                 break;
 
+            case ReportSection.Indicators:
+                Heading(section, "Indicators of Compromise");
+                Caption(section, m.IocCaption);
+                PdfTable(section, ["Type", "Indicator", "Verdict", "TLP", "Added (UTC)", "Context"],
+                    m.Iocs.Select(x => new[] { x.Type, x.Value, x.Verdict, x.Tlp ?? "—", x.AddedAtUtc.ToString("yyyy-MM-dd"), x.Description ?? "" }).ToList(),
+                    [2.2, 5.0, 2.0, 2.6, 2.2, 3.0]);
+                break;
+
             case ReportSection.Recommendations:
                 Heading(section, "Recommendations");
                 Caption(section, "After-action items and follow-up tasks.");
@@ -162,6 +173,7 @@ public sealed partial class ReportGenerator
         section.AddParagraph($"Classification: {m.Classification}    Phase: {m.Phase}    Severity: {m.Severity}");
         section.AddParagraph($"Origin: {m.Origin}{(m.VendorName is null ? "" : $" ({m.VendorName})")}");
         if (m.DetectionCaseId is not null) section.AddParagraph($"Detection case: {m.DetectionCaseId}");
+        if (m.SharingLine is { } sharing) section.AddParagraph(sharing);
         if (m.DataTypesInvolved is not null) section.AddParagraph($"Data context (analyst notes): {m.DataTypesInvolved}");
         if (m.LegalReferred) section.AddParagraph($"Legal/Privacy referral recorded. {m.LegalNote}");
         if (m.LegalHold) section.AddParagraph("Legal hold in effect — case data must be preserved (do not delete).");
@@ -286,11 +298,34 @@ public sealed partial class ReportGenerator
                 [3.8, 2.4, 4.0, 2.2, 2.2, 2.2]);
     }
 
+    /// <summary>
+    /// PROD-45: "TLP:AMBER" in the marking's colour on a black cell, right-aligned — a one-cell table, since MigraDoc
+    /// can only shade whole paragraphs (which would bar the full page width).
+    /// </summary>
+    private static void AddTlpMarking(HeaderFooter hf, TlpLevel tlp)
+    {
+        var table = hf.AddTable();
+        table.Rows.Alignment = RowAlignment.Right;
+        table.Borders.Visible = false;
+        table.AddColumn(Unit.FromCentimeter(3.6));
+        var cell = table.AddRow().Cells[0];
+        cell.Shading.Color = Colors.Black;
+        var para = cell.AddParagraph(Tlp.Label(tlp));
+        para.Format.Alignment = ParagraphAlignment.Center;
+        para.Format.Font.Bold = true;
+        para.Format.Font.Size = 8;
+        para.Format.Font.Color = Color.Parse("0xFF" + Tlp.Color(tlp));
+        hf.AddParagraph().Format.SpaceAfter = Unit.FromCentimeter(0.05);
+    }
+
     private static void BuildHeaderFooter(Section section, CaseReportModel m, string? logoPath)
     {
         var org = string.IsNullOrWhiteSpace(m.OrganizationName) ? "[Company Name]" : m.OrganizationName!;
         var team = string.IsNullOrWhiteSpace(m.TeamName) ? "[Team Name]" : m.TeamName!;
         var header = section.Headers.Primary;
+
+        // PROD-45: the TLP marking, right-aligned in the header (and footer, below) of every page.
+        if (m.Tlp is { } tlp) AddTlpMarking(header, tlp);
 
         // An admin-set legend (e.g. a counsel-approved confidentiality marking) heads every page.
         if (!string.IsNullOrWhiteSpace(m.Legend))
@@ -324,6 +359,7 @@ public sealed partial class ReportGenerator
         teamP.Format.Alignment = ParagraphAlignment.Center;
         teamP.Format.Font.Size = 10;
 
+        if (m.Tlp is { } footTlp) AddTlpMarking(section.Footers.Primary, footTlp);   // PROD-45
         var pageP = section.Footers.Primary.AddParagraph();
         pageP.Format.Alignment = ParagraphAlignment.Center;
         pageP.AddPageField();

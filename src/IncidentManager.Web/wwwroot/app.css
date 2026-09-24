@@ -1949,6 +1949,11 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
     background: var(--bs-tertiary-bg); color: var(--bs-secondary-color); border-left: 3px solid var(--bs-border-color); }
 .im-viewonly strong { color: var(--bs-body-color); }
 
+/* PROD-45: a TLP marking — the marking's colour on black, per TLP 2.0. */
+.im-tlp { display: inline-block; background: #000; font-weight: 700; font-size: .75rem; padding: .1rem .45rem;
+    border-radius: .2rem; letter-spacing: .02em; line-height: 1.3; }
+.im-tlp-sm { font-size: .68rem; padding: .05rem .35rem; }
+
 /* E-31: print-to-PDF for report pages (the program report first). Hides the app chrome and anything marked
    .no-print, prints on white whatever the theme, and keeps cards from splitting across pages. */
 @media print {

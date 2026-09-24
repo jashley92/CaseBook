@@ -1837,3 +1837,32 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924194443_AddTlpMarkings'
+)
+BEGIN
+    ALTER TABLE [Reports] ADD [Tlp] int NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924194443_AddTlpMarkings'
+)
+BEGIN
+    ALTER TABLE [CaseEntities] ADD [Tlp] int NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924194443_AddTlpMarkings'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260924194443_AddTlpMarkings', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

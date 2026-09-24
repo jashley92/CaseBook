@@ -19,6 +19,10 @@ else
             {
                 <img class="mb-2" style="max-height:48px" src="@LogoDataUri(Model)" alt="Logo" />
             }
+            @if (Model.Tlp is { } tlp)
+            {
+                <div class="text-end mb-1"><span class="im-tlp" style="color:#@IncidentManager.Domain.Enums.Tlp.Color(tlp)">@IncidentManager.Domain.Enums.Tlp.Label(tlp)</span></div>
+            }
             <div class="fw-bold">@Org</div>
             <div class="small text-muted">@Team</div>
         </div>
@@ -28,6 +32,7 @@ else
             Classification: @Model.Classification &nbsp;&middot;&nbsp; Phase: @Model.Phase &nbsp;&middot;&nbsp; Severity: @Model.Severity<br />
             Origin: @Model.Origin@(Model.VendorName is null ? "" : $" ({Model.VendorName})")
             @if (Model.DetectionCaseId is not null) { <text> &nbsp;&middot;&nbsp; Detection case: @Model.DetectionCaseId</text> }
+            @if (Model.SharingLine is { } sharing) { <br />@sharing }
         </div>
 
         @foreach (var section in Model.Sections)
@@ -138,6 +143,25 @@ else
                         </div>
                         break;
 
+                    case ReportSection.Indicators:
+                        <p class="small fst-italic text-muted mb-1">@Model.IocCaption</p>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered small mb-0">
+                                <thead><tr><th>Type</th><th>Indicator</th><th>Verdict</th><th>TLP</th><th>Added (UTC)</th><th>Context</th></tr></thead>
+                                <tbody>
+                                    @if (Model.Iocs.Count == 0)
+                                    {
+                                        <tr><td colspan="6" class="text-muted">(none)</td></tr>
+                                    }
+                                    @foreach (var x in Model.Iocs)
+                                    {
+                                        <tr><td>@x.Type</td><td><code class="small">@x.Value</code></td><td>@x.Verdict</td><td>@(x.Tlp ?? "—")</td><td class="text-nowrap">@x.AddedAtUtc.ToString("yyyy-MM-dd")</td><td>@x.Description</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        break;
+
                     case ReportSection.Recommendations:
                         <p class="small fst-italic text-muted mb-1">After-action items and follow-up tasks.</p>
                         <div class="table-responsive">
@@ -215,6 +239,7 @@ else
         ReportSection.EventTimeline => "Event Timeline",
         ReportSection.InvestigationTimeline => "Investigation Timeline",
         ReportSection.SystemsReviewed => "Systems Reviewed",
+        ReportSection.Indicators => "Indicators of Compromise",
         ReportSection.Recommendations => "Recommendations",
         ReportSection.Outcome => "Outcome",
         ReportSection.Appendix => "Appendix",

@@ -553,6 +553,18 @@ public class Case : AuditableEntity, IHashableEntity
         return entity;
     }
 
+    /// <summary>PROD-45: sets (or clears, with null) an indicator's TLP sharing marking.</summary>
+    public void SetEntityTlp(Guid entityId, TlpLevel? tlp, string actor, DateTimeOffset nowUtc)
+    {
+        var entity = Entities.FirstOrDefault(e => e.Id == entityId)
+            ?? throw new InvalidOperationException("Entity not found on this case.");
+        if (entity.Tlp == tlp) return;
+        entity.Tlp = tlp;
+        entity.ModifiedBy = actor;
+        entity.ModifiedAtUtc = nowUtc;
+        Touch(actor, nowUtc);
+    }
+
     /// <summary>
     /// Corrects an Event-timeline step in place (typo in the description, wrong tactic/technique, or a
     /// re-attributed actor/target). Event steps are short factual records; the audit chain preserves the

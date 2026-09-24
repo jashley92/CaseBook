@@ -13,6 +13,8 @@ public enum ReportSection
     EventTimeline,
     InvestigationTimeline,
     SystemsReviewed,
+    /// <summary>PROD-45: malicious / suspicious indicators, apart from the full Systems Reviewed record.</summary>
+    Indicators,
     Recommendations,
     Outcome,
     Appendix

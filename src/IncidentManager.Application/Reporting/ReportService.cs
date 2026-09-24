@@ -77,7 +77,7 @@ public sealed class ReportService
     /// Generates a report as a <b>working draft</b> (E-15). Finalization is a separate, permission-gated
     /// approval step (<see cref="ApproveAsync"/>) — generating no longer self-approves.
     /// </summary>
-    public async Task<Report> GenerateAsync(Guid caseId, ReportFormat format, CancellationToken ct = default)
+    public async Task<Report> GenerateAsync(Guid caseId, ReportFormat format, TlpLevel? tlp = null, CancellationToken ct = default)
     {
         if (!_user.Has(Permission.EditCases)) throw new Security.ForbiddenException(Permission.EditCases);
         using var db = _factory.CreateDbContext();
@@ -92,7 +92,7 @@ public sealed class ReportService
         var logo = await _branding.GetLogoAsync(ct);
         var sections = await ResolveSectionsAsync(db, c.ReportProfileId, ct);
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
-        var model = BuildModel(c, now, logo, sections, elemSummary, triggers);
+        var model = BuildModel(c, now, logo, sections, elemSummary, triggers, tlp);
 
         return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.Case, format, model, now, ct);
     }
@@ -103,7 +103,7 @@ public sealed class ReportService
     /// hashed and approvable through the same path, but listed and versioned on its own so it is never mixed
     /// into the examiner-facing case report. Prints the admin-set legend (if any) on every page.
     /// </summary>
-    public async Task<Report> GenerateLessonsAsync(Guid caseId, ReportFormat format, CancellationToken ct = default)
+    public async Task<Report> GenerateLessonsAsync(Guid caseId, ReportFormat format, TlpLevel? tlp = null, CancellationToken ct = default)
     {
         if (!_user.Has(Permission.EditCases)) throw new Security.ForbiddenException(Permission.EditCases);
         using var db = _factory.CreateDbContext();
@@ -111,7 +111,7 @@ public sealed class ReportService
             ?? throw new InvalidOperationException("Case not found.");
 
         var now = _clock.UtcNow;
-        var model = await BuildLessonsModelAsync(db, c, now, ct);
+        var model = await BuildLessonsModelAsync(db, c, now, ct, tlp);
         return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.LessonsLearned, format, model, now, ct);
     }
 
@@ -130,6 +130,7 @@ public sealed class ReportService
 
         var report = new Report
         {
+            Tlp = model.Tlp,   // PROD-45
             CaseId = caseId,
             Kind = kind,
             Version = version,
@@ -249,7 +250,7 @@ public sealed class ReportService
     /// house template — before Generate/Approve. Enforces need-to-know on the parent case.
     /// </summary>
     public async Task<CaseReportModel> BuildPreviewModelAsync(
-        Guid caseId, Guid? selectedProfileId, CancellationToken ct = default)
+        Guid caseId, Guid? selectedProfileId, TlpLevel? tlp = null, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var canAccess = await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct);
@@ -260,7 +261,7 @@ public sealed class ReportService
         var logo = await _branding.GetLogoAsync(ct);
         var sections = await ResolveSectionsAsync(db, selectedProfileId, ct);
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
-        return BuildModel(c, _clock.UtcNow, logo, sections, elemSummary, triggers);
+        return BuildModel(c, _clock.UtcNow, logo, sections, elemSummary, triggers, tlp);
     }
 
     private static Task<Case?> LoadFullCaseAsync(IAppDbContext db, Guid caseId, CancellationToken ct) =>
@@ -339,7 +340,8 @@ public sealed class ReportService
     /// The lessons-learned report model: case identity + branding, the review, and the improvement actions.
     /// Its provenance hash covers the review and actions (their canonical content), not the case row.
     /// </summary>
-    private async Task<CaseReportModel> BuildLessonsModelAsync(IAppDbContext db, Case c, DateTimeOffset now, CancellationToken ct)
+    private async Task<CaseReportModel> BuildLessonsModelAsync(IAppDbContext db, Case c, DateTimeOffset now, CancellationToken ct,
+        TlpLevel? tlp = null)
     {
         var review = await db.PostIncidentReviews.AsNoTracking().FirstOrDefaultAsync(x => x.CaseId == c.Id, ct);
         var actions = Lessons.LessonsService.Ordered(
@@ -356,6 +358,7 @@ public sealed class ReportService
         {
             Kind = ReportKind.LessonsLearned,
             IndicatorsDefanged = d.Enabled,
+            Tlp = tlp ?? opts.EffectiveDefaultTlp,
             Legend = string.IsNullOrWhiteSpace(opts.LessonsLegend) ? null : opts.LessonsLegend.Trim(),
             OrganizationName = string.IsNullOrWhiteSpace(opts.OrganizationName) ? null : opts.OrganizationName.Trim(),
             TeamName = string.IsNullOrWhiteSpace(opts.TeamName) ? null : opts.TeamName.Trim(),
@@ -387,7 +390,7 @@ public sealed class ReportService
     private static string? Plain(string? markdown) => string.IsNullOrWhiteSpace(markdown) ? null : Content.RichText.ToText(markdown);
 
     private CaseReportModel BuildModel(Case c, DateTimeOffset now, ReportLogo? logo, IReadOnlyList<ReportSection> sections,
-        string? dataElementsSummary, string? notificationTriggersSummary)
+        string? dataElementsSummary, string? notificationTriggersSummary, TlpLevel? tlp = null)
     {
         var contentHash = _hasher.Hash(c.BuildCanonicalContent());
         var opts = _reporting.CurrentValue;
@@ -395,6 +398,16 @@ public sealed class ReportService
         return new CaseReportModel
         {
             IndicatorsDefanged = d.Enabled,
+            Tlp = tlp ?? opts.EffectiveDefaultTlp,
+            // PROD-45: the actionable list — anything judged malicious or suspicious, whatever its type (a rogue
+            // account is an indicator too); compromised/benign/unknown entities stay in Systems Reviewed only.
+            Iocs = c.Entities
+                .Where(x => x.Disposition is EntityDisposition.Malicious or EntityDisposition.Suspicious)
+                .OrderBy(x => x.Disposition == EntityDisposition.Malicious ? 0 : 1).ThenBy(x => x.Type).ThenBy(x => x.Value)
+                .Select(x => new ReportIocRow(TaxLabel("EntityType", x.Type.ToString()), d.Value(x.Type, x.Value),
+                    TaxLabel("EntityDisposition", x.Disposition.ToString()), x.Tlp is { } t ? Domain.Enums.Tlp.Label(t) : null,
+                    x.CreatedAtUtc, x.Source, d.NullableText(x.Description)))
+                .ToList(),
             OrganizationName = string.IsNullOrWhiteSpace(opts.OrganizationName) ? null : opts.OrganizationName.Trim(),
             TeamName = string.IsNullOrWhiteSpace(opts.TeamName) ? null : opts.TeamName.Trim(),
             LogoBytes = logo?.Bytes,

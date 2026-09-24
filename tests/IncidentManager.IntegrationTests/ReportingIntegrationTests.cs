@@ -367,6 +367,59 @@ public sealed class ReportingIntegrationTests : IDisposable
         approved.ApprovedBy.Should().Be("checker");
     }
 
+    [Fact]
+    public async Task Report_lists_indicators_of_compromise_and_carries_the_chosen_TLP_marking()
+    {
+        // PROD-45: malicious/suspicious entities get their own section; the TLP marking prints in the header and
+        // footer and is recorded on the stored report; a per-indicator marking shows in the IOC table.
+        _user.RoleSet = [AppRole.IncidentCommander];
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
+                new CaseNumberGenerator(db), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(),
+                new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+            var ioc = await cases.AddEntityAsync(caseId, EntityType.Domain, "evil-cdn.test", null, EntityDisposition.Malicious, "C2 domain", null);
+            await cases.AddEntityAsync(caseId, EntityType.Host, "FIN-WKS-99", null, EntityDisposition.Compromised, null, null);
+            await cases.SetEntityTlpAsync(caseId, ioc, TlpLevel.Red);
+        }
+
+        await using (var db = NewContext())
+        {
+            var svc = NewReportService(db);
+
+            var model = await svc.BuildPreviewModelAsync(caseId, null);
+            model.Tlp.Should().Be(TlpLevel.Amber, "AMBER is the default marking");
+            model.Iocs.Should().Contain(i => i.Value == "evil-cdn[.]test" && i.Tlp == "TLP:RED");
+            model.Iocs.Should().NotContain(i => i.Value == "FIN-WKS-99", "a compromised host is a victim, not an indicator");
+
+            var report = await svc.GenerateAsync(caseId, ReportFormat.Word, TlpLevel.Green);
+            report.Tlp.Should().Be(TlpLevel.Green);
+
+            var (_, stream) = await svc.OpenAsync(report.Id);
+            string documentXml, headerXml, footerXml;
+            await using (stream)
+            {
+                using var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read);
+                async Task<string> Read(Func<string, bool> name) =>
+                    await new StreamReader(zip.Entries.First(e => name(e.FullName)).Open()).ReadToEndAsync();
+                documentXml = await Read(n => n == "word/document.xml");
+                headerXml = await Read(n => n.StartsWith("word/header"));
+                footerXml = await Read(n => n.StartsWith("word/footer"));
+            }
+
+            documentXml.Should().Contain("Indicators of Compromise").And.Contain("evil-cdn[.]test").And.Contain("Sharing: TLP:GREEN");
+            headerXml.Should().Contain("TLP:GREEN");
+            footerXml.Should().Contain("TLP:GREEN");
+
+            // The PDF renders with the marking too (MigraDoc lays out the header table without error).
+            var pdf = await svc.GenerateAsync(caseId, ReportFormat.Pdf, TlpLevel.AmberStrict);
+            pdf.Tlp.Should().Be(TlpLevel.AmberStrict);
+        }
+    }
+
     public void Dispose()
     {
         _connection.Dispose();

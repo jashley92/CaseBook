@@ -188,7 +188,7 @@ public static class DevDataSeeder
                 Description = "Leadership one-pager: narrative sections only, no timelines or appendix.",
                 IsActive = true, SortOrder = 1, CreatedBy = "system", CreatedAtUtc = now,
                 SectionLayout = "Summary,BusinessImpact,Outcome," +
-                                "!EventTimeline,!InvestigationTimeline,!SystemsReviewed,!Recommendations,!Appendix"
+                                "!EventTimeline,!InvestigationTimeline,!SystemsReviewed,!Indicators,!Recommendations,!Appendix"
             },
             new ReportProfile
             {
@@ -196,7 +196,7 @@ public static class DevDataSeeder
                 Description = "Every section in default order: the complete record for an examiner / DFS pack.",
                 IsActive = true, SortOrder = 2, CreatedBy = "system", CreatedAtUtc = now,
                 SectionLayout = "Summary,BusinessImpact,EventTimeline,InvestigationTimeline," +
-                                "SystemsReviewed,Recommendations,Outcome,Appendix"
+                                "SystemsReviewed,Indicators,Recommendations,Outcome,Appendix"
             });
 
         await db.SaveChangesAsync(ct);
