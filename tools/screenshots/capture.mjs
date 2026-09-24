@@ -68,6 +68,8 @@ const SHOTS = [
     before: `(() => { const s=document.getElementById('atk-period'); if (s) { s.value='all'; s.dispatchEvent(new Event('change',{bubbles:true})); }
                       setTimeout(() => document.querySelector('.atkh-cell')?.click(), 600); })()` },
   { name: 'program-report',     path: '/program-report',                settle: 1200 },
+  // S-24: what the signed-in user's roles let them do.
+  { name: 'my-access',          path: '/account/access',                settle: 900 },
 ];
 
 // Resolve {caseId} to the rich hand-authored demo case (the phishing wave) and {campaignId} to the first

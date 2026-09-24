@@ -25,7 +25,9 @@ dwell-before-detection and per-severity SLA targets), **links to related cases**
 impact assessment (affected individuals, data-element taxonomy, and jurisdictions). The header carries
 at-a-glance status badges — SLA, **materiality** (material / not material, a Legal/committee decision the
 tool records but does not make), and the **regulatory notification** countdown — alongside the classic
-classification/severity/legal chips.
+classification/severity/legal chips. A case can be **restricted to need-to-know** (its incident commander,
+its team and cleared roles only), and the Overview says in plain words who can see it; view-only roles get a
+note explaining what they can and can't do.
 
 ![Case workspace](docs/screenshots/case-workspace.png)
 
@@ -198,10 +200,17 @@ server-side security/infrastructure config are deliberately excluded — those n
 
 ### Roles &amp; access
 Permission-based RBAC: locked built-in **system roles** plus **custom roles** that compose the same
-fixed, code-enforced permissions, each tied to AD security groups. Every change is audited and
-hash-chained, with an anti-lockout guard on administrator access.
+fixed, code-enforced permissions, each tied to AD security groups. Every change is audited,
+hash-chained and streamed to the SIEM, with an anti-lockout guard on administrator access and a
+confirmation that says what a removal will do. Changes reach signed-in users within a couple of minutes,
+without them reconnecting.
 
 ![Roles and access](docs/screenshots/roles-access.png)
+
+Everyone can see what their own roles allow under **Account → My access**, and the access-denied page names
+the permission a refused page needs.
+
+![My access](docs/screenshots/my-access.png)
 
 ### Case inventory &amp; drill-in
 Filterable across classification, phase, severity, origin, and full-text search over case numbers,
