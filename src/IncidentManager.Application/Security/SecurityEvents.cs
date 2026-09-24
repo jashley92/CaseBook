@@ -83,6 +83,17 @@ public static class SecurityEvents
         Actor = actor, ActorUpn = actorUpn, CaseNumber = caseNumber, TargetType = "Case"
     };
 
+    /// <summary>S-08: a case was restricted to need-to-know, or the restriction lifted (widening exposure).</summary>
+    public static SecurityEvent CaseRestriction(bool restricted, string actor, string? actorUpn, string? caseNumber) => new()
+    {
+        EventId = restricted ? SecurityEventIds.CaseRestricted : SecurityEventIds.CaseRestrictionLifted,
+        Category = "Authorization",
+        Action = restricted ? "CaseRestricted" : "CaseRestrictionLifted",
+        Outcome = SecurityOutcome.Success,
+        Severity = restricted ? SecuritySeverity.Info : SecuritySeverity.Warning,
+        Actor = actor, ActorUpn = actorUpn, CaseNumber = caseNumber, TargetType = "Case"
+    };
+
     public static SecurityEvent BreachEscalated(string actor, string? actorUpn, string? caseNumber) => new()
     {
         EventId = SecurityEventIds.BreachEscalated,

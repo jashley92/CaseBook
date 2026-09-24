@@ -111,6 +111,20 @@
                     </div>
                 </div>
 
+                @* S-08: open the case restricted to need-to-know from the start. *@
+                <div class="col-12">
+                    <div class="form-check">
+                        <InputCheckbox class="form-check-input" id="isRestricted" @bind-Value="_request.IsRestricted" />
+                        <label class="form-check-label" for="isRestricted">
+                            <span class="bi bi-lock me-1" aria-hidden="true"></span>Restricted (need-to-know)
+                        </label>
+                    </div>
+                    <div class="form-text">
+                        Only its incident commander, the people assigned to it, and roles cleared for restricted cases can see it.
+                        You're added to the case team if your role isn't cleared. It can be changed later from the case.
+                    </div>
+                </div>
+
                 @* FR-03: capture the real detection time at intake — it anchors the response-SLA clock and
                    the dwell metric. Defaults to now (in the viewer's display zone); set it back to when the
                    matter was actually detected, not when the case is being filed. *@

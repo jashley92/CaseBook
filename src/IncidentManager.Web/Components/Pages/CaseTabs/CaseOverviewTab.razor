@@ -355,7 +355,7 @@
                         <span class="im-chip-role">@a.Role</span>
                         <AuthorizeView Policy="@Policies.EditCases" Context="rm">
                             <button type="button" class="im-chip-x" aria-label="Remove @a.UserDisplayName"
-                                    @onclick='() => Confirm($"Remove {a.UserDisplayName} from this case?", () => DoUnassign(a.UserId))'>×</button>
+                                    @onclick='() => Confirm(UnassignPrompt(a.UserDisplayName), () => DoUnassign(a.UserId))'>×</button>
                         </AuthorizeView>
                     </span>
                 }
@@ -364,6 +364,35 @@
                         <span class="bi bi-plus-lg" aria-hidden="true"></span> Assign
                     </button>
                 </AuthorizeView>
+            </div>
+            @* S-08: who can see this case, in plain words, with the control to change it beside the explanation. *@
+            <div class="im-visibility small mt-2 @(Case.IsRestricted ? "is-restricted" : "")">
+                @if (Case.IsRestricted)
+                {
+                    <span class="bi bi-lock-fill" aria-hidden="true"></span>
+                    <span>
+                        <strong>Restricted.</strong> @RestrictedAudience
+                        @if (CanLiftRestriction)
+                        {
+                            <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" @onclick='() => OnOpenModal.InvokeAsync("unrestrict")'>Lift restriction…</button>
+                        }
+                        else if (CanEdit)
+                        {
+                            <span class="text-muted">Only the incident commander or a cleared role can lift it.</span>
+                        }
+                    </span>
+                }
+                else
+                {
+                    <span class="bi bi-unlock" aria-hidden="true"></span>
+                    <span>
+                        Open to everyone with case access.
+                        @if (CanEdit)
+                        {
+                            <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick='() => OnOpenModal.InvokeAsync("restrict")'>Restrict to need-to-know…</button>
+                        }
+                    </span>
+                }
             </div>
         </div>
 
@@ -533,6 +562,8 @@
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter] public bool CanEdit { get; set; }
+    /// <summary>S-08: whether this user may lift the need-to-know restriction (the IC or a cleared role).</summary>
+    [Parameter] public bool CanLiftRestriction { get; set; }
     /// <summary>Retention-guard message set by the parent's legal-hold / archive actions (header, any tab).</summary>
     [Parameter] public string? RetentionMessage { get; set; }
     /// <summary>The next-gate readiness evaluation, computed in the parent's Reload (null when none applies).</summary>
@@ -619,6 +650,30 @@
         // inactive) so already-recorded elements always render with their current label.
         _dataElements = await Cases.ListActiveDataElementsAsync();
         _dataElementLabels = await Cases.DataElementLabelsAsync();
+        // S-08: the roles that see every restricted case, for the visibility line.
+        _clearanceRoles = await Cases.GetRestrictedClearanceRolesAsync();
+    }
+
+    private IReadOnlyList<string> _clearanceRoles = [];
+
+    // S-08: say what removal means on a restricted case — the person loses access unless their role is cleared.
+    private string UnassignPrompt(string name) => Case.IsRestricted
+        ? $"Remove {name} from this case? It's restricted, so they lose access to it unless their role is cleared for restricted cases."
+        : $"Remove {name} from this case?";
+
+    private string RestrictedAudience
+    {
+        get
+        {
+            var who = (Case.Assignments.Count > 0 || Case.IncidentCommander is not null, _clearanceRoles.Count > 0) switch
+            {
+                (true, true) => $"Only the people above and anyone with {Ui.RolePhrase(_clearanceRoles)}",
+                (true, false) => "Only the people above",
+                (false, true) => $"No one is assigned, so only people with {Ui.RolePhrase(_clearanceRoles)}",
+                _ => "No one is assigned, so no one"
+            };
+            return who + " can open this case or see it in lists, search, dashboards and exports.";
+        }
     }
 
     // --- Regulatory notification deadlines (PROD-07) ---

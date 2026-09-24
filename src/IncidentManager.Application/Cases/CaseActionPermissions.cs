@@ -81,6 +81,9 @@ public static class CaseActionPermissions
             [nameof(CaseService.SetReportProfileAsync)] = Permission.EditCases,
             [nameof(CaseService.SetArchivedAsync)] = Permission.Administer,
 
+            // Need-to-know (S-08). Lifting is further limited to the IC / cleared roles by CaseRestrictionPolicy.
+            [nameof(CaseService.SetRestrictedAsync)] = Permission.EditCases,
+
             // Action items / playbooks
             [nameof(CaseService.AddActionItemAsync)] = Permission.EditCases,
             [nameof(CaseService.ApplyTemplateAsync)] = Permission.EditCases,

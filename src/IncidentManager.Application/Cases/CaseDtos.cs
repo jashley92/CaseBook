@@ -38,6 +38,10 @@ public sealed class CreateCaseRequest
     /// <summary>PROD-43: open this as a tabletop / IRP-exercise case (excluded from dashboards, reminders and
     /// feeds). Fixed at creation — it cannot be changed once the case exists.</summary>
     public bool IsExercise { get; set; }
+
+    /// <summary>S-08: open the case restricted to need-to-know. The filer is added to the case team if their role
+    /// wouldn't otherwise see restricted cases.</summary>
+    public bool IsRestricted { get; set; }
 }
 
 /// <summary>Lightweight row for case lists and queues.</summary>

@@ -96,6 +96,19 @@ public static class Ui
         return Tax("Classification", c?.ToString() ?? "ComplexEvent", def);
     }
 
+    /// <summary>
+    /// S-08: a role-name list as prose — "the Manager role", "the Incident Commander or Legal / Privacy role",
+    /// "the A, B or C role" — mapping built-in role names to their labels (custom roles show as named).
+    /// </summary>
+    public static string RolePhrase(IReadOnlyList<string> roleNames)
+    {
+        var labels = roleNames.Select(n => Enum.TryParse<AppRole>(n, out var r) ? Label(r) : n).ToList();
+        var list = labels.Count <= 1
+            ? string.Concat(labels)
+            : string.Join(", ", labels.Take(labels.Count - 1)) + " or " + labels[^1];
+        return $"the {list} role";
+    }
+
     public static string Label(AppRole r) => r switch
     {
         AppRole.IncidentCommander => "Incident Commander",

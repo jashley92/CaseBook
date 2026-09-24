@@ -39,4 +39,6 @@ public static class SecurityEventIds
     public const int LegalHoldPlaced = 5501;
     public const int LegalHoldReleased = 5502;
     public const int BreachEscalated = 5503;
+    public const int CaseRestricted = 5504;          // a case was limited to need-to-know (S-08)
+    public const int CaseRestrictionLifted = 5505;   // a case's need-to-know restriction was lifted — widens exposure (S-08)
 }

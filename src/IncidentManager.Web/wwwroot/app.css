@@ -1935,6 +1935,12 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
     background: var(--bs-tertiary-bg); border-radius: 0 .3rem .3rem 0; color: var(--bs-body-color); }
 .im-why-body p:last-child, .im-why-body ul:last-child { margin-bottom: 0; }
 
+/* S-08: the case's "who can see this" line under Assignments. */
+.im-visibility { display: flex; gap: .45rem; align-items: baseline; padding: .4rem .6rem; border-radius: .3rem;
+    background: var(--bs-tertiary-bg); color: var(--bs-secondary-color); }
+.im-visibility.is-restricted { background: var(--im-warn-bg); color: var(--bs-body-color); }
+.im-visibility.is-restricted > .bi { color: var(--im-warn); }
+
 /* E-31: print-to-PDF for report pages (the program report first). Hides the app chrome and anything marked
    .no-print, prints on white whatever the theme, and keeps cards from splitting across pages. */
 @media print {

@@ -335,6 +335,13 @@ public sealed class CaseService
             c.ImpactedAssets = request.ImpactedAssets;
             c.DetectedAtUtc = detectedAtUtc;          // FR-03: real detection time (Case.Open defaults it to now)
             c.OccurredAtUtc = request.OccurredAtUtc;
+            if (request.IsRestricted)
+            {
+                // S-08: keep the filer on a case they're restricting (they have no IC/assignment yet).
+                if (!CaseRestrictionPolicy.KeepsAccess(_user, null, []))
+                    c.Assign(_user.UserId, SelfDisplayName, CaseAssignmentRole.Analyst, _user.UserId, now);
+                c.IsRestricted = true;
+            }
             if (request.Origin == CaseOrigin.ThirdParty)
             {
                 c.ThirdParty = new ThirdPartyDetails
@@ -1186,6 +1193,63 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
         _siem?.Emit(Security.SecurityEvents.LegalHold(false, _user.UserId, _user.UserPrincipalName, c.CaseNumber));
     }
+
+    /// <summary>
+    /// S-08: restricts the case to need-to-know, or lifts the restriction. Restricting needs only edit rights; if the
+    /// caller wouldn't otherwise keep sight of the case they're added to its team as an analyst, so nobody locks
+    /// themselves out mid-investigation. Lifting opens the case to everyone with case access, so it's limited to the
+    /// incident commander or a cleared role (<see cref="CaseRestrictionPolicy.CanLift"/>) and needs a reason. The
+    /// change and reason land in the audit chain and the SIEM stream.
+    /// </summary>
+    public async Task SetRestrictedAsync(Guid id, bool restricted, string? reason, CancellationToken ct = default)
+    {
+        Require();
+        reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (reason is { Length: > 1000 }) throw new ArgumentException("Keep the reason to 1000 characters or fewer.");
+
+        using var db = _factory.CreateDbContext();
+        if (!await Scoped(db.Cases.AsNoTracking()).AnyAsync(x => x.Id == id, ct))
+            throw new InvalidOperationException("Case not found or not accessible.");
+        var c = await LoadTrackedAsync(db, id, ct);
+        if (c.IsRestricted == restricted) return;
+
+        var now = _clock.UtcNow;
+        if (restricted)
+        {
+            if (!CaseRestrictionPolicy.KeepsAccess(_user, c.IncidentCommander, c.Assignments.Select(a => a.UserId)))
+                c.Assign(_user.UserId, SelfDisplayName, CaseAssignmentRole.Analyst, _user.UserId, now);
+            c.Restrict(_user.UserId, now);
+        }
+        else
+        {
+            if (!CaseRestrictionPolicy.CanLift(_user, c.IncidentCommander))
+                throw new InvalidOperationException(
+                    "Only the case's incident commander or a role cleared for restricted cases can lift the restriction.");
+            if (reason is null) throw new ArgumentException("Say why the restriction is being lifted.");
+            c.LiftRestriction(_user.UserId, now);
+        }
+
+        db.PendingChangeReason = reason;
+        await db.SaveChangesAsync(ct);
+        _siem?.Emit(Security.SecurityEvents.CaseRestriction(restricted, _user.UserId, _user.UserPrincipalName, c.CaseNumber));
+    }
+
+    /// <summary>
+    /// S-08: the roles whose holders see every restricted case (ViewAllCases or ViewRestricted), for the case's
+    /// "who can see this" line. Includes custom roles.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetRestrictedClearanceRolesAsync(CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var roles = await db.Roles.AsNoTracking().ToListAsync(ct);
+        return roles
+            .Where(r => r.GetPermissions() is var p && (p.Contains(Permission.ViewAllCases) || p.Contains(Permission.ViewRestricted)))
+            .Select(r => r.Name)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private string SelfDisplayName => string.IsNullOrWhiteSpace(_user.DisplayName) ? _user.UserId : _user.DisplayName;
 
     /// <summary>F-12: withdraws a pending release request; the hold stays.</summary>
     public async Task CancelLegalHoldReleaseAsync(Guid id, CancellationToken ct = default)

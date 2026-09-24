@@ -181,6 +181,15 @@ else
                             @* PROD-11: supersede this case by the one work continues on (link + optional IOC copy + notes). *@
                             <button class="dropdown-item" @onclick='() => OpenModal("supersede")'>Supersede as a duplicate…</button>
                         }
+                        @* S-08: need-to-know. Anyone who can edit may restrict; only the IC or a cleared role may lift it. *@
+                        @if (_canEdit && !_case.IsRestricted)
+                        {
+                            <button class="dropdown-item" @onclick='() => OpenModal("restrict")'>Restrict to need-to-know…</button>
+                        }
+                        else if (_canEdit && CanLiftRestriction)
+                        {
+                            <button class="dropdown-item" @onclick='() => OpenModal("unrestrict")'>Lift restriction…</button>
+                        }
                         @if (_canManageLegal)
                         {
                             @if (_case.LegalHold && Cases.LegalHoldReleaseNeedsSecondApprover)
@@ -358,7 +367,7 @@ else
         @* UX-13: extracted to CaseOverviewTab. It owns the Summary EasyMDE editor (so the central reconcile
            retires) + details/impact/techniques/links/history; the parent threads the retention alert, the
            readiness gate, the shared confirm dialog, the assign modal (OnOpenModal), and hotkey dispatch. *@
-        <CaseOverviewTab @ref="_overviewTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
+        <CaseOverviewTab @ref="_overviewTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" CanLiftRestriction="@(_canEdit && CanLiftRestriction)"
                          RetentionMessage="@_retentionMsg" ReadinessEval="_readinessEval"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" OnOpenModal="OpenModal"
                          RefreshToken="_liveRefresh" />
@@ -530,6 +539,32 @@ else
                             <textarea id="supersede-reason" class="form-control" rows="2" @bind="_supersedeReason" @bind:event="oninput"
                                       placeholder="e.g. Same phishing wave; the user report and the SIEM alert were filed separately"></textarea>
                         }
+                        else if (_activeModal == "restrict")
+                        {
+                            <p class="small mb-2">Restricting limits who can see this case. Once restricted:</p>
+                            <ul class="small mb-2">
+                                <li>@_clearanceNote</li>
+                                <li>It disappears for everyone else: case lists, search, My Work, dashboards, the indicator and ATT&amp;CK
+                                    views, and exports.</li>
+                                <li>Assigning someone later gives them access; removing them takes it away.</li>
+                                <li>Opening it, or downloading its evidence or reports, is flagged at a higher severity in the SIEM stream.</li>
+                            </ul>
+                            @if (!RestrictKeepsMe)
+                            {
+                                <div class="alert alert-info py-1 px-2 small mb-2">You'll be added to the case team as an analyst so you keep access.</div>
+                            }
+                            <label class="form-label small" for="restrict-reason">Reason <span class="text-muted">(optional, recorded in the audit trail)</span></label>
+                            <textarea id="restrict-reason" class="form-control" rows="2" maxlength="1000" @bind="_restrictReason" @bind:event="oninput"
+                                      placeholder="e.g. Insider matter involving a named employee; HR and counsel only"></textarea>
+                        }
+                        else if (_activeModal == "unrestrict")
+                        {
+                            <p class="small mb-2">Lifting the restriction opens this case to <strong>everyone with case access</strong>. It will show up in
+                                their case lists, search, dashboards and exports.</p>
+                            <label class="form-label small" for="unrestrict-reason">Reason</label>
+                            <textarea id="unrestrict-reason" class="form-control" rows="2" maxlength="1000" @bind="_restrictReason" @bind:event="oninput"
+                                      placeholder="e.g. Counsel confirmed the matter no longer needs to be restricted"></textarea>
+                        }
                         else if (_activeModal == "holdrelease")
                         {
                             <p class="small text-muted mb-2">Two-person control is on: this asks for the hold to be lifted. Someone else with
@@ -590,6 +625,11 @@ else
                                         <option value="@u.UserId">@u.DisplayName</option>
                                     }
                                 </select>
+                                @if (_case.IsRestricted)
+                                {
+                                    <p class="small text-muted mb-2"><span class="bi bi-lock-fill" aria-hidden="true"></span> This case is restricted:
+                                        assigning someone gives them access to it.</p>
+                                }
                                 <label class="form-label small">Role on this case</label>
                                 <select class="form-select" @bind="_assignRole">
                                     @foreach (var r in Enum.GetValues<CaseAssignmentRole>())
@@ -693,6 +733,19 @@ else
     private CaseAssignmentRole _assignRole = CaseAssignmentRole.Analyst;
     private string? _legalContact;
     private string? _holdReleaseReason;   // F-12
+
+    // S-08: need-to-know restriction.
+    private string? _restrictReason;
+    private bool _canViewRestricted;
+    private string _clearanceNote = "";
+
+    /// <summary>The IC or a cleared role may lift a restriction (mirrors CaseRestrictionPolicy.CanLift).</summary>
+    private bool CanLiftRestriction => _canViewAll || _canViewRestricted
+        || (_case is not null && string.Equals(_case.IncidentCommander, _myId, StringComparison.Ordinal));
+
+    /// <summary>Whether the current user would still see the case once restricted (else the service adds them).</summary>
+    private bool RestrictKeepsMe => CanLiftRestriction
+        || (_case?.Assignments.Any(a => string.Equals(a.UserId, _myId, StringComparison.Ordinal)) ?? false);
 
     // PROD-11: supersede-as-duplicate modal state.
     private Guid? _supersedeTargetId;
@@ -813,6 +866,7 @@ else
         _canManageLegal = (await AuthZ.AuthorizeAsync(user, Policies.ManageLegal)).Succeeded;
         _canAdmin = (await AuthZ.AuthorizeAsync(user, Policies.Administer)).Succeeded;
         _canViewAll = (await AuthZ.AuthorizeAsync(user, Policies.ViewAllCases)).Succeeded;
+        _canViewRestricted = (await AuthZ.AuthorizeAsync(user, Policies.ViewRestricted)).Succeeded;
         if (couldEdit && !_canEdit) _permissionLost = true;
     }
 
@@ -1066,6 +1120,15 @@ else
         _newSeverity = _case.Severity;
         _newPhase = _case.Phase;
 
+        if (name is "restrict" or "unrestrict")
+        {
+            _restrictReason = null;
+            var roles = await Cases.GetRestrictedClearanceRolesAsync();
+            _clearanceNote = roles.Count > 0
+                ? $"Only its incident commander, the people assigned to it and anyone with {Ui.RolePhrase(roles)} can open it."
+                : "Only its incident commander and the people assigned to it can open it.";
+        }
+
         if (name == "supersede")
         {
             _supersedeTargetId = null; _supersedeTargetNumber = null; _supersedeQuery = null; _supersedeReason = null;
@@ -1283,6 +1346,8 @@ else
         "legal" => "Refer to Legal / Privacy",
         "holdrelease" => "Request legal hold release",
         "supersede" => "Supersede as a duplicate",
+        "restrict" => "Restrict to need-to-know",
+        "unrestrict" => "Lift restriction",
         "materiality" => "Record materiality determination",
         "archive" => "Archive case",
         "assign" => "Assign someone to this case",
@@ -1316,6 +1381,8 @@ else
         "reopen" => "Reopen",
         "holdrelease" => "Request release",
         "supersede" => "Supersede",
+        "restrict" => "Restrict",
+        "unrestrict" => "Lift restriction",
         _ => "Apply"
     };
 
@@ -1328,6 +1395,7 @@ else
         "reopen" => string.IsNullOrWhiteSpace(_reopenReason),
         "holdrelease" => string.IsNullOrWhiteSpace(_holdReleaseReason),
         "supersede" => _supersedeTargetId is null || string.IsNullOrWhiteSpace(_supersedeReason),
+        "unrestrict" => string.IsNullOrWhiteSpace(_restrictReason),
         // A final call needs decision-maker, date and rationale; "Under review" needs none of them.
         "materiality" => _materialityStatus is MaterialityStatus.Material or MaterialityStatus.NotMaterial
             && (string.IsNullOrWhiteSpace(_materialityDecisionMaker) || _materialityDecidedOn is null
@@ -1382,6 +1450,17 @@ else
                            + ". Close this case to finish.";
                     break;
                 }
+                case "restrict":
+                    await Cases.SetRestrictedAsync(Id, true, _restrictReason);
+                    _restrictReason = null;
+                    done = "Case restricted to need-to-know";
+                    break;
+                case "unrestrict":
+                    if (string.IsNullOrWhiteSpace(_restrictReason)) { _modalError = "Say why the restriction is being lifted."; return; }
+                    await Cases.SetRestrictedAsync(Id, false, _restrictReason);
+                    _restrictReason = null;
+                    done = "Restriction lifted";
+                    break;
                 case "holdrelease":
                     await Cases.RequestLegalHoldReleaseAsync(Id, _holdReleaseReason ?? "");
                     _holdReleaseReason = null;
@@ -1679,6 +1758,10 @@ else
 
         if (_canEdit && _case.Phase != CasePhase.Closed)
             list.Add(new("Supersede as a duplicate…", "bi-files", () => OpenModalFromPalette("supersede")));
+        if (_canEdit && !_case.IsRestricted)
+            list.Add(new("Restrict to need-to-know…", "bi-lock", () => OpenModalFromPalette("restrict")));
+        else if (_canEdit && CanLiftRestriction)
+            list.Add(new("Lift restriction…", "bi-unlock", () => OpenModalFromPalette("unrestrict")));
 
         if (_canManageLegal)
         {

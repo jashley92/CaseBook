@@ -765,6 +765,25 @@ public class Case : AuditableEntity, IHashableEntity
         Touch(actor, nowUtc);
     }
 
+    /// <summary>
+    /// S-08: limits the case to need-to-know — its incident commander, its assigned team, and roles cleared for
+    /// restricted cases. Audited (the field diff, with any reason, lands in the hash chain).
+    /// </summary>
+    public void Restrict(string actor, DateTimeOffset nowUtc)
+    {
+        if (IsRestricted) return;
+        IsRestricted = true;
+        Touch(actor, nowUtc);
+    }
+
+    /// <summary>S-08: lifts the need-to-know restriction, opening the case to everyone with case access.</summary>
+    public void LiftRestriction(string actor, DateTimeOffset nowUtc)
+    {
+        if (!IsRestricted) return;
+        IsRestricted = false;
+        Touch(actor, nowUtc);
+    }
+
     /// <summary>Places a legal hold, blocking archival/retention purge until it is released.</summary>
     public void PlaceLegalHold(string actor, DateTimeOffset nowUtc)
     {

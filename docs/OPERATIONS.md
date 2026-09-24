@@ -358,6 +358,8 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5501 | Governance | Legal hold placed |
 | 5502 | Governance | Legal hold released |
 | 5503 | Governance | Case escalated to Breach |
+| 5504 | Authorization | Case restricted to need-to-know |
+| 5505 | Authorization | Case restriction lifted (widens who can see it) |
 
 These ids are a **stable contract** — pin SIEM rules to them; they are only ever appended to, never
 renumbered. **5101** fires on a failed **Windows (Negotiate) authentication handshake**, so it is a

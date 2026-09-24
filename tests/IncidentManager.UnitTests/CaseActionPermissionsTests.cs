@@ -23,6 +23,7 @@ public sealed class CaseActionPermissionsTests
     private static readonly HashSet<string> ReadOnlyActions = new(StringComparer.Ordinal)
     {
         nameof(CaseService.CanViewAsync),
+        nameof(CaseService.GetRestrictedClearanceRolesAsync),
         nameof(CaseService.IsCaseNumberAvailableAsync),
         nameof(CaseService.ListAsync),
         nameof(CaseService.GetDetailAsync),
