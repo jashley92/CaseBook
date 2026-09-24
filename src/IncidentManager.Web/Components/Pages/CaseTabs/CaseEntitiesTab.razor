@@ -147,6 +147,8 @@
                         Drop a block of IOCs (one per line, or comma / semicolon separated). We refang defanged
                         notation (<code>hxxp</code>→<code>http</code>, <code>[.]</code>→<code>.</code>), auto-detect
                         each type, and drop duplicates &mdash; review below, then add them in one step.
+                        Got a partner's STIX 2.1 bundle or an IOC CSV file instead?
+                        <a href="@($"cases/import?into={CaseId}")">Import it into this case</a>.
                     </p>
                     <textarea class="form-control form-control-sm mb-2" rows="4" @bind="_bulkText" @bind:event="oninput"
                               placeholder="1.2.3.4, evil.example[.]com&#10;hxxp://bad[.]site/x&#10;44d88612fea8a8f36de82e1278abb02f&#10;user@phish.example"></textarea>

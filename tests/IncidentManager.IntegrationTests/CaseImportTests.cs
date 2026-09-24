@@ -232,6 +232,38 @@ public sealed class CaseImportTests : IDisposable
         missing.Warning.Should().Contain("defaulted");
     }
 
+    // ── PROD-06: STIX round trip ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_stix_export_imports_into_another_case_with_its_verdicts(/* PROD-06 */)
+    {
+        await using var db = NewContext();
+        var cases = NewCaseService(db);
+        var source = await cases.CreateAsync(new CreateCaseRequest
+            { DescriptiveName = "Source", Title = "Source case", Classification = Classification.Incident, Severity = Severity.High });
+        var target = await cases.CreateAsync(new CreateCaseRequest
+            { DescriptiveName = "Target", Title = "Partner share", Classification = Classification.Incident, Severity = Severity.Medium });
+        await cases.AddEntityAsync(source.Id, EntityType.IpAddress, "203.0.113.66", "C2", EntityDisposition.Malicious, null, "EDR");
+        await cases.AddEntityAsync(source.Id, EntityType.Host, "FIN-WKS-07", null, EntityDisposition.Compromised, null, null);
+
+        var stix = await new IncidentManager.Application.Export.StixExportService(NewFactory(), _user, _clock,
+            new TestOptionsMonitor<IncidentManager.Application.Reporting.ReportingOptions>(new())).BuildAsync(source.Id);
+        var json = JsonSerializer.Serialize(stix!.Bundle);
+
+        var converted = IocImportConverter.Convert(json);
+        converted.Format.Should().Be(ImportSourceFormat.StixBundle);
+        var svc = NewImportService(db);
+        var preview = await svc.BuildPreviewAsync(converted.Document!, target.Id);
+        preview.TargetKind.Should().Be(CaseImportTargetKind.ExistingCase);
+        await svc.ApplyAsync(preview);
+
+        var imported = await db.CaseEntities.AsNoTracking().Where(e => e.CaseId == target.Id)
+            .OrderBy(e => e.Value).ToListAsync();
+        imported.Select(e => (e.Type, e.Value, e.Disposition, e.Label, e.Source)).Should().Equal(
+            (EntityType.IpAddress, "203.0.113.66", EntityDisposition.Malicious, "C2", "EDR"),
+            (EntityType.Host, "FIN-WKS-07", EntityDisposition.Compromised, (string?)null, "STIX 2.1 bundle (CaseBook)"));
+    }
+
     // ── Apply (integration) ──────────────────────────────────────────────────────────────────────
 
     private static CaseImportDocument FullDoc() => new()

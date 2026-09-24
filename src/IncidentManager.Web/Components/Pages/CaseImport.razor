@@ -7,11 +7,12 @@
 @inject NavigationManager Nav
 @inject ILogger<CaseImport> Logger
 @inject IJSRuntime JS
+@inject CaseService Cases
 
 <PageTitle>Import case</PageTitle>
 
 <PageHeader Title="Import case"
-           Subtitle="Bring a structured case-import document into a new or existing case. Paste or upload the JSON, review an editable preview, then confirm — nothing is written until you apply." />
+           Subtitle="Bring a structured case-import document, a STIX 2.1 bundle or an IOC CSV into a case. Review an editable preview, then confirm — nothing is written until you apply." />
 
 @* PROD-33: programmatic submissions awaiting human review, and the reviewing banner. *@
 @if (_reviewingPendingId is not null)
@@ -99,16 +100,19 @@ else if (_pending.Count > 0)
 
 @* Step 2 (PROD-31): paste/upload the resulting JSON and review the preview. *@
 <div class="im-card nc-card">
-    <div class="fw-semibold mb-2"><span class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></span>Step 2 — Paste or upload the import JSON</div>
+    <div class="fw-semibold mb-2"><span class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></span>Step 2 — Paste or upload the import</div>
     <p class="text-muted small mb-2">
         The document is <strong>untrusted</strong> and reviewed before anything is written: indicators are refanged and
         auto-typed, unknown values fall back to a safe default and are flagged, and each item can be edited or excluded.
         Provenance (<code>origin</code>) is recorded on imported indicators and timeline entries. Not sure of the shape?
         See the <a href="#" @onclick="ToggleSample" @onclick:preventDefault>sample below</a> or the
         <a href="api/import/cases/schema" target="_blank" rel="noopener noreferrer">full JSON Schema</a>.
+        <br />Also accepts a partner's <strong>STIX 2.1 bundle</strong> or an <strong>IOC CSV</strong> (a <code>value</code>/<code>indicator</code>
+        column, optional <code>type</code>, <code>disposition</code>, <code>label</code>, <code>description</code>, <code>source</code>; or one indicator per line).
+        Their indicators become entities you review here like any other import.
     </p>
 
-    <label class="form-label">Import JSON</label>
+    <label class="form-label">Import JSON, STIX bundle or CSV</label>
     <textarea class="form-control font-monospace" rows="6" @bind="_text" @bind:event="oninput"
               placeholder='{ "format": "casebook-case-import", "schemaVersion": 1, ... }'></textarea>
 
@@ -117,7 +121,7 @@ else if (_pending.Count > 0)
             <span class="bi bi-eye me-1" aria-hidden="true"></span>Preview import
         </button>
         <span class="text-muted small">or upload a file:</span>
-        <InputFile OnChange="OnFileSelected" accept=".json" class="form-control form-control-sm" style="max-width:20rem" />
+        <InputFile OnChange="OnFileSelected" accept=".json,.stix,.csv,.txt" class="form-control form-control-sm" style="max-width:20rem" />
         @if (_preview is not null)
         {
             <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="Reset">Clear</button>
@@ -261,6 +265,25 @@ else if (_pending.Count > 0)
         </div>
     }
 
+    @* PROD-06: indicators already on other open cases — a prompt to relate them, never an automatic link. *@
+    @if (_related.Count > 0)
+    {
+        <div class="im-card nc-card">
+            <div class="fw-semibold mb-1"><span class="bi bi-intersect me-1" aria-hidden="true"></span>Already seen on open cases</div>
+            <p class="text-muted small mb-2">Some of these indicators are on other open investigations. Consider linking the cases (for example as part of the same campaign) from the case's Overview once the import is applied.</p>
+            <ul class="list-unstyled small mb-0">
+                @foreach (var m in _related)
+                {
+                    <li class="mb-1">
+                        <a href="@($"cases/{m.CaseId}")" target="_blank" rel="noopener noreferrer"><code>@m.CaseNumber</code></a>
+                        <span class="text-muted">@m.Title</span> ·
+                        @string.Join(", ", m.Indicators.Take(5))@(m.Indicators.Count > 5 ? $" +{m.Indicators.Count - 5} more" : "")
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+
     @* Entities *@
     @if (p.Entities.Count > 0)
     {
@@ -330,6 +353,10 @@ else if (_pending.Count > 0)
 @code {
     [SupplyParameterFromQuery(Name = "into")] public Guid? IntoCaseId { get; set; }
     [SupplyParameterFromQuery(Name = "pending")] public Guid? PendingId { get; set; }
+
+    // PROD-06: the uploaded file's name (provenance for a CSV) and open cases sharing the previewed indicators.
+    private string? _fileName;
+    private List<IncidentManager.Application.Cases.CaseIocMatch> _related = [];
 
     // PROD-33: the pending programmatic-import queue + the one currently under review.
     private Guid? _reviewingPendingId;
@@ -415,6 +442,7 @@ else if (_pending.Count > 0)
     {
         try
         {
+            _fileName = e.File.Name;
             using var reader = new StreamReader(e.File.OpenReadStream(maxAllowedSize: 4 * 1024 * 1024));
             _text = await reader.ReadToEndAsync();
             await Preview();
@@ -429,14 +457,32 @@ else if (_pending.Count > 0)
     private async Task Preview()
     {
         _error = null;
-        var parsed = CaseImportService.Parse(_text);
-        if (!parsed.Ok)
+        _related = [];
+        // PROD-06: a STIX bundle or IOC CSV is converted into an entities-only import document first.
+        var converted = IocImportConverter.Convert(_text, _fileName);
+        if (!converted.Ok)
         {
             _preview = null;
-            Toasts.Error(parsed.Error!);
+            Toasts.Error(converted.Error!);
             return;
         }
-        _preview = await Import.BuildPreviewAsync(parsed.Document!, IntoCaseId);
+        _preview = await Import.BuildPreviewAsync(converted.Document!, IntoCaseId);
+        _preview.Warnings.InsertRange(0, converted.Notes);
+        if (converted.Format != ImportSourceFormat.CaseImport && _preview.TargetKind == CaseImportTargetKind.NewCase)
+        {
+            // Indicator shares land in an investigation someone chose; ask for the case rather than inventing one.
+            _preview.TargetKind = CaseImportTargetKind.ExistingCase;
+            _preview.Warnings.Insert(0, "Choose the case these indicators go into (or switch to creating a new case).");
+        }
+        await LoadRelated();
+    }
+
+    // Open cases that already carry any of the previewed indicators (need-to-know scoped), excluding the target.
+    private async Task LoadRelated()
+    {
+        if (_preview is not { Entities.Count: > 0 } p) { _related = []; return; }
+        var matches = await Cases.FindOpenCaseMatchesForIocsAsync(p.Entities.Select(e => e.Value));
+        _related = matches.Where(m => m.CaseId != p.ExistingCaseId).ToList();
     }
 
     private void Reset()
@@ -446,6 +492,8 @@ else if (_pending.Count > 0)
         _error = null;
         _existingNumber = null;
         _existingError = null;
+        _fileName = null;
+        _related = [];
     }
 
     private static bool CanApply(CaseImportPreview p)
