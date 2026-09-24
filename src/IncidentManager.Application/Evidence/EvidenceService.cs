@@ -18,13 +18,16 @@ public sealed class EvidenceService
     private readonly IEvidenceStore _store;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
+    private readonly IAuditWriter _audit;
 
-    public EvidenceService(IAppDbContextFactory factory, IEvidenceStore store, ICurrentUser user, IClock clock)
+    public EvidenceService(IAppDbContextFactory factory, IEvidenceStore store, ICurrentUser user, IClock clock,
+        IAuditWriter audit)
     {
         _factory = factory;
         _store = store;
         _user = user;
         _clock = clock;
+        _audit = audit;
     }
 
     public async Task<Domain.Entities.Evidence> UploadAsync(Guid caseId, string fileName, string contentType,
@@ -126,8 +129,9 @@ public sealed class EvidenceService
     /// PROD-13: records a hand-off of a copy of the evidence outside CaseBook (outside counsel, law
     /// enforcement, a forensics firm, a regulator). No export ships evidence bytes, so a transfer is always a
     /// real-world act the analyst attests to here: who received it, how, and why. Requires
-    /// <see cref="Permission.EditCases"/> and need-to-know on the case; the entry is hash-chained like any
-    /// other custody event.
+    /// <see cref="Permission.EditCases"/> and need-to-know on the case. Custody rows sit outside the audit chain
+    /// by design (downloads/views are access telemetry), but a transfer is an attested decision, so it is also
+    /// written to the hash-chained audit log explicitly.
     /// </summary>
     public async Task<ChainOfCustodyEvent> RecordTransferAsync(Guid evidenceId, string recipient, string? method,
         string purpose, CancellationToken ct = default)
@@ -151,6 +155,11 @@ public sealed class EvidenceService
         };
         evidence.CustodyEvents.Add(custody);
         await db.SaveChangesAsync(ct);
+
+        var caseNumber = await db.Cases.AsNoTracking().Where(c => c.Id == evidence.CaseId)
+            .Select(c => c.CaseNumber).FirstOrDefaultAsync(ct);
+        await _audit.RecordAsync(AuditAction.EvidenceTransferred, nameof(Domain.Entities.Evidence), evidence.Id.ToString(),
+            caseNumber, $"Transferred {evidence.OriginalFileName} (sha256 {evidence.Sha256[..12]}…). {custody.Details}", ct);
         return custody;
     }
 

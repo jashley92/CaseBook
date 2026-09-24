@@ -54,3 +54,10 @@ public sealed class TestCurrentUser : ICurrentUser
     public IReadOnlySet<Permission> Permissions => RoleDefinitions.PermissionsFor(RoleSet);
     public bool Has(Permission permission) => Permissions.Contains(permission);
 }
+
+/// <summary>Discards explicit audit records, for tests that don't assert on the audit chain.</summary>
+public sealed class NoOpAuditWriter : IncidentManager.Application.Abstractions.IAuditWriter
+{
+    public Task RecordAsync(IncidentManager.Domain.Enums.AuditAction action, string entityType, string? entityId,
+        string? caseNumber, string summary, CancellationToken ct = default) => Task.CompletedTask;
+}

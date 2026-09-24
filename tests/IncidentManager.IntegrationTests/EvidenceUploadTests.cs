@@ -54,7 +54,7 @@ public sealed class EvidenceUploadTests : IDisposable
 
     private EvidenceService NewEvidenceService() =>
         new(NewFactory(), new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = _storeDir })),
-            _user, _clock);
+            _user, _clock, new AuditWriter(NewContext(), _hasher, _user, _clock));
 
     private static string Sha256Hex(string content) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant();
@@ -206,8 +206,12 @@ public sealed class EvidenceUploadTests : IDisposable
             "To Outside counsel (Smith LLP) via Encrypted SFTP. Purpose: Privileged review",
             "To NYPD Cyber. Purpose: Criminal referral");
 
+        // Custody rows are outside the audit chain by design; the transfer is chained explicitly.
         await using var db = NewContext();
         var entries = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+        entries.Where(a => a.Action == AuditAction.EvidenceTransferred).Select(a => a.CaseNumber)
+            .Should().Equal("2026-01_Phishing_Wave", "2026-01_Phishing_Wave");
+        entries.Last().Summary.Should().Contain("To NYPD Cyber. Purpose: Criminal referral");
         _hasher.VerifyChain(entries).IsValid.Should().BeTrue();
     }
 

@@ -225,7 +225,9 @@ Details worth knowing:
 
 - **What is not audited:** `AuditLogEntry`, `IntegritySeal`, `AppUser`, `ChainOfCustodyEvent`,
   `EntityLayout` (cosmetic graph positions), and `CaseAccessEvent` (high-volume read telemetry) are in the
-  `NotAudited` set. The access log and custody log are separate records by design.
+  `NotAudited` set. The access log and custody log are separate records by design. The one custody entry
+  that *is* also chained is a recorded **transfer** (PROD-13): it's an attested decision, not access
+  telemetry, so `EvidenceService.RecordTransferAsync` writes an explicit `EvidenceTransferred` audit entry.
 - **Before/after capture:** an `Update` records only the **changed** properties' before→after JSON; a
   `Create` records the new values; a `SoftDelete` records the prior values. Shadow properties are skipped.
 - **Reason-for-change:** a service can set `AppDbContext.PendingChangeReason` for a unit of work (e.g. "why

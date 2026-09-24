@@ -28,10 +28,11 @@ public enum AuditAction
     LegalReferral = 12,
     IntegritySeal = 13,
     IntegrityVerification = 14,
-    Export = 15
+    Export = 15,
+    /// <summary>PROD-13: an analyst attested a hand-off of evidence outside CaseBook.</summary>
+    EvidenceTransferred = 16
 }
 
-/// <summary>Output format of a generated report.</summary>
 /// <summary>
 /// Which document a stored <see cref="Entities.Report"/> is. The case report is the examiner-facing record;
 /// the lessons-learned report (E-26/PROD-41) is kept separate so it can be handled and shared on its own terms.
@@ -42,6 +43,7 @@ public enum ReportKind
     LessonsLearned = 1
 }
 
+/// <summary>Output format of a generated report.</summary>
 public enum ReportFormat
 {
     Word = 0,

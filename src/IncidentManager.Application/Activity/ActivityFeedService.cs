@@ -75,6 +75,7 @@ public sealed class ActivityFeedService
             AuditAction.StatusChanged => "Changed the case status",
             AuditAction.EvidenceUploaded => "Uploaded evidence",
             AuditAction.EvidenceDownloaded => "Downloaded evidence",
+            AuditAction.EvidenceTransferred => "Recorded an evidence transfer",
             AuditAction.ReportGenerated => "Generated a report",
             AuditAction.ReportFinalized => "Finalized a report",
             AuditAction.LegalReferral => "Referred to Legal / Privacy",

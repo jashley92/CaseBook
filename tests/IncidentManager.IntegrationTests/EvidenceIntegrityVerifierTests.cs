@@ -56,7 +56,7 @@ public sealed class EvidenceIntegrityVerifierTests : IDisposable
     private FileEvidenceStore Store() =>
         new(Options.Create(new EvidenceStoreOptions { RootPath = _storeDir }));
 
-    private EvidenceService NewEvidenceService() => new(NewFactory(), Store(), _user, _clock);
+    private EvidenceService NewEvidenceService() => new(NewFactory(), Store(), _user, _clock, new NoOpAuditWriter());
 
     private sealed class CapturingNotifier : IEvidenceIntegrityAlertNotifier
     {
