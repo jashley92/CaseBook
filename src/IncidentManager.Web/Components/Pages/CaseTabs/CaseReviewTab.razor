@@ -15,6 +15,7 @@
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
 @inject IJSRuntime JS
+@inject ISeverityLabels SevLabels
 
 @if (_view is null)
 {
@@ -63,7 +64,17 @@
             @foreach (var f in Fields)
             {
                 <div class="mb-3">
-                    <label class="form-label small fw-semibold mb-0" for="@FieldEditorId(f.Key)">@f.Label</label>
+                    <div class="d-flex align-items-end justify-content-between gap-2">
+                        <label class="form-label small fw-semibold mb-0" for="@FieldEditorId(f.Key)">@f.Label</label>
+                        @if (f.Key == "happened")
+                        {
+                            @* PROD-27: a deterministic draft from the case record — fills the editor, never saves. *@
+                            <button type="button" class="btn btn-sm btn-link p-0" @onclick="DraftWhatHappened" disabled="@_drafting"
+                                    title="Draft an account from the timeline, key times and recorded decisions. You edit it before saving.">
+                                <span class="bi bi-magic me-1" aria-hidden="true"></span>Draft from the case record
+                            </button>
+                        }
+                    </div>
                     <div class="form-text mt-0 mb-1">@f.Hint</div>
                     @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Save. *@
                     <textarea id="@FieldEditorId(f.Key)" class="form-control"></textarea>
@@ -381,6 +392,30 @@ else
                 hint = e.Type.ToString()
             })
             .ToArray();
+
+    // PROD-27: put a drafted "What happened" into the editor. Existing text is kept: the draft goes below it.
+    private bool _drafting;
+    private async Task DraftWhatHappened()
+    {
+        if (_drafting) return;
+        _drafting = true;
+        try
+        {
+            var draft = await Lessons.DraftWhatHappenedAsync(CaseId, SevLabels.For);
+            var id = FieldEditorId("happened");
+            var current = (await EditorValue(id)).TrimEnd();
+            await JS.InvokeVoidAsync("markdownEditor.setValue", id, current.Length == 0 ? draft : current + "\n\n" + draft);
+            Toasts.Success(current.Length == 0 ? "Draft added. Review and edit it before saving." : "Draft added below your text. Review and edit it before saving.");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or JSException)
+        {
+            Toasts.Error("The draft couldn't be built. Please try again.");
+        }
+        finally
+        {
+            _drafting = false;
+        }
+    }
 
     private async Task<string> EditorValue(string id)
     {

@@ -82,6 +82,27 @@ public sealed class LessonsService
     // ---- Per case ----------------------------------------------------------------------------------
 
     /// <summary>The review and actions for a case the caller can see; an empty view otherwise (no existence leak).</summary>
+    /// <summary>
+    /// PROD-27: a draft "What happened" account built from the case record (<see cref="CaseNarrative"/>), for the
+    /// review editor. Returns text only; nothing is saved until the analyst saves the review. Need-to-know scoped.
+    /// </summary>
+    public async Task<string> DraftWhatHappenedAsync(Guid caseId, Func<Severity, string> severityLabel,
+        CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var c = await db.Cases.AsNoTracking().ForUser(_user)
+            .AsSplitQuery()
+            .Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics)
+            .Include(x => x.ClassificationChanges)
+            .Include(x => x.SeverityChanges)
+            .Include(x => x.StatusChanges)
+            .Include(x => x.Entities)
+            .FirstOrDefaultAsync(x => x.Id == caseId, ct)
+            ?? throw new InvalidOperationException("Case not found.");
+        var labels = c.Entities.ToDictionary(e => e.Id, e => string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!);
+        return CaseNarrative.Draft(c, id => labels.GetValueOrDefault(id), severityLabel, _clock.UtcNow);
+    }
+
     public async Task<CaseLessonsView> GetForCaseAsync(Guid caseId, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
