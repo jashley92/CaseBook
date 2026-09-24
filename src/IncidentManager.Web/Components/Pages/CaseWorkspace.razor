@@ -178,7 +178,18 @@ else
                         }
                         @if (_canManageLegal)
                         {
-                            <button class="dropdown-item" @onclick="() => SetLegalHold(!_case.LegalHold)">@(_case.LegalHold ? "Release legal hold" : "Place legal hold")</button>
+                            @if (_case.LegalHold && Cases.LegalHoldReleaseNeedsSecondApprover)
+                            {
+                                @* F-12: two-person release — request it; a second person approves from the banner. *@
+                                @if (!_case.LegalHoldReleasePending)
+                                {
+                                    <button class="dropdown-item" @onclick='() => OpenModal("holdrelease")'>Request legal hold release…</button>
+                                }
+                            }
+                            else
+                            {
+                                <button class="dropdown-item" @onclick="() => SetLegalHold(!_case.LegalHold)">@(_case.LegalHold ? "Release legal hold" : "Place legal hold")</button>
+                            }
                         }
                         @if (_canAdmin)
                         {
@@ -218,6 +229,29 @@ else
             </button>
         }
     </div>
+
+    @* F-12: a pending two-person legal-hold release. Anyone can see it; Manage Legal can approve (not the
+       requester) or withdraw it. *@
+    @if (_case.LegalHold && _case.LegalHoldReleasePending)
+    {
+        <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 py-2" role="status">
+            <span class="bi bi-unlock" aria-hidden="true"></span>
+            <span>
+                <strong>Legal hold release requested</strong> by @Users.DisplayFor(_case.LegalHoldReleaseRequestedBy)
+                @if (_case.LegalHoldReleaseRequestedAtUtc is { } at) { <span>&nbsp;· @TimeDisp.Short(at)</span> }
+                <span class="d-block small">Reason: @_case.LegalHoldReleaseReason</span>
+            </span>
+            @if (_canManageLegal)
+            {
+                var own = string.Equals(_case.LegalHoldReleaseRequestedBy, CurrentUser.UserId, StringComparison.OrdinalIgnoreCase);
+                <span class="ms-auto d-flex gap-2">
+                    <button class="btn btn-sm btn-dark" @onclick="ApproveHoldRelease" disabled="@own"
+                            title="@(own ? "Two-person control: someone else must approve your request" : "Release the legal hold")">Approve release</button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="CancelHoldRelease">Withdraw request</button>
+                </span>
+            }
+        </div>
+    }
 
     <ul class="nav nav-tabs mb-3 im-workspace-tabs">
         @foreach (var tab in _tabs)
@@ -450,6 +484,14 @@ else
                             @RationaleHint(_phaseReason)
                             @GateModalSection()
                         }
+                        else if (_activeModal == "holdrelease")
+                        {
+                            <p class="small text-muted mb-2">Two-person control is on: this asks for the hold to be lifted. Someone else with
+                                Manage Legal approves it from the case; until then the hold stays in force.</p>
+                            <label class="form-label small" for="hold-release-reason">Reason</label>
+                            <textarea id="hold-release-reason" class="form-control" rows="3" maxlength="1000" @bind="_holdReleaseReason" @bind:event="oninput"
+                                      placeholder="e.g. Litigation settled; counsel confirmed preservation is no longer required"></textarea>
+                        }
                         else if (_activeModal == "legal")
                         {
                             <input class="form-control mb-2" placeholder="Legal contact" @bind="_legalContact" />
@@ -604,6 +646,7 @@ else
     private string _assignUserId = "";
     private CaseAssignmentRole _assignRole = CaseAssignmentRole.Analyst;
     private string? _legalContact;
+    private string? _holdReleaseReason;   // F-12
     private string? _legalNote;
     // REL-02: optimistic-concurrency baselines captured when the Legal-referral / materiality modal opens,
     // sent back on apply so a concurrent edit surfaces a StaleEditException instead of silently clobbering.
@@ -1164,6 +1207,7 @@ else
         "severity" => "Change severity",
         "status" => "Change status",
         "legal" => "Refer to Legal / Privacy",
+        "holdrelease" => "Request legal hold release",
         "materiality" => "Record materiality determination",
         "archive" => "Archive case",
         "assign" => "Assign someone to this case",
@@ -1195,6 +1239,7 @@ else
         "archive" => "Archive",
         "assign" => "Assign",
         "reopen" => "Reopen",
+        "holdrelease" => "Request release",
         _ => "Apply"
     };
 
@@ -1205,6 +1250,7 @@ else
     {
         "assign" => string.IsNullOrEmpty(_assignUserId),
         "reopen" => string.IsNullOrWhiteSpace(_reopenReason),
+        "holdrelease" => string.IsNullOrWhiteSpace(_holdReleaseReason),
         // A final call needs decision-maker, date and rationale; "Under review" needs none of them.
         "materiality" => _materialityStatus is MaterialityStatus.Material or MaterialityStatus.NotMaterial
             && (string.IsNullOrWhiteSpace(_materialityDecisionMaker) || _materialityDecidedOn is null
@@ -1250,6 +1296,11 @@ else
                         _attested.Count > 0 ? _attested : null, _gateOverride);
                     _phaseReason = null;
                     done = $"Status changed to {Ui.Label(_newPhase)}";
+                    break;
+                case "holdrelease":
+                    await Cases.RequestLegalHoldReleaseAsync(Id, _holdReleaseReason ?? "");
+                    _holdReleaseReason = null;
+                    done = "Release requested. A second person with Manage Legal approves it.";
                     break;
                 case "legal":
                     await Cases.ReferToLegalAsync(Id, _legalContact, _legalNote, _legalBaseline);
@@ -1457,6 +1508,25 @@ else
     }
     private void CloseShot() => _previewShotId = null;
 
+    // F-12: approve / withdraw a pending two-person hold release (the service enforces approver ≠ requester).
+    private async Task ApproveHoldRelease()
+    {
+        try
+        {
+            await Cases.ApproveLegalHoldReleaseAsync(Id);
+            await Reload();
+            Toasts.Success("Legal hold released");
+        }
+        catch (InvalidOperationException ex) { Toasts.Error(ex.Message); }
+    }
+
+    private async Task CancelHoldRelease()
+    {
+        await Cases.CancelLegalHoldReleaseAsync(Id);
+        await Reload();
+        Toasts.Success("Release request withdrawn; the hold stays in force");
+    }
+
     private async Task SetLegalHold(bool held)
     {
         _actionsOpen = false;
@@ -1516,8 +1586,18 @@ else
         }
 
         if (_canManageLegal)
-            list.Add(new(_case.LegalHold ? "Release legal hold" : "Place legal hold",
-                _case.LegalHold ? "bi-unlock" : "bi-lock", RunThenRender(() => SetLegalHold(!_case.LegalHold))));
+        {
+            if (_case.LegalHold && Cases.LegalHoldReleaseNeedsSecondApprover)
+            {
+                if (!_case.LegalHoldReleasePending)
+                    list.Add(new("Request legal hold release…", "bi-unlock", () => OpenModalFromPalette("holdrelease")));
+            }
+            else
+            {
+                list.Add(new(_case.LegalHold ? "Release legal hold" : "Place legal hold",
+                    _case.LegalHold ? "bi-unlock" : "bi-lock", RunThenRender(() => SetLegalHold(!_case.LegalHold))));
+            }
+        }
 
         if (_canAdmin)
         {

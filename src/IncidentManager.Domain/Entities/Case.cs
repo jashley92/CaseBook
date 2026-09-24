@@ -91,6 +91,14 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>Legal hold blocks archival/retention purge.</summary>
     public bool LegalHold { get; set; }
 
+    // F-12: a pending request to release the legal hold, awaiting a second person's approval (when the org turns
+    // two-person release on). Audited like any change, but deliberately outside the row-hash canonical: it is a
+    // workflow state, not case content, and adding it there would re-baseline every existing case's hash.
+    public string? LegalHoldReleaseRequestedBy { get; private set; }
+    public DateTimeOffset? LegalHoldReleaseRequestedAtUtc { get; private set; }
+    public string? LegalHoldReleaseReason { get; private set; }
+    public bool LegalHoldReleasePending => LegalHoldReleaseRequestedBy is not null;
+
     /// <summary>
     /// Optional per-case <see cref="ReportProfile"/> (E-28): when set, that profile's section layout
     /// overrides the global <c>Reporting:SectionLayout</c> for this case's report + preview. Null = use
@@ -770,7 +778,49 @@ public class Case : AuditableEntity, IHashableEntity
     {
         if (!LegalHold) return;
         LegalHold = false;
+        ClearLegalHoldReleaseRequest();
         Touch(actor, nowUtc);
+    }
+
+    /// <summary>
+    /// F-12: asks for the legal hold to be released, pending a second person's approval. The reason is required
+    /// (it's what the approver weighs). A newer request replaces an older pending one.
+    /// </summary>
+    public void RequestLegalHoldRelease(string reason, string actor, DateTimeOffset nowUtc)
+    {
+        if (!LegalHold) throw new InvalidOperationException("There is no legal hold on this case to release.");
+        reason = (reason ?? "").Trim();
+        if (reason.Length == 0) throw new ArgumentException("Give a reason for releasing the legal hold.");
+        if (reason.Length > 1000) throw new ArgumentException("Keep the reason under 1,000 characters.");
+        LegalHoldReleaseRequestedBy = actor;
+        LegalHoldReleaseRequestedAtUtc = nowUtc;
+        LegalHoldReleaseReason = reason;
+        Touch(actor, nowUtc);
+    }
+
+    /// <summary>F-12: a second person approves the pending request, which releases the hold. Never the requester.</summary>
+    public void ApproveLegalHoldRelease(string approver, DateTimeOffset nowUtc)
+    {
+        if (!LegalHold || !LegalHoldReleasePending)
+            throw new InvalidOperationException("There is no pending request to release this legal hold.");
+        if (string.Equals(approver, LegalHoldReleaseRequestedBy, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Two-person control: someone other than the requester must approve the release.");
+        ReleaseLegalHold(approver, nowUtc);
+    }
+
+    /// <summary>F-12: withdraws a pending release request; the hold stays in force.</summary>
+    public void CancelLegalHoldReleaseRequest(string actor, DateTimeOffset nowUtc)
+    {
+        if (!LegalHoldReleasePending) return;
+        ClearLegalHoldReleaseRequest();
+        Touch(actor, nowUtc);
+    }
+
+    private void ClearLegalHoldReleaseRequest()
+    {
+        LegalHoldReleaseRequestedBy = null;
+        LegalHoldReleaseRequestedAtUtc = null;
+        LegalHoldReleaseReason = null;
     }
 
     /// <summary>

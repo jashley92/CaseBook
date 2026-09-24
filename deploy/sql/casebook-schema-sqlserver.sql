@@ -1779,3 +1779,40 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924112734_AddLegalHoldReleaseRequest'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [LegalHoldReleaseReason] nvarchar(1000) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924112734_AddLegalHoldReleaseRequest'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [LegalHoldReleaseRequestedAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924112734_AddLegalHoldReleaseRequest'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [LegalHoldReleaseRequestedBy] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924112734_AddLegalHoldReleaseRequest'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260924112734_AddLegalHoldReleaseRequest', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

@@ -491,6 +491,17 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<bool>("LegalHold")
                         .HasColumnType("bit");
 
+                    b.Property<string>("LegalHoldReleaseReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset?>("LegalHoldReleaseRequestedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LegalHoldReleaseRequestedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<DateTimeOffset?>("ModifiedAtUtc")
                         .HasColumnType("datetimeoffset");
 

@@ -58,11 +58,18 @@ public sealed class CaseService
     private readonly Sla.ISlaTargetsProvider _sla;
     private readonly Security.ISecurityEventSink? _siem;
 
+    private readonly Microsoft.Extensions.Options.IOptionsMonitor<LegalHoldOptions>? _legalHold;
+
+    /// <summary>F-12: whether releasing a legal hold needs a second approver (admin setting, off by default).</summary>
+    public bool LegalHoldReleaseNeedsSecondApprover => _legalHold?.CurrentValue.RequireSecondApprover ?? false;
+
     public CaseService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
         ICaseNumberGenerator caseNumbers, IValidator<CreateCaseRequest> createValidator,
         ICaseNotifications notifications, IStageGateEvaluator gates, Sla.ISlaTargetsProvider sla,
-        Security.ISecurityEventSink? siem = null)
+        Security.ISecurityEventSink? siem = null,
+        Microsoft.Extensions.Options.IOptionsMonitor<LegalHoldOptions>? legalHold = null)
     {
+        _legalHold = legalHold;
         _factory = factory;
         _user = user;
         _clock = clock;
@@ -1079,9 +1086,47 @@ public sealed class CaseService
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         if (held) c.PlaceLegalHold(_user.UserId, _clock.UtcNow);
-        else c.ReleaseLegalHold(_user.UserId, _clock.UtcNow);
+        else
+        {
+            // F-12: with two-person release on, a single person can't lift a hold; they request it instead.
+            if (c.LegalHold && LegalHoldReleaseNeedsSecondApprover)
+                throw new InvalidOperationException(
+                    "Releasing a legal hold needs a second approver. Request the release; someone else with Manage Legal approves it.");
+            c.ReleaseLegalHold(_user.UserId, _clock.UtcNow);
+        }
         await db.SaveChangesAsync(ct);
         _siem?.Emit(Security.SecurityEvents.LegalHold(held, _user.UserId, _user.UserPrincipalName, c.CaseNumber));
+    }
+
+    /// <summary>F-12: asks for the legal hold to be released, with a reason, pending a second person's approval.</summary>
+    public async Task RequestLegalHoldReleaseAsync(Guid id, string reason, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.RequestLegalHoldRelease(reason, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>F-12: approves a pending release (never by the requester), which lifts the hold.</summary>
+    public async Task ApproveLegalHoldReleaseAsync(Guid id, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.ApproveLegalHoldRelease(_user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+        _siem?.Emit(Security.SecurityEvents.LegalHold(false, _user.UserId, _user.UserPrincipalName, c.CaseNumber));
+    }
+
+    /// <summary>F-12: withdraws a pending release request; the hold stays.</summary>
+    public async Task CancelLegalHoldReleaseAsync(Guid id, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.CancelLegalHoldReleaseRequest(_user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>

@@ -132,6 +132,9 @@ public static class SettingsCatalog
             "Indicator lookup template. Use {0} where the indicator value should appear.", "https://www.virustotal.com/gui/search/{0}"),
         new SettingDefinition("Retention:CaseYears", "Case retention (years)", "Retention", SettingKind.Int,
             "How long closed cases are retained before becoming eligible for archival. A legal hold always overrides this.", "7"),
+        // F-12: two-person control for lifting a legal hold. Off by default.
+        new SettingDefinition("Governance:LegalHoldRelease:RequireSecondApprover", "Second approver to release a legal hold", "Retention", SettingKind.Bool,
+            "When on, releasing a legal hold is a request with a reason that a different person with Manage Legal must approve. Placing a hold stays a single action.", "false"),
         new SettingDefinition("Integrity:AutoSeal:Enabled", "Auto-seal enabled", "Integrity", SettingKind.Bool,
             "Whether the background job periodically verifies the audit chain and records a signed seal.", "true"),
         new SettingDefinition("Integrity:AutoSeal:IntervalHours", "Auto-seal interval (hours)", "Integrity", SettingKind.Int,

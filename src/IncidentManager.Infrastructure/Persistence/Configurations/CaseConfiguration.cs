@@ -28,6 +28,10 @@ public sealed class CaseConfiguration : IEntityTypeConfiguration<Case>
         b.Property(c => c.Summary).HasMaxLength(8000);
         b.Property(c => c.ImpactedAssets).HasMaxLength(4000);
         b.Property(c => c.DataTypesInvolved).HasMaxLength(4000);
+        // F-12: pending two-person legal-hold release request.
+        b.Property(c => c.LegalHoldReleaseRequestedBy).HasMaxLength(200);
+        b.Property(c => c.LegalHoldReleaseReason).HasMaxLength(1000);
+        b.Ignore(c => c.LegalHoldReleasePending);
         b.Property(c => c.DetectionCaseId).HasMaxLength(100);
         b.Property(c => c.IncidentCommander).HasMaxLength(200);
         b.Property(c => c.CreatedBy).HasMaxLength(200);

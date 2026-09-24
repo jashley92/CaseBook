@@ -37,6 +37,9 @@ public static class CaseActionPermissions
             // Regulatory / legal milestones
             [nameof(CaseService.ReferToLegalAsync)] = Permission.ManageLegal,
             [nameof(CaseService.SetLegalHoldAsync)] = Permission.ManageLegal,
+            [nameof(CaseService.RequestLegalHoldReleaseAsync)] = Permission.ManageLegal,
+            [nameof(CaseService.ApproveLegalHoldReleaseAsync)] = Permission.ManageLegal,
+            [nameof(CaseService.CancelLegalHoldReleaseAsync)] = Permission.ManageLegal,
             [nameof(CaseService.MarkReportedAsync)] = Permission.EditCases,
             [nameof(CaseService.ClearReportedAsync)] = Permission.EditCases,
             [nameof(CaseService.RecordMaterialityAsync)] = Permission.EditCases,

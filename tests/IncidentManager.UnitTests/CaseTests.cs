@@ -110,6 +110,32 @@ public class CaseTests
     }
 
     [Fact]
+    public void A_two_person_hold_release_needs_a_reason_and_a_different_approver(/* F-12 */)
+    {
+        var c = NewCase();
+        c.Invoking(x => x.RequestLegalHoldRelease("why", "legal1", Now)).Should().Throw<InvalidOperationException>("no hold yet");
+        c.PlaceLegalHold("legal1", Now);
+
+        c.Invoking(x => x.RequestLegalHoldRelease("  ", "legal1", Now)).Should().Throw<ArgumentException>();
+        c.RequestLegalHoldRelease("Matter closed", "legal1", Now.AddHours(1));
+        c.LegalHoldReleasePending.Should().BeTrue();
+
+        c.Invoking(x => x.ApproveLegalHoldRelease("LEGAL1", Now.AddHours(2))).Should().Throw<InvalidOperationException>();
+        c.ApproveLegalHoldRelease("legal2", Now.AddHours(2));
+        c.LegalHold.Should().BeFalse();
+        c.LegalHoldReleasePending.Should().BeFalse();
+
+        // The pending request isn't case content: it stays out of the tamper-evident row hash.
+        var before = c.BuildCanonicalContent();
+        c.PlaceLegalHold("legal1", Now.AddHours(3));
+        c.RequestLegalHoldRelease("again", "legal1", Now.AddHours(4));
+        var withRequest = c.BuildCanonicalContent();
+        c.CancelLegalHoldReleaseRequest("legal1", Now.AddHours(5));
+        c.BuildCanonicalContent().Should().Be(withRequest);
+        withRequest.Should().NotBe(before, "the hold itself is canonical");
+    }
+
+    [Fact]
     public void Reclassify_requires_a_reason()
     {
         var c = NewCase();

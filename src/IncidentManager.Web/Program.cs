@@ -175,6 +175,8 @@ builder.Services.Configure<DevAuthOptions>(builder.Configuration.GetSection("Dev
 // layered over appsettings, so IOptionsSnapshot gives each new circuit the current effective duration.
 builder.Services.Configure<IncidentManager.Web.Security.IdleTimeoutOptions>(
     builder.Configuration.GetSection("Security"));
+// F-12: optional two-person control for releasing a legal hold (admin setting, live).
+builder.Services.Configure<IncidentManager.Application.Cases.LegalHoldOptions>(builder.Configuration.GetSection("Governance:LegalHoldRelease"));
 builder.Services.Configure<IncidentManager.Application.Reporting.ReportingOptions>(
     builder.Configuration.GetSection("Reporting"));
 
