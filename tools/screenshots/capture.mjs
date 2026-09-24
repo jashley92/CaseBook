@@ -58,6 +58,16 @@ const SHOTS = [
   { name: 'config-bundle',      path: '/admin/config-bundle',           settle: 1000 },
   { name: 'roles-access',       path: '/admin/roles',                   settle: 1000 },
   { name: 'cases-filtered',     path: '/cases?classification=Breach',   settle: 1000 },
+  // 2026-09-24 additions: post-incident review, the cross-case pages, and the quarterly program report.
+  { name: 'lessons-learned',    path: '/cases/{vendorCaseId}?tab=Review', settle: 1200 },
+  { name: 'improvement-actions', path: '/improvement-actions',          settle: 1000,
+    before: `(() => { const s=document.getElementById('ia-scope'); if (s) { s.value='All'; s.dispatchEvent(new Event('change',{bubbles:true})); } })()` },
+  { name: 'indicators',         path: '/indicators',                    settle: 1200,
+    before: `(() => { const s=document.getElementById('ind-type'); if (s) { s.value='all'; s.dispatchEvent(new Event('change',{bubbles:true})); } })()` },
+  { name: 'attack-coverage',    path: '/attack-coverage',               settle: 1200,
+    before: `(() => { const s=document.getElementById('atk-period'); if (s) { s.value='all'; s.dispatchEvent(new Event('change',{bubbles:true})); }
+                      setTimeout(() => document.querySelector('.atkh-cell')?.click(), 600); })()` },
+  { name: 'program-report',     path: '/program-report',                settle: 1200 },
 ];
 
 // Resolve {caseId} to the rich hand-authored demo case (the phishing wave) and {campaignId} to the first
@@ -65,6 +75,10 @@ const SHOTS = [
 const RESOLVERS = {
   caseId: {
     url: '/cases?q=Phishing&closed=true',
+    eval: `(() => { const a=document.querySelector('table tbody tr a[href^="cases/"]'); return a ? a.getAttribute('href').split('/')[1].split('?')[0] : null; })()`,
+  },
+  vendorCaseId: {
+    url: '/cases?q=Claims-processing&closed=true',
     eval: `(() => { const a=document.querySelector('table tbody tr a[href^="cases/"]'); return a ? a.getAttribute('href').split('/')[1].split('?')[0] : null; })()`,
   },
   campaignId: {

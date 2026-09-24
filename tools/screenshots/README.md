@@ -16,6 +16,13 @@ drives headless Chrome over the DevTools Protocol using only Node's built-in `fe
    dotnet run --project src/IncidentManager.Web
    ```
 
+   To keep your working database, point the app at a throwaway one instead (it seeds on first start):
+
+   ```bash
+   ConnectionStrings__Default="Data Source=/tmp/casebook-shots.db" EvidenceStore__RootPath=/tmp/casebook-shots-evidence \
+     dotnet run --project src/IncidentManager.Web --launch-profile http
+   ```
+
 2. In another shell, from the repo root:
 
    ```bash

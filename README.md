@@ -70,9 +70,28 @@ a type, a **disposition** (malicious / suspicious / benign / unknown), and a sou
 force-directed **relationship graph** renders each entity as a type-shaped node and **overlays the
 attack chain** as tactic-coloured edges (e.g. the blue *Initial Access* step), so an analyst can see how
 the phishing sender, patient-zero host, compromised Domain Admin account, and exfiltration destination
-connect at a glance. Network/URL indicators can be shown **defanged** for safe copy-out.
+connect at a glance. Network/URL indicators can be shown **defanged** for safe copy-out. An **Across
+cases** view redraws the graph around the case itself: the indicators it shares with other cases you can
+see, those cases, and its case links (campaign links in gold).
 
 ![Relationship graph](docs/screenshots/relationship-graph.png)
+
+### Indicators — the cross-case pivot
+Every indicator recorded on your cases, deduplicated by type and value, **most-shared first**: how many
+cases each appears on (and how many are still open), the worst verdict any case gave it, and first / last
+seen, with an expandable list of the cases behind it. A case's "also in" badge links straight here. Partner
+**STIX 2.1 bundles** and **IOC CSV** files import into a case through the same reviewed import as everything
+else, and the preview flags open cases already carrying the same indicators.
+
+![Indicators](docs/screenshots/indicators.png)
+
+### ATT&amp;CK coverage
+What the SOC has actually faced: the technique tags and attack steps across your cases rolled into the
+MITRE ATT&amp;CK matrix, each technique shaded by how many cases saw it, unobserved tactics shown as gaps,
+and a click-through to the cases behind any cell. Windowed by detection date; exercises excluded unless
+asked for.
+
+![ATT&CK coverage](docs/screenshots/attack-coverage.png)
 
 ### Campaign rollup
 When several cases are worked as one attack wave, linking them **"Same campaign as"** (E-14) makes them
@@ -101,6 +120,22 @@ the case closes and roll up into a cross-case **Improvement actions** register w
 **Lessons captured** check can be required on the Close gate for Incidents and Breaches. The review prints in
 its own stored, hashed **lessons-learned report**, never in the case report, with an optional admin-set
 confidentiality legend on every page. Wording is deliberately neutral, since these records are discoverable.
+**Draft from the case record** fills *What happened* with key times, the event sequence and every recorded
+decision, for the analyst to edit (template-based; CaseBook never calls an AI).
+
+![Lessons learned](docs/screenshots/lessons-learned.png)
+
+![Improvement actions](docs/screenshots/improvement-actions.png)
+
+### Program report
+A **quarterly** roll-up for leadership, board and exam packs: case volumes by classification and severity,
+time to detect / contain / resolve, SLA attainment, regulatory reporting, post-incident follow-through and
+the top ATT&amp;CK techniques, each against the previous quarter. Exports as CSV and prints cleanly to PDF;
+an optional **quarterly email** sends the headline figures to managers. A **legal &amp; regulatory
+obligations register** (referrals, holds, materiality, notification deadlines) exports alongside it for
+Legal and Privacy.
+
+![Program report](docs/screenshots/program-report.png)
 
 ### Integrity &amp; audit
 The tamper-evident spine: an append-only, SHA-256 hash-chained audit trail with one-click chain

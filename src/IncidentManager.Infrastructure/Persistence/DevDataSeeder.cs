@@ -499,6 +499,9 @@ public static class DevDataSeeder
         c1.AddEntity(EntityType.FileHash, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             "Lure attachment (SHA-256)", EntityDisposition.Suspicious, null, "VirusTotal", actor, now.AddDays(-6));
 
+        c1.AddTechnique("T1566", "Phishing", MitreTactic.InitialAccess, actor, now.AddDays(-6));
+        c1.AddTechnique("T1078", "Valid Accounts", MitreTactic.InitialAccess, actor, now.AddDays(-5));
+        c1.AddTechnique("T1114", "Email Collection", MitreTactic.Collection, actor, now.AddDays(-5));
         c1.LinkEntities(acct.Id, url.Id, EntityRelationshipType.Accessed, "User submitted credentials to the lure.", actor, now.AddDays(-6));
         c1.LinkEntities(acct.Id, host.Id, EntityRelationshipType.LoggedInTo, null, actor, now.AddDays(-5));
         c1.LinkEntities(url.Id, ip.Id, EntityRelationshipType.ResolvedTo, null, actor, now.AddDays(-5));
@@ -580,8 +583,47 @@ public static class DevDataSeeder
             c.DetectionCaseId = $"SIEM-{40000 + rnd.Next(1000, 9999)}";
             c.Summary = summary;
             c.DataTypesInvolved = s.Data;
+            // PROD-42 showcase: the ATT&CK techniques each scenario typically involves, so the program-wide
+            // heatmap and the quarterly program report have realistic data on a fresh demo database.
+            foreach (var (tid, tname, tactic) in Techniques(s.Name))
+                c.AddTechnique(tid, tname, tactic, actor, created);
+            // PROD-10 showcase: recurring indicators per scenario, so the cross-case pivot and graph show the
+            // same infrastructure turning up across cases (documentation ranges / .test names only).
+            foreach (var (type, value, disposition) in Indicators(s.Name))
+                c.AddEntity(type, value, null, disposition, null, "SIEM", actor, created);
             return c;
         }
+
+        static (EntityType Type, string Value, EntityDisposition Disposition)[] Indicators(string scenario) => scenario switch
+        {
+            "Phishing Wave" => [(EntityType.Domain, "o365-secure-login.contoso-insurance.example.attacker.test", EntityDisposition.Malicious),
+                                (EntityType.IpAddress, "203.0.113.66", EntityDisposition.Malicious)],
+            "BEC Wire Fraud" => [(EntityType.EmailAddress, "ap-invoices@contoso-lnsurance.test", EntityDisposition.Malicious),
+                                 (EntityType.Domain, "contoso-lnsurance.test", EntityDisposition.Malicious)],
+            "Ransomware Outbreak" => [(EntityType.IpAddress, "198.51.100.23", EntityDisposition.Malicious),
+                                      (EntityType.FileHash, "5d41402abc4b2a76b9719d911017c592", EntityDisposition.Malicious)],
+            "Malware Beacon" => [(EntityType.IpAddress, "198.51.100.23", EntityDisposition.Malicious),
+                                 (EntityType.Domain, "update-cdn.attacker.test", EntityDisposition.Suspicious)],
+            "Anomalous VPN Logins" => [(EntityType.IpAddress, "203.0.113.66", EntityDisposition.Suspicious)],
+            _ => [],
+        };
+
+        static (string Id, string Name, MitreTactic Tactic)[] Techniques(string scenario) => scenario switch
+        {
+            "Phishing Wave" => [("T1566", "Phishing", MitreTactic.InitialAccess), ("T1078", "Valid Accounts", MitreTactic.InitialAccess),
+                                ("T1114", "Email Collection", MitreTactic.Collection)],
+            "Ransomware Outbreak" => [("T1486", "Data Encrypted for Impact", MitreTactic.Impact), ("T1059", "Command and Scripting Interpreter", MitreTactic.Execution),
+                                      ("T1021", "Remote Services", MitreTactic.LateralMovement), ("T1490", "Inhibit System Recovery", MitreTactic.Impact)],
+            "BEC Wire Fraud" => [("T1566", "Phishing", MitreTactic.InitialAccess), ("T1114", "Email Collection", MitreTactic.Collection),
+                                 ("T1534", "Internal Spearphishing", MitreTactic.LateralMovement)],
+            "Anomalous VPN Logins" => [("T1078", "Valid Accounts", MitreTactic.InitialAccess), ("T1133", "External Remote Services", MitreTactic.InitialAccess)],
+            "Malware Beacon" => [("T1071", "Application Layer Protocol", MitreTactic.CommandAndControl), ("T1204", "User Execution", MitreTactic.Execution)],
+            "Exposed Storage Bucket" => [("T1530", "Data from Cloud Storage", MitreTactic.Collection)],
+            "Insider Data Access" => [("T1213", "Data from Information Repositories", MitreTactic.Collection), ("T1078", "Valid Accounts", MitreTactic.PrivilegeEscalation)],
+            "Portal DDoS" => [("T1498", "Network Denial of Service", MitreTactic.Impact)],
+            "Vendor Credential Leak" => [("T1552", "Unsecured Credentials", MitreTactic.CredentialAccess)],
+            _ => [],
+        };
 
         // ── Closed history: 2–3 cases per month across the last ~11 months, each run fully through the
         // lifecycle with durations that mostly beat, sometimes miss, the per-severity SLA target. ──
