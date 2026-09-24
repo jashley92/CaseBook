@@ -4,6 +4,7 @@
 @inject RoleService Roles
 @inject AccessReviewService AccessReview
 @inject ToastService Toasts
+@inject TimeDisplay TimeDisp
 
 <PageTitle>Roles &amp; access</PageTitle>
 
@@ -169,9 +170,9 @@ else
     </table>
 }
 
-@* ---------- Restricted-case access review ---------- *@
-<h4 class="mt-4 mb-2">Restricted-case access review</h4>
-<p class="text-muted small">Need-to-know review for audits: who can currently see restricted cases and why.
+@* ---------- Access review ---------- *@
+<h4 class="mt-4 mb-2">Access review</h4>
+<p class="text-muted small">For periodic access reviews and audits: who can currently see restricted cases and why, and who holds roles at all.
 Broad access comes from roles (and their AD groups); case-specific access is the incident commander and assignees.</p>
 
 @if (_review is null)
@@ -225,6 +226,37 @@ else
             </tbody>
         </table>
         <p class="small text-muted">Plus anyone whose role grants <strong>All cases</strong> above.</p>
+    }
+
+    @* PROD-14: the AppUser mirror, read back for a periodic user-access review (NYDFS 500.7). *@
+    <h6 class="text-uppercase small text-muted mt-3">Known users</h6>
+    <p class="small text-muted mb-2">Everyone who has signed in, with the roles Active Directory gave them at their last sign-in.
+        Accounts idle for more than @((int)AccessReviewService.DormantAfter.TotalDays) days are flagged <strong>dormant</strong>: review whether they still need their AD groups.</p>
+    @if (_review.KnownUsers.Count == 0)
+    {
+        <p class="text-muted">No one has signed in yet.</p>
+    }
+    else
+    {
+        <table class="table table-sm align-middle">
+            <thead><tr><th>User</th><th>Roles at last sign-in</th><th>Last seen (@TimeDisp.Label)</th></tr></thead>
+            <tbody>
+                @foreach (var u in _review.KnownUsers)
+                {
+                    <tr>
+                        <td>@u.DisplayName @if (u.UserPrincipalName is { } upn) { <div class="small text-muted">@upn</div> }</td>
+                        <td>
+                            @if (u.Roles.Count == 0) { <span class="text-muted small">none</span> }
+                            else { @foreach (var r in u.Roles) { <span class="im-badge im-b-neutral me-1">@r</span> } }
+                        </td>
+                        <td class="small">
+                            @TimeDisp.Short(u.LastSeenUtc)
+                            @if (u.IsDormant) { <span class="im-badge im-b-warn ms-1">Dormant</span> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     }
 }
 

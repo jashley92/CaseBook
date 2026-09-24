@@ -69,12 +69,18 @@ public sealed class AccessReviewTests : IDisposable
                 Classification.AdverseEvent, Severity.Low, CaseOrigin.InternalDetection, "system", _clock.UtcNow);
             db.Cases.Add(open);
 
+            // PROD-14: the sign-in mirror — one active user, one idle past the dormancy threshold.
+            db.Users.Add(new AppUser { Sid = "an-uid", DisplayName = "Bob Analyst", UserPrincipalName = "bob@corp",
+                RolesCsv = "Analyst", LastSeenUtc = _clock.UtcNow.AddDays(-2) });
+            db.Users.Add(new AppUser { Sid = "old-uid", DisplayName = "Old Manager", RolesCsv = "Manager, IncidentCommander",
+                LastSeenUtc = _clock.UtcNow - AccessReviewService.DormantAfter - TimeSpan.FromDays(1) });
+
             await db.SaveChangesAsync();
         }
 
         await using (var db = NewContext())
         {
-            var review = await new AccessReviewService(NewFactory()).BuildAsync();
+            var review = await new AccessReviewService(NewFactory(), _clock).BuildAsync();
 
             // Broad access: roles with ViewAllCases / ViewRestricted, with their AD groups.
             review.Broad.Should().Contain(b => b.RoleName == "Manager" && b.ViewAllCases);
@@ -88,6 +94,12 @@ public sealed class AccessReviewTests : IDisposable
             rc.CaseNumber.Should().Contain("Restricted");
             rc.IncidentCommander.Should().Be("ic-uid");
             rc.Assignees.Should().Contain("Bob Analyst");
+
+            // Known users: dormant first, roles split from the sign-in snapshot.
+            review.KnownUsers.Select(u => (u.DisplayName, u.IsDormant)).Should().Equal(
+                ("Old Manager", true), ("Bob Analyst", false));
+            review.KnownUsers[0].Roles.Should().Equal("Manager", "IncidentCommander");
+            review.KnownUsers[1].UserPrincipalName.Should().Be("bob@corp");
         }
     }
 
