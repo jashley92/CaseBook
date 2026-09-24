@@ -20,23 +20,23 @@
 
 <PageHeader Title="Cases">
     <Actions>
-        <div class="btn-group btn-group-sm" role="group" aria-label="Case scope">
-            <button type="button" class="btn @(_onlyMine ? "btn-primary" : "btn-outline-secondary")"
-                    @onclick="() => SetScope(true)" aria-pressed="@_onlyMine" title="Only cases I own or am assigned to">Mine</button>
-            <button type="button" class="btn @(!_onlyMine ? "btn-primary" : "btn-outline-secondary")"
-                    @onclick="() => SetScope(false)" aria-pressed="@(!_onlyMine)" title="All cases I'm allowed to see">All</button>
+        <div class="im-seg" role="group" aria-label="Case scope">
+            <button type="button" class="btn @(_onlyMine ? "active" : "")"
+                    @onclick="() => SetScope(true)" aria-pressed="@_onlyMine" title="Cases you own or are assigned to">Mine</button>
+            <button type="button" class="btn @(!_onlyMine ? "active" : "")"
+                    @onclick="() => SetScope(false)" aria-pressed="@(!_onlyMine)" title="All cases you can see">All</button>
         </div>
         <a class="btn btn-sm btn-outline-secondary" href="export/iocs.csv" download
-           title="Download confirmed-malicious IOCs across your visible cases as a CSV blocklist for SIEM / firewalls / EDR">
+           title="Confirmed-malicious IOCs from your visible cases, as a blocklist for SIEM, firewall or EDR">
             <span class="bi bi-shield-exclamation" aria-hidden="true"></span> Export IOC feed (CSV)
         </a>
         <AuthorizeView Policy="@Policies.EditCases">
             <a class="btn btn-sm btn-outline-secondary" href="cases/import"
-               title="Import a structured case-import document (paste or upload JSON) into a new or existing case">
+               title="Paste or upload a case-import JSON document into a new or existing case">
                 <span class="bi bi-box-arrow-in-down" aria-hidden="true"></span> Import
             </a>
             <a class="btn btn-sm btn-primary" href="cases/new">
-                <span class="bi bi-plus-square" aria-hidden="true"></span> New Case
+                <span class="bi bi-plus-square" aria-hidden="true"></span> New case
             </a>
         </AuthorizeView>
     </Actions>
@@ -77,7 +77,7 @@
                 {
                     @* PROD-24: mark one of your own views as the default Cases landing (captures Mine/All too). *@
                     <button type="button" class="btn @(v.IsDefault ? "btn-warning" : "btn-outline-secondary")"
-                            title="@(v.IsDefault ? "Your default view — Cases lands here" : "Set as your default view")"
+                            title="@(v.IsDefault ? "Your default view. Cases opens here." : "Set as your default view")"
                             aria-pressed="@v.IsDefault" aria-label="@($"{(v.IsDefault ? "Unset" : "Set")} {v.Name} as default view")"
                             @onclick="() => ToggleDefault(v)">
                         <span class="bi @(v.IsDefault ? "bi-star-fill" : "bi-star")" aria-hidden="true"></span>
@@ -92,7 +92,7 @@
     }
     else
     {
-        <span class="text-muted small fst-italic">none yet</span>
+        <span class="text-muted small fst-italic">No saved views yet</span>
     }
     <button type="button" class="btn btn-sm btn-outline-primary" @onclick="ToggleSaveForm">
         <span class="bi bi-plus-lg" aria-hidden="true"></span> Save current view
@@ -125,7 +125,7 @@
             }
             else
             {
-                <div class="form-text">Saving over an existing name of yours updates it (you'll be asked to confirm). Captures the current filters and Mine/All scope.</div>
+                <div class="form-text">Saves the current filters and Mine/All scope. Reusing one of your view names replaces that view.</div>
             }
         </div>
     </div>
@@ -182,7 +182,7 @@
         </div>
         <div class="form-check">
             <input class="form-check-input" type="checkbox" id="exercises" @bind="_includeExercises" @bind:after="ApplyFilters" />
-            <label class="form-check-label small" for="exercises" title="Tabletop / exercise (drill) cases are hidden by default">Show exercises</label>
+            <label class="form-check-label small" for="exercises" title="Tabletop and drill cases are hidden by default">Show exercises</label>
         </div>
     </div>
     @* FR-16: the four status roll-up toggles collapse behind "More filters" to cut the density; they auto-
@@ -217,7 +217,7 @@
         <div class="col-auto">
             <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="hold" @bind="_onHoldOnly" @bind:after="ApplyFilters" />
-                <label class="form-check-label small" for="hold" title="Cases under a legal hold (preserve — do not delete)">On legal hold</label>
+                <label class="form-check-label small" for="hold" title="Cases that must be preserved under a legal hold">On legal hold</label>
             </div>
         </div>
     }
@@ -285,7 +285,7 @@ else if (_page.Total == 0)
         <div class="empty-state">
             <span class="bi bi-funnel empty-state-icon" aria-hidden="true"></span>
             <div class="empty-state-title">No cases match your filters</div>
-            <div class="empty-state-msg">Try widening or clearing the filters to see more.</div>
+            <div class="empty-state-msg">Remove a filter above, or clear them all.</div>
             <div class="empty-state-actions">
                 <button class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">Clear filters</button>
             </div>
@@ -351,8 +351,8 @@ else
     @* PROD-25: keyboard row navigation. Focus the table (click or Tab) then j/k (or ↑/↓) move the cursor and
        Enter/o opens it — no default to prevent, so Tab still leaves the table. (x-to-select waits on E-18's
        metered bulk bar to have something to act on.) *@
-    <table class="table table-hover align-middle im-table" tabindex="0" @onkeydown="OnListKey"
-           aria-label="Case list — press j and k to move, Enter to open">
+    <table class="table table-hover align-middle im-table im-case-list" tabindex="0" @onkeydown="OnListKey"
+           aria-label="Case list. Use j and k to move, Enter to open.">
         <thead>
             <tr>
                 @if (BulkEligible)
@@ -370,7 +370,6 @@ else
                 <th>SLA</th>
                 <th>Origin</th>
                 <th>Opened</th>
-                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -381,7 +380,7 @@ else
                     @if (BulkEligible)
                     {
                         var atCap = !_selected.Contains(c.Id) && _selected.Count >= MaxBulk;
-                        <td style="width:1%">
+                        <td class="case-cell-select" style="width:1%">
                             <input class="form-check-input" type="checkbox" checked="@_selected.Contains(c.Id)"
                                    disabled="@atCap" aria-label="@($"Select {c.CaseNumber}")"
                                    @onchange="e => ToggleSelect(c.Id, (bool)(e.Value ?? false))" />
@@ -391,11 +390,11 @@ else
                         <code title="@c.CaseNumber">@c.CaseNumber</code>
                         @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
                     </td>
-                    <td>
+                    <td class="case-cell-title">
                         <a href="cases/@c.Id" class="link-body-emphasis text-decoration-none fw-medium case-title">@c.Title</a>
                         @if (c.LegalReferred) { <span class="im-badge im-b-neutral ms-1" title="Referred to Legal / Privacy">Legal</span> }
-                        @if (c.LegalHold) { <span class="im-badge im-b-danger ms-1" title="Under a legal hold — preserve, do not delete">Hold</span> }
-                        @if (c.IsExercise) { <span class="im-badge im-b-info ms-1" title="Tabletop / exercise (drill) case — excluded from dashboards, reminders and feeds">Exercise</span> }
+                        @if (c.LegalHold) { <span class="im-badge im-b-danger ms-1" title="Under a legal hold: preserve, don't delete">Hold</span> }
+                        @if (c.IsExercise) { <span class="im-badge im-b-info ms-1" title="Exercise case, excluded from dashboards, reminders and feeds">Exercise</span> }
                     </td>
                     <td><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
                     <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
@@ -415,9 +414,8 @@ else
                             </span>
                         }
                     </td>
-                    <td>@(c.Origin == CaseOrigin.ThirdParty ? "Third-party" : "Internal")</td>
-                    <td class="text-muted small">@Ui.Age(c.CreatedAtUtc, Clock.UtcNow)</td>
-                    <td><a class="btn btn-sm btn-outline-primary" href="cases/@c.Id">Open</a></td>
+                    <td class="case-cell-origin">@(c.Origin == CaseOrigin.ThirdParty ? "Third-party" : "Internal")</td>
+                    <td class="case-cell-age text-muted small">@Ui.Age(c.CreatedAtUtc, Clock.UtcNow)</td>
                 </tr>
             }
         </tbody>
@@ -505,7 +503,7 @@ else
                                     </select>
                                 </div>
                             </div>
-                            <div class="form-text">Adds this assignee to each selected case (existing assignees are kept). Reversible per case.</div>
+                            <div class="form-text">Adds this person to each selected case. Existing assignees stay on.</div>
                         }
                         else
                         {
@@ -519,7 +517,7 @@ else
                                     <input id="bulk-note" class="form-control form-control-sm" @bind="_bulkReferNote" placeholder="Why these are being referred" />
                                 </div>
                             </div>
-                            <div class="form-text">Marks each selected case as referred to Legal / Privacy. The same contact / note applies to all.</div>
+                            <div class="form-text">Marks each selected case as referred to Legal / Privacy, with the same contact and note.</div>
                         }
                     </div>
                     <div class="modal-footer">
@@ -557,7 +555,7 @@ else
                         <button class="btn btn-outline-secondary" @onclick="() => _bulkConfirm = false" disabled="@_bulkBusy">Back</button>
                         <button class="btn btn-primary" @onclick="ApplyBulk" disabled="@_bulkBusy">
                             @if (_bulkBusy) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
-                            @(_bulkVerb == BulkVerb.Assign ? "Confirm assign" : "Confirm referral")
+                            @(_bulkVerb == BulkVerb.Assign ? "Assign cases" : "Refer cases")
                         </button>
                     </div>
                 }

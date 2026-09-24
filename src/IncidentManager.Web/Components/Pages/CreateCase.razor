@@ -11,10 +11,10 @@
 @inject TimeDisplay TimeDisp
 @inject IJSRuntime JS
 
-<PageTitle>New Case</PageTitle>
+<PageTitle>New case</PageTitle>
 
 <PageHeader Title="New case"
-           Subtitle="File a new security matter — set its classification (Adverse Event, Incident, or Breach), or choose Complex Event to capture and triage it before classifying." />
+           Subtitle="Pick Adverse Event, Incident or Breach, or file as a Complex Event and classify after triage." />
 
 <EditForm Model="_request" OnValidSubmit="Submit" FormName="createCase">
     <div class="nc-form">
@@ -35,7 +35,7 @@
                     @if (_selectedTemplate is not null)
                     {
                         <div class="small text-muted mt-1">
-                            @_selectedTemplate.Description@if (_selectedTemplate.Steps.Count > 0) { <text> · @_selectedTemplate.Steps.Count action item(s) added on create.</text> }
+                            @_selectedTemplate.Description@if (_selectedTemplate.Steps.Count > 0) { <text> · Adds @_selectedTemplate.Steps.Count task@(_selectedTemplate.Steps.Count == 1 ? "" : "s") to the case.</text> }
                         </div>
                     }
                 </div>
@@ -70,7 +70,7 @@
                             <option value="@s">@SevLabels.For(s)</option>
                         }
                     </InputSelect>
-                    <div class="form-text">Sets the response-time SLA clock — confirm it matches the matter's impact (defaults to @SevLabels.For(Severity.Medium)).</div>
+                    <div class="form-text">Sets the response SLA clock. Defaults to @SevLabels.For(Severity.Medium).</div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Origin</label>
@@ -105,9 +105,8 @@
                         </label>
                     </div>
                     <div class="form-text">
-                        A drill for IRP testing (NYDFS 500.16). It runs through the normal workflow but is excluded
-                        from dashboards, reminders, the IOC feed and cross-case correlation, and is clearly badged.
-                        This <strong>can't be changed</strong> once the case is created.
+                        A drill for IRP testing (NYDFS 500.16). It's badged and kept out of dashboards, reminders,
+                        the IOC feed and cross-case correlation. This <strong>can't be changed</strong> after the case is created.
                     </div>
                 </div>
 
@@ -120,8 +119,8 @@
                         </label>
                     </div>
                     <div class="form-text">
-                        Only its incident commander, the people assigned to it, and roles cleared for restricted cases can see it.
-                        You're added to the case team if your role isn't cleared. It can be changed later from the case.
+                        Visible only to the incident commander, people assigned to the case and roles cleared for restricted cases.
+                        If your role isn't cleared, you're added to the case team. You can change this later.
                     </div>
                 </div>
 
@@ -131,12 +130,12 @@
                 <div class="col-md-4">
                     <label class="form-label">Detected (@TimeDisp.Label) <span class="text-danger">*</span></label>
                     <input type="datetime-local" class="form-control" @bind="_detectedWall"
-                           title="When the matter was first detected or reported. Drives the response-SLA clock and dwell metrics. Set it to the real detection time, not when the case was filed. Entered in @TimeDisp.Label." />
+                           title="When the activity was first detected or reported, not when the case was filed. Starts the response SLA clock." />
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Initial activity <span class="text-muted">(optional)</span></label>
                     <input type="datetime-local" class="form-control" @bind="_occurredWall"
-                           title="When adversary activity actually began (initial access / first malicious activity), if known. Detected minus this is the dwell time. Entered in @TimeDisp.Label." />
+                           title="When adversary activity began (initial access), if known. Used to calculate dwell time." />
                 </div>
 
                 <div class="col-md-6">
@@ -144,10 +143,10 @@
                     <InputText class="form-control" @bind-Value="_request.DetectionCaseId" placeholder="@($"e.g. {DetectionLabel}-40122")" />
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Data context <span class="text-muted">(notes, optional)</span></label>
+                    <label class="form-label">Data context <span class="text-muted">(optional)</span></label>
                     <InputText class="form-control" @bind-Value="_request.DataTypesInvolved" placeholder="@(_dataTypesPrompt ?? "e.g. PII, PHI, credentials")" />
                     @* E-36: the structured data elements (Impact assessment) are the authoritative record. *@
-                    <div class="form-text">Free-text context. Record the regulated data elements in the case's Impact assessment; notification decisions use those.</div>
+                    <div class="form-text">Free-text notes only. Notification decisions use the data elements recorded in the case's Impact assessment.</div>
                 </div>
 
                 <div class="col-12">
@@ -159,7 +158,7 @@
                     @if (_selectedTemplate is not null && string.IsNullOrWhiteSpace(_request.Summary))
                     {
                         <div class="form-text text-warning">
-                            <span class="bi bi-info-circle me-1" aria-hidden="true"></span>The grey text is the template's prompt, not content — add your own summary or the case is filed with none.
+                            <span class="bi bi-info-circle me-1" aria-hidden="true"></span>The gray text is the template's prompt, not content. Write your own summary, or the case is created without one.
                         </div>
                     }
                 </div>
@@ -174,15 +173,15 @@
                     @* FR-22: flag a collision here instead of only on submit. *@
                     @if (_numberAvailable == false)
                     {
-                        <div class="form-text text-danger"><span class="bi bi-x-circle me-1" aria-hidden="true"></span>“@(_request.CaseNumber?.Trim())” is already in use — pick another or leave blank.</div>
+                        <div class="form-text text-danger"><span class="bi bi-x-circle me-1" aria-hidden="true"></span>“@(_request.CaseNumber?.Trim())” is already in use. Pick another or leave it blank.</div>
                     }
                     else if (_numberAvailable == true)
                     {
-                        <div class="form-text text-success"><span class="bi bi-check-circle me-1" aria-hidden="true"></span>Available. Must be unique.</div>
+                        <div class="form-text text-success"><span class="bi bi-check-circle me-1" aria-hidden="true"></span>Available.</div>
                     }
                     else
                     {
-                        <div class="form-text">Leave blank to auto-generate. Must be unique.</div>
+                        <div class="form-text">Leave blank to assign one automatically.</div>
                     }
                 </div>
             </details>
@@ -190,12 +189,12 @@
 
         @* Indicators + duplicate / campaign detection (E-23) *@
         <div class="im-card nc-card">
-            <label class="form-label">Indicators / IOCs <span class="text-muted">(optional, one per line)</span></label>
+            <label class="form-label">Indicators <span class="text-muted">(optional, one per line)</span></label>
             <textarea class="form-control" rows="3" @bind="_indicators" @bind:event="oninput" @bind:after="OnIndicatorsChanged"
-                      placeholder="One indicator per line, e.g. 1.2.3.4, evil.example.com, hxxp://bad[.]site/x, or a file hash"
+                      placeholder="e.g. 1.2.3.4, evil.example.com, hxxp://bad[.]site/x, or a file hash"
                       @onblur="CheckOverlaps"></textarea>
             <div class="form-text">
-                Checked against open cases for duplicates, and added as entities on create (defanged notation is refanged; types auto-detected).
+                Checked against open cases for duplicates, then added as entities when the case is created. Defanged values are fine.
                 <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="CheckOverlaps" disabled="@_checking">Check now</button>
             </div>
 
@@ -207,7 +206,7 @@
             {
                 <div class="alert alert-success py-2 mt-2 mb-0">
                     <span class="bi bi-check2-circle me-1" aria-hidden="true"></span>
-                    No open cases reference these indicators. This looks like a new matter.
+                    No open cases reference these indicators.
                 </div>
             }
             else if (_matches.Count > 0)
@@ -215,7 +214,7 @@
                 <div class="alert alert-warning mt-2 mb-0">
                     <div class="fw-semibold mb-2">
                         <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>
-                        @_matches.Count open case(s) already reference these indicators. Relate one to avoid fragmenting a campaign:
+                        @(_matches.Count == 1 ? "1 open case already references" : $"{_matches.Count} open cases already reference") these indicators. Link related ones to keep a campaign together:
                     </div>
                     @foreach (var m in _matches)
                     {
@@ -236,7 +235,7 @@
                             </div>
                         </div>
                     }
-                    <div class="small text-muted">Relationships are applied when you create the case; filing is never blocked.</div>
+                    <div class="small text-muted">Links are optional and are applied when you create the case.</div>
                 </div>
             }
         </div>
@@ -247,8 +246,8 @@
         {
             <div class="alert alert-warning mb-0">
                 <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
-                Open case(s) already reference these indicators (see above). Relate one to avoid fragmenting a
-                campaign, then click <strong>Create case</strong> again — or click again to file as a separate matter.
+                Open cases already reference these indicators (see above). Link any that are related, then click
+                <strong>Create case</strong> again. To keep it separate, click <strong>Create case</strong> without linking.
             </div>
         }
 
@@ -260,8 +259,8 @@
             @if (_created is not null)
             {
                 <div class="alert alert-warning mb-0">
-                    <div class="fw-semibold"><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>Case <code>@_created.CaseNumber</code> was filed, but its initial setup didn’t finish.</div>
-                    <div class="small mt-1">Click <strong>Finish filing</strong> to apply the rest — you won’t create a duplicate — or open the case and add them there.</div>
+                    <div class="fw-semibold"><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>Case <code>@_created.CaseNumber</code> was created, but its setup didn’t finish.</div>
+                    <div class="small mt-1">Click <strong>Finish setup</strong> to add the remaining indicators, links and tasks without creating a duplicate. Or open the case and add them there.</div>
                     <div class="small text-muted mt-1">Detail: @_error</div>
                 </div>
             }
@@ -272,7 +271,7 @@
         }
 
         <div class="nc-actions">
-            <button type="submit" class="btn btn-primary" disabled="@(_saving || _checking)">@(_created is null ? "Create case" : "Finish filing")</button>
+            <button type="submit" class="btn btn-primary" disabled="@(_saving || _checking)">@(_created is null ? "Create case" : "Finish setup")</button>
             @if (_created is not null)
             {
                 <a class="btn btn-outline-primary" href="cases/@_created.Id">Open case as-is</a>
@@ -516,7 +515,7 @@
             // REL-06: show domain/validation messages verbatim; replace cryptic EF/SQLite/internal errors
             // with a plain line and log the detail. The amber "was filed" state renders this the same way.
             _error = UserFacingError.Describe(ex, Logger, "creating a case",
-                "The case couldn't be created. Please try again.");
+                "Couldn't create the case. Try again, and contact an admin if it keeps failing.");
         }
         finally
         {

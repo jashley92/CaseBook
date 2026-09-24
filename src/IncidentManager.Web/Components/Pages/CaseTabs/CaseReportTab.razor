@@ -39,7 +39,7 @@
                     }
                     else
                     {
-                        <span class="small text-muted">Reports use this profile's sections. Manage profiles in Admin → Reports.</span>
+                        <span class="small text-muted">Reports use this profile's sections. Manage profiles in Administration → Settings → Reports.</span>
                     }
                 </div>
             </div>
@@ -49,7 +49,7 @@
             {
                 <div class="small text-muted mb-2">
                     <span class="bi bi-file-earmark-word me-1" aria-hidden="true"></span>Word drafts use this profile's template
-                    (<strong>@templateName</strong>); the preview and PDFs show the built-in layout.
+                    (<strong>@templateName</strong>). The preview and PDFs use the built-in layout.
                 </div>
             }
             @* PROD-45: the TLP marking printed on every page of the report generated next. *@
@@ -73,7 +73,7 @@
             <button class="btn btn-sm btn-primary" @onclick="() => Generate(ReportFormat.Pdf)">
                 Generate PDF draft
             </button>
-            <span class="ms-2 small text-muted">Reports are generated as drafts; a PDF becomes the locked final only when approved below.</span>
+            <span class="ms-2 small text-muted">Reports are generated as drafts. A PDF becomes the locked final only when approved below.</span>
             @if (_reportMsg is not null) { <div class="small text-muted mt-1">@_reportMsg</div> }
         </div>
     </div>
@@ -82,7 +82,7 @@
     {
         <div class="card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <span><span class="bi bi-eye me-1"></span>Preview <span class="small text-muted">· what Generate / Approve will produce</span></span>
+                <span><span class="bi bi-eye me-1"></span>Preview <span class="small text-muted">· what the generated report will contain</span></span>
                 <button class="btn-close" aria-label="Hide preview" @onclick="TogglePreview"></button>
             </div>
             <div class="card-body bg-body-tertiary">
@@ -151,7 +151,8 @@
 
     private async Task SaveProfile()
     {
-        await Cases.SetReportProfileAsync(CaseId, _selectedProfileId);
+        try { await Cases.SetReportProfileAsync(CaseId, _selectedProfileId); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't save the report profile. {ex.Message}"); return; }
         await OnCaseChanged.InvokeAsync(); // parent Reload → CaseProfileId reflects the saved value
         _profileDirty = false;
         Toasts.Success("Report profile saved");
@@ -181,7 +182,9 @@
     {
         // Persist a changed profile choice first so the generated report matches the selection on screen.
         if (_profileDirty) await SaveProfile();
-        var report = await Reports.GenerateAsync(CaseId, format, _tlp);
+        IncidentManager.Domain.Entities.Report report;
+        try { report = await Reports.GenerateAsync(CaseId, format, _tlp); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't generate the report. {ex.Message}"); return; }
         _reportMsg = $"Generated draft {report.FileName} (SHA-256 {report.ContentSha256[..12]}…)";
         await LoadReports();
         await OnCaseChanged.InvokeAsync();

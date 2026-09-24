@@ -60,11 +60,11 @@ else
                                 @if (!string.IsNullOrWhiteSpace(Model.ImpactedAssets)) { <li>Impacted assets: @Model.ImpactedAssets</li> }
                                 @if (Model.DataTypesInvolved is not null) { <li>Data context (analyst notes): @Model.DataTypesInvolved</li> }
                                 @if (Model.LegalReferred) { <li>Legal/Privacy referral recorded. @Model.LegalNote</li> }
-                                @if (Model.LegalHold) { <li>Legal hold in effect — case data must be preserved (do not delete).</li> }
+                                @if (Model.LegalHold) { <li>Legal hold in effect. Case data must be preserved and not deleted.</li> }
                                 @if (Model.MaterialityStatus is { } ms)
                                 {
                                     <li>
-                                        Materiality: @ms@(Model.MaterialityDetermined ? $" — determined{(string.IsNullOrWhiteSpace(Model.MaterialityDecisionMaker) ? "" : $" by {Model.MaterialityDecisionMaker}")}{(Model.MaterialityDecidedOnUtc is { } dd ? $" on {dd:yyyy-MM-dd}" : "")}" : "").
+                                        Materiality: @ms@(Model.MaterialityDetermined ? $", determined{(string.IsNullOrWhiteSpace(Model.MaterialityDecisionMaker) ? "" : $" by {Model.MaterialityDecisionMaker}")}{(Model.MaterialityDecidedOnUtc is { } dd ? $" on {dd:yyyy-MM-dd}" : "")}" : "").
                                         @if (!string.IsNullOrWhiteSpace(Model.MaterialityRationale)) { <span>@Model.MaterialityRationale</span> }
                                     </li>
                                 }
@@ -73,7 +73,7 @@ else
                         break;
 
                     case ReportSection.EventTimeline:
-                        <p class="small fst-italic text-muted mb-1">Reconstructed adversary activity: tactic(s), actor → target, technique.</p>
+                        <p class="small fst-italic text-muted mb-1">Reconstructed adversary activity in order: ATT&amp;CK tactic(s), actor → target, and technique.</p>
                         @foreach (var png in Model.AttackChainImages)
                         {
                             <img class="img-fluid border rounded mb-2" src="@Png(png)" alt="@CaseReportModel.AttackChainAlt" />
@@ -171,7 +171,7 @@ else
                         break;
 
                     case ReportSection.Recommendations:
-                        <p class="small fst-italic text-muted mb-1">After-action items and follow-up tasks.</p>
+                        <p class="small fst-italic text-muted mb-1">Follow-up tasks from the case.</p>
                         <div class="table-responsive">
                             <table class="table table-sm table-bordered small mb-0">
                                 <thead><tr><th>Task</th><th>Owner</th><th>Due (UTC)</th><th>Status</th></tr></thead>
@@ -198,7 +198,7 @@ else
                             @if (Model.ReportedAtUtc is { } rep) { <li>Reported to regulators: @rep.ToString("u")</li> }
                             @if (Model.ClosedAtUtc is { } cl) { <li>Closed: @cl.ToString("u")</li> }
                             @if (Model.LegalReferred) { <li>Referred to Legal/Privacy. @Model.LegalNote</li> }
-                            @if (Model.LegalHold) { <li>Legal hold in effect — case data must be preserved (do not delete).</li> }
+                            @if (Model.LegalHold) { <li>Legal hold in effect. Case data must be preserved and not deleted.</li> }
                         </ul>
                         break;
 

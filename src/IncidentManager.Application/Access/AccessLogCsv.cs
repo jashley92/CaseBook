@@ -17,7 +17,7 @@ public static class AccessLogCsv
         var inv = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
 
-        sb.Append("# CaseBook access log — read/access telemetry (out of the tamper-evident chain), generated ")
+        sb.Append("# CaseBook access log (read and access telemetry, kept outside the tamper-evident chain), generated ")
           .Append(generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(" UTC\r\n");
 
         sb.Append("actor,access_type,case_number,target,restricted,count,first_seen_utc,last_seen_utc\r\n");

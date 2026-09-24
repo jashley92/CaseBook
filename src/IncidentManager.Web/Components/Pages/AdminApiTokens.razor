@@ -15,22 +15,21 @@
     </Actions>
 </PageHeader>
 <p class="text-muted">
-    <strong>System</strong> tokens are named machine identities for the import API (XSIAM/SOAR playbooks,
-    scripts) — grant each the roles it needs. API actions attribute to the token's name in the audit trail.
-    A token still only <strong>stages</strong> an import; a person confirms it. Tokens are shown once at
-    creation, then stored only as a hash. Personal tokens are self-managed by each user under their account.
+    <strong>System</strong> tokens are named machine identities for the import API, such as XSIAM/SOAR playbooks
+    or scripts. Grant each only the roles it needs. The audit trail records API actions under the token's name.
+    Users manage their own personal tokens under their account.
 </p>
 
 <div class="im-card nc-card">
     <div class="fw-semibold mb-2"><span class="bi bi-terminal me-1" aria-hidden="true"></span>Using the import API</div>
     <p class="text-muted small mb-2">
-        Give a <strong>system</strong> token to a producer (an XSIAM/SOAR playbook or a script). Every submission
-        lands in the <a href="cases/import">import review queue</a> for a human to confirm — the API never writes
-        case state directly. Full reference: <code>docs/API.md</code>.
+        A token only <strong>stages</strong> an import. Every submission lands in the
+        <a href="cases/import">import review queue</a> for a person to confirm; the API never changes case state
+        directly. Full reference: <code>docs/API.md</code>.
     </p>
     <ul class="small mb-2">
-        <li><span class="im-badge im-b-info">POST</span> <code>/api/import/cases</code> — submit a case-import document. Header <code>Authorization: Bearer &lt;token&gt;</code>.</li>
-        <li><span class="im-badge im-b-neutral">GET</span> <code>/api/import/cases/schema</code> — the JSON Schema for the document (no auth required).</li>
+        <li><span class="im-badge im-b-info">POST</span> <code>/api/import/cases</code>: submit a case-import document with the header <code>Authorization: Bearer &lt;token&gt;</code>.</li>
+        <li><span class="im-badge im-b-neutral">GET</span> <code>/api/import/cases/schema</code>: the JSON Schema for the document (no auth required).</li>
     </ul>
     <pre class="border rounded bg-body-tertiary p-2 small mb-0" style="overflow:auto"><code>curl -X POST https://your-casebook/api/import/cases \
   -H "Authorization: Bearer &lt;token&gt;" \
@@ -41,8 +40,8 @@
 @if (_created is not null)
 {
     <div class="alert alert-success">
-        <div class="fw-semibold mb-1"><span class="bi bi-check2-circle me-1"></span>Token “@_created.Token.Name” created — copy it now</div>
-        <div class="small mb-2">This is the only time the token is shown. Store it in your SOAR/secret manager; CaseBook keeps only a hash.</div>
+        <div class="fw-semibold mb-1"><span class="bi bi-check2-circle me-1"></span>Token “@_created.Token.Name” created. Copy it now.</div>
+        <div class="small mb-2">It won't be shown again. Store it in your SOAR or secret manager; CaseBook keeps only a hash.</div>
         <div class="input-group input-group-sm" style="max-width:40rem">
             <input class="form-control font-monospace" readonly value="@_created.Plaintext" @ref="_tokenBox" />
             <button class="btn btn-outline-secondary" type="button" @onclick="CopyToken">
@@ -76,7 +75,7 @@
                     <input type="date" class="form-control" @bind="_expiresDate"
                            min="@DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-dd")"
                            max="@DateTime.UtcNow.Date.Add(ApiTokenService.MaxSystemLifetime).ToString("yyyy-MM-dd")" />
-                    <div class="form-text">Required, up to @((int)ApiTokenService.MaxSystemLifetime.TotalDays) days. Rotate by re-creating before it lapses.</div>
+                    <div class="form-text">Up to @((int)ApiTokenService.MaxSystemLifetime.TotalDays) days. To rotate, create a new token before this one expires.</div>
                 </div>
             </div>
             <label class="form-label mt-3">Roles <span class="text-danger">*</span></label>
@@ -107,6 +106,10 @@
 @if (_tokens is null)
 {
     <p><em>Loading&hellip;</em></p>
+}
+else if (_tokens.Count == 0)
+{
+    <p class="text-muted">No API tokens yet. Click <strong>New system token</strong> to create one.</p>
 }
 else
 {
@@ -147,7 +150,7 @@ else
     private ConfirmDialog _confirm = null!;
 
     private void ConfirmRevoke(ApiTokenView t) => _confirm.Ask(this, "Revoke token",
-        $"Revoke “{t.Name}”? Anything using it (a playbook, a script) is refused from now on. This can't be undone; " +
+        $"Revoke “{t.Name}”? Any playbook or script using it is refused from now on. This can't be undone; " +
         "create a new token if it's still needed.",
         "Revoke token", () => Revoke(t));
 

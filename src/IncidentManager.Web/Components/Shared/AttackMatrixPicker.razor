@@ -19,7 +19,7 @@
                    value="@_filter" @oninput="OnFilter" aria-label="Filter techniques" />
             @if (_filter.Length > 0)
             {
-                <button type="button" class="btn btn-sm btn-link p-0 ms-1" @onclick="ClearFilter" title="Clear filter">clear</button>
+                <button type="button" class="btn btn-sm btn-link p-0 ms-1" @onclick="ClearFilter" title="Clear filter">Clear</button>
             }
         </div>
         <button type="button" class="btn-close" aria-label="Close" @onclick="Cancel"></button>
@@ -87,7 +87,7 @@
     @if (!SingleSelect && (_customTags.Count > 0 || _customOpen))
     {
         <div class="atkm-custom">
-            <span class="text-muted small me-1">Off-catalogue:</span>
+            <span class="text-muted small me-1">Custom:</span>
             @foreach (var c in _customTags)
             {
                 <span class="im-chip"><code>@c.Key</code> <span class="im-chip-role">@Ui.Label(c.Value)</span>
@@ -96,8 +96,8 @@
             }
             @if (_customOpen)
             {
-                <input class="form-control form-control-sm atkm-custom-in" placeholder="T1234[.001]" value="@_customId" @oninput="e => _customId = e.Value?.ToString() ?? string.Empty" />
-                <select class="form-select form-select-sm atkm-custom-in" @bind="_customTactic">
+                <input class="form-control form-control-sm atkm-custom-in" placeholder="T1234[.001]" aria-label="Technique ID" value="@_customId" @oninput="e => _customId = e.Value?.ToString() ?? string.Empty" />
+                <select class="form-select form-select-sm atkm-custom-in" aria-label="Tactic" @bind="_customTactic">
                     @foreach (var t in Enum.GetValues<MitreTactic>().Where(t => t != MitreTactic.Unspecified).OrderBy(Ui.TacticRank))
                     {
                         <option value="@t">@Ui.Label(t)</option>
@@ -116,7 +116,7 @@
     <div class="atkm-foot">
         @if (SingleSelect)
         {
-            <div class="atkm-summary small text-muted">Click a technique in the tactic column you mean@(AllowTacticOnly ? ", or a tactic header for a tactic-only step." : ".")</div>
+            <div class="atkm-summary small text-muted">Click a technique under the tactic you mean@(AllowTacticOnly ? ", or click a tactic header to record the tactic only." : ".")</div>
             <button type="button" class="btn btn-outline-secondary" @onclick="Cancel">Cancel</button>
         }
         else
@@ -279,7 +279,7 @@
         if (!System.Text.RegularExpressions.Regex.IsMatch(id, @"^T\d{4}(\.\d{3})?$",
                 System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1)))  // S6444: bounded
         {
-            _customError = "Expected e.g. T1234 or T1234.001.";
+            _customError = "Use the format T1234 or T1234.001.";
             return;
         }
         _selected[id] = _customTactic;

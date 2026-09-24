@@ -17,8 +17,7 @@
             {
                 <div class="empty-state-title">Not signed in</div>
                 <div class="empty-state-msg">
-                    Your session isn't authenticated. Close and reopen the browser, or contact a CaseBook
-                    administrator if this persists.
+                    Close and reopen the browser. If you still can't get in, contact a CaseBook administrator.
                 </div>
             }
             else if (CurrentUser.RoleNames.Count == 0)
@@ -26,13 +25,11 @@
                 <div class="empty-state-title">No access assigned yet</div>
                 <div class="empty-state-msg">
                     You're signed in as <strong>@CurrentUser.DisplayName</strong>@_identityHint, but your
-                    account hasn't been granted a role in CaseBook yet, so there's nothing here you can
-                    open.
+                    account doesn't have a CaseBook role yet.
                 </div>
                 <div class="empty-state-msg text-muted">
-                    Access is granted through your Active Directory group membership. Ask a CaseBook
-                    administrator to add you to the security group for your team. A new AD group takes effect
-                    after you next sign in to Windows.
+                    Roles come from Active Directory groups. Ask a CaseBook administrator to add you to your
+                    team's group. It takes effect the next time you sign in to Windows.
                 </div>
             }
             else
@@ -56,8 +53,8 @@
                 </div>
 
                 <div class="empty-state-msg text-muted">
-                    If you need it, ask a CaseBook administrator. A change to what your role grants reaches you within a
-                    few minutes; a new AD group takes effect after you next sign in to Windows.
+                    To get it, ask a CaseBook administrator. Role changes reach you within a few minutes. A new AD
+                    group takes effect the next time you sign in to Windows.
                     <a href="account/access">See everything your role can do</a>.
                 </div>
             }

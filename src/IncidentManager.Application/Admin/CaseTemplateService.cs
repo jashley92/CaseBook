@@ -73,7 +73,7 @@ public sealed class CaseTemplateService
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A template name is required.");
         if (await db.CaseTemplates.AnyAsync(t => t.Name == name, ct))
-            throw new InvalidOperationException($"A template named '{name}' already exists.");
+            throw new InvalidOperationException($"A template named '{name}' already exists. Choose a different name.");
 
         var template = new CaseTemplate { Name = name, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow };
         ApplyContent(template, input);
@@ -87,12 +87,12 @@ public sealed class CaseTemplateService
         AdminActionPermissions.Require<CaseTemplateService>(_user);
         using var db = _factory.CreateDbContext();
         var template = await db.CaseTemplates.Include(t => t.Steps).FirstOrDefaultAsync(t => t.Id == id, ct)
-                       ?? throw new InvalidOperationException("Template not found.");
+                       ?? throw new InvalidOperationException("That template no longer exists. Reload the page and try again.");
 
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A template name is required.");
         if (await db.CaseTemplates.AnyAsync(t => t.Name == name && t.Id != id, ct))
-            throw new InvalidOperationException($"A template named '{name}' already exists.");
+            throw new InvalidOperationException($"A template named '{name}' already exists. Choose a different name.");
 
         template.Name = name;
         template.ModifiedBy = _user.UserId;

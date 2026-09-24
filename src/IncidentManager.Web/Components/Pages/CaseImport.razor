@@ -8,18 +8,19 @@
 @inject ILogger<CaseImport> Logger
 @inject IJSRuntime JS
 @inject CaseService Cases
+@inject ISeverityLabels SevLabels
 
 <PageTitle>Import case</PageTitle>
 
 <PageHeader Title="Import case"
-           Subtitle="Bring a structured case-import document, a STIX 2.1 bundle or an IOC CSV into a case. Review an editable preview, then confirm — nothing is written until you apply." />
+           Subtitle="Import a case-import JSON document, STIX 2.1 bundle or IOC CSV. Nothing is written until you review the preview and apply it." />
 
 @* PROD-33: programmatic submissions awaiting human review, and the reviewing banner. *@
 @if (_reviewingPendingId is not null)
 {
     <div class="alert alert-info d-flex flex-wrap align-items-center gap-2">
         <span class="bi bi-inbox" aria-hidden="true"></span>
-        <span>Reviewing a <strong>submitted</strong> import. Confirm it to write it into a case, or reject it — nothing has been written yet.</span>
+        <span>Reviewing a <strong>submitted</strong> import. Nothing has been written yet. Confirm to write it into a case, or reject it.</span>
         <a class="btn btn-sm btn-outline-secondary ms-auto" href="cases/import">Back to queue</a>
     </div>
 }
@@ -27,7 +28,7 @@ else if (_pending.Count > 0)
 {
     <div class="im-card nc-card">
         <div class="fw-semibold mb-1"><span class="bi bi-inbox me-1" aria-hidden="true"></span>Pending imports <span class="im-badge im-b-info">@_pending.Count</span></div>
-        <p class="text-muted small mb-2">Submitted programmatically (e.g. by a SOAR playbook via the import API) and awaiting review. Nothing is written until you confirm.</p>
+        <p class="text-muted small mb-2">Submitted through the import API (for example, by a SOAR playbook). Nothing is written until you confirm.</p>
         <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
                 <thead><tr><th>Submission</th><th style="width:11rem">Origin</th><th style="width:11rem">Submitted by</th><th style="width:12rem">When (UTC)</th><th style="width:6rem"></th></tr></thead>
@@ -53,15 +54,15 @@ else if (_pending.Count > 0)
 @* Step 1 (PROD-32): generate a prompt for the analyst's own AI. CaseBook never calls an LLM. *@
 <div class="im-card nc-card">
     <div class="d-flex justify-content-between align-items-center">
-        <div class="fw-semibold"><span class="bi bi-robot me-1" aria-hidden="true"></span>Step 1 — Generate a prompt for your AI <span class="text-muted small fw-normal">(optional)</span></div>
+        <div class="fw-semibold"><span class="bi bi-robot me-1" aria-hidden="true"></span>Step 1: Generate a prompt for your AI <span class="text-muted small fw-normal">(optional)</span></div>
         <button class="btn btn-sm btn-outline-secondary" @onclick="() => _showPromptBuilder = !_showPromptBuilder">@(_showPromptBuilder ? "Hide" : "Show")</button>
     </div>
     @if (_showPromptBuilder)
     {
         <p class="text-muted small mt-2 mb-2">
-            CaseBook never calls an AI. Copy this prompt into your <strong>own</strong> tool (e.g. Copilot) together with
-            the incident's emails, chat logs and notes — it returns JSON you paste into Step 2 below. The prompt embeds
-            the exact schema, so what your AI produces will import cleanly.
+            CaseBook never calls an AI. Paste this prompt into your <strong>own</strong> tool, such as Copilot, along with
+            the incident's emails, chat logs and notes. It includes the import schema, so the JSON it returns can be
+            pasted straight into Step 2.
         </p>
         <div class="row g-2 align-items-end">
             <div class="col-md-3">
@@ -100,16 +101,13 @@ else if (_pending.Count > 0)
 
 @* Step 2 (PROD-31): paste/upload the resulting JSON and review the preview. *@
 <div class="im-card nc-card">
-    <div class="fw-semibold mb-2"><span class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></span>Step 2 — Paste or upload the import</div>
+    <div class="fw-semibold mb-2"><span class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></span>Step 2: Paste or upload the import</div>
     <p class="text-muted small mb-2">
-        The document is <strong>untrusted</strong> and reviewed before anything is written: indicators are refanged and
-        auto-typed, unknown values fall back to a safe default and are flagged, and each item can be edited or excluded.
-        Provenance (<code>origin</code>) is recorded on imported indicators and timeline entries. Not sure of the shape?
-        See the <a href="#" @onclick="ToggleSample" @onclick:preventDefault>sample below</a> or the
-        <a href="api/import/cases/schema" target="_blank" rel="noopener noreferrer">full JSON Schema</a>.
-        <br />Also accepts a partner's <strong>STIX 2.1 bundle</strong> or an <strong>IOC CSV</strong> (a <code>value</code>/<code>indicator</code>
-        column, optional <code>type</code>, <code>disposition</code>, <code>label</code>, <code>description</code>, <code>source</code>; or one indicator per line).
-        Their indicators become entities you review here like any other import.
+        The document is treated as <strong>untrusted</strong>. You can edit or exclude each item before anything is written,
+        and unknown values are flagged. For the format, see the <a href="#" @onclick="ToggleSample" @onclick:preventDefault>sample</a>
+        or the <a href="api/import/cases/schema" target="_blank" rel="noopener noreferrer">JSON Schema</a>.
+        <br />A <strong>STIX 2.1 bundle</strong> or <strong>IOC CSV</strong> also works. A CSV needs a <code>value</code> or <code>indicator</code>
+        column (optional: <code>type</code>, <code>disposition</code>, <code>label</code>, <code>description</code>, <code>source</code>), or one indicator per line.
     </p>
 
     <label class="form-label">Import JSON, STIX bundle or CSV</label>
@@ -140,7 +138,7 @@ else if (_pending.Count > 0)
     @if (p.Warnings.Count > 0)
     {
         <div class="alert alert-warning py-2">
-            <div class="fw-semibold mb-1"><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>@p.Warnings.Count note(s) — review before applying</div>
+            <div class="fw-semibold mb-1"><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>@(p.Warnings.Count == 1 ? "1 note" : $"{p.Warnings.Count} notes") to review before applying</div>
             <ul class="mb-0 small">@foreach (var w in p.Warnings) { <li>@w</li> }</ul>
         </div>
     }
@@ -177,19 +175,20 @@ else if (_pending.Count > 0)
                 <div class="col-md-2">
                     <label class="form-label small mb-1">Severity</label>
                     <select class="form-select form-select-sm" @bind="nc.Severity">
-                        @foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@s</option> }
+                        @foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@SevLabels.For(s)</option> }
                     </select>
                 </div>
                 <div class="col-md-2">
                     <label class="form-label small mb-1">Origin</label>
                     <select class="form-select form-select-sm" @bind="nc.Origin">
-                        @foreach (var o in Enum.GetValues<CaseOrigin>()) { <option value="@o">@o</option> }
+                        <option value="@CaseOrigin.InternalDetection">Internal detection</option>
+                        <option value="@CaseOrigin.ThirdParty">Third-party / vendor</option>
                     </select>
                 </div>
             </div>
             @if (string.IsNullOrWhiteSpace(nc.Title))
             {
-                <div class="form-text text-danger">A title is required to open a new case.</div>
+                <div class="form-text text-danger">Enter a title to create the case.</div>
             }
         }
         else if (p.TargetKind == CaseImportTargetKind.ExistingCase)
@@ -254,7 +253,7 @@ else if (_pending.Count > 0)
                                     @if (t.Warning is not null) { <div class="form-text text-warning small">@t.Warning</div> }
                                 </td>
                                 <td><select class="form-select form-select-sm" @bind="t.Kind">@foreach (var k in Enum.GetValues<TimelineKind>()) { <option value="@k">@k</option> }</select></td>
-                                <td><select class="form-select form-select-sm" @bind="t.Type">@foreach (var ty in Enum.GetValues<TimelineEntryType>()) { <option value="@ty">@ty</option> }</select></td>
+                                <td><select class="form-select form-select-sm" @bind="t.Type">@foreach (var ty in Enum.GetValues<TimelineEntryType>()) { <option value="@ty">@Ui.Label(ty)</option> }</select></td>
                                 <td><input class="form-control form-control-sm" @bind="t.Description" /></td>
                                 <td><input class="form-control form-control-sm" @bind="t.Source" /></td>
                             </tr>
@@ -270,7 +269,7 @@ else if (_pending.Count > 0)
     {
         <div class="im-card nc-card">
             <div class="fw-semibold mb-1"><span class="bi bi-intersect me-1" aria-hidden="true"></span>Already seen on open cases</div>
-            <p class="text-muted small mb-2">Some of these indicators are on other open investigations. Consider linking the cases (for example as part of the same campaign) from the case's Overview once the import is applied.</p>
+            <p class="text-muted small mb-2">Some of these indicators appear on other open cases. After applying, you can link related cases from the case's Overview.</p>
             <ul class="list-unstyled small mb-0">
                 @foreach (var m in _related)
                 {
@@ -288,7 +287,7 @@ else if (_pending.Count > 0)
     @if (p.Entities.Count > 0)
     {
         <div class="im-card nc-card">
-            <div class="fw-semibold mb-2">Indicators / entities <span class="text-muted small">(@p.Entities.Count(r => r.Include) of @p.Entities.Count)</span></div>
+            <div class="fw-semibold mb-2">Entities <span class="text-muted small">(@p.Entities.Count(r => r.Include) of @p.Entities.Count)</span></div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle">
                     <thead><tr><th style="width:2rem"></th><th style="width:9rem">Type</th><th>Value</th><th style="width:9rem">Disposition</th><th style="width:10rem">Source</th></tr></thead>
@@ -298,11 +297,11 @@ else if (_pending.Count > 0)
                             <tr class="@(e.Include ? "" : "opacity-50")">
                                 <td><input class="form-check-input" type="checkbox" @bind="e.Include" /></td>
                                 <td>
-                                    <select class="form-select form-select-sm" @bind="e.Type">@foreach (var ty in Enum.GetValues<EntityType>()) { <option value="@ty">@ty</option> }</select>
-                                    @if (e.Type == EntityType.Other) { <div class="form-text text-warning small">check type</div> }
+                                    <select class="form-select form-select-sm" @bind="e.Type">@foreach (var ty in Enum.GetValues<EntityType>()) { <option value="@ty">@Ui.Label(ty)</option> }</select>
+                                    @if (e.Type == EntityType.Other) { <div class="form-text text-warning small">Check the type</div> }
                                 </td>
                                 <td><input class="form-control form-control-sm font-monospace" @bind="e.Value" /></td>
-                                <td><select class="form-select form-select-sm" @bind="e.Disposition">@foreach (var d in Enum.GetValues<EntityDisposition>()) { <option value="@d">@d</option> }</select></td>
+                                <td><select class="form-select form-select-sm" @bind="e.Disposition">@foreach (var d in Enum.GetValues<EntityDisposition>()) { <option value="@d">@Ui.Label(d)</option> }</select></td>
                                 <td><input class="form-control form-control-sm" @bind="e.Source" /></td>
                             </tr>
                         }
@@ -316,7 +315,7 @@ else if (_pending.Count > 0)
     @if (p.ActionItems.Count > 0)
     {
         <div class="im-card nc-card">
-            <div class="fw-semibold mb-2">Action items <span class="text-muted small">(@p.ActionItems.Count(r => r.Include) of @p.ActionItems.Count)</span></div>
+            <div class="fw-semibold mb-2">Tasks <span class="text-muted small">(@p.ActionItems.Count(r => r.Include) of @p.ActionItems.Count)</span></div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle">
                     <thead><tr><th style="width:2rem"></th><th>Title</th><th style="width:12rem">Owner</th><th style="width:12rem">Due (UTC)</th></tr></thead>
@@ -338,13 +337,31 @@ else if (_pending.Count > 0)
 
     @if (_error is not null) { <div class="alert alert-danger">@_error</div> }
 
+    @if (_rejecting)
+    {
+        @* Rejecting is a decision on someone else's submission, so it takes one explicit step and an optional
+           reason (recorded with the rejection) rather than firing on the first click. *@
+        <div class="card border-danger-subtle mb-3">
+            <div class="card-body">
+                <label class="form-label fw-semibold" for="reject-note">Reject this import?</label>
+                <textarea id="reject-note" class="form-control form-control-sm mb-2" rows="2" maxlength="1000"
+                          placeholder="Reason (optional), for example: duplicate of an existing case" @bind="_rejectNote"></textarea>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-danger" @onclick="Reject" disabled="@_applying">Reject import</button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => _rejecting = false">Keep reviewing</button>
+                </div>
+                <div class="form-text">Nothing from the submission is written to a case.</div>
+            </div>
+        </div>
+    }
+
     <div class="nc-actions">
         <button class="btn btn-primary" @onclick="Apply" disabled="@(_applying || !CanApply(p))">
             <span class="bi bi-check2-circle me-1" aria-hidden="true"></span>@(_reviewingPendingId is null ? "Apply import" : "Confirm & apply") (@p.IncludedItemCount item(s))
         </button>
         @if (_reviewingPendingId is not null)
         {
-            <button class="btn btn-outline-danger" @onclick="Reject" disabled="@_applying">Reject</button>
+            <button class="btn btn-outline-danger" @onclick="() => _rejecting = true" disabled="@(_applying || _rejecting)">Reject…</button>
         }
         <a class="btn btn-outline-secondary" href="cases">Cancel</a>
     </div>
@@ -362,6 +379,7 @@ else if (_pending.Count > 0)
     private Guid? _reviewingPendingId;
     private List<PendingImportSummary> _pending = new();
     private string? _rejectNote;
+    private bool _rejecting;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -374,7 +392,7 @@ else if (_pending.Count > 0)
                 var preview = await Import.BuildPreviewForPendingAsync(pid);
                 if (preview is null)
                 {
-                    Toasts.Error("That submitted import is no longer available.");
+                    Toasts.Error("That submitted import is no longer available. It may already have been reviewed.");
                     Nav.NavigateTo("cases/import");
                     return;
                 }
@@ -394,11 +412,17 @@ else if (_pending.Count > 0)
     private async Task Reject()
     {
         if (_reviewingPendingId is not { } pid) return;
-        await Import.RejectPendingAsync(pid, _rejectNote);
+        try { await Import.RejectPendingAsync(pid, string.IsNullOrWhiteSpace(_rejectNote) ? null : _rejectNote.Trim()); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
+        {
+            Toasts.Error($"Couldn't reject the import. {ex.Message}");
+            return;
+        }
         _preview = null;
         _reviewingPendingId = null;
         _rejectNote = null;
-        Toasts.Success("Import rejected — nothing was written.");
+        _rejecting = false;
+        Toasts.Success("Import rejected. Nothing was written.");
         Nav.NavigateTo("cases/import");
     }
 
@@ -428,11 +452,11 @@ else if (_pending.Count > 0)
         try
         {
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", _prompt);
-            Toasts.Success("Prompt copied — paste it into your AI tool with the incident material.");
+            Toasts.Success("Prompt copied. Paste it into your AI tool with the incident material.");
         }
         catch
         {
-            Toasts.Error("Couldn't copy automatically — select the text and copy it manually.");
+            Toasts.Error("Couldn't copy the prompt. Select the text and copy it manually.");
         }
     }
 
@@ -449,7 +473,7 @@ else if (_pending.Count > 0)
         }
         catch (Exception ex)
         {
-            _error = "The file couldn't be read.";
+            _error = "Couldn't read the file. Check that it's a JSON, STIX or CSV file under 4 MB.";
             Logger.LogWarning(ex, "Case-import file read failed");
         }
     }
@@ -472,7 +496,7 @@ else if (_pending.Count > 0)
         {
             // Indicator shares land in an investigation someone chose; ask for the case rather than inventing one.
             _preview.TargetKind = CaseImportTargetKind.ExistingCase;
-            _preview.Warnings.Insert(0, "Choose the case these indicators go into (or switch to creating a new case).");
+            _preview.Warnings.Insert(0, "Choose the case to add these indicators to, or switch to creating a new case.");
         }
         await LoadRelated();
     }
@@ -537,7 +561,7 @@ else if (_pending.Count > 0)
         }
         else
         {
-            _existingError = "No case with that number is visible to you.";
+            _existingError = "No case with that number is visible to you. Check the number and try again.";
         }
     }
 
@@ -551,7 +575,7 @@ else if (_pending.Count > 0)
             var result = await Import.ApplyAsync(p);
             if (_reviewingPendingId is { } pid) await Import.MarkPendingAppliedAsync(pid, result);
             var what = result.CaseCreated ? $"Case {result.CaseNumber} created" : $"Imported into {result.CaseNumber}";
-            Toasts.Success($"{what} — {result.Total} item(s) imported.");
+            Toasts.Success($"{what}. {result.Total} item(s) imported.");
             Nav.NavigateTo($"cases/{result.CaseId}");
         }
         catch (Exception ex)
@@ -559,7 +583,7 @@ else if (_pending.Count > 0)
             // Domain/validation messages show verbatim; internal errors are replaced and logged. A retry
             // resumes (already-applied items are skipped) rather than duplicating.
             _error = UserFacingError.Describe(ex, Logger, "importing a case",
-                "The import couldn't be completed. Please try again.");
+                "Couldn't complete the import. Try again; items already imported won't be duplicated.");
         }
         finally
         {
@@ -571,7 +595,7 @@ else if (_pending.Count > 0)
   ""format"": ""casebook-case-import"",
   ""schemaVersion"": 1,
   ""origin"": ""AI-assisted (Copilot)"",
-  ""target"": { ""newCase"": { ""title"": ""Phishing wave — Finance"", ""classification"": ""Incident"", ""severity"": ""High"" } },
+  ""target"": { ""newCase"": { ""title"": ""Phishing wave targeting Finance"", ""classification"": ""Incident"", ""severity"": ""High"" } },
   ""summary"": ""Summary of the incident assembled from the email thread…"",
   ""timeline"": [
     { ""occurredAtUtc"": ""2026-09-18T13:05:00Z"", ""kind"": ""Investigation"", ""type"": ""Communication"", ""description"": ""User reported a suspicious email to the SOC."" }

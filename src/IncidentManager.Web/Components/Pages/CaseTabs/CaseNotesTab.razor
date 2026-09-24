@@ -19,7 +19,7 @@
             @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add. *@
             <ComposerHint>Your investigation record: findings and reasoning, printed in the case report. Doesn't notify anyone. To hand off or ask a teammate, use <strong>Discussion</strong>.</ComposerHint>
             <textarea id="@NoteAddEditorId" class="form-control mb-2"></textarea>
-            <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddNote">Add note</button>
+            <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="AddNote">Add note</button>
         </div>
     </div>
 </AuthorizeView>
@@ -29,8 +29,7 @@
     <div class="empty-state">
         <div class="empty-state-icon"><span class="bi bi-journal-text" aria-hidden="true"></span></div>
         <div class="empty-state-title">No notes yet</div>
-        <div class="empty-state-msg">Notes are the investigation record: findings and reasoning, printed in the case report. Edits keep
-            every prior version, so the record shows how the understanding developed.</div>
+        <div class="empty-state-msg">Record findings and reasoning here. Notes print in the case report, and edits keep every prior version.</div>
     </div>
 }
 else
@@ -152,7 +151,8 @@ else
         try { _noteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteAddEditorId); }
         catch (JSException) { /* editor not mounted; fall back to bound value */ }
         if (string.IsNullOrWhiteSpace(_noteBody)) return;
-        await Cases.AddNoteAsync(CaseId, _noteBody);
+        try { await Cases.AddNoteAsync(CaseId, _noteBody); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't add the note. {ex.Message}"); return; }
         _noteBody = "";
         ComposerDrafts?.Remove(NoteAddEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
@@ -181,7 +181,8 @@ else
         try { _editNoteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteEditEditorId(noteId)); }
         catch (JSException) { /* fall back to bound value */ }
         if (string.IsNullOrWhiteSpace(_editNoteBody)) return;
-        await Cases.EditNoteAsync(CaseId, noteId, _editNoteBody);
+        try { await Cases.EditNoteAsync(CaseId, noteId, _editNoteBody); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't save the note. {ex.Message}"); return; }
         CancelNoteEdit();
         await OnChanged.InvokeAsync();
         Toasts.Success("Note updated");

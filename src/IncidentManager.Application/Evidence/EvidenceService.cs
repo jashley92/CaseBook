@@ -147,7 +147,7 @@ public sealed class EvidenceService
         if (recipient.Length == 0) throw new ArgumentException("Say who received the evidence.");
         if (purpose.Length == 0) throw new ArgumentException("Give the purpose of the transfer.");
         if (recipient.Length > 200 || purpose.Length > 500 || method?.Length > 100)
-            throw new ArgumentException("Keep the recipient, method and purpose brief.");
+            throw new ArgumentException("Keep the recipient to 200 characters, the method to 100 and the purpose to 500.");
 
         using var db = _factory.CreateDbContext();
         var evidence = await LoadScopedAsync(db, evidenceId, ct);

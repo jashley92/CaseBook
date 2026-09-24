@@ -98,19 +98,19 @@ public static class DevDataSeeder
             phishing.SetImpactAssessment(1450, new[] { "SocialSecurityNumber", "DateOfBirth", "OnlineCredentials" },
                 "NY, NJ", "system", now.AddDays(-4));
             phishing.RecordMateriality(MaterialityStatus.Material, "Disclosure Committee", now.AddDays(-1),
-                "NY resident NPI (SSNs) confirmed exposed — reasonable likelihood of harm; NYDFS Part 500 applies.",
+                "NY resident NPI (SSNs) confirmed exposed, with a reasonable likelihood of harm. NYDFS Part 500 applies.",
                 "legal1", now.AddDays(-1));
 
             db.CaseComments.Add(new CaseComment
             {
-                CaseId = phishing.Id, Body = "Handing off to day shift — mailbox rules cleared, creds reset. "
+                CaseId = phishing.Id, Body = "Handing off to day shift. Mailbox rules cleared, creds reset. "
                     + "Legal has the affected-user list; awaiting the materiality call.",
                 CreatedBy = "ic1", CreatedAtUtc = now.AddDays(-2)
             });
             db.CaseComments.Add(new CaseComment
             {
-                CaseId = phishing.Id, Body = "Disclosure committee determined this **material**. NYDFS 72h clock is running — "
-                    + "please confirm the NY + federal notification drafts.",
+                CaseId = phishing.Id, Body = "Disclosure committee determined this **material**. NYDFS 72h clock is running. "
+                    + "Please confirm the NY + federal notification drafts.",
                 CreatedBy = "legal1", CreatedAtUtc = now.AddDays(-1)
             });
             await db.SaveChangesAsync(ct);
@@ -136,7 +136,7 @@ public static class DevDataSeeder
                 db.PostIncidentReviews.Add(new PostIncidentReview
                 {
                     CaseId = vendor.Id,
-                    WhatHappened = "The vendor's SaaS tenant was accessed with a reused administrator credential. Policyholder records synchronised to the tenant were exported before the vendor detected the activity.",
+                    WhatHappened = "The vendor's SaaS tenant was accessed with a reused administrator credential. Policyholder records synchronized to the tenant were exported before the vendor detected the activity.",
                     ContributingFactors = "The vendor portal accepted password-only sign-in. Our data-sharing inventory did not list this tenant, so its notification contact was out of date.",
                     WhatWorkedWell = "The vendor disclosure reached the SOC within hours, and Legal had a materiality call inside two days.",
                     OpportunitiesToImprove = "Require MFA attestation from vendors holding policyholder data, and keep the data-sharing inventory current.",
@@ -472,7 +472,7 @@ public static class DevDataSeeder
         c1.ChangeSeverity(Severity.High, "Confirmed unauthorized mailbox access", actor, now.AddDays(-5));
         c1.Reclassify(Classification.Breach, "Evidence of mailbox access to files containing NY resident NPI", actor, now.AddDays(-4));
         c1.ChangeSeverity(Severity.Critical, "NY resident NPI confirmed exposed", actor, now.AddDays(-4));
-        c1.ReferToLegal(actor, "privacy@contoso-insurance.example", "NY resident NPI potentially accessed — NYDFS Part 500 relevance.", now.AddDays(-4));
+        c1.ReferToLegal(actor, "privacy@contoso-insurance.example", "NY resident NPI potentially accessed. Possible NYDFS Part 500 relevance.", now.AddDays(-4));
         c1.ActionItems.Add(new ActionItem
         {
             CaseId = c1.Id, Title = "Provide affected-user list to Legal", Owner = "ic1",

@@ -14,18 +14,17 @@
     </Actions>
 </PageHeader>
 <p class="text-muted">
-    Export this instance's <strong>editable configuration</strong> as a single signed, versioned file — the
-    "seed pack". Use it to <strong>snapshot</strong> the current setup, <strong>diff</strong> it against an IRP
-    revision, <strong>promote</strong> config from a test instance to production, or <strong>stand up a new
-    white-label instance</strong> from a known baseline. The file is plain JSON, so it reviews and diffs like
-    code, and it carries a signature (with the public key) so its authenticity can be checked offline.
+    Export this instance's <strong>editable configuration</strong> as one signed, versioned JSON file. Use it to
+    <strong>snapshot</strong> the current setup, <strong>diff</strong> it against an IRP revision,
+    <strong>promote</strong> config from test to production, or <strong>stand up a new white-label instance</strong>
+    from a known baseline. The file carries its signature and public key, so authenticity can be checked offline.
 </p>
 <p class="text-muted small">
-    <span class="bi bi-info-circle me-1"></span>The bundle covers operational &amp; taxonomy <strong>settings</strong>,
-    <strong>roles</strong> &amp; AD mappings, <strong>case templates</strong>, <strong>stage gates</strong>,
-    <strong>report profiles</strong>, and <strong>data elements</strong>. It deliberately excludes cases,
-    evidence and the audit trail (records, not configuration) and server-side security/infrastructure config
-    (connection strings, auth mode, signing keys, the SIEM endpoint) — those never leave the server.
+    <span class="bi bi-info-circle me-1"></span>The bundle covers operational and taxonomy <strong>settings</strong>,
+    <strong>roles</strong> and AD mappings, <strong>case templates</strong>, <strong>stage gates</strong>,
+    <strong>report profiles</strong>, <strong>data elements</strong> and <strong>notification rules</strong>. It
+    excludes cases, evidence and the audit trail, and server-side security and infrastructure config such as
+    connection strings, auth mode, signing keys and the SIEM endpoint.
 </p>
 
 <div class="card mb-3">
@@ -60,13 +59,13 @@
     <div class="card-header"><span class="bi bi-box-arrow-in-up me-1"></span>Import</div>
     <div class="card-body">
         <p class="small text-muted">
-            Upload a bundle to apply it here. The signature is verified first; then you get a <strong>preview</strong> of
-            exactly what would change before anything is written. Import is <strong>additive</strong> — existing items are
-            updated in place and new ones are added, but nothing is ever deleted. Every change is audited.
+            Upload a bundle to apply it here. The signature is checked first, then you'll see a <strong>preview</strong> of
+            every change before anything is written. Import is <strong>additive</strong>: existing items are updated and
+            new ones added, but nothing is deleted. Every change is audited.
         </p>
         <div class="alert alert-warning small py-2">
             <span class="bi bi-exclamation-triangle me-1"></span>Importing <strong>roles</strong> and <strong>AD mappings</strong>
-            changes who can access this instance. Review the preview carefully — AD group names are organization-specific.
+            changes who can access this instance. Review the preview carefully, since AD group names differ between organizations.
         </div>
 
         <InputFile OnChange="OnFileSelected" accept=".json" class="form-control form-control-sm" style="max-width:28rem" />
@@ -78,13 +77,13 @@
                 {
                     <div class="alert alert-danger py-2 mb-2">
                         <span class="bi bi-shield-x me-1"></span><strong>Signature invalid.</strong> This bundle was altered
-                        after it was signed, or is corrupt. It cannot be imported.
+                        after it was signed, or is corrupt. It can't be imported; export a fresh bundle from the source instance.
                     </div>
                 }
                 else
                 {
                     <div class="alert @(_verification.SignedByThisInstance ? "alert-success" : "alert-info") py-2 mb-2">
-                        <span class="bi bi-shield-check me-1"></span>Signature valid —
+                        <span class="bi bi-shield-check me-1"></span>Signature valid:
                         @(_verification.SignedByThisInstance ? "signed by this instance" : "signed by another instance")
                         (key <code>@Trunc(_verification.KeyId)</code>). Exported by <strong>@_verification.ExportedBy</strong>
                         from <strong>@_verification.SourceHost</strong> on @_verification.ExportedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
@@ -124,7 +123,7 @@
                     }
                     else
                     {
-                        <p class="text-muted mb-0">This bundle matches the live configuration — nothing to apply.</p>
+                        <p class="text-muted mb-0">This bundle matches the live configuration. Nothing to apply.</p>
                     }
                     <button class="btn btn-sm btn-outline-secondary ms-1" @onclick="ClearUpload" disabled="@_applying">Cancel</button>
                 }
@@ -179,7 +178,7 @@
         try
         {
             var result = await Config.ImportAsync(_incoming);
-            Toasts.Success($"Import applied — {result.Added} added, {result.Updated} updated.");
+            Toasts.Success($"Import applied: {result.Added} added, {result.Updated} updated.");
             ClearUpload();
             await LoadAsync();
         }

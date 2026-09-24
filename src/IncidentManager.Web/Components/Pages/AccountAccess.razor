@@ -3,7 +3,7 @@
 @page "/account/access"
 @attribute [Authorize]
 
-<PageTitle>My access — CaseBook</PageTitle>
+<PageTitle>My access</PageTitle>
 
 <PageHeader Title="My access"
             Subtitle="What your CaseBook roles let you do. Roles come from your Active Directory groups." />
@@ -15,7 +15,6 @@
 <div class="small text-muted" style="max-width: 48rem">
     <p class="mb-1"><strong>Restricted cases.</strong> A case restricted to need-to-know is visible only to its incident commander,
         the people assigned to it, and roles with <em>View restricted</em> or <em>View all cases</em>.</p>
-    <p class="mb-0"><strong>Changing your access.</strong> Ask a CaseBook administrator. If they change what a role grants or which
-        AD group maps to it, that reaches you within a few minutes. If you're added to a new AD group, it takes effect after you
-        next sign in to Windows.</p>
+    <p class="mb-0"><strong>Changing your access.</strong> Ask a CaseBook administrator. Changes to a role or its AD group mapping
+        reach you within a few minutes. Membership of a new AD group takes effect the next time you sign in to Windows.</p>
 </div>

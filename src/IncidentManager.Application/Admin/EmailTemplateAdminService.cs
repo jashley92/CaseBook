@@ -79,7 +79,7 @@ public sealed class EmailTemplateAdminService
         var def = EmailTemplateCatalog.ById(id) ?? throw new InvalidOperationException($"'{id}' is not a known email template.");
         subject = (subject ?? "").Trim();
         body = (body ?? "").Trim();
-        if (subject.Length == 0) throw new ArgumentException("Subject must not be empty.");
+        if (subject.Length == 0) throw new ArgumentException("Enter a subject.");
         if (subject.Length > MaxSubjectLength) throw new ArgumentException($"Subject must be {MaxSubjectLength} characters or fewer.");
         if (body.Length > MaxBodyLength) throw new ArgumentException($"Body must be {MaxBodyLength} characters or fewer.");
 

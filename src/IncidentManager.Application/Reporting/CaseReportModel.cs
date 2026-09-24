@@ -154,7 +154,7 @@ public sealed class CaseReportModel
 
     /// <summary>PROD-46: alt text for the pictures (the tables carry the same facts).</summary>
     public const string AttackChainAlt = "Attack chain: each step in time order, placed in its ATT&CK tactic lane. The table below lists the same steps.";
-    public const string EntityGraphAlt = "Entity relationship graph: entities coloured by verdict, arrows for relationships. Appendix B lists the same relationships.";
+    public const string EntityGraphAlt = "Entity relationship graph: entities colored by verdict, arrows for relationships. Appendix B lists the same relationships.";
 
     /// <summary>PROD-45: the indicators-of-compromise table (malicious and suspicious entities).</summary>
     public IReadOnlyList<ReportIocRow> Iocs { get; init; } = [];

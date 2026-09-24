@@ -10,7 +10,7 @@
 <PageTitle>Exports</PageTitle>
 
 <PageHeader Title="Exports"
-            Subtitle="Export the metrics, feeds and regulator/examiner artifacts CaseBook produces." />
+            Subtitle="Download metrics, feeds and regulator or examiner artifacts." />
 
 <section class="im-card mb-3">
     <div class="im-section-head">
@@ -21,7 +21,7 @@
             <span class="dl-ic bi bi-bar-chart-line" aria-hidden="true"></span>
             <div class="dl-body">
                 <div class="dl-name">Incident metrics <span class="dl-fmt">CSV</span></div>
-                <div class="dl-desc">The leadership/board snapshot — open caseload, breaches, SLA posture and throughput. A point-in-time figure set for a metrics deck or a status update.</div>
+                <div class="dl-desc">A point-in-time leadership snapshot for a metrics deck or status update: open caseload, breaches, SLA posture and throughput.</div>
             </div>
             <a class="btn btn-sm btn-outline-primary dl-btn" href="export/metrics.csv" download>
                 <span class="bi bi-download" aria-hidden="true"></span> Download
@@ -51,7 +51,7 @@
             <span class="dl-ic bi bi-shield-exclamation" aria-hidden="true"></span>
             <div class="dl-body">
                 <div class="dl-name">Malicious IOC feed <span class="dl-fmt">CSV</span></div>
-                <div class="dl-desc">Confirmed-malicious indicators across the cases you can see — a flat blocklist to push to your SIEM, firewalls or EDR to close the detection loop.</div>
+                <div class="dl-desc">Confirmed-malicious indicators from the cases you can see, as a flat blocklist for your SIEM, firewalls or EDR.</div>
             </div>
             <a class="btn btn-sm btn-outline-primary dl-btn" href="export/iocs.csv" download>
                 <span class="bi bi-download" aria-hidden="true"></span> Download
@@ -61,7 +61,7 @@
             <span class="dl-ic bi bi-calendar-week" aria-hidden="true"></span>
             <div class="dl-body">
                 <div class="dl-name">My agenda <span class="dl-fmt">ICS</span></div>
-                <div class="dl-desc">Your after-action due dates as a calendar file to import into Outlook. For a live subscription instead of a one-shot file, use the feed link on the <a href="agenda">Agenda</a> page.</div>
+                <div class="dl-desc">Your task due dates as a calendar file to import into Outlook. For a syncing subscription, use the feed link on the <a href="agenda">Agenda</a> page.</div>
             </div>
             <a class="btn btn-sm btn-outline-primary dl-btn" href="agenda/agenda.ics" download>
                 <span class="bi bi-download" aria-hidden="true"></span> Download
@@ -81,7 +81,7 @@
                 <span class="dl-ic bi bi-file-earmark-zip" aria-hidden="true"></span>
                 <div class="dl-body">
                     <div class="dl-name">Compliance evidence bundle <span class="dl-fmt">ZIP</span></div>
-                    <div class="dl-desc">The tamper-evident audit-chain segment for a date range, its covering integrity seals and a verification report — the package to hand a regulator or examiner. Defaults to year-to-date; narrow the range below if needed.</div>
+                    <div class="dl-desc">The tamper-evident audit-chain segment for a date range, its covering integrity seals and a verification report, packaged for a regulator or examiner. Defaults to year-to-date.</div>
                     <div class="dl-range">
                         <label class="form-label small mb-0">From <input type="date" class="form-control form-control-sm" @bind="_from" /></label>
                         <label class="form-label small mb-0">To <input type="date" class="form-control form-control-sm" @bind="_to" /></label>
@@ -95,7 +95,7 @@
                 <span class="dl-ic bi bi-eye" aria-hidden="true"></span>
                 <div class="dl-body">
                     <div class="dl-name">Access log <span class="dl-fmt">CSV</span></div>
-                    <div class="dl-desc">The out-of-chain read/access telemetry — who opened which case or artifact, and when. Supports an access review or an examiner's "who saw this" question. Filter it first on <a href="access-log">Access log</a>.</div>
+                    <div class="dl-desc">Who opened which case or artifact, and when, for an access review or an examiner's "who saw this" question. To filter it first, use the <a href="access-log">Access log</a> page.</div>
                 </div>
                 <a class="btn btn-sm btn-outline-primary dl-btn" href="export/access-log.csv" download>
                     <span class="bi bi-download" aria-hidden="true"></span> Download
@@ -105,7 +105,7 @@
                 <span class="dl-ic bi bi-box-seam" aria-hidden="true"></span>
                 <div class="dl-body">
                     <div class="dl-name">Configuration bundle <span class="dl-fmt">JSON</span></div>
-                    <div class="dl-desc">A signed, versioned snapshot of the editable configuration (templates, taxonomy, gates, report profiles…) — for backup or promoting settings to another deployment. Managed on <a href="admin/config-bundle">Configuration bundle</a>.</div>
+                    <div class="dl-desc">A signed, versioned snapshot of the editable configuration, such as templates, taxonomy, gates and report profiles. Use it for backup or to move settings to another deployment. Managed on <a href="admin/config-bundle">Configuration bundle</a>.</div>
                 </div>
                 <a class="btn btn-sm btn-outline-primary dl-btn" href="export/config-bundle.json" download>
                     <span class="bi bi-download" aria-hidden="true"></span> Download
@@ -120,10 +120,9 @@
         <span><span class="bi bi-folder2-open" aria-hidden="true"></span> Per-case exports</span>
     </div>
     <p class="text-muted small mb-0">
-        Case-scoped artifacts live on the case itself: the <strong>STIX 2.1 graph bundle</strong> and the
-        <strong>per-case audit CSV</strong> are on a case's <em>Entities</em> and <em>Audit</em> tabs, and the
-        <strong>campaign rollup JSON</strong> is on a campaign's page. Open the case or campaign to export them
-        in context.
+        The <strong>STIX 2.1 graph bundle</strong> and <strong>per-case audit CSV</strong> are on a case's
+        <em>IOCs &amp; entities</em> and <em>Audit</em> tabs. The <strong>campaign rollup JSON</strong> is on a
+        campaign's page.
     </p>
 </section>
 

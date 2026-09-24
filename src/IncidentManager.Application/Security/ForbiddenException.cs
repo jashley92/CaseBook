@@ -18,9 +18,23 @@ public sealed class ForbiddenException : Exception
     public string? Action { get; }
 
     public ForbiddenException(Permission required, string? action = null)
-        : base($"This action requires the '{required}' permission.")
+        : base($"You don't have permission to {Describe(required)}. Ask an administrator if you need it.")
     {
         Required = required;
         Action = action;
     }
+
+    /// <summary>What the permission lets someone do, as a verb phrase for the refusal message.</summary>
+    public static string Describe(Permission p) => p switch
+    {
+        Permission.ViewCases => "view cases",
+        Permission.ViewAllCases => "view all cases",
+        Permission.EditCases => "edit cases",
+        Permission.ChangeClassification => "change a case's classification",
+        Permission.ApproveReports => "approve reports",
+        Permission.ViewRestricted => "view restricted cases",
+        Permission.ManageLegal => "manage Legal referrals and holds",
+        Permission.Administer => "change administration settings",
+        _ => "do that"
+    };
 }

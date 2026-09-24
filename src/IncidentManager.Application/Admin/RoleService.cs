@@ -49,7 +49,7 @@ public sealed class RoleService
         name = (name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A role name is required.");
         if (await db.Roles.AnyAsync(r => r.Name == name, ct))
-            throw new InvalidOperationException($"A role named '{name}' already exists.");
+            throw new InvalidOperationException($"A role named '{name}' already exists. Choose a different name.");
 
         var role = new Role { Name = name, Description = description?.Trim(), IsSystem = false };
         role.SetPermissions(permissions, _user.UserId, _clock.UtcNow);
@@ -65,15 +65,15 @@ public sealed class RoleService
         AdminActionPermissions.Require<RoleService>(_user, _siem);
         using var db = _factory.CreateDbContext();
         var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == id, ct)
-                   ?? throw new InvalidOperationException("Role not found.");
-        if (role.IsSystem) throw new InvalidOperationException("System roles are managed in code and cannot be edited.");
+                   ?? throw new InvalidOperationException("That role no longer exists. Reload the page and try again.");
+        if (role.IsSystem) throw new InvalidOperationException("System roles can't be edited. Create a custom role instead.");
 
         // S-17: the same anti-lockout guard as delete — taking Administer off a role mustn't remove the last admin access.
         var perms = permissions as IReadOnlyCollection<Permission> ?? permissions.ToList();
         permissions = perms;
         if (role.GetPermissions().Contains(Permission.Administer) && !perms.Contains(Permission.Administer)
             && !await AdministerRemainsWithoutAsync(db, roleName: role.Name, exceptMappingId: null, ct))
-            throw new InvalidOperationException("Removing Administer from this role would remove the last administrator access.");
+            throw new InvalidOperationException("Can't remove Administer: this role holds the last administrator access. Grant Administer to another role first.");
 
         role.Description = description?.Trim();
         role.SetPermissions(permissions, _user.UserId, _clock.UtcNow);
@@ -87,12 +87,12 @@ public sealed class RoleService
         AdminActionPermissions.Require<RoleService>(_user, _siem);
         using var db = _factory.CreateDbContext();
         var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == id, ct)
-                   ?? throw new InvalidOperationException("Role not found.");
-        if (role.IsSystem) throw new InvalidOperationException("System roles cannot be deleted.");
+                   ?? throw new InvalidOperationException("That role no longer exists. Reload the page and try again.");
+        if (role.IsSystem) throw new InvalidOperationException("System roles can't be deleted.");
 
         if (role.GetPermissions().Contains(Permission.Administer)
             && !await AdministerRemainsWithoutAsync(db, roleName: role.Name, exceptMappingId: null, ct))
-            throw new InvalidOperationException("Deleting this role would remove the last administrator access.");
+            throw new InvalidOperationException("Can't delete this role: it holds the last administrator access. Grant Administer to another role first.");
 
         var mappings = await db.RoleMappings.Where(m => m.RoleName == role.Name).ToListAsync(ct);
         db.RoleMappings.RemoveRange(mappings);
@@ -110,7 +110,7 @@ public sealed class RoleService
         roleName = (roleName ?? "").Trim();
         if (string.IsNullOrWhiteSpace(adGroup)) throw new ArgumentException("An AD group is required.");
         if (!await db.Roles.AnyAsync(r => r.Name == roleName, ct))
-            throw new InvalidOperationException($"No role named '{roleName}'.");
+            throw new InvalidOperationException($"No role named '{roleName}'. Reload the page and choose another.");
         if (await db.RoleMappings.AnyAsync(m => m.AdGroup == adGroup && m.RoleName == roleName, ct))
             throw new InvalidOperationException("That mapping already exists.");
 
@@ -134,7 +134,7 @@ public sealed class RoleService
         if (mapping is null) return;
 
         if (!await AdministerRemainsWithoutAsync(db, roleName: null, exceptMappingId: id, ct))
-            throw new InvalidOperationException("Removing this mapping would remove the last administrator access.");
+            throw new InvalidOperationException("Can't remove this mapping: it grants the last administrator access. Map another group to an admin role first.");
 
         db.RoleMappings.Remove(mapping);
         await db.SaveChangesAsync(ct);

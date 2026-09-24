@@ -29,7 +29,7 @@ public static class TaxonomyCatalog
     public static readonly IReadOnlyList<TaxonomyKind> Kinds = new[]
     {
         new TaxonomyKind("Classification", "Classification ladder",
-            "The formal IRP classifications a case is promoted through. Renaming is display-only — the ladder order, escalation rules and breach-notification logic are unchanged.",
+            "The formal IRP classifications a case is promoted through. Ladder order, escalation rules and breach-notification logic don't change.",
             new TaxonomyMember[]
             {
                 new("ComplexEvent", "Complex Event"),
@@ -38,7 +38,7 @@ public static class TaxonomyCatalog
                 new("Breach", "Breach"),
             }),
         new TaxonomyKind("CasePhase", "Lifecycle phases",
-            "The investigation lifecycle phases (aligned to NIST SP 800-61). Renaming is display-only — the phase order and the SLA milestones keyed to them are unchanged.",
+            "Investigation lifecycle phases, aligned to NIST SP 800-61. Phase order and the SLA milestones tied to them don't change.",
             new TaxonomyMember[]
             {
                 new("New", "New"),
@@ -50,7 +50,7 @@ public static class TaxonomyCatalog
                 new("Closed", "Closed"),
             }),
         new TaxonomyKind("EntityType", "Entity types",
-            "The kinds of artifact / observable an analyst records on a case. Rename, hide unused types, or reorder how they appear in the entity picker.",
+            "Kinds of artifact or observable an analyst records on a case, as offered in the entity picker.",
             new TaxonomyMember[]
             {
                 new("Account", "Account"),
@@ -66,7 +66,7 @@ public static class TaxonomyCatalog
                 new("Other", "Other"),
             }) { AllowVisibilityOrder = true },
         new TaxonomyKind("EntityDisposition", "Entity dispositions",
-            "The analyst's verdict on an entity. Rename, hide unused verdicts, or reorder them; the graph colours are unchanged.",
+            "The analyst's verdict on an entity. Graph colors don't change.",
             new TaxonomyMember[]
             {
                 new("Unknown", "Unknown"),
@@ -76,7 +76,7 @@ public static class TaxonomyCatalog
                 new("Compromised", "Compromised"),
             }) { AllowVisibilityOrder = true },
         new TaxonomyKind("TimelineEntryType", "Timeline entry types",
-            "The category of a timeline entry, used for filtering. Rename, hide unused categories, or reorder the picker.",
+            "The category of a timeline entry, used for filtering.",
             new TaxonomyMember[]
             {
                 new("Detection", "Detection"),
@@ -97,7 +97,7 @@ public static class TaxonomyCatalog
                 new("RegulatoryNotification", "Regulatory notification"),
             }) { AllowVisibilityOrder = true },
         new TaxonomyKind("EntityRelationshipType", "Entity relationships",
-            "How one entity relates to another in the investigation graph. Rename, hide unused relationships, or reorder the picker.",
+            "How one entity relates to another in the investigation graph.",
             new TaxonomyMember[]
             {
                 new("RelatedTo", "related to"),

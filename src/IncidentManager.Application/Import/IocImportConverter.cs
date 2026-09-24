@@ -234,7 +234,7 @@ public static partial class IocImportConverter
 
         var notes = new List<string>();
         if (unknownTypes > 0)
-            notes.Add($"{unknownTypes} row(s) had a type CaseBook doesn't recognise; their type was detected from the value.");
+            notes.Add($"{unknownTypes} row(s) had a type CaseBook doesn't recognize. Their type was detected from the value.");
         if (!hasHeader)
             notes.Add("No header row found, so the first column was read as the indicator.");
         var origin = string.IsNullOrWhiteSpace(fileName) ? "IOC CSV" : $"IOC CSV ({Path.GetFileName(fileName)})";

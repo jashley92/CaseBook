@@ -60,7 +60,7 @@ public static class BackupHealthEvaluator
             return new BackupHealthReport(
                 BackupHealthState.NotConfigured, source,
                 [new BackupHealthItem("Backup status source", BackupHealthState.NotConfigured,
-                    "no status file configured (BackupStatus:FilePath) — expected in production")],
+                    "no status file configured (BackupStatus:FilePath); one is expected in production")],
                 null);
 
         if (status is null)
@@ -98,7 +98,7 @@ public static class BackupHealthEvaluator
 
         return age <= maxAge
             ? new BackupHealthItem(label, BackupHealthState.Ok, when)
-            : new BackupHealthItem(label, BackupHealthState.Stale, $"{when} — older than the {Humanize(maxAge)} threshold");
+            : new BackupHealthItem(label, BackupHealthState.Stale, $"{when}, older than the {Humanize(maxAge)} threshold");
     }
 
     private static string Humanize(TimeSpan span)

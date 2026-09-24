@@ -59,7 +59,7 @@
             </a>
             @* S-24: lock the session on demand (the same teardown as the idle lock) when stepping away. *@
             <button type="button" class="profile-item" role="menuitem" @onclick="LockNow"
-                    title="Ends this session now; text you haven't saved is discarded">
+                    title="Ends this session now. Unsaved text is lost.">
                 <span class="bi bi-lock" aria-hidden="true"></span>
                 <span>Lock now</span>
             </button>
@@ -121,8 +121,8 @@
             {
                 <div class="profile-about">
                     <div class="profile-about-name">Case<span class="brand-accent">Book</span></div>
-                    <div class="profile-about-line">Secure SOC incident &amp; breach case management &mdash; a
-                        tamper-evident, auditable single source of truth for adverse events, incidents and breaches.</div>
+                    <div class="profile-about-line">Secure SOC incident and breach case management, with a
+                        tamper-evident, auditable record of every adverse event, incident and breach.</div>
                 </div>
             }
         </div>

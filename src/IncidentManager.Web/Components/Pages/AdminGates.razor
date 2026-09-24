@@ -15,11 +15,11 @@
     </Actions>
 </PageHeader>
 <p class="text-muted">
-    Completeness <strong>gates</strong> enforced when a case is promoted onto the ladder, escalated to Incident or
-    Breach, or closed (C-07). Each gate lists <strong>requirements</strong>: <em>automatic checks</em> against
-    the case's data, or <em>analyst attestations</em> ticked at the transition. Blocking requirements stop the
-    transition unless overridden with a recorded justification. One <strong>active</strong> gate governs each
-    transition.
+    Completeness <strong>gates</strong> run when a case is promoted onto the ladder, escalated to Incident or
+    Breach, or closed. Each gate lists <strong>requirements</strong>: <em>automatic checks</em> on the case's
+    data, or <em>analyst attestations</em> confirmed at the transition. Blocking requirements stop the
+    transition unless someone overrides them with a justification. Each transition has one <strong>active</strong>
+    gate.
 </p>
 
 <div class="d-flex align-items-center justify-content-between mt-4 mb-2">
@@ -32,7 +32,7 @@
 @if (_edit is not null)
 {
     <div class="card mb-3 border-primary">
-        <div class="card-header">@(_edit.IsNew ? "New gate" : $"Edit gate — {_edit.Name}")</div>
+        <div class="card-header">@(_edit.IsNew ? "New gate" : $"Edit gate: {_edit.Name}")</div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-4">
@@ -55,11 +55,9 @@
             </div>
 
             <h6 class="text-uppercase small text-muted mt-4">Requirements</h6>
-            <p class="small text-muted mb-2">An <strong>automatic check</strong> is evaluated against the case's data;
-            an <strong>attestation</strong> is a statement the analyst confirms at the transition. Reword an automatic
-            check's <strong>description</strong> to match your IRP — the underlying check is unchanged and blank keeps
-            the built-in wording. <strong>Blocking</strong> requirements stop the transition (overridable with a
-            justification); non-blocking ones are advisory.</p>
+            <p class="small text-muted mb-2">To match your IRP, reword an automatic check in the text box under it.
+            The check itself doesn't change, and blank keeps the built-in wording. <strong>Blocking</strong> requirements
+            stop the transition unless overridden; the rest are advisory.</p>
 
             @if (_edit.Requirements.Count == 0)
             {
@@ -90,7 +88,7 @@
                                     {
                                         <select class="form-select form-select-sm" value="@req.Check"
                                                 @onchange="e => OnCheckChanged(req, e.Value?.ToString())">
-                                            <option value="">— pick a check —</option>
+                                            <option value="">Choose a check</option>
                                             @foreach (var chk in GateCheckRegistry.All)
                                             {
                                                 <option value="@chk.Key">@chk.LabelFor(null)</option>
@@ -103,14 +101,14 @@
                                                 <input class="form-control" type="number" min="@spec.Min" step="1"
                                                        value="@(req.Param ?? spec.Default)"
                                                        @onchange="e => OnParamChanged(req, e.Value?.ToString())"
-                                                       title="The threshold this check requires (admin data; the check itself is code-defined)." />
+                                                       title="Threshold this check requires" />
                                             </div>
                                         }
                                         @if (!string.IsNullOrEmpty(req.Check))
                                         {
                                             <input class="form-control form-control-sm mt-1" @bind="req.Label" @bind:event="oninput"
                                                    placeholder="@DefaultCheckLabel(req.Check, req.Param)"
-                                                   title="Wording shown to the analyst at this gate — reword to match your IRP; blank uses the default." />
+                                                   title="Wording the analyst sees. Blank uses the default." />
                                         }
                                     }
                                     else
@@ -136,12 +134,12 @@
                     <span class="input-group-text">Minimum characters</span>
                     <input class="form-control" type="number" min="0" step="1" @bind="_edit.CommentaryMinLength" />
                 </div>
-                <div class="form-text">0 = no minimum. Above 0, the analyst's <strong>reason</strong> for the transition must be at least this many characters — and when the gate is overridden, its <strong>override justification</strong> must be too. The reason is kept on the tamper-evident gate passage.</div>
+                <div class="form-text">0 means no minimum. Otherwise the analyst's <strong>reason</strong> for the transition, and any <strong>override justification</strong>, must be at least this long. The reason is kept on the tamper-evident gate record.</div>
             </div>
 
             <div class="form-check mt-4">
                 <input class="form-check-input" type="checkbox" id="gate-active" @bind="_edit.IsActive" />
-                <label class="form-check-label" for="gate-active">Active <span class="text-muted small">(enforced on this transition; only one active gate per transition)</span></label>
+                <label class="form-check-label" for="gate-active">Active <span class="text-muted small">(enforced on this transition; one active gate per transition)</span></label>
             </div>
         </div>
         <div class="card-footer d-flex gap-2">
@@ -157,7 +155,7 @@
 }
 else if (_gates.Count == 0)
 {
-    <p class="text-muted">No gates defined. Create one to enforce completeness on a transition.</p>
+    <p class="text-muted">No gates yet. Click <strong>New gate</strong> to add one.</p>
 }
 else
 {

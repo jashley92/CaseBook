@@ -9,12 +9,12 @@
 <PageTitle>Dashboard</PageTitle>
 
 <div class="dash">
-<PageHeader Title="Leadership Dashboard"
+<PageHeader Title="Leadership dashboard"
            Subtitle="@(_asOf is null ? null : $"As of {_asOf}")">
     <Actions>
         @* UX-06: quick jump to the caller's own queue (the opposite-view cross-link). *@
         <a class="btn btn-sm btn-outline-secondary" href="work"
-           title="Go to your own open cases and after-action tasks">
+           title="Your open cases and tasks">
             <span class="bi bi-person-workspace" aria-hidden="true"></span> My work
         </a>
         @* UX-14: Team workload is the Dashboard's Overview-cluster sibling — a one-click lateral hop. *@
@@ -23,7 +23,7 @@
             <span class="bi bi-people-fill" aria-hidden="true"></span> Team workload
         </a>
         <a class="btn btn-sm btn-outline-secondary" href="export/metrics.csv" download
-           title="Download current metrics and 12-month trend as CSV for a board / regulatory pack">
+           title="Current metrics and 12-month trend, for a board or regulatory pack">
             <span class="bi bi-download" aria-hidden="true"></span> Export metrics (CSV)
         </a>
     </Actions>
@@ -67,7 +67,7 @@ else
     <div class="kpi-strip">
         <div class="kpi kpi-lead">
             <a class="kpi-open dash-link" href="cases" title="View all open cases">
-                <span class="k-label">Open items</span>
+                <span class="k-label">Open cases</span>
                 <span class="k-row">
                     <span class="k-value">@m.OpenCount</span>
                     @if (_openDelta != 0)
@@ -78,7 +78,7 @@ else
                     }
                 </span>
             </a>
-            <div class="compo" role="img" aria-label="Classification mix of open items">
+            <div class="compo" role="img" aria-label="Classification mix of open cases">
                 @if (compTotal == 0)
                 {
                     <span class="seg empty" style="flex:1"></span>
@@ -170,7 +170,7 @@ else
     @* ─── Secondary row: response & SLA · phase pipeline ────────────────────── *@
     <div class="dash-secondary">
         <div class="dash-card">
-            <div class="c-head"><span class="c-title">Response &amp; SLA <span class="c-note">vs administered targets</span></span></div>
+            <div class="c-head"><span class="c-title">Response &amp; SLA <span class="c-note">against targets</span></span></div>
 
             <div class="rt-grid">
                 <div class="rt-fig">
@@ -198,7 +198,7 @@ else
             @if (m.SlaBreached > 0 || m.SlaAtRisk > 0)
             {
                 <a class="sla-line breached dash-link" href="cases?sla=true"
-                   title="View open cases at or past their per-severity response-time target">
+                   title="Open cases at or past their response-time target">
                     <span class="bi bi-clock-history" aria-hidden="true"></span>
                     <span><strong>@m.SlaBreached</strong> overdue · <strong>@m.SlaAtRisk</strong> at risk</span>
                     <span class="sla-go">View →</span>
@@ -244,13 +244,13 @@ else
                 }
             }
 
-            <div class="rt-foot">Compliance and SLA flags are judged against the administered per-severity
-                targets (<a class="dash-link u-link" href="admin/settings/sla">Settings → Response &amp; SLA</a>);
-                mean times average every case that reached the milestone.</div>
+            <div class="rt-foot">Measured against the per-severity targets in
+                <a class="dash-link u-link" href="admin/settings/sla">Settings → Response &amp; SLA</a>.
+                Mean times include every case that reached the milestone.</div>
         </div>
 
         <div class="dash-card">
-            <div class="c-head"><span class="c-title">Open items by phase</span></div>
+            <div class="c-head"><span class="c-title">Open cases by phase</span></div>
             @{ var maxPhase = Math.Max(1, m.ByPhase.Count == 0 ? 1 : m.ByPhase.Max(p => p.Count)); }
             <div class="pipe">
                 @foreach (var phase in OpenPhases)

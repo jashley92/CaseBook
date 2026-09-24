@@ -214,8 +214,8 @@ public sealed class ProgramReportService
                      ("Time to contain", c.TimeToContain, p.TimeToContain), ("Time to resolve", c.TimeToResolve, p.TimeToResolve),
                      ("Detection to regulatory report", c.DetectToReport, p.DetectToReport) })
         {
-            Row("Timing (hours)", name + " — mean", N(cur.MeanHours), N(prev.MeanHours));
-            Row("Timing (hours)", name + " — median", N(cur.MedianHours), N(prev.MedianHours));
+            Row("Timing (hours)", name + " (mean)", N(cur.MeanHours), N(prev.MeanHours));
+            Row("Timing (hours)", name + " (median)", N(cur.MedianHours), N(prev.MedianHours));
         }
         foreach (var s in c.Sla)
         {

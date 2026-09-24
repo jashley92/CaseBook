@@ -31,7 +31,7 @@ public sealed partial class ConfigBundleService
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException("This file is not a valid configuration bundle (unreadable JSON).", ex);
+            throw new InvalidOperationException("This file isn't a valid configuration bundle. Its JSON couldn't be read.", ex);
         }
 
         if (env is null || env.Format != ConfigBundleJson.FormatTag || env.Bundle is null)

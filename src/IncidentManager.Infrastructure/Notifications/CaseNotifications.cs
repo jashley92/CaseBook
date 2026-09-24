@@ -25,11 +25,19 @@ public sealed class CaseNotifications : ICaseNotifications
     private readonly IOptionsMonitor<EmailOptions> _options;
     private readonly IChatNotifier _chat;
     private readonly INotificationPreferenceProvider _prefs;
+    private readonly ISeverityLabels? _severityLabels;
+    private readonly ITaxonomyDisplay? _taxonomy;
+
+    // The org's display labels (the same ones the UI shows), so emails and chat never print enum identifiers.
+    private string Sev(Severity s) => _severityLabels?.For(s) ?? s.ToString();
+    private string PhaseName(CasePhase p) => _taxonomy?.Label("CasePhase", p.ToString(), p.ToString()) ?? p.ToString();
 
     public CaseNotifications(IEmailSender email, IEmailComposer composer, IUserDirectory users,
         IConfiguration config, IOptionsMonitor<EmailOptions> options, IChatNotifier chat,
-        INotificationPreferenceProvider prefs)
+        INotificationPreferenceProvider prefs, ISeverityLabels? severityLabels = null, ITaxonomyDisplay? taxonomy = null)
     {
+        _severityLabels = severityLabels;
+        _taxonomy = taxonomy;
         _email = email;
         _composer = composer;
         _users = users;
@@ -61,12 +69,12 @@ public sealed class CaseNotifications : ICaseNotifications
         // learn of a breach escalation even when no Legal recipients are configured.
         if (ChatOn("BreachEscalations"))
             await _chat.SendAsync(c.IsRestricted
-                ? new ChatNotification("Breach escalation — restricted case",
+                ? new ChatNotification("Breach escalation (restricted case)",
                     "A restricted case was escalated to Breach. Details are limited to its team; open it in CaseBook.",
                     CaseUrl(c.Id), ChatUrgency.Alert)
                 : new ChatNotification(
-                    $"Breach escalation — {c.CaseNumber}",
-                    $"{c.Title} · severity {c.Severity}, phase {c.Phase}.",
+                    $"Breach escalation: {c.CaseNumber}",
+                    $"{c.Title} · severity {Sev(c.Severity)}, phase {PhaseName(c.Phase)}.",
                     CaseUrl(c.Id), ChatUrgency.Alert), ct);
 
         var options = _options.CurrentValue;
@@ -76,8 +84,8 @@ public sealed class CaseNotifications : ICaseNotifications
         {
             ["CaseNumber"] = c.CaseNumber,
             ["CaseTitle"] = c.Title,
-            ["Severity"] = c.Severity.ToString(),
-            ["Phase"] = c.Phase.ToString(),
+            ["Severity"] = Sev(c.Severity),
+            ["Phase"] = PhaseName(c.Phase),
             ["CaseUrl"] = CaseUrl(c.Id) ?? "",
         };
         var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -109,8 +117,8 @@ public sealed class CaseNotifications : ICaseNotifications
             var who = string.Join(", ", recipients.Select(_users.DisplayFor));
             // S-13: the shared channel isn't a restricted case's audience — say who, not what or where.
             await _chat.SendAsync(c.IsRestricted
-                ? new ChatNotification("Mention — restricted case", $"{byName} mentioned {who} on a restricted case.", CaseUrl(c.Id))
-                : new ChatNotification($"Mention — {c.CaseNumber}", $"{byName} mentioned {who}: {excerpt}", CaseUrl(c.Id)), ct);
+                ? new ChatNotification("Mention (restricted case)", $"{byName} mentioned {who} on a restricted case.", CaseUrl(c.Id))
+                : new ChatNotification($"Mention: {c.CaseNumber}", $"{byName} mentioned {who}: {excerpt}", CaseUrl(c.Id)), ct);
         }
 
         foreach (var id in recipients)
@@ -142,11 +150,11 @@ public sealed class CaseNotifications : ICaseNotifications
         // toggle and of whether the assignee has an address on file.
         if (ChatOn("Assignments"))
             await _chat.SendAsync(c.IsRestricted
-                ? new ChatNotification("Case assigned — restricted case",
+                ? new ChatNotification("Case assigned (restricted case)",
                     $"{assigneeDisplayName} assigned as {Ui(role)} by {_users.DisplayFor(assignedByUserId)} to a restricted case.",
                     CaseUrl(c.Id))
                 : new ChatNotification(
-                    $"Case assigned — {c.CaseNumber}",
+                    $"Case assigned: {c.CaseNumber}",
                     $"{assigneeDisplayName} assigned as {Ui(role)} by {_users.DisplayFor(assignedByUserId)} · {c.Title}.",
                     CaseUrl(c.Id)), ct);
 
@@ -164,8 +172,8 @@ public sealed class CaseNotifications : ICaseNotifications
             ["AssignedBy"] = _users.DisplayFor(assignedByUserId),
             ["CaseNumber"] = c.CaseNumber,
             ["CaseTitle"] = c.Title,
-            ["Severity"] = c.Severity.ToString(),
-            ["Phase"] = c.Phase.ToString(),
+            ["Severity"] = Sev(c.Severity),
+            ["Phase"] = PhaseName(c.Phase),
             ["CaseUrl"] = CaseUrl(c.Id) ?? "",
         };
 
@@ -182,8 +190,8 @@ public sealed class CaseNotifications : ICaseNotifications
         {
             var caseCount = items.Select(i => i.CaseId).Distinct().Count();
             await _chat.SendAsync(new ChatNotification(
-                $"{items.Count} after-action item(s) overdue",
-                $"Across {caseCount} case(s). Owners have been emailed where reachable.",
+                $"{items.Count} task(s) overdue",
+                $"Across {caseCount} case(s). Owners were emailed where reachable.",
                 OverdueUrl(), ChatUrgency.Alert), ct);
         }
 
@@ -229,8 +237,8 @@ public sealed class CaseNotifications : ICaseNotifications
         {
             var caseCount = items.Select(i => i.Item.CaseId).Distinct().Count();
             await _chat.SendAsync(new ChatNotification(
-                $"{items.Count} overdue after-action escalation(s)",
-                $"Across {caseCount} case(s). Incident commanders / managers have been emailed where reachable.",
+                $"{items.Count} overdue task(s) escalated",
+                $"Across {caseCount} case(s). Incident commanders and managers were emailed where reachable.",
                 OverdueUrl(), ChatUrgency.Alert), ct);
         }
 
@@ -345,8 +353,8 @@ public sealed class CaseNotifications : ICaseNotifications
         {
             var caseCount = items.Select(i => i.CaseId).Distinct().Count();
             await _chat.SendAsync(new ChatNotification(
-                $"{items.Count} after-action item(s) due within {leadHours}h",
-                $"Across {caseCount} case(s). Owners have been emailed where reachable.",
+                $"{items.Count} task(s) due within {leadHours}h",
+                $"Across {caseCount} case(s). Owners were emailed where reachable.",
                 AgendaUrl()), ct);
         }
 
@@ -393,8 +401,8 @@ public sealed class CaseNotifications : ICaseNotifications
             var caseCount = reminders.Select(r => r.CaseId).Distinct().Count();
             var breached = reminders.Count(r => r.State == SlaState.Breached);
             var detail = breached > 0
-                ? $"{breached} past deadline, {reminders.Count - breached} at risk, across {caseCount} case(s). IC/owners emailed where reachable."
-                : $"{reminders.Count} case(s) approaching a deadline. IC/owners emailed where reachable.";
+                ? $"{breached} past deadline, {reminders.Count - breached} at risk, across {caseCount} case(s). Incident commanders and owners were emailed where reachable."
+                : $"{reminders.Count} case(s) approaching a deadline. Incident commanders and owners were emailed where reachable.";
             await _chat.SendAsync(new ChatNotification(
                 "Regulatory notification deadline", detail,
                 CasesUrl(), ChatUrgency.Alert), ct);
@@ -450,7 +458,7 @@ public sealed class CaseNotifications : ICaseNotifications
             var caseCount = reminders.Select(r => r.CaseId).Distinct().Count();
             await _chat.SendAsync(new ChatNotification(
                 $"{caseCount} case(s) with no recent activity",
-                "Open cases have gone quiet past their severity threshold. IC/owners emailed where reachable.",
+                "These open cases have had no activity past their severity threshold. Incident commanders and owners were emailed where reachable.",
                 CasesUrl()), ct);
         }
 
@@ -537,11 +545,11 @@ public sealed class CaseNotifications : ICaseNotifications
     }
 
     // Composer-rendered safe HTML: every case-supplied field is HTML-encoded here.
-    private static string RenderStaleList(IEnumerable<StaleCaseReminder> reminders)
+    private string RenderStaleList(IEnumerable<StaleCaseReminder> reminders)
     {
         var lis = reminders.Select(r =>
             $"<li>{WebUtility.HtmlEncode(r.CaseNumber)} — {WebUtility.HtmlEncode(r.CaseTitle)} " +
-            $"({WebUtility.HtmlEncode(r.Severity.ToString())}: no activity for {r.DaysInactive} day(s))</li>");
+            $"({WebUtility.HtmlEncode(Sev(r.Severity))}: no activity for {r.DaysInactive} day(s))</li>");
         return "<ul>" + string.Join("", lis) + "</ul>";
     }
 

@@ -85,7 +85,7 @@ public sealed class DataElementService
             labels.Add(label);
         }
         if (labels.Select(l => l.ToLowerInvariant()).Distinct().Count() != labels.Count)
-            throw new InvalidOperationException("Data-element labels must be unique.");
+            throw new InvalidOperationException("Each data element needs a unique label.");
 
         using var db = _factory.CreateDbContext();
         var existing = await db.DataElements.ToListAsync(ct);
@@ -103,7 +103,7 @@ public sealed class DataElementService
             if (row.Id is { } id)
             {
                 if (!byId.TryGetValue(id, out var el))
-                    throw new InvalidOperationException("A data element being edited no longer exists.");
+                    throw new InvalidOperationException("A data element you were editing was deleted. Reload the page and try again.");
                 el.Label = label;
                 el.IsActive = true;   // the editor only ever submits the active set
                 el.SortOrder = order;
@@ -139,7 +139,7 @@ public sealed class DataElementService
         AdminActionPermissions.Require<DataElementService>(_user);
         using var db = _factory.CreateDbContext();
         var el = await db.DataElements.FirstOrDefaultAsync(e => e.Id == id, ct)
-            ?? throw new InvalidOperationException("Data element not found.");
+            ?? throw new InvalidOperationException("That data element no longer exists. Reload the page and try again.");
         if (el.IsActive != archived) return; // already in the target state
         el.IsActive = !archived;
         el.ModifiedBy = _user.UserId;
@@ -159,12 +159,12 @@ public sealed class DataElementService
         var el = await db.DataElements.FirstOrDefaultAsync(e => e.Id == id, ct);
         if (el is null) return;
         if (el.IsSystem)
-            throw new InvalidOperationException("Built-in elements can't be deleted — archive it instead.");
+            throw new InvalidOperationException("A built-in element can't be deleted; archive it instead.");
 
         var refCount = await db.CaseDataElements.CountAsync(c => c.ElementKey == el.Key, ct);
         if (refCount > 0)
             throw new InvalidOperationException(
-                $"'{el.Label}' is recorded on {refCount} case(s) and can't be deleted — archive it instead.");
+                $"'{el.Label}' is recorded on {refCount} case(s) and can't be deleted; archive it instead.");
 
         db.DataElements.Remove(el);
         await db.SaveChangesAsync(ct);

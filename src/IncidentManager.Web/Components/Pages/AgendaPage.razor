@@ -31,7 +31,7 @@
                     }
                 </select>
             </div>
-            <a class="btn btn-sm btn-outline-secondary ms-2" href="agenda/agenda.ics" title="Download an .ics of your due items">
+            <a class="btn btn-sm btn-outline-secondary ms-2" href="agenda/agenda.ics" title="Download an .ics file of your due tasks">
                 <span class="bi bi-calendar-plus" aria-hidden="true"></span> Add to calendar
             </a>
         </Actions>
@@ -58,7 +58,7 @@
                 <div class="mw-empty">
                     Nothing due here.
                     @if (!string.IsNullOrEmpty(_owner)) { <text>Try <button class="btn btn-link p-0 align-baseline" @onclick='() => ChangeOwner("")'>everyone</button>.</text> }
-                    else { <text>No open after-action items have a due date.</text> }
+                    else { <text>No open tasks have a due date.</text> }
                 </div>
             </section>
         }
@@ -107,8 +107,8 @@
             @if (Feeds.Enabled && _feedUrl is not null)
             {
                 <p class="text-muted small mb-2">
-                    Subscribe your calendar (Outlook: <em>Add calendar → Subscribe from web</em>) to this private URL and your
-                    due after-action items stay in sync automatically. The link is personal to you — treat it like a password.
+                    Subscribe to this private URL in your calendar (Outlook: <em>Add calendar → Subscribe from web</em>) to keep
+                    your due tasks in sync. The link is personal to you, so treat it like a password.
                 </p>
                 <div class="input-group input-group-sm agenda-feed">
                     <input class="form-control" readonly value="@_feedUrl" id="agenda-feed-url" />
@@ -127,8 +127,8 @@
             else
             {
                 <p class="text-muted small mb-0">
-                    Live subscription is disabled. Use <strong>Add to calendar</strong> above for a one-time import, or ask an
-                    administrator to set a feed key (<code>Agenda:FeedKey</code>) to enable an auto-syncing Outlook subscription.
+                    Calendar subscription is off. Use <strong>Add to calendar</strong> above for a one-time import, or ask an
+                    administrator to set <code>Agenda:FeedKey</code> to turn on a syncing subscription.
                 </p>
             }
         </section>
@@ -160,8 +160,8 @@
     }
 
     private void ConfirmResetFeed() => _confirm.Ask(this, "Reset calendar link",
-        "Your current link stops working straight away, so any calendar subscribed to it stops updating. " +
-        "Subscribe again with the new link afterwards.",
+        "Your current link stops working immediately, and any calendar subscribed to it stops updating. " +
+        "You'll need to subscribe again with the new link.",
         "Reset link", async () => { SetFeed(await Feeds.ResetMyLinkAsync()); Toasts.Success("New calendar link ready. Re-subscribe with it."); });
 
     private async Task Load() => _board = await Svc.GetBoardAsync(string.IsNullOrEmpty(_owner) ? null : _owner);

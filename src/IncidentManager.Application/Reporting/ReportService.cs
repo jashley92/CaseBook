@@ -191,7 +191,7 @@ public sealed class ReportService
         if (_reporting.CurrentValue.RequireSeparateApprover
             && string.Equals(report.CreatedBy, _user.UserId, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
-                "Two-person control is enabled: this report must be approved by someone other than the analyst who generated it.");
+                "Two-person control is on. Someone other than the analyst who generated this report must approve it.");
 
         report.Approve(_user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
@@ -367,7 +367,7 @@ public sealed class ReportService
 
         var triggers = byJurisdiction.Count == 0
             ? null
-            : string.Join("; ", byJurisdiction.Select(kv => $"{kv.Key} — {string.Join(", ", kv.Value)}"));
+            : string.Join("; ", byJurisdiction.Select(kv => $"{kv.Key}: {string.Join(", ", kv.Value)}"));
 
         return (summary, triggers);
     }

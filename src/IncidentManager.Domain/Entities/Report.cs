@@ -36,7 +36,7 @@ public class Report : AuditableEntity
         if (string.IsNullOrWhiteSpace(approver))
             throw new ArgumentException("An approver is required.", nameof(approver));
         if (Format != ReportFormat.Pdf)
-            throw new InvalidOperationException("Only a PDF report can be approved as the locked final — generate a PDF first.");
+            throw new InvalidOperationException("Only a PDF report can be approved as the locked final. Generate a PDF first.");
         if (IsFinal)
             throw new InvalidOperationException("This report is already approved and final.");
 

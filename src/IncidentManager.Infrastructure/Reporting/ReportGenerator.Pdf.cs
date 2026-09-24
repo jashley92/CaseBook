@@ -140,7 +140,7 @@ public sealed partial class ReportGenerator
 
             case ReportSection.EventTimeline:
                 Heading(section, "Event Timeline");
-                Caption(section, "The reconstructed adversary activity, in order — ATT&CK tactic(s), actor → target, and technique.");
+                Caption(section, "Reconstructed adversary activity in order: ATT&CK tactic(s), actor → target, and technique.");
                 foreach (var picture in pictures.AttackChain) AddPicture(section, picture);
                 PdfTable(section, ["#", "When (UTC)", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
                     m.AttackChain.Select(x => new[]
@@ -185,7 +185,7 @@ public sealed partial class ReportGenerator
 
             case ReportSection.Recommendations:
                 Heading(section, "Recommendations");
-                Caption(section, "After-action items and follow-up tasks.");
+                Caption(section, "Follow-up tasks from the case.");
                 PdfTable(section, ["Task", "Owner", "Due (UTC)", "Status"],
                     m.ActionItems.Select(x => new[] { x.Title, x.Owner ?? "", x.DueAtUtc?.ToString("u") ?? "", x.Status }).ToList(),
                     [8.0, 3.0, 2.5, 2.5]);
@@ -211,7 +211,7 @@ public sealed partial class ReportGenerator
         if (m.SharingLine is { } sharing) section.AddParagraph(sharing);
         if (m.DataTypesInvolved is not null) section.AddParagraph($"Data context (analyst notes): {m.DataTypesInvolved}");
         if (m.LegalReferred) section.AddParagraph($"Legal/Privacy referral recorded. {m.LegalNote}");
-        if (m.LegalHold) section.AddParagraph("Legal hold in effect — case data must be preserved (do not delete).");
+        if (m.LegalHold) section.AddParagraph("Legal hold in effect. Case data must be preserved and not deleted.");
     }
 
     private static void AppendBusinessImpact(Section section, CaseReportModel m)
@@ -224,12 +224,12 @@ public sealed partial class ReportGenerator
         if (!string.IsNullOrWhiteSpace(m.ImpactedAssets)) { section.AddParagraph($"Impacted assets: {m.ImpactedAssets}"); any = true; }
         if (m.DataTypesInvolved is not null) { section.AddParagraph($"Data context (analyst notes): {m.DataTypesInvolved}"); any = true; }
         if (m.LegalReferred) { section.AddParagraph($"Legal/Privacy referral recorded. {m.LegalNote}"); any = true; }
-        if (m.LegalHold) { section.AddParagraph("Legal hold in effect — case data must be preserved (do not delete)."); any = true; }
+        if (m.LegalHold) { section.AddParagraph("Legal hold in effect. Case data must be preserved and not deleted."); any = true; }
         if (m.MaterialityStatus is { } ms)
         {
             var by = string.IsNullOrWhiteSpace(m.MaterialityDecisionMaker) ? "" : $" by {m.MaterialityDecisionMaker}";
             var on = m.MaterialityDecidedOnUtc is { } d ? $" on {d:yyyy-MM-dd}" : "";
-            section.AddParagraph($"Materiality: {ms}{(m.MaterialityDetermined ? $" — determined{by}{on}" : "")}.");
+            section.AddParagraph($"Materiality: {ms}{(m.MaterialityDetermined ? $", determined{by}{on}" : "")}.");
             if (!string.IsNullOrWhiteSpace(m.MaterialityRationale)) section.AddParagraph($"Materiality rationale: {m.MaterialityRationale}");
             any = true;
         }
@@ -246,7 +246,7 @@ public sealed partial class ReportGenerator
         Stamp("Reported to regulators", m.ReportedAtUtc);
         Stamp("Closed", m.ClosedAtUtc);
         if (m.LegalReferred) section.AddParagraph($"Referred to Legal/Privacy. {m.LegalNote}");
-        if (m.LegalHold) section.AddParagraph("Legal hold in effect — case data must be preserved (do not delete).");
+        if (m.LegalHold) section.AddParagraph("Legal hold in effect. Case data must be preserved and not deleted.");
     }
 
     private static void AppendAppendix(Section section, CaseReportModel m)

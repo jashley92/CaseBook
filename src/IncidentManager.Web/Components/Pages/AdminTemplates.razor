@@ -15,10 +15,8 @@
     </Actions>
 </PageHeader>
 <p class="text-muted">
-    Curated <strong>playbooks</strong> analysts can start a case from or apply to an open case. A template pre-fills
-    the New Case form (classification, severity, data types, a summary starter) and seeds an ordered
-    <strong>checklist</strong> as action items. Seeded items default to the case owner; each step's due date is
-    computed from when it's applied.
+    Templates analysts can start a case from or apply to an open case. A template pre-fills the new-case form
+    and adds its <strong>playbook steps</strong> to the case as tasks, due relative to when it's applied.
 </p>
 
 <div class="d-flex align-items-center justify-content-between mt-4 mb-2">
@@ -31,7 +29,7 @@
 @if (_edit is not null)
 {
     <div class="card mb-3 border-primary">
-        <div class="card-header">@(_edit.IsNew ? "New template" : $"Edit template — {_edit.Name}")</div>
+        <div class="card-header">@(_edit.IsNew ? "New template" : $"Edit template: {_edit.Name}")</div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-5">
@@ -53,7 +51,7 @@
                 <div class="col-md-3">
                     <label class="form-label">Classification</label>
                     <select class="form-select" @bind="_edit.DefaultClassification">
-                        <option value="">— leave blank —</option>
+                        <option value="">No default</option>
                         @foreach (var c in Enum.GetValues<Classification>())
                         {
                             <option value="@c">@Ui.Label(c)</option>
@@ -63,7 +61,7 @@
                 <div class="col-md-3">
                     <label class="form-label">Severity</label>
                     <select class="form-select" @bind="_edit.DefaultSeverity">
-                        <option value="">— leave blank —</option>
+                        <option value="">No default</option>
                         @foreach (var s in Enum.GetValues<Severity>())
                         {
                             <option value="@s">@SevLabels.For(s)</option>
@@ -82,9 +80,8 @@
             </div>
 
             <h6 class="text-uppercase small text-muted mt-4">Playbook steps</h6>
-            <p class="small text-muted mb-2">Each step is seeded as an action item, in order. Owner is optional; blank
-            falls to the case owner. Due offset is in <strong>hours</strong> from when the template is applied
-            (24 = 1 day, 48 = 2 days); blank = no due date.</p>
+            <p class="small text-muted mb-2">Each step becomes a task, in order. A blank owner means the case owner.
+            <strong>Due (hrs)</strong> counts from when the template is applied (24 = 1 day). Blank means no due date.</p>
 
             @if (_edit.Steps.Count == 0)
             {
@@ -118,7 +115,7 @@
 
             <div class="form-check mt-4">
                 <input class="form-check-input" type="checkbox" id="tpl-active" @bind="_edit.IsActive" />
-                <label class="form-check-label" for="tpl-active">Active <span class="text-muted small">(shown in the New Case picker and Apply-playbook dialog)</span></label>
+                <label class="form-check-label" for="tpl-active">Active <span class="text-muted small">(offered on the New case form and in Apply playbook)</span></label>
             </div>
         </div>
         <div class="card-footer d-flex gap-2">
@@ -134,7 +131,7 @@
 }
 else if (_templates.Count == 0)
 {
-    <p class="text-muted">No templates yet. Create one to give analysts a quick-start playbook.</p>
+    <p class="text-muted">No templates yet. Click <strong>New template</strong> to add one.</p>
 }
 else
 {

@@ -15,7 +15,7 @@
 
 <div class="no-print">
     <PageHeader Title="Program report"
-                Subtitle="Quarterly roll-up of case volumes, response times, SLA attainment and post-incident follow-through, against the previous quarter." />
+                Subtitle="Quarterly case volumes, response times, SLA attainment and follow-through, compared with the previous quarter." />
 </div>
 
 @if (_report is not { } r)
@@ -55,7 +55,7 @@
     <h2 class="h5 mb-1">Program report · @r.Period.Label</h2>
     <p class="small text-muted mb-3">
         @r.Period.Start.UtcDateTime.ToString("yyyy-MM-dd") to @r.Period.End.AddDays(-1).UtcDateTime.ToString("yyyy-MM-dd") (UTC), compared with @r.Period.Previous.Label.
-        Cases you're entitled to see@(r.IncludesExercises ? ", including exercise cases" : ", excluding exercise cases").
+        Cases you can see@(r.IncludesExercises ? ", including exercise cases" : ", excluding exercise cases").
         Generated @r.GeneratedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
         @if (_period == Current) { <strong>This quarter is still in progress.</strong> }
     </p>

@@ -96,7 +96,7 @@ public sealed class CaseImportService
             }
             else
             {
-                preview.Warnings.Add("The target case wasn't found or isn't visible to you — prepared a new case instead.");
+                preview.Warnings.Add("The target case wasn't found or isn't visible to you, so a new case was prepared instead.");
             }
         }
 
@@ -307,7 +307,7 @@ public sealed class CaseImportService
         var target = p.TargetKind == CaseImportTargetKind.ExistingCase
             ? $"Into {p.ExistingCaseNumber ?? "an existing case"}"
             : $"New case: {(string.IsNullOrWhiteSpace(p.NewCase?.Title) ? "(untitled)" : p.NewCase!.Title)}";
-        var s = $"{target} — {p.IncludedItemCount} item(s)";
+        var s = $"{target} ({p.IncludedItemCount} item(s))";
         return s.Length <= 300 ? s : s[..300];
     }
 
@@ -356,13 +356,13 @@ public sealed class CaseImportService
                 if (occ > nowUtc)
                 {
                     row.Include = false;
-                    row.Warning = "In the future — excluded. Correct the time to include it.";
+                    row.Warning = "This time is in the future, so the entry is excluded. Correct the time to include it.";
                 }
             }
             else
             {
                 row.OccurredAtUtc = nowUtc;
-                row.Warning = "No timestamp — defaulted to now.";
+                row.Warning = "No timestamp, so it defaulted to now.";
             }
             p.Timeline.Add(row);
         }
@@ -384,7 +384,7 @@ public sealed class CaseImportService
             else
             {
                 type = IocObservable.DetectType(rawValue);
-                p.Warnings.Add($"Unknown entity type '{e.Type}' — auto-detected as {type}.");
+                p.Warnings.Add($"Unknown entity type '{e.Type}'. Detected as {type} from the value.");
             }
 
             var value = IocObservable.Normalize(type, rawValue);
@@ -407,16 +407,16 @@ public sealed class CaseImportService
         var droppedTasks = 0;
         foreach (var a in doc.ActionItems ?? [])
         {
-            var title = Clamp(a.Title, MaxTitle, "Action-item title", p.Warnings);
+            var title = Clamp(a.Title, MaxTitle, "Task title", p.Warnings);
             if (string.IsNullOrWhiteSpace(title)) { droppedTasks++; continue; }
             p.ActionItems.Add(new ImportActionItemRow
             {
                 Title = title!,
-                Owner = Clamp(a.Owner, MaxOwner, "Action-item owner", p.Warnings),
+                Owner = Clamp(a.Owner, MaxOwner, "Task owner", p.Warnings),
                 DueAtUtc = a.DueAtUtc
             });
         }
-        if (droppedTasks > 0) p.Warnings.Add($"{droppedTasks} action item(s) had no title and were skipped.");
+        if (droppedTasks > 0) p.Warnings.Add($"{droppedTasks} task(s) had no title and were skipped.");
 
         return p;
     }
@@ -441,7 +441,7 @@ public sealed class CaseImportService
             else if (Enum.TryParse<Classification>(trimmed, ignoreCase: true, out var c))
                 classification = c;
             else
-                warnings.Add($"Unknown classification '{rawCls}' — defaulted to {Classification.AdverseEvent}.");
+                warnings.Add($"Unknown classification '{rawCls}'. Using Adverse Event instead.");
         }
 
         return new CreateCaseRequest
@@ -456,7 +456,7 @@ public sealed class CaseImportService
             OccurredAtUtc = nc?.OccurredAtUtc,
             DataTypesInvolved = Clamp(nc?.DataTypesInvolved, MaxLabel, "Data context", warnings),
             ImpactedAssets = Clamp(nc?.ImpactedAssets, MaxSummary, "Impacted assets", warnings),
-            DetectionCaseId = Clamp(nc?.DetectionCaseId, 100, "Detection case id", warnings)
+            DetectionCaseId = Clamp(nc?.DetectionCaseId, 100, "Detection case ID", warnings)
         };
     }
 
@@ -474,7 +474,7 @@ public sealed class CaseImportService
     {
         if (string.IsNullOrWhiteSpace(raw)) return fallback;
         if (Enum.TryParse<TEnum>(raw.Trim(), ignoreCase: true, out var v) && Enum.IsDefined(v)) return v;
-        warnings.Add($"Unknown {field} '{raw}' — defaulted to {fallback}.");
+        warnings.Add($"Unknown {field} '{raw}'. Using {fallback} instead.");
         return fallback;
     }
 

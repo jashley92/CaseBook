@@ -3,6 +3,7 @@
 @inject CaseService Cases
 @inject ICurrentUser CurrentUser
 @inject IJSRuntime JS
+@inject ISeverityLabels SevLabels
 @inject IncidentManager.Web.Services.CommandPaletteController Palette
 @inject IncidentManager.Web.Services.CaseCommandRegistry PaletteActions
 @inject IncidentManager.Application.Cases.CaseShortcutService Shortcuts
@@ -76,13 +77,13 @@
             <li><span class="cmdk-keys"><kbd>Ctrl</kbd>&thinsp;/&thinsp;<kbd>&#8984;</kbd><kbd>K</kbd></span><span>Open the command palette</span></li>
             <li><span class="cmdk-keys"><kbd>/</kbd></span><span>Search cases &amp; jump</span></li>
             <li><span class="cmdk-keys"><kbd>g</kbd><kbd>d</kbd></span><span>Go to Dashboard</span></li>
-            <li><span class="cmdk-keys"><kbd>g</kbd><kbd>m</kbd></span><span>Go to My Work</span></li>
+            <li><span class="cmdk-keys"><kbd>g</kbd><kbd>m</kbd></span><span>Go to My work</span></li>
             <li><span class="cmdk-keys"><kbd>g</kbd><kbd>c</kbd></span><span>Go to Cases</span></li>
             @if (CurrentUser.Has(Permission.EditCases))
             {
                 <li><span class="cmdk-keys"><kbd>g</kbd><kbd>n</kbd></span><span>New case</span></li>
             }
-            <li><span class="cmdk-keys"><kbd>g</kbd><kbd>i</kbd></span><span>Go to Integrity &amp; Audit</span></li>
+            <li><span class="cmdk-keys"><kbd>g</kbd><kbd>i</kbd></span><span>Go to Integrity &amp; audit</span></li>
             <li><span class="cmdk-keys"><kbd>?</kbd></span><span>Show this help</span></li>
             <li><span class="cmdk-keys"><kbd>Esc</kbd></span><span>Close any overlay</span></li>
         </ul>
@@ -91,7 +92,7 @@
 
 @code {
     private static readonly string[] CaseTabs =
-        ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Tasks", "Report", "Audit"];
+        ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Discussion", "Tasks", "Review", "Report", "Audit"];
 
     private bool _open;
     private bool _help;
@@ -252,7 +253,7 @@
                     var caseId = it.Id;
                     items.Add(new Cmd("Cases", "bi-folder2-open",
                         $"{it.CaseNumber} · {it.Title}",
-                        $"{Ui.Label(it.Classification)} · {it.Severity} · {Ui.Label(it.Phase)}",
+                        $"{Ui.Label(it.Classification)} · {SevLabels.For(it.Severity)} · {Ui.Label(it.Phase)}",
                         () => GoTo($"cases/{caseId}")));
                 }
             }
@@ -268,19 +269,19 @@
     // PROD-20: a palette entry that jumps to a case (used by the Pinned / Recent groups).
     private Cmd CaseCmd(string group, string icon, IncidentManager.Application.Cases.CaseListItem c) =>
         new(group, icon, $"{c.CaseNumber} · {c.Title}",
-            $"{Ui.Label(c.Classification)} · {c.Severity} · {Ui.Label(c.Phase)}",
+            $"{Ui.Label(c.Classification)} · {SevLabels.For(c.Severity)} · {Ui.Label(c.Phase)}",
             () => GoTo($"cases/{c.Id}"));
 
     private IEnumerable<Cmd> StaticCommands()
     {
         yield return new Cmd("Navigate", "bi-speedometer2", "Dashboard", null, () => GoTo(""));
-        yield return new Cmd("Navigate", "bi-person-workspace", "My Work", null, () => GoTo("my"));
+        yield return new Cmd("Navigate", "bi-person-workspace", "My work", null, () => GoTo("my"));
         yield return new Cmd("Navigate", "bi-folder2-open", "Cases", null, () => GoTo("cases"));
         if (CurrentUser.Has(Permission.EditCases))
         {
-            yield return new Cmd("Navigate", "bi-plus-circle", "New Case", null, () => GoTo("cases/new"));
+            yield return new Cmd("Navigate", "bi-plus-circle", "New case", null, () => GoTo("cases/new"));
         }
-        yield return new Cmd("Navigate", "bi-shield-lock", "Integrity & Audit", null, () => GoTo("integrity"));
+        yield return new Cmd("Navigate", "bi-shield-lock", "Integrity & audit", null, () => GoTo("integrity"));
         if (CurrentUser.Has(Permission.Administer))
         {
             yield return new Cmd("Navigate", "bi-sliders", "Administration", null, () => GoTo("admin"));
@@ -303,11 +304,11 @@
         {
             foreach (var t in CaseTabs)
             {
-                yield return new Cmd("This case", TabIcon(t), $"Go to {t}", null, () => GoTo($"cases/{cid}?tab={t}"));
+                yield return new Cmd("This case", TabIcon(t), $"Go to {TabLabel(t)}", null, () => GoTo($"cases/{cid}?tab={t}"));
             }
         }
 
-        yield return new Cmd("Actions", "bi-circle-half", "Toggle light / dark theme", null, ToggleTheme);
+        yield return new Cmd("Actions", "bi-circle-half", "Toggle light or dark theme", null, ToggleTheme);
         yield return new Cmd("Actions", "bi-keyboard", "Keyboard shortcuts", null, () =>
         {
             OpenHelp();
@@ -343,6 +344,9 @@
             : null;
     }
 
+    // Display label for a tab key; matches the case workspace tab bar.
+    private static string TabLabel(string tab) => tab switch { "Entities" => "IOCs & entities", "Review" => "Lessons learned", _ => tab };
+
     private static string TabIcon(string tab) => tab switch
     {
         "Overview" => "bi-clipboard-data",
@@ -350,6 +354,8 @@
         "Entities" => "bi-diagram-3",
         "Evidence" => "bi-paperclip",
         "Notes" => "bi-journal-text",
+        "Discussion" => "bi-chat-left-text",
+        "Review" => "bi-lightbulb",
         "Tasks" => "bi-check2-square",
         "Report" => "bi-file-earmark-text",
         "Audit" => "bi-shield-check",

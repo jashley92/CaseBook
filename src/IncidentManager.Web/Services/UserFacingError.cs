@@ -16,7 +16,7 @@ namespace IncidentManager.Web.Services;
 public static class UserFacingError
 {
     /// <summary>The fallback shown for an unexpected (non-domain) failure when the caller gives no override.</summary>
-    public const string GenericSave = "Something went wrong and your change couldn't be saved. Please try again.";
+    public const string GenericSave = "Couldn't save your change. Try again, and if it keeps failing, contact your CaseBook administrator.";
 
     /// <param name="action">A short phrase for the log, e.g. "creating a case" or "uploading evidence".</param>
     /// <param name="generic">Context-specific fallback for unexpected failures; defaults to <see cref="GenericSave"/>.</param>

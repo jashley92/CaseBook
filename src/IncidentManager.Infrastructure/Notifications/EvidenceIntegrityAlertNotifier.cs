@@ -89,7 +89,7 @@ public sealed class EvidenceIntegrityAlertNotifier : IEvidenceIntegrityAlertNoti
     private static string RenderDriftList(EvidenceVerificationResult result)
     {
         var lis = result.Drifts.Select(d =>
-            $"<li>[{WebUtility.HtmlEncode(d.Kind.ToString())}] {WebUtility.HtmlEncode(d.CaseNumber ?? d.CaseId.ToString())} — " +
+            $"<li>[{WebUtility.HtmlEncode(d.Kind.ToString())}] {WebUtility.HtmlEncode(d.CaseNumber ?? d.CaseId.ToString())}, " +
             $"{WebUtility.HtmlEncode(d.OriginalFileName)}: {WebUtility.HtmlEncode(d.Detail)}</li>");
         return "<ul>" + string.Join("", lis) + "</ul>";
     }

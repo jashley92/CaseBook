@@ -9,13 +9,13 @@
 <PageTitle>My API tokens</PageTitle>
 
 <PageHeader Title="My API tokens"
-           Subtitle="Personal tokens let you call the CaseBook API as yourself — actions are logged to you. Grant only the roles you need; every token needs an expiry and can be revoked anytime." />
+           Subtitle="Call the CaseBook API as yourself. Everything a token does is logged to you, so grant only the roles it needs." />
 
 @if (_created is not null)
 {
     <div class="alert alert-success">
-        <div class="fw-semibold mb-1"><span class="bi bi-check2-circle me-1"></span>Token “@_created.Token.Name” created — copy it now</div>
-        <div class="small mb-2">This is the only time it's shown. CaseBook stores only a hash.</div>
+        <div class="fw-semibold mb-1"><span class="bi bi-check2-circle me-1"></span>Token “@_created.Token.Name” created. Copy it now.</div>
+        <div class="small mb-2">It won't be shown again. CaseBook stores only a hash.</div>
         <div class="input-group input-group-sm" style="max-width:40rem">
             <input class="form-control font-monospace" readonly value="@_created.Plaintext" />
             <button class="btn btn-outline-secondary" type="button" @onclick="CopyToken">
@@ -38,7 +38,7 @@
             <input type="date" class="form-control form-control-sm" @bind="_expiresDate"
                    min="@DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-dd")"
                    max="@DateTime.UtcNow.Date.Add(ApiTokenService.MaxPersonalLifetime).ToString("yyyy-MM-dd")" />
-            <div class="form-text">Up to @((int)ApiTokenService.MaxPersonalLifetime.TotalDays) days. It only works with roles you still hold.</div>
+            <div class="form-text">Up to @((int)ApiTokenService.MaxPersonalLifetime.TotalDays) days. A token only works with roles you still hold.</div>
         </div>
     </div>
     <label class="form-label mt-3">Roles <span class="text-muted small">(a subset of your own)</span></label>
@@ -117,8 +117,8 @@ else
     private ConfirmDialog _confirm = null!;
 
     private void ConfirmRevoke(ApiTokenView t) => _confirm.Ask(this, "Revoke token",
-        $"Revoke “{t.Name}”? Anything using it (a playbook, a script) is refused from now on. This can't be undone; " +
-        "create a new token if it's still needed.",
+        $"Anything using “{t.Name}”, such as a playbook or script, is refused from now on. This can't be undone. " +
+        "Create a new token if you still need access.",
         "Revoke token", () => Revoke(t));
 
     private string[] _myRoles = Array.Empty<string>();

@@ -32,7 +32,7 @@
                     <label class="form-label small mb-0">Playbook</label>
                     <select class="form-select form-select-sm mb-3" style="max-width:28rem" @onchange="OnApplyTemplateChanged"
                             value="@(_applyTemplate?.Id.ToString() ?? "")">
-                        <option value="">— choose a template —</option>
+                        <option value="">Choose a playbook</option>
                         @foreach (var t in _applyTemplates)
                         {
                             <option value="@t.Id">@t.Name@(t.Steps.Count > 0 ? $" ({t.Steps.Count} steps)" : "")</option>
@@ -43,11 +43,11 @@
                     {
                         @if (_applyTemplate.Steps.Count == 0)
                         {
-                            <p class="text-muted small">This template has no steps to add.</p>
+                            <p class="text-muted small">This playbook has no steps to add.</p>
                         }
                         else
                         {
-                            <p class="small text-muted mb-2">Uncheck any step you don't need. Owners default to a step's own owner, then the case owner; due dates are computed from now.</p>
+                            <p class="small text-muted mb-2">Uncheck steps you don't need. Each task goes to the step's owner, or to the case owner if the step has none. Due dates count from now.</p>
                             <div class="border rounded p-2 mb-2">
                                 @foreach (var s in _applyTemplate.Steps)
                                 {
@@ -69,11 +69,11 @@
                             {
                                 <div class="alert alert-warning py-2 px-2 small mb-0">
                                     <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
-                                    This case has no owner (Incident Commander) yet, so steps without their own owner will be created
-                                    <strong>Unassigned</strong>. Choose a default owner for them, or leave blank to create them unassigned.
+                                    This case has no incident commander yet, so steps without an owner will be added as
+                                    <strong>Unassigned</strong>. Choose a default owner for them, or leave them unassigned.
                                     <div class="mt-2" style="max-width:20rem">
                                         <select class="form-select form-select-sm" @bind="_applyDefaultOwner">
-                                            <option value="">— Leave unassigned —</option>
+                                            <option value="">Leave unassigned</option>
                                             @foreach (var u in Users.All())
                                             {
                                                 <option value="@u.UserId">@u.DisplayName</option>
@@ -88,7 +88,7 @@
                 <div class="card-footer d-flex gap-2">
                     <button class="btn btn-sm btn-primary" @onclick="ApplyTemplate"
                             disabled="@(_applyTemplate is null || _applySelected.Count == 0)">
-                        Add @_applySelected.Count action item(s)
+                        Add @_applySelected.Count task@(_applySelected.Count == 1 ? "" : "s")
                     </button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="CancelApplyTemplate">Cancel</button>
                 </div>
@@ -98,13 +98,13 @@
     <div class="card mb-3">
         <div class="card-body row g-2 align-items-end">
             <div class="col-md-4">
-                <label class="form-label small mb-0">Follow-up</label>
+                <label class="form-label small mb-0">Task</label>
                 <input class="form-control form-control-sm" @bind="_taskTitle" @bind:event="oninput" />
             </div>
             <div class="col-md-2">
                 <label class="form-label small mb-0">Owner</label>
                 <select class="form-select form-select-sm" @bind="_taskOwner">
-                    <option value="">— Unassigned —</option>
+                    <option value="">Unassigned</option>
                     @foreach (var u in Users.All())
                     {
                         <option value="@u.UserId">@u.DisplayName</option>
@@ -125,10 +125,10 @@
             <div class="col-md-2">
                 <label class="form-label small mb-0">Time (@TimeDisp.Label)</label>
                 <input type="time" class="form-control form-control-sm" @bind="_taskDueTime"
-                       title="Entered in @TimeDisp.Label. Leave blank for end of day." />
+                       title="Leave blank for end of day." />
             </div>
             <div class="col-md-2">
-                <button class="btn btn-sm btn-primary w-100" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddTask" disabled="@string.IsNullOrWhiteSpace(_taskTitle)">Add</button>
+                <button class="btn btn-sm btn-primary w-100" title="Ctrl / ⌘ + Enter" @onclick="AddTask" disabled="@string.IsNullOrWhiteSpace(_taskTitle)">Add task</button>
             </div>
         </div>
     </div>
@@ -136,7 +136,7 @@
 
 @if (Case.ActionItems.Count == 0)
 {
-    <p class="text-muted">No after-action items.</p>
+    <p class="text-muted">No tasks yet.@(CanEdit ? " Add the first one above." : "")</p>
 }
 else
 {
@@ -229,7 +229,7 @@ else
                                 <div class="col-md-3">
                                     <label class="form-label small mb-0">Owner</label>
                                     <select class="form-select form-select-sm" @bind="_editOwner">
-                                        <option value="">— Unassigned —</option>
+                                        <option value="">Unassigned</option>
                                         @foreach (var u in Users.All())
                                         {
                                             <option value="@u.UserId">@u.DisplayName</option>
@@ -258,7 +258,7 @@ else
                                 <div class="col-md-1">
                                     <label class="form-label small mb-0">Time</label>
                                     <input type="time" class="form-control form-control-sm" @bind="_editDueTime"
-                                           title="Entered in @TimeDisp.Label. Leave blank for end of day." />
+                                           title="In @TimeDisp.Label. Leave blank for end of day." />
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label small mb-0">Description <span class="text-muted">(optional)</span></label>
@@ -400,6 +400,7 @@ else
     private static string StatusLabel(ActionItemStatus s) => s switch
     {
         ActionItemStatus.InProgress => "In progress",
+        ActionItemStatus.Cancelled => "Canceled",
         _ => s.ToString()
     };
 
@@ -477,7 +478,9 @@ else
             null or "" => null,
             var u => u
         };
-        await Cases.AddActionItemAsync(CaseId, _taskTitle, owner, ResolveDueUtc());
+        // A failed save keeps what was typed so the analyst can fix it and retry.
+        try { await Cases.AddActionItemAsync(CaseId, _taskTitle, owner, ResolveDueUtc()); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't add the task. {ex.Message}"); return; }
         _taskTitle = ""; _taskOwner = null; _taskOwnerExternal = null; _taskDueDate = null; _taskDueTime = null;
         await OnChanged.InvokeAsync();
         Toasts.Success("Task added");
@@ -566,7 +569,7 @@ else
         try
         {
             var n = await Cases.ApplyTemplateAsync(CaseId, _applyTemplate.Id, _applySelected.ToList(), _applyDefaultOwner);
-            Toasts.Success($"Added {n} action item(s) from '{_applyTemplate.Name}'");
+            Toasts.Success($"Added {n} task{(n == 1 ? "" : "s")} from '{_applyTemplate.Name}'");
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {

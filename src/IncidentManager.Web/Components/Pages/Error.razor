@@ -8,20 +8,20 @@
 @layout Layout.BlankLayout
 @attribute [AllowAnonymous]
 
-<PageTitle>Something went wrong — CaseBook</PageTitle>
+<PageTitle>Something went wrong · CaseBook</PageTitle>
 
 <div class="error-notice">
     <div class="error-notice-card">
         <div class="error-notice-icon" aria-hidden="true"><span class="bi bi-exclamation-triangle-fill"></span></div>
         <h1 class="error-notice-title">Something went wrong</h1>
         <p class="error-notice-text">
-            CaseBook hit an unexpected error while handling your request. Anything you had already saved is
-            safe. Please try again — if it keeps happening, contact your CaseBook administrator.
+            CaseBook couldn't complete your request. Anything you already saved is safe. Try again, and if it
+            keeps happening, contact your CaseBook administrator.
         </p>
         @if (ShowRequestId)
         {
             <p class="error-notice-text error-notice-muted">
-                Quote this reference so support can find it in the logs:<br />
+                Give support this reference:<br />
                 <code>@RequestId</code>
             </p>
         }

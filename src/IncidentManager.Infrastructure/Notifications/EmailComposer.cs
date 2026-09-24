@@ -129,7 +129,7 @@ public sealed partial class EmailComposer : IEmailComposer
             : "";
 
         var year = DateTimeOffset.UtcNow.Year;
-        var footer = $"{WebUtility.HtmlEncode(org)}{(string.IsNullOrWhiteSpace(team) ? "" : " · " + WebUtility.HtmlEncode(team))} · automated notification — please do not reply.";
+        var footer = $"{WebUtility.HtmlEncode(org)}{(string.IsNullOrWhiteSpace(team) ? "" : " · " + WebUtility.HtmlEncode(team))} · Automated notification. Replies aren't monitored.";
 
         var html = $"""
             <!doctype html>
@@ -157,7 +157,7 @@ public sealed partial class EmailComposer : IEmailComposer
 
         var text = contentText;
         if (hasCta) text += $"\n\n{ctaLabel}: {ctaUrl}";
-        text += $"\n\n— {org}{(string.IsNullOrWhiteSpace(team) ? "" : " · " + team)} (automated notification)";
+        text += $"\n\n{org}{(string.IsNullOrWhiteSpace(team) ? "" : " · " + team)} (automated notification)";
         return (html, text);
     }
 
@@ -216,7 +216,7 @@ public sealed partial class EmailComposer : IEmailComposer
         {
             ["ItemsList"] = "<ul><li>2026-01_Phishing_Wave — Reset affected credentials (due 2026-09-08 12:00:00Z)</li>"
                           + "<li>2026-118_Malware_Beacon — Rebuild the beaconing host (due 2026-09-09 09:00:00Z)</li></ul>",
-            ["DriftList"] = "<ul><li>2026-01_Phishing_Wave — capture.pcap — hash mismatch</li></ul>",
+            ["DriftList"] = "<ul><li>2026-01_Phishing_Wave — capture.pcap: hash mismatch</li></ul>",
         };
         return (tokens, htmlTokens, "https://casebook.example/cases/preview");
     }

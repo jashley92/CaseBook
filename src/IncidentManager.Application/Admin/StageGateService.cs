@@ -78,7 +78,7 @@ public sealed class StageGateService
         AdminActionPermissions.Require<StageGateService>(_user);
         using var db = _factory.CreateDbContext();
         var gate = await db.StageGates.Include(g => g.Requirements).FirstOrDefaultAsync(g => g.Id == id, ct)
-                   ?? throw new InvalidOperationException("Gate not found.");
+                   ?? throw new InvalidOperationException("That gate no longer exists. Reload the page and try again.");
 
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A gate name is required.");
@@ -135,7 +135,7 @@ public sealed class StageGateService
                 // (the registry is the whitelist — an admin can only pick a code-defined predicate).
                 if (string.IsNullOrWhiteSpace(r.CheckKey)) continue;
                 if (!GateCheckRegistry.IsKnown(r.CheckKey))
-                    throw new ArgumentException($"Unknown machine check '{r.CheckKey}'.");
+                    throw new ArgumentException($"Unknown check '{r.CheckKey}'. Choose one from the list.");
                 // A parameterized check stores a threshold clamped to its floor (defaulted when absent);
                 // a parameterless check ignores any supplied value.
                 var spec = GateCheckRegistry.Param(r.CheckKey);

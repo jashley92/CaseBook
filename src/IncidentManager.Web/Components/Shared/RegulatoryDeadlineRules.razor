@@ -8,11 +8,10 @@
 
 <p class="small text-muted mt-4">
     <span class="bi bi-alarm-fill me-1" aria-hidden="true"></span>
-    <strong>Per-jurisdiction rules.</strong> The <strong>code</strong> is matched against the notification
-    jurisdictions on your <a href="admin/data-elements">data elements</a>, so a case's involved data
-    determines which deadlines apply. Any triggered jurisdiction without a rule here falls back to the
-    <strong>default window</strong> in the deadline clock above, so a countdown always exists. Tailor these
-    without a release: add, retime, or archive. Changes are audited.
+    <strong>Per-jurisdiction rules.</strong> Each rule's <strong>code</strong> is matched against the
+    jurisdictions on your <a href="admin/data-elements">data elements</a>, so the data involved in a case
+    decides which deadlines apply. A triggered jurisdiction without a rule uses the <strong>Default window</strong>
+    above. Changes are audited.
 </p>
 
 @if (_all is null)
@@ -54,7 +53,7 @@ else
         <div class="card-body">
             @if (_all.Count(r => r.IsActive) == 0)
             {
-                <p class="text-muted small mb-0">No active rules — add one above, or every jurisdiction uses the default window.</p>
+                <p class="text-muted small mb-0">No active rules. Every jurisdiction uses the default window until you add one above.</p>
             }
             else
             {
@@ -121,8 +120,7 @@ else
     private ConfirmDialog _confirm = null!;
 
     private void ConfirmDelete(Guid id, string label) => _confirm.Ask(this, "Delete rule",
-        $"Permanently delete the “{label}” rule? Cases stop getting its deadline. This can't be undone. " +
-        "(Archiving keeps it restorable.)",
+        $"Permanently delete the “{label}” rule? This can't be undone.",
         "Delete rule", () => Delete(id));
 
     private List<NotificationRuleView>? _all;

@@ -13,7 +13,7 @@
         <div class="empty-state-icon"><span class="bi bi-exclamation-triangle" aria-hidden="true"></span></div>
         <div class="empty-state-title">@Title</div>
         <div class="empty-state-msg text-muted">
-            @Message Nothing you'd already saved is affected — the record is intact.
+            @Message Anything you already saved is safe.
         </div>
         <div class="empty-state-actions">
             <button type="button" class="btn btn-primary btn-sm" @onclick="Retry">
@@ -44,8 +44,8 @@
         : "Something went wrong on this page";
 
     private string Message => Scope == ErrorScope.Section
-        ? "An unexpected error interrupted this part of the page."
-        : "An unexpected error interrupted this page.";
+        ? "This part of the page hit an error."
+        : "This page hit an error.";
 
     private string RetryLabel => OnRecover.HasDelegate ? "Try again" : "Reload the page";
 

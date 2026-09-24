@@ -15,10 +15,10 @@
 @inject AuthenticationStateProvider AuthState
 @inject ISeverityLabels SevLabels
 
-<PageTitle>My Work</PageTitle>
+<PageTitle>My work</PageTitle>
 
 <div class="mywork">
-    <PageHeader Title="My Work">
+    <PageHeader Title="My work">
         <Actions>
             @* UX-06: leadership lands on the dashboard, but may drop into their own queue here; give them
                a one-click way back. Shown only to all-cases roles (the ones who have a dashboard). *@
@@ -154,7 +154,7 @@
 
                 <section class="im-card" id="tasks">
                     <div class="im-section-head">
-                        <span><span class="bi bi-list-check" aria-hidden="true"></span> My after-action tasks</span>
+                        <span><span class="bi bi-list-check" aria-hidden="true"></span> My tasks</span>
                         <span class="im-section-note">@_work.Tasks.Count open@(overdueCount > 0 ? $" · {overdueCount} overdue" : "")</span>
                     </div>
 
@@ -179,7 +179,7 @@
                                     </select>
                                 </div>
                                 <button class="btn btn-sm btn-primary" @onclick="AddQuickTask"
-                                        disabled="@string.IsNullOrWhiteSpace(_newTaskTitle)" title="Add — Enter">
+                                        disabled="@string.IsNullOrWhiteSpace(_newTaskTitle)" title="Add (Enter)">
                                     <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
                                 </button>
                             </div>
@@ -231,7 +231,7 @@
                     </div>
                     @if (_work.RecentEscalations.Count == 0)
                     {
-                        <div class="mw-empty">No escalations in the window.</div>
+                        <div class="mw-empty">No escalations in the last @MyWorkService.EscalationWindowDays days.</div>
                     }
                     else
                     {

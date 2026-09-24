@@ -325,9 +325,9 @@ public class Case : AuditableEntity, IHashableEntity
         if (string.IsNullOrWhiteSpace(title))
             throw new ArgumentException("Title is required.", nameof(title));
         if (detectedAtUtc > nowUtc)
-            throw new ArgumentException("The detected time cannot be in the future.", nameof(detectedAtUtc));
+            throw new ArgumentException("The detected time can't be in the future.", nameof(detectedAtUtc));
         if (occurredAtUtc is { } occurred && occurred > detectedAtUtc)
-            throw new ArgumentException("Activity cannot begin after it was detected.", nameof(occurredAtUtc));
+            throw new ArgumentException("Activity can't begin after it was detected.", nameof(occurredAtUtc));
 
         Title = title.Trim();
         Summary = summary;
@@ -348,7 +348,7 @@ public class Case : AuditableEntity, IHashableEntity
         string? affectedStates, string actor, DateTimeOffset nowUtc)
     {
         if (affectedIndividualsCount is < 0)
-            throw new ArgumentException("Affected-individual count cannot be negative.", nameof(affectedIndividualsCount));
+            throw new ArgumentException("The affected-individual count can't be negative.", nameof(affectedIndividualsCount));
 
         AffectedIndividualsCount = affectedIndividualsCount;
 
@@ -448,7 +448,7 @@ public class Case : AuditableEntity, IHashableEntity
         if (Classification is null or Domain.Enums.Classification.AdverseEvent)
             throw new InvalidOperationException("Materiality is determined only for Incidents and Breaches.");
         if (decidedOnUtc is { } future && future > nowUtc)
-            throw new ArgumentException("The decision date cannot be in the future.", nameof(decidedOnUtc));
+            throw new ArgumentException("The decision date can't be in the future.", nameof(decidedOnUtc));
 
         if (status is MaterialityStatus.Material or MaterialityStatus.NotMaterial)
         {
@@ -761,9 +761,9 @@ public class Case : AuditableEntity, IHashableEntity
     public void MarkReported(DateTimeOffset reportedAtUtc, string actor, DateTimeOffset nowUtc)
     {
         if (reportedAtUtc > nowUtc)
-            throw new ArgumentException("The reported time cannot be in the future.", nameof(reportedAtUtc));
+            throw new ArgumentException("The reported time can't be in the future.", nameof(reportedAtUtc));
         if (DetectedAtUtc is { } detected && reportedAtUtc < detected)
-            throw new ArgumentException("The reported time cannot be before the matter was detected.", nameof(reportedAtUtc));
+            throw new ArgumentException("The reported time can't be earlier than the detected time.", nameof(reportedAtUtc));
 
         ReportedAtUtc = reportedAtUtc;
         Touch(actor, nowUtc);
@@ -822,7 +822,7 @@ public class Case : AuditableEntity, IHashableEntity
         if (!LegalHold) throw new InvalidOperationException("There is no legal hold on this case to release.");
         reason = (reason ?? "").Trim();
         if (reason.Length == 0) throw new ArgumentException("Give a reason for releasing the legal hold.");
-        if (reason.Length > 1000) throw new ArgumentException("Keep the reason under 1,000 characters.");
+        if (reason.Length > 1000) throw new ArgumentException("Keep the reason to 1,000 characters or fewer.");
         LegalHoldReleaseRequestedBy = actor;
         LegalHoldReleaseRequestedAtUtc = nowUtc;
         LegalHoldReleaseReason = reason;
@@ -869,7 +869,7 @@ public class Case : AuditableEntity, IHashableEntity
     public void Archive(string actor, DateTimeOffset nowUtc)
     {
         if (LegalHold)
-            throw new InvalidOperationException("This case is under legal hold and cannot be archived.");
+            throw new InvalidOperationException("This case is under legal hold and can't be archived. Release the hold first.");
         if (IsArchived) return;
         IsArchived = true;
         Touch(actor, nowUtc);
@@ -900,7 +900,7 @@ public class Case : AuditableEntity, IHashableEntity
         string? description, string actor, DateTimeOffset nowUtc)
     {
         if (sourceEntityId == targetEntityId)
-            throw new ArgumentException("An entity cannot be related to itself.");
+            throw new ArgumentException("An entity can't be related to itself.");
         if (Entities.All(e => e.Id != sourceEntityId) || Entities.All(e => e.Id != targetEntityId))
             throw new ArgumentException("Both entities must belong to this case.");
 

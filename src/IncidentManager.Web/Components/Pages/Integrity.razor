@@ -3,10 +3,10 @@
 @inject IntegrityService IntegritySvc
 @inject TimeDisplay TimeDisp
 
-<PageTitle>Integrity &amp; Audit</PageTitle>
+<PageTitle>Integrity &amp; audit</PageTitle>
 
-<PageHeader Title="Integrity & Audit"
-           Subtitle="The audit trail is an append-only, hash-chained record. Verification recomputes the entire chain and flags any altered, inserted, or deleted entry." />
+<PageHeader Title="Integrity & audit"
+           Subtitle="Check that the audit trail is complete and unaltered." />
 
 @* The persistent tamper banner is rendered app-wide for admins from MainLayout, so it already
    appears above this page — no page-level copy needed. The card below shows on-demand results. *@
@@ -51,11 +51,11 @@
                 else
                 {
                     <span class="im-badge im-b-danger">BROKEN</span>
-                    <span class="ms-2">First break at sequence @_result.FirstBrokenSequence — @_result.Detail</span>
+                    <span class="ms-2">First break at sequence @_result.FirstBrokenSequence: @_result.Detail</span>
                 }
                 @if (_result is not null && _verifiedAt is { } at)
                 {
-                    <div class="small text-muted mt-2">Verified @TimeDisp.Short(at)@(_verifiedShared ? " (a check run in the last minute; the chain is re-verified at most once a minute)" : "").</div>
+                    <div class="small text-muted mt-2">Verified @TimeDisp.Short(at)@(_verifiedShared ? " (reused from a check in the last minute)" : "").</div>
                 }
                 @if (_sealMessage is not null) { <div class="small text-muted mt-2">@_sealMessage</div> }
             </div>
@@ -68,10 +68,9 @@
         <div class="card-header">Compliance evidence bundle</div>
         <div class="card-body">
             <p class="text-muted small mb-3">
-                A single downloadable package for a NYDFS §500.17(b) certification file or a DFS examination
-                request: the audit-chain segment for a date range, a whole-chain integrity verification, and
-                the signed seals covering it, plus the public key and instructions to verify it independently.
-                Generating a bundle is itself recorded in the audit trail.
+                For a NYDFS §500.17(b) certification file or a DFS examination request. Contains the audit-chain
+                segment for the date range, a full-chain verification, the signed seals covering it, and the public
+                key with instructions to verify it independently. Each download is recorded in the audit trail.
             </p>
             <div class="row g-2 align-items-end">
                 <div class="col-6 col-sm-4 col-md-3">
@@ -84,7 +83,7 @@
                 </div>
                 <div class="col-12 col-sm-4 col-md-3">
                     <a class="btn btn-sm btn-primary" href="@BundleHref" download
-                       title="Download the compliance evidence bundle for the selected date range">
+                       title="Bundle for the selected date range">
                         <span class="bi bi-file-earmark-zip" aria-hidden="true"></span> Download bundle
                     </a>
                 </div>
@@ -147,7 +146,7 @@ else
                     <td>@a.Sequence</td>
                     <td class="small">@a.AtUtc.ToString("u")</td>
                     <td>@a.Actor</td>
-                    <td>@a.Action</td>
+                    <td>@AuditLabels.Label(a.Action)</td>
                     <td>@a.EntityType</td>
                     <td class="small">@a.CaseNumber</td>
                     <td><code class="small">@a.EntryHash[..12]…</code></td>

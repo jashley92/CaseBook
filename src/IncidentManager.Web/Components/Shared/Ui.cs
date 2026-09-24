@@ -260,7 +260,7 @@ public static class Ui
         MitreTactic.Collection => "Gathering data of interest.",
         MitreTactic.CommandAndControl => "Communicating with compromised systems.",
         MitreTactic.Exfiltration => "Stealing data out of the network.",
-        MitreTactic.Impact => "Manipulate, interrupt, or destroy systems and data.",
+        MitreTactic.Impact => "Manipulating, interrupting or destroying systems and data.",
         _ => "Tactic not specified."
     };
 

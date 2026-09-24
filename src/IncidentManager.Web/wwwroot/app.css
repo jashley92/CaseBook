@@ -34,6 +34,29 @@ a, .btn-link {
     border-color: var(--im-gold-strong);
 }
 
+/* Secondary "accent" action. Bootstrap compiles .btn-outline-primary to its stock blue (it doesn't follow
+   --bs-primary), which read as off-brand next to the gold/charcoal palette, so it's retinted here to the
+   gold accent in both themes. Selected state (e.g. the active option in a segmented control) fills gold. */
+.btn-outline-primary {
+    --bs-btn-color: var(--im-accent-text);
+    --bs-btn-border-color: var(--im-accent-strong);
+    --bs-btn-hover-color: var(--im-accent-text);
+    --bs-btn-hover-bg: var(--im-accent-bg);
+    --bs-btn-hover-border-color: var(--im-accent-strong);
+    --bs-btn-focus-shadow-rgb: 224, 175, 18;
+    --bs-btn-active-color: #1a1a1a;
+    --bs-btn-active-bg: var(--im-accent);
+    --bs-btn-active-border-color: var(--im-accent);
+    --bs-btn-disabled-color: var(--im-text-muted);
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: var(--im-border-strong);
+}
+
+/* Code-ish text (case numbers, config keys, technique IDs) in a quiet slate instead of Bootstrap's pink,
+   which clashed with the brand palette. */
+:root { --bs-code-color: #3a4a5e; }
+[data-bs-theme="dark"] { --bs-code-color: #c3cfdd; }
+
 .btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
   box-shadow: 0 0 0 0.2rem var(--im-focus);
 }
@@ -73,7 +96,7 @@ h1:focus {
 }
 
     .blazor-error-boundary::after {
-        content: "An error has occurred."
+        content: "Part of this page failed to load. Reload to try again."
     }
 
 .darker-border-checkbox.form-check-input {
@@ -1901,17 +1924,17 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
 .im-table > tbody > tr.im-row-selected > td { background-color: var(--im-accent-bg); }
 .im-table > tbody > tr.im-row-selected > td:first-child { box-shadow: inset 3px 0 0 var(--im-accent); }
 
-/* FR-17: on phones the 9-tab case-workspace bar becomes a single-row swipeable strip instead of wrapping
-   to 2–3 rows. Scoped to ≤640px so desktop tabs are unchanged. */
-@media (max-width: 640px) {
-    .nav-tabs.im-workspace-tabs {
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-    .nav-tabs.im-workspace-tabs .nav-item { flex: 0 0 auto; }
-    .nav-tabs.im-workspace-tabs .nav-link { white-space: nowrap; }
+/* FR-17: the 10-tab case-workspace bar stays a single row at every width and scrolls sideways when it
+   doesn't fit (laptops included), instead of wrapping a lone tab onto a second row. */
+.nav-tabs.im-workspace-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
 }
+.nav-tabs.im-workspace-tabs .nav-item { flex: 0 0 auto; }
+.nav-tabs.im-workspace-tabs .nav-link { white-space: nowrap; padding-inline: .85rem; }
 
 /* FR-11: on phones, wide data tables (case list, My Work, notification deadlines, campaigns, agenda, …)
    scroll horizontally within their card instead of overflowing the page or clipping columns. Scoped to
@@ -1963,4 +1986,65 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
     .im-card { break-inside: avoid; box-shadow: none !important; border: 1px solid #ccc !important; background: #fff !important; }
     .im-table, .im-table td, .im-table th { color: #000 !important; background: transparent !important; }
     a { color: inherit !important; text-decoration: none !important; }
+}
+
+/* ============================================================================
+   Segmented control (.im-seg): one look for every "pick one view/mode" toggle
+   (case scope, timeline lens, composer mode). The selected option is a raised
+   pill; the rest are quiet text. Replaces ad-hoc btn-primary/btn-secondary pairs
+   that styled the same control three different ways.
+   ============================================================================ */
+.im-seg {
+    display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px;
+    background: var(--im-surface-2); border: 1px solid var(--im-border); border-radius: var(--im-radius);
+    vertical-align: middle;
+}
+.im-seg > .btn {
+    border: 0; margin: 0 !important; border-radius: calc(var(--im-radius) - 2px) !important;
+    background: transparent; color: var(--im-text-muted); font-weight: 500;
+    font-size: var(--im-text-sm); line-height: 1.4; padding: .2rem .7rem;
+}
+.im-seg > .btn:hover { color: var(--im-text); background: var(--im-accent-bg); }
+.im-seg > .btn.active, .im-seg > .btn.active:hover {
+    color: var(--im-text); background: var(--im-surface); box-shadow: 0 1px 2px rgba(15, 23, 42, .12), 0 0 0 1px var(--im-border);
+}
+[data-bs-theme="dark"] .im-seg > .btn.active, [data-bs-theme="dark"] .im-seg > .btn.active:hover { background: var(--im-border-strong); box-shadow: none; }
+.im-seg > .btn:focus-visible { box-shadow: 0 0 0 .2rem var(--im-focus); }
+
+/* ============================================================================
+   Case list (.im-case-list): the whole row opens the case (the title link is
+   stretched over the row), so the list doesn't need a separate "Open" button.
+   Checkboxes, badges with tooltips and other controls sit above the overlay.
+   On phones each row becomes a compact card: number, title, then the status
+   badges, so the case you want is tappable without scrolling sideways.
+   ============================================================================ */
+.im-case-list > tbody > tr { position: relative; }
+.im-case-list .case-title::after { content: ""; position: absolute; inset: 0; }
+.im-case-list .case-title:focus-visible { outline: none; }
+.im-case-list .case-title:focus-visible::after { box-shadow: inset 0 0 0 2px var(--im-accent-strong); border-radius: 2px; }
+.im-case-list input, .im-case-list .im-badge[title], .im-case-list .case-above { position: relative; z-index: 1; }
+
+@media (max-width: 640px) {
+    .im-table.im-case-list { display: block; overflow: visible; white-space: normal; }
+    .im-case-list > thead { display: none; }
+    .im-case-list > tbody { display: block; }
+    .im-case-list > tbody > tr {
+        display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .35rem;
+        padding: .7rem .5rem; border-bottom: 1px solid var(--im-border);
+    }
+    .im-case-list > tbody > tr > td { display: block; padding: 0; border: 0; background: none; }
+    .im-case-list .case-num { order: -2; flex: 1 0 100%; max-width: none; font-size: var(--im-text-xs); }
+    .im-case-list .case-cell-title { order: -1; flex: 1 0 100%; margin-bottom: .15rem; }
+    .im-case-list .case-cell-title .case-title { font-size: var(--im-text-md); }
+    .im-case-list .case-cell-select, .im-case-list .case-cell-origin { display: none; }
+    .im-case-list .case-cell-age { margin-left: auto; }
+}
+
+/* Phones: stat tiles shrink to a dense 2-up strip so the page's real content (the case list, the work
+   queue) starts near the top instead of below a screen of tiles. */
+@media (max-width: 640px) {
+    .im-stat { padding: 10px 12px; gap: var(--im-space-2); }
+    .im-stat-ic { display: none; }
+    .im-stat-value { font-size: var(--im-text-lg); }
+    .im-stat-label { font-size: var(--im-text-xs); }
 }

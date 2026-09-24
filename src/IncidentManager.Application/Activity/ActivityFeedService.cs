@@ -96,10 +96,10 @@ public sealed class ActivityFeedService
         "Case" => "the case",
         "TimelineEntry" => "a timeline entry",
         "AnalystNote" => "a note",
-        "CaseEntity" => "an entity / IOC",
+        "CaseEntity" => "an entity or IOC",
         "EntityRelationship" => "a relationship",
         "CaseTechnique" => "an ATT&CK technique",
-        "ActionItem" => "an action item",
+        "ActionItem" => "a task",
         "CaseAssignment" => "an assignment",
         "Evidence" => "evidence",
         _ => SpaceCamel(entityType)

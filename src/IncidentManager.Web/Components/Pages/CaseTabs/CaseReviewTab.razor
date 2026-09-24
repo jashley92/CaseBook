@@ -24,9 +24,9 @@
 }
 
 <p class="small text-muted mb-3">
-    Capture what this case taught the team and any improvements to follow up. Improvement actions stay tracked in the
-    <a href="improvement-actions">improvement-action register</a> after the case closes. This review is not part of the
-    case report; it prints in its own lessons-learned report below.
+    Record what the team learned and the improvements to follow up. Improvement actions stay tracked in the
+    <a href="improvement-actions">improvement-action register</a> after the case closes. This review stays out of the
+    case report and prints in its own report below.
     @if (NeedsReview)
     {
         @if (IsComplete)
@@ -35,7 +35,7 @@
         }
         else
         {
-            <span class="im-badge im-b-warn ms-1" title="Record what happened, then log the improvement actions (or tick “No improvement actions identified”). A Close gate can require this.">Review incomplete</span>
+            <span class="im-badge im-b-warn ms-1" title="Record what happened, then log improvement actions or tick “No improvement actions identified”. Closing the case can require this.">Review incomplete</span>
         }
     }
 </p>
@@ -91,13 +91,13 @@
                     : "Tick this if the review found nothing to follow up, so the record shows the question was answered.")
             </div>
             <div class="d-flex gap-2">
-                <button class="btn btn-sm btn-primary" title="Save — Ctrl / ⌘ + Enter" @onclick="SaveReview" disabled="@_saving">Save review</button>
+                <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveReview" disabled="@_saving">Save review</button>
                 <button class="btn btn-sm btn-outline-secondary" @onclick="CancelReviewEdit" disabled="@_saving">Cancel</button>
             </div>
         }
         else if (_view.Review is null)
         {
-            <p class="text-muted mb-0">No post-incident review has been recorded.</p>
+            <p class="text-muted mb-0">No post-incident review yet.@(CanEdit ? " Select Start review to begin." : "")</p>
         }
         else
         {
@@ -162,7 +162,7 @@
 
 @if (_view.Actions.Count == 0)
 {
-    <p class="text-muted">No improvement actions logged.</p>
+    <p class="text-muted">No improvement actions logged yet.@(CanEdit ? " Add one above." : "")</p>
 }
 else
 {
@@ -409,7 +409,7 @@ else
         }
         catch (Exception ex) when (ex is InvalidOperationException or JSException)
         {
-            Toasts.Error("The draft couldn't be built. Please try again.");
+            Toasts.Error("Couldn't build the draft. Try again, or write the account yourself.");
         }
         finally
         {
@@ -555,7 +555,7 @@ else
 
     private static string OutcomeHint(ImprovementActionStatus s) => s == ImprovementActionStatus.NotPursued
         ? "why it isn't being pursued, and who decided"
-        : "what was done (e.g. change ticket or test reference)";
+        : "what was done (for example, a change ticket or test reference)";
 
     // ---- Lessons-learned report ----------------------------------------------------------------------
 

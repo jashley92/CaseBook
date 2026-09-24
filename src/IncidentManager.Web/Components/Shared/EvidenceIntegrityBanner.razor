@@ -9,10 +9,10 @@
     <div class="integrity-alert" role="alert">
         <span class="bi bi-hdd-stack integrity-alert-icon" aria-hidden="true"></span>
         <div class="integrity-alert-text">
-            <strong>Evidence-at-rest integrity failure.</strong>
-            @status.DriftCount of @status.CheckedCount stored evidence item(s) no longer match their recorded
-            SHA-256 (checked @status.CheckedAtUtc.ToString("u")). The files may have suffered bit-rot or been
-            altered, replaced, or deleted. Investigate immediately.
+            <strong>Evidence integrity check failed.</strong>
+            @status.DriftCount of @status.CheckedCount stored evidence file(s) no longer match their recorded
+            SHA-256 (checked @status.CheckedAtUtc.ToString("u")). They may be corrupted, altered, replaced or
+            deleted. Investigate now.
         </div>
         <a class="btn btn-sm btn-light integrity-alert-cta" href="admin#diagnostics">Open Diagnostics</a>
     </div>

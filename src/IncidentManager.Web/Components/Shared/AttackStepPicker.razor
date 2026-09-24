@@ -8,7 +8,7 @@
 <div class="atk-field position-relative">
     <div class="input-group input-group-sm">
         <input class="form-control form-control-sm" value="@_query" @oninput="OnInput" @onfocus="Reopen"
-               placeholder="ATT&CK technique or tactic (type to search)" autocomplete="off" aria-label="ATT&CK technique or tactic" />
+               placeholder="Search techniques or tactics" autocomplete="off" aria-label="ATT&CK technique or tactic" />
         <button type="button" class="btn btn-outline-secondary" @onclick="() => _matrix = true" title="Browse the ATT&CK matrix">
             <span class="bi bi-diagram-3" aria-hidden="true"></span>
         </button>
@@ -59,7 +59,7 @@
                 <a href="https://attack.mitre.org/techniques/@(TechniqueId.Replace('.', '/'))/" target="_blank" rel="noopener noreferrer"><code>@TechniqueId</code></a>
                 @if (!string.IsNullOrWhiteSpace(_techName)) { <span class="im-chip-name">@_techName</span> }
                 @if (Tactic != MitreTactic.Unspecified) { <span class="im-chip-role">@Ui.Label(Tactic)</span> }
-                <button type="button" class="im-chip-x" aria-label="Clear" @onclick="Clear">×</button>
+                <button type="button" class="im-chip-x" aria-label="Clear selection" @onclick="Clear">×</button>
             </span>
         }
         else if (Tactic != MitreTactic.Unspecified)
@@ -68,7 +68,7 @@
                 <span class="bi @Ui.TacticGlyph(Tactic)" style="color:@Ui.TacticColor(Tactic)" aria-hidden="true"></span>
                 <span class="im-chip-name">@Ui.Label(Tactic)</span>
                 <span class="im-chip-role">tactic only</span>
-                <button type="button" class="im-chip-x" aria-label="Clear" @onclick="Clear">×</button>
+                <button type="button" class="im-chip-x" aria-label="Clear selection" @onclick="Clear">×</button>
             </span>
         }
         else

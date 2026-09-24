@@ -50,7 +50,7 @@ else
             <span class="bi bi-exclamation-triangle-fill mt-1" aria-hidden="true"></span>
             <div>
                 <div class="fw-semibold">This case was archived or your access to it changed while you had it open.</div>
-                <div class="small mb-0">Your unsaved text is still on screen — copy anything you need now, as new changes can no longer be saved to this case. <a href="cases">Back to cases</a>.</div>
+                <div class="small mb-0">Your unsaved text is still on screen. Copy anything you need now, because changes can no longer be saved to this case. <a href="cases">Back to cases</a>.</div>
             </div>
         </div>
     }
@@ -143,7 +143,7 @@ else
                 @if (_case.IsRestricted) { <span class="im-badge im-b-warn">Restricted</span> }
                 @if (_case.LegalHold) { <span class="im-badge im-b-danger">Legal hold</span> }
                 @if (_case.IsArchived) { <span class="im-badge im-b-neutral">Archived</span> }
-                @if (_case.IsExercise) { <span class="im-badge im-b-info" title="Tabletop / exercise (drill) case">Exercise</span> }
+                @if (_case.IsExercise) { <span class="im-badge im-b-info" title="Tabletop exercise or drill">Exercise</span> }
             </div>
         </div>
         <div class="d-flex align-items-center gap-2">
@@ -166,7 +166,7 @@ else
                     }
                     <button id="case-actions-btn" class="btn btn-sm btn-outline-primary dropdown-toggle" @onclick="() => _actionsOpen = !_actionsOpen">Actions</button>
                     <div class="dropdown-menu dropdown-menu-end @(_actionsOpen ? "show" : "")">
-                        @if (_canReclassify) { <button class="dropdown-item" @onclick='() => OpenModal("reclass")'>@(_case.Classification is null ? "Promote to ladder…" : "Reclassify…")</button> }
+                        @if (_canReclassify) { <button class="dropdown-item" @onclick='() => OpenModal("reclass")'>@(_case.Classification is null ? "Promote onto the ladder…" : "Reclassify…")</button> }
                         @if (_canEdit)
                         {
                             @if (!_case.Assignments.Any(a => string.Equals(a.UserId, _myId, StringComparison.OrdinalIgnoreCase)))
@@ -290,7 +290,7 @@ else
             var _tabNo = (Array.IndexOf(_tabs, tab) + 1) % 10;   // U-14: the digit shortcut for this tab (the 10th is 0)
             <li class="nav-item">
                 <button class="nav-link @(_activeTab == tab ? "active" : "")" @onclick="() => SetTab(tab)"
-                        title="@($"{TabLabel(tab)} — press {_tabNo}")">
+                        title="@($"Shortcut: {_tabNo}")">
                     @TabLabel(tab)@{ var _tc = TabCount(tab); }@if (_tc is { } cnt) { <span class="im-badge im-b-neutral ms-1 im-bump" @key="@($"{tab}:{cnt}")">@cnt</span> }@if (TabHasNew(tab)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }
                 </button>
             </li>
@@ -305,13 +305,13 @@ else
             <div class="modal-dialog" @onclick:stopPropagation="true">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title" id="im-confirm-title">Please confirm</h5>
+                        <h5 class="modal-title" id="im-confirm-title">@ConfirmTitle</h5>
                         <button type="button" class="btn-close" aria-label="Close" @onclick="CancelConfirm"></button>
                     </div>
                     <div class="modal-body"><p class="mb-0">@_confirm.Value.Message</p></div>
                     <div class="modal-footer">
                         <button class="btn btn-outline-secondary" @onclick="CancelConfirm">Cancel</button>
-                        <button class="btn btn-danger" @onclick="RunConfirm">Remove</button>
+                        <button class="btn btn-danger" @onclick="RunConfirm">@ConfirmVerb</button>
                     </div>
                 </div>
             </div>
@@ -327,11 +327,11 @@ else
             <div class="modal-dialog" @onclick:stopPropagation="true">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title" id="im-leave-title">Unsaved text</h5>
+                        <h5 class="modal-title" id="im-leave-title">Discard unsaved text?</h5>
                         <button type="button" class="btn-close" aria-label="Close" @onclick="CancelLeave"></button>
                     </div>
                     <div class="modal-body">
-                        <p class="mb-0">You have unsubmitted text in a composer on this case. Leave the page and discard it?</p>
+                        <p class="mb-0">You have text on this case that hasn't been saved. If you leave now, it's lost.</p>
                     </div>
                     <div class="modal-footer">
                         <button class="btn btn-outline-secondary" @onclick="CancelLeave">Stay on this page</button>
@@ -355,7 +355,7 @@ else
                         <button type="button" class="btn-close" aria-label="Close" @onclick="CloseShot"></button>
                     </div>
                     <div class="modal-body text-center bg-body-tertiary" style="max-height:75vh;overflow:auto">
-                        <img src="evidence/@previewId/inline" alt="attached screenshot"
+                        <img src="evidence/@previewId/inline" alt="Attached screenshot"
                              style="max-width:100%;height:auto;border-radius:.375rem" />
                     </div>
                     <div class="modal-footer py-2">
@@ -491,11 +491,11 @@ else
                         {
                             @if (_case?.Classification is null)
                             {
-                                <p class="small text-muted mb-2">This is a <strong>Complex Event</strong> (pre-triage intake). Promoting it assigns its first formal classification on the ladder.</p>
+                                <p class="small text-muted mb-2">This <strong>Complex Event</strong> hasn't been triaged yet. Promoting it gives it its first formal classification.</p>
                             }
                             <label class="form-label small">@(_case?.Classification is null ? "Promote to" : "New classification")</label>
                             <select class="form-select mb-2" @bind="_newClass" @bind:after="OnReclassTargetChanged">@foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }</select>
-                            <label class="form-label small">Reason for the reclassification <span class="text-muted">(required)</span></label>
+                            <label class="form-label small">Reason <span class="text-muted">(required)</span></label>
                             <input class="form-control" placeholder="e.g. new evidence confirms data was exfiltrated" @bind="_reclassReason" @bind:event="oninput" />
                             @RationaleHint(_reclassReason)
                             @GateModalSection()
@@ -510,22 +510,21 @@ else
                         {
                             <label class="form-label small">New status</label>
                             <select class="form-select mb-2" @bind="_newPhase" @bind:after="OnStatusTargetChanged">@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
-                            <label class="form-label small">Reason for the status change <span class="text-muted">@(_gateEval is { RequiresCommentary: true } ? "(required)" : "(optional)")</span></label>
+                            <label class="form-label small">Reason <span class="text-muted">@(_gateEval is { RequiresCommentary: true } ? "(required)" : "(optional)")</span></label>
                             <input class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
                             @RationaleHint(_phaseReason)
                             @GateModalSection()
                         }
                         else if (_activeModal == "supersede")
                         {
-                            <p class="small text-muted mb-2">Marks this case a duplicate of the case work continues on: links the two, can copy this
-                                case's indicators across (existing ones are left alone), and notes both cases. You then close this case through the
-                                normal close step.</p>
+                            <p class="small text-muted mb-2">Marks this case as a duplicate of the one work continues on, links the two and adds a
+                                note to both. You then close this case as usual.</p>
                             <label class="form-label small mb-1">Case to keep</label>
                             @if (_supersedeTargetId is not null)
                             {
                                 <div class="alert alert-info py-1 px-2 small d-flex align-items-center gap-2 mb-2">
                                     <span>Keeping <code>@_supersedeTargetNumber</code></span>
-                                    <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick="() => _supersedeTargetId = null">change</button>
+                                    <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick="() => _supersedeTargetId = null">Change</button>
                                 </div>
                             }
                             else
@@ -550,7 +549,7 @@ else
                             }
                             <div class="form-check mt-2">
                                 <input class="form-check-input" type="checkbox" id="supersede-copy" @bind="_supersedeCopy" />
-                                <label class="form-check-label small" for="supersede-copy">Copy this case's indicators to the kept case</label>
+                                <label class="form-check-label small" for="supersede-copy">Copy this case's indicators to the kept case (ones already there are skipped)</label>
                             </div>
                             <label class="form-label small mt-2" for="supersede-reason">Why it's a duplicate</label>
                             <textarea id="supersede-reason" class="form-control" rows="2" @bind="_supersedeReason" @bind:event="oninput"
@@ -572,7 +571,7 @@ else
                             }
                             <label class="form-label small" for="restrict-reason">Reason <span class="text-muted">(optional, recorded in the audit trail)</span></label>
                             <textarea id="restrict-reason" class="form-control" rows="2" maxlength="1000" @bind="_restrictReason" @bind:event="oninput"
-                                      placeholder="e.g. Insider matter involving a named employee; HR and counsel only"></textarea>
+                                      placeholder="e.g. Insider investigation involving a named employee; HR and counsel only"></textarea>
                         }
                         else if (_activeModal == "unrestrict")
                         {
@@ -580,20 +579,19 @@ else
                                 their case lists, search, dashboards and exports.</p>
                             <label class="form-label small" for="unrestrict-reason">Reason</label>
                             <textarea id="unrestrict-reason" class="form-control" rows="2" maxlength="1000" @bind="_restrictReason" @bind:event="oninput"
-                                      placeholder="e.g. Counsel confirmed the matter no longer needs to be restricted"></textarea>
+                                      placeholder="e.g. Counsel confirmed the case no longer needs to be restricted"></textarea>
                         }
                         else if (_activeModal == "holdrelease")
                         {
                             @if (Cases.LegalHoldReleaseNeedsSecondApprover)
                             {
-                                <p class="small text-muted mb-2">Two-person control is on: this asks for the hold to be lifted. Someone else with
-                                    Manage Legal approves it from the case; until then the hold stays in force.</p>
+                                <p class="small text-muted mb-2">Two-person control is on, so this sends a release request. The hold stays in force
+                                    until someone else with Manage Legal approves it from the case.</p>
                             }
                             else
                             {
-                                <p class="small mb-2">Once released, an administrator can archive this case and it's no longer exempt from your
-                                    retention policy. Release it only once counsel confirms preservation is no longer required. The reason is
-                                    recorded in the audit trail.</p>
+                                <p class="small mb-2">Once released, the case is no longer exempt from your retention policy and an administrator
+                                    can archive it. Release it only after counsel confirms preservation is no longer required.</p>
                             }
                             <label class="form-label small" for="hold-release-reason">Reason</label>
                             <textarea id="hold-release-reason" class="form-control" rows="3" maxlength="1000" @bind="_holdReleaseReason" @bind:event="oninput"
@@ -601,16 +599,16 @@ else
                         }
                         else if (_activeModal == "legal")
                         {
-                            <input class="form-control mb-2" placeholder="Legal contact" @bind="_legalContact" />
-                            <input class="form-control" placeholder="Regulatory-relevance note (e.g. NY NPI)" @bind="_legalNote" />
+                            <input class="form-control mb-2" placeholder="Legal contact" aria-label="Legal contact" @bind="_legalContact" />
+                            <input class="form-control" placeholder="Regulatory relevance (e.g. NY NPI)" aria-label="Regulatory relevance" @bind="_legalNote" />
                         }
                         else if (_activeModal == "materiality")
                         {
-                            <p class="small text-muted mb-2">Record the materiality decision for the case file. It may be the SOC's own call or one made by Legal / Privacy or a disclosure committee — capture <strong>who</strong> decided in the decision-maker field either way. A final call requires the decision-maker, the date, and a rationale. A case can't close with this left open (Incidents &amp; Breaches).</p>
+                            <p class="small text-muted mb-2">Record <strong>who</strong> made the call (the SOC, Legal / Privacy or a disclosure committee), when, and why.
+                                A final determination needs all three. An Incident or Breach can't close while this is open.</p>
                             <WhyThisMatters Class="mb-2">
-                                Materiality decides what disclosure follows and when: a determination can start regulatory clocks (for SEC
-                                registrants, a Form 8-K within four business days of it), and your notification-deadline settings may count from it.
-                                Recording who decided, when and why is the evidence that the call was made deliberately and on time.
+                                A determination can start disclosure clocks (for SEC registrants, a Form 8-K is due within four business days),
+                                and your notification deadlines may count from it. The record shows the call was made deliberately and on time.
                             </WhyThisMatters>
                             <label class="form-label small">Determination</label>
                             <select class="form-select mb-2" @bind="_materialityStatus">
@@ -623,16 +621,16 @@ else
                             <label class="form-label small">Decision date <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
                             <input type="date" class="form-control mb-2" @bind="_materialityDecidedOn" />
                             <label class="form-label small">Rationale <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-                            <textarea class="form-control" rows="2" placeholder="Why the matter is (or isn't) material" @bind="_materialityRationale"></textarea>
+                            <textarea class="form-control" rows="2" placeholder="Why the case is or isn't material" @bind="_materialityRationale"></textarea>
                         }
                         else if (_activeModal == "archive")
                         {
-                            <p class="mb-0">Archive <code>@_case.CaseNumber</code>? It will be hidden from active queues; you can restore it later.</p>
+                            <p class="mb-0">Archive <code>@_case.CaseNumber</code>? It's hidden from active queues and can be restored later.</p>
                         }
                         else if (_activeModal == "reopen")
                         {
-                            <p class="small text-muted mb-2">Reopen <code>@_case.CaseNumber</code>? It returns to its pre-closure phase and the closure timestamp is cleared, so response metrics stay accurate. Closing again re-runs the close gate.</p>
-                            <label class="form-label small">Reason (required)</label>
+                            <p class="small text-muted mb-2">Reopen <code>@_case.CaseNumber</code>? It returns to the phase it was in before closing and the closure time is cleared. Closing it again re-runs the close gate.</p>
+                            <label class="form-label small">Reason <span class="text-muted">(required)</span></label>
                             <input class="form-control" placeholder="Why is this case being reopened?" @bind="_reopenReason" @bind:event="oninput" />
                         }
                         else if (_activeModal == "assign")
@@ -645,7 +643,7 @@ else
                             {
                                 <label class="form-label small">Person</label>
                                 <select class="form-select mb-2" @bind="_assignUserId">
-                                    <option value="">Select a user…</option>
+                                    <option value="">Select a person…</option>
                                     @foreach (var u in AssignableUsers())
                                     {
                                         <option value="@u.UserId">@u.DisplayName</option>
@@ -768,8 +766,8 @@ else
             var roles = Ui.OrderRoles(CurrentUser.RoleNames).Select(Ui.RoleLabel).ToList();
             var who = roles.Count switch { 0 => "Your access", 1 => $"Your role ({roles[0]})", _ => $"Your roles ({string.Join(", ", roles)})" };
             var legal = _canManageLegal ? " Legal actions (referral, legal hold) are in the Actions menu." : "";
-            return $"{who} can read this case and post in its Discussion, but not change the case record.{legal} " +
-                   "The incident commander or a CaseBook administrator can make changes or grant edit access.";
+            return $"{who} can read this case and post in Discussion, but can't edit it.{legal} " +
+                   "Ask the incident commander or an administrator if you need edit access.";
         }
     }
 
@@ -889,7 +887,7 @@ else
     // Drives a banner and demotes the header edit affordances so a stale control can't throw when clicked.
     private bool _permissionLost;
     private const string PermissionLostMessage =
-        "You no longer have permission to do that — your access to this case may have changed. Reload the page to refresh your view.";
+        "You no longer have permission to do that. Your access to this case may have changed. Reload the page to see what you can do.";
 
     // REL-08: (re-)evaluate the current user's action permissions from the live auth state. Called at load and
     // on every live-collab refresh; if a re-check shows edit was revoked mid-session, demote + warn. Under the
@@ -1270,7 +1268,7 @@ else
         if ((reason?.Trim().Length ?? 0) < min)
             return $"Record a reason of at least {min} characters to pass this gate.";
         if (NeedsOverride && (_gateOverride?.Trim().Length ?? 0) < min)
-            return $"The override justification must be at least {min} characters for this gate.";
+            return $"The override justification needs at least {min} characters.";
         return null;
     }
 
@@ -1284,7 +1282,7 @@ else
                 {
                     <div class="alert alert-warning small mt-2 mb-1 py-2">
                         <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
-                        @UnmetBlocking.Count required item@(UnmetBlocking.Count == 1 ? "" : "s") outstanding. Override with a recorded justification to proceed anyway.
+                        @UnmetBlocking.Count required item@(UnmetBlocking.Count == 1 ? "" : "s") not met. To proceed anyway, enter an override justification.
                     </div>
                     <input class="form-control form-control-sm" placeholder="Override justification (required)" @bind="_gateOverride" @bind:event="oninput" />
                     @if (g.RequiresCommentary)
@@ -1304,7 +1302,7 @@ else
         @if (_gateEval is { RequiresCommentary: true } g)
         {
             <div class="form-text @((text?.Trim().Length ?? 0) < g.CommentaryMinLength ? "text-danger" : "text-success")">
-                @(text?.Trim().Length ?? 0) / @g.CommentaryMinLength characters — recorded on the gate passage.
+                @(text?.Trim().Length ?? 0) / @g.CommentaryMinLength characters (saved with the gate record)
             </div>
         }
     </text>;
@@ -1317,6 +1315,11 @@ else
 
     // Generic confirm for destructive removes: capture a message + the action to run on confirm.
     private void AskConfirm(string message, Func<Task> onConfirm) => _confirm = (message, onConfirm);
+
+    // The shared confirm serves removes and "Clear the reported milestone?"; label the button with the verb the
+    // message leads with so it never reads "Remove" for a clear.
+    private string ConfirmVerb => _confirm?.Message.StartsWith("Clear", StringComparison.Ordinal) == true ? "Clear" : "Remove";
+    private string ConfirmTitle => ConfirmVerb == "Clear" ? "Confirm clear" : "Confirm removal";
     private void CancelConfirm() => _confirm = null;
 
     // FR-05: intercept in-app navigation away from this case when a composer still holds unsubmitted text,
@@ -1462,9 +1465,9 @@ else
             switch (_activeModal)
             {
                 case "reclass":
-                    if (string.IsNullOrWhiteSpace(_reclassReason)) { _modalError = "A reason is required."; return; }
+                    if (string.IsNullOrWhiteSpace(_reclassReason)) { _modalError = "Enter a reason."; return; }
                     if (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
-                    { _modalError = "Provide a justification to override the unmet gate requirements."; return; }
+                    { _modalError = "Enter an override justification for the unmet requirements."; return; }
                     if (GateRationaleError(_reclassReason) is { } m1) { _modalError = m1; return; }
                     await Cases.ReclassifyAsync(Id, _newClass, _reclassReason,
                         _attested.Count > 0 ? _attested : null, _gateOverride);
@@ -1474,11 +1477,11 @@ else
                 case "severity":
                     await Cases.ChangeSeverityAsync(Id, _newSeverity, _severityReason);
                     _severityReason = null;
-                    done = $"Severity changed to {_newSeverity}";
+                    done = $"Severity changed to {SevLabels.For(_newSeverity)}";
                     break;
                 case "status":
                     if (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
-                    { _modalError = "Provide a justification to override the unmet gate requirements."; return; }
+                    { _modalError = "Enter an override justification for the unmet requirements."; return; }
                     if (GateRationaleError(_phaseReason) is { } m2) { _modalError = m2; return; }
                     await Cases.ChangePhaseAsync(Id, _newPhase, _phaseReason,
                         _attested.Count > 0 ? _attested : null, _gateOverride);
@@ -1499,7 +1502,7 @@ else
                     done = "Case restricted to need-to-know";
                     break;
                 case "unrestrict":
-                    if (string.IsNullOrWhiteSpace(_restrictReason)) { _modalError = "Say why the restriction is being lifted."; return; }
+                    if (string.IsNullOrWhiteSpace(_restrictReason)) { _modalError = "Enter a reason for lifting the restriction."; return; }
                     await Cases.SetRestrictedAsync(Id, false, _restrictReason);
                     _restrictReason = null;
                     done = "Restriction lifted";
@@ -1507,7 +1510,7 @@ else
                 case "holdrelease" when Cases.LegalHoldReleaseNeedsSecondApprover:
                     await Cases.RequestLegalHoldReleaseAsync(Id, _holdReleaseReason ?? "");
                     _holdReleaseReason = null;
-                    done = "Release requested. A second person with Manage Legal approves it.";
+                    done = "Release requested. Someone else with Manage Legal must approve it.";
                     break;
                 case "holdrelease":
                     await Cases.SetLegalHoldAsync(Id, false, _holdReleaseReason);
@@ -1523,20 +1526,20 @@ else
                         ? new DateTimeOffset(DateTime.SpecifyKind(d.Date, DateTimeKind.Utc)) : null;
                     await Cases.RecordMaterialityAsync(Id, _materialityStatus, _materialityDecisionMaker, decidedOn,
                         _materialityRationale, _materialityBaseline);
-                    done = $"Materiality: {MaterialityLabel(_materialityStatus)} recorded";
+                    done = $"Materiality recorded: {MaterialityLabel(_materialityStatus)}";
                     break;
                 case "archive":
                     await Cases.SetArchivedAsync(Id, true);
                     done = "Case archived";
                     break;
                 case "reopen":
-                    if (string.IsNullOrWhiteSpace(_reopenReason)) { _modalError = "A reason is required."; return; }
+                    if (string.IsNullOrWhiteSpace(_reopenReason)) { _modalError = "Enter a reason."; return; }
                     await Cases.ReopenAsync(Id, _reopenReason);
                     _reopenReason = "";
                     done = "Case reopened";
                     break;
                 case "assign":
-                    if (string.IsNullOrWhiteSpace(_assignUserId)) { _modalError = "Select a user to assign."; return; }
+                    if (string.IsNullOrWhiteSpace(_assignUserId)) { _modalError = "Select a person to assign."; return; }
                     var assignName = Users.Resolve(_assignUserId)?.DisplayName ?? _assignUserId;
                     await Cases.AssignAsync(Id, _assignUserId, assignName, _assignRole);
                     _assignUserId = "";
@@ -1576,7 +1579,7 @@ else
             // and re-baseline so a deliberate re-apply overwrites (mirrors the details/impact editors, FR-06).
             if (_activeModal == "legal") _legalBaseline = ex.CurrentStamp;
             else if (_activeModal == "materiality") _materialityBaseline = ex.CurrentStamp;
-            _modalError = ex.Message + " Your entries are unsaved — review the current values, then apply again to overwrite, or Cancel to discard yours.";
+            _modalError = ex.Message + " Your entries weren't saved. Review the current values, then select Apply again to overwrite them, or Cancel to discard yours.";
             await Reload();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
@@ -1880,7 +1883,7 @@ else
         try
         {
             await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
-            Toasts.Success("Case link copied to the clipboard.");
+            Toasts.Success("Case link copied.");
         }
         catch
         {

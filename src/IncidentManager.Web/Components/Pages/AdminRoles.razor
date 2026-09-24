@@ -14,9 +14,9 @@
     </Actions>
 </PageHeader>
 <p class="text-muted">
-    Bundles of code-enforced <strong>permissions</strong>. Built-in <em>system</em> roles are locked; add
-    <strong>custom roles</strong> that compose the same permissions and map any role to AD security groups.
-    Changes take effect at the next sign-in.
+    A role is a set of <strong>permissions</strong>. Built-in <em>system</em> roles are locked. Build
+    <strong>custom roles</strong> from the same permissions, and map any role to AD security groups.
+    Changes take effect at next sign-in.
 </p>
 
 @* ---------- Roles ---------- *@
@@ -30,7 +30,7 @@
 @if (_editing is not null)
 {
     <div class="card mb-3 border-primary">
-        <div class="card-header">@(_editing.IsNew ? "New custom role" : $"Edit role — {_editing.Name}")</div>
+        <div class="card-header">@(_editing.IsNew ? "New custom role" : $"Edit role: {_editing.Name}")</div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-4">
@@ -121,8 +121,8 @@ else
 
 @* ---------- AD group → role mapping ---------- *@
 <h4 class="mt-4 mb-2">AD group → role mapping</h4>
-<p class="text-muted small">Members of an AD security group receive the mapped role's permissions. Seeded from
-<code>appsettings.json</code> on first run; edited here thereafter.</p>
+<p class="text-muted small">Members of an AD security group get the mapped role's permissions. Seeded from
+<code>appsettings.json</code> on first run, then managed here.</p>
 
 @if (_roles is not null)
 {
@@ -149,7 +149,7 @@ else
 }
 else if (_mappings.Count == 0)
 {
-    <p class="text-muted">No mappings configured.</p>
+    <p class="text-muted">No AD group mappings yet. Add one above.</p>
 }
 else
 {
@@ -172,8 +172,8 @@ else
 
 @* ---------- Access review ---------- *@
 <h4 class="mt-4 mb-2">Access review</h4>
-<p class="text-muted small">For periodic access reviews and audits: who can currently see restricted cases and why, and who holds roles at all.
-Broad access comes from roles (and their AD groups); case-specific access is the incident commander and assignees.</p>
+<p class="text-muted small">Who can see restricted cases and why, and who holds each role.
+Broad access comes from roles and their AD groups. Case-level access goes to the incident commander and assignees.</p>
 
 @if (_review is null)
 {

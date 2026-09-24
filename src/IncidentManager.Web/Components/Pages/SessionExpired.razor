@@ -7,7 +7,7 @@
 @layout Layout.BlankLayout
 @attribute [AllowAnonymous]
 
-<PageTitle>Session locked — CaseBook</PageTitle>
+<PageTitle>Session locked · CaseBook</PageTitle>
 
 <div class="session-locked">
     <div class="session-locked-card">
@@ -20,12 +20,12 @@
             }
             else
             {
-                <span>You were signed out here because of inactivity. Anything you saved is safe; an edit you were still
-                    typing when the session locked may need to be redone.</span>
+                <span>This session locked after a period of inactivity. Anything you saved is safe, but an edit you were
+                    still typing may need to be redone.</span>
             }
         </p>
         <p class="session-locked-text session-locked-muted">
-            This is a security measure for unattended workstations. Please also lock your computer when you step away.
+            This protects unattended workstations. Lock your computer when you step away, too.
         </p>
         <a href="/" class="btn btn-primary">Resume session</a>
     </div>

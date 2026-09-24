@@ -35,7 +35,7 @@ public partial class CaseTechnique : AuditableEntity, IHashableEntity
     {
         var id = (techniqueId ?? string.Empty).Trim().ToUpperInvariant();
         if (!IdPattern().IsMatch(id))
-            throw new ArgumentException($"'{techniqueId}' is not a valid ATT&CK technique ID (expected e.g. T1566 or T1566.001).", nameof(techniqueId));
+            throw new ArgumentException($"'{techniqueId}' isn't a valid ATT&CK technique ID. Use the form T1566 or T1566.001.", nameof(techniqueId));
         return id;
     }
 }

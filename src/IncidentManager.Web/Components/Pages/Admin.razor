@@ -59,19 +59,19 @@
                             </div>
                             <div class="card-body">
                                 <p class="small text-muted mb-2">
-                                    A notification reaches someone only when <strong>Send email</strong> is on, a
+                                    A notification is delivered only when <strong>Send email</strong> is on, a
                                     <strong>From address</strong> is set, and the trigger is enabled with a reachable
-                                    recipient. This reflects your current selections — <strong>Save Notifications</strong>
-                                    to apply; the reminder scans pick up changes within a few minutes.
+                                    recipient. This panel reflects unsaved selections. Click <strong>Save Notifications</strong>
+                                    to apply them; reminder scans pick up changes within a few minutes.
                                 </p>
                                 <ul class="list-unstyled mb-0 small">
                                     <li class="mb-1 d-flex align-items-start gap-2">
                                         @ReadyIcon(EmailOn)
-                                        <span><strong>Email delivery</strong> — @(EmailOn ? "on, sending through the configured relay" : "off; messages are written to the log, not sent")</span>
+                                        <span><strong>Email delivery:</strong> @(EmailOn ? "on, sending through the configured relay" : "off. Messages are logged, not sent.")</span>
                                     </li>
                                     <li class="mb-1 d-flex align-items-start gap-2">
                                         @ReadyIcon(FromSet)
-                                        <span><strong>From address</strong> — @(FromSet ? FormText("Email:From")! : "not set (required to send)")</span>
+                                        <span><strong>From address:</strong> @(FromSet ? FormText("Email:From")! : "not set (required to send)")</span>
                                     </li>
                                     <li class="mb-1 d-flex align-items-center justify-content-between">
                                         <span>Breach&nbsp;&rarr; Legal/Privacy <span class="text-muted">(on escalation)</span></span>
@@ -83,17 +83,17 @@
                                         @TriggerState(FormBool("Email:AssignmentNotifications"), EmailOn && FromSet)
                                     </li>
                                     <li class="mb-1 d-flex align-items-center justify-content-between">
-                                        <span>Overdue after-action reminders</span>
+                                        <span>Overdue task reminders</span>
                                         @TriggerState(FormBool("Notifications:OverdueScan:Enabled"), EmailOn && FromSet)
                                     </li>
                                     <li class="mb-1 d-flex align-items-center justify-content-between">
-                                        <span>Due-soon after-action reminders</span>
+                                        <span>Due-soon task reminders</span>
                                         @TriggerState(FormBool("Notifications:DueSoonScan:Enabled"), EmailOn && FromSet)
                                     </li>
                                     <li class="mb-1 d-flex align-items-center justify-content-between">
                                         <span>Regulatory deadline reminders <span class="text-muted">(needs the deadline clock on)</span></span>
                                         @if (FormBool("Notifications:DeadlineScan:Enabled") && !DeadlineClockOn)
-                                        { <span class="im-badge im-b-warn">On — clock off</span> }
+                                        { <span class="im-badge im-b-warn">On but clock off</span> }
                                         else { @TriggerState(FormBool("Notifications:DeadlineScan:Enabled"), EmailOn && FromSet) }
                                     </li>
                                     <li class="mb-1 d-flex align-items-center justify-content-between">
@@ -115,22 +115,22 @@
                                 {
                                     <div class="alert alert-warning small mt-2 mb-0 py-2">
                                         <span class="bi bi-exclamation-triangle-fill me-1"></span>
-                                        One or more notifications are enabled, but <strong>Send email is off</strong> — they will be
-                                        written to the log, not delivered. Turn on Send email below to go live.
+                                        Notifications are enabled but <strong>Send email</strong> is off, so they're logged, not
+                                        delivered. Turn on Send email below to go live.
                                     </div>
                                 }
                                 else if (EmailOn && !FromSet)
                                 {
                                     <div class="alert alert-warning small mt-2 mb-0 py-2">
                                         <span class="bi bi-exclamation-triangle-fill me-1"></span>
-                                        Email is on but the <strong>From address</strong> is blank — set it below or sends will fail.
+                                        Email is on but the <strong>From address</strong> is blank. Set it below or sends will fail.
                                     </div>
                                 }
                                 else if (EmailOn && FromSet && !AnyTriggerOn && !LegalDistributionSet)
                                 {
                                     <div class="alert alert-info small mt-2 mb-0 py-2">
                                         <span class="bi bi-info-circle me-1"></span>
-                                        Email is ready, but no notifications are enabled yet — turn on the triggers you want below.
+                                        Email is ready, but no notifications are enabled. Turn on the ones you want below.
                                     </div>
                                 }
                             </div>
@@ -204,8 +204,8 @@
                             <div class="card-header"><span class="bi bi-image me-1"></span>Report logo</div>
                             <div class="card-body">
                                 <p class="small text-muted">
-                                    Sits centred above the organisation and team names in the report header. PNG or JPEG,
-                                    up to 2&nbsp;MB; a wide (landscape) image reads best. Leave unset for a text-only header.
+                                    Shown above the organization and team names in the report header. PNG or JPEG,
+                                    up to 2&nbsp;MB. Landscape images work best. Without a logo, the header is text only.
                                 </p>
                                 <div class="row g-3 align-items-center">
                                     <div class="col-sm-5">
@@ -236,22 +236,22 @@
 
                         <div class="card mb-3">
                             <div class="card-header d-flex justify-content-between align-items-center">
-                                <span><span class="bi bi-palette me-1"></span>Brand colours</span>
+                                <span><span class="bi bi-palette me-1"></span>Brand colors</span>
                                 <div>
                                     <button class="btn btn-sm btn-outline-secondary me-2" @onclick="ResetBrand">Reset to defaults</button>
-                                    <button class="btn btn-sm btn-primary" @onclick="SaveBrand">Save brand colours</button>
+                                    <button class="btn btn-sm btn-primary" @onclick="SaveBrand">Save brand colors</button>
                                 </div>
                             </div>
                             <div class="card-body">
                                 <p class="small text-muted">
-                                    White-label the app's brand colours. The <strong>accent</strong> drives links, active states,
-                                    focus rings and highlights; the <strong>primary</strong> colour is used for primary buttons and
-                                    structural ink. A legible emphasis shade is derived automatically so links stay AA-contrast in
-                                    both light and dark. Severity, phase and status colours are fixed and never rebrand.
+                                    The <strong>accent</strong> colors links, active states, focus rings and highlights. The
+                                    <strong>primary</strong> color is used for primary buttons and structural ink. Link shades are
+                                    adjusted automatically to keep AA contrast in light and dark themes. Severity, phase and status
+                                    colors don't change.
                                 </p>
                                 <div class="row g-3">
                                     <div class="col-sm-6">
-                                        <label class="form-label mb-1 fw-semibold">Accent colour</label>
+                                        <label class="form-label mb-1 fw-semibold">Accent color</label>
                                         @if (IsOverridden("Branding:AccentColor")) { <span class="im-badge im-b-info ms-1">Custom</span> }
                                         else { <span class="im-badge im-b-neutral ms-1">Default</span> }
                                         <div class="d-flex align-items-center gap-2 mt-1">
@@ -263,7 +263,7 @@
                                         <div class="form-text">Blank uses the built-in gold.</div>
                                     </div>
                                     <div class="col-sm-6">
-                                        <label class="form-label mb-1 fw-semibold">Primary action colour</label>
+                                        <label class="form-label mb-1 fw-semibold">Primary action color</label>
                                         @if (IsOverridden("Branding:InkColor")) { <span class="im-badge im-b-info ms-1">Custom</span> }
                                         else { <span class="im-badge im-b-neutral ms-1">Default</span> }
                                         <div class="d-flex align-items-center gap-2 mt-1">
@@ -300,8 +300,8 @@
                             </div>
                             <div class="card-body">
                                 <p class="small text-muted">
-                                    Choose which body sections appear in generated Word/PDF reports and their order. The
-                                    document title, branded header/footer and the integrity stamp always appear.
+                                    Choose which sections appear in Word/PDF reports, and in what order. The title, header,
+                                    footer and integrity stamp always appear.
                                 </p>
                                 <ol class="list-group">
                                     @for (var i = 0; i < _layout.Count; i++)
@@ -377,7 +377,7 @@
                                 <div class="form-text">
                                     @(ChatConfigured
                                         ? "Posts a test message to the configured Slack/Teams channel."
-                                        : "No chat webhook is configured on the host (Chat:Webhook). Configure it server-side to enable chat broadcasts.")
+                                        : "No chat webhook is configured. Set Chat:Webhook on the host to enable chat broadcasts.")
                                 </div>
                             </div>
                         </div>
@@ -387,8 +387,7 @@
         }
         else if (_activeId == "server")
         {
-            <p class="text-muted">These settings are managed in server-side configuration (<code>appsettings.json</code> / environment)
-            and can only be changed on the host. Secrets are never displayed, only their status.</p>
+            <p class="text-muted">Set in <code>appsettings.json</code> or environment variables. Secrets show status only.</p>
             <table class="table table-sm">
                 <thead><tr><th style="width:32%">Setting</th><th>Value / status</th></tr></thead>
                 <tbody>
@@ -410,7 +409,7 @@
                     </tr>
                     <tr><td>AD group → role mapping</td><td><span class="im-badge im-b-neutral">DB-managed</span> <span class="small text-muted ms-2">edit under Roles &amp; access</span></td></tr>
                     <tr>
-                        <td>SIEM stream — webhook</td>
+                        <td>SIEM stream (webhook)</td>
                         <td>
                             @StatusBadge(Config.GetValue<bool>("Siem:Webhook:Enabled"), "Enabled", "Disabled")
                             @if (Config.GetValue<bool>("Siem:Webhook:Enabled"))
@@ -421,7 +420,7 @@
                         </td>
                     </tr>
                     <tr>
-                        <td>SIEM stream — syslog (CEF)</td>
+                        <td>SIEM stream (syslog CEF)</td>
                         <td>
                             @StatusBadge(Config.GetValue<bool>("Siem:Syslog:Enabled"), "Enabled", "Disabled")
                             @if (Config.GetValue<bool>("Siem:Syslog:Enabled"))
@@ -432,7 +431,7 @@
                         </td>
                     </tr>
                     <tr>
-                        <td>SIEM stream — Windows Event Log</td>
+                        <td>SIEM stream (Windows Event Log)</td>
                         <td>
                             @StatusBadge(Config.GetValue<bool>("Siem:EventLog:Enabled"), "Enabled", "Disabled")
                             @if (Config.GetValue<bool>("Siem:EventLog:Enabled"))
@@ -443,7 +442,7 @@
                         </td>
                     </tr>
                     <tr>
-                        <td>Team chat — webhook</td>
+                        <td>Team chat (webhook)</td>
                         <td>
                             @StatusBadge(Config.GetValue<bool>("Chat:Webhook:Enabled"), "Enabled", "Disabled")
                             @if (Config.GetValue<bool>("Chat:Webhook:Enabled"))
@@ -454,7 +453,7 @@
                         </td>
                     </tr>
                     <tr>
-                        <td>Secret store — CyberArk CCP</td>
+                        <td>Secret store (CyberArk CCP)</td>
                         <td>
                             @StatusBadge(Config.GetValue<bool>("Secrets:CyberArk:Enabled"), "Enabled", "Disabled")
                             @if (Config.GetValue<bool>("Secrets:CyberArk:Enabled"))
@@ -471,13 +470,13 @@
                     </tr>
                 </tbody>
             </table>
-            <p class="small text-muted mt-2">Auto-seal is an editable operational setting (see <strong>Governance &amp; security</strong>).
-            Run an on-demand verify or seal from <a href="integrity">Integrity &amp; Audit</a>.</p>
+            <p class="small text-muted mt-2">Auto-seal is set in-app under <strong>Governance &amp; security</strong>.
+            To verify or seal on demand, go to <a href="integrity">Integrity &amp; audit</a>.</p>
         }
         else if (_activeId == "source")
         {
-            <p class="text-muted">Where each setting's <strong>effective</strong> value resolves from right now. Database overrides
-            win over <code>appsettings.json</code> for the operational subset; everything else stays server-side. Secrets show status only.</p>
+            <p class="text-muted">For operational settings, a database override wins over <code>appsettings.json</code>.
+            Everything else is server-side only. Secrets show status only.</p>
 
             <h6 class="text-uppercase small text-muted mt-3">Operational (admin-editable)</h6>
             <table class="table table-sm">
@@ -561,9 +560,8 @@
             else
             {
                 <p class="small text-muted mb-2">
-                    Read from the out-of-band backup/restore status file
-                    (<code>@_backup.Source</code>). The app never writes it; the SQL Agent backup and the
-                    restore-verification job do (see <code>docs/OPERATIONS.md §1.3</code>).
+                    Read from <code>@_backup.Source</code>, which the SQL Agent backup and restore-verification
+                    jobs write. CaseBook only reads it. See <code>docs/OPERATIONS.md §1.3</code>.
                 </p>
                 <table class="table table-sm">
                     <tbody>
@@ -588,10 +586,9 @@
 
             <h6 class="text-uppercase small text-muted mt-3">Evidence-at-rest integrity</h6>
             <p class="small text-muted mb-2">
-                F-17: a background job re-hashes stored evidence and compares it to the recorded SHA-256
-                (which the audit chain protects), so bit-rot or tampering of the files themselves is caught.
-                Enable it and set the cadence under <em>Settings → Integrity</em>; alerts reuse the
-                integrity-alert distribution.
+                A background job re-hashes stored evidence and compares it to the SHA-256 recorded in the
+                audit chain, catching bit-rot or tampering. Turn it on and set the interval under
+                <strong>Governance &amp; security</strong>. Alerts go to the integrity-alert distribution.
             </p>
             <table class="table table-sm">
                 <tbody>
@@ -603,7 +600,7 @@
                                 <span class="im-badge im-b-neutral">Not run</span>
                                 <span class="small text-muted ms-2">
                                     @(Config.GetValue<bool>("Integrity:EvidenceVerify:Enabled")
-                                        ? "enabled — awaiting the first pass"
+                                        ? "enabled, awaiting first pass"
                                         : "disabled")
                                 </span>
                             </td>
@@ -633,7 +630,7 @@
                                 <td>@(d.CaseNumber ?? d.CaseId.ToString())</td>
                                 <td>
                                     <span class="im-badge im-b-danger">@d.Kind</span>
-                                    <span class="small text-muted ms-2">@d.OriginalFileName — @d.Detail</span>
+                                    <span class="small text-muted ms-2">@d.OriginalFileName: @d.Detail</span>
                                 </td>
                             </tr>
                         }
@@ -643,16 +640,16 @@
 
             <h6 class="text-uppercase small text-muted mt-3">Secret resolution (CyberArk)</h6>
             <p class="small text-muted mb-2">
-                F-19: whether externalized secrets — e.g. the SIEM webhook token written as a
-                <code>@("@cyberark:…")</code> reference — are resolving from CyberArk CCP. Last success and last
-                error only; never a secret value. In-memory since restart, not part of the audit chain.
+                Whether externalized secrets, such as a SIEM webhook token written as a
+                <code>@("@cyberark:…")</code> reference, resolve from CyberArk CCP. Shows the last success and
+                last error, never a secret value. Held in memory since the last restart and not audited.
             </p>
             @if (!Config.GetValue<bool>("Secrets:CyberArk:Enabled"))
             {
                 <p class="small mb-3">
                     <span class="im-badge im-b-neutral">Disabled</span>
-                    <span class="small text-muted ms-2">secrets are read literally from config/env; enable under
-                    <code>Secrets:CyberArk</code> on the host (OPERATIONS §6)</span>
+                    <span class="small text-muted ms-2">secrets are read literally from config/env. Enable
+                    <code>Secrets:CyberArk</code> on the host (see OPERATIONS §6).</span>
                 </p>
             }
             else if (SecretHealth.Current is { } sh)
@@ -665,7 +662,7 @@
                                 @if (!sh.AnyActivity)
                                 {
                                     <span class="im-badge im-b-neutral">No activity</span>
-                                    <span class="small text-muted ms-2">enabled — no secret has been referenced yet this run</span>
+                                    <span class="small text-muted ms-2">enabled, but no secret referenced since restart</span>
                                 }
                                 else if (sh.LastAttemptFailed)
                                 {
@@ -740,7 +737,7 @@
         new("identity", "Identity & branding", ["Organization"]),
         new("notifications", "Notifications", ["Notifications"]),
         new("integrations", "Integrations", ["Integrations"]),
-        new("sla", "Response & SLA", ["Response SLA", "Response SLA — Breach cases", "Severity labels"]),
+        new("sla", "Response & SLA", ["Response SLA", "Breach SLA overrides", "Severity labels"]),
         new("regulatory-deadlines", "Regulatory deadlines", ["Deadline clock"]),
         new("reporting", "Reports", ["Report defaults"]),
         new("governance", "Governance & security", ["Retention", "Integrity", "Access logging", "Security"]),
@@ -882,7 +879,7 @@
     {
         var (css, text) = !enabled ? ("im-badge im-b-neutral", "Off")
             : deliverable ? ("im-badge im-b-ok", "On")
-            : ("im-badge im-b-warn", "On — not delivering");
+            : ("im-badge im-b-warn", "On but not delivering");
         builder.OpenElement(0, "span");
         builder.AddAttribute(1, "class", css);
         builder.AddContent(2, text);
@@ -905,14 +902,14 @@
             "This is a test notification from CaseBook confirming the email configuration.");
 
         Toasts.Success(Config.GetValue<bool>("Email:Enabled")
-            ? $"Test email dispatched to {to}."
-            : $"Email delivery is off; logged a test message for {to}.");
+            ? $"Test email sent to {to}."
+            : $"Email delivery is off. Logged a test message for {to} instead.");
     }
 
     // PROD-02: post a sample message through the configured chat webhook so an admin can verify it end to end.
     private async Task SendTestChat()
     {
-        if (!Chat.Enabled) { Toasts.Warning("No chat webhook is configured on the host (Chat:Webhook)."); return; }
+        if (!Chat.Enabled) { Toasts.Warning("No chat webhook is configured. Set Chat:Webhook on the host."); return; }
 
         var baseUrl = (Config["App:BaseUrl"] ?? "").TrimEnd('/');
         await Chat.SendAsync(new IncidentManager.Application.Abstractions.ChatNotification(
@@ -956,7 +953,7 @@
         checks.Add(WritableCheck("Evidence store writable", Config["EvidenceStore:RootPath"]));
         checks.Add(WritableCheck("Report output writable", Config["ReportOutput:RootPath"]));
         checks.Add(new HealthCheck("Seal signing key present", SigningKeyPresent(),
-            SigningKeyPresent() ? Signer.KeyId : "missing; seals cannot be signed"));
+            SigningKeyPresent() ? Signer.KeyId : "missing, so seals can't be signed"));
         checks.Add(new HealthCheck("Schema up to date", _pendingMigrations is { Count: 0 },
             _pendingMigrations is { Count: > 0 } ? $"{_pendingMigrations.Count} pending" : "no pending migrations"));
 
@@ -1067,15 +1064,15 @@
         _brandError = null;
         var accent = NullIfBlank(_accentColor);
         var ink = NullIfBlank(_inkColor);
-        if (accent is not null && !BrandPalette.IsValidHex(accent)) { _brandError = "Accent colour must be a hex value like #2563eb."; return; }
-        if (ink is not null && !BrandPalette.IsValidHex(ink)) { _brandError = "Primary colour must be a hex value like #232a33."; return; }
+        if (accent is not null && !BrandPalette.IsValidHex(accent)) { _brandError = "Accent color must be a hex value like #2563eb."; return; }
+        if (ink is not null && !BrandPalette.IsValidHex(ink)) { _brandError = "Primary action color must be a hex value like #232a33."; return; }
 
         if (accent is null) await Settings.ResetAsync("Branding:AccentColor"); else await Settings.SetAsync("Branding:AccentColor", accent);
         if (ink is null) await Settings.ResetAsync("Branding:InkColor"); else await Settings.SetAsync("Branding:InkColor", ink);
 
         await LoadAsync();
         await JS.InvokeVoidAsync("imBrand.apply", BrandPalette.BuildCss(accent, ink) ?? "");
-        Toasts.Success("Saved brand colours.");
+        Toasts.Success("Saved brand colors.");
     }
 
     private async Task ResetBrand()
@@ -1087,7 +1084,7 @@
         _brandError = null;
         await LoadAsync();
         await JS.InvokeVoidAsync("imBrand.apply", "");
-        Toasts.Info("Brand colours reset to defaults.");
+        Toasts.Info("Brand colors reset to defaults.");
     }
 
     // --- Report logo (IReportBrandingStore) ---
@@ -1103,7 +1100,7 @@
         var ct = file.ContentType ?? "";
         if (!ct.Contains("png", StringComparison.OrdinalIgnoreCase) && !ct.Contains("jpeg", StringComparison.OrdinalIgnoreCase))
         {
-            _logoError = "Please choose a PNG or JPEG image.";
+            _logoError = "Choose a PNG or JPEG image.";
             return;
         }
 
@@ -1119,7 +1116,7 @@
         }
         catch (IOException)
         {
-            _logoError = "That image is larger than the 2 MB limit.";
+            _logoError = "That image is over 2 MB. Choose a smaller file.";
         }
         catch (Exception ex) when (ex is ArgumentException)
         {
@@ -1165,7 +1162,7 @@
         }
 
         await LoadAsync();
-        Toasts.Success(changed == 0 ? $"No changes in {group}." : $"Saved {changed} {group} setting(s).");
+        Toasts.Success(changed == 0 ? $"No changes to save in {group}." : $"Saved {changed} {group} setting(s).");
     }
 
     private async Task ResetOne(string key)

@@ -32,8 +32,8 @@ public static class Tlp
     {
         TlpLevel.Clear => "Disclosure is not limited.",
         TlpLevel.Green => "Limited disclosure: may be shared within the community, not publicly.",
-        TlpLevel.Amber => "Limited disclosure: recipients may share with their organisation and its clients on a need-to-know basis.",
-        TlpLevel.AmberStrict => "Limited disclosure: recipients may share only within their own organisation, on a need-to-know basis.",
+        TlpLevel.Amber => "Limited disclosure: recipients may share with their organization and its clients on a need-to-know basis.",
+        TlpLevel.AmberStrict => "Limited disclosure: recipients may share only within their own organization, on a need-to-know basis.",
         TlpLevel.Red => "For the eyes and ears of individual recipients only; no further disclosure.",
         _ => ""
     };

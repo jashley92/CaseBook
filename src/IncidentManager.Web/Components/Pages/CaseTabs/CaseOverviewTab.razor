@@ -15,6 +15,7 @@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
+@inject ISeverityLabels SevLabels
 @inject IJSRuntime JS
 @inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
 @inject IncidentManager.Application.Compliance.NotificationDeadlineService Deadlines
@@ -77,13 +78,13 @@
                         <input class="form-control form-control-sm" @bind="_edTitle" @bind:event="oninput" />
                     </div>
                     <div class="mb-2">
-                        <label class="form-label small mb-0">@DetectionLabel Case ID</label>
+                        <label class="form-label small mb-0">@DetectionLabel case ID</label>
                         <input class="form-control form-control-sm" @bind="_edDetection" />
                     </div>
                     <div class="mb-2">
                         <label class="form-label small mb-0">Data context <span class="text-muted">(notes)</span></label>
                         <input class="form-control form-control-sm" @bind="_edDataTypes" />
-                        <div class="form-text mt-0">Free text. The Impact assessment's data elements are the authoritative list.</div>
+                        <div class="form-text mt-0">Free-text notes. The impact assessment's data elements are the official list.</div>
                     </div>
                     <div class="mb-2">
                         <label class="form-label small mb-0">Impacted assets</label>
@@ -93,12 +94,12 @@
                         <div class="col-sm-6">
                             <label class="form-label small mb-0">Detected (@TimeDisp.Label)</label>
                             <input type="datetime-local" class="form-control form-control-sm" @bind="_edDetected"
-                                   title="When the matter was first detected or reported. Drives the response-SLA clock and dwell metrics. Set it to the real detection time, not when the case was filed. Entered in @TimeDisp.Label." />
+                                   title="When this was first detected or reported, not when the case was opened. Starts the response SLA clock." />
                         </div>
                         <div class="col-sm-6">
                             <label class="form-label small mb-0">Initial activity <span class="text-muted">(optional)</span></label>
                             <input type="datetime-local" class="form-control form-control-sm" @bind="_edOccurred"
-                                   title="When adversary activity actually began (initial access / first malicious activity), if known. Detected minus this is the dwell time. Entered in @TimeDisp.Label." />
+                                   title="When adversary activity began (initial access), if known. Used to calculate dwell time." />
                         </div>
                     </div>
                     @if (_detailsError is { } derr)
@@ -110,7 +111,7 @@
                         @* EasyMDE enhances this textarea (managed in this tab's OnAfterRenderAsync); value pulled on Save. *@
                         <textarea id="@SummaryEditorId" class="form-control"></textarea>
                     </div>
-                    <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="SaveDetails" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
+                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveDetails" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => _editingDetails = false)">Cancel</button>
                 }
                 else
@@ -121,11 +122,9 @@
                         @if (Case.ThirdParty is not null)
                         {
                             <dt class="col-sm-4">Vendor</dt>
-                            <dd class="col-sm-8">@Case.ThirdParty.VendorName
-                                @if (!string.IsNullOrWhiteSpace(Case.ThirdParty.VendorContact)) { <text>(@Case.ThirdParty.VendorContact)</text> }
-                            </dd>
+                            <dd class="col-sm-8">@Case.ThirdParty.VendorName@(string.IsNullOrWhiteSpace(Case.ThirdParty.VendorContact) ? "" : $" ({Case.ThirdParty.VendorContact})")</dd>
                         }
-                        <dt class="col-sm-4">@DetectionLabel Case</dt>
+                        <dt class="col-sm-4">@DetectionLabel case</dt>
                         <dd class="col-sm-8">@(Case.DetectionCaseId ?? "—")
                             @{ var detectionUrl = DetectionCaseUrl(); }
                             @if (detectionUrl is not null)
@@ -197,7 +196,7 @@
                 }
                 else if (Case.AffectedIndividualsCount is null && Case.DataElements.Count == 0 && string.IsNullOrWhiteSpace(Case.AffectedStates))
                 {
-                    <p class="text-muted small mb-0">Not yet assessed. This captures the structured facts (affected count, data elements, jurisdictions) for the Legal / regulatory handoff.</p>
+                    <p class="text-muted small mb-0">Not assessed yet. Record the affected count, data elements and jurisdictions for the Legal and regulatory handoff.</p>
                 }
                 else
                 {
@@ -232,16 +231,17 @@
                     <h3>Regulatory notification</h3>
                     @if (_deadlines.Headline is { } hl)
                     {
-                        <span class="@Ui.SlaBadge(hl.State)" title="Earliest / most urgent jurisdiction">
+                        <span class="@Ui.SlaBadge(hl.State)" title="Most urgent jurisdiction">
                             <span class="bi @Ui.SlaGlyph(hl.State)" aria-hidden="true"></span> @Ui.SlaLabel(hl.State)
                         </span>
                     }
                 </div>
                 <div class="im-sec-body">
                     <WhyThisMatters Class="mb-2">
-                        Regulators set short, fixed windows for notice; NYDFS Part 500, for example, expects notice within 72 hours of
-                        determining a reportable cybersecurity incident. The clock runs per jurisdiction from the data elements recorded in
-                        the impact assessment, so a late or missing notice is visible here before it happens. It reminds only: a person records the report.
+                        Regulators set short, fixed notice windows. NYDFS Part 500, for example, expects notice within 72 hours of
+                        determining a reportable cybersecurity incident. Each jurisdiction's clock comes from the data elements in the
+                        impact assessment, so a notice at risk of running late shows here first. CaseBook only tracks the deadline:
+                        notifying regulators, and recording it here, is up to your team.
                     </WhyThisMatters>
                     @if (_deadlines.ReportedAtUtc is { } rep)
                     {
@@ -252,13 +252,13 @@
                     {
                         <p class="text-muted small mb-0">
                             @(_deadlines.StartBasis == NotificationStartBasis.Determination
-                                ? "The countdown starts once this case is determined material (record the materiality determination)."
+                                ? "The countdown starts once the case is determined material. Record that from the Actions menu."
                                 : "The countdown starts once this case is classified a Breach.")
                         </p>
                     }
                     else if (_deadlines.StartedButNoJurisdictions)
                     {
-                        <p class="text-muted small mb-0">No notifying jurisdictions are triggered by the recorded data elements. Add the involved data elements in the impact assessment above.</p>
+                        <p class="text-muted small mb-0">The recorded data elements don't trigger notice in any jurisdiction. If more data was involved, add it to the impact assessment above.</p>
                     }
                     else if (_deadlines.Statuses.Count > 0)
                     {
@@ -290,7 +290,7 @@
                                     <div>
                                         <label class="form-label small mb-0">Reported at (@TimeDisp.Label)</label>
                                         <input type="datetime-local" class="form-control form-control-sm" @bind="_reportedAt"
-                                               title="When regulators were notified. Entered in @TimeDisp.Label (the same convention as every other time field), stored as UTC. This stops the notification-deadline countdown." />
+                                               title="When regulators were notified. Saving this stops the notification countdown." />
                                     </div>
                                     <button class="btn btn-sm btn-primary" @onclick="MarkReported">Save</button>
                                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => _markingReported = false">Cancel</button>
@@ -334,7 +334,7 @@
                 </div>
                 @if (_showReadiness)
                 {
-                    <p class="text-muted small mb-2">Completeness required to <strong>@StageGateTriggers.Label(rg.Trigger).ToLowerInvariant()</strong>. Enforced when you make the transition, and overridable with a recorded justification.</p>
+                    <p class="text-muted small mb-2">What's needed to <strong>@StageGateTriggers.Label(rg.Trigger).ToLowerInvariant()</strong>. Checked when you make the change. You can override it with a recorded justification.</p>
                     <GateChecklist Eval="rg" Attested="_readinessAttested" Interactive="false" />
                 }
             </div>
@@ -405,7 +405,7 @@
                 }
                 @foreach (var t in Case.Techniques.OrderBy(x => x.Tactic).ThenBy(x => x.TechniqueId))
                 {
-                    <span class="im-chip im-chip-tac" style="--tac:@Ui.TacticColor(t.Tactic)" title="@(t.TechniqueId + (string.IsNullOrWhiteSpace(t.Name) ? "" : " — " + t.Name) + " · " + Ui.Label(t.Tactic))">
+                    <span class="im-chip im-chip-tac" style="--tac:@Ui.TacticColor(t.Tactic)" title="@(t.TechniqueId + (string.IsNullOrWhiteSpace(t.Name) ? "" : ": " + t.Name) + " · " + Ui.Label(t.Tactic))">
                         <a href="https://attack.mitre.org/techniques/@(t.TechniqueId.Replace('.', '/'))/" target="_blank" rel="noopener noreferrer"><code>@t.TechniqueId</code></a>
                         @if (t.Tactic != MitreTactic.Unspecified) { <span class="im-chip-role">@Ui.Label(t.Tactic)</span> }
                         <AuthorizeView Policy="@Policies.EditCases" Context="tq">
@@ -416,7 +416,7 @@
                 }
                 <AuthorizeView Policy="@Policies.EditCases" Context="tqadd">
                     <button type="button" class="im-chip-add" @onclick="OpenTechMatrix">
-                        <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span> Techniques
+                        <span class="bi bi-diagram-3 me-1" aria-hidden="true"></span> @(Case.Techniques.Count == 0 ? "Add techniques…" : "Edit techniques…")
                     </button>
                 </AuthorizeView>
             </div>
@@ -461,7 +461,7 @@
                     {
                         <div class="d-flex align-items-center gap-2">
                             <span class="im-badge im-b-info">@_linkTargetLabel</span>
-                            <button class="btn btn-sm btn-link p-0" @onclick="ClearLinkTarget">change</button>
+                            <button class="btn btn-sm btn-link p-0" @onclick="ClearLinkTarget">Change</button>
                         </div>
                     }
                     else
@@ -482,7 +482,7 @@
                         }
                         else if (!string.IsNullOrWhiteSpace(_linkQuery))
                         {
-                            <div class="form-text">No matching visible cases.</div>
+                            <div class="form-text">No matching cases that you have access to.</div>
                         }
                     }
                 </div>
@@ -827,7 +827,7 @@
         catch (StaleEditException ex) // FR-06: another author changed these fields while we were editing
         {
             _detailsBaseline = ex.CurrentStamp; // re-baseline so a deliberate re-Save overwrites
-            _detailsError = "Another author saved changes to these details while you were editing. Your text is unsaved — review the current values, then Save again to overwrite, or Cancel to discard yours.";
+            _detailsError = "Someone else saved changes to these details while you were editing, so yours weren't saved. Review the current values, then Save again to overwrite them, or Cancel to discard yours.";
             await OnChanged.InvokeAsync(); // refresh the rest of the workspace to the newer values
             return;
         }
@@ -892,7 +892,7 @@
         catch (StaleEditException ex) // FR-06: another author changed the impact assessment while we were editing
         {
             _impactBaseline = ex.CurrentStamp;
-            _impactError = "Another author saved a different impact assessment while you were editing. Your entries are unsaved — review the current values, then Save again to overwrite, or Cancel to discard yours.";
+            _impactError = "Someone else saved the impact assessment while you were editing, so your entries weren't saved. Review the current values, then Save again to overwrite them, or Cancel to discard yours.";
             await OnChanged.InvokeAsync();
             return;
         }
@@ -913,7 +913,7 @@
 
         foreach (var x in Case.SeverityChanges)
             yield return new HistoryRow(x.ChangedAtUtc, "Severity",
-                $"{(x.From?.ToString() ?? "—")} → {x.To}", x.Reason, x.ChangedBy);
+                $"{(x.From is { } sf ? SevLabels.For(sf) : "—")} → {SevLabels.For(x.To)}", x.Reason, x.ChangedBy);
 
         foreach (var x in Case.StatusChanges)
             yield return new HistoryRow(x.ChangedAtUtc, "Phase",

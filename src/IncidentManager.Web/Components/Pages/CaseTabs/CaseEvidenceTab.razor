@@ -40,7 +40,7 @@
                     </div>
                 </div>
                 <div class="small text-muted mt-2">
-                    <span class="bi bi-clipboard me-1"></span>Paste a screenshot, or drag files onto this tab. They're hashed and logged to the chain of custody like any upload.
+                    <span class="bi bi-clipboard me-1"></span>Paste a screenshot or drag files onto this tab. They're hashed and logged to the chain of custody like any upload.
                     @if (_file is not null) { <span class="ms-1">Ready: <strong>@_file.Name</strong>. Add a description and click Upload.</span> }
                 </div>
                 @if (_uploadError is not null) { <div class="text-danger small mt-2">@_uploadError</div> }
@@ -56,9 +56,8 @@
     {
         <div class="empty-state">
             <div class="empty-state-icon"><span class="bi bi-file-earmark-lock" aria-hidden="true"></span></div>
-            <div class="empty-state-title">No evidence attached</div>
-            <div class="empty-state-msg">Upload, paste or drop files here. Each is hashed on arrival and gets its own chain of custody,
-                so you can later show it hasn't changed and who handled it.</div>
+            <div class="empty-state-title">No evidence yet</div>
+            <div class="empty-state-msg">Upload, paste or drop files here. Each file is hashed on arrival and gets its own chain of custody.</div>
         </div>
     }
     else
@@ -91,7 +90,7 @@
                                 <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => OnPreview.InvokeAsync(ev.Id)">Preview</button>
                             }
                             <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => ToggleCustody(ev.Id)"
-                                    title="Chain of custody — access and transfer history"
+                                    title="Access and transfer history"
                                     aria-expanded="@(_custodyOpen.Contains(ev.Id) ? "true" : "false")">
                                 <span class="bi @(_custodyOpen.Contains(ev.Id) ? "bi-chevron-down" : "bi-clock-history")" aria-hidden="true"></span> Custody
                             </button>
@@ -106,9 +105,9 @@
                                     <span class="bi bi-shield-check me-1" aria-hidden="true"></span>Chain of custody
                                 </div>
                                 <WhyThisMatters Class="mb-2">
-                                    Each file's SHA-256 is recorded at upload and re-checked on a schedule, and every download, preview and
-                                    hand-off is logged with who and when. That unbroken record is what lets the evidence be relied on later:
-                                    by counsel, an insurer, law enforcement or a regulator.
+                                    Each file's SHA-256 is recorded at upload and re-checked on a schedule. Every download, preview and
+                                    hand-off is logged with who and when, so counsel, insurers, law enforcement or regulators can rely on
+                                    the evidence later.
                                 </WhyThisMatters>
                                 @if (_custodyLoading.Contains(ev.Id))
                                 {
@@ -141,7 +140,7 @@
                                         @* PROD-13: a hand-off outside CaseBook is attested here, since no export ships evidence bytes. *@
                                         <div class="border rounded p-2 mt-2 bg-body">
                                             <div class="small fw-semibold mb-1">Record a transfer</div>
-                                            <div class="small text-muted mb-2">A copy left CaseBook's custody: who received it, how, and why. Added to the chain of custody and the audit trail.</div>
+                                            <div class="small text-muted mb-2">Record who received a copy outside CaseBook, how and why. It's added to the chain of custody and the audit trail.</div>
                                             <div class="row g-2">
                                                 <div class="col-md-4">
                                                     <label class="form-label small mb-0" for="xfer-to-@ev.Id">Recipient</label>
@@ -231,7 +230,7 @@
         {
             // REL-06: domain messages pass through; EF/IO/internal errors become a plain line (detail logged).
             _uploadError = UserFacingError.Describe(ex, Logger, "uploading evidence",
-                "The file couldn't be uploaded. Please try again.");
+                "Couldn't upload the file. Try again.");
         }
         finally
         {
@@ -261,7 +260,7 @@
                 catch (Exception ex)
                 {
                     // REL-06: per-file — keep the name, map the reason (domain verbatim / internal generic).
-                    _uploadError = $"{f.Name}: {UserFacingError.Describe(ex, Logger, "uploading evidence", "couldn't be uploaded. Please try again.")}";
+                    _uploadError = $"{f.Name}: {UserFacingError.Describe(ex, Logger, "uploading evidence", "couldn't be uploaded. Try again.")}";
                 }
             }
         }
@@ -321,7 +320,7 @@
         catch (Exception ex)
         {
             _xferError = UserFacingError.Describe(ex, Logger, "recording an evidence transfer",
-                "The transfer couldn't be recorded. Please try again.");
+                "Couldn't record the transfer. Try again.");
         }
         finally
         {

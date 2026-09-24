@@ -305,9 +305,9 @@ public sealed class CaseService
         // with the same friendly message rather than silently anchoring the SLA to the wrong instant.
         var detectedAtUtc = request.DetectedAtUtc ?? now;
         if (detectedAtUtc > now)
-            throw new ArgumentException("The detected time cannot be in the future.");
+            throw new ArgumentException("The detected time can't be in the future.");
         if (request.OccurredAtUtc is { } occurred && occurred > detectedAtUtc)
-            throw new ArgumentException("Activity cannot begin after it was detected.");
+            throw new ArgumentException("Activity can't begin after it was detected.");
 
         // Retry on the rare auto-sequence collision (the unique CaseNumber / per-scheme sequence indexes
         // are the guard). A fresh context per attempt so a failed save's audit entry never lingers into the
@@ -554,7 +554,7 @@ public sealed class CaseService
         // fields changed since the modal was opened, refuse rather than silently clobbering the other author.
         if (expectedStamp is not null && c.LegalReferralConcurrencyStamp() != expectedStamp)
             throw new StaleEditException(c.LegalReferralConcurrencyStamp(),
-                "Another author changed the Legal referral while you were editing.");
+                "Someone else changed the Legal referral while you were editing. Reload and try again.");
         c.ReferToLegal(_user.UserId, contact, relevanceNote, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
@@ -596,7 +596,7 @@ public sealed class CaseService
         // determination changed since the modal was opened, refuse rather than silently clobbering the rationale.
         if (expectedStamp is not null && c.MaterialityConcurrencyStamp() != expectedStamp)
             throw new StaleEditException(c.MaterialityConcurrencyStamp(),
-                "Another author changed the materiality determination while you were editing.");
+                "Someone else changed the materiality determination while you were editing. Reload and try again.");
         c.RecordMateriality(status, decisionMaker, decidedOnUtc, rationale, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
@@ -622,7 +622,7 @@ public sealed class CaseService
         // opened, refuse rather than silently clobbering the other author's edit (last-write-wins).
         if (expectedStamp is not null && c.DetailsConcurrencyStamp() != expectedStamp)
             throw new StaleEditException(c.DetailsConcurrencyStamp(),
-                "Another author changed these details while you were editing.");
+                "Someone else changed these details while you were editing. Reload and try again.");
         c.UpdateDetails(title, summary, detectionCaseId, dataTypesInvolved, impactedAssets,
             detectedAtUtc, occurredAtUtc, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
@@ -640,7 +640,7 @@ public sealed class CaseService
         // FR-06: expected-value optimistic-concurrency, as on the details editor.
         if (expectedStamp is not null && c.ImpactConcurrencyStamp() != expectedStamp)
             throw new StaleEditException(c.ImpactConcurrencyStamp(),
-                "Another author changed the impact assessment while you were editing.");
+                "Someone else changed the impact assessment while you were editing. Reload and try again.");
         c.SetImpactAssessment(affectedIndividualsCount, dataElementKeys, affectedStates, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
@@ -932,7 +932,7 @@ public sealed class CaseService
     {
         Require();
         using var db = _factory.CreateDbContext();
-        if (caseId == relatedCaseId) throw new ArgumentException("A case cannot be linked to itself.");
+        if (caseId == relatedCaseId) throw new ArgumentException("A case can't be linked to itself.");
 
         // Need-to-know: both ends must be visible to the caller.
         var visible = await Scoped(db.Cases.AsNoTracking())
@@ -1187,7 +1187,7 @@ public sealed class CaseService
             // F-12: with two-person release on, a single person can't lift a hold; they request it instead.
             if (c.LegalHold && LegalHoldReleaseNeedsSecondApprover)
                 throw new InvalidOperationException(
-                    "Releasing a legal hold needs a second approver. Request the release; someone else with Manage Legal approves it.");
+                    "Releasing a legal hold needs a second approver. Request the release, and someone else with Manage Legal approves it.");
             if (c.LegalHold && reason is null)
                 throw new ArgumentException("Say why the legal hold is being released.");
             c.ReleaseLegalHold(_user.UserId, _clock.UtcNow);
@@ -1391,7 +1391,7 @@ public sealed class CaseService
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, caseId, ct);
         var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
-                   ?? throw new InvalidOperationException("Action item not found.");
+                   ?? throw new InvalidOperationException("Task not found.");
         item.Status = status;
         item.ModifiedBy = _user.UserId;
         item.ModifiedAtUtc = _clock.UtcNow;
@@ -1438,7 +1438,7 @@ public sealed class CaseService
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, caseId, ct);
         var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
-                   ?? throw new InvalidOperationException("Action item not found.");
+                   ?? throw new InvalidOperationException("Task not found.");
 
         item.Title = cleanTitle;
         item.Owner = string.IsNullOrWhiteSpace(owner) ? null : owner.Trim();
@@ -1460,7 +1460,7 @@ public sealed class CaseService
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, caseId, ct);
         var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
-                   ?? throw new InvalidOperationException("Action item not found.");
+                   ?? throw new InvalidOperationException("Task not found.");
         item.Owner = string.IsNullOrWhiteSpace(owner) ? null : owner.Trim();
         item.ModifiedBy = _user.UserId;
         item.ModifiedAtUtc = _clock.UtcNow;

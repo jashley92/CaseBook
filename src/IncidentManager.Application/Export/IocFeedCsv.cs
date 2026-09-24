@@ -20,7 +20,7 @@ public static class IocFeedCsv
 
         // A leading comment line documents provenance without breaking parsers (most treat a
         // leading '#'/blank column-count-mismatch line as skippable; the real header follows).
-        sb.Append("# CaseBook malicious-IOC feed — confirmed indicators across your visible cases, generated ")
+        sb.Append("# CaseBook malicious-IOC feed: confirmed indicators across your visible cases, generated ")
           .Append(generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(" UTC\r\n");
 
         sb.Append("type,indicator,disposition,first_seen_utc,last_seen_utc,case_count,cases,sources\r\n");

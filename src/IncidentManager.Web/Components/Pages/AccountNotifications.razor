@@ -5,10 +5,10 @@
 @inject IConfiguration Config
 @inject ToastService Toasts
 
-<PageTitle>Notification preferences</PageTitle>
+<PageTitle>Notification settings</PageTitle>
 
-<PageHeader Title="Notification preferences"
-           Subtitle="Choose how CaseBook keeps you posted on your own work. These settings apply only to you." />
+<PageHeader Title="Notification settings"
+           Subtitle="How CaseBook emails you about your own work. These settings apply only to you." />
 
 @if (!_loaded)
 {
@@ -19,8 +19,8 @@ else
     <div class="im-card nc-card" style="max-width:44rem">
         <div class="fw-semibold mb-1"><span class="bi bi-envelope-paper me-1" aria-hidden="true"></span>Work digest</div>
         <p class="text-muted small mb-3">
-            A single email summarising your open follow-up items — overdue, due today, and due this week —
-            instead of a separate reminder for each. Sent on the cadence you pick. You can turn it off anytime.
+            One email summarizing your overdue tasks and those due today or this week, instead of a separate
+            reminder for each.
         </p>
         <div class="mb-1">
             @foreach (var c in new[] { DigestCadence.Off, DigestCadence.Daily, DigestCadence.Weekly })
@@ -40,30 +40,30 @@ else
     <div class="im-card nc-card mt-3" style="max-width:44rem">
         <div class="fw-semibold mb-1"><span class="bi bi-bell me-1" aria-hidden="true"></span>Individual emails</div>
         <p class="text-muted small mb-3">
-            Turn off the individual reminders you don't want. (Breach escalations to Legal/Privacy are a
-            compliance obligation and are always sent.)
+            Turn off the reminders you don't want. Breach escalations to Legal / Privacy are a compliance
+            obligation and are always sent.
             @if (_cadence != DigestCadence.Off)
             {
                 <span class="d-block mt-1"><span class="bi bi-info-circle me-1" aria-hidden="true"></span>
-                    Your digest already covers overdue and due-soon items, so you can safely turn those off here.</span>
+                    Your digest already covers overdue and due-soon tasks, so you can turn those off here.</span>
             }
         </p>
 
         @Toggle("New case assignments", "when you're assigned to a case", () => _receiveAssignment, v => _receiveAssignment = v, _mandAssignment)
-        @Toggle("Overdue reminders", "when one of your follow-up items passes its due date", () => _receiveOverdue, v => _receiveOverdue = v, _mandOverdue)
-        @Toggle("Due-soon reminders", "shortly before a follow-up item is due", () => _receiveDueSoon, v => _receiveDueSoon = v, _mandDueSoon)
+        @Toggle("Overdue reminders", "when one of your tasks passes its due date", () => _receiveOverdue, v => _receiveOverdue = v, _mandOverdue)
+        @Toggle("Due-soon reminders", "shortly before one of your tasks is due", () => _receiveDueSoon, v => _receiveDueSoon = v, _mandDueSoon)
     </div>
 
     <div class="mt-3">
         <button class="btn btn-sm btn-primary" @onclick="Save" disabled="@_saving">
             @if (_saving) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
-            Save preferences
+            Save
         </button>
     </div>
     <p class="text-muted small mt-3 mb-0" style="max-width:44rem">
         <span class="bi bi-info-circle me-1" aria-hidden="true"></span>
-        Emails are delivered only when an administrator has enabled the relevant feature for this deployment.
-        Until then your choices are saved and take effect once it's turned on.
+        Emails go out only once an administrator turns on the feature for this deployment. Your choices are
+        saved and apply from then.
     </p>
 }
 
@@ -99,9 +99,9 @@ else
                 SuppressAssignment: !_mandAssignment && !_receiveAssignment,
                 SuppressOverdue: !_mandOverdue && !_receiveOverdue,
                 SuppressDueSoon: !_mandDueSoon && !_receiveDueSoon));
-            Toasts.Success("Notification preferences saved.");
+            Toasts.Success("Notification settings saved.");
         }
-        catch (Exception ex) { Toasts.Error(ex.Message); }
+        catch (Exception) { Toasts.Error("Couldn't save your notification settings. Try again."); }
         finally { _saving = false; }
     }
 
@@ -130,6 +130,6 @@ else
     {
         DigestCadence.Daily => "One digest each day you have open items.",
         DigestCadence.Weekly => "One digest each week you have open items.",
-        _ => "No digest — you'll still get any individual reminders enabled below."
+        _ => "No digest. You'll still get the individual emails turned on below."
     };
 }

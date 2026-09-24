@@ -82,7 +82,7 @@ public sealed class NotificationRuleService
         if (id is { } ruleId)
         {
             var rule = await db.NotificationRules.FirstOrDefaultAsync(r => r.Id == ruleId, ct)
-                ?? throw new InvalidOperationException("Notification rule not found.");
+                ?? throw new InvalidOperationException("That rule no longer exists. Reload the page and try again.");
             rule.Label = label;
             rule.WindowHours = windowHours;
             rule.ModifiedBy = _user.UserId;
@@ -91,7 +91,7 @@ public sealed class NotificationRuleService
         else
         {
             if (await db.NotificationRules.AnyAsync(r => r.Code == code, ct))
-                throw new InvalidOperationException($"A rule for '{code}' already exists.");
+                throw new InvalidOperationException($"A rule for '{code}' already exists. Edit that rule instead.");
             db.NotificationRules.Add(new NotificationRule
             {
                 Code = code, Label = label, WindowHours = windowHours,
@@ -109,7 +109,7 @@ public sealed class NotificationRuleService
         AdminActionPermissions.Require<NotificationRuleService>(_user);
         using var db = _factory.CreateDbContext();
         var rule = await db.NotificationRules.FirstOrDefaultAsync(r => r.Id == id, ct)
-            ?? throw new InvalidOperationException("Notification rule not found.");
+            ?? throw new InvalidOperationException("That rule no longer exists. Reload the page and try again.");
         if (rule.IsActive != archived) return;
         rule.IsActive = !archived;
         rule.ModifiedBy = _user.UserId;
@@ -125,7 +125,7 @@ public sealed class NotificationRuleService
         var rule = await db.NotificationRules.FirstOrDefaultAsync(r => r.Id == id, ct);
         if (rule is null) return;
         if (rule.IsSystem)
-            throw new InvalidOperationException("Built-in rules can't be deleted — archive it instead.");
+            throw new InvalidOperationException("A built-in rule can't be deleted; archive it instead.");
         db.NotificationRules.Remove(rule);
         await db.SaveChangesAsync(ct);
     }

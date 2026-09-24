@@ -291,7 +291,7 @@ public sealed class ReportingIntegrationTests : IDisposable
 
         model.DataElementsSummary.Should().Contain("Social Security number").And.Contain("Payment card");
         // Grouped by jurisdiction (ordinal), elements in reference display order within each group.
-        model.NotificationTriggersSummary.Should().Be("NY — Social Security number; US — Social Security number, Payment card");
+        model.NotificationTriggersSummary.Should().Be("NY: Social Security number; US: Social Security number, Payment card");
     }
 
     [Fact]

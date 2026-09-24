@@ -33,7 +33,7 @@
             <option value="">Any</option>
             @foreach (var act in Enum.GetValues<AuditAction>())
             {
-                <option value="@act">@act</option>
+                <option value="@act">@AuditLabels.Label(act)</option>
             }
         </select>
     </div>
@@ -64,7 +64,7 @@
 else
 {
     <div class="d-flex justify-content-between align-items-center mb-1">
-        <span class="small text-muted">@_audit.Count entr@(_audit.Count == 1 ? "y" : "ies")@(AuditFiltered ? " (filtered)" : "")@(_audit.Count >= AuditPageSize ? $" — showing the most recent {AuditPageSize}" : "")</span>
+        <span class="small text-muted">@_audit.Count entr@(_audit.Count == 1 ? "y" : "ies")@(AuditFiltered ? " (filtered)" : "")@(_audit.Count >= AuditPageSize ? $". Showing the most recent {AuditPageSize}." : "")</span>
         @if (AuditFiltered)
         {
             <button class="btn btn-sm btn-link p-0" @onclick="ClearAuditFilter">Clear filters</button>
@@ -89,7 +89,7 @@ else
                             {
                                 <button type="button" class="btn btn-sm btn-link p-0 me-1 align-baseline"
                                         @onclick="() => ToggleRaw(a.Sequence)" aria-expanded="@open"
-                                        title="@(open ? "Hide the raw change data" : "Show exactly what changed (raw)")"
+                                        title="@(open ? "Hide raw change data" : "Show raw change data")"
                                         aria-label="@(open ? $"Hide raw change data for entry {a.Sequence}" : $"Show raw change data for entry {a.Sequence}")">
                                     <span class="bi @(open ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>
                                 </button>
@@ -98,7 +98,7 @@ else
                         </td>
                         <td class="small">@a.AtUtc.ToString("u")</td>
                         <td>@Users.DisplayFor(a.Actor)</td>
-                        <td>@a.Action</td>
+                        <td>@AuditLabels.Label(a.Action)</td>
                         <td>
                             @a.EntityType
                             @if (!string.IsNullOrWhiteSpace(a.EntityLabel))
@@ -146,8 +146,8 @@ else
             <span class="im-badge im-b-neutral rounded-pill">@(_viewedBy?.Count ?? 0)</span>
         </h2>
         <p class="small text-muted mb-2">
-            Who has opened this case, coalesced into view-sessions. Access logging is out of the
-            tamper-evident chain; scope is set in Administration → Settings → Access logging.
+            Who has opened this case, grouped into sessions. Access logs aren't part of the tamper-evident
+            trail. Configure them in Administration → Settings → Access logging.
         </p>
         @if (_viewedBy is null)
         {
@@ -155,7 +155,7 @@ else
         }
         else if (_viewedBy.Count == 0)
         {
-            <p class="small text-muted">No recorded opens yet (or access logging is off).</p>
+            <p class="small text-muted">No views recorded yet, or access logging is off.</p>
         }
         else
         {

@@ -66,7 +66,7 @@ public sealed class IntegrityService
         // competent rewrite of sealed history (or an altered/re-signed seal) trips the same F-16 alarm
         // automatically on the monitor's cadence, not only when someone happens to run a manual check (S-05).
         if (result.IsValid && await VerifyLatestSealAsync(ct) is { } sc && !sc.Result.IsValid)
-            result = ChainVerificationResult.Broken(sc.Sequence, "Seal check failed — " + sc.Result.Detail);
+            result = ChainVerificationResult.Broken(sc.Sequence, "Seal check failed: " + sc.Result.Detail);
 
         if (_monitor.RecordResult(result, _clock.UtcNow))
             await _alerts.OnChainBrokenAsync(result, ct);
@@ -230,9 +230,9 @@ public sealed class IntegrityService
         var detail = (signatureValid, chainMatches) switch
         {
             (true, true) => "Signature authentic and the chain head is unchanged since sealing.",
-            (false, _) => "Signature invalid — the seal record was altered or signed by a different key.",
-            (true, false) when entry is null => $"No audit entry at sealed sequence {seal.UpToSequence} — history was truncated.",
-            (true, false) => $"Chain head at sequence {seal.UpToSequence} differs from the seal — history was rewritten after sealing.",
+            (false, _) => "Signature invalid. The seal record was altered or signed by a different key.",
+            (true, false) when entry is null => $"No audit entry at sealed sequence {seal.UpToSequence}. History was truncated.",
+            (true, false) => $"Chain head at sequence {seal.UpToSequence} differs from the seal. History was rewritten after sealing.",
         };
         return new SealVerificationResult(signatureValid, chainMatches, detail);
     }

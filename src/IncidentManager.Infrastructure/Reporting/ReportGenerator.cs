@@ -78,7 +78,7 @@ public sealed partial class ReportGenerator : IReportGenerator
 
             case ReportSection.EventTimeline:
                 body.AppendChild(Heading("Event Timeline"));
-                body.AppendChild(P("The reconstructed adversary activity, in order — MITRE ATT&CK tactic(s), actor → target, and technique.", italic: true, size: 18));
+                body.AppendChild(P("Reconstructed adversary activity in order: MITRE ATT&CK tactic(s), actor → target, and technique.", italic: true, size: 18));
                 foreach (var png in m.AttackChainImages)
                     body.AppendChild(BodyPicture(main, png, "Attack chain", CaseReportModel.AttackChainAlt));
                 body.AppendChild(WordTable(
@@ -125,7 +125,7 @@ public sealed partial class ReportGenerator : IReportGenerator
 
             case ReportSection.Recommendations:
                 body.AppendChild(Heading("Recommendations"));
-                body.AppendChild(P("After-action items and follow-up tasks.", italic: true, size: 18));
+                body.AppendChild(P("Follow-up tasks from the case.", italic: true, size: 18));
                 body.AppendChild(WordTable(
                     ["Task", "Owner", "Due (UTC)", "Status"],
                     m.ActionItems.Select(x => new[] { x.Title, x.Owner ?? "", x.DueAtUtc?.ToString("u") ?? "", x.Status })));
@@ -184,7 +184,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (m.SharingLine is { } sharing) body.AppendChild(P(sharing, size: 20));
         if (m.DataTypesInvolved is not null) body.AppendChild(P($"Data context (analyst notes): {m.DataTypesInvolved}", size: 20));
         if (m.LegalReferred) body.AppendChild(P($"Legal/Privacy referral recorded. {m.LegalNote}", size: 20));
-        if (m.LegalHold) body.AppendChild(P("Legal hold in effect — case data must be preserved (do not delete).", size: 20));
+        if (m.LegalHold) body.AppendChild(P("Legal hold in effect. Case data must be preserved and not deleted.", size: 20));
     }
 
     private static void AppendBusinessImpact(Body body, CaseReportModel m)
@@ -197,12 +197,12 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (!string.IsNullOrWhiteSpace(m.ImpactedAssets)) { body.AppendChild(P($"Impacted assets: {m.ImpactedAssets}")); any = true; }
         if (m.DataTypesInvolved is not null) { body.AppendChild(P($"Data context (analyst notes): {m.DataTypesInvolved}")); any = true; }
         if (m.LegalReferred) { body.AppendChild(P($"Legal/Privacy referral recorded. {m.LegalNote}")); any = true; }
-        if (m.LegalHold) { body.AppendChild(P("Legal hold in effect — case data must be preserved (do not delete).")); any = true; }
+        if (m.LegalHold) { body.AppendChild(P("Legal hold in effect. Case data must be preserved and not deleted.")); any = true; }
         if (m.MaterialityStatus is { } ms)
         {
             var by = string.IsNullOrWhiteSpace(m.MaterialityDecisionMaker) ? "" : $" by {m.MaterialityDecisionMaker}";
             var on = m.MaterialityDecidedOnUtc is { } d ? $" on {d:yyyy-MM-dd}" : "";
-            body.AppendChild(P($"Materiality: {ms}{(m.MaterialityDetermined ? $" — determined{by}{on}" : "")}."));
+            body.AppendChild(P($"Materiality: {ms}{(m.MaterialityDetermined ? $", determined{by}{on}" : "")}."));
             if (!string.IsNullOrWhiteSpace(m.MaterialityRationale)) body.AppendChild(P($"Materiality rationale: {m.MaterialityRationale}"));
             any = true;
         }
@@ -219,7 +219,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         Stamp("Reported to regulators", m.ReportedAtUtc);
         Stamp("Closed", m.ClosedAtUtc);
         if (m.LegalReferred) body.AppendChild(P($"Referred to Legal/Privacy. {m.LegalNote}"));
-        if (m.LegalHold) body.AppendChild(P("Legal hold in effect — case data must be preserved (do not delete)."));
+        if (m.LegalHold) body.AppendChild(P("Legal hold in effect. Case data must be preserved and not deleted."));
     }
 
     private static void AppendAppendix(Body body, CaseReportModel m)

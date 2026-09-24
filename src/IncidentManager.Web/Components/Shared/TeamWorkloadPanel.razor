@@ -3,6 +3,7 @@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Web.Services.ToastService Toasts
 @inject IAuthorizationService Authz
+@inject ISeverityLabels SevLabels
 @inject AuthenticationStateProvider AuthState
 
 @* Team-workload panel (E-25): per-analyst open-case distribution + the unassigned queue, for rebalancing.
@@ -11,8 +12,7 @@
    PROD-23: an editor (IC/SysAdmin) can rebalance in place — a *metered* reassign scoped to one analyst's
    queue (or the unassigned queue): count-capped and enumerate-and-confirm, never across disparate cases. *@
 
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-    <p class="text-muted mb-0">Open cases by analyst, plus the unassigned queue.</p>
+<div class="d-flex justify-content-end align-items-center flex-wrap gap-2 mb-3">
     <a class="btn btn-sm btn-outline-secondary" href="cases?sla=true" title="Open cases at or past their response-time target">
         <span class="bi bi-clock-history" aria-hidden="true"></span> SLA at-risk cases
     </a>
@@ -41,7 +41,7 @@ else
         <div class="empty-state">
             <span class="bi bi-inbox empty-state-icon" aria-hidden="true"></span>
             <div class="empty-state-title">No open cases</div>
-            <div class="empty-state-msg">When cases are opened and assigned, the team's caseload will appear here.</div>
+            <div class="empty-state-msg">The team's caseload appears here once cases are opened and assigned.</div>
         </div>
     }
     else
@@ -113,8 +113,8 @@ else
             </table>
         </div>
         <p class="text-muted small mb-0 mt-3">
-            A case counts toward each incident commander and analyst assigned to it (observers excluded).
-            Severity mix and SLA reuse the same data as the case list. Scoped to the cases you're allowed to see.
+            A case counts toward each incident commander and analyst assigned to it, but not observers.
+            Covers only the cases you can see.
         </p>
         </div>
     }
@@ -190,7 +190,7 @@ else
                                                 </td>
                                                 <td><code>@c.CaseNumber</code></td>
                                                 <td>@c.Title</td>
-                                                <td><span class="@Ui.SeverityBadge(c.Severity)">@c.Severity</span></td>
+                                                <td><span class="@Ui.SeverityBadge(c.Severity)">@SevLabels.For(c.Severity)</span></td>
                                                 <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
                                             </tr>
                                         }
@@ -198,8 +198,7 @@ else
                                 </table>
                             </div>
                             <div class="form-text">
-                                Metered: scoped to this one queue, up to <strong>@MaxReassign</strong> at a time, with a confirm step —
-                                bulk reassignment across unrelated cases isn't offered.
+                                Up to <strong>@MaxReassign</strong> cases at a time from this queue. You'll confirm before anything changes.
                             </div>
                         }
                     </div>
@@ -238,7 +237,7 @@ else
                         <button class="btn btn-outline-secondary" @onclick="() => _reassignConfirm = false" disabled="@_reassigning">Back</button>
                         <button class="btn btn-primary" @onclick="ApplyReassign" disabled="@_reassigning">
                             @if (_reassigning) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
-                            Confirm reassign
+                            Reassign cases
                         </button>
                     </div>
                 }

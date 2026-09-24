@@ -13,7 +13,7 @@
 <PageTitle>Indicators</PageTitle>
 
 <PageHeader Title="Indicators"
-            Subtitle="Every indicator recorded on your cases, deduplicated, so a repeat IP, domain or hash shows up as a pattern." />
+            Subtitle="Indicators from all your cases, deduplicated so repeat IPs, domains and hashes stand out." />
 
 @if (_library is null)
 {
@@ -68,15 +68,15 @@
         </div>
         <div class="ms-auto d-flex align-items-end gap-2">
             <span class="seg" role="radiogroup" aria-label="Indicator display"
-                  title="Defanged renders network/URL indicators as hxxp://evil[.]com so they're safe to copy out of the tool.">
+                  title="Defanged shows addresses and URLs as hxxp://evil[.]com, safe to copy out">
                 <button type="button" class="seg-opt @(!_defang ? "on" : "")" role="radio" aria-checked="@(!_defang)"
                         @onclick="() => _defang = false">Live</button>
                 <button type="button" class="seg-opt @(_defang ? "on" : "")" role="radio" aria-checked="@_defang"
                         @onclick="() => _defang = true">Defanged</button>
             </span>
             <a class="btn btn-sm btn-outline-primary" href="export/iocs.csv" download
-               title="The flat blocklist of confirmed-malicious indicators across your cases, for SIEM / firewall / EDR">
-                <span class="bi bi-filetype-csv me-1" aria-hidden="true"></span>Malicious IOC feed
+               title="Confirmed-malicious IOCs from your cases, as a blocklist for SIEM, firewall or EDR">
+                <span class="bi bi-filetype-csv me-1" aria-hidden="true"></span>Export IOC feed (CSV)
             </a>
         </div>
     </div>

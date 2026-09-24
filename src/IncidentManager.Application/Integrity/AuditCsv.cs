@@ -18,7 +18,7 @@ public static class AuditCsv
         var sb = new StringBuilder();
 
         var scope = string.IsNullOrWhiteSpace(caseNumber) ? "all visible cases" : $"case {caseNumber}";
-        sb.Append("# CaseBook audit trail — ").Append(scope).Append(", generated ")
+        sb.Append("# CaseBook audit trail: ").Append(scope).Append(", generated ")
           .Append(generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(" UTC\r\n");
 
         // `changes` renders the captured before/after diff (e.g. "Legal hold: No → Yes") so an examiner sees

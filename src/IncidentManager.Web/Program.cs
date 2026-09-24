@@ -396,7 +396,7 @@ static async Task<string> BuildAgendaIcsAsync(
         Description: i.CaseTitle,
         Url: baseUrl.Length == 0 ? null : $"{baseUrl}/cases/{i.CaseId}",
         Overdue: i.DueAtUtc!.Value < clock.UtcNow));
-    return IncidentManager.Application.Work.IcsWriter.Write("CaseBook — my after-action items", events, clock.UtcNow);
+    return IncidentManager.Application.Work.IcsWriter.Write("CaseBook: my tasks", events, clock.UtcNow);
 }
 
 // Authenticated one-shot download for the signed-in user (import into any calendar).

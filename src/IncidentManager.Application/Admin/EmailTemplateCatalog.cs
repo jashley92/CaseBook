@@ -35,7 +35,7 @@ public static class EmailTemplateCatalog
     public static string BodyKey(string id) => $"{KeyPrefix}{id}:Body";
 
     // Shared token help.
-    private static readonly EmailToken CaseNumber = new("CaseNumber", "The case number, e.g. 2026-01_Phishing_Wave.");
+    private static readonly EmailToken CaseNumber = new("CaseNumber", "The case number, for example 2026-01_Phishing_Wave.");
     private static readonly EmailToken CaseTitle = new("CaseTitle", "The case title.");
     private static readonly EmailToken Severity = new("Severity", "The case severity (Critical/High/Medium/Low).");
     private static readonly EmailToken Phase = new("Phase", "The case lifecycle phase.");
@@ -45,7 +45,7 @@ public static class EmailTemplateCatalog
         new EmailTemplateDefinition(
             "assignment",
             "Case assignment",
-            "Sent to a person when they are assigned to a case (E-03b). Requires assignment notifications on.",
+            "Sent to a person when they're assigned to a case. Needs assignment notifications on.",
             "You've been assigned to {{CaseNumber}} ({{Role}})",
             """
             <h1>You've been assigned a case</h1>
@@ -65,14 +65,14 @@ public static class EmailTemplateCatalog
 
         new EmailTemplateDefinition(
             "overdue",
-            "Overdue after-action reminder",
-            "Sent to an item's owner (or the case's incident commander) when a follow-up item passes its due date (E-03b).",
-            "{{ItemCount}} overdue after-action item(s)",
+            "Overdue task reminder",
+            "Sent to an item's owner, or the incident commander, when a task passes its due date.",
+            "{{ItemCount}} overdue task(s)",
             """
-            <h1>Overdue after-action items</h1>
-            <p>The following after-action follow-up item(s) are past their due date:</p>
+            <h1>Overdue tasks</h1>
+            <p>These tasks are past their due date:</p>
             {{ItemsList}}
-            <p>Please open the case(s) to update or close them.</p>
+            <p>Open the case(s) to update or close them.</p>
             """,
             new[]
             {
@@ -85,13 +85,13 @@ public static class EmailTemplateCatalog
         new EmailTemplateDefinition(
             "overdue-escalated",
             "Overdue item escalation",
-            "Sent to a case's incident commander, then to managers, when an after-action item stays overdue past the configured hours (PROD-03). A reminder only: nothing is reassigned.",
-            "Escalation: {{ItemCount}} after-action item(s) still overdue",
+            "Sent to a case's incident commander, then to managers, when a task stays overdue past the configured hours. A reminder only: nothing is reassigned.",
+            "Escalation: {{ItemCount}} task(s) still overdue",
             """
-            <h1>After-action items still overdue</h1>
+            <h1>Tasks still overdue</h1>
             <p>You're receiving this as {{Audience}}. The following follow-up item(s) are still open well past their due date:</p>
             {{ItemsList}}
-            <p>The owner has already been reminded. Please check in with them or the case team.</p>
+            <p>The owner has already been reminded. Check in with them or the case team.</p>
             """,
             new[]
             {
@@ -105,7 +105,7 @@ public static class EmailTemplateCatalog
         new EmailTemplateDefinition(
             "executive-report",
             "Quarterly executive report",
-            "Sent to managers in the first week of each quarter with last quarter's program figures (PROD-15 / E-31).",
+            "Sent to managers in the first week of each quarter with last quarter's program figures.",
             "Program report {{Quarter}}",
             """
             <h1>Program report: {{Quarter}}</h1>
@@ -115,7 +115,7 @@ public static class EmailTemplateCatalog
             """,
             new[]
             {
-                new EmailToken("Quarter", "The quarter reported on, e.g. Q3 2026."),
+                new EmailToken("Quarter", "The quarter reported on, for example Q3 2026."),
                 new EmailToken("PreviousQuarter", "The quarter it's compared with."),
                 new EmailToken("SummaryTable", "The headline figures table. Rendered by the app."),
             },
@@ -124,14 +124,14 @@ public static class EmailTemplateCatalog
 
         new EmailTemplateDefinition(
             "action-item-due-soon",
-            "After-action due-soon reminder",
-            "Sent to an item's owner (or the case's incident commander) ahead of the deadline, when a follow-up item is due within the lead window (E-03d).",
-            "{{ItemCount}} after-action item(s) due soon",
+            "Due-soon task reminder",
+            "Sent to an item's owner, or the incident commander, when a task comes due within the lead window.",
+            "{{ItemCount}} task(s) due soon",
             """
-            <h1>After-action items due soon</h1>
-            <p>The following after-action follow-up item(s) are due within the next {{LeadHours}} hours:</p>
+            <h1>Tasks due soon</h1>
+            <p>These tasks are due within the next {{LeadHours}} hours:</p>
             {{ItemsList}}
-            <p>Please open the case(s) to progress or close them before they fall overdue.</p>
+            <p>Open the case(s) to progress or close them before they're overdue.</p>
             """,
             new[]
             {
@@ -145,13 +145,13 @@ public static class EmailTemplateCatalog
         new EmailTemplateDefinition(
             "notification-deadline",
             "Regulatory notification-deadline reminder",
-            "Sent to a case's incident commander and assignees when its regulatory notification deadline (PROD-07) is approaching or has passed and the case is not yet marked reported (PROD-37). Requires the deadline clock on.",
+            "Sent to a case's incident commander and assignees when its regulatory notification deadline is near or past and the case isn't marked reported. Needs the deadline clock on.",
             "{{ItemCount}} case(s) approaching a regulatory notification deadline",
             """
             <h1>Regulatory notification deadline</h1>
             <p>The following case(s) are at risk of, or already past, a regulatory notification deadline and have <strong>not yet been marked reported</strong>:</p>
             {{ItemsList}}
-            <p>Review each case's notification status and record the reported milestone once notified. CaseBook records the milestone — it never files on your behalf.</p>
+            <p>Review each case's notification status and record the reported milestone once notice is given. CaseBook only records the milestone; it never files on your behalf.</p>
             """,
             new[]
             {
@@ -164,19 +164,19 @@ public static class EmailTemplateCatalog
         new EmailTemplateDefinition(
             "digest",
             "Personal work digest",
-            "The consolidated digest a user opts into (account menu → Notifications): their open follow-up items grouped into overdue / due today / due this week, on a daily or weekly cadence (PROD-39). Replaces a scatter of per-item reminders for that user.",
-            "Your CaseBook work digest — {{ItemCount}} open item(s)",
+            "A user's open follow-up items, grouped as overdue, due today and due this week, sent daily or weekly. Users opt in under account menu → Notifications.",
+            "Your CaseBook work digest: {{ItemCount}} open item(s)",
             """
             <h1>Your work digest</h1>
             <p>Here are your open follow-up items across the cases you're working, as of this {{Cadence}} digest:</p>
             {{ItemsList}}
-            <p>Open <strong>My Work</strong> to progress or close them.</p>
+            <p>Open <strong>My work</strong> to progress or close them.</p>
             """,
             new[]
             {
                 new EmailToken("ItemCount", "How many open items are in this digest."),
-                new EmailToken("Cadence", "The digest cadence — \"daily\" or \"weekly\"."),
-                new EmailToken("ItemsList", "The formatted, grouped list of items (overdue / due today / due this week). Rendered by the app."),
+                new EmailToken("Cadence", "The digest cadence: \"daily\" or \"weekly\"."),
+                new EmailToken("ItemsList", "The formatted list of items, grouped as overdue, due today and due this week. Rendered by the app."),
             },
             CtaLabel: "Open my work",
             CtaUrlToken: "AgendaUrl"),
@@ -184,13 +184,13 @@ public static class EmailTemplateCatalog
         new EmailTemplateDefinition(
             "stale-case",
             "Stale-case nudge",
-            "Sent to a case's incident commander and assignees when an open case has had no recorded activity for longer than its severity's threshold (PROD-38). Requires the stale-case scan on.",
+            "Sent to a case's incident commander and assignees when an open case has no recorded activity for longer than its severity's threshold. Needs stale-case nudges on.",
             "{{ItemCount}} open case(s) with no recent activity",
             """
             <h1>Cases with no recent activity</h1>
             <p>The following open case(s) have had no recorded activity for a while and may be stalled:</p>
             {{ItemsList}}
-            <p>Open each case to record progress or move it forward. (This is a nudge only — nothing has changed on the case.)</p>
+            <p>Open each case to record progress or move it forward. This is a reminder only; nothing on the case has changed.</p>
             """,
             new[]
             {
@@ -203,14 +203,14 @@ public static class EmailTemplateCatalog
         new EmailTemplateDefinition(
             "breach",
             "Breach escalation (Legal/Privacy)",
-            "Sent to the Legal/Privacy distribution when a case is escalated to a Breach (E-03).",
+            "Sent to the Legal/Privacy distribution when a case is escalated to Breach.",
             "Case escalated to Breach: {{CaseNumber}}",
             """
             <h1>Case escalated to Breach</h1>
             <p><strong>{{CaseNumber}} — {{CaseTitle}}</strong> has been classified as a <strong>Breach</strong>.</p>
             <p class="meta">Severity: {{Severity}} &middot; Phase: {{Phase}}</p>
             {{ReferralNote}}
-            <p>Review it for regulatory-relevance assessment (NYDFS Part 500 / GLBA).</p>
+            <p>Review it to assess regulatory relevance (NYDFS Part 500, GLBA).</p>
             """,
             new[]
             {
@@ -223,7 +223,7 @@ public static class EmailTemplateCatalog
         new EmailTemplateDefinition(
             "mention",
             "Comment mention",
-            "Sent to a person @mentioned in a case discussion comment (PROD-04).",
+            "Sent to a person @mentioned in a case discussion comment.",
             "{{MentionedBy}} mentioned you on {{CaseNumber}}",
             """
             <h1>You were mentioned in a case discussion</h1>
@@ -244,15 +244,15 @@ public static class EmailTemplateCatalog
 
         new EmailTemplateDefinition(
             "audit-chain-alarm",
-            "Audit-chain integrity alarm (F-16)",
-            "Sent to the integrity-alert distribution when the audit hash-chain fails verification. A critical SIEM/log event is always emitted regardless.",
+            "Audit-chain integrity alarm",
+            "Sent to the integrity-alert distribution when the audit hash chain fails verification. A critical SIEM event is sent either way.",
             "ALERT: audit-chain integrity failure",
             """
             <h1>Audit-chain integrity failure</h1>
-            <p>The CaseBook audit hash-chain <strong>failed verification</strong> — the tamper-evident log may have been altered, truncated, or reordered. Treat this as a potential integrity/security incident.</p>
+            <p>The CaseBook audit hash chain <strong>failed verification</strong>. The tamper-evident log may have been altered, truncated or reordered. Treat this as a potential integrity or security incident.</p>
             <p class="meta">First break at sequence: {{FirstBrokenSequence}}<br/>Detail: {{Detail}}</p>
             <p>1. Preserve the current database and the out-of-band integrity seals.<br/>
-               2. Review Integrity &amp; Audit and the most recent signed seal to locate the break.<br/>
+               2. Review Integrity &amp; audit and the most recent signed seal to locate the break.<br/>
                3. Follow the incident-response and restore procedures in OPERATIONS.md.</p>
             <p>No new seals will be recorded until the chain verifies intact again.</p>
             """,
@@ -261,17 +261,17 @@ public static class EmailTemplateCatalog
                 new EmailToken("FirstBrokenSequence", "The audit sequence number where the break was first detected."),
                 new EmailToken("Detail", "A short technical description of the break."),
             },
-            CtaLabel: "Open Integrity & Audit",
+            CtaLabel: "Open Integrity & audit",
             CtaUrlToken: "IntegrityUrl"),
 
         new EmailTemplateDefinition(
             "evidence-drift-alarm",
-            "Evidence-at-rest drift alarm (F-17)",
-            "Sent to the integrity-alert distribution when stored evidence no longer matches its recorded hash. A critical SIEM/log event is always emitted regardless.",
+            "Evidence-at-rest drift alarm",
+            "Sent to the integrity-alert distribution when stored evidence no longer matches its recorded hash. A critical SIEM event is sent either way.",
             "ALERT: evidence-at-rest integrity failure ({{DriftCount}} item(s))",
             """
             <h1>Evidence-at-rest integrity failure</h1>
-            <p>Re-verification found stored evidence whose bytes no longer match their recorded SHA-256 — possible bit-rot or tampering of the files themselves.</p>
+            <p>Re-verification found stored evidence that no longer matches its recorded SHA-256. This may be bit-rot or tampering.</p>
             <p class="meta">Drifted: {{DriftCount}} of {{CheckedCount}} &middot; Verified at (UTC): {{VerifiedAtUtc}}</p>
             {{DriftList}}
             <p>Preserve the evidence store and database, and recover drifted files from the out-of-band evidence backups (OPERATIONS.md).</p>
@@ -283,7 +283,7 @@ public static class EmailTemplateCatalog
                 new EmailToken("VerifiedAtUtc", "When the verification ran (UTC)."),
                 new EmailToken("DriftList", "The formatted list of drifted items. Rendered by the app."),
             },
-            CtaLabel: "Open Integrity & Audit",
+            CtaLabel: "Open Integrity & audit",
             CtaUrlToken: "IntegrityUrl"),
     };
 

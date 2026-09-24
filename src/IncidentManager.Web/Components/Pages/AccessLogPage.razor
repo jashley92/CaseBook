@@ -15,9 +15,9 @@
     </Actions>
 </PageHeader>
 <p class="text-muted">
-    Who <strong>read</strong> a case or pulled a sensitive artifact (evidence, report, export), coalesced into
-    per-user view-sessions (C-05). This telemetry is <strong>outside</strong> the tamper-evident audit chain and is
-    prunable independently. Scope and coalescing window are set in
+    Who <strong>read</strong> a case or opened a sensitive artifact (evidence, report, export), grouped into
+    per-user view sessions. This log sits <strong>outside</strong> the tamper-evident audit chain and is pruned
+    separately. Set its scope and grouping window in
     <a href="admin/settings/governance">Administration → Governance &amp; security → Access logging</a>.
 </p>
 
@@ -64,7 +64,7 @@
 
 <div class="d-flex justify-content-between align-items-center mb-1">
     <span class="small text-muted">
-        @(_rows?.Count ?? 0) session@(_rows?.Count == 1 ? "" : "s")@(_rows is { Count: >= PageSize } ? $" — showing the most recent {PageSize}" : "")
+        @(_rows?.Count ?? 0) session@(_rows?.Count == 1 ? "" : "s")@(_rows is { Count: >= PageSize } ? $" (showing the most recent {PageSize})" : "")
     </span>
     <a class="btn btn-sm btn-outline-secondary" href="@ExportHref()">
         <span class="bi bi-download me-1" aria-hidden="true"></span>Export CSV
@@ -94,7 +94,7 @@ else
                     <td>
                         @if (string.IsNullOrEmpty(r.CaseNumber)) { <span class="text-muted">—</span> }
                         else { <code>@r.CaseNumber</code> }
-                        @if (r.WasRestricted) { <span class="im-badge im-b-warn ms-2">restricted</span> }
+                        @if (r.WasRestricted) { <span class="im-badge im-b-warn ms-2">Restricted</span> }
                     </td>
                     <td class="small">@(string.IsNullOrWhiteSpace(r.TargetLabel) ? "" : r.TargetLabel)</td>
                     <td class="text-end">@r.Count</td>

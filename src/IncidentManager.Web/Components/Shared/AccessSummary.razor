@@ -25,7 +25,7 @@
                 var held = CurrentUser.Has(p);
                 <li class="@(held ? "" : "text-muted")">
                     <span class="bi @(held ? "bi-check-circle-fill text-success" : "bi-dash-circle")" aria-hidden="true"></span>
-                    <strong>@Label(p)</strong> — @Meaning(p)
+                    <strong>@Label(p)</strong>: @Meaning(p)
                     <span class="visually-hidden">@(held ? "(you have this)" : "(you don't have this)")</span>
                 </li>
             }

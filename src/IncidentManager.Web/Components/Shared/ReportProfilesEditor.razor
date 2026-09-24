@@ -15,20 +15,19 @@
     </div>
     <div class="card-body">
         <p class="small text-muted">
-            Reusable <strong>section layouts</strong> (E-28) a case can be printed with — such as an
-            <em>Executive summary</em> for leadership or a <em>Full examiner pack</em> for a DFS exam. A case
-            picks a profile on its Report tab; that layout overrides the global default (above) for the case's
-            reports and the in-app preview. The document title, branded header/footer and integrity stamp always appear.
+            Reusable <strong>section layouts</strong> for printing a case, such as an <em>Executive summary</em> for
+            leadership or a <em>Full examiner pack</em> for a DFS exam. A profile picked on a case's Report tab
+            overrides the default layout above for that case's reports and preview.
         </p>
 
         @* PROD-47: optional customer-designed Word templates, one per profile. *@
         <div class="border rounded p-2 mb-3 small">
             <div class="fw-semibold mb-1"><span class="bi bi-file-earmark-word me-1" aria-hidden="true"></span>Word templates (optional)</div>
             <p class="mb-1 text-muted">
-                Give a profile your own Word design: upload a .docx with <code>{{…}}</code> fields and that profile's Word reports are
-                filled into it (your fonts, styles, headers and footers). PDF reports keep the built-in layout. A table row with a list
-                field such as <code>{{ioc.value}}</code> repeats once per item; <code>{{image.attack_chain}}</code> alone on a line
-                becomes the picture. Templates with macros, embedded objects or content loaded from outside the document are refused.
+                Upload a .docx with <code>{{…}}</code> fields to give a profile's Word reports your own fonts, styles, headers and
+                footers. PDF reports keep the built-in layout. A table row with a list field such as <code>{{ioc.value}}</code>
+                repeats once per item, and <code>{{image.attack_chain}}</code> alone on a line becomes the picture. Templates with
+                macros, embedded objects or external content are refused.
             </p>
             <a class="me-3" href="export/report-template-starter.docx" download><span class="bi bi-download me-1" aria-hidden="true"></span>Download the starter template</a>
             <details class="mt-1">
@@ -38,7 +37,7 @@
                     <ul class="mb-2">
                         @foreach (var f in ReportTemplateFields.ScalarFields)
                         {
-                            <li><code>{{@f.Name}}</code> — @f.Description</li>
+                            <li><code>{{@f.Name}}</code>: @f.Description</li>
                         }
                     </ul>
                     <div class="fw-semibold">Lists (the row or paragraph repeats per item)</div>
@@ -51,7 +50,7 @@
                     <ul class="mb-0">
                         @foreach (var f in ReportTemplateFields.ImageFields)
                         {
-                            <li><code>{{@f.Name}}</code> — @f.Description</li>
+                            <li><code>{{@f.Name}}</code>: @f.Description</li>
                         }
                     </ul>
                 </div>
@@ -69,7 +68,7 @@
         @if (_edit is not null)
         {
             <div class="card mb-3 border-primary">
-                <div class="card-header">@(_edit.IsNew ? "New profile" : $"Edit profile — {_edit.Name}")</div>
+                <div class="card-header">@(_edit.IsNew ? "New profile" : $"Edit profile: {_edit.Name}")</div>
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-md-5">
@@ -135,7 +134,7 @@
         }
         else if (_profiles.Count == 0)
         {
-            <p class="text-muted mb-0">No report profiles yet. Create one to offer analysts a ready-made section layout.</p>
+            <p class="text-muted mb-0">No report profiles yet. Click <strong>New profile</strong> to add one.</p>
         }
         else
         {
@@ -155,7 +154,7 @@
                                 @if (p.TemplateFileName is { } tf)
                                 {
                                     <a href="export/report-templates/@p.Id" download title="Download to edit, then upload again">@tf</a>
-                                    <button class="btn btn-link btn-sm p-0 ms-2 text-danger align-baseline" @onclick="() => ConfirmRemoveTemplate(p)">remove</button>
+                                    <button class="btn btn-link btn-sm p-0 ms-2 text-danger align-baseline" @onclick="() => ConfirmRemoveTemplate(p)">Remove</button>
                                 }
                                 else
                                 {

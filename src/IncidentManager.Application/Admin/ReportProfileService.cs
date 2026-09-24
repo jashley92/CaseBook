@@ -49,8 +49,8 @@ public sealed class ReportProfileService
     public async Task<Reporting.TemplateCheck> UploadTemplateAsync(Guid id, string fileName, byte[] docx, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<ReportProfileService>(_user);
-        if (_templates is null || _templateStore is null) throw new InvalidOperationException("Report templates aren't available.");
-        if (docx.Length == 0) throw new ArgumentException("The file is empty.");
+        if (_templates is null || _templateStore is null) throw new InvalidOperationException("Word templates aren't available on this server.");
+        if (docx.Length == 0) throw new ArgumentException("That file is empty. Choose a .docx template.");
         if (docx.Length > MaxTemplateBytes) throw new ArgumentException($"A template must be {MaxTemplateBytes / 1024 / 1024} MB or smaller.");
         if (!fileName.EndsWith(".docx", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("Upload a Word document (.docx). Macro-enabled files (.docm) aren't accepted.");
@@ -60,7 +60,7 @@ public sealed class ReportProfileService
 
         using var db = _factory.CreateDbContext();
         var profile = await db.ReportProfiles.FirstOrDefaultAsync(p => p.Id == id, ct)
-                      ?? throw new InvalidOperationException("Report profile not found.");
+                      ?? throw new InvalidOperationException("That report profile no longer exists. Reload the page and try again.");
         await _templateStore.SaveAsync(id, docx, ct);
         profile.TemplateFileName = Path.GetFileName(fileName);
         profile.TemplateSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(docx)).ToLowerInvariant();
@@ -76,7 +76,7 @@ public sealed class ReportProfileService
         AdminActionPermissions.Require<ReportProfileService>(_user);
         using var db = _factory.CreateDbContext();
         var profile = await db.ReportProfiles.FirstOrDefaultAsync(p => p.Id == id, ct)
-                      ?? throw new InvalidOperationException("Report profile not found.");
+                      ?? throw new InvalidOperationException("That report profile no longer exists. Reload the page and try again.");
         if (profile.TemplateFileName is null) return;
         profile.TemplateFileName = null;
         profile.TemplateSha256 = null;
@@ -125,7 +125,7 @@ public sealed class ReportProfileService
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A profile name is required.");
         if (await db.ReportProfiles.AnyAsync(p => p.Name == name, ct))
-            throw new InvalidOperationException($"A report profile named '{name}' already exists.");
+            throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.");
 
         var profile = new ReportProfile { Name = name, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow };
         ApplyContent(profile, input);
@@ -139,12 +139,12 @@ public sealed class ReportProfileService
         AdminActionPermissions.Require<ReportProfileService>(_user);
         using var db = _factory.CreateDbContext();
         var profile = await db.ReportProfiles.FirstOrDefaultAsync(p => p.Id == id, ct)
-                      ?? throw new InvalidOperationException("Report profile not found.");
+                      ?? throw new InvalidOperationException("That report profile no longer exists. Reload the page and try again.");
 
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A profile name is required.");
         if (await db.ReportProfiles.AnyAsync(p => p.Name == name && p.Id != id, ct))
-            throw new InvalidOperationException($"A report profile named '{name}' already exists.");
+            throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.");
 
         profile.Name = name;
         profile.ModifiedBy = _user.UserId;

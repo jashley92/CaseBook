@@ -24,9 +24,9 @@
         }
         <label class="form-label small mb-1" for="@ComposerId">
             @(_replyTo is null ? "Add a comment" : "Reply")
-            <span class="text-muted">· Markdown &mdash; <code>@@</code> to mention a teammate, <code>#</code> to tag an entity</span>
+            <span class="text-muted">· Markdown · <code>@@</code> to mention a teammate · <code>#</code> to tag an entity</span>
         </label>
-        <ComposerHint>Team conversation and handoffs, open to everyone who can see this case. <code>@@</code>mentioned teammates are notified. Not printed in the case report; record findings in <strong>Notes</strong>.</ComposerHint>
+        <ComposerHint>Team conversation and handoffs, visible to everyone who can see this case. <code>@@</code>mentioned teammates are notified. Not printed in the case report, so record findings in <strong>Notes</strong>.</ComposerHint>
         @* EasyMDE enhances this textarea (toolbar + inline @mention autocomplete); managed in OnAfterRenderAsync. *@
         <textarea id="@ComposerId" class="form-control mb-2" placeholder="Share an update, a question, or a handoff…"></textarea>
 
@@ -45,7 +45,7 @@ else if (_comments.Count == 0)
     <div class="empty-state">
         <span class="bi bi-chat-dots empty-state-icon" aria-hidden="true"></span>
         <div class="empty-state-title">No discussion yet</div>
-        <div class="empty-state-msg">Start the conversation — post an update, ask a question, or hand the case off. @@mention a teammate to pull them in.</div>
+        <div class="empty-state-msg">Post an update, ask a question or hand the case off. @@mention a teammate to pull them in.</div>
     </div>
 }
 else
@@ -147,7 +147,7 @@ else
             await Comments.AddAsync(CaseId, body, _replyTo?.Id, mentions);
             _replyTo = null;
             await Load();
-            Toasts.Success("Comment posted.");
+            Toasts.Success("Comment posted");
             ComposerDrafts?.Remove(ComposerId); // FR-02: the draft is now saved
             try { await JS.InvokeVoidAsync("markdownEditor.setValue", ComposerId, ""); } catch (JSException) { /* best effort */ }
         }

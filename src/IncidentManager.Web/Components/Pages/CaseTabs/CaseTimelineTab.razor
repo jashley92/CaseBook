@@ -30,7 +30,7 @@
     {
         TimelineKind.Event => IsThirdParty
             ? "The vendor-disclosure narrative: what the vendor reported and what we confirmed about our data."
-            : "Facts and timing of the actual event: the attack narrative.",
+            : "The attack narrative: facts and timing of what happened.",
         TimelineKind.Investigation => "Analyst and team actions during the investigation.",
         _ => "The full chronology: what happened and what the team did, interleaved."
     })
@@ -44,13 +44,13 @@
             @if (_tlEditId is null)
             {
                 <div class="small text-muted mb-2 d-flex align-items-center gap-2 flex-wrap">
-                    <span><span class="bi bi-clipboard me-1"></span>Paste a screenshot to attach it to this entry. It's stored as hashed, chain-of-custody evidence.</span>
+                    <span><span class="bi bi-clipboard me-1"></span>Paste a screenshot to attach it. It's saved as hashed evidence with chain of custody.</span>
                     @if (_tlShotBytes is not null)
                     {
                         <span class="im-badge im-b-info">
                             <span class="bi bi-paperclip me-1"></span>@_tlShotName
                         </span>
-                        <img src="@TlShotDataUri()" alt="pasted screenshot preview" style="max-height:40px;border-radius:.25rem;border:1px solid var(--bs-border-color)" />
+                        <img src="@TlShotDataUri()" alt="Pasted screenshot preview" style="max-height:40px;border-radius:.25rem;border:1px solid var(--bs-border-color)" />
                         <button type="button" class="btn btn-sm btn-link text-danger p-0" @onclick="ClearTimelineShot">Remove</button>
                     }
                 </div>
@@ -92,7 +92,7 @@
                         <button type="button" class="btn @(!_evtAttackMode ? "btn-secondary" : "btn-outline-secondary")"
                                 @onclick="() => _evtAttackMode = false">Disclosure milestone</button>
                         <button type="button" class="btn @(_evtAttackMode ? "btn-secondary" : "btn-outline-secondary")"
-                                @onclick="() => _evtAttackMode = true" title="Optionally record the vendor's attack breakdown (MITRE ATT&CK)">Attack step (ATT&amp;CK)</button>
+                                @onclick="() => _evtAttackMode = true" title="Record the vendor's attack breakdown (MITRE ATT&CK)">Attack step (ATT&amp;CK)</button>
                     </div>
                 }
                 @if (!IsThirdParty || _evtAttackMode)
@@ -106,7 +106,7 @@
                         <div class="col-md-4">
                             <label class="form-label small mb-0">Actor <span class="text-muted">(from IOCs)</span></label>
                             <select class="form-select form-select-sm" @bind="_evtActorId">
-                                <option value="">— none —</option>
+                                <option value="">None</option>
                                 @foreach (var en in Case.Entities)
                                 {
                                     <option value="@en.Id">@EntityOptionLabel(en)</option>
@@ -116,7 +116,7 @@
                         <div class="col-md-4">
                             <label class="form-label small mb-0">Target <span class="text-muted">(from IOCs)</span></label>
                             <select class="form-select form-select-sm" @bind="_evtTargetId">
-                                <option value="">— none —</option>
+                                <option value="">None</option>
                                 @foreach (var en in Case.Entities)
                                 {
                                     <option value="@en.Id">@EntityOptionLabel(en)</option>
@@ -175,7 +175,7 @@
                     <div class="col d-flex justify-content-end align-items-end gap-2">
                         @if (_tlEditId is null)
                         {
-                            <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddEventStep">
+                            <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="AddEventStep">
                                 <span class="bi bi-plus-lg" aria-hidden="true"></span> Add step
                             </button>
                         }
@@ -217,7 +217,7 @@
                     </label>
                     @if (_tlEditId is null)
                     {
-                        <ComposerHint>What the team did and when (actions, decisions, meetings), printed in the report's investigation timeline. Doesn't notify anyone.</ComposerHint>
+                        <ComposerHint>What the team did and when: actions, decisions, meetings. Appears in the report's investigation timeline and doesn't notify anyone.</ComposerHint>
                     }
                     @* EasyMDE enhances this textarea (managed in this tab's OnAfterRenderAsync); value pulled on Add/Save. *@
                     <textarea id="@InvEditorId" class="form-control"></textarea>
@@ -231,7 +231,7 @@
                     <div class="mt-2 d-flex justify-content-end gap-2">
                         @if (_tlEditId is null)
                         {
-                            <button class="btn btn-sm btn-primary" title="Submit — Ctrl / ⌘ + Enter" @onclick="AddTimeline">
+                            <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="AddTimeline">
                                 <span class="bi bi-plus-lg" aria-hidden="true"></span> Add entry
                             </button>
                         }
@@ -432,7 +432,7 @@ else
                         {
                             @* U-40: attached screenshot — click the thumbnail to preview it in a lightbox. *@
                             <button type="button" class="tl-shot d-inline-block mt-1 btn p-0 border-0 bg-transparent" @onclick="() => OnPreview.InvokeAsync(shotId)" title="Preview the attached screenshot">
-                                <img src="evidence/@shotId/inline" alt="attached screenshot" loading="lazy"
+                                <img src="evidence/@shotId/inline" alt="Attached screenshot" loading="lazy"
                                      style="max-height:120px;max-width:100%;border-radius:.375rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
                             </button>
                         }
@@ -484,7 +484,7 @@ else
                         <div class="tl-head">
                             <span class="tl-kind-label"><span class="bi bi-search" aria-hidden="true"></span> Investigation</span>
                             <span class="tactic-chip" style="--tac:@Ui.TimelineColor(e.Type)">
-                                <span class="bi @Ui.TimelineGlyph(e.Type)" aria-hidden="true"></span> @e.Type
+                                <span class="bi @Ui.TimelineGlyph(e.Type)" aria-hidden="true"></span> @Ui.Label(e.Type)
                             </span>
                             @if (e.Version > 1)
                             {
@@ -497,7 +497,7 @@ else
                         {
                             @* U-40: attached screenshot — click the thumbnail to preview it in a lightbox. *@
                             <button type="button" class="tl-shot d-inline-block mt-1 btn p-0 border-0 bg-transparent" @onclick="() => OnPreview.InvokeAsync(shotId)" title="Preview the attached screenshot">
-                                <img src="evidence/@shotId/inline" alt="attached screenshot" loading="lazy"
+                                <img src="evidence/@shotId/inline" alt="Attached screenshot" loading="lazy"
                                      style="max-height:120px;max-width:100%;border-radius:.375rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
                             </button>
                         }
@@ -725,7 +725,7 @@ else
         }
         catch (Exception ex)
         {
-            Toasts.Error($"Couldn't read the pasted image: {ex.Message}");
+            Toasts.Error("Couldn't read the pasted image. Try again, or upload it on the Evidence tab (15 MB max).");
             ClearTimelineShot();
         }
     }
@@ -792,7 +792,7 @@ else
         _evtTactic = MitreTactic.Unspecified;
         ClearTimelineShot();
         await OnChanged.InvokeAsync();
-        var what = disclosure ? "Disclosure step" : "Attack step";
+        var what = disclosure ? "Disclosure step" : IsThirdParty ? "Attack step" : "Event step";
         Toasts.Success(shotId is null ? $"{what} added" : $"{what} added with screenshot");
     }
 
@@ -879,7 +879,7 @@ else
         await Cases.EditInvestigationEntryAsync(CaseId, id, _tlType, whenUtc, _tlDesc, _tlSource, _tlReason);
         await CancelTimelineEdit();
         await OnChanged.InvokeAsync();
-        Toasts.Success("Investigation entry updated (new version saved)");
+        Toasts.Success("Investigation entry saved as a new version");
     }
 
     // Leave edit mode and clear the composer. For Investigation, also blank the Markdown editor.

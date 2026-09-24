@@ -4,7 +4,7 @@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 
 <select id="@Id" class="form-select form-select-sm" value="@(Owner ?? "")" @onchange="OnOwnerChanged">
-    <option value="">— Unassigned —</option>
+    <option value="">Unassigned</option>
     @foreach (var u in Users.All())
     {
         <option value="@u.UserId">@u.DisplayName</option>

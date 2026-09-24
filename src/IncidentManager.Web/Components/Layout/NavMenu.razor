@@ -50,8 +50,8 @@
 
         <div class="nav-group-label">Workspace</div>
         <div class="nav-item">
-            <NavLink class="nav-link" href="work" Match="NavLinkMatch.All" title="My Work">
-                <span class="bi bi-person-workspace" aria-hidden="true"></span><span class="nav-text">My Work</span>
+            <NavLink class="nav-link" href="work" Match="NavLinkMatch.All" title="My work">
+                <span class="bi bi-person-workspace" aria-hidden="true"></span><span class="nav-text">My work</span>
             </NavLink>
         </div>
         <div class="nav-item">
@@ -90,8 +90,8 @@
         </div>
         <AuthorizeView Policy="@Policies.EditCases">
             <div class="nav-item">
-                <NavLink class="nav-link" href="cases/new" title="New Case">
-                    <span class="bi bi-plus-circle" aria-hidden="true"></span><span class="nav-text">New Case</span>
+                <NavLink class="nav-link" href="cases/new" title="New case">
+                    <span class="bi bi-plus-circle" aria-hidden="true"></span><span class="nav-text">New case</span>
                 </NavLink>
             </div>
         </AuthorizeView>
@@ -99,10 +99,10 @@
         @* UX-17: audit/forensic surfaces + the export hub together. Access log (the "who viewed this"
            telemetry) sits beside Integrity & Audit — its sibling forensic surface — instead of being
            buried in the admin hub; it stays SysAdmin-only. Downloads renamed Exports (names the job). *@
-        <div class="nav-group-label">Audit &amp; Exports</div>
+        <div class="nav-group-label">Audit &amp; exports</div>
         <div class="nav-item">
-            <NavLink class="nav-link" href="integrity" title="Integrity &amp; Audit">
-                <span class="bi bi-shield-lock" aria-hidden="true"></span><span class="nav-text">Integrity &amp; Audit</span>
+            <NavLink class="nav-link" href="integrity" title="Integrity &amp; audit">
+                <span class="bi bi-shield-lock" aria-hidden="true"></span><span class="nav-text">Integrity &amp; audit</span>
             </NavLink>
         </div>
         <AuthorizeView Policy="@Policies.Administer">

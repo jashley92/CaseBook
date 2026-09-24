@@ -42,9 +42,9 @@ public static class ComplianceBundlePack
         var sb = new StringBuilder();
         void Line(string s = "") => sb.Append(s).Append(Nl);
 
-        Line("INCIDENT MANAGER — COMPLIANCE EVIDENCE BUNDLE");
-        Line("=============================================");
-        Line("A tamper-evident extract of the audit record for regulatory / examination use");
+        Line("CASEBOOK COMPLIANCE EVIDENCE BUNDLE");
+        Line("===================================");
+        Line("A tamper-evident extract of the audit record for regulatory and examination use");
         Line("(supports NYDFS 23 NYCRR Part 500 §500.17(b) certification and DFS examination requests).");
         Line();
         Line($"Generated (UTC) : {Utc(m.GeneratedAtUtc)}");
@@ -63,7 +63,7 @@ public static class ComplianceBundlePack
         Line("---------------");
         if (m.ChainResult.IsValid)
         {
-            Line("Whole-chain verification : VALID — no altered, inserted, or deleted entries.");
+            Line("Whole-chain verification : VALID. No altered, inserted, or deleted entries.");
             Line($"Chain head               : #{m.ChainHeadSequence}");
             Line($"Chain head hash          : {m.ChainHeadHash}");
         }
@@ -78,13 +78,13 @@ public static class ComplianceBundlePack
         Line($"Signing algorithm : {m.Algorithm}");
         Line($"Signing key id    : {m.KeyId}");
         Line(m.CoveringSeal is { } cov
-            ? $"Covering seal     : #{cov.Seal.UpToSequence} sealed {Utc(cov.Seal.SealedAtUtc)} — {SealVerdict(cov)}"
-            : "Covering seal     : NONE — the end of this range is not yet under an integrity seal.");
+            ? $"Covering seal     : #{cov.Seal.UpToSequence} sealed {Utc(cov.Seal.SealedAtUtc)}, {SealVerdict(cov)}"
+            : "Covering seal     : NONE. The end of this range is not yet under an integrity seal.");
         if (m.CoveringSeal is not null)
             Line("                    (the earliest seal that covers the last entry in this range)");
         Line($"Seals listed      : {m.Seals.Count}");
         foreach (var s in m.Seals)
-            Line($"   #{s.Seal.UpToSequence} sealed {Utc(s.Seal.SealedAtUtc)} key {s.Seal.KeyId} — {SealVerdict(s)}");
+            Line($"   #{s.Seal.UpToSequence} sealed {Utc(s.Seal.SealedAtUtc)} key {s.Seal.KeyId}, {SealVerdict(s)}");
         Line();
         Line("CONTENTS");
         Line("--------");
@@ -149,8 +149,8 @@ public static class ComplianceBundlePack
 
         Line("INDEPENDENTLY VERIFYING THIS BUNDLE");
         Line("===================================");
-        Line("This package can be verified without the IncidentManager application. Two independent");
-        Line("checks together establish that the record is intact and was sealed by our key.");
+        Line("This package can be verified without CaseBook. Two independent checks together");
+        Line("establish that the record is intact and was sealed by our key.");
         Line();
         Line("1) AUDIT CHAIN  (audit-chain.csv)");
         Line("   Each row is one append-only entry. Its EntryHash is:");
@@ -181,7 +181,7 @@ public static class ComplianceBundlePack
         Line("   up to that point is unchanged since it was sealed.");
         Line();
         Line("The SignatureValid / ChainMatches columns in seals.csv record the result of the same two");
-        Line("checks performed by IncidentManager at the moment this bundle was generated.");
+        Line("checks performed by CaseBook at the moment this bundle was generated.");
         return sb.ToString();
     }
 

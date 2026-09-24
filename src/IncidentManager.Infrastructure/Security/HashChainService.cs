@@ -43,12 +43,12 @@ public sealed class HashChainService : IHashChainService
 
             if (entry.PrevHash != prevHash)
                 return ChainVerificationResult.Broken(entry.Sequence,
-                    "Previous-hash link does not match the prior entry's hash.");
+                    "Previous-hash link doesn't match the prior entry's hash.");
 
             var recomputed = ComputeEntryHash(entry);
             if (entry.EntryHash != recomputed)
                 return ChainVerificationResult.Broken(entry.Sequence,
-                    "Entry hash does not match its content — this record was altered after it was written.");
+                    "Entry hash doesn't match its content. This record was altered after it was written.");
 
             prevHash = entry.EntryHash;
             expectedSequence++;
