@@ -82,14 +82,18 @@ public static class AdminActionPermissions
     /// Fails closed: an unmapped action throws <see cref="InvalidOperationException"/>; a missing permission
     /// throws <see cref="ForbiddenException"/>.
     /// </summary>
-    public static void Require<TService>(ICurrentUser user, [CallerMemberName] string action = "")
+    /// <param name="siem">When given, a refusal is streamed to the SIEM (S-19).</param>
+    public static void Require<TService>(ICurrentUser user, ISecurityEventSink? siem = null, [CallerMemberName] string action = "")
     {
         var key = Key<TService>(action);
         if (!Required.TryGetValue(key, out var permission))
             throw new InvalidOperationException(
                 $"No admin-action permission is defined for '{key}'. Add it to {nameof(AdminActionPermissions)}.");
         if (!user.Has(permission))
+        {
+            siem?.Emit(SecurityEvents.ActionRefused(user.UserId, user.UserPrincipalName, permission, key));
             throw new ForbiddenException(permission, key);
+        }
     }
 
     public static string Key<TService>(string action) => Key(typeof(TService), action);

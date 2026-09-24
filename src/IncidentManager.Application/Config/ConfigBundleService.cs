@@ -97,7 +97,7 @@ public sealed partial class ConfigBundleService
     /// <summary>Builds, signs, and packages the bundle for download, recording the export in the audit trail.</summary>
     public async Task<ConfigExport> ExportAsync(CancellationToken ct = default)
     {
-        AdminActionPermissions.Require<ConfigBundleService>(_user);   // S-18
+        AdminActionPermissions.Require<ConfigBundleService>(_user, _siem);   // S-18
         var bundle = await BuildBundleAsync(ct);
 
         var signature = _signer.Sign(ConfigBundleJson.Canonicalize(bundle));

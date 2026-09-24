@@ -73,6 +73,35 @@ public static class SecurityEvents
         Actor = actor, ActorUpn = actorUpn, Detail = path
     };
 
+    /// <summary>
+    /// S-19: an action refused at the service boundary for lack of a permission — the UI normally hides what a user
+    /// can't do, so this fires when the UI and the user's rights disagree (a stale session after access was removed,
+    /// or a UI bug). No HTTP 403 accompanies it (Blazor calls the service directly), so it's streamed here.
+    /// </summary>
+    public static SecurityEvent ActionRefused(string actor, string? actorUpn, Permission required, string? action) => new()
+    {
+        EventId = SecurityEventIds.ActionRefused,
+        Category = "Authorization",
+        Action = "ActionRefused",
+        Outcome = SecurityOutcome.Deny,
+        Severity = SecuritySeverity.Warning,
+        Actor = actor, ActorUpn = actorUpn,
+        Detail = $"{action ?? "action"} requires {required}"
+    };
+
+    /// <summary>S-19: a presented API token was unknown, expired or revoked. Carries only the token's display prefix.</summary>
+    public static SecurityEvent ApiTokenRejected(string? tokenPrefix, string? remoteAddress) => new()
+    {
+        EventId = SecurityEventIds.AuthenticationFailed,
+        Category = "Authentication",
+        Action = "ApiTokenRejected",
+        Outcome = SecurityOutcome.Failure,
+        Severity = SecuritySeverity.Warning,
+        Actor = "anonymous",
+        Detail = $"API token {(string.IsNullOrEmpty(tokenPrefix) ? "(malformed)" : tokenPrefix + "…")} rejected"
+                 + (string.IsNullOrEmpty(remoteAddress) ? "" : $" from {remoteAddress}")
+    };
+
     public static SecurityEvent LegalHold(bool placed, string actor, string? actorUpn, string? caseNumber) => new()
     {
         EventId = placed ? SecurityEventIds.LegalHoldPlaced : SecurityEventIds.LegalHoldReleased,

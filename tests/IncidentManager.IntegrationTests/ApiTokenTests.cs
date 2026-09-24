@@ -11,6 +11,11 @@ using IncidentManager.Infrastructure.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
+using IncidentManager.Web.Security;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace IncidentManager.IntegrationTests;
 
@@ -146,6 +151,37 @@ public sealed class ApiTokenTests : IDisposable
         var created = await svc.CreatePersonalAsync("mine", ["Insider Response"], _clock.UtcNow.AddDays(30));
 
         created.Token.Roles.Should().Equal("Insider Response");
+    }
+
+    [Fact]
+    public async Task A_rejected_token_is_streamed_to_the_siem_without_the_secret()
+    {
+        // S-19: the real auth handler, with a capturing sink.
+        await using var db = NewContext();
+        var sink = new CapturingSecurityEventSink();
+        var sp = new ServiceCollection()
+            .AddOptions()
+            .AddSingleton<ISecurityEventSink>(sink)
+            .AddSingleton(NewService(db, Admin()))
+            .BuildServiceProvider();
+
+        var http = new Microsoft.AspNetCore.Http.DefaultHttpContext { RequestServices = sp };
+        const string bogus = "cbk_thisIsNotARealTokenAtAll_0123456789";
+        http.Request.Headers.Authorization = "Bearer " + bogus;
+        http.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.1.2.3");
+
+        var handler = new ApiKeyAuthenticationHandler(
+            sp.GetRequiredService<IOptionsMonitor<AuthenticationSchemeOptions>>(),
+            NullLoggerFactory.Instance, System.Text.Encodings.Web.UrlEncoder.Default);
+        await handler.InitializeAsync(new AuthenticationScheme(
+            ApiKeyAuthenticationHandler.SchemeName, null, typeof(ApiKeyAuthenticationHandler)), http);
+
+        var result = await handler.AuthenticateAsync();
+
+        result.Succeeded.Should().BeFalse();
+        var e = sink.Events.Should().ContainSingle(x => x.Action == "ApiTokenRejected").Subject;
+        e.EventId.Should().Be(SecurityEventIds.AuthenticationFailed);
+        e.Detail.Should().Contain(bogus[..12]).And.Contain("10.1.2.3").And.NotContain(bogus[12..]);
     }
 
     [Fact]

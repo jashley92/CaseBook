@@ -303,5 +303,30 @@ public sealed class SecurityEventEmitSiteTests : IDisposable
         _siem.Events.Should().ContainSingle(e => e.EventId == SecurityEventIds.LegalHoldReleased);
     }
 
+    [Fact]
+    public async Task A_case_action_refused_for_lack_of_permission_emits_5202()
+    {
+        Guid id;
+        using (var db = NewContext())
+        {
+            var c = Case.Open(2026, 2, "Beta", "Beta", Classification.Incident, Severity.Medium,
+                CaseOrigin.InternalDetection, "sys", _clock.UtcNow);
+            db.Cases.Add(c);
+            await db.SaveChangesAsync();
+            id = c.Id;
+        }
+
+        _user.RoleSet = [AppRole.Manager];   // view-only
+        using (var db = NewContext())
+        {
+            var svc = NewCaseService(db);
+            await svc.Invoking(s => s.AddNoteAsync(id, "note")).Should()
+                .ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
+        }
+
+        _siem.Events.Should().ContainSingle(e => e.EventId == SecurityEventIds.ActionRefused
+                                                && e.Detail!.Contains("CaseService.AddNoteAsync"));
+    }
+
     public void Dispose() => _connection.Dispose();
 }

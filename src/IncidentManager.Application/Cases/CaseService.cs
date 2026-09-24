@@ -102,7 +102,10 @@ public sealed class CaseService
             throw new InvalidOperationException(
                 $"No case-action permission is defined for '{action}'. Add it to {nameof(CaseActionPermissions)}.");
         if (!_user.Has(permission))
+        {
+            _siem?.Emit(Security.SecurityEvents.ActionRefused(_user.UserId, _user.UserPrincipalName, permission, $"CaseService.{action}"));
             throw new ForbiddenException(permission, action);
+        }
     }
 
     /// <summary>

@@ -20,6 +20,7 @@ public static class SecurityEventIds
 
     // 52xx — Authorization
     public const int AuthorizationDenied = 5201; // a 403 on a page/endpoint
+    public const int ActionRefused = 5202;       // an in-app action refused at the service layer (S-19)
 
     // 53xx — Data access (sourced from the C-05 access log)
     public const int CaseOpened = 5301;

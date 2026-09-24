@@ -97,19 +97,23 @@ public sealed class AdminActionPermissionsTests
     [Fact]
     public void An_unmapped_action_fails_closed()
     {
-        var act = () => AdminActionPermissions.Require<RoleService>(new FakeUser(Permission.Administer), "NotARealAction");
+        var act = () => AdminActionPermissions.Require<RoleService>(new FakeUser(Permission.Administer), action: "NotARealAction");
         act.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]
     public void A_user_without_Administer_is_refused()
     {
-        var act = () => AdminActionPermissions.Require<RoleService>(new FakeUser(Permission.EditCases),
+        var siem = new CapturingSink();
+        var act = () => AdminActionPermissions.Require<RoleService>(new FakeUser(Permission.EditCases), siem,
             nameof(RoleService.AddMappingAsync));
         act.Should().Throw<ForbiddenException>().Which.Required.Should().Be(Permission.Administer);
+        // S-19: the refusal is streamed to the SIEM.
+        siem.Events.Should().ContainSingle(e => e.EventId == SecurityEventIds.ActionRefused
+                                               && e.Detail!.Contains("RoleService.AddMappingAsync"));
 
         var ok = () => AdminActionPermissions.Require<RoleService>(new FakeUser(Permission.Administer),
-            nameof(RoleService.AddMappingAsync));
+            action: nameof(RoleService.AddMappingAsync));
         ok.Should().NotThrow();
     }
 
@@ -124,5 +128,11 @@ public sealed class AdminActionPermissionsTests
         public bool IsInRole(AppRole role) => false;
         public IReadOnlySet<Permission> Permissions => held.ToHashSet();
         public bool Has(Permission permission) => held.Contains(permission);
+    }
+
+    private sealed class CapturingSink : ISecurityEventSink
+    {
+        public List<SecurityEvent> Events { get; } = new();
+        public void Emit(SecurityEvent e) => Events.Add(e);
     }
 }

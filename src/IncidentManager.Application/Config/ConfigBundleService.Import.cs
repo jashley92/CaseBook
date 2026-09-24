@@ -134,7 +134,7 @@ public sealed partial class ConfigBundleService
     public async Task<ConfigImportResult> ImportAsync(ConfigBundle bundle, CancellationToken ct = default)
     {
         // S-18: an import can grant roles and AD mappings, so it's asserted here, not just by the Administer page.
-        AdminActionPermissions.Require<ConfigBundleService>(_user);
+        AdminActionPermissions.Require<ConfigBundleService>(_user, _siem);
         var changedSettings = new List<string>();
         var changedRoles = new List<string>();
         var addedMappings = new List<string>();

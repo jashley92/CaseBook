@@ -37,7 +37,15 @@ public sealed class ApiKeyAuthenticationHandler : AuthenticationHandler<Authenti
 
         var svc = Context.RequestServices.GetRequiredService<ApiTokenService>();
         var auth = await svc.AuthenticateAsync(token);
-        if (auth is null) return AuthenticateResult.Fail("Invalid, expired, or revoked API token.");
+        if (auth is null)
+        {
+            // S-19: a rejected token is an authentication failure for the SIEM (a leaked, stale or guessed credential).
+            // Only the display prefix travels — the same prefix the token lists show — never the secret.
+            Context.RequestServices.GetService<ISecurityEventSink>()?.Emit(SecurityEvents.ApiTokenRejected(
+                token.StartsWith("cbk_", StringComparison.Ordinal) && token.Length >= 12 ? token[..12] : null,
+                Context.Connection.RemoteIpAddress?.ToString()));
+            return AuthenticateResult.Fail("Invalid, expired, or revoked API token.");
+        }
 
         var claims = new List<Claim>
         {

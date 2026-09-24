@@ -56,7 +56,7 @@ public sealed class AdminSettingsService
     /// </summary>
     public async Task SetAsync(string key, string? value, CancellationToken ct = default)
     {
-        AdminActionPermissions.Require<AdminSettingsService>(_user);
+        AdminActionPermissions.Require<AdminSettingsService>(_user, _siem);
         using var db = _factory.CreateDbContext();
         if (!SettingsCatalog.ByKey.TryGetValue(key, out var def))
             throw new InvalidOperationException($"'{key}' is not an editable operational setting.");
@@ -92,7 +92,7 @@ public sealed class AdminSettingsService
     /// </summary>
     public async Task ResetAsync(string key, CancellationToken ct = default)
     {
-        AdminActionPermissions.Require<AdminSettingsService>(_user);
+        AdminActionPermissions.Require<AdminSettingsService>(_user, _siem);
         using var db = _factory.CreateDbContext();
         var existing = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == key, ct);
         if (existing is null) return;

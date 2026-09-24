@@ -346,6 +346,7 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5003 | Integrity | Evidence at rest drifted from its recorded SHA-256 (F-17 critical log/email alarm) |
 | 5101 | Authentication | Authentication failure |
 | 5201 | Authorization | Access denied (403) |
+| 5202 | Authorization | In-app action refused for lack of a permission |
 | 5301 | DataAccess | Case opened |
 | 5302 | DataAccess | Evidence downloaded |
 | 5303 | DataAccess | Report downloaded |
@@ -362,8 +363,11 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5505 | Authorization | Case restriction lifted (widens who can see it) |
 
 These ids are a **stable contract** — pin SIEM rules to them; they are only ever appended to, never
-renumbered. **5101** fires on a failed **Windows (Negotiate) authentication handshake**, so it is a
-production-only signal (the development auth handler never fails).
+renumbered. **5101** fires on a failed **Windows (Negotiate) authentication handshake** (a production-only
+signal; the development auth handler never fails) and, with action `ApiTokenRejected`, on an unknown, expired or
+revoked **API token** (the detail carries the token's display prefix and source address, never the token).
+**5202** fires when an in-app action is refused at the service layer for lack of a permission: the UI normally
+hides what a user can't do, so this marks a stale session (access removed while signed in) or a UI defect.
 
 ---
 
