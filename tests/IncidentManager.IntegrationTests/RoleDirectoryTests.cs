@@ -142,6 +142,24 @@ public sealed class RoleDirectoryTests : IDisposable
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    [Fact]
+    public async Task Cannot_edit_Administer_off_the_last_admin_role()
+    {
+        // S-17: admin access comes only through a custom role (no AD group maps to SysAdmin).
+        await SeedAsync(new RoleMappingOptions());
+        using var scope = Scope();
+        var svc = scope.ServiceProvider.GetRequiredService<RoleService>();
+        await svc.CreateRoleAsync("Platform Admins", null, [Permission.ViewCases, Permission.Administer]);
+        await svc.AddMappingAsync("SOC-Platform", "Platform Admins");
+        var role = (await svc.ListRolesAsync()).First(r => r.Name == "Platform Admins");
+
+        var strip = () => svc.UpdateRoleAsync(role.Id, null, [Permission.ViewCases]);
+        await strip.Should().ThrowAsync<InvalidOperationException>().WithMessage("*last administrator*");
+
+        // Editing it while keeping Administer is fine.
+        await svc.UpdateRoleAsync(role.Id, "Platform team", [Permission.ViewCases, Permission.EditCases, Permission.Administer]);
+    }
+
     public void Dispose()
     {
         _sp.Dispose();

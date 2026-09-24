@@ -68,6 +68,13 @@ public sealed class RoleService
                    ?? throw new InvalidOperationException("Role not found.");
         if (role.IsSystem) throw new InvalidOperationException("System roles are managed in code and cannot be edited.");
 
+        // S-17: the same anti-lockout guard as delete — taking Administer off a role mustn't remove the last admin access.
+        var perms = permissions as IReadOnlyCollection<Permission> ?? permissions.ToList();
+        permissions = perms;
+        if (role.GetPermissions().Contains(Permission.Administer) && !perms.Contains(Permission.Administer)
+            && !await AdministerRemainsWithoutAsync(db, roleName: role.Name, exceptMappingId: null, ct))
+            throw new InvalidOperationException("Removing Administer from this role would remove the last administrator access.");
+
         role.Description = description?.Trim();
         role.SetPermissions(permissions, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
