@@ -19,6 +19,21 @@ public sealed record OverdueActionItem(
     DateTimeOffset DueAtUtc,
     string? OwnerUserId);
 
+/// <summary>Who an overdue follow-up item has escalated to (PROD-03). Values are the escalation order.</summary>
+public enum OverdueEscalationTier
+{
+    /// <summary>The case's incident commander (skipped when they were the first reminder's recipient).</summary>
+    IncidentCommander = 1,
+    /// <summary>Everyone holding the Manager role in the user directory.</summary>
+    Managers = 2,
+}
+
+/// <summary>
+/// An overdue follow-up item that has stayed overdue long enough to escalate (PROD-03): the item, the tier it
+/// has newly reached, and how long it has been overdue, for the email body.
+/// </summary>
+public sealed record EscalatedActionItem(OverdueActionItem Item, OverdueEscalationTier Tier, double HoursOverdue);
+
 /// <summary>
 /// A follow-up item whose due date is approaching but not yet passed (E-03d), flattened for notification.
 /// Same shape as <see cref="OverdueActionItem"/> — carried as a distinct type so the "due soon" and
@@ -123,6 +138,15 @@ public interface ICaseNotifications
     /// by config; a no-op when no recipients resolve.
     /// </summary>
     Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default);
+
+    /// <summary>
+    /// Called by the overdue scan (PROD-03) with items that have <em>newly</em> reached an escalation tier:
+    /// still overdue after the configured hours, so the reminder widens from the owner to the incident
+    /// commander, then to managers. Notifies only — nothing here changes the item or the case. A default no-op
+    /// is provided so existing implementers (and test doubles) need not change.
+    /// </summary>
+    Task OnActionItemsEscalatedAsync(IReadOnlyList<EscalatedActionItem> items, CancellationToken ct = default)
+        => Task.CompletedTask;
 
     /// <summary>
     /// Called by the scheduled regulatory-deadline scan (PROD-37) with the cases that have <em>newly</em>

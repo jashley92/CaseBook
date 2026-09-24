@@ -65,6 +65,13 @@ public static class SettingsCatalog
             "When on, a background scan emails each after-action item's owner (or the case's incident commander if it has no reachable owner) once when the item passes its due date (E-03b). Read-only over case data — it records nothing. Takes effect within a few minutes of saving.", "false"),
         new SettingDefinition("Notifications:OverdueScan:IntervalHours", "Overdue scan interval (hours)", "Notifications", SettingKind.Int,
             "Hours between overdue after-action scans. Reminders are not time-critical, so this is deliberately slow (default daily). Takes effect within a few minutes of saving.", "24"),
+        // PROD-03: escalation chain for items that stay overdue. Notifications only; nothing is reassigned.
+        new SettingDefinition("Notifications:OverdueScan:Escalation:Enabled", "Escalate items that stay overdue", "Notifications", SettingKind.Bool,
+            "When an overdue after-action item is still open after the hours below, email the case's incident commander, then managers. Reminders only: nothing is reassigned or changed. Needs overdue reminders on.", "false"),
+        new SettingDefinition("Notifications:OverdueScan:Escalation:IncidentCommanderAfterHours", "Escalate to incident commander after (hours overdue)", "Notifications", SettingKind.Int,
+            "Hours past the due date before the case's incident commander is emailed. 0 skips this step.", "48"),
+        new SettingDefinition("Notifications:OverdueScan:Escalation:ManagersAfterHours", "Escalate to managers after (hours overdue)", "Notifications", SettingKind.Int,
+            "Hours past the due date before everyone with the Manager role is emailed. 0 skips this step.", "120"),
         new SettingDefinition("Notifications:DueSoonScan:Enabled", "Due-soon after-action reminders", "Notifications", SettingKind.Bool,
             "When on, a background scan emails each after-action item's owner (or the case's incident commander if it has no reachable owner) once, ahead of the deadline, when the item is due within the lead window (E-03d). This fires before the item lapses; the overdue reminder still fires if it does. Read-only over case data. Takes effect within a few minutes of saving.", "false"),
         new SettingDefinition("Notifications:DueSoonScan:LeadHours", "Due-soon lead window (hours)", "Notifications", SettingKind.Int,

@@ -83,6 +83,26 @@ public static class EmailTemplateCatalog
             CtaUrlToken: "OverdueUrl"),
 
         new EmailTemplateDefinition(
+            "overdue-escalated",
+            "Overdue item escalation",
+            "Sent to a case's incident commander, then to managers, when an after-action item stays overdue past the configured hours (PROD-03). A reminder only: nothing is reassigned.",
+            "Escalation: {{ItemCount}} after-action item(s) still overdue",
+            """
+            <h1>After-action items still overdue</h1>
+            <p>You're receiving this as {{Audience}}. The following follow-up item(s) are still open well past their due date:</p>
+            {{ItemsList}}
+            <p>The owner has already been reminded. Please check in with them or the case team.</p>
+            """,
+            new[]
+            {
+                new EmailToken("ItemCount", "How many escalated items are in this email."),
+                new EmailToken("Audience", "Why this recipient is receiving it: \"the incident commander\" or \"a manager\"."),
+                new EmailToken("ItemsList", "The formatted list of items (case, title, owner, how long overdue). Rendered by the app."),
+            },
+            CtaLabel: "Review overdue items",
+            CtaUrlToken: "OverdueUrl"),
+
+        new EmailTemplateDefinition(
             "action-item-due-soon",
             "After-action due-soon reminder",
             "Sent to an item's owner (or the case's incident commander) ahead of the deadline, when a follow-up item is due within the lead window (E-03d).",

@@ -20,14 +20,21 @@ public class CaseNotificationsTests
     private sealed class FakeUserDirectory : IUserDirectory
     {
         private readonly Dictionary<string, (string Name, string? Email)> _users = new(StringComparer.OrdinalIgnoreCase);
-        public FakeUserDirectory Add(string id, string name, string? email) { _users[id] = (name, email); return this; }
+        private readonly Dictionary<string, string> _roles = new(StringComparer.OrdinalIgnoreCase);
+        public FakeUserDirectory Add(string id, string name, string? email, string roles = "")
+        {
+            _users[id] = (name, email);
+            _roles[id] = roles;
+            return this;
+        }
 
         public string? EmailFor(string userId) => _users.TryGetValue(userId, out var u) ? u.Email : null;
         public string DisplayFor(string? userId) =>
             userId is not null && _users.TryGetValue(userId, out var u) ? u.Name : (userId ?? "—");
         public UserSummary? Resolve(string userId) =>
             _users.TryGetValue(userId, out var u) ? new UserSummary(userId, u.Name, null, u.Email, "") : null;
-        public IReadOnlyList<UserSummary> All() => [];
+        public IReadOnlyList<UserSummary> All() =>
+            _users.Select(kv => new UserSummary(kv.Key, kv.Value.Name, null, kv.Value.Email, _roles[kv.Key])).ToList();
         public Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, CancellationToken ct = default) => Task.CompletedTask;
         public void Invalidate() { }
     }
@@ -115,6 +122,62 @@ public class CaseNotificationsTests
     }
 
     // --- Assignment (E-03b) ----------------------------------------------------
+
+    // ---- PROD-03: overdue escalation chain ----
+
+    private static OverdueActionItem Item(string? owner, string? ic = "ic1") =>
+        new(Guid.NewGuid(), "2026-01_Vendor", "Vendor breach", ic, Guid.NewGuid(), "Rotate keys", Now.AddDays(-3), owner);
+
+    private static FakeUserDirectory Team() => new FakeUserDirectory()
+        .Add("owner1", "Olive Owner", "olive@insurer.example", "Analyst")
+        .Add("ic1", "Ivan IC", "ivan@insurer.example", "IncidentCommander")
+        .Add("mgr1", "Mia Manager", "mia@insurer.example", "Manager")
+        .Add("mgr2", "Max Manager", "max@insurer.example", "Manager, SysAdmin");
+
+    [Fact]
+    public async Task Escalation_tiers_reach_the_ic_then_every_manager()
+    {
+        var sender = new CapturingEmailSender();
+        var notifications = Build(sender, new EmailOptions(), Team());
+        var item = Item("owner1");
+
+        await notifications.OnActionItemsEscalatedAsync(
+            [new EscalatedActionItem(item, OverdueEscalationTier.IncidentCommander, 50)]);
+        sender.Sent.Should().ContainSingle().Which.To.Should().Equal("ivan@insurer.example");
+        sender.Sent[0].HtmlBody.Should().Contain("the incident commander").And.Contain("Olive Owner").And.Contain("2 days overdue");
+
+        sender.Sent.Clear();
+        await notifications.OnActionItemsEscalatedAsync(
+            [new EscalatedActionItem(item, OverdueEscalationTier.Managers, 130)]);
+        sender.Sent.SelectMany(m => m.To).Should().BeEquivalentTo("mia@insurer.example", "max@insurer.example");
+        sender.Sent.Should().OnlyContain(m => m.HtmlBody.Contains("a manager"));
+    }
+
+    [Fact]
+    public async Task The_ic_step_is_skipped_when_the_ic_already_got_the_first_reminder()
+    {
+        var sender = new CapturingEmailSender();
+        var notifications = Build(sender, new EmailOptions(), Team());
+
+        // No owner: the first overdue reminder already went to the IC, so escalating "to the IC" would repeat it.
+        await notifications.OnActionItemsEscalatedAsync(
+            [new EscalatedActionItem(Item(owner: null), OverdueEscalationTier.IncidentCommander, 50)]);
+
+        sender.Sent.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Escalations_honour_the_overdue_opt_out()
+    {
+        var sender = new CapturingEmailSender();
+        var prefs = new FakePrefs().Set("mgr1", overdue: true);
+        var notifications = Build(sender, new EmailOptions(), Team(), prefs: prefs);
+
+        await notifications.OnActionItemsEscalatedAsync(
+            [new EscalatedActionItem(Item("owner1"), OverdueEscalationTier.Managers, 130)]);
+
+        sender.Sent.SelectMany(m => m.To).Should().Equal("max@insurer.example");
+    }
 
     [Fact]
     public async Task Assignment_emails_the_assignee_when_enabled()

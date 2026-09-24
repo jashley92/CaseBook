@@ -213,6 +213,77 @@ public sealed class CaseNotifications : ICaseNotifications
         }
     }
 
+    public async Task OnActionItemsEscalatedAsync(IReadOnlyList<EscalatedActionItem> items, CancellationToken ct = default)
+    {
+        if (items.Count == 0) return;
+
+        if (ChatOn("OverdueReminders"))
+        {
+            var caseCount = items.Select(i => i.Item.CaseId).Distinct().Count();
+            await _chat.SendAsync(new ChatNotification(
+                $"{items.Count} overdue after-action escalation(s)",
+                $"Across {caseCount} case(s). Incident commanders / managers have been emailed where reachable.",
+                OverdueUrl(), ChatUrgency.Alert), ct);
+        }
+
+        // Managers = everyone the directory holds with the Manager role (a sign-in snapshot of AD groups).
+        var managers = _users.All()
+            .Where(u => u.RolesCsv.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Contains(nameof(AppRole.Manager), StringComparer.OrdinalIgnoreCase))
+            .Select(u => u.UserId)
+            .ToList();
+
+        // (recipient, audience) → items. The IC step skips an IC who was already the first reminder's recipient.
+        var byRecipient = new Dictionary<(string Uid, string Audience), List<EscalatedActionItem>>();
+        void Add(string uid, string audience, EscalatedActionItem e)
+        {
+            if (!byRecipient.TryGetValue((uid, audience), out var list)) byRecipient[(uid, audience)] = list = [];
+            list.Add(e);
+        }
+        foreach (var e in items)
+        {
+            if (e.Tier == OverdueEscalationTier.IncidentCommander)
+            {
+                var ic = e.Item.IncidentCommanderUserId;
+                var first = ResolveRecipientUserId(e.Item.OwnerUserId, ic);
+                if (!string.IsNullOrWhiteSpace(ic) && !string.Equals(ic, first, StringComparison.OrdinalIgnoreCase))
+                    Add(ic, "the incident commander", e);
+            }
+            else
+            {
+                foreach (var m in managers) Add(m, "a manager", e);
+            }
+        }
+
+        var overdueUrl = OverdueUrl();
+        var mandatory = Mandatory("Overdue");
+        foreach (var ((uid, audience), list) in byRecipient)
+        {
+            if (!mandatory && (await _prefs.GetAsync(uid, ct)).Overdue) continue; // same opt-out as overdue reminders
+            var to = _users.EmailFor(uid);
+            if (string.IsNullOrWhiteSpace(to)) continue;
+            var ordered = list.OrderBy(i => i.Item.DueAtUtc).ToList();
+            var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ItemCount"] = ordered.Count.ToString(CultureInfo.InvariantCulture),
+                ["Audience"] = audience,
+                ["OverdueUrl"] = overdueUrl ?? "",
+            };
+            var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ItemsList"] = "<ul>" + string.Join("", ordered.Select(i =>
+                    $"<li>{WebUtility.HtmlEncode(i.Item.CaseNumber)} — {WebUtility.HtmlEncode(i.Item.Title)} " +
+                    $"(owner {WebUtility.HtmlEncode(_users.DisplayFor(i.Item.OwnerUserId ?? i.Item.IncidentCommanderUserId))}; " +
+                    $"due {WebUtility.HtmlEncode(i.Item.DueAtUtc.ToString("u"))}, {OverdueSpan(i.HoursOverdue)} overdue)</li>")) + "</ul>",
+            };
+            var message = await _composer.ComposeAsync("overdue-escalated", [to], tokens, overdueUrl, htmlTokens, ct);
+            await _email.SendAsync(message, ct);
+        }
+    }
+
+    private static string OverdueSpan(double hours) =>
+        hours >= 48 ? $"{Math.Floor(hours / 24):0} days" : $"{Math.Floor(hours):0} hours";
+
     public async Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default)
     {
         if (items.Count == 0) return;

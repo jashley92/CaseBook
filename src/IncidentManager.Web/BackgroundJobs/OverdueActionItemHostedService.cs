@@ -37,7 +37,7 @@ public sealed class OverdueActionItemHostedService : BackgroundService
         {
             var options = _options.CurrentValue;
             if (options.Enabled && IsDue(options))
-                await RunCycleAsync(stoppingToken);
+                await RunCycleAsync(options, stoppingToken);
 
             await DelayAsync(PollInterval, stoppingToken);
         }
@@ -56,14 +56,18 @@ public sealed class OverdueActionItemHostedService : BackgroundService
         catch (OperationCanceledException) { /* shutting down */ }
     }
 
-    private async Task RunCycleAsync(CancellationToken ct)
+    private async Task RunCycleAsync(OverdueScanOptions options, CancellationToken ct)
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var scanner = scope.ServiceProvider.GetRequiredService<OverdueActionItemScanner>();
 
-            var notified = await scanner.ScanAndNotifyAsync(ct);
+            var esc = options.Escalation;
+            var policy = esc.Enabled
+                ? new OverdueEscalationPolicy(esc.IncidentCommanderAfterHours, esc.ManagersAfterHours)
+                : null;
+            var notified = await scanner.ScanAndNotifyAsync(policy, ct);
             _lastRunUtc = DateTimeOffset.UtcNow;
 
             if (notified > 0)

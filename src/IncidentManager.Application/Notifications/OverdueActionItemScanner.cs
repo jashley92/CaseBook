@@ -6,6 +6,12 @@ using Microsoft.EntityFrameworkCore;
 namespace IncidentManager.Application.Notifications;
 
 /// <summary>
+/// PROD-03: how long an item may stay overdue before its reminder widens. Hours are measured from the due
+/// date; a value of 0 (or less) disables that tier.
+/// </summary>
+public sealed record OverdueEscalationPolicy(int IncidentCommanderAfterHours, int ManagersAfterHours);
+
+/// <summary>
 /// Finds after-action items that have passed their due date and, for those newly overdue since the last
 /// run, dispatches an overdue reminder through <see cref="ICaseNotifications"/> (E-03b). Read-only over the
 /// data — it records nothing to the database, so it never touches the audit chain (the "ops telemetry out
@@ -18,8 +24,13 @@ public sealed class OverdueActionItemScanner(
     IOverdueActionItemTracker tracker,
     IClock clock)
 {
-    /// <summary>Scans for overdue items and notifies the newly-overdue ones. Returns how many were sent for.</summary>
-    public async Task<int> ScanAndNotifyAsync(CancellationToken ct = default)
+    /// <summary>
+    /// Scans for overdue items and notifies the newly-overdue ones; with an <paramref name="escalation"/> policy,
+    /// also escalates items that have stayed overdue past each tier (PROD-03) — once per item, due date and tier.
+    /// Notifications only: an escalation never reassigns, re-dates or otherwise changes the item or its case.
+    /// Returns how many reminders and escalations were sent for.
+    /// </summary>
+    public async Task<int> ScanAndNotifyAsync(OverdueEscalationPolicy? escalation = null, CancellationToken ct = default)
     {
         var now = clock.UtcNow;
         using var db = factory.CreateDbContext();
@@ -40,6 +51,32 @@ public sealed class OverdueActionItemScanner(
         if (newly.Count > 0)
             await notifications.OnActionItemsOverdueAsync(newly, ct);
 
-        return newly.Count;
+        var escalated = escalation is null ? [] : Escalations(overdue, escalation, now);
+        if (escalated.Count > 0)
+            await notifications.OnActionItemsEscalatedAsync(escalated, ct);
+
+        return newly.Count + escalated.Count;
+    }
+
+    /// <summary>Each item's newly reached tier(s). A lower tier not yet sent (e.g. the IC step, when the scan was
+    /// off while it passed) goes out alongside the higher one, so the chain never skips a rung.</summary>
+    private List<EscalatedActionItem> Escalations(IEnumerable<OverdueActionItem> overdue, OverdueEscalationPolicy policy,
+        DateTimeOffset now)
+    {
+        var result = new List<EscalatedActionItem>();
+        foreach (var item in overdue)
+        {
+            var hours = (now - item.DueAtUtc).TotalHours;
+            foreach (var (tier, after) in new[]
+            {
+                (OverdueEscalationTier.IncidentCommander, policy.IncidentCommanderAfterHours),
+                (OverdueEscalationTier.Managers, policy.ManagersAfterHours),
+            })
+            {
+                if (after > 0 && hours >= after && tracker.TryMarkEscalated(item.ActionItemId, item.DueAtUtc, (int)tier))
+                    result.Add(new EscalatedActionItem(item, tier, Math.Round(hours, 1)));
+            }
+        }
+        return result;
     }
 }

@@ -47,6 +47,12 @@ public sealed class OverdueActionItemScannerTests : IDisposable
     private sealed class CapturingNotifications : ICaseNotifications
     {
         public List<OverdueActionItem> Received { get; } = new();
+        public List<EscalatedActionItem> Escalated { get; } = new();
+        public Task OnActionItemsEscalatedAsync(IReadOnlyList<EscalatedActionItem> items, CancellationToken ct = default)
+        {
+            Escalated.AddRange(items);
+            return Task.CompletedTask;
+        }
         public int Calls { get; private set; }
         public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
         public Task OnAssignedAsync(Case c, string a, string b, CaseAssignmentRole role, string by, CancellationToken ct = default) => Task.CompletedTask;
@@ -105,6 +111,39 @@ public sealed class OverdueActionItemScannerTests : IDisposable
         (await scanner.ScanAndNotifyAsync()).Should().Be(0);   // already reminded
 
         notifications.Calls.Should().Be(1);                    // only the first pass dispatched
+    }
+
+    [Fact]
+    public async Task Items_that_stay_overdue_escalate_once_per_tier(/* PROD-03 */)
+    {
+        SeedCaseWithItems();                               // "Overdue open" is 24h past due
+        var notifications = new CapturingNotifications();
+        var scanner = NewScanner(notifications, new OverdueActionItemTracker());
+        var policy = new OverdueEscalationPolicy(IncidentCommanderAfterHours: 12, ManagersAfterHours: 48);
+
+        (await scanner.ScanAndNotifyAsync(policy)).Should().Be(2);   // first reminder + IC tier
+        notifications.Escalated.Should().ContainSingle()
+            .Which.Tier.Should().Be(OverdueEscalationTier.IncidentCommander);
+
+        (await scanner.ScanAndNotifyAsync(policy)).Should().Be(0, "each tier is sent once");
+
+        _clock.UtcNow = _clock.UtcNow.AddDays(2);          // now 72h overdue (and "Not yet due" has lapsed too)
+        await scanner.ScanAndNotifyAsync(policy);
+        var first = notifications.Escalated.Where(e => e.Item.Title == "Overdue open").ToList();
+        first.Select(e => e.Tier).Should().Equal(OverdueEscalationTier.IncidentCommander, OverdueEscalationTier.Managers);
+        first[1].HoursOverdue.Should().Be(72);
+    }
+
+    [Fact]
+    public async Task Without_a_policy_or_with_tiers_off_nothing_escalates(/* PROD-03 */)
+    {
+        SeedCaseWithItems();
+        var notifications = new CapturingNotifications();
+
+        await NewScanner(notifications, new OverdueActionItemTracker()).ScanAndNotifyAsync();
+        await NewScanner(notifications, new OverdueActionItemTracker()).ScanAndNotifyAsync(new OverdueEscalationPolicy(0, 0));
+
+        notifications.Escalated.Should().BeEmpty();
     }
 
     public void Dispose() => _connection.Dispose();
