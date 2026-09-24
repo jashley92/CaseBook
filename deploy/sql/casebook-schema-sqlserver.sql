@@ -1816,3 +1816,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924153921_AddAgendaFeedLinkIssuedAt'
+)
+BEGIN
+    ALTER TABLE [Users] ADD [FeedLinkIssuedAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260924153921_AddAgendaFeedLinkIssuedAt'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260924153921_AddAgendaFeedLinkIssuedAt', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

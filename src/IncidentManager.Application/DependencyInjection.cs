@@ -37,6 +37,7 @@ public static class DependencyInjection
         services.AddScoped<Work.MyWorkService>();
         services.AddScoped<Work.TeamWorkloadService>();
         services.AddScoped<Work.AgendaService>();
+        services.AddScoped<Work.AgendaFeedService>();
         services.AddScoped<Campaigns.CampaignService>();   // E-29: cross-case campaign rollup + export
         services.AddScoped<Views.SavedViewService>();      // PROD-09: named/shared case-queue filter views
         services.AddScoped<CaseShortcutService>();         // PROD-20: recent + pinned cases for the palette / My Work

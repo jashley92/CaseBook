@@ -5,7 +5,8 @@
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Abstractions.ICurrentUser Me
-@inject IncidentManager.Application.Abstractions.IAgendaFeedTokens FeedTokens
+@inject AgendaFeedService Feeds
+@inject IncidentManager.Web.Services.ToastService Toasts
 @inject ISeverityLabels SevLabels
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -103,7 +104,7 @@
             <div class="im-section-head">
                 <span><span class="bi bi-calendar-week" aria-hidden="true"></span> Calendar subscription</span>
             </div>
-            @if (FeedTokens.Enabled && _feedUrl is not null)
+            @if (Feeds.Enabled && _feedUrl is not null)
             {
                 <p class="text-muted small mb-2">
                     Subscribe your calendar (Outlook: <em>Add calendar → Subscribe from web</em>) to this private URL and your
@@ -116,6 +117,12 @@
                         @(_copied ? "Copied" : "Copy")
                     </button>
                 </div>
+                @* S-12: the link lasts a year and can be voided without affecting anyone else's. *@
+                <p class="text-muted small mt-2 mb-0">
+                    Works until @TimeDisp.DateOnly(_feedExpires). If the link may have been shared or exposed,
+                    <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ConfirmResetFeed">reset it</button>.
+                </p>
+                <ConfirmDialog @ref="_confirm" />
             }
             else
             {
@@ -132,17 +139,30 @@
     private AgendaBoard? _board;
     private string _owner = "";      // "" = everyone, "@me" = mine, else a specific owner id
     private string? _feedUrl;
+    private DateTimeOffset _feedExpires;
     private bool _copied;
+    private ConfirmDialog _confirm = null!;
 
     [SupplyParameterFromQuery(Name = "owner")] private string? OwnerQuery { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
         if (!string.IsNullOrWhiteSpace(OwnerQuery)) _owner = OwnerQuery!;
-        if (FeedTokens.Issue(Me.UserId) is { } token)
-            _feedUrl = Nav.ToAbsoluteUri($"agenda/feed.ics?token={Uri.EscapeDataString(token)}").ToString();
+        SetFeed(await Feeds.GetMyLinkAsync());
         await Load();
     }
+
+    private void SetFeed(AgendaFeedLink? link)
+    {
+        _feedUrl = link is null ? null : Nav.ToAbsoluteUri($"agenda/feed.ics?token={Uri.EscapeDataString(link.Token)}").ToString();
+        _feedExpires = link?.ExpiresAtUtc ?? default;
+        _copied = false;
+    }
+
+    private void ConfirmResetFeed() => _confirm.Ask(this, "Reset calendar link",
+        "Your current link stops working straight away, so any calendar subscribed to it stops updating. " +
+        "Subscribe again with the new link afterwards.",
+        "Reset link", async () => { SetFeed(await Feeds.ResetMyLinkAsync()); Toasts.Success("New calendar link ready. Re-subscribe with it."); });
 
     private async Task Load() => _board = await Svc.GetBoardAsync(string.IsNullOrEmpty(_owner) ? null : _owner);
 

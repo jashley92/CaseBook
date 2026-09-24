@@ -316,6 +316,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("FeedLinkIssuedAtUtc")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("LastSeenUtc")
                         .HasColumnType("INTEGER");
 

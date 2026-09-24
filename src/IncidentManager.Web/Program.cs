@@ -408,13 +408,13 @@ app.MapGet("/agenda/agenda.ics", async (IncidentManager.Application.Work.AgendaS
 }).RequireAuthorization(Policies.ViewCases);
 
 // Subscribable live feed — token-authenticated (the token IS the credential), so anonymous. Disabled
-// (404) until Agenda:FeedKey is configured; an invalid/forged token is also 404. Exposes only that user's
-// own task titles + case numbers. Served inline so calendar clients can poll it.
-app.MapGet("/agenda/feed.ics", async (string? token, IncidentManager.Application.Abstractions.IAgendaFeedTokens tokens,
+// (404) until Agenda:FeedKey is configured; a forged, reset, expired (S-12) or role-less owner's token is also
+// 404. Exposes only that user's own task titles + case numbers. Served inline so calendar clients can poll it.
+app.MapGet("/agenda/feed.ics", async (string? token, IncidentManager.Application.Work.AgendaFeedService feeds,
     IncidentManager.Application.Work.AgendaService agenda, IConfiguration cfg,
     IncidentManager.Application.Abstractions.IClock clock, CancellationToken ct) =>
 {
-    if (string.IsNullOrWhiteSpace(token) || !tokens.TryValidate(token, out var userId))
+    if (await feeds.ResolveAsync(token, ct) is not { } userId)
         return Results.NotFound();
     var ics = await BuildAgendaIcsAsync(agenda, cfg, clock, userId, ct);
     return Results.Text(ics, "text/calendar", System.Text.Encoding.UTF8);

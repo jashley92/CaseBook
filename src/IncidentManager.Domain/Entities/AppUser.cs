@@ -17,4 +17,10 @@ public class AppUser : Entity
 
     /// <summary>Comma-separated <see cref="Enums.AppRole"/> names resolved from AD groups.</summary>
     public string RolesCsv { get; set; } = string.Empty;
+
+    /// <summary>
+    /// S-12: when this user's current agenda-feed link was issued. A feed token is valid only if it carries exactly this
+    /// time (and is under a year old), so resetting the link voids every earlier one for this user alone.
+    /// </summary>
+    public DateTimeOffset? FeedLinkIssuedAtUtc { get; set; }
 }
