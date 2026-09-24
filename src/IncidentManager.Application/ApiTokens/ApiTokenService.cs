@@ -97,7 +97,7 @@ public sealed class ApiTokenService
         ValidateExpiry(expiresAtUtc);
         if (roles.Count == 0) throw new ArgumentException("Select at least one of your roles for the token.");
 
-        var mine = _user.Roles.Select(r => r.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var mine = _user.RoleNames.ToHashSet(StringComparer.OrdinalIgnoreCase);   // S-14: custom roles count too
         var extra = roles.Where(r => !mine.Contains(r)).ToList();
         if (extra.Count > 0)
             throw new ArgumentException($"A personal token can't grant roles you don't have: {string.Join(", ", extra)}.");

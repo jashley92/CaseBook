@@ -12,6 +12,10 @@ public interface IRoleDirectory
     /// <summary>The union of permissions granted by the named roles (unknown names ignored).</summary>
     IReadOnlySet<Permission> PermissionsForRoles(IEnumerable<string> roleNames);
 
+    /// <summary>S-14: whether <paramref name="name"/> is a CaseBook role (built-in or custom), as opposed to, say, an
+    /// AD group SID carried as a role claim.</summary>
+    bool IsRole(string name) => PermissionsForRoles([name]).Count > 0;
+
     /// <summary>The role names granted to a user in the given AD security groups.</summary>
     IReadOnlySet<string> RolesForGroups(IEnumerable<string> adGroups);
 

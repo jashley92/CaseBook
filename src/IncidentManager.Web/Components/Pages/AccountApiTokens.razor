@@ -46,14 +46,16 @@
     else
     {
         <div class="row">
-            @foreach (var r in _myRoles)
+            @for (var i = 0; i < _myRoles.Length; i++)
             {
+                var r = _myRoles[i];
+                var inputId = $"myrole-{i}";   @* custom role names can contain spaces — index the id *@
                 <div class="col-md-4">
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="myrole-@r"
-                               checked="@_selectedRoles.Contains(r.ToString())"
-                               @onchange="e => ToggleRole(r.ToString(), (bool)(e.Value ?? false))" />
-                        <label class="form-check-label" for="myrole-@r">@Ui.Label(r)</label>
+                        <input class="form-check-input" type="checkbox" id="@inputId"
+                               checked="@_selectedRoles.Contains(r)"
+                               @onchange="e => ToggleRole(r, (bool)(e.Value ?? false))" />
+                        <label class="form-check-label" for="@inputId">@Ui.RoleLabel(r)</label>
                     </div>
                 </div>
             }
@@ -105,7 +107,7 @@ else
 }
 
 @code {
-    private AppRole[] _myRoles = Array.Empty<AppRole>();
+    private string[] _myRoles = Array.Empty<string>();
     private IReadOnlyList<ApiTokenView>? _tokens;
     private string _name = "";
     private DateTime _expiresDate = DateTime.UtcNow.Date.AddDays(90);
@@ -115,8 +117,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _myRoles = CurrentUser.Roles.OrderBy(r => (int)r).ToArray();
-        foreach (var r in _myRoles) _selectedRoles.Add(r.ToString()); // default to all of the user's roles
+        _myRoles = Ui.OrderRoles(CurrentUser.RoleNames).ToArray();   // S-14: custom roles too
+        foreach (var r in _myRoles) _selectedRoles.Add(r); // default to all of the user's roles
         await LoadAsync();
     }
 

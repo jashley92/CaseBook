@@ -31,7 +31,7 @@
             @if (_roles.Length > 0)
             {
                 <div class="profile-roles">
-                    <span class="profile-role">@Ui.Label(_primaryRole)</span>
+                    <span class="profile-role">@Ui.RoleLabel(_primaryRole)</span>
                     @if (_roles.Length > 1)
                     {
                         <span class="profile-role profile-role-more"
@@ -121,18 +121,21 @@
     private bool _open;
     private bool _about;
     private bool _dark;
-    private AppRole[] _roles = Array.Empty<AppRole>();
-    private AppRole _primaryRole;
+    private string[] _roles = Array.Empty<string>();
+    private string _primaryRole = "";
     private string _otherRolesTooltip = "";
 
     protected override void OnInitialized()
     {
-        // Ascending by enum value; the largest value is the most-privileged role, shown as primary.
-        _roles = CurrentUser.Roles.OrderBy(r => (int)r).ToArray();
+        // S-14: built-in and custom roles. The most-privileged built-in role is primary; a user with only custom
+        // roles shows the first of those.
+        var ordered = Ui.OrderRoles(CurrentUser.RoleNames);
+        var builtIn = ordered.Where(n => Enum.TryParse<AppRole>(n, out _)).ToList();
+        _roles = ordered.ToArray();
         if (_roles.Length > 0)
         {
-            _primaryRole = _roles[^1];
-            _otherRolesTooltip = string.Join(", ", _roles[..^1].Select(Ui.Label));
+            _primaryRole = builtIn.Count > 0 ? builtIn[^1] : _roles[0];
+            _otherRolesTooltip = string.Join(", ", _roles.Where(r => r != _primaryRole).Select(Ui.RoleLabel));
         }
     }
 

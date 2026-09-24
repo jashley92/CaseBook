@@ -15,7 +15,7 @@ public sealed class UserMirrorMiddleware
 
     public UserMirrorMiddleware(RequestDelegate next) => _next = next;
 
-    public async Task InvokeAsync(HttpContext context, IUserDirectory directory)
+    public async Task InvokeAsync(HttpContext context, IUserDirectory directory, IRoleDirectory roleDirectory)
     {
         var principal = context.User;
         if (principal.Identity?.IsAuthenticated == true)
@@ -31,11 +31,11 @@ public sealed class UserMirrorMiddleware
                 var upn = principal.FindFirstValue(ClaimTypes.Upn);
                 var email = principal.FindFirstValue(ClaimTypes.Email);
 
-                // Keep only resolved application-role names (Windows group SIDs won't parse), de-duped
-                // since a principal can carry the same role claim more than once.
+                // Keep only CaseBook role names — built-in or custom (S-14); Windows group SIDs are dropped.
+                // De-duped since a principal can carry the same role claim more than once.
                 var roles = string.Join(',', principal.FindAll(ClaimTypes.Role)
                     .Select(c => c.Value)
-                    .Where(v => Enum.TryParse<AppRole>(v, out _))
+                    .Where(v => Enum.TryParse<AppRole>(v, out _) || roleDirectory.IsRole(v))
                     .Distinct(StringComparer.OrdinalIgnoreCase));
 
                 // S8949: flow the request's cancellation token — the mirror is a best-effort, throttled

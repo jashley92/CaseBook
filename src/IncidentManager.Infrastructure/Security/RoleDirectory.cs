@@ -73,6 +73,8 @@ public sealed class RoleDirectory : IRoleDirectory
         return set;
     }
 
+    public bool IsRole(string name) => _snapshot.RolePermissions.ContainsKey(name);
+
     public IReadOnlySet<string> RolesForGroups(IEnumerable<string> adGroups)
     {
         var snap = _snapshot;

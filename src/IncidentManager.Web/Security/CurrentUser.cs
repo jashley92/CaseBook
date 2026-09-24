@@ -14,12 +14,19 @@ public sealed class CurrentUser : ICurrentUser
 {
     private readonly IHttpContextAccessor _http;
     private readonly AuthenticationStateProvider _authState;
+    private readonly Func<IRoleDirectory?> _roles;
     private ClaimsPrincipal? _cached;
 
-    public CurrentUser(IHttpContextAccessor http, AuthenticationStateProvider authState)
+    /// <param name="services">
+    /// The role directory is resolved from here on first use, not injected: it loads itself through a DbContext whose
+    /// audit interceptor needs the current user, so taking it as a constructor dependency deadlocks the container at
+    /// startup.
+    /// </param>
+    public CurrentUser(IHttpContextAccessor http, AuthenticationStateProvider authState, IServiceProvider services)
     {
         _http = http;
         _authState = authState;
+        _roles = () => services.GetService<IRoleDirectory>();
     }
 
     private ClaimsPrincipal Principal
@@ -68,6 +75,15 @@ public sealed class CurrentUser : ICurrentUser
             .ToHashSet();
 
     public bool IsInRole(AppRole role) => Principal.IsInRole(role.ToString());
+
+    // S-14: role claims that name a CaseBook role — built-in or custom. Windows can also carry group SIDs as role
+    // claims; those aren't roles here, so anything the directory doesn't know (and isn't built-in) is dropped.
+    public IReadOnlyList<string> RoleNames =>
+        Principal.FindAll(ClaimTypes.Role)
+            .Select(c => c.Value)
+            .Where(v => Enum.TryParse<AppRole>(v, out _) || (_roles()?.IsRole(v) ?? false))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     public IReadOnlySet<Permission> Permissions =>
         Principal.FindAll(AppClaimTypes.Permission)

@@ -50,6 +50,10 @@ public sealed class TestCurrentUser : ICurrentUser
     public IReadOnlySet<AppRole> Roles => RoleSet;
     public bool IsInRole(AppRole role) => RoleSet.Contains(role);
 
+    /// <summary>S-14: custom (non-built-in) role names the user also holds.</summary>
+    public List<string> CustomRoleNames { get; set; } = [];
+    public IReadOnlyList<string> RoleNames => RoleSet.Select(r => r.ToString()).Concat(CustomRoleNames).ToList();
+
     // Effective permissions derive from the role set, mirroring production claim expansion.
     public IReadOnlySet<Permission> Permissions => RoleDefinitions.PermissionsFor(RoleSet);
     public bool Has(Permission permission) => Permissions.Contains(permission);

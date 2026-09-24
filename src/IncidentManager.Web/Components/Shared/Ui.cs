@@ -109,6 +109,16 @@ public static class Ui
         return $"the {list} role";
     }
 
+    /// <summary>S-14: a role name's label — built-in roles get their friendly label, custom roles show as named.</summary>
+    public static string RoleLabel(string name) => Enum.TryParse<AppRole>(name, out var r) ? Label(r) : name;
+
+    /// <summary>S-14: role names in display order — built-in roles least to most privileged, then custom roles A–Z.</summary>
+    public static IReadOnlyList<string> OrderRoles(IEnumerable<string> names) =>
+        names.OrderBy(n => Enum.TryParse<AppRole>(n, out var r) ? 0 : 1)
+             .ThenBy(n => Enum.TryParse<AppRole>(n, out var r) ? (int)r : 0)
+             .ThenBy(n => n, StringComparer.OrdinalIgnoreCase)
+             .ToList();
+
     public static string Label(AppRole r) => r switch
     {
         AppRole.IncidentCommander => "Incident Commander",

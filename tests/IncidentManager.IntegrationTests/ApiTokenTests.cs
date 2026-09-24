@@ -135,6 +135,20 @@ public sealed class ApiTokenTests : IDisposable
     }
 
     [Fact]
+    public async Task A_personal_token_can_carry_a_custom_role_the_user_holds()
+    {
+        // S-14: custom roles count as the user's own roles.
+        await using var db = NewContext();
+        var analyst = Analyst();
+        analyst.CustomRoleNames = ["Insider Response"];
+        var svc = NewService(db, analyst);
+
+        var created = await svc.CreatePersonalAsync("mine", ["Insider Response"], _clock.UtcNow.AddDays(30));
+
+        created.Token.Roles.Should().Equal("Insider Response");
+    }
+
+    [Fact]
     public async Task Only_an_admin_can_create_a_system_token()
     {
         await using var db = NewContext();

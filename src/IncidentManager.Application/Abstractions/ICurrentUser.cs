@@ -11,8 +11,15 @@ public interface ICurrentUser
     string? UserPrincipalName { get; }
     string? Email { get; }
     bool IsAuthenticated { get; }
+    /// <summary>The built-in roles the user holds. Custom roles aren't here — see <see cref="RoleNames"/>.</summary>
     IReadOnlySet<AppRole> Roles { get; }
     bool IsInRole(AppRole role);
+
+    /// <summary>
+    /// S-14: every CaseBook role the user holds by name — built-in and custom — for display and for anything that
+    /// compares roles (a personal API token may only carry the user's own roles). Defaults to the built-in set.
+    /// </summary>
+    IReadOnlyList<string> RoleNames => Roles.Select(r => r.ToString()).ToList();
 
     /// <summary>The effective permissions granted by the user's roles.</summary>
     IReadOnlySet<Permission> Permissions { get; }
