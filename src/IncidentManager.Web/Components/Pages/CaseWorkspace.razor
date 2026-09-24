@@ -109,7 +109,7 @@ else
                 <span class="@Ui.SeverityBadge(_case.Severity)">@SevLabels.For(_case.Severity)</span>
                 @{
                     var slaHead = SlaPolicy.Evaluate(_case.Severity, _case.Phase, _case.DetectedAtUtc,
-                        _case.ContainedAtUtc, _case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow);
+                        _case.ContainedAtUtc, _case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow, _case.Classification);
                     var slaHeadClock = slaHead.Clock is { } hc ? Ui.SlaClockLabel(hc) : "SLA";
                     var slaHeadTiming = Ui.SlaTiming(slaHead);
                     var slaHeadTitle = slaHeadTiming.Length > 0 ? $"{slaHeadClock} · {slaHeadTiming}" : slaHeadClock;

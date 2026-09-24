@@ -13,7 +13,7 @@ public class MetricsCsvTests
         OpenCount: 5, Breaches: 2, Incidents: 2, AdverseEvents: 1,
         InternalOrigin: 3, ThirdPartyOrigin: 2, LegalReferred: 2, OverdueActionItems: 1,
         SlaAtRisk: 1, SlaBreached: 2,
-        ContainmentMet: 8, ContainmentMissed: 2, ResolutionMet: 6, ResolutionMissed: 3,
+        ContainmentMet: 8, ContainmentMissed: 2, ResolutionMet: 6, ResolutionMissed: 3, DetectionMet: 3, DetectionMissed: 1,
         MeanHoursToContain: 4.5, MeanHoursToResolve: null,
         NotifyDeadlinesEnabled: false, NotifyAwaitingReport: 0, NotifyAtRisk: 0, NotifyBreached: 0, MeanHoursToReport: null,
         ByPhase: new[] { new PhaseCount(CasePhase.Triage, 3), new PhaseCount(CasePhase.Containment, 2) },
@@ -37,6 +37,7 @@ public class MetricsCsvTests
         // SLA compliance from the per-severity targets: 8 met / 10 = 80%, 6 met / 9 ≈ 67%.
         csv.Should().Contain("Containment SLA compliance %,80");
         csv.Should().Contain("Resolution SLA compliance %,67");
+        csv.Should().Contain("Detection SLA compliance %,75");
         csv.Should().Contain("Generated (UTC),2026-08-10 14:30:00");
     }
 

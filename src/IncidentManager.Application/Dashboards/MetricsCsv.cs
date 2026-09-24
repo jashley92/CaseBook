@@ -41,6 +41,9 @@ public static class MetricsCsv
         Row("Resolution SLA met", m.ResolutionMet.ToString(CultureInfo.InvariantCulture));
         Row("Resolution SLA missed", m.ResolutionMissed.ToString(CultureInfo.InvariantCulture));
         Row("Resolution SLA compliance %", m.ResolutionCompliancePercent?.ToString(CultureInfo.InvariantCulture) ?? "");
+        Row("Detection SLA met", m.DetectionMet.ToString(CultureInfo.InvariantCulture));
+        Row("Detection SLA missed", m.DetectionMissed.ToString(CultureInfo.InvariantCulture));
+        Row("Detection SLA compliance %", m.DetectionCompliancePercent?.ToString(CultureInfo.InvariantCulture) ?? "");
 
         // Regulatory notification deadlines (PROD-07) — only when the feature is administered on.
         if (m.NotifyDeadlinesEnabled)

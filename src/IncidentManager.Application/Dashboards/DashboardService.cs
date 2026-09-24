@@ -28,6 +28,9 @@ public sealed record DashboardMetrics(
     int ContainmentMissed,
     int ResolutionMet,
     int ResolutionMissed,
+    // PROD-08: detection SLA (occurred → detected) over cases with an occurred time and a Sla:Detection:* target.
+    int DetectionMet,
+    int DetectionMissed,
     double? MeanHoursToContain,
     double? MeanHoursToResolve,
     // PROD-07: regulatory notification-deadline aggregates (zero/null when the feature is off). Awaiting =
@@ -46,6 +49,9 @@ public sealed record DashboardMetrics(
 
     /// <summary>Percent of resolved cases that met their per-severity resolution target, or null when none had one.</summary>
     public int? ResolutionCompliancePercent => Percent(ResolutionMet, ResolutionMissed);
+
+    /// <summary>Percent of cases detected within their per-severity detection target, or null when none had one.</summary>
+    public int? DetectionCompliancePercent => Percent(DetectionMet, DetectionMissed);
 
     private static int? Percent(int met, int missed)
         => met + missed == 0 ? null : (int)Math.Round(met * 100.0 / (met + missed));
@@ -104,14 +110,16 @@ public sealed class DashboardService
         // Everything here is settings-aligned — no target is hardcoded in the app or the UI.
         var slaTargets = _sla.Current;
         var slaRows = await cases
-            .Select(c => new { c.Severity, c.Phase, c.IsArchived, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc })
+            .Select(c => new { c.Severity, c.Phase, c.IsArchived, c.Classification, c.OccurredAtUtc, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc })
             .ToListAsync(ct);
         int slaAtRisk = 0, slaBreached = 0;
-        int cMet = 0, cMissed = 0, rMet = 0, rMissed = 0;
+        int cMet = 0, cMissed = 0, rMet = 0, rMissed = 0, dMet = 0, dMissed = 0;
         foreach (var r in slaRows)
         {
             var (cont, res) = Sla.SlaPolicy.Breakdown(
-                r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, slaTargets, now);
+                r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, slaTargets, now, r.Classification);
+            var det = Sla.SlaPolicy.EvaluateDetection(r.Severity, r.OccurredAtUtc, r.DetectedAtUtc, slaTargets);
+            if (det.State == Sla.SlaState.Met) dMet++; else if (det.State == Sla.SlaState.Missed) dMissed++;
 
             if (cont.State == Sla.SlaState.Met) cMet++; else if (cont.State == Sla.SlaState.Missed) cMissed++;
             if (res.State == Sla.SlaState.Met) rMet++; else if (res.State == Sla.SlaState.Missed) rMissed++;
@@ -119,7 +127,7 @@ public sealed class DashboardService
             if (r.Phase != CasePhase.Closed && !r.IsArchived)
             {
                 var head = Sla.SlaPolicy
-                    .Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, slaTargets, now)
+                    .Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, slaTargets, now, r.Classification)
                     .State;
                 if (head == Sla.SlaState.Breached) slaBreached++;
                 else if (head == Sla.SlaState.AtRisk) slaAtRisk++;
@@ -204,7 +212,7 @@ public sealed class DashboardService
         return new DashboardMetrics(
             openCount, breaches, incidents, adverse, internalOrigin, thirdParty, legalReferred, overdue,
             slaAtRisk, slaBreached,
-            cMet, cMissed, rMet, rMissed,
+            cMet, cMissed, rMet, rMissed, dMet, dMissed,
             MeanHours(containedPairs.Select(p => (p.From, p.To))),
             MeanHours(resolvedPairs.Select(p => (p.From, p.To))),
             ndSettings.Enabled, notifyAwaiting, notifyAtRisk, notifyBreached, meanHoursToReport,

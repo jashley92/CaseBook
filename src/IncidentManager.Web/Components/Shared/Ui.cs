@@ -408,6 +408,7 @@ public static class Ui
     {
         SlaClock.Containment => "Time to contain",
         SlaClock.Resolution => "Time to resolve",
+        SlaClock.Detection => "Time to detect",
         _ => c.ToString()
     };
 

@@ -719,7 +719,7 @@
         new("identity", "Identity & branding", ["Organization"]),
         new("notifications", "Notifications", ["Notifications"]),
         new("integrations", "Integrations", ["Integrations"]),
-        new("sla", "Response & SLA", ["Response SLA", "Severity labels"]),
+        new("sla", "Response & SLA", ["Response SLA", "Response SLA — Breach cases", "Severity labels"]),
         new("regulatory-deadlines", "Regulatory deadlines", ["Deadline clock"]),
         new("reporting", "Reports", ["Report defaults"]),
         new("governance", "Governance & security", ["Retention", "Integrity", "Access logging", "Security"]),
@@ -772,11 +772,11 @@
 
     // The per-severity SLA rows embed the severity's name in their label (e.g. "Containment — Critical
     // (hours)"). Show the org's configured severity label instead, so a renamed level (e.g. Critical → SEV-1)
-    // stays consistent here too. Only Sla:{Clock}:{Severity} keys are affected.
+    // stays consistent here too. Only Sla:…:{Severity} keys (including the Breach overrides) are affected.
     private string DisplayLabel(SettingDefinition def)
     {
         var parts = def.Key.Split(':');
-        return parts is ["Sla", _, var sevName] && Enum.TryParse<Severity>(sevName, out var sev)
+        return parts is ["Sla", _, .., var sevName] && Enum.TryParse<Severity>(sevName, out var sev)
             ? def.Label.Replace(sev.ToString(), SevLabels.For(sev))
             : def.Label;
     }

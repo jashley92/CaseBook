@@ -189,6 +189,11 @@ else
 
             @ComplianceRow("Containment within target", m.ContainmentCompliancePercent, m.ContainmentMet, m.ContainmentMissed)
             @ComplianceRow("Resolution within target", m.ResolutionCompliancePercent, m.ResolutionMet, m.ResolutionMissed)
+            @if (m.DetectionMet + m.DetectionMissed > 0)
+            {
+                @* PROD-08: only once a detection target is set and cases carry an occurred time. *@
+                @ComplianceRow("Detection within target", m.DetectionCompliancePercent, m.DetectionMet, m.DetectionMissed)
+            }
 
             @if (m.SlaBreached > 0 || m.SlaAtRisk > 0)
             {

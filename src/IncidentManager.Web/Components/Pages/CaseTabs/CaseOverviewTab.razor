@@ -22,7 +22,9 @@
 
 @{
     var (slaContain, slaResolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase,
-        Case.DetectedAtUtc, Case.ContainedAtUtc, Case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow);
+        Case.DetectedAtUtc, Case.ContainedAtUtc, Case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow, Case.Classification);
+    // PROD-08: the detection SLA (occurred → detected), shown in place of the plain dwell figure when a target applies.
+    var slaDetect = SlaPolicy.EvaluateDetection(Case.Severity, Case.OccurredAtUtc, Case.DetectedAtUtc, SlaProvider.Current);
     var hasSla = slaContain.State != SlaState.NoTarget || slaResolve.State != SlaState.NoTarget;
     var openTasks = Case.ActionItems.Count(a => a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled);
 }
@@ -43,7 +45,11 @@
     <div class="im-vital"><div class="small text-muted">Detected</div><div class="fw-semibold">@TimeDisp.Long(Case.DetectedAtUtc)</div></div>
     <div class="im-vital"><div class="small text-muted">Contained</div><div class="fw-semibold">@TimeDisp.Long(Case.ContainedAtUtc)</div></div>
     <div class="im-vital"><div class="small text-muted">Resolved</div><div class="fw-semibold">@TimeDisp.Long(Case.ResolvedAtUtc)</div></div>
-    @if (Case.OccurredAtUtc is { } occ && Case.DetectedAtUtc is { } det)
+    @if (slaDetect.State != SlaState.NoTarget)
+    {
+        @SlaVital(slaDetect)
+    }
+    else if (Case.OccurredAtUtc is { } occ && Case.DetectedAtUtc is { } det)
     {
         <div class="im-vital"><div class="small text-muted">Dwell</div><div class="fw-semibold">@DwellLabel(det - occ)</div><div class="small text-muted">before detection</div></div>
     }

@@ -163,4 +163,57 @@ public class SlaPolicyTests
         SettingsCatalog.ByKey["Sla:Containment:Critical"].Default.Should().Be("4");
         SettingsCatalog.ByKey["Sla:AtRiskThresholdPercent"].Default.Should().Be("80");
     }
+
+    // ---- PROD-08: detection clock + Breach overrides ----
+
+    private static SlaTargets WithDetectionAndBreach() => new(
+        new Dictionary<(SlaClock, Severity), int>
+        {
+            [(SlaClock.Containment, Severity.Critical)] = 4,
+            [(SlaClock.Resolution, Severity.Critical)] = 24,
+            [(SlaClock.Detection, Severity.Critical)] = 24,
+        },
+        80,
+        new Dictionary<(SlaClock, Severity), int> { [(SlaClock.Containment, Severity.Critical)] = 2 });
+
+    [Fact]
+    public void Detection_is_a_historical_outcome_from_occurred_to_detected()
+    {
+        var t = WithDetectionAndBreach();
+        var met = SlaPolicy.EvaluateDetection(Severity.Critical, Detected.AddHours(-10), Detected, t);
+        met.State.Should().Be(SlaState.Met);
+        met.Clock.Should().Be(SlaClock.Detection);
+        met.ElapsedHours.Should().Be(10);
+        met.IsActive.Should().BeFalse();
+
+        SlaPolicy.EvaluateDetection(Severity.Critical, Detected.AddHours(-30), Detected, t).State.Should().Be(SlaState.Missed);
+    }
+
+    [Fact]
+    public void Detection_needs_an_occurred_time_and_a_target()
+    {
+        var t = WithDetectionAndBreach();
+        SlaPolicy.EvaluateDetection(Severity.Critical, null, Detected, t).State.Should().Be(SlaState.NoTarget);
+        SlaPolicy.EvaluateDetection(Severity.High, Detected.AddHours(-1), Detected, t).State.Should().Be(SlaState.NoTarget);
+        SlaPolicy.EvaluateDetection(Severity.Critical, Detected.AddHours(-1), Detected, Targets()).State.Should().Be(SlaState.NoTarget);
+        SettingsCatalog.ByKey["Sla:Detection:Critical"].Default.Should().BeNull("detection targets are opt-in");
+    }
+
+    [Fact]
+    public void Breach_cases_use_their_override_and_others_the_general_target()
+    {
+        var t = WithDetectionAndBreach();
+        var now = Detected.AddHours(3);
+
+        // 3h in: inside the general 4h containment target, past the Breach-only 2h override.
+        SlaPolicy.Evaluate(Severity.Critical, CasePhase.Containment, Detected, null, null, t, now, Classification.Incident)
+            .State.Should().Be(SlaState.OnTrack);
+        var breach = SlaPolicy.Evaluate(Severity.Critical, CasePhase.Containment, Detected, null, null, t, now, Classification.Breach);
+        breach.State.Should().Be(SlaState.Breached);
+        breach.TargetHours.Should().Be(2);
+
+        // No Breach override for resolution → the general 24h applies.
+        t.HoursFor(SlaClock.Resolution, Severity.Critical, Classification.Breach).Should().Be(24);
+        SettingsCatalog.ByKey["Sla:Breach:Containment:Critical"].Default.Should().BeNull();
+    }
 }

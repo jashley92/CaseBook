@@ -16,7 +16,10 @@ public sealed class ConfigurationSlaTargetsProvider : ISlaTargetsProvider
     private static readonly Severity[] Severities =
         { Severity.Low, Severity.Medium, Severity.High, Severity.Critical };
 
-    private static readonly SlaClock[] Clocks = { SlaClock.Containment, SlaClock.Resolution };
+    private static readonly SlaClock[] Clocks = { SlaClock.Containment, SlaClock.Resolution, SlaClock.Detection };
+
+    // PROD-08: clocks a Breach-classified case may override (detection happens before classification).
+    private static readonly SlaClock[] BreachClocks = { SlaClock.Containment, SlaClock.Resolution };
 
     private readonly IConfiguration _config;
 
@@ -38,7 +41,15 @@ public sealed class ConfigurationSlaTargetsProvider : ISlaTargetsProvider
                       ?? SlaPolicy.DefaultAtRiskThresholdPercent;
             if (pct is <= 0 or > 100) pct = SlaPolicy.DefaultAtRiskThresholdPercent;
 
-            return new SlaTargets(hours, pct);
+            var breach = new Dictionary<(SlaClock, Severity), int>();
+            foreach (var clock in BreachClocks)
+            foreach (var severity in Severities)
+            {
+                if (int.TryParse(_config[$"Sla:Breach:{clock}:{severity}"], out var h) && h > 0)
+                    breach[(clock, severity)] = h;
+            }
+
+            return new SlaTargets(hours, pct, breach);
         }
     }
 }

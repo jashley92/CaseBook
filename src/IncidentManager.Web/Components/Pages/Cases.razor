@@ -402,7 +402,7 @@ else
                     <td><span class="@Ui.SeverityBadge(c.Severity)">@SevLabels.For(c.Severity)</span></td>
                     <td>
                         @{
-                            var sla = SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, _targets, Clock.UtcNow);
+                            var sla = SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, _targets, Clock.UtcNow, c.Classification);
                         }
                         @if (sla.State == SlaState.NoTarget)
                         {

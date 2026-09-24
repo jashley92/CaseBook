@@ -8,7 +8,9 @@ public enum SlaClock
     /// <summary>Detected → Contained.</summary>
     Containment,
     /// <summary>Detected → Resolved (recovery reached).</summary>
-    Resolution
+    Resolution,
+    /// <summary>PROD-08: Occurred → Detected (dwell). Always historical: a case only exists once detected.</summary>
+    Detection
 }
 
 /// <summary>A case's standing against a response-time target.</summary>
@@ -54,17 +56,25 @@ public sealed record SlaStatus(
 /// <summary>
 /// Per-severity response-time targets (hours) and the at-risk threshold, as administered under the
 /// <c>Sla:*</c> settings. A missing or non-positive hour value means that severity/clock has no target.
+/// PROD-08: <paramref name="BreachHours"/> optionally overrides a clock for cases classified
+/// <see cref="Classification.Breach"/> (<c>Sla:Breach:{Clock}:{Severity}</c>); where unset, the base target applies.
 /// </summary>
 public sealed record SlaTargets(
     IReadOnlyDictionary<(SlaClock Clock, Severity Severity), int> Hours,
-    int AtRiskThresholdPercent)
+    int AtRiskThresholdPercent,
+    IReadOnlyDictionary<(SlaClock Clock, Severity Severity), int>? BreachHours = null)
 {
     public static readonly SlaTargets Empty =
         new(new Dictionary<(SlaClock, Severity), int>(), SlaPolicy.DefaultAtRiskThresholdPercent);
 
-    /// <summary>The configured target for a clock/severity, or null when none applies.</summary>
-    public int? HoursFor(SlaClock clock, Severity severity)
-        => Hours.TryGetValue((clock, severity), out var h) && h > 0 ? h : null;
+    /// <summary>The configured target for a clock/severity (and classification), or null when none applies.</summary>
+    public int? HoursFor(SlaClock clock, Severity severity, Classification? classification = null)
+    {
+        if (classification == Classification.Breach && BreachHours is not null
+            && BreachHours.TryGetValue((clock, severity), out var b) && b > 0)
+            return b;
+        return Hours.TryGetValue((clock, severity), out var h) && h > 0 ? h : null;
+    }
 }
 
 /// <summary>
@@ -86,10 +96,10 @@ public static class SlaPolicy
     public static SlaStatus Evaluate(
         Severity severity, CasePhase phase,
         DateTimeOffset? detectedAtUtc, DateTimeOffset? containedAtUtc, DateTimeOffset? resolvedAtUtc,
-        SlaTargets targets, DateTimeOffset nowUtc)
+        SlaTargets targets, DateTimeOffset nowUtc, Classification? classification = null)
     {
         var (containment, resolution) =
-            Breakdown(severity, phase, detectedAtUtc, containedAtUtc, resolvedAtUtc, targets, nowUtc);
+            Breakdown(severity, phase, detectedAtUtc, containedAtUtc, resolvedAtUtc, targets, nowUtc, classification);
 
         // An open clock takes precedence — containment is chased before resolution.
         if (containment.IsActive) return containment;
@@ -107,7 +117,7 @@ public static class SlaPolicy
     public static (SlaStatus Containment, SlaStatus Resolution) Breakdown(
         Severity severity, CasePhase phase,
         DateTimeOffset? detectedAtUtc, DateTimeOffset? containedAtUtc, DateTimeOffset? resolvedAtUtc,
-        SlaTargets targets, DateTimeOffset nowUtc)
+        SlaTargets targets, DateTimeOffset nowUtc, Classification? classification = null)
     {
         // Informational carries no SLA, and every clock is measured from detection.
         if (severity == Severity.Informational || detectedAtUtc is not { } start)
@@ -117,10 +127,28 @@ public static class SlaPolicy
         var abandoned = phase == CasePhase.Closed;
 
         var containment = EvaluateClock(SlaClock.Containment, start, containedAtUtc, abandoned,
-            targets.HoursFor(SlaClock.Containment, severity), targets.AtRiskThresholdPercent, nowUtc);
+            targets.HoursFor(SlaClock.Containment, severity, classification), targets.AtRiskThresholdPercent, nowUtc);
         var resolution = EvaluateClock(SlaClock.Resolution, start, resolvedAtUtc, abandoned,
-            targets.HoursFor(SlaClock.Resolution, severity), targets.AtRiskThresholdPercent, nowUtc);
+            targets.HoursFor(SlaClock.Resolution, severity, classification), targets.AtRiskThresholdPercent, nowUtc);
         return (containment, resolution);
+    }
+
+    /// <summary>
+    /// PROD-08: the detection SLA — how long the activity ran before we detected it (Occurred → Detected),
+    /// judged against the per-severity <c>Sla:Detection:*</c> target. Always a historical Met/Missed (the case
+    /// only exists once detected), and <see cref="SlaStatus.None"/> without an occurred time or a target. It
+    /// never drives the headline <see cref="Evaluate"/> state: there is nothing left for responders to chase.
+    /// </summary>
+    public static SlaStatus EvaluateDetection(Severity severity, DateTimeOffset? occurredAtUtc,
+        DateTimeOffset? detectedAtUtc, SlaTargets targets)
+    {
+        if (severity == Severity.Informational || occurredAtUtc is not { } start || detectedAtUtc is not { } detected
+            || targets.HoursFor(SlaClock.Detection, severity) is not { } hours)
+            return SlaStatus.None with { Clock = SlaClock.Detection };
+
+        var due = start.AddHours(hours);
+        var elapsed = Math.Round(Math.Max(0, (detected - start).TotalHours), 1);
+        return new SlaStatus(detected <= due ? SlaState.Met : SlaState.Missed, SlaClock.Detection, hours, due, null, elapsed);
     }
 
     private static SlaStatus EvaluateClock(SlaClock clock, DateTimeOffset start, DateTimeOffset? milestoneUtc,
