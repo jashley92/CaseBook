@@ -87,12 +87,17 @@ Minimal example:
 ```
 
 Notes:
-- Set `target.newCase` to open a new case, or `target.caseId` to add to an existing one.
+- Set `target.newCase` to open a new case, or `target.caseId` to add to an existing one. A new case with no
+  `classification` files as a **Complex Event** (intake) for a person to classify; `newCase.detectionCaseId`
+  carries the source platform's id (for example the XSIAM incident id) as the case's back-link.
 - Indicators may be **defanged** (`hxxp://`, `1.1.1[.]1`) — CaseBook refangs and auto-types them; the entity
   `type` is optional.
 - `origin` is recorded as the provenance (source) of imported indicators and timeline entries.
 - Enum fields (classification, severity, kind, type, disposition, …) and their allowed values are defined in
   the schema; unknown values fall back to a safe default and are flagged in the review preview.
+
+**XSIAM hand-off.** A ready-to-adapt XSIAM automation script and set-up guide for elevating an incident into
+CaseBook live in [`integrations/xsiam/`](../integrations/xsiam/README.md).
 
 To have an AI produce a valid document from raw material (emails, chat logs, notes), use the
 **"Generate a prompt for your AI"** step on the *Import* page — it emits a prompt embedding this exact schema.

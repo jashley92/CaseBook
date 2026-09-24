@@ -126,6 +126,10 @@
         },
         "impactedAssets": {
           "type": "string"
+        },
+        "detectionCaseId": {
+          "type": "string",
+          "description": "The source platform's id for the event, e.g. the XSIAM incident id (the case's detection-source back-link). Up to 100 characters."
         }
       }
     },

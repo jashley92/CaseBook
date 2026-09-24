@@ -211,6 +211,40 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public void The_xsiam_playbook_sample_imports_cleanly(/* PROD-05 */)
+    {
+        var root = FindRepoRoot();
+        root.Should().NotBeNull();
+        var json = File.ReadAllText(Path.Combine(root!, "integrations", "xsiam", "sample-elevation.json"));
+
+        var parsed = CaseImportService.Parse(json);
+        parsed.Ok.Should().BeTrue(parsed.Error);
+        var p = CaseImportService.BuildPreviewCore(parsed.Document!, _clock.UtcNow);
+
+        p.Warnings.Should().BeEmpty();
+        p.NewCase!.Classification.Should().BeNull();
+        p.NewCase.Severity.Should().Be(Severity.High);
+        p.NewCase.DetectionCaseId.Should().Be("4812");
+        p.Entities.Should().ContainSingle(e => e.Value == "203.0.113.66" && e.Disposition == EntityDisposition.Malicious);
+        p.Timeline.Should().ContainSingle(t => t.Type == TimelineEntryType.Escalation && t.Kind == TimelineKind.Investigation);
+    }
+
+    [Fact]
+    public void A_new_case_without_a_classification_is_a_complex_event_and_keeps_its_detection_id(/* PROD-05 */)
+    {
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Target = new() { NewCase = new() { Title = "Elevated from XSIAM", DetectionCaseId = "XSIAM-4812" } },
+        };
+
+        var p = CaseImportService.BuildPreviewCore(doc, _clock.UtcNow);
+
+        p.NewCase!.Classification.Should().BeNull("an omitted classification files intake, as the schema documents");
+        p.NewCase.DetectionCaseId.Should().Be("XSIAM-4812");
+    }
+
+    [Fact]
     public void Preview_excludes_future_timeline_and_defaults_a_missing_timestamp()
     {
         var doc = new CaseImportDocument

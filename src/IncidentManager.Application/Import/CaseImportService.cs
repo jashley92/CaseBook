@@ -419,8 +419,9 @@ public sealed class CaseImportService
         if (string.IsNullOrWhiteSpace(descriptive))
             descriptive = SlugSource(title); // derive when omitted, like the New Case form
 
-        // Classification: null / "complexevent" / "none" ⇒ Complex Event (null); otherwise parse with fallback.
-        Classification? classification = Classification.AdverseEvent;
+        // Classification: omitted / "complexevent" / "none" ⇒ Complex Event (null), as the published schema
+        // documents — an elevated event lands as intake and a person classifies it; otherwise parse with fallback.
+        Classification? classification = null;
         if (nc?.Classification is { } rawCls && !string.IsNullOrWhiteSpace(rawCls))
         {
             var trimmed = rawCls.Trim();
@@ -445,7 +446,8 @@ public sealed class CaseImportService
             DetectedAtUtc = nc?.DetectedAtUtc,
             OccurredAtUtc = nc?.OccurredAtUtc,
             DataTypesInvolved = Clamp(nc?.DataTypesInvolved, MaxLabel, "Data context", warnings),
-            ImpactedAssets = Clamp(nc?.ImpactedAssets, MaxSummary, "Impacted assets", warnings)
+            ImpactedAssets = Clamp(nc?.ImpactedAssets, MaxSummary, "Impacted assets", warnings),
+            DetectionCaseId = Clamp(nc?.DetectionCaseId, 100, "Detection case id", warnings)
         };
     }
 

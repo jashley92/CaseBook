@@ -54,6 +54,10 @@ public sealed class CaseImportNewCase
     public DateTimeOffset? OccurredAtUtc { get; set; }
     public string? DataTypesInvolved { get; set; }
     public string? ImpactedAssets { get; set; }
+
+    /// <summary>The source platform's own id for the event (e.g. the XSIAM incident id) — the case's detection-source
+    /// back-link (E-05). Optional; up to 100 characters.</summary>
+    public string? DetectionCaseId { get; set; }
 }
 
 /// <summary>One timeline entry to import. <see cref="Kind"/>/<see cref="Type"/> are strings (safe fallback).</summary>

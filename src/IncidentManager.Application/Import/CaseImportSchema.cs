@@ -76,6 +76,7 @@ public static class CaseImportSchema
                         ["occurredAtUtc"] = DateTime("When activity began (must not be after detection)."),
                         ["dataTypesInvolved"] = Str("Free-text data context (notes). Regulated data elements are recorded in the impact assessment, not here."),
                         ["impactedAssets"] = Str(null),
+                        ["detectionCaseId"] = Str("The source platform's id for the event, e.g. the XSIAM incident id (the case's detection-source back-link). Up to 100 characters."),
                     },
                 },
                 ["timelineEntry"] = new JsonObject

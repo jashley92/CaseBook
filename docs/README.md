@@ -10,6 +10,7 @@ The documentation set, by audience and question.
 | **Understand how it's built** — layers, the integrity spine, access control, data model, diagrams | **[ARCHITECTURE.md](ARCHITECTURE.md)** |
 | **Support / troubleshoot** it at runtime (support desk, SRE) | **[SUPPORT.md](SUPPORT.md)** |
 | Understand the deploy tooling/scripts | **[../deploy/README.md](../deploy/README.md)** |
+| Call the import API, or elevate XSIAM incidents into CaseBook | **[API.md](API.md)** · **[../integrations/xsiam/README.md](../integrations/xsiam/README.md)** |
 
 ### Other assets
 

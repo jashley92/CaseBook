@@ -1,0 +1,33 @@
+{
+ "format": "casebook-case-import",
+ "schemaVersion": 1,
+ "origin": "XSIAM incident 4812",
+ "target": {
+  "newCase": {
+   "title": "Impossible travel for jdoe",
+   "severity": "High",
+   "origin": "InternalDetection",
+   "detectionCaseId": "4812",
+   "summary": "VPN logins from two countries",
+   "detectedAtUtc": "2026-09-24T09:15:00Z",
+   "occurredAtUtc": "2026-09-24T08:00:00Z"
+  }
+ },
+ "timeline": [
+  {
+   "occurredAtUtc": "2026-09-24T09:15:00Z",
+   "kind": "Investigation",
+   "type": "Escalation",
+   "description": "Elevated from XSIAM incident 4812 by Alex Analyst.",
+   "source": "XSIAM"
+  }
+ ],
+ "entities": [
+  {
+   "value": "203.0.113.66",
+   "type": "IpAddress",
+   "disposition": "Malicious",
+   "source": "XSIAM"
+  }
+ ]
+}
