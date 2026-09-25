@@ -165,40 +165,10 @@ public sealed class DashboardService
         if (ndSettings.Enabled)
         {
             var ruleSet = await _rules.LoadRuleSetAsync(ndSettings.DefaultWindowHours, ct);
-            var elementJur = await db.DataElements.AsNoTracking()
-                .Where(e => e.NotificationJurisdictions != null && e.NotificationJurisdictions != "")
-                .Select(e => new { e.Key, e.NotificationJurisdictions })
-                .ToDictionaryAsync(e => e.Key, e => e.NotificationJurisdictions!, ct);
-
-            var openRows = await open
-                .Select(c => new
-                {
-                    c.Classification, c.DetectedAtUtc, c.ReportedAtUtc,
-                    MatStatus = c.Materiality.Status, MatDecided = c.Materiality.DecidedOnUtc, MatRecorded = c.Materiality.RecordedAtUtc,
-                    Keys = c.DataElements.Select(d => d.ElementKey).ToList()
-                })
-                .ToListAsync(ct);
-
-            foreach (var c in openRows)
-            {
-                if (c.ReportedAtUtc is not null) continue; // clock already stopped
-                var start = Compliance.NotificationDeadlineService.ResolveStart(
-                    ndSettings.StartBasis, c.Classification, c.DetectedAtUtc, c.MatStatus, c.MatDecided, c.MatRecorded);
-                if (start is null) continue; // obligation not triggered yet
-
-                var jurisdictions = c.Keys.Where(elementJur.ContainsKey)
-                    .SelectMany(k => elementJur[k].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                    .Select(j => j.ToUpperInvariant()).Distinct().ToList();
-                if (jurisdictions.Count == 0) continue;
-
-                var head = Compliance.NotificationDeadlinePolicy.Headline(
-                    Compliance.NotificationDeadlinePolicy.Evaluate(start, null, jurisdictions, ruleSet,
-                        ndSettings.AtRiskThresholdPercent, now));
-                if (head is null) continue;
-                notifyAwaiting++;
-                if (head.State == Sla.SlaState.Breached) notifyBreached++;
-                else if (head.State == Sla.SlaState.AtRisk) notifyAtRisk++;
-            }
+            var heads = await Compliance.NotificationDeadlineService.OpenHeadlinesAsync(db, open, ndSettings, ruleSet, now, ct);
+            notifyAwaiting = heads.Count;
+            notifyBreached = heads.Values.Count(h => h.State == Sla.SlaState.Breached);
+            notifyAtRisk = heads.Values.Count(h => h.State == Sla.SlaState.AtRisk);
 
             var reportedPairs = await cases
                 .Where(c => c.ReportedAtUtc != null && c.DetectedAtUtc != null)

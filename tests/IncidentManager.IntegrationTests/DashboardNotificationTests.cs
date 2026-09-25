@@ -1,6 +1,7 @@
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Admin;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Compliance;
 using IncidentManager.Application.Dashboards;
 using IncidentManager.Domain.Entities;
@@ -115,6 +116,35 @@ public sealed class DashboardNotificationTests : IDisposable
         var m = await NewDashboard().GetAsync();
         m.NotifyAwaitingReport.Should().Be(0, "the case has been reported");
         m.MeanHoursToReport.Should().BeApproximately(48, 0.5);
+    }
+
+    [Fact]
+    public async Task The_case_list_notification_filter_lists_the_cases_the_dashboard_counts()
+    {
+        var onTrack = NewMaterialBreach(MaterialityStatus.Material, _clock.UtcNow.AddHours(-1));
+        var overdue = NewMaterialBreach(MaterialityStatus.Material, _clock.UtcNow.AddHours(-80));
+        var undecided = NewMaterialBreach(MaterialityStatus.UnderReview, _clock.UtcNow.AddHours(-80));
+        await SeedAsync(onTrack, overdue, undecided);
+        var cases = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(NewContext()),
+            new CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(),
+            new TestSlaTargets(), notifySettings: _settings, notifyRules: new NotificationRuleService(NewFactory(), _user, _clock));
+
+        _settings.Current = NotificationDeadlineSettings.Off;
+        (await cases.ListAsync(new CaseFilter { NotifyDeadlineOnly = true })).Items.Should().BeEmpty("the feature is off");
+
+        _settings.Current = new NotificationDeadlineSettings(true, NotificationStartBasis.Determination, 72, 80);
+        var page = await cases.ListAsync(new CaseFilter { NotifyDeadlineOnly = true });
+        page.Items.Should().ContainSingle().Which.Id.Should().Be(overdue.Id);
+        (await NewDashboard().GetAsync()).NotifyBreached.Should().Be(page.Total);
+    }
+
+    private sealed class NoOpCaseNotifications : IncidentManager.Application.Abstractions.ICaseNotifications
+    {
+        public System.Threading.Tasks.Task OnAssignedAsync(IncidentManager.Domain.Entities.Case c, string assigneeUserId, string assigneeDisplayName, IncidentManager.Domain.Enums.CaseAssignmentRole role, string assignedByUserId, System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
+        public System.Threading.Tasks.Task OnActionItemsOverdueAsync(System.Collections.Generic.IReadOnlyList<IncidentManager.Application.Abstractions.OverdueActionItem> items, System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
+        public System.Threading.Tasks.Task OnActionItemsDueSoonAsync(System.Collections.Generic.IReadOnlyList<IncidentManager.Application.Abstractions.DueSoonActionItem> items, int leadHours, System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
+        public Task OnReclassifiedAsync(IncidentManager.Domain.Entities.Case c, Classification? from, Classification to, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 
     private sealed class StubSettings : INotificationDeadlineSettingsProvider

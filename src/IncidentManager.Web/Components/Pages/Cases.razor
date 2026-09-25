@@ -9,6 +9,7 @@
 @inject SavedViewService Views
 @inject IClock Clock
 @inject ISlaTargetsProvider SlaProvider
+@inject IncidentManager.Application.Compliance.INotificationDeadlineSettingsProvider NotifySettings
 @inject ISeverityLabels SevLabels
 @inject NavigationManager Nav
 @inject ToastService Toasts
@@ -193,7 +194,7 @@
     </div>
     @* FR-16: the four status roll-up toggles collapse behind "More filters" to cut the density; they auto-
        reveal whenever one is active so a set filter is never hidden (and each also shows as a chip below). *@
-    @{ var showAdvanced = _showMoreFilters || _overdueOnly || _slaAtRiskOnly || _referredOnly || _onHoldOnly; }
+    @{ var showAdvanced = _showMoreFilters || _overdueOnly || _slaAtRiskOnly || _notifyOnly || _referredOnly || _onHoldOnly; }
     <div class="col-auto">
         <button type="button" class="btn btn-sm btn-link p-0" @onclick="() => _showMoreFilters = !_showMoreFilters">
             <span class="bi @(showAdvanced ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span> More filters
@@ -213,6 +214,15 @@
                 <label class="form-check-label small" for="sla" title="Open cases approaching or past their response-time target">SLA at risk</label>
             </div>
         </div>
+        @if (NotifySettings.Current.Enabled || _notifyOnly)
+        {
+            <div class="col-auto">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="notify" @bind="_notifyOnly" @bind:after="ApplyFilters" />
+                    <label class="form-check-label small" for="notify" title="Open cases whose regulatory notification deadline is near or past">Notification deadline at risk</label>
+                </div>
+            </div>
+        }
         @* UX-10: SOC/IC roll-up of Legal obligations across the queue — Legal reads the reports, not the app. *@
         <div class="col-auto">
             <div class="form-check">
@@ -596,6 +606,7 @@ else
     [SupplyParameterFromQuery(Name = "exercises")] public bool QExercises { get; set; }
     [SupplyParameterFromQuery(Name = "overdue")] public bool QOverdue { get; set; }
     [SupplyParameterFromQuery(Name = "sla")] public bool QSla { get; set; }
+    [SupplyParameterFromQuery(Name = "notify")] public bool QNotify { get; set; }
     [SupplyParameterFromQuery(Name = "referred")] public bool QReferred { get; set; }
     [SupplyParameterFromQuery(Name = "hold")] public bool QHold { get; set; }
     [SupplyParameterFromQuery(Name = "opened")] public string? QOpened { get; set; }
@@ -622,6 +633,7 @@ else
     private bool _includeExercises;
     private bool _overdueOnly;
     private bool _slaAtRiskOnly;
+    private bool _notifyOnly;
     private bool _referredOnly;
     private bool _onHoldOnly;
     private string? _openedLabel; // "MMM yyyy" when an opened-month drill-in is active
@@ -640,7 +652,7 @@ else
 
     private bool _hasActiveFilter => !(string.IsNullOrEmpty(_classification) && string.IsNullOrEmpty(_phase)
         && string.IsNullOrEmpty(_minSeverity) && string.IsNullOrEmpty(_origin)
-        && string.IsNullOrEmpty(_search) && !_includeClosed && !_includeExercises && !_overdueOnly && !_slaAtRiskOnly
+        && string.IsNullOrEmpty(_search) && !_includeClosed && !_includeExercises && !_overdueOnly && !_slaAtRiskOnly && !_notifyOnly
         && !_referredOnly && !_onHoldOnly && _openedLabel is null && _assignee is null);
 
     // FR-16: whether the collapsed "More filters" (status roll-up toggles) group is expanded.
@@ -744,6 +756,7 @@ else
         _includeExercises = QExercises;
         _overdueOnly = QOverdue;
         _slaAtRiskOnly = QSla;
+        _notifyOnly = QNotify;
         _referredOnly = QReferred;
         _onHoldOnly = QHold;
         _assignee = string.IsNullOrWhiteSpace(QAssignee) ? null : QAssignee;
@@ -791,6 +804,7 @@ else
         ["exercises"] = _includeExercises ? "true" : null,
         ["overdue"] = _overdueOnly ? "true" : null,
         ["sla"] = _slaAtRiskOnly ? "true" : null,
+        ["notify"] = _notifyOnly ? "true" : null,
         ["referred"] = _referredOnly ? "true" : null,
         ["hold"] = _onHoldOnly ? "true" : null,
         ["assignee"] = _assignee,
@@ -835,6 +849,7 @@ else
         if (_includeExercises) yield return ("Including exercises", () => _includeExercises = false);
         if (_overdueOnly) yield return ("Overdue only", () => _overdueOnly = false);
         if (_slaAtRiskOnly) yield return ("SLA at risk", () => _slaAtRiskOnly = false);
+        if (_notifyOnly) yield return ("Notification deadline at risk", () => _notifyOnly = false);
         if (_referredOnly) yield return ("Referred to Legal", () => _referredOnly = false);
         if (_onHoldOnly) yield return ("On legal hold", () => _onHoldOnly = false);
     }
@@ -964,6 +979,7 @@ else
         _filter.IncludeExercises = _includeExercises;
         _filter.OverdueOnly = _overdueOnly;
         _filter.SlaAtRiskOnly = _slaAtRiskOnly;
+        _filter.NotifyDeadlineOnly = _notifyOnly;
         _filter.ReferredOnly = _referredOnly;
         _filter.OnHoldOnly = _onHoldOnly;
         _filter.UnassignedOnly = _assignee == "none";

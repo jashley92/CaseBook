@@ -54,12 +54,18 @@ else
         <div class="dash-attn">
             <span class="dash-dot danger"></span>
             <strong>Needs attention:</strong>&nbsp;
-            @{ var bits = new List<string>();
-               if (m.Breaches > 0) bits.Add($"{m.Breaches} open breach{(m.Breaches == 1 ? "" : "es")}");
-               if (m.SlaBreached > 0) bits.Add($"{m.SlaBreached} SLA breach{(m.SlaBreached == 1 ? "" : "es")}");
-               if (m.NotifyBreached > 0) bits.Add($"{m.NotifyBreached} notification deadline{(m.NotifyBreached == 1 ? "" : "s")} overdue");
-               if (m.OverdueActionItems > 0) bits.Add($"{m.OverdueActionItems} overdue task{(m.OverdueActionItems == 1 ? "" : "s")}"); }
-            @string.Join(" · ", bits)
+            @{ var bits = new List<(string Text, string Href)>();
+               if (m.Breaches > 0) bits.Add(($"{m.Breaches} open breach{(m.Breaches == 1 ? "" : "es")}", "cases?classification=Breach"));
+               if (m.SlaBreached > 0) bits.Add(($"{m.SlaBreached} SLA breach{(m.SlaBreached == 1 ? "" : "es")}", "cases?sla=true"));
+               if (m.NotifyBreached > 0) bits.Add(($"{m.NotifyBreached} notification deadline{(m.NotifyBreached == 1 ? "" : "s")} overdue", "cases?notify=true"));
+               if (m.OverdueActionItems > 0) bits.Add(($"{m.OverdueActionItems} overdue task{(m.OverdueActionItems == 1 ? "" : "s")}", "cases?overdue=true")); }
+            <span>
+                @for (var i = 0; i < bits.Count; i++)
+                {
+                    @if (i > 0) { <span class="dash-attn-sep" aria-hidden="true"> · </span> }
+                    <a class="dash-attn-link" href="@bits[i].Href">@bits[i].Text</a>
+                }
+            </span>
         </div>
     }
 

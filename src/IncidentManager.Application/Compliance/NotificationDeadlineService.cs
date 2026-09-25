@@ -1,5 +1,6 @@
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Admin;
+using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
@@ -98,6 +99,49 @@ public sealed class NotificationDeadlineService
 
         return new CaseNotificationDeadlines(true, settings.StartBasis, start, c.ReportedAtUtc,
             statuses, NotificationDeadlinePolicy.Headline(statuses));
+    }
+
+    /// <summary>
+    /// The headline deadline for each unreported case in <paramref name="cases"/> whose obligation is triggered
+    /// and whose data elements put at least one jurisdiction in play. Shared by the dashboard counts and the case
+    /// list's notification-deadline filter so the two always agree. The caller scopes <paramref name="cases"/>
+    /// (open, visible to the user) and checks that the feature is enabled.
+    /// </summary>
+    public static async Task<Dictionary<Guid, NotificationDeadlineStatus>> OpenHeadlinesAsync(
+        IAppDbContext db, IQueryable<Case> cases, NotificationDeadlineSettings settings,
+        NotificationRuleSet ruleSet, DateTimeOffset now, CancellationToken ct = default)
+    {
+        var elementJur = await db.DataElements.AsNoTracking()
+            .Where(e => e.NotificationJurisdictions != null && e.NotificationJurisdictions != "")
+            .Select(e => new { e.Key, e.NotificationJurisdictions })
+            .ToDictionaryAsync(e => e.Key, e => e.NotificationJurisdictions!, ct);
+
+        var rows = await cases
+            .Where(c => c.ReportedAtUtc == null) // a recorded report stops the clock
+            .Select(c => new
+            {
+                c.Id, c.Classification, c.DetectedAtUtc,
+                MatStatus = c.Materiality.Status, MatDecided = c.Materiality.DecidedOnUtc, MatRecorded = c.Materiality.RecordedAtUtc,
+                Keys = c.DataElements.Select(d => d.ElementKey).ToList()
+            })
+            .ToListAsync(ct);
+
+        var result = new Dictionary<Guid, NotificationDeadlineStatus>();
+        foreach (var c in rows)
+        {
+            var start = ResolveStart(settings.StartBasis, c.Classification, c.DetectedAtUtc, c.MatStatus, c.MatDecided, c.MatRecorded);
+            if (start is null) continue; // obligation not triggered yet
+
+            var jurisdictions = c.Keys.Where(elementJur.ContainsKey)
+                .SelectMany(k => elementJur[k].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                .Select(j => j.ToUpperInvariant()).Distinct().ToList();
+            if (jurisdictions.Count == 0) continue;
+
+            var head = NotificationDeadlinePolicy.Headline(
+                NotificationDeadlinePolicy.Evaluate(start, null, jurisdictions, ruleSet, settings.AtRiskThresholdPercent, now));
+            if (head is not null) result[c.Id] = head;
+        }
+        return result;
     }
 
     /// <summary>The clock-start instant for a case under a given basis, or null when the obligation is not yet

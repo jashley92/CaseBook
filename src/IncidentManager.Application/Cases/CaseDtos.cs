@@ -89,6 +89,10 @@ public sealed class CaseFilter
     /// <summary>Only open cases whose response-time SLA is at risk or breached (E-16).</summary>
     public bool SlaAtRiskOnly { get; set; }
 
+    /// <summary>Only open cases whose regulatory notification deadline is at risk or past due (PROD-07). Matches
+    /// nothing while the deadline feature is off.</summary>
+    public bool NotifyDeadlineOnly { get; set; }
+
     /// <summary>Only cases this user is actively assigned to (IC or Analyst). Drill-in from team workload (E-25).</summary>
     public string? AssigneeUserId { get; set; }
 

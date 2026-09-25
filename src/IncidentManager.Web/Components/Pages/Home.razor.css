@@ -51,6 +51,8 @@
     border-radius: 9px; padding: 10px 14px;
     font-size: .85rem; color: var(--text); margin-bottom: 16px;
 }
+.dash-attn-link { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; }
+.dash-attn-link:hover { color: var(--danger); text-decoration-color: currentColor; }
 .dash-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .dash-dot.danger { background: var(--danger); }
 

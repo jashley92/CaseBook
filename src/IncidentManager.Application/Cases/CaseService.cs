@@ -60,6 +60,8 @@ public sealed class CaseService
     private readonly IStageGateEvaluator _gates;
     private readonly Sla.ISlaTargetsProvider _sla;
     private readonly Security.ISecurityEventSink? _siem;
+    private readonly Compliance.INotificationDeadlineSettingsProvider? _notifySettings;
+    private readonly Admin.NotificationRuleService? _notifyRules;
 
     private readonly Microsoft.Extensions.Options.IOptionsMonitor<LegalHoldOptions>? _legalHold;
 
@@ -70,9 +72,13 @@ public sealed class CaseService
         ICaseNumberGenerator caseNumbers, IValidator<CreateCaseRequest> createValidator,
         ICaseNotifications notifications, IStageGateEvaluator gates, Sla.ISlaTargetsProvider sla,
         Security.ISecurityEventSink? siem = null,
-        Microsoft.Extensions.Options.IOptionsMonitor<LegalHoldOptions>? legalHold = null)
+        Microsoft.Extensions.Options.IOptionsMonitor<LegalHoldOptions>? legalHold = null,
+        Compliance.INotificationDeadlineSettingsProvider? notifySettings = null,
+        Admin.NotificationRuleService? notifyRules = null)
     {
         _legalHold = legalHold;
+        _notifySettings = notifySettings;
+        _notifyRules = notifyRules;
         _factory = factory;
         _user = user;
         _clock = clock;
@@ -179,6 +185,21 @@ public sealed class CaseService
                     .NeedsAttention)
                 .Select(r => r.Id).ToList();
             q = q.Where(c => flaggedIds.Contains(c.Id));
+        }
+
+        if (filter.NotifyDeadlineOnly)
+        {
+            // Same evaluation as the dashboard's notification figures, so a click-through lists exactly those cases.
+            var ids = new List<Guid>();
+            if (_notifySettings?.Current is { Enabled: true } nd && _notifyRules is not null)
+            {
+                var ruleSet = await _notifyRules.LoadRuleSetAsync(nd.DefaultWindowHours, ct);
+                var heads = await Compliance.NotificationDeadlineService.OpenHeadlinesAsync(
+                    db, q.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived), nd, ruleSet, _clock.UtcNow, ct);
+                ids = heads.Where(h => h.Value.State is Sla.SlaState.Breached or Sla.SlaState.AtRisk)
+                    .Select(h => h.Key).ToList();
+            }
+            q = q.Where(c => ids.Contains(c.Id));
         }
 
         if (filter is { OpenedYear: { } oy, OpenedMonth: { } om })
