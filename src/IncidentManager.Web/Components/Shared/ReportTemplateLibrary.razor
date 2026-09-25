@@ -146,8 +146,10 @@
                                     }
                                 </td>
                                 <td class="small">
-                                    <a href="export/report-templates/@t.Id" download title="Download to edit, then replace">@t.FileName</a>
-                                    @if (t.SizeBytes > 0) { <span class="text-muted">· @Size(t.SizeBytes)</span> }
+                                    @* One line per file name (long ones are cut off with the full name in the tooltip). *@
+                                    <a href="export/report-templates/@t.Id" download class="d-inline-block text-truncate text-nowrap align-bottom"
+                                       style="max-width:14rem" title="@t.FileName: download to edit, then replace">@t.FileName</a>
+                                    @if (t.SizeBytes > 0) { <div class="text-muted">@Size(t.SizeBytes)</div> }
                                 </td>
                                 <td class="small">@(t.DefaultFor.Count == 0 ? "—" : string.Join(", ", t.DefaultFor))</td>
                                 <td class="small text-muted">@TimeDisp.Short(t.UpdatedAtUtc) · @Users.DisplayFor(t.UpdatedBy)</td>
