@@ -136,6 +136,18 @@ public sealed partial class ReportGenerator : IReportGenerator
                 AppendOutcome(body, m);
                 break;
 
+            case ReportSection.AnalystNotes:
+                body.AppendChild(Heading("Analyst Notes"));
+                body.AppendChild(P("Working notes recorded during the investigation, as written.", italic: true, size: 18));
+                if (m.Notes.Count == 0) body.AppendChild(P("(none)"));
+                foreach (var n in m.Notes)
+                {
+                    body.AppendChild(P($"[{n.AtUtc:u}] {n.Author}", bold: true, size: 18));
+                    if (n.Blocks is { Count: > 0 } blocks) AppendRich(body, blocks);
+                    else body.AppendChild(P(n.Body));
+                }
+                break;
+
             case ReportSection.Appendix:
                 body.AppendChild(Heading("Appendix"));
                 AppendAppendix(body, m);
@@ -247,15 +259,6 @@ public sealed partial class ReportGenerator : IReportGenerator
         body.AppendChild(SubHeading("F. Evidence index"));
         body.AppendChild(WordTable(["File", "Size (bytes)", "SHA-256", "Uploaded (UTC)", "By"],
             m.Evidence.Select(x => new[] { x.FileName, x.SizeBytes.ToString(CultureInfo.InvariantCulture), x.Sha256, x.UploadedAtUtc.ToString("u"), x.UploadedBy })));
-
-        body.AppendChild(SubHeading("G. Analyst notes"));
-        if (m.Notes.Count == 0) body.AppendChild(P("(none)"));
-        foreach (var n in m.Notes)
-        {
-            body.AppendChild(P($"[{n.AtUtc:u}] {n.Author}", bold: true, size: 18));
-            if (n.Blocks is { Count: > 0 } blocks) AppendRich(body, blocks);
-            else body.AppendChild(P(n.Body));
-        }
     }
 
     internal static Paragraph P(string text, bool bold = false, bool italic = false, int size = 22)

@@ -10,10 +10,40 @@ namespace IncidentManager.UnitTests;
 public class ReportLayoutTests
 {
     [Fact]
-    public void Blank_layout_enables_every_section_in_enum_order()
+    public void Blank_layout_enables_every_section_except_analyst_notes_in_enum_order()
     {
-        ReportLayout.Resolve(null).Should().Equal(System.Enum.GetValues<ReportSection>());
-        ReportLayout.Resolve("").Should().Equal(System.Enum.GetValues<ReportSection>());
+        var expected = System.Enum.GetValues<ReportSection>().Where(s => s != ReportSection.AnalystNotes);
+        ReportLayout.Resolve(null).Should().Equal(expected);
+        ReportLayout.Resolve("").Should().Equal(expected);
+    }
+
+    [Fact]
+    public void A_layout_saved_before_analyst_notes_existed_keeps_notes_out()
+    {
+        // An upgrade must never start printing notes in reports that didn't have them.
+        ReportLayout.Resolve("Summary,Outcome,Appendix").Should().NotContain(ReportSection.AnalystNotes);
+        ReportLayout.Parse("Summary").Should().Contain(new ReportSectionState(ReportSection.AnalystNotes, false));
+    }
+
+    [Fact]
+    public void Analyst_notes_print_only_when_the_layout_turns_them_on()
+    {
+        ReportLayout.Resolve("Summary,AnalystNotes").Should().Contain(ReportSection.AnalystNotes);
+
+        CaseReportModel Model(params ReportSection[] sections) => new()
+        {
+            Sections = sections,
+            CaseNumber = "2026-09", Title = "Notes test", Classification = "Incident", Phase = "Triage",
+            Severity = "Low", Origin = "Internal detection", Summary = "s",
+            Notes = [new ReportNoteItem(System.DateTimeOffset.UnixEpoch, "Dana", "NOTE_MARKER")],
+            GeneratedBy = "tester", GeneratedAtUtc = System.DateTimeOffset.UnixEpoch, ContentHash = new string('a', 64),
+        };
+
+        var off = WordXml(new ReportGenerator().GenerateWord(Model(ReportSection.Summary, ReportSection.Appendix)));
+        off.Should().NotContain("NOTE_MARKER", "notes are no longer part of the appendix");
+        var on = WordXml(new ReportGenerator().GenerateWord(Model(ReportSection.Summary, ReportSection.AnalystNotes)));
+        on.Should().Contain("Analyst Notes").And.Contain("NOTE_MARKER");
+        new ReportGenerator().GeneratePdf(Model(ReportSection.AnalystNotes)).Should().NotBeEmpty();
     }
 
     [Fact]
@@ -40,11 +70,13 @@ public class ReportLayoutTests
     [Fact]
     public void Sections_missing_from_a_stored_layout_are_appended_enabled_forward_compat()
     {
-        // Only two sections stored (as if saved before others existed) — the rest come back enabled.
+        // Only two sections stored (as if saved before others existed): the rest come back enabled, except
+        // Analyst Notes, which stays off until a layout turns it on.
+        var expected = System.Enum.GetValues<ReportSection>().Where(s => s != ReportSection.AnalystNotes).ToList();
         var resolved = ReportLayout.Resolve("Outcome,Summary");
         resolved.Should().StartWith(ReportSection.Outcome);
-        resolved.Should().Contain(System.Enum.GetValues<ReportSection>()); // none dropped
-        resolved.Count.Should().Be(System.Enum.GetValues<ReportSection>().Length);
+        resolved.Should().Contain(expected); // none dropped
+        resolved.Count.Should().Be(expected.Count);
     }
 
     [Fact]

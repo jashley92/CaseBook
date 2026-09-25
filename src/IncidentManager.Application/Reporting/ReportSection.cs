@@ -17,6 +17,9 @@ public enum ReportSection
     Indicators,
     Recommendations,
     Outcome,
+    /// <summary>The analysts' working notes, verbatim. Off unless a layout turns it on: notes are working
+    /// reasoning, not the confirmed record, and the case report can end up in discovery.</summary>
+    AnalystNotes,
     Appendix
 }
 
@@ -32,6 +35,9 @@ public static class ReportLayout
 {
     private static readonly ReportSection[] All = Enum.GetValues<ReportSection>();
 
+    /// <summary>Sections that start switched off when a layout doesn't mention them (a new or blank layout).</summary>
+    private static readonly HashSet<ReportSection> OffByDefault = [ReportSection.AnalystNotes];
+
     /// <summary>Full ordered layout (every section, with its enabled flag) for the admin editor.</summary>
     public static IReadOnlyList<ReportSectionState> Parse(string? raw)
     {
@@ -46,10 +52,11 @@ public static class ReportLayout
                 result.Add(new ReportSectionState(section, enabled));
         }
 
-        // Append any sections not present in the stored value (new sections, or a blank layout) enabled.
+        // Append any sections not present in the stored value (new sections, or a blank layout): enabled,
+        // except the off-by-default ones, so an existing layout never starts printing notes after an upgrade.
         foreach (var s in All)
             if (seen.Add(s))
-                result.Add(new ReportSectionState(s, true));
+                result.Add(new ReportSectionState(s, !OffByDefault.Contains(s)));
 
         return result;
     }

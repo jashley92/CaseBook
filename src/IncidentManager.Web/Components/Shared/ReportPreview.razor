@@ -202,15 +202,24 @@ else
                         </ul>
                         break;
 
+                    case ReportSection.AnalystNotes:
+                        <p class="small fst-italic text-muted mb-1">Working notes recorded during the investigation, as written.</p>
+                        @if (Model.Notes.Count == 0) { <p class="small mb-0">(none)</p> }
+                        @foreach (var n in Model.Notes)
+                        {
+                            <p class="small fw-semibold mb-0">[@n.AtUtc.ToString("u")] @n.Author</p>
+                            <p class="small" style="white-space:pre-wrap">@n.Body</p>
+                        }
+                        break;
+
                     case ReportSection.Appendix:
-                        <p class="small fst-italic text-muted mb-1">Full structured record: assignments, relationships, ATT&amp;CK, history, evidence index, notes.</p>
+                        <p class="small fst-italic text-muted mb-1">Full structured record: assignments, relationships, ATT&amp;CK, history, evidence index.</p>
                         <ul class="small mb-0">
                             <li>Assignments: @Model.Assignments.Count</li>
                             <li>Entity relationships: @Model.Relationships.Count</li>
                             <li>MITRE ATT&amp;CK techniques: @Model.Techniques.Count</li>
                             <li>Classification changes: @Model.ClassificationHistory.Count &nbsp;·&nbsp; Severity changes: @Model.SeverityHistory.Count</li>
                             <li>Evidence items: @Model.Evidence.Count</li>
-                            <li>Analyst notes: @Model.Notes.Count</li>
                         </ul>
                         break;
                 }
@@ -250,6 +259,7 @@ else
         ReportSection.Indicators => "Indicators of Compromise",
         ReportSection.Recommendations => "Recommendations",
         ReportSection.Outcome => "Outcome",
+        ReportSection.AnalystNotes => "Analyst Notes",
         ReportSection.Appendix => "Appendix",
         _ => s.ToString()
     };

@@ -135,6 +135,7 @@ public static class Ui
         IncidentManager.Application.Reporting.ReportSection.InvestigationTimeline => "Investigation Timeline",
         IncidentManager.Application.Reporting.ReportSection.SystemsReviewed => "Systems Reviewed",
         IncidentManager.Application.Reporting.ReportSection.Indicators => "Indicators of Compromise",
+        IncidentManager.Application.Reporting.ReportSection.AnalystNotes => "Analyst Notes (working notes, as written)",
         IncidentManager.Application.Reporting.ReportSection.Appendix => "Appendix (full structured record)",
         _ => s.ToString()
     };

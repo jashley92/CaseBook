@@ -196,6 +196,19 @@ public sealed partial class ReportGenerator
                 AppendOutcome(section, m);
                 break;
 
+            case ReportSection.AnalystNotes:
+                Heading(section, "Analyst Notes");
+                Caption(section, "Working notes recorded during the investigation, as written.");
+                if (m.Notes.Count == 0) section.AddParagraph("(none)");
+                foreach (var n in m.Notes)
+                {
+                    var p = section.AddParagraph($"[{n.AtUtc:u}] {n.Author}");
+                    p.Format.Font.Bold = true;
+                    if (n.Blocks is { Count: > 0 } blocks) AppendRich(section, blocks);
+                    else section.AddParagraph(n.Body);
+                }
+                break;
+
             case ReportSection.Appendix:
                 Heading(section, "Appendix");
                 AppendAppendix(section, m);
@@ -280,16 +293,6 @@ public sealed partial class ReportGenerator
         PdfTable(section, ["File", "Size", "SHA-256", "Uploaded", "By"],
             m.Evidence.Select(x => new[] { x.FileName, x.SizeBytes.ToString(CultureInfo.InvariantCulture), x.Sha256, x.UploadedAtUtc.ToString("u"), x.UploadedBy }).ToList(),
             [3.0, 1.5, 6.5, 2.8, 2.2]);
-
-        SubHeading(section, "G. Analyst notes");
-        if (m.Notes.Count == 0) section.AddParagraph("(none)");
-        foreach (var n in m.Notes)
-        {
-            var p = section.AddParagraph($"[{n.AtUtc:u}] {n.Author}");
-            p.Format.Font.Bold = true;
-            if (n.Blocks is { Count: > 0 } blocks) AppendRich(section, blocks);
-            else section.AddParagraph(n.Body);
-        }
     }
 
     /// <summary>Branded header (logo over organisation/team name) + centred page-number footer.</summary>

@@ -590,8 +590,11 @@ Generation always produces a **working draft**; finalization is a **separate, pe
 step that can enforce **separation of duties** (approver ≠ generator) when `Reporting:RequireSeparateApprover`
 is on. Each file's **SHA-256 is persisted** on the `Report` row; `VerifyFileAsync` re-hashes the stored
 file to prove it hasn't changed. Section layout is resolved per-case (a `ReportProfile` overrides the
-global `Reporting:SectionLayout`); Markdown notes are flattened to plain text; owner ids resolve to display
-names so an examiner report never shows a raw id.
+global `Reporting:SectionLayout`). Analyst notes are their own `AnalystNotes` section, **off unless a layout
+turns it on** (a layout that doesn't mention it resolves it disabled, so upgrades never start printing notes):
+notes are working reasoning, and the case report can end up in discovery. People (authors, uploaders, owners,
+"changed by") resolve to display names and enums to their UI labels, so an examiner report never shows a raw
+id or code name.
 
 ### 9.4 Real-time presence & notifications
 
