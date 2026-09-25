@@ -74,8 +74,8 @@
                             var req = _edit.Requirements[idx];
                             <tr>
                                 <td class="text-muted small text-center">
-                                    <button class="btn btn-sm btn-link p-0 text-muted" title="Move up" disabled="@(idx == 0)" @onclick="() => MoveReq(idx, -1)"><span class="bi bi-arrow-up"></span></button>
-                                    <button class="btn btn-sm btn-link p-0 text-muted" title="Move down" disabled="@(idx == _edit.Requirements.Count - 1)" @onclick="() => MoveReq(idx, 1)"><span class="bi bi-arrow-down"></span></button>
+                                    <button class="btn btn-sm btn-link p-0 text-muted" title="Move up" aria-label="Move requirement @(idx + 1) up" disabled="@(idx == 0)" @onclick="() => MoveReq(idx, -1)"><span class="bi bi-arrow-up" aria-hidden="true"></span></button>
+                                    <button class="btn btn-sm btn-link p-0 text-muted" title="Move down" aria-label="Move requirement @(idx + 1) down" disabled="@(idx == _edit.Requirements.Count - 1)" @onclick="() => MoveReq(idx, 1)"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
                                 </td>
                                 <td>
                                     <select class="form-select form-select-sm" @bind="req.Kind">
@@ -116,7 +116,7 @@
                                         <input class="form-control form-control-sm" @bind="req.Label" @bind:event="oninput" placeholder="e.g. Evidence preserved and chain of custody complete" />
                                     }
                                 </td>
-                                <td class="text-center"><input class="form-check-input" type="checkbox" @bind="req.IsBlocking" /></td>
+                                <td class="text-center"><input class="form-check-input" type="checkbox" @bind="req.IsBlocking" aria-label="Requirement @(idx + 1) is blocking" /></td>
                                 <td class="text-end"><button class="btn btn-sm btn-outline-danger py-0" @onclick="() => RemoveReq(idx)">Remove</button></td>
                             </tr>
                         }

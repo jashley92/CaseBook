@@ -94,13 +94,13 @@
                             var st = _edit.Layout[idx];
                             <li class="list-group-item d-flex align-items-center gap-2">
                                 <div class="btn-group btn-group-sm" role="group">
-                                    <button class="btn btn-outline-secondary" title="Move up"
+                                    <button class="btn btn-outline-secondary" title="Move up" aria-label="Move @SectionLabel(st.Section) up"
                                             disabled="@(idx == 0)" @onclick="() => MoveSection(idx, -1)">
-                                        <span class="bi bi-arrow-up"></span>
+                                        <span class="bi bi-arrow-up" aria-hidden="true"></span>
                                     </button>
-                                    <button class="btn btn-outline-secondary" title="Move down"
+                                    <button class="btn btn-outline-secondary" title="Move down" aria-label="Move @SectionLabel(st.Section) down"
                                             disabled="@(idx == _edit.Layout.Count - 1)" @onclick="() => MoveSection(idx, 1)">
-                                        <span class="bi bi-arrow-down"></span>
+                                        <span class="bi bi-arrow-down" aria-hidden="true"></span>
                                     </button>
                                 </div>
                                 <div class="form-check form-switch mb-0 flex-grow-1">

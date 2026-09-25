@@ -470,15 +470,15 @@
                                @bind="_linkQuery" @bind:event="oninput" @bind:after="SearchLinkTargets" />
                         @if (_linkResults.Count > 0)
                         {
-                            <ul class="list-group mt-1">
+                            <div class="list-group mt-1">
                                 @foreach (var r in _linkResults)
                                 {
-                                    <li class="list-group-item list-group-item-action py-1 small" role="button" @onclick="() => SelectLinkTarget(r)">
+                                    <button type="button" class="list-group-item list-group-item-action py-1 small text-start" @onclick="() => SelectLinkTarget(r)">
                                         <strong>@r.CaseNumber</strong> — @r.Title
                                         <span class="@Ui.ClassificationBadge(r.Classification) ms-1">@Ui.Label(r.Classification)</span>
-                                    </li>
+                                    </button>
                                 }
-                            </ul>
+                            </div>
                         }
                         else if (!string.IsNullOrWhiteSpace(_linkQuery))
                         {

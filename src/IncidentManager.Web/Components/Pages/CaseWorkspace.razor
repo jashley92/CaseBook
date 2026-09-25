@@ -85,7 +85,7 @@ else
                 <code class="im-casehead-num">@_case.CaseNumber</code>
                 @if (_canEdit && !_renumbering)
                 {
-                    <button class="btn btn-sm btn-link p-0 ms-1 align-baseline" title="Change case number" @onclick="StartRenumber">
+                    <button class="btn btn-sm btn-link p-0 ms-1 align-baseline" title="Change case number" aria-label="Change case number" @onclick="StartRenumber">
                         <span class="bi bi-pencil" aria-hidden="true"></span>
                     </button>
                 }
