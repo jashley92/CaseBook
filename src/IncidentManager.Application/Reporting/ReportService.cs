@@ -57,8 +57,9 @@ public sealed class ReportService
     // and the severity labels already used here. Canonical member names when no provider/override is set.
     private string ClassificationLabel(Classification? c)
     {
-        var def = c is { } cls ? cls.ToString() : "Complex Event";
-        return _taxonomy?.Label("Classification", c?.ToString() ?? "ComplexEvent", def) ?? def;
+        var member = c?.ToString() ?? "ComplexEvent";
+        var def = c is null ? "Complex Event" : Admin.TaxonomyCatalog.DefaultLabel("Classification", member);
+        return _taxonomy?.Label("Classification", member, def) ?? def;
     }
 
     // Same wording as the Tasks tab, so the report never prints "InProgress" or "Cancelled".
@@ -506,11 +507,11 @@ public sealed class ReportService
             ClosedAtUtc = c.ClosedAtUtc,
             ClassificationHistory = c.ClassificationChanges
                 .OrderBy(x => x.ChangedAtUtc)
-                .Select(x => new ReportClassificationItem(x.ChangedAtUtc, x.From?.ToString() ?? "—", x.To.ToString(), x.Reason, x.ChangedBy))
+                .Select(x => new ReportClassificationItem(x.ChangedAtUtc, x.From is { } fc ? ClassificationLabel(fc) : "—", ClassificationLabel(x.To), x.Reason, _users.DisplayFor(x.ChangedBy)))
                 .ToList(),
             SeverityHistory = c.SeverityChanges
                 .OrderBy(x => x.ChangedAtUtc)
-                .Select(x => new ReportClassificationItem(x.ChangedAtUtc, x.From is { } f ? _severityLabels.For(f) : "—", _severityLabels.For(x.To), x.Reason ?? "", x.ChangedBy))
+                .Select(x => new ReportClassificationItem(x.ChangedAtUtc, x.From is { } f ? _severityLabels.For(f) : "—", _severityLabels.For(x.To), x.Reason ?? "", _users.DisplayFor(x.ChangedBy)))
                 .ToList(),
             EventTimeline = c.TimelineEntries
                 .Where(x => x.Kind == TimelineKind.Event)
@@ -526,7 +527,7 @@ public sealed class ReportService
                 .Select((x, i) => new ReportAttackStep(
                     i + 1,
                     x.OccurredAtUtc,
-                    string.Join(", ", x.Tactics.Select(t => t.Tactic.ToString()).OrderBy(s => s)),
+                    string.Join(", ", x.Tactics.Select(t => Humanize(t.Tactic.ToString())).OrderBy(s => s)),
                     d.Text(EntityName(c, x.ActorEntityId)),
                     d.Text(EntityName(c, x.TargetEntityId)),
                     x.TechniqueId,
@@ -540,12 +541,12 @@ public sealed class ReportService
                 .ToList(),
             Evidence = c.Evidence
                 .OrderBy(x => x.CreatedAtUtc)
-                .Select(x => new ReportEvidenceItem(x.OriginalFileName, x.SizeBytes, x.Sha256, x.CreatedAtUtc, x.CreatedBy))
+                .Select(x => new ReportEvidenceItem(x.OriginalFileName, x.SizeBytes, x.Sha256, x.CreatedAtUtc, _users.DisplayFor(x.CreatedBy)))
                 .ToList(),
             Notes = c.Notes.Where(x => x.IsCurrent)
                 .OrderBy(x => x.CreatedAtUtc)
                 // Notes are Markdown (U-35); flatten to readable plain text for the report.
-                .Select(x => new ReportNoteItem(x.CreatedAtUtc, x.CreatedBy, d.Text(_markdown.ToPlainText(x.Body)), d.Blocks(Content.RichText.Parse(x.Body))))
+                .Select(x => new ReportNoteItem(x.CreatedAtUtc, _users.DisplayFor(x.CreatedBy), d.Text(_markdown.ToPlainText(x.Body)), d.Blocks(Content.RichText.Parse(x.Body))))
                 .ToList(),
             ActionItems = c.ActionItems
                 .OrderBy(x => x.Status)
@@ -556,8 +557,8 @@ public sealed class ReportService
             Assignments = c.Assignments
                 .OrderBy(x => x.Role)
                 .Select(x => new ReportAssignmentRow(
-                    string.IsNullOrWhiteSpace(x.UserDisplayName) ? x.UserId : x.UserDisplayName,
-                    x.Role.ToString()))
+                    string.IsNullOrWhiteSpace(x.UserDisplayName) ? _users.DisplayFor(x.UserId) : x.UserDisplayName,
+                    x.Role == CaseAssignmentRole.IncidentCommander ? "Incident Commander" : x.Role.ToString()))
                 .ToList(),
             Entities = c.Entities
                 .OrderBy(x => x.Type).ThenBy(x => x.Value)

@@ -60,6 +60,51 @@ public sealed class ReportingIntegrationTests : IDisposable
             diagrams: new IncidentManager.Infrastructure.Reporting.SkiaReportDiagrams());   // PROD-46: real pictures
     }
 
+    [Fact]
+    public async Task The_report_shows_people_by_name_and_labels_in_words()
+    {
+        _user.RoleSet = [AppRole.IncidentCommander];
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
+                new CaseNumberGenerator(db), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+            await cases.AddEventStepAsync(caseId, _clock.UtcNow, new[] { MitreTactic.CommandAndControl },
+                null, null, null, "Beacon to the C2 host", "SIEM");
+            await cases.AddNoteAsync(caseId, "Named-author note");
+        }
+
+        await using (var db = NewContext())
+        {
+            var store = new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = _reportDir }));
+            var branding = new FileReportBrandingStore(Options.Create(new ReportBrandingOptions { RootPath = Path.Combine(_reportDir, "branding") }));
+            var svc = new ReportService(NewFactory(), new ReportGenerator(), store, _hasher, _user, _clock,
+                new IncidentManager.Application.Content.MarkdownService(), _reporting, branding, new NamingUserDirectory(),
+                new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()));
+            var m = await svc.BuildPreviewModelAsync(caseId, null);
+
+            m.Notes.Should().Contain(n => n.Author == $"Name of {_user.UserId}");
+            m.ClassificationHistory.Should().NotBeEmpty();
+            m.ClassificationHistory.Should().OnlyContain(h => h.By.StartsWith("Name of "));
+            m.ClassificationHistory.SelectMany(h => new[] { h.From, h.To }).Should().NotContain(new[] { "AdverseEvent", "ComplexEvent" });
+            m.AttackChain.Should().Contain(s => s.Tactics.Contains("Command And Control") || s.Tactics.Contains("Command and Control"));
+            m.Assignments.Select(a => a.Role).Should().NotContain("IncidentCommander");
+        }
+    }
+
+    /// <summary>Resolves every id to "Name of {id}", so a test can tell a resolved name from a raw id.</summary>
+    private sealed class NamingUserDirectory : IncidentManager.Application.Abstractions.IUserDirectory
+    {
+        public Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, CancellationToken ct = default) => Task.CompletedTask;
+        public IReadOnlyList<IncidentManager.Application.Abstractions.UserSummary> All() => Array.Empty<IncidentManager.Application.Abstractions.UserSummary>();
+        public IncidentManager.Application.Abstractions.UserSummary? Resolve(string userId) => null;
+        public string DisplayFor(string? userId) => userId is null ? "—" : $"Name of {userId}";
+        public string? EmailFor(string userId) => null;
+        public void Invalidate() { }
+    }
+
     /// <summary>Identity directory stub: resolves ids to themselves — enough for the report footer/owner columns.</summary>
     private sealed class StubUserDirectory : IncidentManager.Application.Abstractions.IUserDirectory
     {
@@ -104,7 +149,7 @@ public sealed class ReportingIntegrationTests : IDisposable
             }
 
             documentXml.Should().Contain("Event Timeline");
-            documentXml.Should().Contain("LateralMovement");
+            documentXml.Should().Contain("Lateral Movement").And.NotContain("LateralMovement");
             // PROD-46: the attack chain and entity graph are embedded as pictures with alt text.
             documentXml.Should().Contain("descr=\"Attack chain").And.Contain("descr=\"Entity relationship graph");
             documentXml.Should().Contain("Pivoted to the finance account jdoe");
