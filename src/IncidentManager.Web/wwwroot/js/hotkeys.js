@@ -23,6 +23,40 @@ window.imHotkeys = (function () {
         if (leaderTimer) { clearTimeout(leaderTimer); leaderTimer = null; }
     }
 
+    // The palette opens through a server round trip, so keys typed straight after Ctrl/Cmd-K (or "/") would
+    // land on the page before its input exists. Hold printable keys until the input appears, then hand
+    // them over as if typed there. Gives up after two seconds.
+    let buffering = false;
+    let buffer = '';
+    let bufferTimer = null;
+
+    function stopBuffering() {
+        buffering = false;
+        buffer = '';
+        if (bufferTimer) { clearTimeout(bufferTimer); bufferTimer = null; }
+    }
+
+    function startBuffering() {
+        stopBuffering();
+        buffering = true;
+        bufferTimer = setTimeout(stopBuffering, 2000);
+        const started = Date.now();
+        (function waitForInput() {
+            if (!buffering) return;
+            const input = document.querySelector('.cmdk-input');
+            if (input) {
+                input.focus();
+                if (buffer) {
+                    input.value = buffer;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                stopBuffering();
+                return;
+            }
+            if (Date.now() - started < 2000) requestAnimationFrame(waitForInput);
+        })();
+    }
+
     function send(name) {
         if (dotnet) { try { dotnet.invokeMethodAsync('OnHotkey', name); } catch (e) { /* circuit gone */ } }
     }
@@ -30,11 +64,20 @@ window.imHotkeys = (function () {
     function onKeydown(e) {
         if (!dotnet) return;
 
+        if (buffering && !(e.target && e.target.classList && e.target.classList.contains('cmdk-input'))) {
+            if (e.key === 'Escape') { stopBuffering(); }
+            else if (e.key === 'Backspace') { e.preventDefault(); buffer = buffer.slice(0, -1); return; }
+            else if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                e.preventDefault(); buffer += e.key; return;
+            }
+        }
+
         // Command palette — reachable from anywhere, including while typing.
         if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
             e.preventDefault();
             clearLeader();
             send('palette');
+            startBuffering();
             return;
         }
 
@@ -65,7 +108,7 @@ window.imHotkeys = (function () {
             leaderTimer = setTimeout(clearLeader, 1200); // abandon a half-typed sequence
             return;
         }
-        if (e.key === '/') { e.preventDefault(); send('palette'); return; }
+        if (e.key === '/') { e.preventDefault(); send('palette'); startBuffering(); return; }
         if (e.key === '?') { e.preventDefault(); send('help'); return; }
     }
 
