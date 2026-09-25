@@ -17,4 +17,14 @@ public interface ISecurityEventTransport
     bool Enabled { get; }
 
     Task SendAsync(SecurityEvent e, CancellationToken ct);
+
+    /// <summary>
+    /// For the Diagnostics test button only: sends like <see cref="SendAsync"/> but returns why delivery failed
+    /// (null when it went out). Transports that can't observe delivery keep this default.
+    /// </summary>
+    async Task<string?> SendTestAsync(SecurityEvent e, CancellationToken ct)
+    {
+        await SendAsync(e, ct);
+        return null;
+    }
 }

@@ -6,6 +6,7 @@
 @using IncidentManager.Application.Abstractions
 @using IncidentManager.Application.Branding
 @attribute [Authorize(Policy = Policies.Administer)]
+@inject IncidentManager.Web.Siem.SiemTestService SiemTest
 @layout AdminLayout
 @inject AdminSettingsService Settings
 @inject IReportBrandingStore Branding
@@ -458,6 +459,27 @@
                             }
                         </td>
                     </tr>
+                    @if (SiemTest.AnyEnabled)
+                    {
+                        <tr>
+                            <td>SIEM test</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="SendSiemTest" disabled="@_siemTesting">
+                                    @(_siemTesting ? "Sending…" : "Send test event")
+                                </button>
+                                <span class="small text-muted ms-2">Event 5901, marked as a test. Doesn't touch case data.</span>
+                                @if (_siemResults is { } results)
+                                {
+                                    <ul class="list-unstyled small mt-2 mb-0">
+                                        @foreach (var r in results)
+                                        {
+                                            <li>@StatusBadge(r.Delivered, r.Transport, r.Transport) <span class="ms-1">@r.Detail</span></li>
+                                        }
+                                    </ul>
+                                }
+                            </td>
+                        </tr>
+                    }
                     <tr>
                         <td>Team chat (webhook)</td>
                         <td>
@@ -949,6 +971,16 @@
         }
 
         Toasts.Success("Test chat message posted to the configured channel.");
+    }
+
+    private bool _siemTesting;
+    private IReadOnlyList<IncidentManager.Web.Siem.SiemTestResult>? _siemResults;
+
+    private async Task SendSiemTest()
+    {
+        _siemTesting = true;
+        try { _siemResults = await SiemTest.SendTestAsync(); }
+        finally { _siemTesting = false; }
     }
 
     private sealed record HealthCheck(string Label, bool Ok, string Detail);

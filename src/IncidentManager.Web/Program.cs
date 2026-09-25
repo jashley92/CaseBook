@@ -101,6 +101,7 @@ builder.Services.AddHttpClient("siem");
 builder.Services.AddSingleton<IncidentManager.Infrastructure.Siem.ISecurityEventTransport, IncidentManager.Web.Siem.WebhookTransport>();
 builder.Services.Configure<IncidentManager.Web.Siem.SiemEventLogOptions>(builder.Configuration.GetSection("Siem:EventLog"));
 builder.Services.AddSingleton<IncidentManager.Infrastructure.Siem.ISecurityEventTransport, IncidentManager.Web.Siem.EventLogTransport>();
+builder.Services.AddScoped<IncidentManager.Web.Siem.SiemTestService>();
 builder.Services.AddHostedService<IncidentManager.Web.BackgroundJobs.SecurityEventDispatcher>();
 
 // --- PROD-02: team-chat (Slack/Teams) notification channel. Overrides the no-op default from Infrastructure. ---

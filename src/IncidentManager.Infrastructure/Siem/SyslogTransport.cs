@@ -34,6 +34,27 @@ public sealed class SyslogTransport : ISecurityEventTransport
         }
     }
 
+    public async Task<string?> SendTestAsync(SecurityEvent e, CancellationToken ct)
+    {
+        var o = _options.CurrentValue;
+        if (!o.Enabled || string.IsNullOrWhiteSpace(o.Host)) return null;
+        var bytes = Encoding.UTF8.GetBytes(SecurityEventCef.ToSyslogLine(e, o.Facility, o.AppName));
+        try
+        {
+            if (o.Protocol.Equals("Tcp", StringComparison.OrdinalIgnoreCase)) await SendTcpAsync(o, bytes, ct);
+            else await SendUdpAsync(o, bytes, ct);
+            return null;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return $"{o.Host}:{o.Port} didn't accept a connection in time.";
+        }
+        catch (Exception ex) when (ex is SocketException or IOException or ArgumentException)
+        {
+            return ex.GetBaseException().Message;
+        }
+    }
+
     public async Task SendAsync(SecurityEvent e, CancellationToken ct)
     {
         var o = _options.CurrentValue;

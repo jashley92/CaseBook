@@ -6,7 +6,7 @@ namespace IncidentManager.Application.Security;
 /// Extends the F-16 integrity alarm (<see cref="AuditChainBroken"/> = 5001).
 ///
 /// Ranges: 50xx integrity · 51xx authentication · 52xx authorization · 53xx data access · 54xx
-/// admin/config · 55xx case governance.
+/// admin/config · 55xx case governance · 59xx diagnostics.
 /// </summary>
 public static class SecurityEventIds
 {
@@ -42,4 +42,7 @@ public static class SecurityEventIds
     public const int BreachEscalated = 5503;
     public const int CaseRestricted = 5504;          // a case was limited to need-to-know (S-08)
     public const int CaseRestrictionLifted = 5505;   // a case's need-to-know restriction was lifted — widens exposure (S-08)
+
+    // 59xx — Diagnostics
+    public const int SiemTest = 5901; // an admin's "Send test event" from Diagnostics, to confirm the collector receives the stream
 }

@@ -41,10 +41,15 @@ public sealed class WebhookTransport : ISecurityEventTransport
         }
     }
 
-    public async Task SendAsync(SecurityEvent e, CancellationToken ct)
+    public Task SendAsync(SecurityEvent e, CancellationToken ct) => PostAsync(e, ct);
+
+    public Task<string?> SendTestAsync(SecurityEvent e, CancellationToken ct) => PostAsync(e, ct);
+
+    // Returns null when the event posted (or the transport is off), else a short reason for the test button.
+    private async Task<string?> PostAsync(SecurityEvent e, CancellationToken ct)
     {
         var opts = _options.CurrentValue;
-        if (!opts.Enabled || string.IsNullOrWhiteSpace(opts.Url)) return;
+        if (!opts.Enabled || string.IsNullOrWhiteSpace(opts.Url)) return null;
 
         // S-06: refuse to send the token/event stream to a non-https (or non-loopback-http) endpoint.
         if (!SiemWebhookUrl.IsAcceptable(opts.Url, out var reason))
@@ -52,11 +57,12 @@ public sealed class WebhookTransport : ISecurityEventTransport
             _logger.LogWarning(
                 "SIEM webhook URL rejected ({Reason}); event {EventId} not sent. Configure an https collector URL.",
                 reason, e.EventId);
-            return;
+            return $"The collector URL was refused ({reason}). Use an https URL.";
         }
 
         var payload = SecurityEventJson.Serialize(e);
         var attempts = Math.Max(1, opts.MaxAttempts);
+        string? lastError = null;
 
         // F-19: resolve the token (literal or @cyberark: reference) once per event; the provider caches.
         // A configured-but-unresolvable secret comes back null → we send no auth header (fail-closed) rather
@@ -80,17 +86,19 @@ public sealed class WebhookTransport : ISecurityEventTransport
                 ApplyAuth(req, opts, token);
 
                 using var resp = await client.SendAsync(req, ct).ConfigureAwait(false);
-                if (resp.IsSuccessStatusCode) return;
+                if (resp.IsSuccessStatusCode) return null;
+                lastError = $"The collector answered {(int)resp.StatusCode} {resp.ReasonPhrase}.";
 
                 _logger.LogWarning("SIEM webhook returned {Status} for event {EventId} (attempt {Attempt}/{Max}).",
                     (int)resp.StatusCode, e.EventId, attempt, attempts);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                return;
+                return "Canceled.";
             }
             catch (Exception ex)
             {
+                lastError = ex is TaskCanceledException ? "The collector didn't answer in time." : ex.GetBaseException().Message;
                 _logger.LogWarning(ex, "SIEM webhook POST failed for event {EventId} (attempt {Attempt}/{Max}).",
                     e.EventId, attempt, attempts);
             }
@@ -98,9 +106,10 @@ public sealed class WebhookTransport : ISecurityEventTransport
             if (attempt < attempts)
             {
                 try { await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ct).ConfigureAwait(false); }
-                catch (OperationCanceledException) { return; }
+                catch (OperationCanceledException) { return "Canceled."; }
             }
         }
+        return lastError;
     }
 
     private static void ApplyAuth(HttpRequestMessage req, SiemWebhookOptions opts, string? token)

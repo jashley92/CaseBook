@@ -357,11 +357,13 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5401 | Admin | Role created / updated / deleted |
 | 5402 | Admin | AD-group → role mapping added / removed |
 | 5403 | Admin | Operational setting changed |
+| 5404 | Admin | API token created or revoked |
 | 5501 | Governance | Legal hold placed |
 | 5502 | Governance | Legal hold released |
 | 5503 | Governance | Case escalated to Breach |
 | 5504 | Authorization | Case restricted to need-to-know |
 | 5505 | Authorization | Case restriction lifted (widens who can see it) |
+| 5901 | Diagnostics | Test event from **Administration → Diagnostics → Send test event**. Safe to ignore; use it to confirm the collector receives the stream |
 
 These ids are a **stable contract** — pin SIEM rules to them; they are only ever appended to, never
 renumbered. **5101** fires on a failed **Windows (Negotiate) authentication handshake** (a production-only
