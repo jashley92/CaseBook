@@ -1,10 +1,10 @@
 @using IncidentManager.Application.Reporting
 
 @*
-    In-app HTML preview of a generated case report (U-37). Renders the same CaseReportModel the Word/PDF
-    generators consume, in the same section order (the case's chosen report profile / global layout), so an
+    In-app HTML preview of a generated case report (U-37). Renders the same CaseReportModel the Word report
+    generator consumes, in the same section order (the case's chosen report profile / global layout), so an
     analyst or approver can see what they're about to Generate / Approve without pulling the file. Read-only.
-    Timestamps render in UTC to match the forensic artifacts (the Word/PDF use UTC), not the per-user toggle.
+    Timestamps render in UTC to match the forensic artifacts (the Word report uses UTC), not the per-user toggle.
 *@
 
 @if (Model is null)
@@ -264,7 +264,7 @@ else
         _ => s.ToString()
     };
 
-    // PROD-46: the report pictures, inline (the same PNGs the Word/PDF embed).
+    // PROD-46: the report pictures, inline (the same PNGs the Word report embeds).
     private static string Png(byte[] bytes) => $"data:image/png;base64,{Convert.ToBase64String(bytes)}";
 
     private static string LogoDataUri(CaseReportModel m) =>
