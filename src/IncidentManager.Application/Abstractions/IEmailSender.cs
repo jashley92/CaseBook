@@ -25,4 +25,20 @@ public interface IEmailSender
     /// notification triggers compose branded HTML via <see cref="IEmailComposer"/> and use the overload above.
     /// </summary>
     Task SendAsync(IReadOnlyCollection<string> to, string subject, string body, CancellationToken ct = default);
+
+    /// <summary>
+    /// For the admin "send test" buttons only: sends like <see cref="SendAsync(EmailMessage, CancellationToken)"/>
+    /// but reports the outcome instead of swallowing a relay failure, so the problem shows where the relay is
+    /// being configured. Notification triggers keep using SendAsync.
+    /// </summary>
+    async Task<EmailSendOutcome> SendTestAsync(EmailMessage message, CancellationToken ct = default)
+    {
+        await SendAsync(message, ct);
+        return new EmailSendOutcome(EmailSendStatus.Sent);
+    }
 }
+
+public enum EmailSendStatus { Sent, Disabled, Failed }
+
+/// <summary>The result of an admin test send. <see cref="Error"/> carries the relay's reason when it failed.</summary>
+public sealed record EmailSendOutcome(EmailSendStatus Status, string? Error = null);

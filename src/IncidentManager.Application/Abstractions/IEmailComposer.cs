@@ -29,8 +29,10 @@ public interface IEmailComposer
         string templateId, string subject, string bodyHtml, CancellationToken ct = default);
 
     /// <summary>
-    /// Composes a full message for the currently-saved template using representative sample token values —
-    /// for the admin "send test" action, so an admin can see a real rendered email in their inbox.
+    /// Composes a full message using representative sample token values, for the admin "send test" action, so an
+    /// admin can see a real rendered email in their inbox. A draft subject/body (unsaved edits) is used when given,
+    /// otherwise the saved template.
     /// </summary>
-    Task<EmailMessage> ComposeSampleAsync(string templateId, IReadOnlyCollection<string> to, CancellationToken ct = default);
+    Task<EmailMessage> ComposeSampleAsync(string templateId, IReadOnlyCollection<string> to,
+        string? draftSubject = null, string? draftBody = null, CancellationToken ct = default);
 }

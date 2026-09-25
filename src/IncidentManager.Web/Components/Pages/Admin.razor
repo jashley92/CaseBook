@@ -254,8 +254,8 @@
                             </div>
                             <div class="card-body">
                                 <p class="small text-muted">
-                                    The <strong>accent</strong> colors links, active states, focus rings and highlights. The
-                                    <strong>primary</strong> color is used for primary buttons and structural ink. Link shades are
+                                    <strong>Accent color</strong> sets links, active states, focus rings and highlights.
+                                    <strong>Primary action color</strong> sets primary buttons and structural ink. Link shades are
                                     adjusted automatically to keep AA contrast in light and dark themes. Severity, phase and status
                                     colors don't change.
                                 </p>
@@ -373,9 +373,16 @@
                                     </div>
                                 </div>
                                 <div class="form-text">
-                                    @(Config.GetValue<bool>("Email:Enabled")
-                                        ? "Email delivery is on. This sends through the configured relay."
-                                        : "Email delivery is off. The message is written to the log, not sent.")
+                                    @if (EmailSettingsUnsaved)
+                                    {
+                                        <span class="text-warning-emphasis">The test uses the saved settings. Save your email changes first to test them.</span>
+                                    }
+                                    else
+                                    {
+                                        @(Config.GetValue<bool>("Email:Enabled")
+                                            ? "Email delivery is on. This sends through the configured relay."
+                                            : "Email delivery is off. The message is written to the log, not sent.")
+                                    }
                                 </div>
 
                                 <hr class="my-3" />
@@ -853,6 +860,11 @@
     private string? FormText(string key) => _form.GetValueOrDefault(key);
     private bool EmailOn => FormBool("Email:Enabled");
     private bool FromSet => !string.IsNullOrWhiteSpace(FormText("Email:From"));
+    // UX-41: the test buttons send with the saved settings, so flag when the form's email settings differ from them.
+    private bool EmailSettingsUnsaved =>
+        new[] { "Email:Enabled", "Email:From" }.Any(k =>
+            !string.Equals((FormText(k) ?? "").Trim(), (SavedValue(k) ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+    private string? SavedValue(string key) => _effective?.FirstOrDefault(e => e.Definition.Key == key)?.Value;
     private bool LegalDistributionSet => !string.IsNullOrWhiteSpace(FormText("Email:LegalDistribution"));
     private bool AnyTriggerOn =>
         FormBool("Email:AssignmentNotifications")
@@ -909,20 +921,15 @@
         if (string.IsNullOrWhiteSpace(to)) { Toasts.Warning("Enter a recipient address."); return; }
 
         // Admins need the relay's actual complaint to fix the configuration, so the reason is shown here.
-        try
+        var outcome = await Email.SendTestAsync(new EmailMessage([to], "[CaseBook] Test notification",
+            "<p>This is a test notification from CaseBook confirming the email configuration.</p>",
+            "This is a test notification from CaseBook confirming the email configuration."));
+        switch (outcome.Status)
         {
-            await Email.SendAsync([to], "[CaseBook] Test notification",
-                "This is a test notification from CaseBook confirming the email configuration.");
+            case EmailSendStatus.Sent: Toasts.Success($"Test email sent to {to}."); break;
+            case EmailSendStatus.Disabled: Toasts.Info($"Email delivery is off. Logged a test message for {to} instead."); break;
+            default: Toasts.Error($"Couldn't send the test email. {outcome.Error} Check the relay host, port and sender address."); break;
         }
-        catch (Exception ex)
-        {
-            Toasts.Error($"Couldn't send the test email: {ex.Message} Check the relay host, port and credentials.");
-            return;
-        }
-
-        Toasts.Success(Config.GetValue<bool>("Email:Enabled")
-            ? $"Test email sent to {to}."
-            : $"Email delivery is off. Logged a test message for {to} instead.");
     }
 
     // PROD-02: post a sample message through the configured chat webhook so an admin can verify it end to end.

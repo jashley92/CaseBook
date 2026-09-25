@@ -31,6 +31,27 @@ public sealed class EmailSender : IEmailSender
     public Task SendAsync(EmailMessage message, CancellationToken ct = default) =>
         SendCoreAsync(message.To, message.Subject, textBody: message.TextBody, htmlBody: message.HtmlBody, ct);
 
+    public async Task<EmailSendOutcome> SendTestAsync(EmailMessage message, CancellationToken ct = default)
+    {
+        if (message.To.Count == 0) return new EmailSendOutcome(EmailSendStatus.Failed, "No recipient.");
+        if (!_options.CurrentValue.Enabled)
+        {
+            await SendCoreAsync(message.To, message.Subject, message.TextBody, message.HtmlBody, ct);
+            return new EmailSendOutcome(EmailSendStatus.Disabled);
+        }
+        try
+        {
+            await DeliverAsync(_options.CurrentValue, message.To, message.Subject, message.TextBody, message.HtmlBody, ct);
+            return new EmailSendOutcome(EmailSendStatus.Sent);
+        }
+        catch (Exception ex) when (ex is SmtpException or InvalidOperationException or FormatException or IOException)
+        {
+            _log.LogError(ex, "Test email to {RecipientCount} recipient(s) failed.", message.To.Count);
+            // The innermost message names the actual cause (connection refused, auth required, bad address).
+            return new EmailSendOutcome(EmailSendStatus.Failed, ex.GetBaseException().Message);
+        }
+    }
+
     private async Task SendCoreAsync(IReadOnlyCollection<string> to, string subject,
         string textBody, string? htmlBody, CancellationToken ct)
     {
@@ -47,25 +68,7 @@ public sealed class EmailSender : IEmailSender
 
         try
         {
-            using var message = new MailMessage { From = new MailAddress(o.From), Subject = subject };
-            foreach (var addr in to) message.To.Add(addr);
-
-            if (htmlBody is null)
-            {
-                message.Body = textBody;
-            }
-            else
-            {
-                // multipart/alternative: text first (fallback), HTML preferred by capable clients.
-                message.Body = textBody;
-                message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(
-                    htmlBody, null, MediaTypeNames.Text.Html));
-            }
-
-            // S4423: encrypt the connection by default (Email:EnableSsl, server-side). Only a deliberately
-            // configured relay that does its own TLS turns this off.
-            using var client = new SmtpClient(o.SmtpHost, o.SmtpPort) { EnableSsl = o.EnableSsl };
-            await client.SendMailAsync(message, ct);
+            await DeliverAsync(o, to, subject, textBody, htmlBody, ct);
         }
         catch (Exception ex)
         {
@@ -73,5 +76,29 @@ public sealed class EmailSender : IEmailSender
             // recipient addresses would only leak personal/case data into the log, so log a count instead.
             _log.LogError(ex, "Failed to send notification email to {RecipientCount} recipient(s).", to.Count);
         }
+    }
+
+    private static async Task DeliverAsync(EmailOptions o, IReadOnlyCollection<string> to, string subject,
+        string textBody, string? htmlBody, CancellationToken ct)
+    {
+        using var message = new MailMessage { From = new MailAddress(o.From), Subject = subject };
+        foreach (var addr in to) message.To.Add(addr);
+
+        if (htmlBody is null)
+        {
+            message.Body = textBody;
+        }
+        else
+        {
+            // multipart/alternative: text first (fallback), HTML preferred by capable clients.
+            message.Body = textBody;
+            message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(
+                htmlBody, null, MediaTypeNames.Text.Html));
+        }
+
+        // S4423: encrypt the connection by default (Email:EnableSsl, server-side). Only a deliberately
+        // configured relay that does its own TLS turns this off.
+        using var client = new SmtpClient(o.SmtpHost, o.SmtpPort) { EnableSsl = o.EnableSsl };
+        await client.SendMailAsync(message, ct);
     }
 }

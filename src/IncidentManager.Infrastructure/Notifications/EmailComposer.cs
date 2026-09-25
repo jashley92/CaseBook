@@ -26,15 +26,22 @@ public sealed partial class EmailComposer : IEmailComposer
         _branding = branding;
     }
 
-    public async Task<EmailMessage> ComposeAsync(string templateId, IReadOnlyCollection<string> to,
+    public Task<EmailMessage> ComposeAsync(string templateId, IReadOnlyCollection<string> to,
         IReadOnlyDictionary<string, string> tokens, string? ctaUrl = null,
-        IReadOnlyDictionary<string, string>? htmlTokens = null, CancellationToken ct = default)
+        IReadOnlyDictionary<string, string>? htmlTokens = null, CancellationToken ct = default) =>
+        ComposeCoreAsync(templateId, to, tokens, ctaUrl, htmlTokens, null, null, ct);
+
+    private async Task<EmailMessage> ComposeCoreAsync(string templateId, IReadOnlyCollection<string> to,
+        IReadOnlyDictionary<string, string> tokens, string? ctaUrl, IReadOnlyDictionary<string, string>? htmlTokens,
+        string? draftSubject, string? draftBody, CancellationToken ct)
     {
         var def = EmailTemplateCatalog.ById(templateId)
                   ?? throw new ArgumentException($"Unknown email template '{templateId}'.", nameof(templateId));
 
-        var subjectTemplate = _config[EmailTemplateCatalog.SubjectKey(templateId)] is { Length: > 0 } s ? s : def.DefaultSubject;
-        var bodyTemplate = _config[EmailTemplateCatalog.BodyKey(templateId)] is { Length: > 0 } b ? b : def.DefaultBodyHtml;
+        var subjectTemplate = draftSubject is { Length: > 0 } ds ? ds
+            : _config[EmailTemplateCatalog.SubjectKey(templateId)] is { Length: > 0 } s ? s : def.DefaultSubject;
+        var bodyTemplate = draftBody is { Length: > 0 } db ? db
+            : _config[EmailTemplateCatalog.BodyKey(templateId)] is { Length: > 0 } b ? b : def.DefaultBodyHtml;
 
         var subject = SubstitutePlain(subjectTemplate, tokens);
         var contentHtml = SubstituteHtml(bodyTemplate, tokens, htmlTokens);
@@ -61,12 +68,13 @@ public sealed partial class EmailComposer : IEmailComposer
         return (subj, html);
     }
 
-    public Task<EmailMessage> ComposeSampleAsync(string templateId, IReadOnlyCollection<string> to, CancellationToken ct = default)
+    public Task<EmailMessage> ComposeSampleAsync(string templateId, IReadOnlyCollection<string> to,
+        string? draftSubject = null, string? draftBody = null, CancellationToken ct = default)
     {
         var def = EmailTemplateCatalog.ById(templateId)
                   ?? throw new ArgumentException($"Unknown email template '{templateId}'.", nameof(templateId));
         var (tokens, htmlTokens, ctaUrl) = SampleTokens(def);
-        return ComposeAsync(templateId, to, tokens, ctaUrl, htmlTokens, ct);
+        return ComposeCoreAsync(templateId, to, tokens, ctaUrl, htmlTokens, draftSubject, draftBody, ct);
     }
 
     // --- token substitution ----------------------------------------------------

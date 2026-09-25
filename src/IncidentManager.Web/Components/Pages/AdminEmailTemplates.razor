@@ -85,7 +85,7 @@ else
                             <span class="vr mx-1"></span>
                             <input class="form-control form-control-sm" style="max-width:16rem" aria-label="Test email recipient" placeholder="you@example.com"
                                    @bind="_testRecipient" />
-                            <button class="btn btn-outline-secondary btn-sm" @onclick="SendTest" disabled="@(_busy || string.IsNullOrWhiteSpace(_testRecipient))">Send test</button>
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="SendTest" disabled="@(_busy || string.IsNullOrWhiteSpace(_testRecipient))" title="Sends the draft on screen. Doesn't save it.">Send test</button>
                         </div>
                         @if (_error is not null) { <p class="text-danger small mt-2 mb-0">@_error</p> }
                     </div>
@@ -201,14 +201,17 @@ else
         _error = null;
         try
         {
-            // Save first so the test reflects exactly what's live, then send with sample values.
-            await Templates.SaveAsync(_selectedId, _subject, _body);
-            _views = await Templates.GetAllAsync();
-            var message = await Composer.ComposeSampleAsync(_selectedId, [_testRecipient!]);
-            await Email.SendAsync(message);
-            Toasts.Success($"Test sent to {_testRecipient} (logged if email delivery is off)");
+            // Sends the draft on screen with sample values. Nothing is saved, so live emails don't change.
+            var message = await Composer.ComposeSampleAsync(_selectedId, [_testRecipient!], _subject, _body);
+            var outcome = await Email.SendTestAsync(message);
+            if (outcome.Status == EmailSendStatus.Failed) _error = $"Couldn't send the test. {outcome.Error}";
+            else if (outcome.Status == EmailSendStatus.Disabled) Toasts.Info($"Email delivery is off, so the draft was logged instead of sent. It isn't saved.");
+            else Toasts.Success($"Draft sent to {_testRecipient}. It isn't saved.");
         }
-        catch (Exception ex) { _error = ex.Message; }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            _error = $"Couldn't send the test. {ex.Message}";
+        }
         finally { _busy = false; }
     }
 }
