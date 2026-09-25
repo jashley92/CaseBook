@@ -125,7 +125,7 @@ public sealed class NotificationRuleService
         var rule = await db.NotificationRules.FirstOrDefaultAsync(r => r.Id == id, ct);
         if (rule is null) return;
         if (rule.IsSystem)
-            throw new InvalidOperationException("A built-in rule can't be deleted; archive it instead.");
+            throw new InvalidOperationException("A built-in rule can't be deleted. Archive it instead.");
         db.NotificationRules.Remove(rule);
         await db.SaveChangesAsync(ct);
     }

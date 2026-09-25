@@ -96,7 +96,7 @@ public static class CaseNarrative
         }
 
         if (steps.Count == 0 && decisions.Count == 0)
-            sb.Append("_The case has no event timeline or recorded decisions yet; add the account here._\n");
+            sb.Append("_The case has no event timeline or recorded decisions yet. Add the account here._\n");
 
         return sb.ToString().TrimEnd() + "\n";
     }

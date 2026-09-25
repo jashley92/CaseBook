@@ -245,12 +245,28 @@ for an analyst mid-investigation, not a marketing page.
 
 - No narrative or marketing subtitles. A subtitle states a fact ("As of 14:30 UTC",
   a filter summary), never mood copy like "Your day at a glance".
-- No em-dashes in prose or guiding text. They read as an AI tell. Use a period,
-  semicolon, colon, or parentheses instead. (This applies to labels, help text,
-  tooltips and titles.)
-- Functional separators are exempt: a bare empty-value cell placeholder, a
-  middot count caption (`3 open breaches`), and dropdown placeholder glyphs are
-  fine as-is.
+- No em-dashes in prose or guiding text. They read as an AI tell. Rewrite the
+  sentence rather than swapping the dash: a period, comma, colon or parentheses,
+  whichever reads naturally. Go easy on semicolons too; two sentences are usually
+  clearer. (This applies to labels, help text, tooltips and titles.)
+- Functional separators are exempt: a bare empty-value cell placeholder, the
+  `CASE-NUMBER — Title` identity separator, and a middot count caption
+  (`3 open breaches`).
+- Helper text answers the question the user has at that point, in one short
+  sentence. If the label already says it, leave the helper out. No "Please",
+  "Note that", ticket IDs (F-19, PROD-47) or feature explanations that belong in
+  the docs.
+- Errors say what happened and what to do: "Couldn't add the task. Reload and try
+  again." Never a bare "An error occurred" or a raw exception type.
+- Empty states say what would be here and the next step when there is one:
+  "No tasks yet. Add the first one above."
+- Confirm buttons use the verb ("Remove", "Reject import", "Release hold"), never
+  "OK" or "Yes". If copy tells people to click a button, the bold text matches
+  the button's real label.
+- US spelling (organization, color, canceled). Vocabulary: **case** (not matter),
+  **task** (not action item or follow-up item), **improvement action** for
+  lessons-learned actions, **Settings** (not preferences). **Delete** destroys,
+  **Remove** detaches, **Archive** hides reversibly.
 - Sentence case for page titles, section heads and buttons ("Open cases", "Export
   metrics", not "Open Cases" / "EXPORT METRICS"). Proper nouns and enum labels keep
   their own casing.
@@ -260,8 +276,24 @@ for an analyst mid-investigation, not a marketing page.
 <PageHeader Title="Dashboard" Subtitle="Your incidents at a glance, updated live" />
 
 @* Prefer: factual, no em-dash *@
-<PageHeader Title="Leadership Dashboard" Subtitle="@(_asOf is null ? null : $"As of {_asOf}")" />
+<PageHeader Title="Leadership dashboard" Subtitle="@(_asOf is null ? null : $"As of {_asOf}")" />
 ```
+
+### Buttons and toggles
+
+- **Primary** (`btn-primary`): the one main action in a view. Charcoal in light, gold in dark.
+- **Accent** (`btn-outline-primary`): a secondary action worth drawing the eye to. Gold outline in both themes.
+- **Neutral** (`btn-outline-secondary`): everything else. Uses the text and border tokens so it never reads as disabled.
+- **Pick-one toggles** (a scope, lens or mode) use the segmented control, never a pair of primary/outline buttons:
+
+```razor
+<div class="im-seg" role="group" aria-label="Case scope">
+    <button type="button" class="btn @(mine ? "active" : "")" aria-pressed="@mine" @onclick="...">Mine</button>
+    <button type="button" class="btn @(!mine ? "active" : "")" aria-pressed="@(!mine)" @onclick="...">All</button>
+</div>
+```
+
+- Clickable list rows stretch their title link over the row (see `.im-case-list`) instead of adding an "Open" button per row.
 
 ---
 

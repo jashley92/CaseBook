@@ -159,12 +159,12 @@ public sealed class DataElementService
         var el = await db.DataElements.FirstOrDefaultAsync(e => e.Id == id, ct);
         if (el is null) return;
         if (el.IsSystem)
-            throw new InvalidOperationException("A built-in element can't be deleted; archive it instead.");
+            throw new InvalidOperationException("A built-in element can't be deleted. Archive it instead.");
 
         var refCount = await db.CaseDataElements.CountAsync(c => c.ElementKey == el.Key, ct);
         if (refCount > 0)
             throw new InvalidOperationException(
-                $"'{el.Label}' is recorded on {refCount} case(s) and can't be deleted; archive it instead.");
+                $"'{el.Label}' is recorded on {refCount} case(s) and can't be deleted. Archive it instead.");
 
         db.DataElements.Remove(el);
         await db.SaveChangesAsync(ct);

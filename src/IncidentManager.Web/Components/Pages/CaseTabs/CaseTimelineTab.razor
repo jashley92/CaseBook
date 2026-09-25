@@ -63,7 +63,7 @@
                         @(_tlAddKind == TimelineKind.Event
                             ? (IsThirdParty ? "Editing this disclosure step. The audit trail records the change."
                                             : "Editing this event step. The audit trail records the change.")
-                            : "Editing this entry. A new version is saved; the prior one is kept.")
+                            : "Editing this entry. Saving creates a new version and keeps the old one.")
                     </span>
                     <button type="button" class="btn btn-sm btn-link text-decoration-none p-0"
                             @onclick="CancelTimelineEdit">Cancel</button>

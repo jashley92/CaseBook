@@ -109,7 +109,7 @@ public static class EmailTemplateCatalog
             "Program report {{Quarter}}",
             """
             <h1>Program report: {{Quarter}}</h1>
-            <p>Headline figures for {{Quarter}}, compared with {{PreviousQuarter}}. Cases in all scopes; exercise cases excluded.</p>
+            <p>Headline figures for {{Quarter}}, compared with {{PreviousQuarter}}. Covers every case except exercises.</p>
             {{SummaryTable}}
             <p>The full report, with the breakdowns and a CSV export, is in CaseBook.</p>
             """,
@@ -151,7 +151,7 @@ public static class EmailTemplateCatalog
             <h1>Regulatory notification deadline</h1>
             <p>The following case(s) are at risk of, or already past, a regulatory notification deadline and have <strong>not yet been marked reported</strong>:</p>
             {{ItemsList}}
-            <p>Review each case's notification status and record the reported milestone once notice is given. CaseBook only records the milestone; it never files on your behalf.</p>
+            <p>Review each case's notification status and record the reported milestone once notice is given. CaseBook only records the milestone. It never files on your behalf.</p>
             """,
             new[]
             {
@@ -190,7 +190,7 @@ public static class EmailTemplateCatalog
             <h1>Cases with no recent activity</h1>
             <p>The following open case(s) have had no recorded activity for a while and may be stalled:</p>
             {{ItemsList}}
-            <p>Open each case to record progress or move it forward. This is a reminder only; nothing on the case has changed.</p>
+            <p>Open each case to record progress or move it forward. This is only a reminder. Nothing on the case has changed.</p>
             """,
             new[]
             {

@@ -61,8 +61,8 @@
                                 <p class="small text-muted mb-2">
                                     A notification is delivered only when <strong>Send email</strong> is on, a
                                     <strong>From address</strong> is set, and the trigger is enabled with a reachable
-                                    recipient. This panel reflects unsaved selections. Click <strong>Save Notifications</strong>
-                                    to apply them; reminder scans pick up changes within a few minutes.
+                                    recipient. This panel reflects unsaved selections. Click <strong>Save</strong> to apply them.
+                                    Reminder scans pick up changes within a few minutes.
                                 </p>
                                 <ul class="list-unstyled mb-0 small">
                                     <li class="mb-1 d-flex align-items-start gap-2">
@@ -729,7 +729,7 @@
     private ConfirmDialog _confirm = null!;
 
     private void ConfirmRemoveLogo() => _confirm.Ask(this, "Remove logo",
-        "Remove the report logo? Reports generated from now on won't show it; reports already generated keep it.",
+        "Remove the report logo? New reports won't show it. Reports already generated keep it.",
         "Remove logo", RemoveLogo);
 
     // This page renders the Configuration and System sections of the admin hub; the shared AdminLayout owns

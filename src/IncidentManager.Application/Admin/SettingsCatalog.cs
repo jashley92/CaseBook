@@ -142,8 +142,8 @@ public static class SettingsCatalog
         new SettingDefinition("Integrity:AutoSeal:Enabled", "Auto-seal enabled", "Integrity", SettingKind.Bool,
             "Periodically verifies the audit chain and records a signed seal.", "true"),
         new SettingDefinition("Integrity:AutoSeal:IntervalHours", "Auto-seal interval (hours)", "Integrity", SettingKind.Int,
-            "Hours between signed seals. Tamper checks run about every 10 minutes regardless; this only limits " +
-            "how much recent history is waiting for a seal. Applies within a few minutes.", "6"),
+            "Hours between signed seals. Tamper checks still run about every 10 minutes. This only limits " +
+            "how much recent history waits for a seal. Applies within a few minutes.", "6"),
         new SettingDefinition("Integrity:EvidenceVerify:Enabled", "Evidence re-verification enabled", "Integrity", SettingKind.Bool,
             "Periodically re-hashes stored evidence and alerts if a file no longer matches its recorded SHA-256. " +
             "Off by default because a full pass is I/O-heavy. Alerts go to the integrity-alert distribution.", "false"),
@@ -201,7 +201,7 @@ public static class SettingsCatalog
         // Takes effect within a few minutes of saving.
         new SettingDefinition("Compliance:NotificationDeadlines:Enabled", "Regulatory deadline clock", "Deadline clock", SettingKind.Bool,
             "Master switch for the per-jurisdiction notification-deadline countdown, for example 72 hours for NYDFS Part 500. " +
-            "When on, breach and material cases show a deadline for each triggered jurisdiction. It only displays and reminds; it never notifies anyone.", "false"),
+            "When on, breach and material cases show a deadline for each triggered jurisdiction. It displays and reminds. It never notifies anyone.", "false"),
         new SettingDefinition("Compliance:NotificationDeadlines:StartBasis", "Clock starts from", "Deadline clock", SettingKind.Text,
             "Determination starts the clock when a case is determined Material (NYDFS 500.17(a), SEC Item 1.05). " +
             "Detection starts it at detection, for Breach-classified cases.", "Determination",
