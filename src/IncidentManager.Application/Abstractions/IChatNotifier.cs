@@ -25,4 +25,14 @@ public interface IChatNotifier
 
     /// <summary>Posts one message to the configured channel. A no-op (not an error) when disabled.</summary>
     Task SendAsync(ChatNotification message, CancellationToken ct = default);
+
+    /// <summary>
+    /// For the admin test button only: posts like <see cref="SendAsync"/> but returns why it failed (null when
+    /// it posted), so a bad URL or a rejected webhook shows where it's being configured.
+    /// </summary>
+    async Task<string?> SendTestAsync(ChatNotification message, CancellationToken ct = default)
+    {
+        await SendAsync(message, ct);
+        return null;
+    }
 }

@@ -38,17 +38,22 @@ public sealed class ChatWebhookNotifier : IChatNotifier
         }
     }
 
-    public async Task SendAsync(ChatNotification message, CancellationToken ct = default)
+    public Task SendAsync(ChatNotification message, CancellationToken ct = default) => PostAsync(message, ct);
+
+    public Task<string?> SendTestAsync(ChatNotification message, CancellationToken ct = default) => PostAsync(message, ct);
+
+    // Returns null when the message posted (or chat is off), else a short reason for the admin test button.
+    private async Task<string?> PostAsync(ChatNotification message, CancellationToken ct)
     {
         var o = _options.CurrentValue;
-        if (!o.Enabled || string.IsNullOrWhiteSpace(o.WebhookUrl)) return;
+        if (!o.Enabled || string.IsNullOrWhiteSpace(o.WebhookUrl)) return null;
 
         // The webhook URL is itself the channel credential; resolve it (literal or @cyberark: reference).
         var url = await _secrets.ResolveAsync(o.WebhookUrl, ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(url))
         {
             _logger.LogWarning("Chat webhook URL could not be resolved; message not posted.");
-            return;
+            return "The webhook URL couldn't be resolved.";
         }
 
         // Same egress guard as the SIEM webhook (S-06): https required (http only to loopback) so the secret
@@ -56,11 +61,12 @@ public sealed class ChatWebhookNotifier : IChatNotifier
         if (!SiemWebhookUrl.IsAcceptable(url, out var reason))
         {
             _logger.LogWarning("Chat webhook URL rejected ({Reason}); message not posted. Configure an https webhook URL.", reason);
-            return;
+            return $"The webhook URL was refused ({reason}). Use an https URL.";
         }
 
         var payload = ChatPayload.Serialize(o.Format, message);
         var attempts = Math.Max(1, o.MaxAttempts);
+        string? lastError = null;
 
         for (var attempt = 1; attempt <= attempts && !ct.IsCancellationRequested; attempt++)
         {
@@ -71,25 +77,28 @@ public sealed class ChatWebhookNotifier : IChatNotifier
 
                 using var content = new StringContent(payload, Encoding.UTF8, "application/json");
                 using var resp = await client.PostAsync(url, content, ct).ConfigureAwait(false);
-                if (resp.IsSuccessStatusCode) return;
+                if (resp.IsSuccessStatusCode) return null;
+                lastError = $"The webhook answered {(int)resp.StatusCode} {resp.ReasonPhrase}.";
 
                 _logger.LogWarning("Chat webhook returned {Status} (attempt {Attempt}/{Max}).",
                     (int)resp.StatusCode, attempt, attempts);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                return;
+                return "Canceled.";
             }
             catch (Exception ex)
             {
+                lastError = ex is TaskCanceledException ? "The webhook didn't answer in time." : ex.GetBaseException().Message;
                 _logger.LogWarning(ex, "Chat webhook POST failed (attempt {Attempt}/{Max}).", attempt, attempts);
             }
 
             if (attempt < attempts)
             {
                 try { await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ct).ConfigureAwait(false); }
-                catch (OperationCanceledException) { return; }
+                catch (OperationCanceledException) { return "Canceled."; }
             }
         }
+        return lastError;
     }
 }

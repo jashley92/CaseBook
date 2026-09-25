@@ -938,16 +938,13 @@
         if (!Chat.Enabled) { Toasts.Warning("No chat webhook is configured. Set Chat:Webhook on the host."); return; }
 
         var baseUrl = (Config["App:BaseUrl"] ?? "").TrimEnd('/');
-        try
+        var error = await Chat.SendTestAsync(new IncidentManager.Application.Abstractions.ChatNotification(
+            "CaseBook test message",
+            "This is a test notification confirming the chat webhook configuration.",
+            baseUrl.Length == 0 ? null : baseUrl));
+        if (error is not null)
         {
-            await Chat.SendAsync(new IncidentManager.Application.Abstractions.ChatNotification(
-                "CaseBook test message",
-                "This is a test notification confirming the chat webhook configuration.",
-                baseUrl.Length == 0 ? null : baseUrl));
-        }
-        catch (Exception ex)
-        {
-            Toasts.Error($"Couldn't post the test message: {ex.Message} Check the webhook URL on the host.");
+            Toasts.Error($"Couldn't post the test message. {error} Check the webhook URL on the host.");
             return;
         }
 
