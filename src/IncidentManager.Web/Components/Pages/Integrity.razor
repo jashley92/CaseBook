@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @inject IntegrityService IntegritySvc
 @inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
 
 <PageTitle>Integrity &amp; audit</PageTitle>
 
@@ -145,9 +146,9 @@ else
                 <tr>
                     <td>@a.Sequence</td>
                     <td class="small">@a.AtUtc.ToString("u")</td>
-                    <td>@a.Actor</td>
+                    <td>@Users.DisplayFor(a.Actor)</td>
                     <td>@AuditLabels.Label(a.Action)</td>
-                    <td>@a.EntityType</td>
+                    <td>@AuditLabels.Entity(a.EntityType)</td>
                     <td class="small">@a.CaseNumber</td>
                     <td><code class="small">@a.EntryHash[..12]…</code></td>
                 </tr>

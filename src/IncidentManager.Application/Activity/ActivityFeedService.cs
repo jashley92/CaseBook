@@ -72,7 +72,7 @@ public sealed class ActivityFeedService
             AuditAction.Update => "Updated",
             AuditAction.SoftDelete => "Removed",
             AuditAction.ClassificationChanged => "Reclassified the case",
-            AuditAction.StatusChanged => "Changed the case status",
+            AuditAction.StatusChanged => "Changed the case phase",
             AuditAction.EvidenceUploaded => "Uploaded evidence",
             AuditAction.EvidenceDownloaded => "Downloaded evidence",
             AuditAction.EvidenceTransferred => "Recorded an evidence transfer",

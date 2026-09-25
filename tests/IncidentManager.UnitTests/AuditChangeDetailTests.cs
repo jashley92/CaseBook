@@ -102,7 +102,7 @@ public class AuditChangeDetailTests
         AuditChangeDetail.Changes(entry).Should().BeEquivalentTo(new[]
         {
             new AuditChangeDetail.FieldChange("Classification", "Incident", "Breach"),
-            new AuditChangeDetail.FieldChange("Status", "Triage", "Containment"), // Phase surfaces as "Status"
+            new AuditChangeDetail.FieldChange("Phase", "Triage", "Containment"),
         });
     }
 

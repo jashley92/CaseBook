@@ -127,6 +127,12 @@ public static class Ui
         _ => r.ToString()
     };
 
+    public static string Label(CaseAssignmentRole r) => r switch
+    {
+        CaseAssignmentRole.IncidentCommander => "Incident Commander",
+        _ => r.ToString()
+    };
+
     public static string Label(EntityType t)
     {
         var def = t switch

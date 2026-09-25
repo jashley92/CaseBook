@@ -349,10 +349,10 @@
                 }
                 @foreach (var a in Case.Assignments.OrderBy(x => x.Role))
                 {
-                    <span class="im-chip" title="@a.UserDisplayName · @a.Role">
+                    <span class="im-chip" title="@a.UserDisplayName · @Ui.Label(a.Role)">
                         <span class="bi bi-person" aria-hidden="true"></span>
                         <span class="im-chip-name">@a.UserDisplayName</span>
-                        <span class="im-chip-role">@a.Role</span>
+                        <span class="im-chip-role">@Ui.Label(a.Role)</span>
                         <AuthorizeView Policy="@Policies.EditCases" Context="rm">
                             <button type="button" class="im-chip-x" aria-label="Remove @a.UserDisplayName"
                                     @onclick='() => Confirm(UnassignPrompt(a.UserDisplayName), () => DoUnassign(a.UserId))'>×</button>

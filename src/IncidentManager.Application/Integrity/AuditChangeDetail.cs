@@ -45,7 +45,7 @@ public static class AuditChangeDetail
         ["ReportProfileId"] = "Report profile",
         ["Summary"] = "Case summary",
         ["ReportedAtUtc"] = "Reported (regulatory)",
-        ["Phase"] = "Status", // the phase field is surfaced as "status" everywhere the user acts on it
+        ["Phase"] = "Phase",
         // Owned value objects, folded into the case diff by the interceptor as "Nav.Prop".
         ["LegalReferral.IsReferred"] = "Referred to Legal",
         ["LegalReferral.ReferredToContact"] = "Legal contact",
@@ -78,7 +78,7 @@ public static class AuditChangeDetail
     };
 
     // Enum fields whose stored value is a number: mapped back to the member name so a transition reads
-    // "Status: Triage → Containment" rather than "Phase: 1 → 2". Keyed by (entity, field) to stay unambiguous.
+    // "Phase: Triage → Containment" rather than "Phase: 1 → 2". Keyed by (entity, field) to stay unambiguous.
     private static Type? EnumTypeFor(string entityType, string field) => (entityType, field) switch
     {
         ("Case", "Classification") => typeof(Classification),

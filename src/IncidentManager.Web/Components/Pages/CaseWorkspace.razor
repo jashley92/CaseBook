@@ -661,7 +661,7 @@ else
                                 <select class="form-select" @bind="_assignRole">
                                     @foreach (var r in Enum.GetValues<CaseAssignmentRole>())
                                     {
-                                        <option value="@r">@r</option>
+                                        <option value="@r">@Ui.Label(r)</option>
                                     }
                                 </select>
                             }

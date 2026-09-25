@@ -43,7 +43,7 @@
             <option value="">Any</option>
             @foreach (var et in State.EntityTypes)
             {
-                <option value="@et">@et</option>
+                <option value="@et">@AuditLabels.Entity(et)</option>
             }
         </select>
     </div>
@@ -100,7 +100,7 @@ else
                         <td>@Users.DisplayFor(a.Actor)</td>
                         <td>@AuditLabels.Label(a.Action)</td>
                         <td>
-                            @a.EntityType
+                            @AuditLabels.Entity(a.EntityType)
                             @if (!string.IsNullOrWhiteSpace(a.EntityLabel))
                             {
                                 <div class="small text-muted" title="@a.EntityLabel">@Trunc(a.EntityLabel!, 40)</div>
