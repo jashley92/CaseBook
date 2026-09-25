@@ -67,7 +67,8 @@ public sealed record CaseListItem(
     // The case's lead for the queue's Owner column: the incident commander, else the earliest analyst. Null when
     // nobody but observers is assigned. OtherAssignees counts the remaining analysts/commanders.
     string? OwnerName = null,
-    int OtherAssignees = 0);
+    int OtherAssignees = 0,
+    string? OwnerUserId = null);
 
 /// <summary>Filter for listing cases.</summary>
 public sealed class CaseFilter

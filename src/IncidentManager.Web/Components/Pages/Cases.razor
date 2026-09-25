@@ -435,7 +435,7 @@ else
                         @if (c.OwnerName is { } owner)
                         {
                             <span class="case-owner" title="@OwnerTitle(c)">
-                                <span class="case-owner-avatar" style="background:hsl(@Ui.AvatarHue(owner) 55% 42%)" aria-hidden="true">@Ui.Initials(owner)</span>
+                                <span class="case-owner-avatar" style="background:hsl(@Ui.AvatarHue(c.OwnerUserId ?? owner) 55% 42%)" aria-hidden="true">@Ui.Initials(owner)</span>
                                 <span class="case-owner-name">@owner</span>
                                 @if (c.OtherAssignees > 0) { <span class="text-muted small">+@c.OtherAssignees</span> }
                             </span>

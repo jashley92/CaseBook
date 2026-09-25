@@ -47,14 +47,6 @@ public sealed class CaseSearchTests : IDisposable
     private CaseService NewService(AppDbContext db) =>
         new(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
 
-    private sealed class NoOpCaseNotifications : IncidentManager.Application.Abstractions.ICaseNotifications
-    {
-        public System.Threading.Tasks.Task OnAssignedAsync(IncidentManager.Domain.Entities.Case c, string assigneeUserId, string assigneeDisplayName, IncidentManager.Domain.Enums.CaseAssignmentRole role, string assignedByUserId, System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
-        public System.Threading.Tasks.Task OnActionItemsOverdueAsync(System.Collections.Generic.IReadOnlyList<IncidentManager.Application.Abstractions.OverdueActionItem> items, System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
-        public System.Threading.Tasks.Task OnActionItemsDueSoonAsync(System.Collections.Generic.IReadOnlyList<IncidentManager.Application.Abstractions.DueSoonActionItem> items, int leadHours, System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
-        public Task OnReclassifiedAsync(IncidentManager.Domain.Entities.Case c, Classification? from, Classification to, CancellationToken ct = default)
-            => Task.CompletedTask;
-    }
 
     private static CreateCaseRequest Req(string name) => new()
     {
@@ -244,6 +236,7 @@ public sealed class CaseSearchTests : IDisposable
         var a = items.Single(i => i.Id == alpha.Id);
         a.OwnerName.Should().Be("Ivy Commander", "the incident commander leads the case");
         a.OtherAssignees.Should().Be(1, "observers don't count as assignees");
+        a.OwnerUserId.Should().Be("S-1-ic");
         var b = items.Single(i => i.Id == beta.Id);
         b.OwnerName.Should().BeNull("an observer alone leaves the case unassigned");
         b.OtherAssignees.Should().Be(0);

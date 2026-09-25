@@ -279,7 +279,10 @@ public sealed class CaseService
                 c.Assignments.Where(a => a.Role != CaseAssignmentRole.Observer)
                     .OrderBy(a => a.Role).ThenBy(a => a.AssignedAtUtc)
                     .Select(a => a.UserDisplayName).FirstOrDefault(),
-                Math.Max(0, c.Assignments.Count(a => a.Role != CaseAssignmentRole.Observer) - 1)))
+                Math.Max(0, c.Assignments.Count(a => a.Role != CaseAssignmentRole.Observer) - 1),
+                c.Assignments.Where(a => a.Role != CaseAssignmentRole.Observer)
+                    .OrderBy(a => a.Role).ThenBy(a => a.AssignedAtUtc)
+                    .Select(a => a.UserId).FirstOrDefault()))
             .ToListAsync(ct);
 
         return new CasePage(items, total, page, size);
