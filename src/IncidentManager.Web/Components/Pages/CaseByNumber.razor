@@ -1,0 +1,29 @@
+@page "/cases/{Number}"
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@inject CaseService Cases
+@inject NavigationManager Nav
+
+@* Readable case links: /cases/2026-124_Insider_Data_Access (or just /cases/2026-124) forwards to the case's
+   canonical id URL, keeping any ?tab= query. Ids stay canonical because a case number can be edited. *@
+<PageTitle>Case</PageTitle>
+
+@if (_notFound)
+{
+    <h1>Case not found</h1>
+    <p>No case you can open has the number <code>@Number</code>. <a href="cases?q=@Uri.EscapeDataString(Number ?? "")">Search cases</a>.</p>
+}
+
+@code {
+    [Parameter] public string? Number { get; set; }
+
+    private bool _notFound;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _notFound = false;
+        var id = await Cases.FindIdByNumberAsync(Uri.UnescapeDataString(Number ?? ""));
+        if (id is null) { _notFound = true; return; }
+        var query = new Uri(Nav.Uri).Query;
+        Nav.NavigateTo($"cases/{id}{query}", replace: true);
+    }
+}

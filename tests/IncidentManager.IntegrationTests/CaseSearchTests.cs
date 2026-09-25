@@ -249,5 +249,19 @@ public sealed class CaseSearchTests : IDisposable
         b.OtherAssignees.Should().Be(0);
     }
 
+    [Fact]
+    public async Task A_case_number_or_its_year_sequence_prefix_resolves_to_the_case()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var alpha = await svc.CreateAsync(Req("Alpha"));
+        await svc.CreateAsync(Req("Beta"));
+
+        (await svc.FindIdByNumberAsync(alpha.CaseNumber)).Should().Be(alpha.Id);
+        (await svc.FindIdByNumberAsync(alpha.CaseNumber.Split('_')[0])).Should().Be(alpha.Id);
+        (await svc.FindIdByNumberAsync("1999-01")).Should().BeNull();
+        (await svc.FindIdByNumberAsync("  ")).Should().BeNull();
+    }
+
     public void Dispose() => _connection.Dispose();
 }

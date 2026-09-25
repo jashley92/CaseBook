@@ -131,6 +131,23 @@ public sealed class CaseService
     /// number is "available" (it auto-generates); an over-long one is not. <paramref name="exceptCaseId"/>
     /// excludes the case being renumbered from the check.
     /// </summary>
+    /// <summary>
+    /// Resolves a case number from a readable link (/cases/2026-124_Insider_Data_Access) to the case id, need-to-know
+    /// scoped. An exact match wins. Otherwise the year-sequence prefix alone ("2026-124") resolves when exactly one
+    /// visible case carries it, since that's how people quote case numbers in chat and tickets.
+    /// </summary>
+    public async Task<Guid?> FindIdByNumberAsync(string? caseNumber, CancellationToken ct = default)
+    {
+        var n = caseNumber?.Trim();
+        if (string.IsNullOrEmpty(n)) return null;
+        using var db = _factory.CreateDbContext();
+        var visible = Scoped(db.Cases.AsNoTracking());
+        var exact = await visible.Where(c => c.CaseNumber == n).Select(c => (Guid?)c.Id).FirstOrDefaultAsync(ct);
+        if (exact is not null) return exact;
+        var prefixed = await visible.Where(c => c.CaseNumber.StartsWith(n + "_")).Select(c => c.Id).Take(2).ToListAsync(ct);
+        return prefixed.Count == 1 ? prefixed[0] : null;
+    }
+
     public async Task<bool> IsCaseNumberAvailableAsync(string? caseNumber, Guid? exceptCaseId = null, CancellationToken ct = default)
     {
         var n = caseNumber?.Trim();
