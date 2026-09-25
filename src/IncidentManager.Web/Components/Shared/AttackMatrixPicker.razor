@@ -7,7 +7,8 @@
 @using IncidentManager.Application.Mitre
 
 <div class="atkm-backdrop" @onclick="Cancel"></div>
-<div class="atkm-panel" role="dialog" aria-modal="true" aria-label="Select ATT&CK techniques" @onclick:stopPropagation="true">
+<div class="atkm-panel" role="dialog" aria-modal="true" aria-label="Select ATT&CK techniques" @onclick:stopPropagation="true"
+     @onkeydown="OnPanelKey">
     <div class="atkm-head">
         <div class="atkm-title">
             <span class="bi bi-diagram-3 me-2" aria-hidden="true"></span>
@@ -15,7 +16,7 @@
         </div>
         <div class="atkm-search">
             <span class="bi bi-search" aria-hidden="true"></span>
-            <input class="form-control form-control-sm" placeholder="Filter by ID or name…"
+            <input @ref="_filterBox" class="form-control form-control-sm" placeholder="Filter by ID or name…"
                    value="@_filter" @oninput="OnFilter" aria-label="Filter techniques" />
             @if (_filter.Length > 0)
             {
@@ -32,7 +33,8 @@
             <div class="atkm-col">
                 <div class="atkm-colhead @(TacticPickable ? "atkm-colhead-btn" : "")" style="--tac:@Ui.TacticColor(col.Tactic)"
                      title="@(TacticPickable ? $"Pick {Ui.Label(col.Tactic)} as a tactic-only step" : Ui.TacticId(col.Tactic))"
-                     role="@(TacticPickable ? "button" : null)" @onclick="() => PickTacticHeader(col.Tactic)">
+                     role="@(TacticPickable ? "button" : null)" tabindex="@(TacticPickable ? "0" : null)"
+                     @onclick="() => PickTacticHeader(col.Tactic)" @onkeydown="e => { if (TacticPickable && IsActivate(e)) PickTacticHeader(col.Tactic); }">
                     <span class="bi @Ui.TacticGlyph(col.Tactic)" aria-hidden="true"></span>
                     <span class="atkm-colname">@Ui.Label(col.Tactic)</span>
                     @{ var selN = rows.Count(r => IsSel(r.Parent.Id, col.Tactic) || r.Subs.Any(s => IsSel(s.Id, col.Tactic))); }
@@ -45,10 +47,12 @@
                         var expanded = _expanded.Contains(pid) || (_filter.Length > 0 && row.Subs.Any(s => Matches(s)));
                         <div class="atkm-row">
                             <div class="atkm-cell @CellClass(pid, col.Tactic, row.ParentInTactic)"
-                                 @onclick="() => ToggleParent(row, col.Tactic)">
+                                 role="button" tabindex="0" aria-pressed="@(IsSel(pid, col.Tactic) ? "true" : "false")"
+                                 aria-label="@($"{pid} {row.Parent.Name}, {Ui.Label(col.Tactic)}")"
+                                 @onclick="() => ToggleParent(row, col.Tactic)" @onkeydown="e => { if (IsActivate(e)) ToggleParent(row, col.Tactic); }">
                                 @if (row.Subs.Count > 0)
                                 {
-                                    <button type="button" class="atkm-exp" @onclick="() => ToggleExpand(pid)" @onclick:stopPropagation="true"
+                                    <button type="button" class="atkm-exp" @onclick="() => ToggleExpand(pid)" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true"
                                             aria-label="@(expanded ? "Collapse" : "Expand") sub-techniques">
                                         <span class="bi @(expanded ? "bi-caret-down-fill" : "bi-caret-right-fill")" aria-hidden="true"></span>
                                     </button>
@@ -68,7 +72,9 @@
                                 @foreach (var sub in row.Subs)
                                 {
                                     <div class="atkm-cell atkm-subcell @CellClass(sub.Id, col.Tactic, true)"
-                                         @onclick="() => ToggleTechnique(sub.Id, col.Tactic)">
+                                         role="button" tabindex="0" aria-pressed="@(IsSel(sub.Id, col.Tactic) ? "true" : "false")"
+                                         aria-label="@($"{sub.Id} {sub.Name}, {Ui.Label(col.Tactic)}")"
+                                         @onclick="() => ToggleTechnique(sub.Id, col.Tactic)" @onkeydown="e => { if (IsActivate(e)) ToggleTechnique(sub.Id, col.Tactic); }">
                                         <span class="atkm-tid"><code>@sub.Id</code></span>
                                         <span class="atkm-tname">@sub.Name</span>
                                         @if (IsSel(sub.Id, col.Tactic)) { <span class="bi bi-check2 atkm-tick" aria-hidden="true"></span> }
@@ -138,6 +144,10 @@
 </div>
 
 @code {
+    // Keyboard activation for the matrix cells (role="button"): Enter or Space, like a native button. Keys from
+    // the nested expand button are its own, so they don't also toggle the cell.
+    private static bool IsActivate(KeyboardEventArgs e) => e.Key is "Enter" or " ";
+
     [Parameter] public IReadOnlyDictionary<string, MitreTactic> Current { get; set; } = new Dictionary<string, MitreTactic>();
     [Parameter] public EventCallback<IReadOnlyDictionary<string, MitreTactic>> OnApply { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
@@ -305,4 +315,19 @@
 
     private async Task Apply() => await OnApply.InvokeAsync(new Dictionary<string, MitreTactic>(_selected, StringComparer.OrdinalIgnoreCase));
     private async Task Cancel() => await OnCancel.InvokeAsync();
+
+    // Keyboard: Escape closes without applying, like the app's other dialogs. Focus starts in the filter box.
+    private ElementReference _filterBox;
+    private async Task OnPanelKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await Cancel();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { await _filterBox.FocusAsync(); } catch (Exception) { /* element gone */ }
+        }
+    }
 }

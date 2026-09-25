@@ -8,7 +8,7 @@
     --muted: var(--im-text-muted);
     --accent: var(--im-accent-text);   /* deep gold reads as data-ink on white */
     --accent-bg: rgba(224, 175, 18, .12);
-    --danger: #dc4a34;
+    --danger: #bd402d;
     --danger-bg: rgba(220, 74, 52, .10);
     --amber: #d9982b;
     --warn: #d9982b;
@@ -16,7 +16,7 @@
     --line: #6366f1;                   /* backlog trend line — distinct from bar colours */
     --neutral: #64748b;
     --neutral-bg: rgba(100, 116, 139, .12);
-    --ok: #1f9d57;
+    --ok: #187a44;
     --ok-bg: rgba(31, 157, 87, .12);
     --track: rgba(15, 23, 42, .07);
     --hover: rgba(15, 23, 42, .04);
@@ -29,7 +29,7 @@
     --muted: var(--im-text-muted);
     --accent: var(--im-accent);        /* bright gold on dark cards */
     --accent-bg: rgba(255, 207, 49, .14);
-    --danger: #f4614e;
+    --danger: #f6735f;
     --danger-bg: rgba(244, 97, 78, .14);
     --amber: #e0a83b;
     --warn: #e0a83b;
@@ -186,7 +186,7 @@
 .cmp-na .cmp-val, .cmp-na .cmp-label { color: var(--muted); }
 
 .sla-line { display: flex; align-items: center; gap: 8px; font-size: .82rem; padding: 10px 12px; border-radius: 9px; margin: 4px 0 12px; }
-.sla-line .sla-go { margin-left: auto; font-size: .74rem; font-weight: 650; opacity: .85; }
+.sla-line .sla-go { margin-left: auto; font-size: .74rem; font-weight: 650; }
 .sla-line.breached { background: var(--danger-bg); color: var(--danger); }
 .sla-line.ok { background: var(--ok-bg); color: var(--ok); }
 a.sla-line { text-decoration: none; }
@@ -197,7 +197,7 @@ a.sla-line:hover { filter: brightness(1.05); }
 .pipe { display: flex; flex-direction: column; gap: 12px; }
 .prow { display: grid; grid-template-columns: 104px 1fr 22px; align-items: center; gap: 10px; }
 .pl { color: var(--text); font-size: .82rem; transition: color .12s ease; }
-.prow.off .pl, .prow.off .pc { color: var(--muted); opacity: .6; }
+.prow.off .pl, .prow.off .pc { color: var(--muted); }
 .track { height: 9px; background: var(--track); border-radius: 5px; position: relative; overflow: hidden; }
 .fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 5px; }
 .pc { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; font-size: .84rem; }
