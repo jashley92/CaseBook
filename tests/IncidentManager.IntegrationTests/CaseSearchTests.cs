@@ -227,5 +227,27 @@ public sealed class CaseSearchTests : IDisposable
         page2.Items.Should().ContainSingle();
     }
 
+    [Fact]
+    public async Task Listing_carries_the_owner_and_a_count_of_other_assignees()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var alpha = await svc.CreateAsync(Req("Alpha"));
+        var beta = await svc.CreateAsync(Req("Beta"));
+        await svc.AssignAsync(alpha.Id, "S-1-analyst", "Alex Analyst", CaseAssignmentRole.Analyst);
+        await svc.AssignAsync(alpha.Id, "S-1-ic", "Ivy Commander", CaseAssignmentRole.IncidentCommander);
+        await svc.AssignAsync(alpha.Id, "S-1-obs", "Olive Observer", CaseAssignmentRole.Observer);
+        await svc.AssignAsync(beta.Id, "S-1-obs", "Olive Observer", CaseAssignmentRole.Observer);
+
+        var items = (await svc.ListAsync(new CaseFilter())).Items;
+
+        var a = items.Single(i => i.Id == alpha.Id);
+        a.OwnerName.Should().Be("Ivy Commander", "the incident commander leads the case");
+        a.OtherAssignees.Should().Be(1, "observers don't count as assignees");
+        var b = items.Single(i => i.Id == beta.Id);
+        b.OwnerName.Should().BeNull("an observer alone leaves the case unassigned");
+        b.OtherAssignees.Should().Be(0);
+    }
+
     public void Dispose() => _connection.Dispose();
 }

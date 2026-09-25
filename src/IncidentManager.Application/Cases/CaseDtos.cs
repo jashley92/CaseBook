@@ -63,7 +63,11 @@ public sealed record CaseListItem(
     DateTimeOffset? ContainedAtUtc,
     DateTimeOffset? ResolvedAtUtc,
     // PROD-43: a tabletop/exercise case, so the list can badge it.
-    bool IsExercise = false);
+    bool IsExercise = false,
+    // The case's lead for the queue's Owner column: the incident commander, else the earliest analyst. Null when
+    // nobody but observers is assigned. OtherAssignees counts the remaining analysts/commanders.
+    string? OwnerName = null,
+    int OtherAssignees = 0);
 
 /// <summary>Filter for listing cases.</summary>
 public sealed class CaseFilter

@@ -237,7 +237,11 @@ public sealed class CaseService
             .Select(c => new CaseListItem(
                 c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, c.Severity, c.Origin,
                 c.IsRestricted, c.LegalReferral.IsReferred, c.LegalHold, c.CreatedAtUtc, c.IncidentCommander,
-                c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.IsExercise))
+                c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.IsExercise,
+                c.Assignments.Where(a => a.Role != CaseAssignmentRole.Observer)
+                    .OrderBy(a => a.Role).ThenBy(a => a.AssignedAtUtc)
+                    .Select(a => a.UserDisplayName).FirstOrDefault(),
+                Math.Max(0, c.Assignments.Count(a => a.Role != CaseAssignmentRole.Observer) - 1)))
             .ToListAsync(ct);
 
         return new CasePage(items, total, page, size);

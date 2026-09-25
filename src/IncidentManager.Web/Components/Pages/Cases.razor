@@ -374,6 +374,7 @@ else
                 <th>Phase</th>
                 <th>Severity</th>
                 <th>SLA</th>
+                <th class="case-cell-owner">Owner</th>
                 <th class="case-cell-origin">Origin</th>
                 <th>Opened</th>
             </tr>
@@ -418,6 +419,20 @@ else
                             <span class="@Ui.SlaBadge(sla.State)" title="@SlaTitle(sla)">
                                 <span class="bi @Ui.SlaGlyph(sla.State)" aria-hidden="true"></span> @Ui.SlaLabel(sla.State)
                             </span>
+                        }
+                    </td>
+                    <td class="case-cell-owner">
+                        @if (c.OwnerName is { } owner)
+                        {
+                            <span class="case-owner" title="@OwnerTitle(c)">
+                                <span class="case-owner-avatar" style="background:hsl(@Ui.AvatarHue(owner) 55% 42%)" aria-hidden="true">@Ui.Initials(owner)</span>
+                                <span class="case-owner-name">@owner</span>
+                                @if (c.OtherAssignees > 0) { <span class="text-muted small">+@c.OtherAssignees</span> }
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="case-owner-none small">Unassigned</span>
                         }
                     </td>
                     <td class="case-cell-origin">@(c.Origin == CaseOrigin.ThirdParty ? "Third-party" : "Internal")</td>
@@ -504,7 +519,7 @@ else
                                     <select id="bulk-role" class="form-select form-select-sm" @bind="_bulkAssignRole">
                                         @foreach (var r in Enum.GetValues<CaseAssignmentRole>())
                                         {
-                                            <option value="@r">@r</option>
+                                            <option value="@r">@Ui.Label(r)</option>
                                         }
                                     </select>
                                 </div>
@@ -1025,6 +1040,13 @@ else
     private bool _bulkConfirm;
     private bool _bulkBusy;
     private string _bulkAssignToId = "";
+    private static string OwnerTitle(CaseListItem c) => c.OtherAssignees switch
+    {
+        0 => $"Owner: {c.OwnerName}",
+        1 => $"Owner: {c.OwnerName}, plus 1 other assignee",
+        var n => $"Owner: {c.OwnerName}, plus {n} other assignees"
+    };
+
     private CaseAssignmentRole _bulkAssignRole = CaseAssignmentRole.Analyst;
     private string? _bulkReferContact;
     private string? _bulkReferNote;

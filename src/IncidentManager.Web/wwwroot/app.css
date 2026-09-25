@@ -2041,6 +2041,18 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
 .im-case-list .case-cell-title { min-width: 12rem; }
 .im-case-list .case-num { max-width: 11rem; }
 .im-case-list .case-cell-origin { white-space: nowrap; }
+.im-case-list .case-owner { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
+.im-case-list .case-owner-avatar {
+    display: inline-grid; place-items: center; flex: none;
+    width: 1.5rem; height: 1.5rem; border-radius: 50%;
+    color: #fff; font-size: .62rem; font-weight: 700;
+}
+.im-case-list .case-owner-name { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; }
+.im-case-list .case-owner-none { color: var(--im-warn); white-space: nowrap; }
+/* Narrower desktops: the owner column shows initials only (the full name is in the tooltip). */
+@media (min-width: 641px) and (max-width: 1599.98px) {
+    .im-case-list .case-owner-name { display: none; }
+}
 /* Laptop widths: Origin (also a filter) is the column that gives way so the rest fits without clipping. */
 @media (min-width: 641px) and (max-width: 1399.98px) {
     .im-case-list .case-cell-origin { display: none; }
@@ -2063,7 +2075,9 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
     .im-case-list .case-cell-title { order: -1; flex: 1 0 100%; margin-bottom: .15rem; }
     .im-case-list .case-cell-title .case-title { font-size: var(--im-text-md); }
     .im-case-list .case-cell-select, .im-case-list .case-cell-origin { display: none; }
-    .im-case-list .case-cell-age { margin-left: auto; }
+    /* Last line of the card: owner on the left, age on the right. */
+    .im-case-list .case-cell-owner { order: 1; flex: 1 0 calc(100% - 5rem); font-size: var(--im-text-xs); }
+    .im-case-list .case-cell-age { order: 2; margin-left: auto; }
 }
 
 /* Phones: stat tiles shrink to a dense 2-up strip so the page's real content (the case list, the work
