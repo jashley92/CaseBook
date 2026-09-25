@@ -19,7 +19,13 @@ else
             @foreach (var r in Reports)
             {
                 <tr>
-                    <td>@r.FileName</td>
+                    <td>
+                        @r.FileName
+                        @if (r.TemplateName is { } tn)
+                        {
+                            <div class="small text-muted" title="Filled from this Word template (SHA-256 @r.TemplateSha256)">Template: @tn</div>
+                        }
+                    </td>
                     <td>@r.Format</td>
                     <td>@r.Version</td>
                     <td class="small text-nowrap">@(r.Tlp is { } rt ? IncidentManager.Domain.Enums.Tlp.Label(rt) : "—")</td>

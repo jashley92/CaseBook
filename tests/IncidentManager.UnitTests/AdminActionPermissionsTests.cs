@@ -35,7 +35,9 @@ public sealed class AdminActionPermissionsTests
         K<ReportProfileService>(nameof(ReportProfileService.ListActiveAsync)),
         K<ReportProfileService>(nameof(ReportProfileService.ListAllAsync)),
         K<ReportProfileService>(nameof(ReportProfileService.GetAsync)),
-        K<ReportProfileService>(nameof(ReportProfileService.GetTemplateAsync)),   // PROD-47: download for editing
+        K<ReportTemplateService>(nameof(ReportTemplateService.ListAllAsync)),
+        K<ReportTemplateService>(nameof(ReportTemplateService.ListActiveAsync)),
+        K<ReportTemplateService>(nameof(ReportTemplateService.GetFileAsync)),       // PROD-47: download for editing
         K<RoleService>(nameof(RoleService.ListRolesAsync)),
         K<RoleService>(nameof(RoleService.ListMappingsAsync)),
         K<StageGateService>(nameof(StageGateService.ListAllAsync)),

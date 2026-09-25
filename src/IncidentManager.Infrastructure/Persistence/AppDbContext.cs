@@ -33,6 +33,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<GatePassage> GatePassages => Set<GatePassage>();
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<ReportProfile> ReportProfiles => Set<ReportProfile>();
+    public DbSet<ReportTemplate> ReportTemplates => Set<ReportTemplate>();
     public DbSet<DataElement> DataElements => Set<DataElement>();
     public DbSet<NotificationRule> NotificationRules => Set<NotificationRule>();
     public DbSet<CaseDataElement> CaseDataElements => Set<CaseDataElement>();

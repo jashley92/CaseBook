@@ -18,7 +18,7 @@ Three data sets must be backed up **in lockstep** so they stay mutually consiste
 | Integrity seals | `Integrity:ExportPath` (out-of-band seal exports) | File backup (append-only) |
 | Generated reports | `ReportOutput:RootPath` | File backup |
 | Report branding logo | `ReportBranding:RootPath` (`DataRoot\branding`, H-07) | File backup (single small image; low churn) |
-| Word report templates | `ReportTemplates:RootPath` (`DataRoot\report-templates`, PROD-47; when unset, a `report-templates` folder beside `ReportBranding:RootPath`, so upgraded servers need no config change) | File backup (one .docx per report profile; low churn) |
+| Word report templates | `ReportTemplates:RootPath` (`DataRoot\report-templates`, PROD-47; when unset, a `report-templates` folder beside `ReportBranding:RootPath`, so upgraded servers need no config change) | File backup (one .docx per library template, named by its id; low churn) |
 
 ### 1.1 SQL Server backup schedule (recommended baseline)
 

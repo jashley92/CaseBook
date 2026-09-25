@@ -15,8 +15,8 @@ public sealed class ReportTemplateOptions
 }
 
 /// <summary>
-/// PROD-47: file-backed <see cref="IReportTemplateStore"/> — one .docx per report profile under the template root,
-/// named by the profile id, mirroring the report-logo store.
+/// PROD-47: file-backed <see cref="IReportTemplateStore"/> — one .docx per library template under the template root,
+/// named by the template id (templates migrated from a profile kept that profile's id, so their files didn't move), mirroring the report-logo store.
 /// </summary>
 public sealed class FileReportTemplateStore : IReportTemplateStore
 {
@@ -36,23 +36,23 @@ public sealed class FileReportTemplateStore : IReportTemplateStore
         return Path.Combine(parent ?? AppContext.BaseDirectory, "report-templates");
     }
 
-    private string PathFor(Guid profileId) => Path.Combine(_root, $"{profileId:N}.docx");
+    private string PathFor(Guid templateId) => Path.Combine(_root, $"{templateId:N}.docx");
 
-    public async Task SaveAsync(Guid profileId, byte[] docx, CancellationToken ct = default)
+    public async Task SaveAsync(Guid templateId, byte[] docx, CancellationToken ct = default)
     {
         Directory.CreateDirectory(_root);
-        await File.WriteAllBytesAsync(PathFor(profileId), docx, ct);
+        await File.WriteAllBytesAsync(PathFor(templateId), docx, ct);
     }
 
-    public async Task<byte[]?> GetAsync(Guid profileId, CancellationToken ct = default)
+    public async Task<byte[]?> GetAsync(Guid templateId, CancellationToken ct = default)
     {
-        var path = PathFor(profileId);
+        var path = PathFor(templateId);
         return File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
     }
 
-    public Task DeleteAsync(Guid profileId, CancellationToken ct = default)
+    public Task DeleteAsync(Guid templateId, CancellationToken ct = default)
     {
-        var path = PathFor(profileId);
+        var path = PathFor(templateId);
         if (File.Exists(path)) File.Delete(path);
         return Task.CompletedTask;
     }

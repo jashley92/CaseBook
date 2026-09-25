@@ -1,0 +1,288 @@
+@* PROD-47: the Word report template library. Admins upload several customer-designed .docx templates, preview
+   each one filled with a real case before anyone uses it, and keep them current (replace, rename, archive,
+   delete). Report profiles pick one as their default below; the case Report tab can pick any active one. *@
+@using IncidentManager.Application.Admin
+@using IncidentManager.Application.Cases
+@using IncidentManager.Application.Reporting
+@inject ReportTemplateService Templates
+@inject CaseService Cases
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+
+<div class="card mb-3">
+    <div class="card-header"><span class="bi bi-file-earmark-word me-1" aria-hidden="true"></span>Word templates</div>
+    <div class="card-body">
+        <p class="small text-muted mb-2">
+            Upload .docx files with <code>{{…}}</code> fields to give Word reports your own fonts, styles, headers and footers.
+            A report profile picks one as its default, and whoever generates a Word report can pick another. PDF reports keep
+            the built-in layout. A table row with a list field such as <code>{{ioc.value}}</code> repeats once per item, and
+            <code>{{image.attack_chain}}</code> or <code>{{image.entity_graph}}</code> alone on a line becomes the picture.
+            Templates with macros, embedded objects or external content are refused.
+        </p>
+        <div class="small mb-3">
+            <a class="me-3" href="export/report-template-starter.docx" download><span class="bi bi-download me-1" aria-hidden="true"></span>Download the starter template</a>
+            <details class="d-inline-block align-top">
+                <summary style="cursor:pointer; color: var(--im-accent-text)">Field reference</summary>
+                <div class="mt-2 im-template-fields">
+                    <div class="fw-semibold">Single values</div>
+                    <ul class="mb-2">
+                        @foreach (var f in ReportTemplateFields.ScalarFields)
+                        {
+                            <li><code>{{@f.Name}}</code>: @f.Description</li>
+                        }
+                    </ul>
+                    <div class="fw-semibold">Lists (the row or paragraph repeats per item)</div>
+                    @foreach (var c in ReportTemplateFields.Collections)
+                    {
+                        <div class="mt-1">@c.Description:</div>
+                        <div>@foreach (var f in c.Fields) { <code class="me-2" title="@f.Description">{{@f.Name}}</code> }</div>
+                    }
+                    <div class="fw-semibold mt-2">Pictures (alone in their paragraph, body only)</div>
+                    <ul class="mb-0">
+                        @foreach (var f in ReportTemplateFields.ImageFields)
+                        {
+                            <li><code>{{@f.Name}}</code>: @f.Description</li>
+                        }
+                    </ul>
+                </div>
+            </details>
+        </div>
+
+        @* Upload: name it, then pick the file. *@
+        <div class="row g-2 align-items-end mb-3">
+            <div class="col-sm-6 col-lg-4">
+                <label class="form-label small mb-0" for="tpl-new-name">New template name</label>
+                <input id="tpl-new-name" class="form-control form-control-sm" @bind="_newName" @bind:event="oninput"
+                       placeholder="e.g. Examiner pack (blank uses the file name)" />
+            </div>
+            <div class="col-auto">
+                <label class="btn btn-sm btn-primary mb-0">
+                    <span class="bi bi-upload me-1" aria-hidden="true"></span>Upload .docx…
+                    <InputFile class="d-none" accept=".docx" OnChange="Upload" />
+                </label>
+            </div>
+        </div>
+
+        @if (_problems is { Count: > 0 })
+        {
+            <div class="alert alert-danger small py-2" role="alert">
+                <div class="fw-semibold">That template wasn't accepted:</div>
+                <ul class="mb-0">@foreach (var p in _problems) { <li>@p</li> }</ul>
+            </div>
+        }
+
+        @if (_previewFor is { } pv)
+        {
+            <div class="border rounded p-2 mb-3 small im-template-preview" role="region" aria-label="Preview @pv.Name">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="fw-semibold"><span class="bi bi-eye me-1" aria-hidden="true"></span>Preview “@pv.Name”</span>
+                    <button type="button" class="btn-close" aria-label="Close preview" @onclick="() => _previewFor = null"></button>
+                </div>
+                <p class="text-muted mb-2">
+                    Fills the template with a case's data and downloads it. Nothing is saved to the case and no report version
+                    is created. The document opens with a PREVIEW line. The download is recorded in the access log.
+                </p>
+                @if (_cases is null)
+                {
+                    <span class="text-muted">Loading cases…</span>
+                }
+                else if (_cases.Count == 0)
+                {
+                    <span class="text-muted">No cases you can open yet. Create one (an exercise case works well), then preview.</span>
+                }
+                else
+                {
+                    <div class="d-flex flex-wrap gap-2 align-items-end">
+                        <div>
+                            <label class="form-label small mb-0" for="tpl-preview-case">Case</label>
+                            <select id="tpl-preview-case" class="form-select form-select-sm" style="max-width:32rem" @bind="_previewCaseId">
+                                @foreach (var c in _cases)
+                                {
+                                    <option value="@c.Id">@c.CaseNumber · @c.Title@(c.IsExercise ? " (exercise)" : "")</option>
+                                }
+                            </select>
+                        </div>
+                        <a class="btn btn-sm btn-outline-primary" href="export/report-templates/@pv.Id/preview?caseId=@_previewCaseId" download>
+                            <span class="bi bi-download me-1" aria-hidden="true"></span>Download preview
+                        </a>
+                    </div>
+                    <div class="form-text">Pick a case with an attack chain and entities to see the pictures filled in.</div>
+                }
+            </div>
+        }
+
+        @if (_templates is null)
+        {
+            <p><em>Loading&hellip;</em></p>
+        }
+        else if (_templates.Count == 0)
+        {
+            <p class="text-muted mb-0">No Word templates yet. Word reports use the built-in layout.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>Template</th><th>File</th><th class="text-nowrap">Default for</th><th>Updated</th><th style="width:1%"></th></tr></thead>
+                    <tbody>
+                        @foreach (var t in _templates)
+                        {
+                            <tr @key="t.Id">
+                                <td>
+                                    @if (_renaming == t.Id)
+                                    {
+                                        <div class="d-flex gap-1">
+                                            <input class="form-control form-control-sm" style="max-width:16rem" aria-label="Template name"
+                                                   @bind="_renameValue" @bind:event="oninput" />
+                                            <button class="btn btn-sm btn-primary py-0" @onclick="() => SaveRename(t)">Save</button>
+                                            <button class="btn btn-sm btn-outline-secondary py-0" @onclick="() => _renaming = null">Cancel</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="fw-semibold">@t.Name</span>
+                                        @if (!t.IsActive) { <span class="im-badge im-b-neutral ms-1">Archived</span> }
+                                    }
+                                </td>
+                                <td class="small">
+                                    <a href="export/report-templates/@t.Id" download title="Download to edit, then replace">@t.FileName</a>
+                                    @if (t.SizeBytes > 0) { <span class="text-muted">· @Size(t.SizeBytes)</span> }
+                                </td>
+                                <td class="small">@(t.DefaultFor.Count == 0 ? "—" : string.Join(", ", t.DefaultFor))</td>
+                                <td class="small text-muted">@TimeDisp.Short(t.UpdatedAtUtc) · @Users.DisplayFor(t.UpdatedBy)</td>
+                                <td class="text-nowrap text-end">
+                                    <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => OpenPreview(t)">Preview</button>
+                                    <label class="btn btn-sm btn-outline-secondary py-0 mb-0" title="Upload a new version of this template">
+                                        Replace…
+                                        <InputFile class="d-none" accept=".docx" OnChange="e => Replace(t, e)" />
+                                    </label>
+                                    <button class="btn btn-sm btn-link py-0" @onclick="() => BeginRename(t)" aria-label="Rename @t.Name">Rename</button>
+                                    <button class="btn btn-sm btn-link py-0" @onclick="() => SetActive(t, !t.IsActive)">@(t.IsActive ? "Archive" : "Restore")</button>
+                                    <button class="btn btn-sm btn-link py-0 text-danger" @onclick="() => ConfirmDelete(t)" aria-label="Delete @t.Name">Delete…</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    /// <summary>Raised after the library changes, so the profiles editor can refresh its template choices.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private ConfirmDialog _confirm = null!;
+    private List<ReportTemplateView>? _templates;
+    private IReadOnlyList<string>? _problems;
+    private string? _newName;
+    private Guid? _renaming;
+    private string? _renameValue;
+    private ReportTemplateView? _previewFor;
+    private List<CaseListItem>? _cases;
+    private Guid _previewCaseId;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => _templates = await Templates.ListAllAsync();
+
+    /// <summary>Called by the profiles editor after a profile changes, so "Default for" stays current.</summary>
+    public async Task ReloadAsync()
+    {
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    private async Task Changed()
+    {
+        await LoadAsync();
+        await OnChanged.InvokeAsync();
+    }
+
+    private static async Task<byte[]> ReadAsync(InputFileChangeEventArgs e)
+    {
+        await using var stream = e.File.OpenReadStream(ReportTemplateService.MaxTemplateBytes);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return ms.ToArray();
+    }
+
+    private async Task Upload(InputFileChangeEventArgs e)
+    {
+        _problems = null;
+        try
+        {
+            var name = string.IsNullOrWhiteSpace(_newName) ? Path.GetFileNameWithoutExtension(e.File.Name) : _newName!;
+            var result = await Templates.UploadAsync(name, e.File.Name, await ReadAsync(e));
+            if (!result.Check.Ok) { _problems = result.Check.Problems; return; }
+            _newName = null;
+            await Changed();
+            Toasts.Success($"Template “{name}” added ({result.Check.Placeholders.Count} fields). Preview it with a case below.");
+            if (_templates!.FirstOrDefault(t => t.Id == result.Id) is { } added) await OpenPreview(added);
+        }
+        catch (IOException) { _problems = [$"A template must be {ReportTemplateService.MaxTemplateBytes / 1024 / 1024} MB or smaller."]; }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { _problems = [ex.Message]; }
+    }
+
+    private async Task Replace(ReportTemplateView t, InputFileChangeEventArgs e)
+    {
+        _problems = null;
+        try
+        {
+            var check = await Templates.ReplaceFileAsync(t.Id, e.File.Name, await ReadAsync(e));
+            if (!check.Ok) { _problems = check.Problems; return; }
+            await Changed();
+            Toasts.Success($"“{t.Name}” now uses {e.File.Name}. Preview it with a case below.");
+            await OpenPreview(t);
+        }
+        catch (IOException) { _problems = [$"A template must be {ReportTemplateService.MaxTemplateBytes / 1024 / 1024} MB or smaller."]; }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { _problems = [ex.Message]; }
+    }
+
+    private async Task OpenPreview(ReportTemplateView t)
+    {
+        _previewFor = t;
+        if (_cases is null)
+        {
+            var page = await Cases.ListAsync(new CaseFilter { IncludeClosed = true, IncludeExercises = true, PageSize = 100 });
+            _cases = page.Items.ToList();
+            if (_cases.Count > 0) _previewCaseId = _cases[0].Id;
+        }
+    }
+
+    private void BeginRename(ReportTemplateView t) { _renaming = t.Id; _renameValue = t.Name; }
+
+    private async Task SaveRename(ReportTemplateView t)
+    {
+        try { await Templates.UpdateAsync(t.Id, _renameValue ?? "", t.IsActive); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
+        _renaming = null;
+        await Changed();
+        Toasts.Success("Template renamed");
+    }
+
+    private async Task SetActive(ReportTemplateView t, bool active)
+    {
+        try { await Templates.UpdateAsync(t.Id, t.Name, active); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
+        await Changed();
+        Toasts.Success(active ? $"“{t.Name}” restored" : $"“{t.Name}” archived. It can't be picked for new reports.");
+    }
+
+    private void ConfirmDelete(ReportTemplateView t) => _confirm.Ask(this, "Delete template",
+        $"Delete “{t.Name}” and its file? Reports already generated from it are unchanged and still record its name.",
+        "Delete template", async () =>
+        {
+            try { await Templates.DeleteAsync(t.Id); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
+            if (_previewFor?.Id == t.Id) _previewFor = null;
+            await Changed();
+            Toasts.Info("Template deleted.");
+        });
+
+    private static string Size(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / 1024d / 1024d:0.#} MB" : $"{Math.Max(1, bytes / 1024)} KB";
+}

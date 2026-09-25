@@ -21,6 +21,7 @@ public static class DependencyInjection
         services.AddScoped<Admin.RoleService>();
         services.AddScoped<Admin.CaseTemplateService>();
         services.AddScoped<Admin.ReportProfileService>();
+        services.AddScoped<Admin.ReportTemplateService>();   // PROD-47: the Word template library
         services.AddScoped<Admin.StageGateService>();
         services.AddScoped<Admin.AccessReviewService>();
         services.AddScoped<Admin.TaxonomyAdminService>();

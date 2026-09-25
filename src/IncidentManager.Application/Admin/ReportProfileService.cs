@@ -8,11 +8,11 @@ namespace IncidentManager.Application.Admin;
 /// <summary>A report profile resolved for the case picker and the admin editor.</summary>
 public sealed record ReportProfileView(
     Guid Id, string Name, string? Description, bool IsActive, int SortOrder, string? SectionLayout,
-    string? TemplateFileName = null);
+    Guid? TemplateId = null, string? TemplateName = null);
 
 /// <summary>The fields to create a report profile with, or replace an existing one's content.</summary>
 public sealed record ReportProfileInput(
-    string Name, string? Description, bool IsActive, int SortOrder, string? SectionLayout);
+    string Name, string? Description, bool IsActive, int SortOrder, string? SectionLayout, Guid? TemplateId = null);
 
 /// <summary>
 /// Administers report profiles (E-28): named, reusable report section layouts a case can be printed with
@@ -25,97 +25,32 @@ public sealed class ReportProfileService
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
-    private readonly Reporting.IReportTemplateEngine? _templates;
-    private readonly Reporting.IReportTemplateStore? _templateStore;
-
-    /// <summary>PROD-47: the largest Word template accepted.</summary>
-    public const int MaxTemplateBytes = 5 * 1024 * 1024;
-
-    public ReportProfileService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
-        Reporting.IReportTemplateEngine? templates = null, Reporting.IReportTemplateStore? templateStore = null)
+    public ReportProfileService(IAppDbContextFactory factory, ICurrentUser user, IClock clock)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
-        _templates = templates;
-        _templateStore = templateStore;
-    }
-
-    /// <summary>
-    /// PROD-47: attaches a customer-designed Word template to a profile, after checking it (a plain .docx — no
-    /// macros, embedded objects or externally loaded content — using only known placeholders). Returns the check;
-    /// nothing is stored unless it passes.
-    /// </summary>
-    public async Task<Reporting.TemplateCheck> UploadTemplateAsync(Guid id, string fileName, byte[] docx, CancellationToken ct = default)
-    {
-        AdminActionPermissions.Require<ReportProfileService>(_user);
-        if (_templates is null || _templateStore is null) throw new InvalidOperationException("Word templates aren't available on this server.");
-        if (docx.Length == 0) throw new ArgumentException("That file is empty. Choose a .docx template.");
-        if (docx.Length > MaxTemplateBytes) throw new ArgumentException($"A template must be {MaxTemplateBytes / 1024 / 1024} MB or smaller.");
-        if (!fileName.EndsWith(".docx", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("Upload a Word document (.docx). Macro-enabled files (.docm) aren't accepted.");
-
-        var check = _templates.Check(docx);
-        if (!check.Ok) return check;
-
-        using var db = _factory.CreateDbContext();
-        var profile = await db.ReportProfiles.FirstOrDefaultAsync(p => p.Id == id, ct)
-                      ?? throw new InvalidOperationException("That report profile no longer exists. Reload the page and try again.");
-        await _templateStore.SaveAsync(id, docx, ct);
-        profile.TemplateFileName = Path.GetFileName(fileName);
-        profile.TemplateSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(docx)).ToLowerInvariant();
-        profile.ModifiedBy = _user.UserId;
-        profile.ModifiedAtUtc = _clock.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return check;
-    }
-
-    /// <summary>PROD-47: detaches the template, so the profile's Word reports use the built-in layout again.</summary>
-    public async Task RemoveTemplateAsync(Guid id, CancellationToken ct = default)
-    {
-        AdminActionPermissions.Require<ReportProfileService>(_user);
-        using var db = _factory.CreateDbContext();
-        var profile = await db.ReportProfiles.FirstOrDefaultAsync(p => p.Id == id, ct)
-                      ?? throw new InvalidOperationException("That report profile no longer exists. Reload the page and try again.");
-        if (profile.TemplateFileName is null) return;
-        profile.TemplateFileName = null;
-        profile.TemplateSha256 = null;
-        profile.ModifiedBy = _user.UserId;
-        profile.ModifiedAtUtc = _clock.UtcNow;
-        await db.SaveChangesAsync(ct);
-        if (_templateStore is not null) await _templateStore.DeleteAsync(id, ct);
-    }
-
-    /// <summary>PROD-47: the profile's uploaded template file (for an admin to download and edit), or null.</summary>
-    public async Task<(string FileName, byte[] Bytes)?> GetTemplateAsync(Guid id, CancellationToken ct = default)
-    {
-        if (_templateStore is null) return null;
-        using var db = _factory.CreateDbContext();
-        var name = await db.ReportProfiles.AsNoTracking().Where(p => p.Id == id).Select(p => p.TemplateFileName).FirstOrDefaultAsync(ct);
-        if (name is null) return null;
-        var bytes = await _templateStore.GetAsync(id, ct);
-        return bytes is null ? null : (name, bytes);
     }
 
     /// <summary>Active profiles for the case picker, ordered for display.</summary>
     public async Task<List<ReportProfileView>> ListActiveAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        return Project(await Load(db).Where(p => p.IsActive).ToListAsync(ct));
+        return await ProjectAsync(db, await Load(db).Where(p => p.IsActive).ToListAsync(ct), ct);
     }
 
     /// <summary>Every profile, active or not, for administration.</summary>
     public async Task<List<ReportProfileView>> ListAllAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        return Project(await Load(db).ToListAsync(ct));
+        return await ProjectAsync(db, await Load(db).ToListAsync(ct), ct);
     }
 
     public async Task<ReportProfileView?> GetAsync(Guid id, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var p = await Load(db).FirstOrDefaultAsync(p => p.Id == id, ct);
-        return p is null ? null : Project(p);
+        return p is null ? null : (await ProjectAsync(db, [p], ct))[0];
     }
 
     public async Task<Guid> CreateAsync(ReportProfileInput input, CancellationToken ct = default)
@@ -128,6 +63,7 @@ public sealed class ReportProfileService
             throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.");
 
         var profile = new ReportProfile { Name = name, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow };
+        await EnsureTemplateAsync(db, input.TemplateId, ct);
         ApplyContent(profile, input);
         db.ReportProfiles.Add(profile);
         await db.SaveChangesAsync(ct);
@@ -146,6 +82,7 @@ public sealed class ReportProfileService
         if (await db.ReportProfiles.AnyAsync(p => p.Name == name && p.Id != id, ct))
             throw new InvalidOperationException($"A report profile named '{name}' already exists. Choose a different name.");
 
+        await EnsureTemplateAsync(db, input.TemplateId, ct);
         profile.Name = name;
         profile.ModifiedBy = _user.UserId;
         profile.ModifiedAtUtc = _clock.UtcNow;
@@ -166,7 +103,14 @@ public sealed class ReportProfileService
         if (profile is null) return;
         db.ReportProfiles.Remove(profile);
         await db.SaveChangesAsync(ct);
-        if (_templateStore is not null) await _templateStore.DeleteAsync(id, ct);   // PROD-47
+    }
+
+    // A default template must exist and be active (archived templates can't be picked for new reports).
+    private static async Task EnsureTemplateAsync(IAppDbContext db, Guid? templateId, CancellationToken ct)
+    {
+        if (templateId is not { } tid) return;
+        if (!await db.ReportTemplates.AnyAsync(t => t.Id == tid && t.IsActive, ct))
+            throw new InvalidOperationException("That Word template is archived or no longer exists. Pick another, or the built-in layout.");
     }
 
     private static void ApplyContent(ReportProfile p, ReportProfileInput input)
@@ -175,16 +119,21 @@ public sealed class ReportProfileService
         p.IsActive = input.IsActive;
         p.SortOrder = input.SortOrder;
         p.SectionLayout = Trim(input.SectionLayout);
+        p.TemplateId = input.TemplateId;
     }
 
     private static IQueryable<ReportProfile> Load(IAppDbContext db) =>
         db.ReportProfiles.AsNoTracking().OrderBy(p => p.SortOrder).ThenBy(p => p.Name);
 
-    private static List<ReportProfileView> Project(IEnumerable<ReportProfile> profiles) =>
-        profiles.Select(Project).ToList();
-
-    private static ReportProfileView Project(ReportProfile p) =>
-        new(p.Id, p.Name, p.Description, p.IsActive, p.SortOrder, p.SectionLayout, p.TemplateFileName);
+    private static async Task<List<ReportProfileView>> ProjectAsync(IAppDbContext db, List<ReportProfile> profiles, CancellationToken ct)
+    {
+        var ids = profiles.Where(p => p.TemplateId != null).Select(p => p.TemplateId!.Value).Distinct().ToList();
+        var names = ids.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await db.ReportTemplates.AsNoTracking().Where(t => ids.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.Name, ct);
+        return profiles.Select(p => new ReportProfileView(p.Id, p.Name, p.Description, p.IsActive, p.SortOrder, p.SectionLayout,
+            p.TemplateId, p.TemplateId is { } tid && names.TryGetValue(tid, out var n) ? n : null)).ToList();
+    }
 
     private static string? Trim(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }

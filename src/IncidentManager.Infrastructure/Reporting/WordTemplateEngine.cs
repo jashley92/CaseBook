@@ -93,7 +93,7 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
 
     // ── Rendering ────────────────────────────────────────────────────────────────────────────────
 
-    public byte[] Render(byte[] template, CaseReportModel m)
+    public byte[] Render(byte[] template, CaseReportModel m, string? banner = null)
     {
         using var ms = new MemoryStream();
         ms.Write(template);
@@ -102,6 +102,15 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         {
             var main = doc.MainDocumentPart!;
             Fill(main.Document.Body!, m, main);
+            if (!string.IsNullOrWhiteSpace(banner))
+            {
+                // Preview marker: bold red first paragraph, so a preview can't pass for a stored report.
+                var body = main.Document.Body!;
+                var mark = new Paragraph(new Run(
+                    new RunProperties(new Bold(), new Color { Val = "C00000" }),
+                    new Text(banner) { Space = SpaceProcessingModeValues.Preserve }));
+                body.InsertAt(mark, 0);
+            }
             main.Document.Save();
             foreach (var h in main.HeaderParts) { Fill(h.Header, m, null); h.Header.Save(); }
             foreach (var f in main.FooterParts) { Fill(f.Footer, m, null); f.Footer.Save(); }

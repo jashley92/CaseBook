@@ -348,7 +348,8 @@
 
                         @* UX-16: reusable report profiles live on the same Reports page as the defaults and
                            the section designer, not a separate rail entry. *@
-                        <ReportProfilesEditor />
+                        <ReportTemplateLibrary @ref="_templateLibrary" OnChanged="() => _profilesEditor.ReloadAsync()" />
+                        <ReportProfilesEditor @ref="_profilesEditor" OnChanged="() => _templateLibrary.ReloadAsync()" />
                     }
 
                     @* UX-15: the per-jurisdiction rules editor sits directly beneath the deadline-clock
@@ -994,6 +995,8 @@
     }
 
     private IncidentManager.Application.Abstractions.LedgerStatus? _ledger;
+    private ReportProfilesEditor _profilesEditor = null!;
+    private ReportTemplateLibrary _templateLibrary = null!;
     private bool _siemTesting;
     private IReadOnlyList<IncidentManager.Web.Siem.SiemTestResult>? _siemResults;
 

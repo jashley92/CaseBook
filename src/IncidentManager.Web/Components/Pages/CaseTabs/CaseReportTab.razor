@@ -5,6 +5,7 @@
    reloads after a profile save or a generate. *@
 @inject ReportService Reports
 @inject IncidentManager.Application.Admin.ReportProfileService ReportProfiles
+@inject IncidentManager.Application.Admin.ReportTemplateService ReportTemplates
 @inject CaseService Cases
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject TimeDisplay TimeDisp
@@ -44,12 +45,24 @@
                 </div>
             </div>
 
-            @* PROD-47: say when this profile's Word reports come from an uploaded template. *@
-            @if (State.Profiles?.FirstOrDefault(p => p.Id == _selectedProfileId)?.TemplateFileName is { } templateName)
+            @* PROD-47: which Word template the next Word draft is filled from. Defaults to the profile's. *@
+            @if (_templates is { Count: > 0 } || ProfileTemplateName is not null)
             {
-                <div class="small text-muted mb-2">
-                    <span class="bi bi-file-earmark-word me-1" aria-hidden="true"></span>Word drafts use this profile's template
-                    (<strong>@templateName</strong>). The preview and PDFs use the built-in layout.
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <label class="form-label small mb-0" for="report-word-template">Word template</label>
+                    <select id="report-word-template" class="form-select form-select-sm w-auto" @bind="_wordTemplate">
+                        <option value="">@(ProfileTemplateName is { } pt ? $"Profile default ({pt})" : "Built-in layout")</option>
+                        @if (ProfileTemplateName is not null)
+                        {
+                            <option value="@Guid.Empty">Built-in layout</option>
+                        }
+                        @foreach (var t in _templates ?? [])
+                        {
+                            if (t.Id == ProfileTemplateId) continue;
+                            <option value="@t.Id">@t.Name</option>
+                        }
+                    </select>
+                    <span class="small text-muted">For Word drafts. The preview and PDFs use the built-in layout.</span>
                 </div>
             }
             @* PROD-45: the TLP marking printed on every page of the report generated next. *@
@@ -112,6 +125,13 @@
     private IncidentManager.Application.Reporting.CaseReportModel? _previewModel;
     private int _loadedToken = int.MinValue;
     private TlpLevel? _tlpChoice;   // PROD-45: the analyst's pick; null = the admin default
+    // PROD-47: the Word template for the next Word draft. "" = the selected profile's default, Guid.Empty = built-in.
+    private string _wordTemplate = "";
+    private List<IncidentManager.Application.Admin.ReportTemplateView>? _templates;
+    private IncidentManager.Application.Admin.ReportProfileView? SelectedProfile =>
+        State.Profiles?.FirstOrDefault(p => p.Id == _selectedProfileId);
+    private Guid? ProfileTemplateId => SelectedProfile?.TemplateId;
+    private string? ProfileTemplateName => SelectedProfile?.TemplateName;
     private TlpLevel _tlp => _tlpChoice ?? ReportingOpts.CurrentValue.EffectiveDefaultTlp;
 
     private async Task OnTlpChanged(ChangeEventArgs e)
@@ -136,6 +156,7 @@
     {
         _reports = await Reports.ListAsync(CaseId);
         State.Profiles ??= await ReportProfiles.ListActiveAsync();
+        _templates ??= await ReportTemplates.ListActiveAsync();
         _selectedProfileId = CaseProfileId;
         _profileDirty = false;
     }
@@ -145,6 +166,7 @@
         var raw = e.Value?.ToString();
         _selectedProfileId = string.IsNullOrEmpty(raw) ? null : Guid.Parse(raw);
         _profileDirty = _selectedProfileId != CaseProfileId;
+        _wordTemplate = "";   // the default follows the newly selected profile
         // Keep an open preview in sync with the new selection.
         if (State.ShowPreview) _ = RefreshPreview();
     }
@@ -187,7 +209,8 @@
             if (_profileDirty) return; // the save failed and said why; don't generate against the old profile
         }
         IncidentManager.Domain.Entities.Report report;
-        try { report = await Reports.GenerateAsync(CaseId, format, _tlp); }
+        Guid? template = Guid.TryParse(_wordTemplate, out var tid) ? tid : null;
+        try { report = await Reports.GenerateAsync(CaseId, format, _tlp, template: template); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't generate the report. {ex.Message}"); return; }
         _reportMsg = $"Generated draft {report.FileName} (SHA-256 {report.ContentSha256[..12]}…)";
         await LoadReports();

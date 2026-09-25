@@ -238,11 +238,24 @@ public sealed class ReportProfileConfiguration : IEntityTypeConfiguration<Report
         b.Property(x => x.Name).HasMaxLength(200).IsRequired();
         b.Property(x => x.Description).HasMaxLength(2000);
         b.Property(x => x.SectionLayout).HasMaxLength(1000);
-        b.Property(x => x.TemplateFileName).HasMaxLength(260);   // PROD-47
-        b.Property(x => x.TemplateSha256).HasMaxLength(64);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.RowHash).HasMaxLength(64);
         b.HasIndex(x => x.Name).IsUnique();
+        // PROD-47: the default Word template. Restrict: a template in use as a default can't be deleted.
+        b.HasOne<ReportTemplate>().WithMany().HasForeignKey(x => x.TemplateId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class ReportTemplateConfiguration : IEntityTypeConfiguration<ReportTemplate>
+{
+    public void Configure(EntityTypeBuilder<ReportTemplate> b)
+    {
+        b.ToTable("ReportTemplates");
+        b.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        b.Property(x => x.FileName).HasMaxLength(260).IsRequired();
+        b.Property(x => x.Sha256).HasMaxLength(64).IsRequired();
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(64);
     }
 }
 
@@ -369,6 +382,8 @@ public sealed class ReportConfiguration : IEntityTypeConfiguration<Report>
         b.Property(x => x.ContentSha256).HasMaxLength(64);
         b.Property(x => x.ApprovedBy).HasMaxLength(200);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.TemplateName).HasMaxLength(200);   // PROD-47
+        b.Property(x => x.TemplateSha256).HasMaxLength(64);
         b.HasIndex(x => x.CaseId);
     }
 }

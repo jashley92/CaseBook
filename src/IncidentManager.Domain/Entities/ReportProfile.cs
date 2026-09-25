@@ -32,14 +32,11 @@ public class ReportProfile : AuditableEntity, IHashableEntity
     public string? SectionLayout { get; set; }
 
     /// <summary>
-    /// PROD-47: the uploaded Word template's original file name, when this profile prints Word reports from a
-    /// customer-designed template (the file itself lives in the report-template store). Null = built-in layout.
-    /// Outside the row hash (so existing rows still verify); changes are audited through the chain.
+    /// PROD-47: the library <see cref="ReportTemplate"/> this profile's Word reports use by default. Null = the
+    /// built-in layout. Whoever generates a report can still pick another template. Outside the row hash (so
+    /// existing rows still verify); changes are audited through the chain.
     /// </summary>
-    public string? TemplateFileName { get; set; }
-
-    /// <summary>PROD-47: SHA-256 of the uploaded template, so the audit trail records exactly which file was in use.</summary>
-    public string? TemplateSha256 { get; set; }
+    public Guid? TemplateId { get; set; }
 
     public string? RowHash { get; set; }
 

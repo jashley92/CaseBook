@@ -52,6 +52,7 @@ public static class AuditLabels
         "NotificationRule" => "Notification rule",
         "PostIncidentReview" => "Lessons-learned review",
         "ReportProfile" => "Report profile",
+        "ReportTemplate" => "Word template",
         "SeverityChange" => "Severity change",
         "StageGate" => "Stage gate",
         "StageGateRequirement" => "Stage gate requirement",

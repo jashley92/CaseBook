@@ -461,28 +461,38 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task A_profile_with_a_Word_template_prints_Word_reports_from_it()
+    public async Task Word_reports_use_the_profile_default_template_or_the_one_picked_and_record_which()
     {
-        // PROD-47: upload through the service (checked), pick the profile on the case, generate.
+        // PROD-47: the template library. Upload (checked), set a profile default, generate, override, preview.
         _user.RoleSet = [AppRole.SysAdmin];
         var engine = new WordTemplateEngine();
         var templateStore = new FileReportTemplateStore(Options.Create(new ReportTemplateOptions { RootPath = Path.Combine(_reportDir, "templates") }),
             Options.Create(new ReportBrandingOptions()));
-        Guid caseId, profileId;
+        Guid caseId, profileId, houseId, boardId;
         await using (var db = NewContext())
         {
             await DevDataSeeder.SeedAsync(db, _clock);
             caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
-            var profiles = new IncidentManager.Application.Admin.ReportProfileService(NewFactory(), _user, _clock, engine, templateStore);
-            profileId = await profiles.CreateAsync(new IncidentManager.Application.Admin.ReportProfileInput("House style", null, true, 9, null));
+            var templates = new IncidentManager.Application.Admin.ReportTemplateService(NewFactory(), _user, _clock, engine, templateStore);
 
-            var rejected = await profiles.UploadTemplateAsync(profileId, "bad.docx", "not a docx"u8.ToArray());
-            rejected.Ok.Should().BeFalse();
-            await profiles.Invoking(p => p.UploadTemplateAsync(profileId, "macro.docm", engine.Starter()))
-                .Should().ThrowAsync<ArgumentException>();
+            (await templates.UploadAsync("Broken", "bad.docx", "not a docx"u8.ToArray())).Check.Ok.Should().BeFalse();
+            await templates.Invoking(t => t.UploadAsync("Macro", "macro.docm", engine.Starter())).Should().ThrowAsync<ArgumentException>();
 
-            (await profiles.UploadTemplateAsync(profileId, "house-style.docx", engine.Starter())).Ok.Should().BeTrue();
-            (await profiles.GetAsync(profileId))!.TemplateFileName.Should().Be("house-style.docx");
+            var house = await templates.UploadAsync("House style", "house-style.docx", engine.Starter());
+            house.Check.Ok.Should().BeTrue();
+            houseId = house.Id!.Value;
+            boardId = (await templates.UploadAsync("Board summary", "board.docx", engine.Starter())).Id!.Value;
+            await templates.Invoking(t => t.UploadAsync("house STYLE", "dup.docx", engine.Starter()))
+                .Should().ThrowAsync<InvalidOperationException>("names are unique, ignoring case");
+
+            var profiles = new IncidentManager.Application.Admin.ReportProfileService(NewFactory(), _user, _clock);
+            profileId = await profiles.CreateAsync(new IncidentManager.Application.Admin.ReportProfileInput("House", null, true, 9, null, houseId));
+            (await profiles.GetAsync(profileId))!.TemplateName.Should().Be("House style");
+
+            // A profile's default can't be archived or deleted out from under it.
+            await templates.Invoking(t => t.DeleteAsync(houseId)).Should().ThrowAsync<InvalidOperationException>().WithMessage("*House*");
+            await templates.Invoking(t => t.UpdateAsync(houseId, "House style", isActive: false)).Should().ThrowAsync<InvalidOperationException>();
+            (await templates.ListAllAsync()).Single(t => t.Id == houseId).DefaultFor.Should().Equal("House");
 
             var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
                 new CaseNumberGenerator(db), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(),
@@ -499,23 +509,52 @@ public sealed class ReportingIntegrationTests : IDisposable
                 new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()),
                 diagrams: new SkiaReportDiagrams(), templates: engine, templateStore: templateStore);
 
-            var word = await svc.GenerateAsync(caseId, ReportFormat.Word);
-            var (_, stream) = await svc.OpenAsync(word.Id);
-            using var ms = new MemoryStream();
-            await using (stream) await stream.CopyToAsync(ms);
-            ms.Position = 0;
-            using var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false);
-            var body = doc.MainDocumentPart!.Document.Body!.InnerText;
+            async Task<string> BodyOf(Guid reportId)
+            {
+                var (_, stream) = await svc.OpenAsync(reportId);
+                using var ms = new MemoryStream();
+                await using (stream) await stream.CopyToAsync(ms);
+                ms.Position = 0;
+                using var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false);
+                new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(doc).Should().BeEmpty("Word opens it without repair");
+                return doc.MainDocumentPart!.Document.Body!.InnerText;
+            }
 
+            // Profile default.
+            var word = await svc.GenerateAsync(caseId, ReportFormat.Word);
+            word.TemplateName.Should().Be("House style");
+            word.TemplateSha256.Should().HaveLength(64);
+            var body = await BodyOf(word.Id);
             body.Should().Contain("Business impact", "the template's own headings print")
                 .And.NotContain("Systems Reviewed", "not the built-in layout")
                 .And.Contain("2026-01_Phishing_Wave").And.Contain("203[.]0[.]113[.]66").And.NotContain("{{");
-            doc.MainDocumentPart.ImageParts.Should().NotBeEmpty("the attack chain and entity graph pictures are filled in");
-            new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(doc).Should().BeEmpty("Word opens it without repair");
 
-            // PDF keeps the built-in layout.
-            var pdf = await svc.GenerateAsync(caseId, ReportFormat.Pdf);
-            pdf.FileName.Should().EndWith(".pdf");
+            // Another template picked for this report, then the built-in layout.
+            (await svc.GenerateAsync(caseId, ReportFormat.Word, template: boardId)).TemplateName.Should().Be("Board summary");
+            var builtIn = await svc.GenerateAsync(caseId, ReportFormat.Word, template: Guid.Empty);
+            builtIn.TemplateName.Should().BeNull();
+            (await BodyOf(builtIn.Id)).Should().Contain("Systems Reviewed");
+
+            // PDF keeps the built-in layout and records no template.
+            (await svc.GenerateAsync(caseId, ReportFormat.Pdf)).TemplateName.Should().BeNull();
+
+            // Preview: filled and marked, but not stored.
+            var before = await db.Reports.CountAsync(r => r.CaseId == caseId);
+            var (fileName, bytes, caseNumber) = await svc.PreviewTemplateAsync(boardId, caseId);
+            fileName.Should().StartWith("PREVIEW_Board-summary_");
+            caseNumber.Should().Be("2026-01_Phishing_Wave");
+            using (var ms = new MemoryStream(bytes))
+            using (var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false))
+            {
+                var text = doc.MainDocumentPart!.Document.Body!.InnerText;
+                text.Should().StartWith("PREVIEW of template").And.Contain("2026-01_Phishing_Wave").And.NotContain("{{");
+                new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(doc).Should().BeEmpty();
+            }
+            (await db.Reports.CountAsync(r => r.CaseId == caseId)).Should().Be(before, "a preview is never stored as a report");
+
+            // Only admins preview.
+            _user.RoleSet = [AppRole.Analyst];
+            await svc.Invoking(s => s.PreviewTemplateAsync(boardId, caseId)).Should().ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
         }
     }
 

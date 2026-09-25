@@ -94,7 +94,11 @@ public sealed class ReportService
     /// Generates a report as a <b>working draft</b> (E-15). Finalization is a separate, permission-gated
     /// approval step (<see cref="ApproveAsync"/>) — generating no longer self-approves.
     /// </summary>
-    public async Task<Report> GenerateAsync(Guid caseId, ReportFormat format, TlpLevel? tlp = null, CancellationToken ct = default)
+    /// <param name="template">PROD-47: which Word template to fill. Null = the case's profile default (the built-in
+    /// layout when it has none); <see cref="Guid.Empty"/> = the built-in layout; otherwise that library template.
+    /// Ignored for PDF, which always uses the built-in layout.</param>
+    public async Task<Report> GenerateAsync(Guid caseId, ReportFormat format, TlpLevel? tlp = null, CancellationToken ct = default,
+        Guid? template = null)
     {
         if (!_user.Has(Permission.EditCases)) throw new Security.ForbiddenException(Permission.EditCases);
         using var db = _factory.CreateDbContext();
@@ -111,13 +115,50 @@ public sealed class ReportService
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
         var model = BuildModel(c, now, logo, sections, elemSummary, triggers, tlp);
 
-        // PROD-47: a Word report from a profile with a customer-designed template is rendered from that template.
-        // PDFs keep the built-in layout (converting Word to PDF would need Word or LibreOffice on the server).
+        // PROD-47: a Word report can be filled from a customer-designed template (the profile's default, or one
+        // picked for this report). PDFs keep the built-in layout (converting Word to PDF would need Word or
+        // LibreOffice on the server).
         byte[]? rendered = null;
-        if (format == ReportFormat.Word && await TemplateForAsync(db, c.ReportProfileId, ct) is { } template)
-            rendered = _templates!.Render(template, model);
+        ResolvedTemplate? used = null;
+        if (format == ReportFormat.Word && await ResolveTemplateAsync(db, c.ReportProfileId, template, ct) is { } t)
+        {
+            rendered = _templates!.Render(t.Bytes, model);
+            used = t;
+        }
 
-        return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.Case, format, model, now, ct, rendered);
+        return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.Case, format, model, now, ct, rendered, used);
+    }
+
+    /// <summary>
+    /// PROD-47: fills a library template with a case's data for an admin to check, without storing a report, adding
+    /// a version or touching the case. The document opens with a "PREVIEW" line so it can't pass for a report.
+    /// Admin-only, and need-to-know on the case applies like any report. The web endpoint records the download in
+    /// the access log.
+    /// </summary>
+    public async Task<(string FileName, byte[] Bytes, string CaseNumber)> PreviewTemplateAsync(Guid templateId, Guid caseId,
+        CancellationToken ct = default)
+    {
+        if (!_user.Has(Permission.Administer)) throw new Security.ForbiddenException(Permission.Administer);
+        if (_templates is null || _templateStore is null) throw new InvalidOperationException("Word templates aren't available on this server.");
+        using var db = _factory.CreateDbContext();
+        var canAccess = await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(x => x.Id == caseId, ct);
+        if (!canAccess) throw new InvalidOperationException("Case not found.");
+        var tpl = await db.ReportTemplates.AsNoTracking().FirstOrDefaultAsync(t => t.Id == templateId, ct)
+                  ?? throw new InvalidOperationException("That template no longer exists. Reload the page and try again.");
+        var bytes = await _templateStore.GetAsync(templateId, ct)
+                    ?? throw new InvalidOperationException("The template's file is missing from the template folder. Replace it to fix this.");
+        var c = await LoadFullCaseAsync(db, caseId, ct) ?? throw new InvalidOperationException("Case not found.");
+
+        var now = _clock.UtcNow;
+        var logo = await _branding.GetLogoAsync(ct);
+        var sections = await ResolveSectionsAsync(db, c.ReportProfileId, ct);
+        var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
+        var model = BuildModel(c, now, logo, sections, elemSummary, triggers, null);
+        var banner = $"PREVIEW of template “{tpl.Name}” with case {c.CaseNumber}, {now:yyyy-MM-dd HH:mm} UTC. " +
+                     "Not a stored or approved report.";
+        var rendered = _templates.Render(bytes, model, banner);
+        var safeName = string.Concat(tpl.Name.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '-'));
+        return ($"PREVIEW_{safeName}_{c.CaseNumber}.docx", rendered, c.CaseNumber);
     }
 
     /// <summary>
@@ -139,17 +180,34 @@ public sealed class ReportService
     }
 
     /// <summary>Renders, stores and records a report; versions number per case + kind + format.</summary>
-    /// <summary>PROD-47: the Word template of the (active) profile a case prints with, or null for the built-in layout.</summary>
-    private async Task<byte[]?> TemplateForAsync(IAppDbContext db, Guid? profileId, CancellationToken ct)
+    private sealed record ResolvedTemplate(string Name, string Sha256, byte[] Bytes);
+
+    /// <summary>PROD-47: the Word template to fill (see <see cref="GenerateAsync"/>'s template argument), or null for
+    /// the built-in layout. A picked template must be active; a profile default that's gone falls back to built-in.</summary>
+    private async Task<ResolvedTemplate?> ResolveTemplateAsync(IAppDbContext db, Guid? profileId, Guid? choice, CancellationToken ct)
     {
-        if (_templates is null || _templateStore is null || profileId is not { } id) return null;
-        var hasTemplate = await db.ReportProfiles.AsNoTracking()
-            .AnyAsync(p => p.Id == id && p.IsActive && p.TemplateFileName != null, ct);
-        return hasTemplate ? await _templateStore.GetAsync(id, ct) : null;
+        if (_templates is null || _templateStore is null) return null;
+        if (choice == Guid.Empty) return null;
+
+        Guid? id = choice;
+        if (id is null && profileId is { } pid)
+            id = await db.ReportProfiles.AsNoTracking().Where(p => p.Id == pid && p.IsActive).Select(p => p.TemplateId).FirstOrDefaultAsync(ct);
+        if (id is not { } tid) return null;
+
+        var t = await db.ReportTemplates.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tid && x.IsActive, ct);
+        if (t is null)
+        {
+            if (choice is not null) throw new InvalidOperationException("That Word template is archived or no longer exists. Pick another.");
+            return null;
+        }
+        var bytes = await _templateStore.GetAsync(tid, ct)
+                    ?? throw new InvalidOperationException($"The file for template “{t.Name}” is missing. Ask an administrator to replace it.");
+        return new ResolvedTemplate(t.Name, t.Sha256, bytes);
     }
 
     private async Task<Report> StoreAsync(IAppDbContext db, Guid caseId, string caseNumber, ReportKind kind,
-        ReportFormat format, CaseReportModel model, DateTimeOffset now, CancellationToken ct, byte[]? rendered = null)
+        ReportFormat format, CaseReportModel model, DateTimeOffset now, CancellationToken ct, byte[]? rendered = null,
+        ResolvedTemplate? template = null)
     {
         var bytes = rendered ?? (format == ReportFormat.Word ? _generator.GenerateWord(model) : _generator.GeneratePdf(model));
         var ext = format == ReportFormat.Word ? "docx" : "pdf";
@@ -163,6 +221,8 @@ public sealed class ReportService
         var report = new Report
         {
             Tlp = model.Tlp,   // PROD-45
+            TemplateName = template?.Name,       // PROD-47: which template filled it, by value
+            TemplateSha256 = template?.Sha256,
             CaseId = caseId,
             Kind = kind,
             Version = version,

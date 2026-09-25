@@ -1895,3 +1895,129 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260925181541_AddReportTemplateLibrary'
+)
+BEGIN
+    CREATE TABLE [ReportTemplates] (
+        [Id] uniqueidentifier NOT NULL,
+        [Name] nvarchar(200) NOT NULL,
+        [FileName] nvarchar(260) NOT NULL,
+        [Sha256] nvarchar(64) NOT NULL,
+        [SizeBytes] bigint NOT NULL,
+        [IsActive] bit NOT NULL,
+        [RowHash] nvarchar(64) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(max) NULL,
+        CONSTRAINT [PK_ReportTemplates] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260925181541_AddReportTemplateLibrary'
+)
+BEGIN
+    ALTER TABLE [ReportProfiles] ADD [TemplateId] uniqueidentifier NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260925181541_AddReportTemplateLibrary'
+)
+BEGIN
+
+    INSERT INTO [ReportTemplates] ([Id], [Name], [FileName], [Sha256], [SizeBytes], [IsActive], [RowHash],
+                                   [CreatedAtUtc], [CreatedBy], [ModifiedAtUtc], [ModifiedBy])
+    SELECT [Id],
+           CASE WHEN LOWER(RIGHT([TemplateFileName], 5)) = N'.docx'
+                THEN LEFT([TemplateFileName], LEN([TemplateFileName]) - 5) ELSE [TemplateFileName] END,
+           [TemplateFileName], COALESCE([TemplateSha256], N''), 0, 1, NULL,
+           COALESCE([ModifiedAtUtc], [CreatedAtUtc]), COALESCE([ModifiedBy], [CreatedBy]), NULL, NULL
+    FROM [ReportProfiles] WHERE [TemplateFileName] IS NOT NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260925181541_AddReportTemplateLibrary'
+)
+BEGIN
+    UPDATE [ReportProfiles] SET [TemplateId] = [Id] WHERE [TemplateFileName] IS NOT NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260925181541_AddReportTemplateLibrary'
+)
+BEGIN
+    DECLARE @var nvarchar(max);
+    SELECT @var = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[ReportProfiles]') AND [c].[name] = N'TemplateFileName');
+    IF @var IS NOT NULL EXEC(N'ALTER TABLE [ReportProfiles] DROP CONSTRAINT ' + @var + ';');
+    ALTER TABLE [ReportProfiles] DROP COLUMN [TemplateFileName];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260925181541_AddReportTemplateLibrary'
+)
+BEGIN
+    DECLARE @var1 nvarchar(max);
+    SELECT @var1 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[ReportProfiles]') AND [c].[name] = N'TemplateSha256');
+    IF @var1 IS NOT NULL EXEC(N'ALTER TABLE [ReportProfiles] DROP CONSTRAINT ' + @var1 + ';');
+    ALTER TABLE [ReportProfiles] DROP COLUMN [TemplateSha256];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260925181541_AddReportTemplateLibrary'
+)
+BEGIN
+    ALTER TABLE [Reports] ADD [TemplateName] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260925181541_AddReportTemplateLibrary'
+)
+BEGIN
+    ALTER TABLE [Reports] ADD [TemplateSha256] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260925181541_AddReportTemplateLibrary'
+)
+BEGIN
+    CREATE INDEX [IX_ReportProfiles_TemplateId] ON [ReportProfiles] ([TemplateId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260925181541_AddReportTemplateLibrary'
+)
+BEGIN
+    ALTER TABLE [ReportProfiles] ADD CONSTRAINT [FK_ReportProfiles_ReportTemplates_TemplateId] FOREIGN KEY ([TemplateId]) REFERENCES [ReportTemplates] ([Id]) ON DELETE NO ACTION;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260925181541_AddReportTemplateLibrary'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260925181541_AddReportTemplateLibrary', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

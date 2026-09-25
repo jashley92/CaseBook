@@ -711,11 +711,25 @@ app.MapGet("/export/report-template-starter.docx",
         Results.File(templates.Starter(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "casebook-report-template-starter.docx"))
     .RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
 app.MapGet("/export/report-templates/{id:guid}", async (Guid id,
-    IncidentManager.Application.Admin.ReportProfileService profiles, CancellationToken ct) =>
-    await profiles.GetTemplateAsync(id, ct) is { } t
+    IncidentManager.Application.Admin.ReportTemplateService templates, CancellationToken ct) =>
+    await templates.GetFileAsync(id, ct) is { } t
         ? Results.File(t.Bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", t.FileName)
         : Results.NotFound())
     .RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
+// PROD-47: a template filled with one case's data, to check it before anyone generates with it. Not stored as a
+// report; the download is recorded in the access log as an export of that case's data.
+app.MapGet("/export/report-templates/{id:guid}/preview", async (Guid id, Guid caseId,
+    IncidentManager.Application.Reporting.ReportService reports,
+    IncidentManager.Application.Access.IAccessLogService access, CancellationToken ct) =>
+{
+    try
+    {
+        var (fileName, bytes, _) = await reports.PreviewTemplateAsync(id, caseId, ct);
+        await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, caseId, $"Word template preview: {fileName}", id, ct);
+        return Results.File(bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileName);
+    }
+    catch (InvalidOperationException) { return Results.NotFound(); }
+}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
 
 // PROD-33: programmatic case import. A producer (an XSIAM/SOAR playbook, a script) POSTs a case-import
 // document; it is validated and STAGED as a pending import for a human to review and confirm in CaseBook —

@@ -113,8 +113,10 @@ Generate an editable **Word** working draft and a finalized, **locked PDF** carr
 **SHA-256 content hash** — the version, final flag, hash, and author are recorded per artifact. Reports
 **draw the attack chain** across ATT&amp;CK tactic lanes and the **entity relationship graph**, list
 **indicators of compromise** apart from everything examined, **defang** indicators so a forwarded report
-can't be clicked through, and carry a **TLP 2.0** marking on every page. Admins can give a report profile
-their own **Word template** with `{{…}}` fields; uploads with macros, embedded objects or externally
+can't be clicked through, and carry a **TLP 2.0** marking on every page. Admins keep a library of their own
+**Word templates** with `{{…}}` fields and **preview** each one filled with a real case before anyone uses it
+(nothing is stored). A report profile names a default template, and whoever generates a Word report can pick
+another; each report records which template filled it. Uploads with macros, embedded objects or externally
 loaded content are refused.
 
 ![Reporting](docs/screenshots/report.png)

@@ -21,6 +21,11 @@ public class Report : AuditableEntity
     /// <summary>PROD-45: the TLP marking printed on this report (null for reports generated before markings).</summary>
     public TlpLevel? Tlp { get; set; }
 
+    /// <summary>PROD-47: the Word template this report was filled from (name and SHA-256 at generation time), or
+    /// null for the built-in layout. Kept by value so the record survives the template being replaced or deleted.</summary>
+    public string? TemplateName { get; set; }
+    public string? TemplateSha256 { get; set; }
+
     /// <summary>True for the locked, approved final; false for editable working drafts.</summary>
     public bool IsFinal { get; set; }
     public string? ApprovedBy { get; set; }

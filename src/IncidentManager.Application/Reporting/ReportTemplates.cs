@@ -16,17 +16,19 @@ public interface IReportTemplateEngine
     /// using only known placeholders.</summary>
     TemplateCheck Check(byte[] docx);
 
-    /// <summary>The finished .docx for this report.</summary>
-    byte[] Render(byte[] template, CaseReportModel model);
+    /// <summary>The finished .docx for this report. A <paramref name="banner"/> (used for previews) is inserted as the
+    /// document's first paragraph, so a preview can't pass for a stored report.</summary>
+    byte[] Render(byte[] template, CaseReportModel model, string? banner = null);
 
     /// <summary>A starter template using the main placeholders, for admins to restyle.</summary>
     byte[] Starter();
 }
 
-/// <summary>PROD-47: where uploaded templates live (one per report profile), off the database like the report logo.</summary>
+/// <summary>PROD-47: where uploaded templates live (one file per library template, keyed by its id), off the
+/// database like the report logo.</summary>
 public interface IReportTemplateStore
 {
-    Task SaveAsync(Guid profileId, byte[] docx, CancellationToken ct = default);
-    Task<byte[]?> GetAsync(Guid profileId, CancellationToken ct = default);
-    Task DeleteAsync(Guid profileId, CancellationToken ct = default);
+    Task SaveAsync(Guid templateId, byte[] docx, CancellationToken ct = default);
+    Task<byte[]?> GetAsync(Guid templateId, CancellationToken ct = default);
+    Task DeleteAsync(Guid templateId, CancellationToken ct = default);
 }

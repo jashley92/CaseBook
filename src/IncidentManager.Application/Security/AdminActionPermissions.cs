@@ -25,7 +25,7 @@ public static class AdminActionPermissions
     public static readonly IReadOnlyList<Type> GuardedServices =
     [
         typeof(AdminSettingsService), typeof(CaseTemplateService), typeof(DataElementService),
-        typeof(EmailTemplateAdminService), typeof(NotificationRuleService), typeof(ReportProfileService),
+        typeof(EmailTemplateAdminService), typeof(NotificationRuleService), typeof(ReportProfileService), typeof(ReportTemplateService),
         typeof(RoleService), typeof(StageGateService), typeof(TaxonomyAdminService), typeof(IntegrityService),
         typeof(Config.ConfigBundleService),
     ];
@@ -54,8 +54,10 @@ public static class AdminActionPermissions
             [Key<ReportProfileService>(nameof(ReportProfileService.CreateAsync))] = Permission.Administer,
             [Key<ReportProfileService>(nameof(ReportProfileService.UpdateAsync))] = Permission.Administer,
             [Key<ReportProfileService>(nameof(ReportProfileService.DeleteAsync))] = Permission.Administer,
-            [Key<ReportProfileService>(nameof(ReportProfileService.UploadTemplateAsync))] = Permission.Administer,
-            [Key<ReportProfileService>(nameof(ReportProfileService.RemoveTemplateAsync))] = Permission.Administer,
+            [Key<ReportTemplateService>(nameof(ReportTemplateService.UploadAsync))] = Permission.Administer,
+            [Key<ReportTemplateService>(nameof(ReportTemplateService.ReplaceFileAsync))] = Permission.Administer,
+            [Key<ReportTemplateService>(nameof(ReportTemplateService.UpdateAsync))] = Permission.Administer,
+            [Key<ReportTemplateService>(nameof(ReportTemplateService.DeleteAsync))] = Permission.Administer,
             [Key<StageGateService>(nameof(StageGateService.CreateAsync))] = Permission.Administer,
             [Key<StageGateService>(nameof(StageGateService.UpdateAsync))] = Permission.Administer,
             [Key<StageGateService>(nameof(StageGateService.DeleteAsync))] = Permission.Administer,
