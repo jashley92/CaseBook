@@ -22,7 +22,7 @@
 <p class="text-muted small">
     <span class="bi bi-info-circle me-1"></span>The bundle covers operational and taxonomy <strong>settings</strong>,
     <strong>roles</strong> and AD mappings, <strong>case templates</strong>, <strong>stage gates</strong>,
-    <strong>report profiles</strong>, <strong>data elements</strong> and <strong>notification rules</strong>. It
+    <strong>report profiles</strong> with their <strong>Word templates</strong>, <strong>data elements</strong> and <strong>notification rules</strong>. It
     excludes cases, evidence and the audit trail, and server-side security and infrastructure config such as
     connection strings, auth mode, signing keys and the SIEM endpoint.
 </p>
@@ -42,7 +42,7 @@
                 <li>@_bundle.Roles.Count role(s) and @_bundle.RoleMappings.Count AD mapping(s)</li>
                 <li>@_bundle.CaseTemplates.Count case template(s)</li>
                 <li>@_bundle.StageGates.Count stage gate(s)</li>
-                <li>@_bundle.ReportProfiles.Count report profile(s)</li>
+                <li>@_bundle.ReportProfiles.Count report profile(s) and @(_bundle.ReportTemplates?.Count ?? 0) Word template(s)</li>
                 <li>@_bundle.DataElements.Count data element(s)</li>
                 <li>@_bundle.NotificationRules.Count notification rule(s)</li>
             </ul>
@@ -61,7 +61,7 @@
         <p class="small text-muted">
             Upload a bundle to apply it here. The signature is checked first, then you'll see a <strong>preview</strong> of
             every change before anything is written. Import is <strong>additive</strong>: existing items are updated and
-            new ones added, but nothing is deleted. Every change is audited.
+            new ones added, but nothing is deleted. Word templates are checked again, as on upload. Every change is audited.
         </p>
         <div class="alert alert-warning small py-2">
             <span class="bi bi-exclamation-triangle me-1"></span>Importing <strong>roles</strong> and <strong>AD mappings</strong>
@@ -151,7 +151,8 @@
         try
         {
             using var ms = new MemoryStream();
-            await e.File.OpenReadStream(maxAllowedSize: 8 * 1024 * 1024).CopyToAsync(ms);
+            // 64 MB: the bundle carries the Word template library.
+            await e.File.OpenReadStream(maxAllowedSize: 64 * 1024 * 1024).CopyToAsync(ms);
             var (envelope, verification) = Config.ParseAndVerify(ms.ToArray());
             _incoming = envelope.Bundle;
             _verification = verification;

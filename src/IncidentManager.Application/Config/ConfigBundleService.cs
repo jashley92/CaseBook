@@ -17,7 +17,7 @@ public sealed record ConfigExport(byte[] Content, string FileName, ConfigBundleE
 /// the "seed pack". Scope is deliberately the <b>editable</b> configuration only: operational + taxonomy
 /// settings (bounded by the same whitelist the admin console writes, so connection strings, auth mode,
 /// signing keys and the SIEM endpoint are never included), roles + AD mappings, case templates, stage gates,
-/// report profiles, and data elements. Cases, evidence and the audit chain are records, not configuration,
+/// report profiles and their Word templates, data elements and notification rules. Cases, evidence and the audit chain are records, not configuration,
 /// and are never exported. The export itself is recorded in the tamper-evident audit trail.
 /// </summary>
 public sealed partial class ConfigBundleService
@@ -30,11 +30,16 @@ public sealed partial class ConfigBundleService
     private readonly ISettingsReloader? _reloader;
     private readonly IRoleDirectory? _roles;
     private readonly ISecurityEventSink? _siem;
+    private readonly Reporting.IReportTemplateEngine? _templateEngine;   // PROD-47
+    private readonly Reporting.IReportTemplateStore? _templateStore;
 
     public ConfigBundleService(IAppDbContextFactory factory, ISealSigner signer, IAuditWriter audit,
         ICurrentUser user, IClock clock, ISettingsReloader? reloader = null, IRoleDirectory? roles = null,
-        ISecurityEventSink? siem = null)
+        ISecurityEventSink? siem = null, Reporting.IReportTemplateEngine? templateEngine = null,
+        Reporting.IReportTemplateStore? templateStore = null)
     {
+        _templateEngine = templateEngine;
+        _templateStore = templateStore;
         _factory = factory;
         _signer = signer;
         _audit = audit;
@@ -70,18 +75,38 @@ public sealed partial class ConfigBundleService
             .Select(m => new ConfigRoleMapping(m.AdGroup, m.RoleName))
             .ToListAsync(ct);
 
-        var templateRows = await db.CaseTemplates.AsNoTracking().Include(t => t.Steps)
+        var caseTemplateRows = await db.CaseTemplates.AsNoTracking().Include(t => t.Steps)
             .OrderBy(t => t.SortOrder).ThenBy(t => t.Name).ToListAsync(ct);
-        var templates = templateRows.Select(ToConfig).ToList();
+        var templates = caseTemplateRows.Select(ToConfig).ToList();
 
         var gateRows = await db.StageGates.AsNoTracking().Include(g => g.Requirements)
             .OrderBy(g => g.Trigger).ThenBy(g => g.Name).ToListAsync(ct);
         var gates = gateRows.Select(ToConfig).ToList();
 
-        var profiles = await db.ReportProfiles.AsNoTracking()
-            .OrderBy(p => p.SortOrder).ThenBy(p => p.Name)
-            .Select(p => new ConfigReportProfile(p.Name, p.Description, p.IsActive, p.SortOrder, p.SectionLayout))
-            .ToListAsync(ct);
+        // PROD-47: the Word template library travels with its files, so a profile's default still resolves after a
+        // promotion. Without a template store (a host with templates off) neither the library nor defaults are carried.
+        var templateRows = _templateStore is null ? null
+            : await db.ReportTemplates.AsNoTracking().OrderBy(t => t.Name).ToListAsync(ct);
+        List<ConfigReportTemplate>? reportTemplates = null;
+        if (templateRows is not null)
+        {
+            reportTemplates = [];
+            foreach (var t in templateRows)
+            {
+                var bytes = await _templateStore!.GetAsync(t.Id, ct)
+                    ?? throw new InvalidOperationException(
+                        $"The file for Word template \"{t.Name}\" is missing from the template store. Replace or delete the template, then export again.");
+                reportTemplates.Add(new ConfigReportTemplate(t.Name, t.FileName, t.IsActive, t.Sha256, Convert.ToBase64String(bytes)));
+            }
+        }
+        var templateNames = templateRows?.ToDictionary(t => t.Id, t => t.Name) ?? [];
+
+        var profileRows = await db.ReportProfiles.AsNoTracking()
+            .OrderBy(p => p.SortOrder).ThenBy(p => p.Name).ToListAsync(ct);
+        var profiles = profileRows
+            .Select(p => new ConfigReportProfile(p.Name, p.Description, p.IsActive, p.SortOrder, p.SectionLayout,
+                p.TemplateId is { } id && templateNames.TryGetValue(id, out var n) ? n : null))
+            .ToList();
 
         var dataElements = await db.DataElements.AsNoTracking().OrderBy(e => e.SortOrder).ThenBy(e => e.Key)
             .Select(e => new ConfigDataElement(e.Key, e.Label, e.SortOrder, e.IsActive, e.IsSystem, e.NotificationJurisdictions))
@@ -91,7 +116,8 @@ public sealed partial class ConfigBundleService
             .Select(r => new ConfigNotificationRule(r.Code, r.Label, r.WindowHours, r.IsActive, r.IsSystem))
             .ToListAsync(ct);
 
-        return new ConfigBundle(settings, roles, mappings, templates, gates, profiles, dataElements, notificationRules);
+        return new ConfigBundle(settings, roles, mappings, templates, gates, profiles, dataElements, notificationRules,
+            reportTemplates);
     }
 
     /// <summary>Builds, signs, and packages the bundle for download, recording the export in the audit trail.</summary>
@@ -121,7 +147,8 @@ public sealed partial class ConfigBundleService
         await _audit.RecordAsync(AuditAction.Export, "ConfigBundle", null, null,
             $"Exported configuration bundle ({bundle.Settings.Count} settings, {bundle.Roles.Count} roles, " +
             $"{bundle.CaseTemplates.Count} templates, {bundle.StageGates.Count} gates, " +
-            $"{bundle.ReportProfiles.Count} report profiles, {bundle.DataElements.Count} data elements, " +
+            $"{bundle.ReportProfiles.Count} report profiles, {bundle.ReportTemplates?.Count ?? 0} Word templates, " +
+            $"{bundle.DataElements.Count} data elements, " +
             $"{bundle.NotificationRules.Count} notification rules)", ct);
 
         return new ConfigExport(bytes, fileName, envelope);

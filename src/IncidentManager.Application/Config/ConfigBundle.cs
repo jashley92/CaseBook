@@ -36,8 +36,15 @@ public sealed record ConfigStageGate(
     string Trigger, bool IsActive, string Name, string? Description, IReadOnlyList<ConfigGateRequirement> Requirements,
     int CommentaryMinLength = 0);
 
-/// <summary>A report profile (named report section layout).</summary>
-public sealed record ConfigReportProfile(string Name, string? Description, bool IsActive, int SortOrder, string? SectionLayout);
+/// <summary>A report profile (named report section layout). <see cref="Template"/> names its default Word template
+/// (schema v3); null means the built-in layout. Left out of the JSON when null, so a v2 bundle still verifies.</summary>
+public sealed record ConfigReportProfile(string Name, string? Description, bool IsActive, int SortOrder, string? SectionLayout,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Template = null);
+
+/// <summary>A Word report template from the library (PROD-47, schema v3), carried with its file so a promoted
+/// report profile keeps its default. Matched on import by <see cref="Name"/>; the file is checked again before
+/// it's stored, and <see cref="Sha256"/> must match <see cref="ContentBase64"/>.</summary>
+public sealed record ConfigReportTemplate(string Name, string FileName, bool IsActive, string Sha256, string ContentBase64);
 
 /// <summary>A data-element reference row (X-03). Matched on import by its stable <see cref="Key"/>.</summary>
 public sealed record ConfigDataElement(
@@ -58,7 +65,11 @@ public sealed record ConfigBundle(
     IReadOnlyList<ConfigReportProfile> ReportProfiles,
     IReadOnlyList<ConfigDataElement> DataElements,
     // Added in schema v2 (PROD-07). A v1 bundle omits it and deserializes to null — read sites guard with `?? []`.
-    IReadOnlyList<ConfigNotificationRule> NotificationRules);
+    IReadOnlyList<ConfigNotificationRule> NotificationRules,
+    // Added in schema v3 (PROD-47). Null on an older bundle, which then leaves the library and profile defaults alone.
+    // Left out of the JSON when null, so a v2 bundle's canonical form (and signature) is unchanged.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<ConfigReportTemplate>? ReportTemplates = null);
 
 /// <summary>
 /// The downloadable file: the <see cref="ConfigBundle"/> plus provenance and a signature over the bundle's
@@ -76,7 +87,8 @@ public static class ConfigBundleJson
 {
     public const string FormatTag = "casebook-config-bundle";
     // v2 (PROD-07) added ConfigBundle.NotificationRules. Older v1 bundles still import (the field reads as empty).
-    public const int CurrentSchemaVersion = 2;
+    // v3 (PROD-47) added the Word template library and each report profile's default template.
+    public const int CurrentSchemaVersion = 3;
 
     /// <summary>Human-readable, stable-cased options for the downloadable envelope file (diff-friendly).</summary>
     public static readonly JsonSerializerOptions File = new(JsonSerializerDefaults.Web)

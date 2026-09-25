@@ -198,7 +198,7 @@ awaiting-report, and at-risk/overdue) — reminders only, never an automatic sta
 
 ### Configuration bundle
 Export an instance's **editable configuration** — operational & taxonomy settings, roles & AD mappings,
-case templates, stage gates, report profiles, data elements, and notification-deadline rules — as a single **signed, versioned**
+case templates, stage gates, report profiles with their Word templates, data elements, and notification-deadline rules — as a single **signed, versioned**
 JSON "seed pack" to snapshot a setup, diff it against an IRP revision, promote config from a test
 instance to production, or stand up a new **white-label** instance from a known baseline. Import is
 **additive and previewed**: the signature is verified first, then a diff shows exactly what would change

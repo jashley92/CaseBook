@@ -77,6 +77,7 @@ public sealed partial class ConfigBundleService
     public async Task<ConfigDiff> PreviewAsync(ConfigBundle incoming, CancellationToken ct = default)
     {
         var live = await BuildBundleAsync(ct);
+        await CheckReportTemplatesAsync(incoming, ct);   // a bad template stops the import here, before the preview
         var items = new List<ConfigDiffItem>();
 
         Diff("Setting", incoming.Settings.Where(IsImportableSetting), live.Settings, s => s.Key, items);
@@ -84,6 +85,7 @@ public sealed partial class ConfigBundleService
         Diff("AD mapping", incoming.RoleMappings, live.RoleMappings, m => $"{m.AdGroup} → {m.RoleName}", items);
         Diff("Case template", incoming.CaseTemplates, live.CaseTemplates, t => t.Name, items);
         Diff("Stage gate", incoming.StageGates, live.StageGates, g => g.Name, items);
+        Diff("Word template", incoming.ReportTemplates ?? [], live.ReportTemplates ?? [], t => t.Name, items);
         Diff("Report profile", incoming.ReportProfiles, live.ReportProfiles, p => p.Name, items);
         // Notification rules match on their portable jurisdiction Code (null when importing a pre-v2 bundle).
         Diff("Notification rule", incoming.NotificationRules ?? [], live.NotificationRules, r => r.Code, items);
@@ -138,6 +140,8 @@ public sealed partial class ConfigBundleService
         var changedSettings = new List<string>();
         var changedRoles = new List<string>();
         var addedMappings = new List<string>();
+
+        var templateFiles = await CheckReportTemplatesAsync(bundle, ct);
 
         using var db = _factory.CreateDbContext();
         var now = _clock.UtcNow;
@@ -263,7 +267,40 @@ public sealed partial class ConfigBundleService
             }
         }
 
+        // --- Word templates (PROD-47; match by name, ignoring case; files were checked above) ---
+        var libraryRows = await db.ReportTemplates.ToListAsync(ct);
+        var library = libraryRows.ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+        foreach (var t in bundle.ReportTemplates ?? [])
+        {
+            var bytes = templateFiles[t.Name];
+            var fileName = Path.GetFileName(t.FileName);
+            if (!library.TryGetValue(t.Name, out var existing))
+            {
+                var created = new ReportTemplate { Name = t.Name, FileName = fileName, IsActive = t.IsActive,
+                    Sha256 = t.Sha256.ToLowerInvariant(), SizeBytes = bytes.LongLength, CreatedBy = actor, CreatedAtUtc = now };
+                await _templateStore!.SaveAsync(created.Id, bytes, ct);
+                db.ReportTemplates.Add(created);
+                library[t.Name] = created;
+                Tally(true, true);
+            }
+            else
+            {
+                var fileChanged = !string.Equals(existing.Sha256, t.Sha256, StringComparison.OrdinalIgnoreCase);
+                var changed = fileChanged || existing.Name != t.Name || existing.FileName != fileName
+                    || existing.IsActive != t.IsActive;
+                if (fileChanged) await _templateStore!.SaveAsync(existing.Id, bytes, ct);
+                if (changed) { existing.Name = t.Name; existing.FileName = fileName; existing.IsActive = t.IsActive;
+                    existing.Sha256 = t.Sha256.ToLowerInvariant(); existing.SizeBytes = bytes.LongLength;
+                    existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
+                Tally(false, changed);
+            }
+        }
+
         // --- Report profiles ---
+        // A bundle that carries the template library (v3) also sets each profile's default template (null = the built-in
+        // layout). An older bundle leaves defaults as they are.
+        var carriesTemplates = bundle.ReportTemplates is not null;
+        Guid? TemplateIdFor(ConfigReportProfile p) => p.Template is null ? null : library[p.Template].Id;
         var profiles = await db.ReportProfiles.ToListAsync(ct);
         foreach (var p in bundle.ReportProfiles)
         {
@@ -271,15 +308,18 @@ public sealed partial class ConfigBundleService
             if (existing is null)
             {
                 db.ReportProfiles.Add(new ReportProfile { Name = p.Name, Description = p.Description, IsActive = p.IsActive,
-                    SortOrder = p.SortOrder, SectionLayout = p.SectionLayout, CreatedBy = actor, CreatedAtUtc = now });
+                    SortOrder = p.SortOrder, SectionLayout = p.SectionLayout,
+                    TemplateId = carriesTemplates ? TemplateIdFor(p) : null, CreatedBy = actor, CreatedAtUtc = now });
                 Tally(true, true);
             }
             else
             {
+                var templateId = carriesTemplates ? TemplateIdFor(p) : existing.TemplateId;
                 var changed = existing.Description != p.Description || existing.IsActive != p.IsActive
-                    || existing.SortOrder != p.SortOrder || existing.SectionLayout != p.SectionLayout;
+                    || existing.SortOrder != p.SortOrder || existing.SectionLayout != p.SectionLayout
+                    || existing.TemplateId != templateId;
                 if (changed) { existing.Description = p.Description; existing.IsActive = p.IsActive;
-                    existing.SortOrder = p.SortOrder; existing.SectionLayout = p.SectionLayout;
+                    existing.SortOrder = p.SortOrder; existing.SectionLayout = p.SectionLayout; existing.TemplateId = templateId;
                     existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
                 Tally(false, changed);
             }
@@ -346,6 +386,66 @@ public sealed partial class ConfigBundleService
             _siem?.Emit(SecurityEvents.MappingChanged("AdGroupMappingImported", _user.UserId, _user.UserPrincipalName, mapping));
 
         return new ConfigImportResult(added, updated, unchanged);
+    }
+
+    /// <summary>
+    /// PROD-47: checks a bundle's Word templates exactly as an upload is checked (a plain .docx within the size limit,
+    /// no macros, embedded objects or externally loaded content, known placeholders only), that each file matches its
+    /// recorded SHA-256, and that after the import every report profile's default template exists and is active.
+    /// Returns the decoded files by name. Throws with every problem listed, so nothing is written.
+    /// </summary>
+    private async Task<Dictionary<string, byte[]>> CheckReportTemplatesAsync(ConfigBundle bundle, CancellationToken ct)
+    {
+        var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        if (bundle.ReportTemplates is null) return files;   // an older bundle: the library is left alone
+        if (bundle.ReportTemplates.Count > 0 && (_templateEngine is null || _templateStore is null))
+            throw new InvalidOperationException("This bundle includes Word templates, but Word templates aren't available on this server.");
+
+        var problems = new List<string>();
+        foreach (var t in bundle.ReportTemplates)
+        {
+            var label = string.IsNullOrWhiteSpace(t.Name) ? "(unnamed)" : t.Name;
+            if (string.IsNullOrWhiteSpace(t.Name) || t.Name.Trim() != t.Name || t.Name.Length > 200)
+            { problems.Add($"Word template \"{label}\": the name must be 1 to 200 characters with no leading or trailing spaces."); continue; }
+            if (files.ContainsKey(t.Name)) { problems.Add($"Word template \"{label}\" appears more than once."); continue; }
+            if (t.FileName is null || !t.FileName.EndsWith(".docx", StringComparison.OrdinalIgnoreCase))
+            { problems.Add($"Word template \"{label}\": only .docx files are accepted."); continue; }
+
+            byte[] bytes;
+            try { bytes = Convert.FromBase64String(t.ContentBase64 ?? ""); }
+            catch (FormatException) { problems.Add($"Word template \"{label}\": the file content couldn't be read."); continue; }
+            if (bytes.Length == 0 || bytes.Length > Admin.ReportTemplateService.MaxTemplateBytes)
+            { problems.Add($"Word template \"{label}\": the file must be non-empty and {Admin.ReportTemplateService.MaxTemplateBytes / 1024 / 1024} MB or smaller."); continue; }
+            if (!string.Equals(Convert.ToHexString(SHA256.HashData(bytes)), t.Sha256, StringComparison.OrdinalIgnoreCase))
+            { problems.Add($"Word template \"{label}\": the file doesn't match its recorded SHA-256."); continue; }
+
+            var check = _templateEngine!.Check(bytes);
+            if (!check.Ok) { problems.Add($"Word template \"{label}\": {string.Join(" ", check.Problems)}"); continue; }
+            files[t.Name] = bytes;
+        }
+
+        // Every profile's default must resolve to an active template once the import is applied: the bundle's version of
+        // a template wins over the live one, and the bundle's profiles set their default (other live profiles keep theirs).
+        using var db = _factory.CreateDbContext();
+        var liveTemplates = await db.ReportTemplates.AsNoTracking().Select(t => new { t.Id, t.Name, t.IsActive }).ToListAsync(ct);
+        var active = liveTemplates.ToDictionary(t => t.Name, t => t.IsActive, StringComparer.OrdinalIgnoreCase);
+        foreach (var t in bundle.ReportTemplates.Where(t => files.ContainsKey(t.Name ?? ""))) active[t.Name] = t.IsActive;
+        var liveNames = liveTemplates.ToDictionary(t => t.Id, t => t.Name);
+        var defaults = (await db.ReportProfiles.AsNoTracking().Where(p => p.TemplateId != null)
+                .Select(p => new { p.Name, p.TemplateId }).ToListAsync(ct))
+            .ToDictionary(p => p.Name, p => liveNames.GetValueOrDefault(p.TemplateId!.Value), StringComparer.Ordinal);
+        foreach (var p in bundle.ReportProfiles) defaults[p.Name] = p.Template;
+        foreach (var (profile, template) in defaults.Where(d => d.Value is not null).OrderBy(d => d.Key, StringComparer.Ordinal))
+        {
+            if (!active.TryGetValue(template!, out var isActive))
+                problems.Add($"Report profile \"{profile}\" uses the Word template \"{template}\", which isn't in the bundle or on this server.");
+            else if (!isActive)
+                problems.Add($"Report profile \"{profile}\" uses the Word template \"{template}\", which would be archived. A profile's default template must be active.");
+        }
+
+        if (problems.Count > 0)
+            throw new InvalidOperationException("This bundle can't be imported. " + string.Join(" ", problems));
+        return files;
     }
 
     private static StageGateRequirement NewRequirement(Guid gateId, ConfigGateRequirement r) => new()

@@ -7,7 +7,9 @@ using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Infrastructure.Persistence.Interceptors;
 using IncidentManager.Infrastructure.Realtime;
+using IncidentManager.Infrastructure.Reporting;
 using IncidentManager.Infrastructure.Security;
+using IncidentManager.Infrastructure.Storage;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -440,5 +442,140 @@ public sealed class ConfigBundleServiceTests : IDisposable
         (await db.AppSettings.AsNoTracking().AnyAsync(x => x.Key == "Security:IdleTimeoutMinutes")).Should().BeFalse();
     }
 
-    public void Dispose() => _connection.Dispose();
+    // --- PROD-47: the Word template library travels in the bundle ---
+
+    private readonly WordTemplateEngine _engine = new();
+    private readonly List<SqliteConnection> _extraConnections = [];
+
+    /// <summary>A separate instance: its own database and template store, sharing this test's user and clock.</summary>
+    private (IAppDbContextFactory Factory, FileReportTemplateStore Store, ConfigBundleService Config) NewInstance(string name)
+    {
+        var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        _extraConnections.Add(connection);
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(connection)
+            .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
+            .Options;
+        var db = new AppDbContext(options);
+        db.Database.EnsureCreated();
+        var store = new FileReportTemplateStore(
+            Options.Create(new ReportTemplateOptions { RootPath = Path.Combine(_workDir, name, "templates") }),
+            Options.Create(new ReportBrandingOptions()));
+        var factory = new TestDbContextFactory(options);
+        var config = new ConfigBundleService(factory, _signer, new AuditWriter(db, _hasher, _user, _clock), _user, _clock,
+            templateEngine: _engine, templateStore: store);
+        return (factory, store, config);
+    }
+
+    /// <summary>Seeds report profiles and a library template set as the first profile's default.</summary>
+    private async Task<(Guid TemplateId, string Profile)> SeedTemplateDefaultAsync(IAppDbContextFactory factory, FileReportTemplateStore store)
+    {
+        using (var db = (AppDbContext)factory.CreateDbContext())
+            await DevDataSeeder.SeedDefaultReportProfilesAsync(db, _clock);
+        var templates = new IncidentManager.Application.Admin.ReportTemplateService(factory, _user, _clock, _engine, store);
+        var upload = await templates.UploadAsync("Examiner pack", "examiner.docx", _engine.Starter());
+        upload.Id.Should().NotBeNull();
+        using var db2 = factory.CreateDbContext();
+        var profile = await db2.ReportProfiles.OrderBy(p => p.SortOrder).FirstAsync();
+        profile.TemplateId = upload.Id;
+        await db2.SaveChangesAsync();
+        return (upload.Id!.Value, profile.Name);
+    }
+
+    [Fact]
+    public async Task Word_templates_and_profile_defaults_are_promoted_to_another_instance()
+    {
+        var source = NewInstance("source");
+        var (sourceTemplateId, profileName) = await SeedTemplateDefaultAsync(source.Factory, source.Store);
+        var export = await source.Config.ExportAsync();
+        export.Envelope.SchemaVersion.Should().Be(3);
+        var bundle = export.Envelope.Bundle;
+        bundle.ReportTemplates.Should().ContainSingle(t => t.Name == "Examiner pack" && t.FileName == "examiner.docx");
+        bundle.ReportProfiles.Single(p => p.Name == profileName).Template.Should().Be("Examiner pack");
+
+        var target = NewInstance("target");
+        var (parsed, verification) = target.Config.ParseAndVerify(export.Content);
+        verification.SignatureValid.Should().BeTrue();
+        (await target.Config.PreviewAsync(parsed.Bundle)).Items
+            .Should().Contain(i => i.Section == "Word template" && i.Name == "Examiner pack" && i.Change == ConfigChange.Add);
+
+        await target.Config.ImportAsync(parsed.Bundle);
+
+        using (var db = target.Factory.CreateDbContext())
+        {
+            var t = await db.ReportTemplates.SingleAsync();
+            t.Name.Should().Be("Examiner pack");
+            t.Id.Should().NotBe(sourceTemplateId, "the target instance gives the template its own id");
+            (await db.ReportProfiles.SingleAsync(p => p.Name == profileName)).TemplateId.Should().Be(t.Id);
+            (await target.Store.GetAsync(t.Id)).Should().Equal(
+                Convert.FromBase64String(bundle.ReportTemplates!.Single().ContentBase64), "the file is stored on the target");
+        }
+
+        // Re-importing the same bundle changes nothing.
+        var again = await target.Config.ImportAsync(parsed.Bundle);
+        again.Added.Should().Be(0);
+        again.Updated.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_v2_bundle_still_verifies_and_leaves_the_template_library_alone()
+    {
+        var instance = NewInstance("v2");
+        var (templateId, profileName) = await SeedTemplateDefaultAsync(instance.Factory, instance.Store);
+        var live = await instance.Config.BuildBundleAsync();
+        var v2 = live with { ReportTemplates = null, ReportProfiles = live.ReportProfiles.Select(p => p with { Template = null }).ToList() };
+
+        // The new fields are left out of the canonical form when absent, so a v2 bundle's signature is unchanged.
+        var canonical = ConfigBundleJson.Canonicalize(v2);
+        canonical.Should().NotContain("reportTemplates").And.NotContain("\"template\"");
+
+        await instance.Config.ImportAsync(v2);
+
+        using var db = instance.Factory.CreateDbContext();
+        (await db.ReportProfiles.SingleAsync(p => p.Name == profileName)).TemplateId.Should().Be(templateId,
+            "an older bundle carries no defaults, so it doesn't clear one");
+        (await db.ReportTemplates.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_bundle_template_that_fails_its_checks_stops_the_import_before_anything_is_written()
+    {
+        var source = NewInstance("bad-src");
+        await SeedTemplateDefaultAsync(source.Factory, source.Store);
+        var bundle = await source.Config.BuildBundleAsync();
+        var template = bundle.ReportTemplates!.Single();
+
+        var target = NewInstance("bad-dst");
+        using (var db = (AppDbContext)target.Factory.CreateDbContext())
+            await DevDataSeeder.SeedDefaultReportProfilesAsync(db, _clock);
+
+        // Content that doesn't match its recorded hash.
+        var altered = _engine.Starter();
+        altered[^1] ^= 0xFF;
+        var tampered = bundle with { ReportTemplates = [template with { ContentBase64 = Convert.ToBase64String(altered) }] };
+        await target.Config.Invoking(c => c.PreviewAsync(tampered)).Should()
+            .ThrowAsync<InvalidOperationException>().WithMessage("*doesn't match its recorded SHA-256*");
+        await target.Config.Invoking(c => c.ImportAsync(tampered)).Should().ThrowAsync<InvalidOperationException>();
+
+        // A profile default that would end up archived.
+        var archived = bundle with { ReportTemplates = [template with { IsActive = false }] };
+        await target.Config.Invoking(c => c.ImportAsync(archived)).Should()
+            .ThrowAsync<InvalidOperationException>().WithMessage("*would be archived*");
+
+        // A macro-enabled file isn't a template, whatever the bundle calls it.
+        var macro = bundle with { ReportTemplates = [template with { FileName = "examiner.docm" }] };
+        await target.Config.Invoking(c => c.ImportAsync(macro)).Should()
+            .ThrowAsync<InvalidOperationException>().WithMessage("*only .docx*");
+
+        using var check = target.Factory.CreateDbContext();
+        (await check.ReportTemplates.CountAsync()).Should().Be(0, "nothing is written when a template fails");
+        (await check.ReportProfiles.CountAsync(p => p.TemplateId != null)).Should().Be(0);
+    }
+
+    public void Dispose()
+    {
+        _connection.Dispose();
+        foreach (var c in _extraConnections) c.Dispose();
+    }
 }
