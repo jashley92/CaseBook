@@ -151,13 +151,6 @@ public sealed class MaterialityDeterminationTests : IDisposable
             (await verify.Cases.FirstAsync(c => c.Id == id)).Phase.Should().Be(CasePhase.Closed);
     }
 
-    private sealed class NoOpCaseNotifications : ICaseNotifications
-    {
-        public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnAssignedAsync(Case c, string assigneeUserId, string assigneeDisplayName, CaseAssignmentRole role, string assignedByUserId, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default) => Task.CompletedTask;
-    }
 
     public void Dispose() => _connection.Dispose();
 }

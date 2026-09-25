@@ -54,13 +54,6 @@ public sealed class CaseActionAuthorizationTests : IDisposable
         new(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
             new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
 
-    private sealed class NoOpCaseNotifications : ICaseNotifications
-    {
-        public Task OnAssignedAsync(IncidentManager.Domain.Entities.Case c, string assigneeUserId, string assigneeDisplayName, CaseAssignmentRole role, string assignedByUserId, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsOverdueAsync(System.Collections.Generic.IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsDueSoonAsync(System.Collections.Generic.IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnReclassifiedAsync(IncidentManager.Domain.Entities.Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
-    }
 
     private async Task<Guid> CreateIncidentAsync(CaseService svc)
     {

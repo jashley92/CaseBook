@@ -1229,7 +1229,7 @@
         }
 
         await LoadAsync();
-        Toasts.Success(changed == 0 ? $"No changes to save in {group}." : $"Saved {changed} {group} setting(s).");
+        Toasts.Success(changed == 0 ? $"No changes to save in {group}." : $"Saved {IncidentManager.Application.Common.Plural.Of(changed, $"{group} setting")}.");
     }
 
     private async Task ResetOne(string key)

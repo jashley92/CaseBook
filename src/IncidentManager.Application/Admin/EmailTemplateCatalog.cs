@@ -67,12 +67,12 @@ public static class EmailTemplateCatalog
             "overdue",
             "Overdue task reminder",
             "Sent to an item's owner, or the incident commander, when a task passes its due date.",
-            "{{ItemCount}} overdue task(s)",
+            "Overdue tasks: {{ItemCount}}",
             """
             <h1>Overdue tasks</h1>
             <p>These tasks are past their due date:</p>
             {{ItemsList}}
-            <p>Open the case(s) to update or close them.</p>
+            <p>Open each case to update or close them.</p>
             """,
             new[]
             {
@@ -86,10 +86,10 @@ public static class EmailTemplateCatalog
             "overdue-escalated",
             "Overdue item escalation",
             "Sent to a case's incident commander, then to managers, when a task stays overdue past the configured hours. A reminder only: nothing is reassigned.",
-            "Escalation: {{ItemCount}} task(s) still overdue",
+            "Escalation: tasks still overdue ({{ItemCount}})",
             """
             <h1>Tasks still overdue</h1>
-            <p>You're receiving this as {{Audience}}. The following follow-up item(s) are still open well past their due date:</p>
+            <p>You're receiving this as {{Audience}}. These tasks are still open well past their due date:</p>
             {{ItemsList}}
             <p>The owner has already been reminded. Check in with them or the case team.</p>
             """,
@@ -126,12 +126,12 @@ public static class EmailTemplateCatalog
             "action-item-due-soon",
             "Due-soon task reminder",
             "Sent to an item's owner, or the incident commander, when a task comes due within the lead window.",
-            "{{ItemCount}} task(s) due soon",
+            "Tasks due soon: {{ItemCount}}",
             """
             <h1>Tasks due soon</h1>
             <p>These tasks are due within the next {{LeadHours}} hours:</p>
             {{ItemsList}}
-            <p>Open the case(s) to progress or close them before they're overdue.</p>
+            <p>Open each case to progress or close them before they're overdue.</p>
             """,
             new[]
             {
@@ -146,10 +146,10 @@ public static class EmailTemplateCatalog
             "notification-deadline",
             "Regulatory notification-deadline reminder",
             "Sent to a case's incident commander and assignees when its regulatory notification deadline is near or past and the case isn't marked reported. Needs the deadline clock on.",
-            "{{ItemCount}} case(s) approaching a regulatory notification deadline",
+            "Regulatory notification deadline near or past: {{ItemCount}}",
             """
             <h1>Regulatory notification deadline</h1>
-            <p>The following case(s) are at risk of, or already past, a regulatory notification deadline and have <strong>not yet been marked reported</strong>:</p>
+            <p>These cases are at risk of, or already past, a regulatory notification deadline and have <strong>not yet been marked reported</strong>:</p>
             {{ItemsList}}
             <p>Review each case's notification status and record the reported milestone once notice is given. CaseBook only records the milestone. It never files on your behalf.</p>
             """,
@@ -158,14 +158,14 @@ public static class EmailTemplateCatalog
                 new EmailToken("ItemCount", "How many cases are approaching or past a deadline for this recipient."),
                 new EmailToken("ItemsList", "The formatted list of cases (case, title, jurisdiction, standing, deadline). Rendered by the app."),
             },
-            CtaLabel: "Review the case(s)",
+            CtaLabel: "Review cases",
             CtaUrlToken: "DeadlinesUrl"),
 
         new EmailTemplateDefinition(
             "digest",
             "Personal work digest",
             "A user's open follow-up items, grouped as overdue, due today and due this week, sent daily or weekly. Users opt in under account menu → Notifications.",
-            "Your CaseBook work digest: {{ItemCount}} open item(s)",
+            "Your CaseBook work digest: {{ItemCount}} open",
             """
             <h1>Your work digest</h1>
             <p>Here are your open follow-up items across the cases you're working, as of this {{Cadence}} digest:</p>
@@ -185,10 +185,10 @@ public static class EmailTemplateCatalog
             "stale-case",
             "Stale-case nudge",
             "Sent to a case's incident commander and assignees when an open case has no recorded activity for longer than its severity's threshold. Needs stale-case nudges on.",
-            "{{ItemCount}} open case(s) with no recent activity",
+            "Open cases with no recent activity: {{ItemCount}}",
             """
             <h1>Cases with no recent activity</h1>
-            <p>The following open case(s) have had no recorded activity for a while and may be stalled:</p>
+            <p>These open cases have had no recorded activity for a while and may be stalled:</p>
             {{ItemsList}}
             <p>Open each case to record progress or move it forward. This is only a reminder. Nothing on the case has changed.</p>
             """,
@@ -197,7 +197,7 @@ public static class EmailTemplateCatalog
                 new EmailToken("ItemCount", "How many stale cases there are for this recipient."),
                 new EmailToken("ItemsList", "The formatted list of stale cases (case, title, severity, days quiet). Rendered by the app."),
             },
-            CtaLabel: "Review the case(s)",
+            CtaLabel: "Review cases",
             CtaUrlToken: "StaleUrl"),
 
         new EmailTemplateDefinition(
@@ -268,7 +268,7 @@ public static class EmailTemplateCatalog
             "evidence-drift-alarm",
             "Evidence-at-rest drift alarm",
             "Sent to the integrity-alert distribution when stored evidence no longer matches its recorded hash. A critical SIEM event is sent either way.",
-            "ALERT: evidence-at-rest integrity failure ({{DriftCount}} item(s))",
+            "ALERT: evidence-at-rest integrity failure ({{DriftCount}} drifted)",
             """
             <h1>Evidence-at-rest integrity failure</h1>
             <p>Re-verification found stored evidence that no longer matches its recorded SHA-256. This may be bit-rot or tampering.</p>

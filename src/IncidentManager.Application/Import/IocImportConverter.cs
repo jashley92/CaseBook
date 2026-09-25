@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using IncidentManager.Domain.Enums;
+using IncidentManager.Application.Common;
 
 namespace IncidentManager.Application.Import;
 
@@ -106,7 +107,7 @@ public static partial class IocImportConverter
 
         var notes = new List<string>();
         if (unparsedPatterns > 0)
-            notes.Add($"{unparsedPatterns} STIX indicator pattern(s) were too complex to read (only simple \"[type:property = 'value']\" comparisons are imported).");
+            notes.Add($"{Plural.Of(unparsedPatterns, "STIX indicator pattern")} {(unparsedPatterns == 1 ? "was" : "were")} too complex to read (only simple \"[type:property = 'value']\" comparisons are imported).");
         if (skipped.Count > 0)
             notes.Add("Not imported (no matching CaseBook entity): " +
                       string.Join(", ", skipped.Select(kv => $"{kv.Value} × {kv.Key}")) + ".");
@@ -234,7 +235,7 @@ public static partial class IocImportConverter
 
         var notes = new List<string>();
         if (unknownTypes > 0)
-            notes.Add($"{unknownTypes} row(s) had a type CaseBook doesn't recognize. Their type was detected from the value.");
+            notes.Add($"{Plural.Of(unknownTypes, "row")} had a type CaseBook doesn't recognize, so the type was detected from the value.");
         if (!hasHeader)
             notes.Add("No header row found, so the first column was read as the indicator.");
         var origin = string.IsNullOrWhiteSpace(fileName) ? "IOC CSV" : $"IOC CSV ({Path.GetFileName(fileName)})";

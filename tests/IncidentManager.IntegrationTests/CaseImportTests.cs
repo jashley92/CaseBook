@@ -55,18 +55,11 @@ public sealed class CaseImportTests : IDisposable
 
     private CaseService NewCaseService(AppDbContext db) =>
         new(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
-            new NoOpNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
 
     private CaseImportService NewImportService(AppDbContext db) =>
         new(NewFactory(), _user, _clock, NewCaseService(db));
 
-    private sealed class NoOpNotifications : ICaseNotifications
-    {
-        public Task OnAssignedAsync(Case c, string a, string b, CaseAssignmentRole r, string d, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
-    }
 
     // ── Parse (pure) ─────────────────────────────────────────────────────────────────────────────
 

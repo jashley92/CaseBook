@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
+using IncidentManager.Application.Common;
 
 namespace IncidentManager.Application.Lessons;
 
@@ -73,7 +74,7 @@ public static class CaseNarrative
                 sb.Append('\n');
             }
             if (steps.Count > MaxSteps)
-                sb.Append(CultureInfo.InvariantCulture, $"- …and {steps.Count - MaxSteps} further step(s) on the case timeline.\n");
+                sb.Append(CultureInfo.InvariantCulture, $"- …and {Plural.Of(steps.Count - MaxSteps, "further step")} on the case timeline.\n");
             sb.Append('\n');
         }
 

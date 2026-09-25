@@ -36,16 +36,9 @@ public sealed class LegalHoldReleaseTests : IDisposable
 
     private CaseService Service(AppDbContext db) =>
         new(new TestDbContextFactory(Options()), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
-            new NoOpNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
             siem: null, legalHold: _options);
 
-    private sealed class NoOpNotifications : ICaseNotifications
-    {
-        public Task OnAssignedAsync(Case c, string a, string b, CaseAssignmentRole r, string d, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
-    }
 
     private async Task<(AppDbContext Db, CaseService Svc, Guid Id)> HeldCaseAsync()
     {

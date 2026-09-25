@@ -47,13 +47,6 @@ public sealed class CaseRestrictionTests : IDisposable
         new(new TestDbContextFactory(Options()), _user, _clock, new CaseNumberGenerator(NewContext()), new CreateCaseValidator(),
             new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
 
-    private sealed class NoOpCaseNotifications : ICaseNotifications
-    {
-        public Task OnAssignedAsync(Case c, string assigneeUserId, string assigneeDisplayName, CaseAssignmentRole role, string assignedByUserId, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
-    }
 
     private async Task<Guid> SeedOpenCaseAsync(string? ic = null)
     {

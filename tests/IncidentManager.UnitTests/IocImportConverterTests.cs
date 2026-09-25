@@ -89,7 +89,7 @@ public class IocImportConverterTests
             ("IpAddress", "198.51.100.7", "Malicious"),
             (null, "phish.example", "Suspicious"));
         r.Document.Entities[0].Description.Should().Be("seen in \"wave 2\", multi-line\nnote");
-        r.Notes.Should().Contain(n => n.Contains("1 row(s) had a type"));
+        r.Notes.Should().Contain(n => n.Contains("1 row had a type"));
     }
 
     [Fact]

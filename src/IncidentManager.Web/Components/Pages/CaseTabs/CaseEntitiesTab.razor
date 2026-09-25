@@ -22,7 +22,7 @@
 {
     <div class="card mb-3 border-info">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <span><span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>Possibly related open case(s)</span>
+            <span><span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>Possibly related open cases</span>
             <button class="btn btn-sm btn-link p-0 text-muted" @onclick="() => _relatedDismissed = true" title="Hide until the next indicator is added">Dismiss</button>
         </div>
         <div class="card-body">
@@ -656,7 +656,7 @@ else
             await LoadOverlaps(); // pasted IOCs may correlate with other cases — refresh "also in"
             _relatedDismissed = false; // pasted IOCs may reveal related cases — re-surface the suggestion (PROD-40)
             await LoadRelated();
-            Toasts.Success($"Added {added} indicator(s)");
+            Toasts.Success($"Added {IncidentManager.Application.Common.Plural.Of(added, "indicator")}");
         }
         catch (Exception ex)
         {
@@ -908,7 +908,7 @@ else
             if (label.Length > 22) label = label[..21] + "…";
             var color = Ui.DispositionColor(e.Disposition);
             nodes.Add(new($"ioc-{entityId:N}", $"{Ui.EntityGlyph(e.Type)} {label}",
-                $"{Ui.Label(e.Type)}: {e.Value} · shared with {list.Count} other case(s)", ShapeFor(e.Type), new GraphColor(color, color),
+                $"{Ui.Label(e.Type)}: {e.Value} · shared with {IncidentManager.Application.Common.Plural.Of(list.Count, "other case")}", ShapeFor(e.Type), new GraphColor(color, color),
                 null));   // indicators keep the theme-aware default label colour
             foreach (var o in list) others.TryAdd(o.OtherCaseId, o.OtherCaseNumber);
         }

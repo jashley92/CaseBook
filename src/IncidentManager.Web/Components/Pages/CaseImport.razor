@@ -357,7 +357,7 @@ else if (_pending.Count > 0)
 
     <div class="nc-actions">
         <button class="btn btn-primary" @onclick="Apply" disabled="@(_applying || !CanApply(p))">
-            <span class="bi bi-check2-circle me-1" aria-hidden="true"></span>@(_reviewingPendingId is null ? "Apply import" : "Confirm & apply") (@p.IncludedItemCount item(s))
+            <span class="bi bi-check2-circle me-1" aria-hidden="true"></span>@(_reviewingPendingId is null ? "Apply import" : "Confirm & apply") (@IncidentManager.Application.Common.Plural.Of(p.IncludedItemCount, "item"))
         </button>
         @if (_reviewingPendingId is not null)
         {
@@ -575,7 +575,7 @@ else if (_pending.Count > 0)
             var result = await Import.ApplyAsync(p);
             if (_reviewingPendingId is { } pid) await Import.MarkPendingAppliedAsync(pid, result);
             var what = result.CaseCreated ? $"Case {result.CaseNumber} created" : $"Imported into {result.CaseNumber}";
-            Toasts.Success($"{what}. {result.Total} item(s) imported.");
+            Toasts.Success($"{what}. {IncidentManager.Application.Common.Plural.Of(result.Total, "item")} imported.");
             Nav.NavigateTo($"cases/{result.CaseId}");
         }
         catch (Exception ex)

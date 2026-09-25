@@ -3,6 +3,7 @@ using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using IncidentManager.Application.Common;
 
 namespace IncidentManager.Application.Admin;
 
@@ -164,7 +165,7 @@ public sealed class DataElementService
         var refCount = await db.CaseDataElements.CountAsync(c => c.ElementKey == el.Key, ct);
         if (refCount > 0)
             throw new InvalidOperationException(
-                $"'{el.Label}' is recorded on {refCount} case(s) and can't be deleted. Archive it instead.");
+                $"'{el.Label}' is recorded on {Plural.Of(refCount, "case")} and can't be deleted. Archive it instead.");
 
         db.DataElements.Remove(el);
         await db.SaveChangesAsync(ct);

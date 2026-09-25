@@ -118,7 +118,7 @@
                             </table>
                         </div>
                         <button class="btn btn-sm btn-primary" @onclick="Apply" disabled="@(!_verification.SignatureValid || _applying)">
-                            <span class="bi bi-check2-circle me-1"></span>Apply import (@_diff.Changes.Count change(s))
+                            <span class="bi bi-check2-circle me-1"></span>Apply import (@IncidentManager.Application.Common.Plural.Of(_diff.Changes.Count, "change"))
                         </button>
                     }
                     else

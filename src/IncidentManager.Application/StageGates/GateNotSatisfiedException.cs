@@ -1,4 +1,5 @@
 using IncidentManager.Domain.Enums;
+using IncidentManager.Application.Common;
 
 namespace IncidentManager.Application.StageGates;
 
@@ -14,7 +15,7 @@ public sealed class GateNotSatisfiedException : Exception
 
     public GateNotSatisfiedException(StageGateTrigger trigger, string? gateName,
         IReadOnlyList<GateRequirementResult> unmet)
-        : base($"Stage gate '{gateName}' is not satisfied: {unmet.Count} required item(s) outstanding. " +
+        : base($"Stage gate '{gateName}' is not satisfied: {Plural.Of(unmet.Count, "required item")} outstanding. " +
                "Complete them or override with a recorded justification.")
     {
         Trigger = trigger;

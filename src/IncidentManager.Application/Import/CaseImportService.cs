@@ -6,6 +6,7 @@ using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Domain.Observables;
 using Microsoft.EntityFrameworkCore;
+using IncidentManager.Application.Common;
 
 namespace IncidentManager.Application.Import;
 
@@ -307,7 +308,7 @@ public sealed class CaseImportService
         var target = p.TargetKind == CaseImportTargetKind.ExistingCase
             ? $"Into {p.ExistingCaseNumber ?? "an existing case"}"
             : $"New case: {(string.IsNullOrWhiteSpace(p.NewCase?.Title) ? "(untitled)" : p.NewCase!.Title)}";
-        var s = $"{target} ({p.IncludedItemCount} item(s))";
+        var s = $"{target} ({Plural.Of(p.IncludedItemCount, "item")})";
         return s.Length <= 300 ? s : s[..300];
     }
 
@@ -416,7 +417,7 @@ public sealed class CaseImportService
                 DueAtUtc = a.DueAtUtc
             });
         }
-        if (droppedTasks > 0) p.Warnings.Add($"{droppedTasks} task(s) had no title and were skipped.");
+        if (droppedTasks > 0) p.Warnings.Add(droppedTasks == 1 ? "1 task had no title and was skipped." : $"{droppedTasks} tasks had no title and were skipped.");
 
         return p;
     }

@@ -6,6 +6,7 @@ using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using IncidentManager.Application.Common;
 
 namespace IncidentManager.Infrastructure.Notifications;
 
@@ -190,8 +191,8 @@ public sealed class CaseNotifications : ICaseNotifications
         {
             var caseCount = items.Select(i => i.CaseId).Distinct().Count();
             await _chat.SendAsync(new ChatNotification(
-                $"{items.Count} task(s) overdue",
-                $"Across {caseCount} case(s). Owners were emailed where reachable.",
+                $"{Plural.Of(items.Count, "task")} overdue",
+                $"Across {Plural.Of(caseCount, "case")}. Owners were emailed where reachable.",
                 OverdueUrl(), ChatUrgency.Alert), ct);
         }
 
@@ -237,8 +238,8 @@ public sealed class CaseNotifications : ICaseNotifications
         {
             var caseCount = items.Select(i => i.Item.CaseId).Distinct().Count();
             await _chat.SendAsync(new ChatNotification(
-                $"{items.Count} overdue task(s) escalated",
-                $"Across {caseCount} case(s). Incident commanders and managers were emailed where reachable.",
+                $"{Plural.Of(items.Count, "overdue task")} escalated",
+                $"Across {Plural.Of(caseCount, "case")}. Incident commanders and managers were emailed where reachable.",
                 OverdueUrl(), ChatUrgency.Alert), ct);
         }
 
@@ -353,8 +354,8 @@ public sealed class CaseNotifications : ICaseNotifications
         {
             var caseCount = items.Select(i => i.CaseId).Distinct().Count();
             await _chat.SendAsync(new ChatNotification(
-                $"{items.Count} task(s) due within {leadHours}h",
-                $"Across {caseCount} case(s). Owners were emailed where reachable.",
+                $"{Plural.Of(items.Count, "task")} due within {leadHours}h",
+                $"Across {Plural.Of(caseCount, "case")}. Owners were emailed where reachable.",
                 AgendaUrl()), ct);
         }
 
@@ -401,8 +402,8 @@ public sealed class CaseNotifications : ICaseNotifications
             var caseCount = reminders.Select(r => r.CaseId).Distinct().Count();
             var breached = reminders.Count(r => r.State == SlaState.Breached);
             var detail = breached > 0
-                ? $"{breached} past deadline, {reminders.Count - breached} at risk, across {caseCount} case(s). Incident commanders and owners were emailed where reachable."
-                : $"{reminders.Count} case(s) approaching a deadline. Incident commanders and owners were emailed where reachable.";
+                ? $"{breached} past deadline, {reminders.Count - breached} at risk, across {Plural.Of(caseCount, "case")}. Incident commanders and owners were emailed where reachable."
+                : $"{Plural.Of(reminders.Count, "case")} approaching a deadline. Incident commanders and owners were emailed where reachable.";
             await _chat.SendAsync(new ChatNotification(
                 "Regulatory notification deadline", detail,
                 CasesUrl(), ChatUrgency.Alert), ct);
@@ -457,7 +458,7 @@ public sealed class CaseNotifications : ICaseNotifications
         {
             var caseCount = reminders.Select(r => r.CaseId).Distinct().Count();
             await _chat.SendAsync(new ChatNotification(
-                $"{caseCount} case(s) with no recent activity",
+                $"{Plural.Of(caseCount, "case")} with no recent activity",
                 "These open cases have had no activity past their severity threshold. Incident commanders and owners were emailed where reachable.",
                 CasesUrl()), ct);
         }
@@ -549,7 +550,7 @@ public sealed class CaseNotifications : ICaseNotifications
     {
         var lis = reminders.Select(r =>
             $"<li>{WebUtility.HtmlEncode(r.CaseNumber)} — {WebUtility.HtmlEncode(r.CaseTitle)} " +
-            $"({WebUtility.HtmlEncode(Sev(r.Severity))}: no activity for {r.DaysInactive} day(s))</li>");
+            $"({WebUtility.HtmlEncode(Sev(r.Severity))}: no activity for {Plural.Of(r.DaysInactive, "day")})</li>");
         return "<ul>" + string.Join("", lis) + "</ul>";
     }
 

@@ -8,6 +8,7 @@ using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
+using IncidentManager.Application.Common;
 
 namespace IncidentManager.Application.Cases;
 
@@ -1063,7 +1064,7 @@ public sealed class CaseService
         primary.Notes.Add(new AnalystNote
         {
             CaseId = primary.Id, CreatedBy = _user.UserId, CreatedAtUtc = now,
-            Body = $"**Supersedes duplicate {dup.CaseNumber}.**" + (copyIndicators ? $" {copied} indicator(s) copied across." : "")
+            Body = $"**Supersedes duplicate {dup.CaseNumber}.**" + (copyIndicators ? $" {Plural.Of(copied, "indicator")} copied across." : "")
                    + $"\n\nReason: {reason}",
         });
 

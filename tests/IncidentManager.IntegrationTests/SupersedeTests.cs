@@ -10,6 +10,7 @@ using IncidentManager.Infrastructure.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
+using System;
 
 namespace IncidentManager.IntegrationTests;
 
@@ -33,13 +34,6 @@ public sealed class SupersedeTests : IDisposable
             .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
             .Options;
 
-    private sealed class NoOpNotifications : ICaseNotifications
-    {
-        public Task OnAssignedAsync(Case c, string a, string b, CaseAssignmentRole r, string d, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
-    }
 
     private async Task<(AppDbContext Db, CaseService Svc, Guid Dup, Guid Primary)> SeedAsync()
     {
@@ -55,7 +49,7 @@ public sealed class SupersedeTests : IDisposable
         db.Cases.AddRange(primary, dup);
         await db.SaveChangesAsync();
         var svc = new CaseService(new TestDbContextFactory(Options()), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
-            new NoOpNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
         return (db, svc, dup.Id, primary.Id);
     }
 
@@ -81,7 +75,7 @@ public sealed class SupersedeTests : IDisposable
         (await read.Notes.AsNoTracking().Where(n => n.CaseId == dup).Select(n => n.Body).SingleAsync())
             .Should().StartWith("**Superseded by 2026-01_Main.**").And.Contain("Same wave, filed twice");
         (await read.Notes.AsNoTracking().Where(n => n.CaseId == primary).Select(n => n.Body).SingleAsync())
-            .Should().Contain("1 indicator(s) copied");
+            .Should().Contain("1 indicator copied");
 
         (await read.Cases.AsNoTracking().SingleAsync(c => c.Id == dup)).Phase.Should().NotBe(CasePhase.Closed,
             "closing stays a separate, gated human act");

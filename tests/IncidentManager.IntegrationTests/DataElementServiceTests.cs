@@ -10,6 +10,7 @@ using IncidentManager.Infrastructure.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
+using System;
 
 namespace IncidentManager.IntegrationTests;
 
@@ -147,7 +148,7 @@ public sealed class DataElementServiceTests : IDisposable
 
         (await svc.ListAllAsync()).Single(e => e.Key == custom.Key).IsDeletable.Should().BeFalse();
         var act = () => svc.DeleteAsync(custom.Id);
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*case(s)*archive*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*1 case*archive*");
     }
 
     [Fact]

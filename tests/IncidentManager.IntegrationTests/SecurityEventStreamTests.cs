@@ -262,21 +262,13 @@ public sealed class SecurityEventEmitSiteTests : IDisposable
         return db;
     }
 
-    private sealed class NoOpNotifications : ICaseNotifications
-    {
-        public System.Threading.Tasks.Task OnAssignedAsync(IncidentManager.Domain.Entities.Case c, string assigneeUserId, string assigneeDisplayName, IncidentManager.Domain.Enums.CaseAssignmentRole role, string assignedByUserId, System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
-        public System.Threading.Tasks.Task OnActionItemsOverdueAsync(System.Collections.Generic.IReadOnlyList<IncidentManager.Application.Abstractions.OverdueActionItem> items, System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
-        public System.Threading.Tasks.Task OnActionItemsDueSoonAsync(System.Collections.Generic.IReadOnlyList<IncidentManager.Application.Abstractions.DueSoonActionItem> items, int leadHours, System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
-        public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default)
-            => Task.CompletedTask;
-    }
 
     private CaseService NewCaseService(AppDbContext db) =>
         new(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
                 .UseSqlite(_connection)
                 .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
                 .Options),
-            _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(), new NoOpNotifications(),
+            _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(), new NoOpCaseNotifications(),
             new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(), _siem);
 
     [Fact]

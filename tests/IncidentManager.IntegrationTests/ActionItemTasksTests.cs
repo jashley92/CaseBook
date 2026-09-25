@@ -197,14 +197,6 @@ public sealed class ActionItemTasksTests : IDisposable
         public void Invalidate() { }
     }
 
-    private sealed class NoOpCaseNotifications : ICaseNotifications
-    {
-        public Task OnAssignedAsync(IncidentManager.Domain.Entities.Case c, string assigneeUserId, string assigneeDisplayName, CaseAssignmentRole role, string assignedByUserId, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnReclassifiedAsync(IncidentManager.Domain.Entities.Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
-        public Task OnMentionedAsync(IncidentManager.Domain.Entities.Case c, string byUserId, IReadOnlyCollection<string> mentionedUserIds, string commentExcerpt, CancellationToken ct = default) => Task.CompletedTask;
-    }
 
     public void Dispose() => _connection.Dispose();
 }

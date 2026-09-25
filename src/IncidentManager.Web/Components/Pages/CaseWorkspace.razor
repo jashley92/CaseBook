@@ -1503,7 +1503,7 @@ else
                 {
                     var res = await Cases.SupersedeAsync(Id, _supersedeTargetId!.Value, _supersedeCopy, _supersedeReason ?? "");
                     _closeAfterSupersede = $"Duplicate of {res.PrimaryCaseNumber}: {_supersedeReason?.Trim()}";
-                    done = $"Superseded by {res.PrimaryCaseNumber}" + (_supersedeCopy ? $" · {res.IndicatorsCopied} indicator(s) copied" : "")
+                    done = $"Superseded by {res.PrimaryCaseNumber}" + (_supersedeCopy ? $" · {IncidentManager.Application.Common.Plural.Of(res.IndicatorsCopied, "indicator")} copied" : "")
                            + ". Close this case to finish.";
                     break;
                 }
