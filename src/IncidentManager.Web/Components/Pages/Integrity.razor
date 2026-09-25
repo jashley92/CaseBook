@@ -196,7 +196,9 @@ else
 
     private async Task Seal()
     {
-        var seal = await IntegritySvc.SealAsync();
+        IntegritySeal? seal;
+        try { seal = await IntegritySvc.SealAsync(); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { _sealMessage = ex.Message; return; }
         _sealMessage = seal is null
             ? "Nothing to seal yet."
             : $"Sealed through sequence {seal.UpToSequence} at {seal.SealedAtUtc:u} (key {seal.KeyId}).";

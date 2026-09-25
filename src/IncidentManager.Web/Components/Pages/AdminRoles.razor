@@ -342,7 +342,7 @@ else
             else
                 await Roles.UpdateRoleAsync(_editing.Id!.Value, _editing.Description, _editing.Permissions);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;
@@ -355,7 +355,7 @@ else
     private async Task DeleteRole(Role r)
     {
         try { await Roles.DeleteRoleAsync(r.Id); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;
@@ -367,7 +367,7 @@ else
     private async Task AddMapping()
     {
         try { await Roles.AddMappingAsync(_newGroup, _newRole); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;
@@ -380,7 +380,7 @@ else
     private async Task RemoveMapping(AdGroupRoleMapping m)
     {
         try { await Roles.RemoveMappingAsync(m.Id); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;

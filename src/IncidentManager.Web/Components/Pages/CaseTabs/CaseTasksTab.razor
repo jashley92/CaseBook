@@ -391,7 +391,7 @@ else
             Toasts.Success("Comment added");
             await OnChanged.InvokeAsync(); // refresh the rest of the workspace (audit trail, live-collab)
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
         }
@@ -455,7 +455,7 @@ else
             await OnChanged.InvokeAsync();
             Toasts.Success("Task updated");
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
         }
@@ -522,7 +522,7 @@ else
         foreach (var id in _selected.ToList())
         {
             try { await Cases.SetActionItemStatusAsync(CaseId, id, ActionItemStatus.Done); done++; }
-            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Toasts.Error(ex.Message); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
         }
         _selected.Clear();
         if (done > 0)
@@ -571,7 +571,7 @@ else
             var n = await Cases.ApplyTemplateAsync(CaseId, _applyTemplate.Id, _applySelected.ToList(), _applyDefaultOwner);
             Toasts.Success($"Added {n} task{(n == 1 ? "" : "s")} from '{_applyTemplate.Name}'");
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;

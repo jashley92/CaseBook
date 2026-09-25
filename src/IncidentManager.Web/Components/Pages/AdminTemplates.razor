@@ -254,7 +254,7 @@ else
             if (_edit.IsNew) await Templates.CreateAsync(input);
             else await Templates.UpdateAsync(_edit.Id!.Value, input);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;
@@ -268,7 +268,7 @@ else
     private async Task DeleteTemplate(TemplateView t)
     {
         try { await Templates.DeleteAsync(t.Id); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;

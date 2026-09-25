@@ -151,7 +151,7 @@ else
             ComposerDrafts?.Remove(ComposerId); // FR-02: the draft is now saved
             try { await JS.InvokeVoidAsync("markdownEditor.setValue", ComposerId, ""); } catch (JSException) { /* best effort */ }
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
         }

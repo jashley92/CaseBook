@@ -1053,7 +1053,8 @@
 
     private async Task SaveLayout()
     {
-        await Settings.SetAsync("Reporting:SectionLayout", ReportLayout.Serialize(_layout));
+        try { await Settings.SetAsync("Reporting:SectionLayout", ReportLayout.Serialize(_layout)); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
         await LoadAsync();
         Toasts.Success("Saved report section layout.");
     }
@@ -1094,8 +1095,16 @@
         if (accent is not null && !BrandPalette.IsValidHex(accent)) { _brandError = "Accent color must be a hex value like #2563eb."; return; }
         if (ink is not null && !BrandPalette.IsValidHex(ink)) { _brandError = "Primary action color must be a hex value like #232a33."; return; }
 
-        if (accent is null) await Settings.ResetAsync("Branding:AccentColor"); else await Settings.SetAsync("Branding:AccentColor", accent);
-        if (ink is null) await Settings.ResetAsync("Branding:InkColor"); else await Settings.SetAsync("Branding:InkColor", ink);
+        try
+        {
+            if (accent is null) await Settings.ResetAsync("Branding:AccentColor"); else await Settings.SetAsync("Branding:AccentColor", accent);
+            if (ink is null) await Settings.ResetAsync("Branding:InkColor"); else await Settings.SetAsync("Branding:InkColor", ink);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _brandError = ex.Message;
+            return;
+        }
 
         await LoadAsync();
         await JS.InvokeVoidAsync("imBrand.apply", BrandPalette.BuildCss(accent, ink) ?? "");
@@ -1104,8 +1113,16 @@
 
     private async Task ResetBrand()
     {
-        await Settings.ResetAsync("Branding:AccentColor");
-        await Settings.ResetAsync("Branding:InkColor");
+        try
+        {
+            await Settings.ResetAsync("Branding:AccentColor");
+            await Settings.ResetAsync("Branding:InkColor");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _brandError = ex.Message;
+            return;
+        }
         _accentColor = null;
         _inkColor = null;
         _brandError = null;
@@ -1182,7 +1199,7 @@
                 }
             }
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;
@@ -1194,7 +1211,8 @@
 
     private async Task ResetOne(string key)
     {
-        await Settings.ResetAsync(key);
+        try { await Settings.ResetAsync(key); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
         await LoadAsync();
         Toasts.Info("Reverted to default.");
     }

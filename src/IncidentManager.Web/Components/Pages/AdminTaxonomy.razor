@@ -173,7 +173,7 @@ else
                     await Taxonomy.SetLabelAsync(kindId, m.Value, next);
             }
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;

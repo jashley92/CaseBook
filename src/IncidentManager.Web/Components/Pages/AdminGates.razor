@@ -308,7 +308,7 @@ else
             if (_edit.IsNew) await Gates.CreateAsync(input);
             else await Gates.UpdateAsync(_edit.Id!.Value, input);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;
@@ -322,7 +322,7 @@ else
     private async Task DeleteGate(StageGateView g)
     {
         try { await Gates.DeleteAsync(g.Id); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;

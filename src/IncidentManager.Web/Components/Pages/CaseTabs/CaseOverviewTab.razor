@@ -700,7 +700,7 @@
             await OnChanged.InvokeAsync();
             Toasts.Success("Reported milestone recorded");
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             _reportedError = ex.Message;
         }
@@ -831,7 +831,7 @@
             await OnChanged.InvokeAsync(); // refresh the rest of the workspace to the newer values
             return;
         }
-        catch (ArgumentException ex) // domain validation (future detection / activity after detection)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) // domain validation (future detection / activity after detection), permission
         {
             _detailsError = ex.Message;
             return;
@@ -894,6 +894,11 @@
             _impactBaseline = ex.CurrentStamp;
             _impactError = "Someone else saved the impact assessment while you were editing, so your entries weren't saved. Review the current values, then Save again to overwrite them, or Cancel to discard yours.";
             await OnChanged.InvokeAsync();
+            return;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _impactError = ex.Message;
             return;
         }
         _editingImpact = false;
@@ -966,20 +971,26 @@
         _techMatrixOpen = false;
         var current = Case.Techniques.ToList();
 
-        foreach (var t in current.Where(t => !desired.ContainsKey(t.TechniqueId)))
-            await Cases.RemoveTechniqueAsync(CaseId, t.Id);
-
-        foreach (var kv in desired)
+        try
         {
-            var existing = current.FirstOrDefault(t => string.Equals(t.TechniqueId, kv.Key, StringComparison.OrdinalIgnoreCase));
-            if (existing is null)
-                await Cases.AddTechniqueAsync(CaseId, kv.Key, AttackCatalog.Find(kv.Key)?.Name ?? "", kv.Value);
-            else if (existing.Tactic != kv.Value)
-                await Cases.AddTechniqueAsync(CaseId, kv.Key, existing.Name, kv.Value);
-        }
+            foreach (var t in current.Where(t => !desired.ContainsKey(t.TechniqueId)))
+                await Cases.RemoveTechniqueAsync(CaseId, t.Id);
 
-        await OnChanged.InvokeAsync();
-        Toasts.Success("Techniques updated");
+            foreach (var kv in desired)
+            {
+                var existing = current.FirstOrDefault(t => string.Equals(t.TechniqueId, kv.Key, StringComparison.OrdinalIgnoreCase));
+                if (existing is null)
+                    await Cases.AddTechniqueAsync(CaseId, kv.Key, AttackCatalog.Find(kv.Key)?.Name ?? "", kv.Value);
+                else if (existing.Tactic != kv.Value)
+                    await Cases.AddTechniqueAsync(CaseId, kv.Key, existing.Name, kv.Value);
+            }
+            Toasts.Success("Techniques updated");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
+        await OnChanged.InvokeAsync(); // reload either way, so a partial update shows what was saved
     }
 
     // --- Related cases (E-14) ---
@@ -1030,9 +1041,10 @@
             if (created is null) { Toasts.Warning("Those cases are already linked."); }
             else { Toasts.Success("Case linked."); }
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Warning(ex.Message);
+            return; // keep the picker and description so the user can adjust and retry
         }
         _addingLink = false;
         ClearLinkTarget();

@@ -182,7 +182,7 @@
             ClearUpload();
             await LoadAsync();
         }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
         }

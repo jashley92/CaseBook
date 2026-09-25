@@ -707,7 +707,8 @@ else
 
     private async Task RemoveEntity(Guid entityId)
     {
-        await Cases.RemoveEntityAsync(CaseId, entityId);
+        try { await Cases.RemoveEntityAsync(CaseId, entityId); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error($"Couldn't remove the entity. {ex.Message}"); return; }
         await OnChanged.InvokeAsync();
         await LoadOverlaps(); // keep the overlap map in sync with the current entity set
         await LoadRelated();  // a removed IOC may drop a correlation (don't un-dismiss on a removal)
@@ -739,7 +740,8 @@ else
 
     private async Task RemoveRelationship(Guid relationshipId)
     {
-        await Cases.UnlinkAsync(CaseId, relationshipId);
+        try { await Cases.UnlinkAsync(CaseId, relationshipId); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error($"Couldn't remove the relationship. {ex.Message}"); return; }
         await OnChanged.InvokeAsync();
         Toasts.Success("Relationship removed");
     }

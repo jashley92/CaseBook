@@ -471,7 +471,7 @@ else
             // The editors stay open with this user's text, so nothing is lost; they can copy it, then reload.
             Toasts.Error(ex.Message);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
         }
@@ -495,7 +495,7 @@ else
             Toasts.Success("Improvement action logged");
             await OnChanged.InvokeAsync();
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
         }
@@ -533,7 +533,7 @@ else
             Toasts.Success("Improvement action updated");
             await OnChanged.InvokeAsync();
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
         }
@@ -569,7 +569,7 @@ else
             Toasts.Success($"Generated {r.FileName}");
             await OnChanged.InvokeAsync();
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
         }
@@ -583,7 +583,7 @@ else
             var r = await Reports.ApproveAsync(reportId);
             Toasts.Success($"Approved {r.FileName} as the locked final");
         }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
         }

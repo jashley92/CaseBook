@@ -174,7 +174,7 @@ else
                                 <button class="dropdown-item" @onclick="AssignToMe">Assign to me</button>
                             }
                             <button class="dropdown-item" @onclick='() => OpenModal("severity")'>Change severity…</button>
-                            <button class="dropdown-item" @onclick='() => OpenModal("status")'>Change status…</button>
+                            <button class="dropdown-item" @onclick='() => OpenModal("status")'>Change phase…</button>
                             <button class="dropdown-item" @onclick='() => OpenModal("legal")'>Refer to Legal / Privacy…</button>
                             @* FR-07: the materiality determination gates closing an Incident/Breach, and the
                                analyst who owns the case's timeline/data is the one who records it — so it needs
@@ -1384,14 +1384,21 @@ else
     {
         var action = _confirm?.OnConfirm;
         _confirm = null;
-        if (action is not null) await action();
+        if (action is null) return;
+        // One guard for every tab's confirm callback: a refused or stale write shows its reason instead of
+        // replacing the page with the error fallback.
+        try { await action(); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
     }
 
     private string ModalTitle() => _activeModal switch
     {
         "reclass" => _case?.Classification is null ? "Promote onto the ladder" : "Reclassify case",
         "severity" => "Change severity",
-        "status" => "Change status",
+        "status" => "Change phase",
         "legal" => "Refer to Legal / Privacy",
         "holdrelease" => Cases.LegalHoldReleaseNeedsSecondApprover ? "Request legal hold release" : "Release legal hold",
         "supersede" => "Supersede as a duplicate",
@@ -1489,7 +1496,7 @@ else
                     await Cases.ChangePhaseAsync(Id, _newPhase, _phaseReason,
                         _attested.Count > 0 ? _attested : null, _gateOverride);
                     _phaseReason = null;
-                    done = $"Status changed to {Ui.Label(_newPhase)}";
+                    done = $"Phase changed to {Ui.Label(_newPhase)}";
                     break;
                 case "supersede":
                 {
@@ -1618,7 +1625,7 @@ else
         {
             await Cases.ChangePhaseAsync(Id, phase, null);
             await Reload();
-            Toasts.Success($"Status changed to {Ui.Label(phase)}");
+            Toasts.Success($"Phase changed to {Ui.Label(phase)}");
         }
         catch (ForbiddenException)
         {
@@ -1742,23 +1749,34 @@ else
             await Reload();
             Toasts.Success("Legal hold released");
         }
-        catch (InvalidOperationException ex) { Toasts.Error(ex.Message); }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
     }
 
     private async Task CancelHoldRelease()
     {
-        await Cases.CancelLegalHoldReleaseAsync(Id);
-        await Reload();
-        Toasts.Success("Release request withdrawn; the hold stays in force");
+        try
+        {
+            await Cases.CancelLegalHoldReleaseAsync(Id);
+            await Reload();
+            Toasts.Success("Release request withdrawn. The hold stays in force.");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
     }
 
     private async Task SetLegalHold(bool held)
     {
         _actionsOpen = false;
         _retentionMsg = null;
-        await Cases.SetLegalHoldAsync(Id, held, reason: null);
-        await Reload();
-        Toasts.Success(held ? "Legal hold placed" : "Legal hold released");
+        try
+        {
+            await Cases.SetLegalHoldAsync(Id, held, reason: null);
+            await Reload();
+            Toasts.Success(held ? "Legal hold placed" : "Legal hold released");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
     }
 
     private async Task SetArchived(bool archived)
@@ -1771,7 +1789,7 @@ else
             await Reload();
             Toasts.Success(archived ? "Case archived" : "Case restored");
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException)
         {
             _retentionMsg = ex.Message;
         }
@@ -1801,7 +1819,7 @@ else
         if (_canEdit)
         {
             list.Add(new("Change severity…", "bi-thermometer-half", () => OpenModalFromPalette("severity")));
-            list.Add(new("Change status…", "bi-signpost-split", () => OpenModalFromPalette("status")));
+            list.Add(new("Change phase…", "bi-signpost-split", () => OpenModalFromPalette("status")));
             list.Add(new("Refer to Legal / Privacy…", "bi-briefcase", () => OpenModalFromPalette("legal")));
             if (_case.Classification is Classification.Incident or Classification.Breach)
                 list.Add(new("Record materiality determination…", "bi-clipboard2-check", () => OpenModalFromPalette("materiality")));

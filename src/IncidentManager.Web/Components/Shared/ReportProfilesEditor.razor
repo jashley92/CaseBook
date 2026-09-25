@@ -244,7 +244,7 @@
             Toasts.Success($"Template {e.File.Name} set for “{p.Name}” ({check.Placeholders.Count} fields). Word reports with this profile use it.");
         }
         catch (IOException) { _templateProblems = [$"A template must be {ReportProfileService.MaxTemplateBytes / 1024 / 1024} MB or smaller."]; }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { _templateProblems = [ex.Message]; }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { _templateProblems = [ex.Message]; }
     }
 
     private void ConfirmRemoveTemplate(ReportProfileView p) => _confirm.Ask(this, "Remove template",
@@ -252,7 +252,8 @@
         "Reports already generated are unchanged.",
         "Remove template", async () =>
         {
-            await Profiles.RemoveTemplateAsync(p.Id);
+            try { await Profiles.RemoveTemplateAsync(p.Id); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
             await LoadAsync();
             Toasts.Info("Template removed.");
         });
@@ -302,7 +303,7 @@
             if (_edit.IsNew) await Profiles.CreateAsync(input);
             else await Profiles.UpdateAsync(_edit.Id!.Value, input);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;
@@ -316,7 +317,7 @@
     private async Task Delete(ReportProfileView p)
     {
         try { await Profiles.DeleteAsync(p.Id); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;

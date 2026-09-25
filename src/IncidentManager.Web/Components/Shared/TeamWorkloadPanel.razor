@@ -341,7 +341,7 @@ else
                         await Cases.UnassignAsync(id, _reassignFromId);
                     done++;
                 }
-                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
                 {
                     Toasts.Error(ex.Message);
                 }

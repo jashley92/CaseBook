@@ -196,7 +196,7 @@ else
             await LoadAsync();
             Toasts.Success($"System token “{_created.Token.Name}” created.");
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
         }
@@ -210,7 +210,7 @@ else
             await LoadAsync();
             Toasts.Info($"Revoked “{t.Name}”.");
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
         }

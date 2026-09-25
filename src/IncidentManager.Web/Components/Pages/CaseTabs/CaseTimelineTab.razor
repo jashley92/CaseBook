@@ -574,6 +574,9 @@ else
 
     // U-40: a screenshot pasted into the composer, staged in memory and attached as evidence on Add.
     private byte[]? _tlShotBytes;
+    // The staged screenshot's evidence id once uploaded, so a retry after a failed save links the same file
+    // instead of uploading a second copy.
+    private Guid? _tlShotEvidenceId;
     private string? _tlShotName;
     private string _tlShotType = "image/png";
 
@@ -720,6 +723,7 @@ else
             using var ms = new MemoryStream();
             await s.CopyToAsync(ms);
             _tlShotBytes = ms.ToArray();
+            _tlShotEvidenceId = null;
             _tlShotName = f.Name;
             _tlShotType = string.IsNullOrWhiteSpace(f.ContentType) ? "image/png" : f.ContentType;
         }
@@ -730,7 +734,7 @@ else
         }
     }
 
-    private void ClearTimelineShot() { _tlShotBytes = null; _tlShotName = null; }
+    private void ClearTimelineShot() { _tlShotBytes = null; _tlShotName = null; _tlShotEvidenceId = null; }
 
     private string TlShotDataUri() =>
         _tlShotBytes is null ? "" : $"data:{_tlShotType};base64,{Convert.ToBase64String(_tlShotBytes)}";
@@ -739,8 +743,10 @@ else
     private async Task<Guid?> UploadTimelineShotAsync()
     {
         if (_tlShotBytes is null) return null;
+        if (_tlShotEvidenceId is { } uploaded) return uploaded;
         await using var s = new MemoryStream(_tlShotBytes);
         var ev = await Evidence.UploadAsync(CaseId, _tlShotName ?? "pasted-screenshot.png", _tlShotType, s, "Pasted into the timeline");
+        _tlShotEvidenceId = ev.Id;
         return ev.Id;
     }
 
@@ -751,8 +757,17 @@ else
 
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = WallToUtc(_tlWhen);
-        var shotId = await UploadTimelineShotAsync();
-        await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, _tlDesc, _tlSource, evidenceId: shotId);
+        Guid? shotId;
+        try
+        {
+            shotId = await UploadTimelineShotAsync();
+            await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, _tlDesc, _tlSource, evidenceId: shotId);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error($"Couldn't add the timeline entry. {ex.Message}");
+            return;
+        }
         _tlDesc = ""; _tlSource = null; ClearTimelineShot();
         ComposerDrafts?.Remove(InvEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
@@ -766,10 +781,11 @@ else
     {
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = WallToUtc(_tlWhen);
-        var shotId = await UploadTimelineShotAsync();
         var disclosure = IsThirdParty && !_evtAttackMode;
+        Guid? shotId;
         try
         {
+            shotId = await UploadTimelineShotAsync();
             if (disclosure)
             {
                 await Cases.AddEventStepAsync(CaseId, whenUtc, Array.Empty<MitreTactic>(), null, null, null,
@@ -783,7 +799,7 @@ else
                 await Cases.AddEventStepAsync(CaseId, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, evidenceId: shotId);
             }
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;
@@ -847,7 +863,7 @@ else
                 await Cases.EditEventStepAsync(CaseId, id, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, _tlReason);
             }
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
             return;
@@ -878,7 +894,8 @@ else
         catch (JSException) { /* fall back to bound value */ }
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = WallToUtc(_tlWhen);
-        await Cases.EditInvestigationEntryAsync(CaseId, id, _tlType, whenUtc, _tlDesc, _tlSource, _tlReason);
+        try { await Cases.EditInvestigationEntryAsync(CaseId, id, _tlType, whenUtc, _tlDesc, _tlSource, _tlReason); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error($"Couldn't save the entry. {ex.Message}"); return; }
         await CancelTimelineEdit();
         await OnChanged.InvokeAsync();
         Toasts.Success("Investigation entry saved as a new version");

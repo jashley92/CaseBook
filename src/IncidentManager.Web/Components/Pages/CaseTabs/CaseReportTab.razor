@@ -181,7 +181,11 @@
     private async Task Generate(ReportFormat format)
     {
         // Persist a changed profile choice first so the generated report matches the selection on screen.
-        if (_profileDirty) await SaveProfile();
+        if (_profileDirty)
+        {
+            await SaveProfile();
+            if (_profileDirty) return; // the save failed and said why; don't generate against the old profile
+        }
         IncidentManager.Domain.Entities.Report report;
         try { report = await Reports.GenerateAsync(CaseId, format, _tlp); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't generate the report. {ex.Message}"); return; }
@@ -198,7 +202,7 @@
             var r = await Reports.ApproveAsync(reportId);
             Toasts.Success($"Approved {r.FileName} as the locked final");
         }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or ForbiddenException)
         {
             Toasts.Error(ex.Message);
         }
