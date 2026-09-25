@@ -66,12 +66,12 @@ else if (_pending.Count > 0)
         </p>
         <div class="row g-2 align-items-end">
             <div class="col-md-3">
-                <label class="form-label small mb-1">Your AI tool</label>
-                <input class="form-control form-control-sm" @bind="_promptTool" placeholder="e.g. Copilot" />
+                <label class="form-label small mb-1" for="imp-ai-tool">Your AI tool</label>
+                <input id="imp-ai-tool" class="form-control form-control-sm" @bind="_promptTool" placeholder="e.g. Copilot" />
             </div>
             <div class="col-md-3">
-                <label class="form-label small mb-1">Target</label>
-                <select class="form-select form-select-sm" value="@_promptExisting" @onchange="OnPromptTargetChanged">
+                <label class="form-label small mb-1" for="imp-target">Target</label>
+                <select id="imp-target" class="form-select form-select-sm" value="@_promptExisting" @onchange="OnPromptTargetChanged">
                     <option value="False">New case</option>
                     <option value="True">Existing case</option>
                 </select>
@@ -79,8 +79,8 @@ else if (_pending.Count > 0)
             @if (!_promptExisting)
             {
                 <div class="col-md-3">
-                    <label class="form-label small mb-1">Classification hint</label>
-                    <select class="form-select form-select-sm" value="@(_promptClassification?.ToString() ?? "")"
+                    <label class="form-label small mb-1" for="imp-class-hint">Classification hint</label>
+                    <select id="imp-class-hint" class="form-select form-select-sm" value="@(_promptClassification?.ToString() ?? "")"
                             @onchange="e => _promptClassification = Enum.TryParse<Classification>(e.Value?.ToString(), out var c) ? c : null">
                         <option value="">Let the AI choose</option>
                         @foreach (var cl in Enum.GetValues<Classification>()) { <option value="@cl">@Ui.Label(cl)</option> }
@@ -93,7 +93,7 @@ else if (_pending.Count > 0)
         </div>
         @if (_prompt is not null)
         {
-            <textarea class="form-control font-monospace mt-2" rows="10" readonly>@_prompt</textarea>
+            <textarea class="form-control font-monospace mt-2" rows="10" readonly aria-label="Generated prompt">@_prompt</textarea>
             <button class="btn btn-sm btn-outline-primary mt-2" @onclick="CopyPrompt"><span class="bi bi-clipboard me-1" aria-hidden="true"></span>Copy prompt</button>
         }
     }
@@ -110,8 +110,8 @@ else if (_pending.Count > 0)
         column (optional: <code>type</code>, <code>disposition</code>, <code>label</code>, <code>description</code>, <code>source</code>), or one indicator per line.
     </p>
 
-    <label class="form-label">Import JSON, STIX bundle or CSV</label>
-    <textarea class="form-control font-monospace" rows="6" @bind="_text" @bind:event="oninput"
+    <label class="form-label" for="imp-json">Import JSON, STIX bundle or CSV</label>
+    <textarea id="imp-json" class="form-control font-monospace" rows="6" @bind="_text" @bind:event="oninput"
               placeholder='{ "format": "casebook-case-import", "schemaVersion": 1, ... }'></textarea>
 
     <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
@@ -161,26 +161,26 @@ else if (_pending.Count > 0)
         {
             <div class="row g-2">
                 <div class="col-md-6">
-                    <label class="form-label small mb-1">Title <span class="text-danger">*</span></label>
-                    <input class="form-control form-control-sm" @bind="nc.Title" />
+                    <label class="form-label small mb-1" for="imp-nc-title">Title <span class="text-danger">*</span></label>
+                    <input id="imp-nc-title" class="form-control form-control-sm" @bind="nc.Title" />
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label small mb-1">Classification</label>
-                    <select class="form-select form-select-sm" value="@(nc.Classification?.ToString() ?? "")"
+                    <label class="form-label small mb-1" for="imp-nc-class">Classification</label>
+                    <select id="imp-nc-class" class="form-select form-select-sm" value="@(nc.Classification?.ToString() ?? "")"
                             @onchange="e => SetClassification(nc, e.Value?.ToString())">
                         <option value="">Complex Event</option>
                         @foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label small mb-1">Severity</label>
-                    <select class="form-select form-select-sm" @bind="nc.Severity">
+                    <label class="form-label small mb-1" for="imp-nc-severity">Severity</label>
+                    <select id="imp-nc-severity" class="form-select form-select-sm" @bind="nc.Severity">
                         @foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@SevLabels.For(s)</option> }
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label small mb-1">Origin</label>
-                    <select class="form-select form-select-sm" @bind="nc.Origin">
+                    <label class="form-label small mb-1" for="imp-nc-origin">Origin</label>
+                    <select id="imp-nc-origin" class="form-select form-select-sm" @bind="nc.Origin">
                         <option value="@CaseOrigin.InternalDetection">Internal detection</option>
                         <option value="@CaseOrigin.ThirdParty">Third-party / vendor</option>
                     </select>
@@ -204,8 +204,8 @@ else if (_pending.Count > 0)
             {
                 <div class="d-flex flex-wrap gap-2 align-items-end">
                     <div>
-                        <label class="form-label small mb-1">Case number</label>
-                        <input class="form-control form-control-sm" style="max-width:16rem" @bind="_existingNumber"
+                        <label class="form-label small mb-1" for="imp-existing-number">Case number</label>
+                        <input id="imp-existing-number" class="form-control form-control-sm" style="max-width:16rem" @bind="_existingNumber"
                                placeholder="e.g. 2026-04_Phishing_Wave" />
                     </div>
                     <button class="btn btn-sm btn-outline-primary" @onclick="() => ResolveExisting(p)" disabled="@string.IsNullOrWhiteSpace(_existingNumber)">Find</button>
@@ -219,8 +219,8 @@ else if (_pending.Count > 0)
     <div class="im-card nc-card">
         <div class="row g-3">
             <div class="col-md-6">
-                <label class="form-label small mb-1">Origin (provenance)</label>
-                <input class="form-control form-control-sm" @bind="p.Origin" placeholder="e.g. AI-assisted (Copilot), manual, XSIAM" />
+                <label class="form-label small mb-1" for="imp-origin">Origin (provenance)</label>
+                <input id="imp-origin" class="form-control form-control-sm" @bind="p.Origin" placeholder="e.g. AI-assisted (Copilot), manual, XSIAM" />
                 <div class="form-text">Recorded as the source of imported indicators and timeline entries.</div>
             </div>
             <div class="col-md-6">
@@ -228,7 +228,7 @@ else if (_pending.Count > 0)
                     <input class="form-check-input" type="checkbox" id="incSummary" @bind="p.IncludeSummary" disabled="@string.IsNullOrWhiteSpace(p.Summary)" />
                     <label class="form-check-label small" for="incSummary">Import summary as an analyst note</label>
                 </div>
-                <textarea class="form-control form-control-sm" rows="2" @bind="p.Summary" placeholder="(no summary in the document)"></textarea>
+                <textarea class="form-control form-control-sm" rows="2" aria-label="Summary" @bind="p.Summary" placeholder="(no summary in the document)"></textarea>
             </div>
         </div>
     </div>
@@ -245,17 +245,17 @@ else if (_pending.Count > 0)
                         @foreach (var t in p.Timeline)
                         {
                             <tr class="@(t.Include ? "" : "opacity-50")">
-                                <td><input class="form-check-input" type="checkbox" @bind="t.Include" /></td>
+                                <td><input class="form-check-input" type="checkbox" aria-label="Include timeline entry @(p.Timeline.IndexOf(t) + 1)" @bind="t.Include" /></td>
                                 <td>
-                                    <input type="datetime-local" class="form-control form-control-sm"
+                                    <input type="datetime-local" class="form-control form-control-sm" aria-label="When (UTC)"
                                            value="@t.OccurredAtUtc.UtcDateTime.ToString("yyyy-MM-ddTHH:mm")"
                                            @onchange="e => SetOccurred(t, e.Value?.ToString())" />
                                     @if (t.Warning is not null) { <div class="form-text text-warning small">@t.Warning</div> }
                                 </td>
-                                <td><select class="form-select form-select-sm" @bind="t.Kind">@foreach (var k in Enum.GetValues<TimelineKind>()) { <option value="@k">@k</option> }</select></td>
-                                <td><select class="form-select form-select-sm" @bind="t.Type">@foreach (var ty in Enum.GetValues<TimelineEntryType>()) { <option value="@ty">@Ui.Label(ty)</option> }</select></td>
-                                <td><input class="form-control form-control-sm" @bind="t.Description" /></td>
-                                <td><input class="form-control form-control-sm" @bind="t.Source" /></td>
+                                <td><select class="form-select form-select-sm" aria-label="Kind" @bind="t.Kind">@foreach (var k in Enum.GetValues<TimelineKind>()) { <option value="@k">@k</option> }</select></td>
+                                <td><select class="form-select form-select-sm" aria-label="Type" @bind="t.Type">@foreach (var ty in Enum.GetValues<TimelineEntryType>()) { <option value="@ty">@Ui.Label(ty)</option> }</select></td>
+                                <td><input class="form-control form-control-sm" aria-label="Description" @bind="t.Description" /></td>
+                                <td><input class="form-control form-control-sm" aria-label="Source" @bind="t.Source" /></td>
                             </tr>
                         }
                     </tbody>
@@ -295,14 +295,14 @@ else if (_pending.Count > 0)
                         @foreach (var e in p.Entities)
                         {
                             <tr class="@(e.Include ? "" : "opacity-50")">
-                                <td><input class="form-check-input" type="checkbox" @bind="e.Include" /></td>
+                                <td><input class="form-check-input" type="checkbox" aria-label="Include entity @(p.Entities.IndexOf(e) + 1)" @bind="e.Include" /></td>
                                 <td>
-                                    <select class="form-select form-select-sm" @bind="e.Type">@foreach (var ty in Enum.GetValues<EntityType>()) { <option value="@ty">@Ui.Label(ty)</option> }</select>
+                                    <select class="form-select form-select-sm" aria-label="Type" @bind="e.Type">@foreach (var ty in Enum.GetValues<EntityType>()) { <option value="@ty">@Ui.Label(ty)</option> }</select>
                                     @if (e.Type == EntityType.Other) { <div class="form-text text-warning small">Check the type</div> }
                                 </td>
-                                <td><input class="form-control form-control-sm font-monospace" @bind="e.Value" /></td>
-                                <td><select class="form-select form-select-sm" @bind="e.Disposition">@foreach (var d in Enum.GetValues<EntityDisposition>()) { <option value="@d">@Ui.Label(d)</option> }</select></td>
-                                <td><input class="form-control form-control-sm" @bind="e.Source" /></td>
+                                <td><input class="form-control form-control-sm font-monospace" aria-label="Value" @bind="e.Value" /></td>
+                                <td><select class="form-select form-select-sm" aria-label="Disposition" @bind="e.Disposition">@foreach (var d in Enum.GetValues<EntityDisposition>()) { <option value="@d">@Ui.Label(d)</option> }</select></td>
+                                <td><input class="form-control form-control-sm" aria-label="Source" @bind="e.Source" /></td>
                             </tr>
                         }
                     </tbody>
@@ -323,9 +323,9 @@ else if (_pending.Count > 0)
                         @foreach (var a in p.ActionItems)
                         {
                             <tr class="@(a.Include ? "" : "opacity-50")">
-                                <td><input class="form-check-input" type="checkbox" @bind="a.Include" /></td>
-                                <td><input class="form-control form-control-sm" @bind="a.Title" /></td>
-                                <td><input class="form-control form-control-sm" @bind="a.Owner" /></td>
+                                <td><input class="form-check-input" type="checkbox" aria-label="Include task @(p.ActionItems.IndexOf(a) + 1)" @bind="a.Include" /></td>
+                                <td><input class="form-control form-control-sm" aria-label="Title" @bind="a.Title" /></td>
+                                <td><input class="form-control form-control-sm" aria-label="Owner" @bind="a.Owner" /></td>
                                 <td class="small text-muted">@(a.DueAtUtc?.UtcDateTime.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
                             </tr>
                         }

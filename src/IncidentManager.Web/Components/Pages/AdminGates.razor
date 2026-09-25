@@ -36,8 +36,8 @@
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-4">
-                    <label class="form-label">Transition <span class="text-danger">*</span></label>
-                    <select class="form-select" @bind="_edit.Trigger">
+                    <label class="form-label" for="gate-trigger">Transition <span class="text-danger">*</span></label>
+                    <select id="gate-trigger" class="form-select" @bind="_edit.Trigger">
                         @foreach (var t in Enum.GetValues<StageGateTrigger>())
                         {
                             <option value="@t">@StageGateTriggers.Label(t)</option>
@@ -45,12 +45,12 @@
                     </select>
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label">Name <span class="text-danger">*</span></label>
-                    <input class="form-control" @bind="_edit.Name" @bind:event="oninput" placeholder="e.g. Breach readiness" />
+                    <label class="form-label" for="gate-name">Name <span class="text-danger">*</span></label>
+                    <input id="gate-name" class="form-control" @bind="_edit.Name" @bind:event="oninput" placeholder="e.g. Breach readiness" />
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label">Description</label>
-                    <input class="form-control" @bind="_edit.Description" @bind:event="oninput" />
+                    <label class="form-label" for="gate-desc">Description</label>
+                    <input id="gate-desc" class="form-control" @bind="_edit.Description" @bind:event="oninput" />
                 </div>
             </div>
 
@@ -78,7 +78,7 @@
                                     <button class="btn btn-sm btn-link p-0 text-muted" title="Move down" aria-label="Move requirement @(idx + 1) down" disabled="@(idx == _edit.Requirements.Count - 1)" @onclick="() => MoveReq(idx, 1)"><span class="bi bi-arrow-down" aria-hidden="true"></span></button>
                                 </td>
                                 <td>
-                                    <select class="form-select form-select-sm" @bind="req.Kind">
+                                    <select class="form-select form-select-sm" aria-label="Requirement @(idx + 1) kind" @bind="req.Kind">
                                         <option value="@GateRequirementKind.MachineCheck">Automatic check</option>
                                         <option value="@GateRequirementKind.Attestation">Analyst attestation</option>
                                     </select>
@@ -86,7 +86,7 @@
                                 <td>
                                     @if (req.Kind == GateRequirementKind.MachineCheck)
                                     {
-                                        <select class="form-select form-select-sm" value="@req.Check"
+                                        <select class="form-select form-select-sm" aria-label="Requirement @(idx + 1) check" value="@req.Check"
                                                 @onchange="e => OnCheckChanged(req, e.Value?.ToString())">
                                             <option value="">Choose a check</option>
                                             @foreach (var chk in GateCheckRegistry.All)
@@ -98,7 +98,7 @@
                                         {
                                             <div class="input-group input-group-sm mt-1" style="max-width:16rem">
                                                 <span class="input-group-text">@spec.Label</span>
-                                                <input class="form-control" type="number" min="@spec.Min" step="1"
+                                                <input class="form-control" type="number" aria-label="@spec.Label" min="@spec.Min" step="1"
                                                        value="@(req.Param ?? spec.Default)"
                                                        @onchange="e => OnParamChanged(req, e.Value?.ToString())"
                                                        title="Threshold this check requires" />
@@ -106,14 +106,14 @@
                                         }
                                         @if (!string.IsNullOrEmpty(req.Check))
                                         {
-                                            <input class="form-control form-control-sm mt-1" @bind="req.Label" @bind:event="oninput"
+                                            <input class="form-control form-control-sm mt-1" aria-label="Requirement @(idx + 1) label" @bind="req.Label" @bind:event="oninput"
                                                    placeholder="@DefaultCheckLabel(req.Check, req.Param)"
                                                    title="Wording the analyst sees. Blank uses the default." />
                                         }
                                     }
                                     else
                                     {
-                                        <input class="form-control form-control-sm" @bind="req.Label" @bind:event="oninput" placeholder="e.g. Evidence preserved and chain of custody complete" />
+                                        <input class="form-control form-control-sm" aria-label="Requirement @(idx + 1) statement" @bind="req.Label" @bind:event="oninput" placeholder="e.g. Evidence preserved and chain of custody complete" />
                                     }
                                 </td>
                                 <td class="text-center"><input class="form-check-input" type="checkbox" @bind="req.IsBlocking" aria-label="Requirement @(idx + 1) is blocking" /></td>
@@ -129,10 +129,10 @@
             </div>
 
             <div class="mt-4" style="max-width:30rem">
-                <label class="form-label mb-1">Required rationale length</label>
+                <label class="form-label mb-1" for="gate-min-length">Required rationale length</label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text">Minimum characters</span>
-                    <input class="form-control" type="number" min="0" step="1" @bind="_edit.CommentaryMinLength" />
+                    <input id="gate-min-length" class="form-control" type="number" min="0" step="1" @bind="_edit.CommentaryMinLength" />
                 </div>
                 <div class="form-text">0 means no minimum. Otherwise the analyst's <strong>reason</strong> for the transition, and any <strong>override justification</strong>, must be at least this long. The reason is kept on the tamper-evident gate record.</div>
             </div>

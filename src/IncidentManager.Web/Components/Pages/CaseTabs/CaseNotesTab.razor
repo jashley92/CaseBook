@@ -15,7 +15,7 @@
 <AuthorizeView Policy="@Policies.EditCases">
     <div class="card mb-3">
         <div class="card-body">
-            <label class="form-label small mb-1">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links · <code>#</code> to tag an entity</span></label>
+            <label class="form-label small mb-1" for="@NoteAddEditorId">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links · <code>#</code> to tag an entity</span></label>
             @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add. *@
             <ComposerHint>Your investigation record: findings and reasoning, printed in the case report. Doesn't notify anyone. To hand off or ask a teammate, use <strong>Discussion</strong>.</ComposerHint>
             <textarea id="@NoteAddEditorId" class="form-control mb-2"></textarea>
@@ -41,7 +41,7 @@ else
                 @if (_editNoteId == n.Id)
                 {
                     @* EasyMDE enhances this textarea; keyed by note id so switching notes remounts a fresh editor. *@
-                    <textarea id="@NoteEditEditorId(n.Id)" class="form-control mb-2"></textarea>
+                    <textarea id="@NoteEditEditorId(n.Id)" class="form-control mb-2" aria-label="Edit note"></textarea>
                     <button class="btn btn-sm btn-primary" @onclick="SaveNoteEdit">Save new version</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="CancelNoteEdit">Cancel</button>
                 }

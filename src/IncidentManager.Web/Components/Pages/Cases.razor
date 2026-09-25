@@ -140,8 +140,8 @@
 </button>
 <div class="row g-2 align-items-end my-3 @(_filtersOpen ? "" : "im-phone-collapsed")">
     <div class="col-auto">
-        <label class="form-label small mb-0">Classification</label>
-        <select class="form-select form-select-sm" @bind="_classification" @bind:after="ApplyFilters">
+        <label class="form-label small mb-0" for="cases-class">Classification</label>
+        <select id="cases-class" class="form-select form-select-sm" @bind="_classification" @bind:after="ApplyFilters">
             <option value="">All</option>
             @foreach (var c in Enum.GetValues<Classification>())
             {
@@ -150,8 +150,8 @@
         </select>
     </div>
     <div class="col-auto">
-        <label class="form-label small mb-0">Phase</label>
-        <select class="form-select form-select-sm" @bind="_phase" @bind:after="ApplyFilters">
+        <label class="form-label small mb-0" for="cases-phase">Phase</label>
+        <select id="cases-phase" class="form-select form-select-sm" @bind="_phase" @bind:after="ApplyFilters">
             <option value="">All</option>
             @foreach (var p in Enum.GetValues<CasePhase>())
             {
@@ -160,8 +160,8 @@
         </select>
     </div>
     <div class="col-auto">
-        <label class="form-label small mb-0">Min severity</label>
-        <select class="form-select form-select-sm" @bind="_minSeverity" @bind:after="ApplyFilters">
+        <label class="form-label small mb-0" for="cases-min-severity">Min severity</label>
+        <select id="cases-min-severity" class="form-select form-select-sm" @bind="_minSeverity" @bind:after="ApplyFilters">
             <option value="">Any</option>
             @foreach (var s in Enum.GetValues<Severity>())
             {
@@ -170,16 +170,16 @@
         </select>
     </div>
     <div class="col-auto">
-        <label class="form-label small mb-0">Origin</label>
-        <select class="form-select form-select-sm" @bind="_origin" @bind:after="ApplyFilters">
+        <label class="form-label small mb-0" for="cases-origin">Origin</label>
+        <select id="cases-origin" class="form-select form-select-sm" @bind="_origin" @bind:after="ApplyFilters">
             <option value="">All</option>
             <option value="@nameof(CaseOrigin.InternalDetection)">Internal</option>
             <option value="@nameof(CaseOrigin.ThirdParty)">Third-party</option>
         </select>
     </div>
     <div class="col-auto">
-        <label class="form-label small mb-0">Search</label>
-        <input class="form-control form-control-sm" placeholder="Number, title, note, or IOC"
+        <label class="form-label small mb-0" for="cases-search">Search</label>
+        <input id="cases-search" class="form-control form-control-sm" placeholder="Number, title, note, or IOC"
                @bind="_search" @bind:after="ApplyFilters" />
     </div>
     <div class="col-auto">

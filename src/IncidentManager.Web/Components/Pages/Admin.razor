@@ -261,25 +261,25 @@
                                 </p>
                                 <div class="row g-3">
                                     <div class="col-sm-6">
-                                        <label class="form-label mb-1 fw-semibold">Accent color</label>
+                                        <label class="form-label mb-1 fw-semibold" for="adm-brand-accent">Accent color</label>
                                         @if (IsOverridden("Branding:AccentColor")) { <span class="im-badge im-b-info ms-1">Custom</span> }
                                         else { <span class="im-badge im-b-neutral ms-1">Default</span> }
                                         <div class="d-flex align-items-center gap-2 mt-1">
-                                            <input type="color" class="form-control form-control-color" value="@AccentOrDefault"
+                                            <input id="adm-brand-accent" type="color" class="form-control form-control-color" value="@AccentOrDefault"
                                                    @oninput="e => OnAccentInput(e.Value?.ToString())" />
-                                            <input type="text" class="form-control font-monospace" style="max-width:9rem" placeholder="#ffcf31"
+                                            <input type="text" class="form-control font-monospace" style="max-width:9rem" aria-label="Accent color hex value" placeholder="#ffcf31"
                                                    value="@_accentColor" @oninput="e => OnAccentInput(e.Value?.ToString())" />
                                         </div>
                                         <div class="form-text">Blank uses the built-in gold.</div>
                                     </div>
                                     <div class="col-sm-6">
-                                        <label class="form-label mb-1 fw-semibold">Primary action color</label>
+                                        <label class="form-label mb-1 fw-semibold" for="adm-brand-ink">Primary action color</label>
                                         @if (IsOverridden("Branding:InkColor")) { <span class="im-badge im-b-info ms-1">Custom</span> }
                                         else { <span class="im-badge im-b-neutral ms-1">Default</span> }
                                         <div class="d-flex align-items-center gap-2 mt-1">
-                                            <input type="color" class="form-control form-control-color" value="@InkOrDefault"
+                                            <input id="adm-brand-ink" type="color" class="form-control form-control-color" value="@InkOrDefault"
                                                    @oninput="e => OnInkInput(e.Value?.ToString())" />
-                                            <input type="text" class="form-control font-monospace" style="max-width:9rem" placeholder="#232a33"
+                                            <input type="text" class="form-control font-monospace" style="max-width:9rem" aria-label="Primary action color hex value" placeholder="#232a33"
                                                    value="@_inkColor" @oninput="e => OnInkInput(e.Value?.ToString())" />
                                         </div>
                                         <div class="form-text">Blank uses the built-in charcoal.</div>
@@ -364,8 +364,8 @@
                             <div class="card-body">
                                 <div class="row g-2 align-items-end" style="max-width:38rem">
                                     <div class="col-sm-8">
-                                        <label class="form-label mb-0">Send a test email to</label>
-                                        <input class="form-control" type="email" @bind="_testRecipient" @bind:event="oninput"
+                                        <label class="form-label mb-0" for="adm-test-recipient">Send a test email to</label>
+                                        <input id="adm-test-recipient" class="form-control" type="email" @bind="_testRecipient" @bind:event="oninput"
                                                placeholder="you@insurer.example" />
                                     </div>
                                     <div class="col-sm-4">

@@ -25,17 +25,17 @@ else
         <div class="card-body">
             <div class="row g-2 align-items-end">
                 <div class="col-auto">
-                    <label class="form-label small mb-0">Code</label>
-                    <input class="form-control form-control-sm" style="max-width:8rem" maxlength="16"
+                    <label class="form-label small mb-0" for="rdr-code">Code</label>
+                    <input id="rdr-code" class="form-control form-control-sm" style="max-width:8rem" maxlength="16"
                            placeholder="e.g. NY" @bind="_code" disabled="@(_editId is not null)" />
                 </div>
                 <div class="col">
-                    <label class="form-label small mb-0">Label</label>
-                    <input class="form-control form-control-sm" maxlength="200" placeholder="e.g. New York (NYDFS Part 500)" @bind="_label" />
+                    <label class="form-label small mb-0" for="rdr-label">Label</label>
+                    <input id="rdr-label" class="form-control form-control-sm" maxlength="200" placeholder="e.g. New York (NYDFS Part 500)" @bind="_label" />
                 </div>
                 <div class="col-auto">
-                    <label class="form-label small mb-0">Window (hours)</label>
-                    <input type="number" min="1" class="form-control form-control-sm" style="max-width:8rem" @bind="_window" />
+                    <label class="form-label small mb-0" for="rdr-window">Window (hours)</label>
+                    <input id="rdr-window" type="number" min="1" class="form-control form-control-sm" style="max-width:8rem" @bind="_window" />
                 </div>
                 <div class="col-auto">
                     <button class="btn btn-sm btn-primary" @onclick="Save">@(_editId is null ? "Add rule" : "Save")</button>

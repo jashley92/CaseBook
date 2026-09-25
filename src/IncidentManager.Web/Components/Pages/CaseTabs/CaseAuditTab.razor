@@ -18,8 +18,8 @@
 @* E-24: filter the hash-chained trail by actor / action / entity / date range (server-side). *@
 <div class="row g-2 align-items-end mb-3">
     <div class="col-6 col-md-3">
-        <label class="form-label small mb-0">Actor</label>
-        <select class="form-select form-select-sm" @bind="State.Actor" @bind:after="ApplyAuditFilter">
+        <label class="form-label small mb-0" for="audit-actor">Actor</label>
+        <select id="audit-actor" class="form-select form-select-sm" @bind="State.Actor" @bind:after="ApplyAuditFilter">
             <option value="">Any</option>
             @foreach (var actor in State.Actors)
             {
@@ -28,8 +28,8 @@
         </select>
     </div>
     <div class="col-6 col-md-3">
-        <label class="form-label small mb-0">Action</label>
-        <select class="form-select form-select-sm" @bind="State.Action" @bind:after="ApplyAuditFilter">
+        <label class="form-label small mb-0" for="audit-action">Action</label>
+        <select id="audit-action" class="form-select form-select-sm" @bind="State.Action" @bind:after="ApplyAuditFilter">
             <option value="">Any</option>
             @foreach (var act in Enum.GetValues<AuditAction>())
             {
@@ -38,8 +38,8 @@
         </select>
     </div>
     <div class="col-6 col-md-2">
-        <label class="form-label small mb-0">Entity</label>
-        <select class="form-select form-select-sm" @bind="State.Entity" @bind:after="ApplyAuditFilter">
+        <label class="form-label small mb-0" for="audit-entity">Entity</label>
+        <select id="audit-entity" class="form-select form-select-sm" @bind="State.Entity" @bind:after="ApplyAuditFilter">
             <option value="">Any</option>
             @foreach (var et in State.EntityTypes)
             {
@@ -48,12 +48,12 @@
         </select>
     </div>
     <div class="col-6 col-md-2">
-        <label class="form-label small mb-0">From (UTC)</label>
-        <input type="date" class="form-control form-control-sm" @bind="State.From" @bind:after="ApplyAuditFilter" />
+        <label class="form-label small mb-0" for="audit-from">From (UTC)</label>
+        <input id="audit-from" type="date" class="form-control form-control-sm" @bind="State.From" @bind:after="ApplyAuditFilter" />
     </div>
     <div class="col-6 col-md-2">
-        <label class="form-label small mb-0">To (UTC)</label>
-        <input type="date" class="form-control form-control-sm" @bind="State.To" @bind:after="ApplyAuditFilter" />
+        <label class="form-label small mb-0" for="audit-to">To (UTC)</label>
+        <input id="audit-to" type="date" class="form-control form-control-sm" @bind="State.To" @bind:after="ApplyAuditFilter" />
     </div>
 </div>
 

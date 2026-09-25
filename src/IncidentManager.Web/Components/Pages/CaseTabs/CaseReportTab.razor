@@ -16,8 +16,8 @@
         <div class="card-body">
             <div class="row g-2 align-items-end mb-3">
                 <div class="col-md-5">
-                    <label class="form-label small mb-0">Report profile <span class="text-muted">(section layout)</span></label>
-                    <select class="form-select form-select-sm" value="@(_selectedProfileId?.ToString() ?? "")"
+                    <label class="form-label small mb-0" for="report-profile">Report profile <span class="text-muted">(section layout)</span></label>
+                    <select id="report-profile" class="form-select form-select-sm" value="@(_selectedProfileId?.ToString() ?? "")"
                             @onchange="OnProfileChanged">
                         <option value="">Global default</option>
                         @if (State.Profiles is not null)

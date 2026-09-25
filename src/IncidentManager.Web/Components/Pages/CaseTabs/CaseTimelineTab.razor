@@ -37,7 +37,15 @@
 </p>
 
 <AuthorizeView Policy="@Policies.EditCases">
-    <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "")">
+    @* Phones: the composer folds behind a button so the entries start near the top. Editing an entry opens it. *@
+    @if (_tlEditId is null)
+    {
+        <button type="button" class="btn btn-sm btn-outline-primary mb-3 d-sm-none" aria-expanded="@_composerOpen"
+                aria-controls="timeline-dropzone" @onclick="() => _composerOpen = !_composerOpen">
+            <span class="bi @(_composerOpen ? "bi-chevron-up" : "bi-plus-lg") me-1" aria-hidden="true"></span>@(_composerOpen ? "Hide form" : "Add to timeline")
+        </button>
+    }
+    <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "") @(_composerOpen || _tlEditId is not null ? "" : "im-phone-collapsed")">
         <div class="card-body">
             @* U-40: hidden sink the paste shim feeds a pasted screenshot into; staged then attached on Add. *@
             <InputFile id="timeline-file-paste" class="d-none" accept="image/*" OnChange="OnTimelinePasted" />
@@ -100,12 +108,12 @@
                     @* First-party (or a third-party attack step): the attack narrative — ATT&CK tactic(s) + actor→target attribution to IOCs. *@
                     <div class="row g-2 align-items-end">
                         <div class="col-md-4">
-                            <label class="form-label small mb-0">Occurred (@TimeDisp.Label)</label>
-                            <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                            <label class="form-label small mb-0" for="tl-atk-when">Occurred (@TimeDisp.Label)</label>
+                            <input id="tl-atk-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label small mb-0">Actor <span class="text-muted">(from IOCs)</span></label>
-                            <select class="form-select form-select-sm" @bind="_evtActorId">
+                            <label class="form-label small mb-0" for="tl-atk-actor">Actor <span class="text-muted">(from IOCs)</span></label>
+                            <select id="tl-atk-actor" class="form-select form-select-sm" @bind="_evtActorId">
                                 <option value="">None</option>
                                 @foreach (var en in Case.Entities)
                                 {
@@ -114,8 +122,8 @@
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label small mb-0">Target <span class="text-muted">(from IOCs)</span></label>
-                            <select class="form-select form-select-sm" @bind="_evtTargetId">
+                            <label class="form-label small mb-0" for="tl-atk-target">Target <span class="text-muted">(from IOCs)</span></label>
+                            <select id="tl-atk-target" class="form-select form-select-sm" @bind="_evtTargetId">
                                 <option value="">None</option>
                                 @foreach (var en in Case.Entities)
                                 {
@@ -129,8 +137,8 @@
                         <AttackStepPicker @bind-TechniqueId="_evtTechnique" @bind-Tactic="_evtTactic" />
                     </div>
                     <div class="mt-2">
-                        <label class="form-label small mb-1">What the adversary did</label>
-                        <textarea class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
+                        <label class="form-label small mb-1" for="tl-atk-desc">What the adversary did</label>
+                        <textarea id="tl-atk-desc" class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
                                   placeholder="e.g. Authenticated to the VPN from 203.0.113.66 with valid credentials"></textarea>
                     </div>
                 }
@@ -141,12 +149,12 @@
                        confirmed, remediation) is the response type carried on the step. *@
                     <div class="row g-2 align-items-end">
                         <div class="col-md-4">
-                            <label class="form-label small mb-0">Occurred (@TimeDisp.Label)</label>
-                            <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                            <label class="form-label small mb-0" for="tl-disc-when">Occurred (@TimeDisp.Label)</label>
+                            <input id="tl-disc-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label small mb-0">Milestone</label>
-                            <select class="form-select form-select-sm" @bind="_evtStage">
+                            <label class="form-label small mb-0" for="tl-disc-stage">Milestone</label>
+                            <select id="tl-disc-stage" class="form-select form-select-sm" @bind="_evtStage">
                                 @foreach (var t in DisclosureComposerOptions())
                                 {
                                     <option value="@t">@Ui.Label(t)</option>
@@ -155,21 +163,21 @@
                         </div>
                     </div>
                     <div class="mt-2">
-                        <label class="form-label small mb-1">What the vendor reported / what we confirmed</label>
-                        <textarea class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
+                        <label class="form-label small mb-1" for="tl-disc-desc">What the vendor reported / what we confirmed</label>
+                        <textarea id="tl-disc-desc" class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
                                   placeholder="e.g. Vendor confirmed our policyholder records were in the exposed dataset"></textarea>
                     </div>
                 }
                 <div class="row g-2 align-items-end mt-1">
                     <div class="col-md-4">
-                        <label class="form-label small mb-0">Source</label>
-                        <input class="form-control form-control-sm" @bind="_tlSource" placeholder="@EventSourcePlaceholder" />
+                        <label class="form-label small mb-0" for="tl-evt-source">Source</label>
+                        <input id="tl-evt-source" class="form-control form-control-sm" @bind="_tlSource" placeholder="@EventSourcePlaceholder" />
                     </div>
                     @if (_tlEditId is not null)
                     {
                         <div class="col-md-4">
-                            <label class="form-label small mb-0">Reason for change <span class="text-muted">(optional)</span></label>
-                            <input class="form-control form-control-sm" @bind="_tlReason" placeholder="e.g. corrected source IP" />
+                            <label class="form-label small mb-0" for="tl-evt-reason">Reason for change <span class="text-muted">(optional)</span></label>
+                            <input id="tl-evt-reason" class="form-control form-control-sm" @bind="_tlReason" placeholder="e.g. corrected source IP" />
                         </div>
                     }
                     <div class="col d-flex justify-content-end align-items-end gap-2">
@@ -194,8 +202,8 @@
                 @* Investigation = the analyst's working log: response type + Markdown notes. *@
                 <div class="row g-2 align-items-end">
                     <div class="col-md-3">
-                        <label class="form-label small mb-0">Type</label>
-                        <select class="form-select form-select-sm" @bind="_tlType">
+                        <label class="form-label small mb-0" for="tl-inv-type">Type</label>
+                        <select id="tl-inv-type" class="form-select form-select-sm" @bind="_tlType">
                             @foreach (var t in InvestigationTypeOptions())
                             {
                                 <option value="@t">@Ui.Label(t)</option>
@@ -203,16 +211,16 @@
                         </select>
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label small mb-0">Occurred (@TimeDisp.Label)</label>
-                        <input type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                        <label class="form-label small mb-0" for="tl-inv-when">Occurred (@TimeDisp.Label)</label>
+                        <input id="tl-inv-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label small mb-0">Source</label>
-                        <input class="form-control form-control-sm" @bind="_tlSource" placeholder="@($"{DetectionLabel}…")" />
+                        <label class="form-label small mb-0" for="tl-inv-source">Source</label>
+                        <input id="tl-inv-source" class="form-control form-control-sm" @bind="_tlSource" placeholder="@($"{DetectionLabel}…")" />
                     </div>
                 </div>
                 <div class="mt-3">
-                    <label class="form-label small mb-1">
+                    <label class="form-label small mb-1" for="@InvEditorId">
                         Notes <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, bullet/numbered lists, links</span>
                     </label>
                     @if (_tlEditId is null)
@@ -224,8 +232,8 @@
                     @if (_tlEditId is not null)
                     {
                         <div class="mt-2">
-                            <label class="form-label small mb-0">Reason for change <span class="text-muted">(optional)</span></label>
-                            <input class="form-control form-control-sm" @bind="_tlReason" placeholder="e.g. clarified meeting outcome" />
+                            <label class="form-label small mb-0" for="tl-inv-reason">Reason for change <span class="text-muted">(optional)</span></label>
+                            <input id="tl-inv-reason" class="form-control form-control-sm" @bind="_tlReason" placeholder="e.g. clarified meeting outcome" />
                         </div>
                     }
                     <div class="mt-2 d-flex justify-content-end gap-2">
@@ -573,6 +581,7 @@ else
     private string? _tlSource;
 
     // U-40: a screenshot pasted into the composer, staged in memory and attached as evidence on Add.
+    private bool _composerOpen;
     private byte[]? _tlShotBytes;
     // The staged screenshot's evidence id once uploaded, so a retry after a failed save links the same file
     // instead of uploading a second copy.

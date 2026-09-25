@@ -33,24 +33,24 @@
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-5">
-                    <label class="form-label">Name <span class="text-danger">*</span></label>
-                    <input class="form-control" @bind="_edit.Name" @bind:event="oninput" placeholder="e.g. Phishing wave" />
+                    <label class="form-label" for="tpl-name">Name <span class="text-danger">*</span></label>
+                    <input id="tpl-name" class="form-control" @bind="_edit.Name" @bind:event="oninput" placeholder="e.g. Phishing wave" />
                 </div>
                 <div class="col-md-5">
-                    <label class="form-label">Description</label>
-                    <input class="form-control" @bind="_edit.Description" @bind:event="oninput" />
+                    <label class="form-label" for="tpl-desc">Description</label>
+                    <input id="tpl-desc" class="form-control" @bind="_edit.Description" @bind:event="oninput" />
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">Sort order</label>
-                    <input type="number" class="form-control" @bind="_edit.SortOrder" />
+                    <label class="form-label" for="tpl-sort">Sort order</label>
+                    <input id="tpl-sort" type="number" class="form-control" @bind="_edit.SortOrder" />
                 </div>
             </div>
 
             <h6 class="text-uppercase small text-muted mt-4">Field defaults (quick-fill)</h6>
             <div class="row g-3">
                 <div class="col-md-3">
-                    <label class="form-label">Classification</label>
-                    <select class="form-select" @bind="_edit.DefaultClassification">
+                    <label class="form-label" for="tpl-class">Classification</label>
+                    <select id="tpl-class" class="form-select" @bind="_edit.DefaultClassification">
                         <option value="">No default</option>
                         @foreach (var c in Enum.GetValues<Classification>())
                         {
@@ -59,8 +59,8 @@
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Severity</label>
-                    <select class="form-select" @bind="_edit.DefaultSeverity">
+                    <label class="form-label" for="tpl-severity">Severity</label>
+                    <select id="tpl-severity" class="form-select" @bind="_edit.DefaultSeverity">
                         <option value="">No default</option>
                         @foreach (var s in Enum.GetValues<Severity>())
                         {
@@ -69,12 +69,12 @@
                     </select>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Data context starter <span class="text-muted">(notes)</span></label>
-                    <input class="form-control" @bind="_edit.DefaultDataTypes" @bind:event="oninput" placeholder="e.g. Credentials; potential NPI" />
+                    <label class="form-label" for="tpl-data-context">Data context starter <span class="text-muted">(notes)</span></label>
+                    <input id="tpl-data-context" class="form-control" @bind="_edit.DefaultDataTypes" @bind:event="oninput" placeholder="e.g. Credentials; potential NPI" />
                 </div>
                 <div class="col-12">
-                    <label class="form-label">Summary starter</label>
-                    <textarea class="form-control" rows="2" @bind="_edit.SummaryBoilerplate"
+                    <label class="form-label" for="tpl-summary">Summary starter</label>
+                    <textarea id="tpl-summary" class="form-control" rows="2" @bind="_edit.SummaryBoilerplate"
                               placeholder="Boilerplate scope statement pre-filled into the case summary."></textarea>
                 </div>
             </div>
@@ -101,10 +101,10 @@
                                     <button class="btn btn-sm btn-link p-0 text-muted" title="Move up" disabled="@(idx == 0)" @onclick="() => MoveStep(idx, -1)"><span class="bi bi-arrow-up"></span></button>
                                     <button class="btn btn-sm btn-link p-0 text-muted" title="Move down" disabled="@(idx == _edit.Steps.Count - 1)" @onclick="() => MoveStep(idx, 1)"><span class="bi bi-arrow-down"></span></button>
                                 </td>
-                                <td><input class="form-control form-control-sm" @bind="step.Title" @bind:event="oninput" placeholder="Step title" /></td>
-                                <td><input class="form-control form-control-sm" @bind="step.Description" @bind:event="oninput" /></td>
-                                <td><input class="form-control form-control-sm" @bind="step.OwnerHint" @bind:event="oninput" placeholder="(case owner)" /></td>
-                                <td><input type="number" min="0" class="form-control form-control-sm" @bind="step.DueOffsetHours" /></td>
+                                <td><input class="form-control form-control-sm" aria-label="Step @(idx + 1) title" @bind="step.Title" @bind:event="oninput" placeholder="Step title" /></td>
+                                <td><input class="form-control form-control-sm" aria-label="Step @(idx + 1) note" @bind="step.Description" @bind:event="oninput" /></td>
+                                <td><input class="form-control form-control-sm" aria-label="Step @(idx + 1) owner" @bind="step.OwnerHint" @bind:event="oninput" placeholder="(case owner)" /></td>
+                                <td><input type="number" min="0" class="form-control form-control-sm" aria-label="Step @(idx + 1) due (hrs)" @bind="step.DueOffsetHours" /></td>
                                 <td class="text-end"><button class="btn btn-sm btn-outline-danger py-0" @onclick="() => RemoveStep(idx)">Remove</button></td>
                             </tr>
                         }

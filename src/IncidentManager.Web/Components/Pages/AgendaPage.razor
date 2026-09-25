@@ -111,7 +111,7 @@
                     your due tasks in sync. The link is personal to you, so treat it like a password.
                 </p>
                 <div class="input-group input-group-sm agenda-feed">
-                    <input class="form-control" readonly value="@_feedUrl" id="agenda-feed-url" />
+                    <input class="form-control" readonly value="@_feedUrl" id="agenda-feed-url" aria-label="Calendar feed URL" />
                     <button class="btn btn-outline-secondary" type="button" @onclick="CopyFeed">
                         <span class="bi @(_copied ? "bi-check2" : "bi-clipboard")" aria-hidden="true"></span>
                         @(_copied ? "Copied" : "Copy")

@@ -20,8 +20,8 @@
                         <InputFile id="evidence-file-input" class="form-control form-control-sm" OnChange="OnFileSelected" disabled="@_busy" />
                     </div>
                     <div class="col-md-5">
-                        <label class="form-label small mb-0">Description</label>
-                        <input class="form-control form-control-sm" @bind="_evDesc" disabled="@_busy" />
+                        <label class="form-label small mb-0" for="ev-desc">Description</label>
+                        <input id="ev-desc" class="form-control form-control-sm" @bind="_evDesc" disabled="@_busy" />
                     </div>
                     <div class="col-md-2">
                         @* REL-03: guard against a double-click (and give feedback on a slow/large upload) — the

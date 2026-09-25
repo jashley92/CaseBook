@@ -109,10 +109,10 @@ else
     private RenderFragment Toggle(string title, string hint, Func<bool> get, Action<bool> set, bool mandatory) => __builder =>
     {
         <div class="form-check form-switch mb-2">
-            <input class="form-check-input" type="checkbox" role="switch"
+            <input class="form-check-input" type="checkbox" role="switch" id="notif-@(title.ToLowerInvariant().Replace(' ', '-'))"
                    checked="@(mandatory || get())" disabled="@mandatory"
                    @onchange="e => set((bool)(e.Value ?? false))" />
-            <label class="form-check-label">
+            <label class="form-check-label" for="notif-@(title.ToLowerInvariant().Replace(' ', '-'))">
                 <strong>@title</strong>
                 <span class="text-muted small d-block">@hint@(mandatory ? " · required by your organization" : "")</span>
             </label>

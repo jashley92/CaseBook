@@ -3,7 +3,7 @@
    Resolve() turns the pair into the stored owner string. *@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 
-<select id="@Id" class="form-select form-select-sm" value="@(Owner ?? "")" @onchange="OnOwnerChanged">
+<select id="@Id" class="form-select form-select-sm" aria-label="@AriaLabel" value="@(Owner ?? "")" @onchange="OnOwnerChanged">
     <option value="">Unassigned</option>
     @foreach (var u in Users.All())
     {
@@ -21,6 +21,7 @@
     public const string ExternalSentinel = "__external__";
 
     [Parameter] public string? Id { get; set; }
+    [Parameter] public string? AriaLabel { get; set; }
     [Parameter] public string? Owner { get; set; }
     [Parameter] public EventCallback<string?> OwnerChanged { get; set; }
     [Parameter] public string? External { get; set; }

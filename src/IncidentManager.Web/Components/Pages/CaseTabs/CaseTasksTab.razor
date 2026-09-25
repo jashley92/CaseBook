@@ -29,8 +29,8 @@
                     <button class="btn-close" aria-label="Cancel" @onclick="CancelApplyTemplate"></button>
                 </div>
                 <div class="card-body">
-                    <label class="form-label small mb-0">Playbook</label>
-                    <select class="form-select form-select-sm mb-3" style="max-width:28rem" @onchange="OnApplyTemplateChanged"
+                    <label class="form-label small mb-0" for="task-playbook">Playbook</label>
+                    <select id="task-playbook" class="form-select form-select-sm mb-3" style="max-width:28rem" @onchange="OnApplyTemplateChanged"
                             value="@(_applyTemplate?.Id.ToString() ?? "")">
                         <option value="">Choose a playbook</option>
                         @foreach (var t in _applyTemplates)
@@ -72,7 +72,7 @@
                                     This case has no incident commander yet, so steps without an owner will be added as
                                     <strong>Unassigned</strong>. Choose a default owner for them, or leave them unassigned.
                                     <div class="mt-2" style="max-width:20rem">
-                                        <select class="form-select form-select-sm" @bind="_applyDefaultOwner">
+                                        <select class="form-select form-select-sm" aria-label="Default owner" @bind="_applyDefaultOwner">
                                             <option value="">Leave unassigned</option>
                                             @foreach (var u in Users.All())
                                             {
@@ -95,15 +95,20 @@
             </div>
         }
     }
-    <div class="card mb-3">
+    @* Phones: the add-task form folds behind a button so the task list starts near the top. *@
+    <button type="button" class="btn btn-sm btn-outline-primary mb-3 d-sm-none" aria-expanded="@_addOpen"
+            aria-controls="task-add-form" @onclick="() => _addOpen = !_addOpen">
+        <span class="bi @(_addOpen ? "bi-chevron-up" : "bi-plus-lg") me-1" aria-hidden="true"></span>@(_addOpen ? "Hide form" : "Add task")
+    </button>
+    <div id="task-add-form" class="card mb-3 @(_addOpen ? "" : "im-phone-collapsed")">
         <div class="card-body row g-2 align-items-end">
             <div class="col-md-4">
-                <label class="form-label small mb-0">Task</label>
-                <input class="form-control form-control-sm" @bind="_taskTitle" @bind:event="oninput" />
+                <label class="form-label small mb-0" for="task-title">Task</label>
+                <input id="task-title" class="form-control form-control-sm" @bind="_taskTitle" @bind:event="oninput" />
             </div>
             <div class="col-md-2">
-                <label class="form-label small mb-0">Owner</label>
-                <select class="form-select form-select-sm" @bind="_taskOwner">
+                <label class="form-label small mb-0" for="task-owner">Owner</label>
+                <select id="task-owner" class="form-select form-select-sm" @bind="_taskOwner">
                     <option value="">Unassigned</option>
                     @foreach (var u in Users.All())
                     {
@@ -114,17 +119,17 @@
                 @if (_taskOwner == ExternalOwnerSentinel)
                 {
                     @* U-45: an external owner (e.g. a vendor contact) not in the directory. *@
-                    <input class="form-control form-control-sm mt-1" @bind="_taskOwnerExternal" @bind:event="oninput"
+                    <input class="form-control form-control-sm mt-1" aria-label="External owner name" @bind="_taskOwnerExternal" @bind:event="oninput"
                            placeholder="External owner name" />
                 }
             </div>
             <div class="col-md-2">
-                <label class="form-label small mb-0">Due date</label>
-                <input type="date" class="form-control form-control-sm" @bind="_taskDueDate" />
+                <label class="form-label small mb-0" for="task-due-date">Due date</label>
+                <input id="task-due-date" type="date" class="form-control form-control-sm" @bind="_taskDueDate" />
             </div>
             <div class="col-md-2">
-                <label class="form-label small mb-0">Time (@TimeDisp.Label)</label>
-                <input type="time" class="form-control form-control-sm" @bind="_taskDueTime"
+                <label class="form-label small mb-0" for="task-due-time">Time (@TimeDisp.Label)</label>
+                <input id="task-due-time" type="time" class="form-control form-control-sm" @bind="_taskDueTime"
                        title="Leave blank for end of day." />
             </div>
             <div class="col-md-2">
@@ -223,12 +228,12 @@ else
                         <td colspan="@colCount" class="bg-body-tertiary">
                             <div class="row g-2 align-items-end">
                                 <div class="col-md-4">
-                                    <label class="form-label small mb-0">Task</label>
-                                    <input class="form-control form-control-sm" @bind="_editTitle" @bind:event="oninput" />
+                                    <label class="form-label small mb-0" for="task-edit-title">Task</label>
+                                    <input id="task-edit-title" class="form-control form-control-sm" @bind="_editTitle" @bind:event="oninput" />
                                 </div>
                                 <div class="col-md-3">
-                                    <label class="form-label small mb-0">Owner</label>
-                                    <select class="form-select form-select-sm" @bind="_editOwner">
+                                    <label class="form-label small mb-0" for="task-edit-owner">Owner</label>
+                                    <select id="task-edit-owner" class="form-select form-select-sm" @bind="_editOwner">
                                         <option value="">Unassigned</option>
                                         @foreach (var u in Users.All())
                                         {
@@ -238,13 +243,13 @@ else
                                     </select>
                                     @if (_editOwner == ExternalOwnerSentinel)
                                     {
-                                        <input class="form-control form-control-sm mt-1" @bind="_editOwnerExternal" @bind:event="oninput"
+                                        <input class="form-control form-control-sm mt-1" aria-label="External owner name" @bind="_editOwnerExternal" @bind:event="oninput"
                                                placeholder="External owner name" />
                                     }
                                 </div>
                                 <div class="col-md-2">
-                                    <label class="form-label small mb-0">Status</label>
-                                    <select class="form-select form-select-sm" @bind="_editStatus">
+                                    <label class="form-label small mb-0" for="task-edit-status">Status</label>
+                                    <select id="task-edit-status" class="form-select form-select-sm" @bind="_editStatus">
                                         @foreach (var s in Enum.GetValues<ActionItemStatus>())
                                         {
                                             <option value="@s">@StatusLabel(s)</option>
@@ -252,17 +257,17 @@ else
                                     </select>
                                 </div>
                                 <div class="col-md-2">
-                                    <label class="form-label small mb-0">Due date</label>
-                                    <input type="date" class="form-control form-control-sm" @bind="_editDueDate" />
+                                    <label class="form-label small mb-0" for="task-edit-due-date">Due date</label>
+                                    <input id="task-edit-due-date" type="date" class="form-control form-control-sm" @bind="_editDueDate" />
                                 </div>
                                 <div class="col-md-1">
-                                    <label class="form-label small mb-0">Time</label>
-                                    <input type="time" class="form-control form-control-sm" @bind="_editDueTime"
+                                    <label class="form-label small mb-0" for="task-edit-due-time">Time</label>
+                                    <input id="task-edit-due-time" type="time" class="form-control form-control-sm" @bind="_editDueTime"
                                            title="In @TimeDisp.Label. Leave blank for end of day." />
                                 </div>
                                 <div class="col-12">
-                                    <label class="form-label small mb-0">Description <span class="text-muted">(optional)</span></label>
-                                    <textarea class="form-control form-control-sm" rows="2" @bind="_editDescription" @bind:event="oninput"></textarea>
+                                    <label class="form-label small mb-0" for="task-edit-desc">Description <span class="text-muted">(optional)</span></label>
+                                    <textarea id="task-edit-desc" class="form-control form-control-sm" rows="2" @bind="_editDescription" @bind:event="oninput"></textarea>
                                 </div>
                                 <div class="col-12 d-flex gap-2">
                                     <button class="btn btn-sm btn-primary" @onclick="SaveEdit"
@@ -316,6 +321,7 @@ else
 }
 
 @code {
+    private bool _addOpen;
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter] public bool CanEdit { get; set; }

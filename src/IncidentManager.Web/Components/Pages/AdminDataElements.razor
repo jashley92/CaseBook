@@ -55,9 +55,9 @@ else
                                 else if (r.IsSystem) { <span class="im-badge im-b-neutral">Built-in</span> }
                                 else { <span class="im-badge im-b-info">Custom</span> }
                             </div>
-                            <input class="form-control form-control-sm" style="max-width:18rem" type="text" maxlength="200"
+                            <input class="form-control form-control-sm" style="max-width:18rem" type="text" aria-label="Data element @(idx + 1) label" maxlength="200"
                                    placeholder="Label" @bind="r.Label" @bind:event="oninput" />
-                            <input class="form-control form-control-sm flex-grow-1" type="text" maxlength="400"
+                            <input class="form-control form-control-sm flex-grow-1" type="text" aria-label="Data element @(idx + 1) notifies" maxlength="400"
                                    placeholder="Notifies (optional, e.g. US, NY)" @bind="r.NotificationJurisdictions" @bind:event="oninput"
                                    title="Jurisdictions whose breach-notification law this element triggers" />
                             @if (r.IsNew)

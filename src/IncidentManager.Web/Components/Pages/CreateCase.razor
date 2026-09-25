@@ -24,8 +24,8 @@
             <div class="nc-template">
                 <span class="bi bi-clipboard-check nc-template-ic" aria-hidden="true"></span>
                 <div class="nc-template-body">
-                    <label class="form-label small mb-1">Start from a template <span class="text-muted">(optional)</span></label>
-                    <select class="form-select form-select-sm" @onchange="OnTemplateChanged" value="@(_selectedTemplate?.Id.ToString() ?? "")">
+                    <label class="form-label small mb-1" for="nc-template">Start from a template <span class="text-muted">(optional)</span></label>
+                    <select id="nc-template" class="form-select form-select-sm" @onchange="OnTemplateChanged" value="@(_selectedTemplate?.Id.ToString() ?? "")">
                         <option value="">No template</option>
                         @foreach (var t in _templates)
                         {
@@ -128,13 +128,13 @@
                    the dwell metric. Defaults to now (in the viewer's display zone); set it back to when the
                    matter was actually detected, not when the case is being filed. *@
                 <div class="col-md-4">
-                    <label class="form-label">Detected (@TimeDisp.Label) <span class="text-danger">*</span></label>
-                    <input type="datetime-local" class="form-control" @bind="_detectedWall"
+                    <label class="form-label" for="nc-detected">Detected (@TimeDisp.Label) <span class="text-danger">*</span></label>
+                    <input id="nc-detected" type="datetime-local" class="form-control" @bind="_detectedWall"
                            title="When the activity was first detected or reported, not when the case was filed. Starts the response SLA clock." />
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label">Initial activity <span class="text-muted">(optional)</span></label>
-                    <input type="datetime-local" class="form-control" @bind="_occurredWall"
+                    <label class="form-label" for="nc-occurred">Initial activity <span class="text-muted">(optional)</span></label>
+                    <input id="nc-occurred" type="datetime-local" class="form-control" @bind="_occurredWall"
                            title="When adversary activity began (initial access), if known. Used to calculate dwell time." />
                 </div>
 
@@ -189,8 +189,8 @@
 
         @* Indicators + duplicate / campaign detection (E-23) *@
         <div class="im-card nc-card">
-            <label class="form-label">Indicators <span class="text-muted">(optional, one per line)</span></label>
-            <textarea class="form-control" rows="3" @bind="_indicators" @bind:event="oninput" @bind:after="OnIndicatorsChanged"
+            <label class="form-label" for="nc-indicators">Indicators <span class="text-muted">(optional, one per line)</span></label>
+            <textarea id="nc-indicators" class="form-control" rows="3" @bind="_indicators" @bind:event="oninput" @bind:after="OnIndicatorsChanged"
                       placeholder="e.g. 1.2.3.4, evil.example.com, hxxp://bad[.]site/x, or a file hash"
                       @onblur="CheckOverlaps"></textarea>
             <div class="form-text">
@@ -225,7 +225,7 @@
                             <span class="@Ui.PhaseBadge(m.Phase)">@Ui.Label(m.Phase)</span>
                             <span class="small text-muted">shared: @string.Join(", ", m.Indicators)</span>
                             <div class="ms-auto">
-                                <select class="form-select form-select-sm d-inline-block w-auto"
+                                <select class="form-select form-select-sm d-inline-block w-auto" aria-label="Link to @m.CaseNumber"
                                         @onchange="e => SetLink(m.CaseId, e.Value?.ToString())">
                                     <option value="">Don't link</option>
                                     <option value="@CaseLinkType.RelatedTo">Related to</option>

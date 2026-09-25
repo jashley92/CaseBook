@@ -73,8 +73,8 @@
         </div>
         <div class="card-body row g-2 align-items-end">
             <div class="col-md-2">
-                <label class="form-label small mb-0">Type</label>
-                <select class="form-select form-select-sm" @bind="_enType">
+                <label class="form-label small mb-0" for="ent-type">Type</label>
+                <select id="ent-type" class="form-select form-select-sm" @bind="_enType">
                     @foreach (var t in Ui.Options<EntityType>("EntityType"))
                     {
                         <option value="@t">@Ui.Label(t)</option>
@@ -82,16 +82,16 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label small mb-0">Value</label>
-                <input class="form-control form-control-sm" @bind="_enValue" @bind:event="oninput" placeholder="e.g. 203.0.113.66" />
+                <label class="form-label small mb-0" for="ent-value">Value</label>
+                <input id="ent-value" class="form-control form-control-sm" @bind="_enValue" @bind:event="oninput" placeholder="e.g. 203.0.113.66" />
             </div>
             <div class="col-md-2">
-                <label class="form-label small mb-0">Label</label>
-                <input class="form-control form-control-sm" @bind="_enLabel" placeholder="Optional" />
+                <label class="form-label small mb-0" for="ent-label">Label</label>
+                <input id="ent-label" class="form-control form-control-sm" @bind="_enLabel" placeholder="Optional" />
             </div>
             <div class="col-md-2">
-                <label class="form-label small mb-0">Disposition</label>
-                <select class="form-select form-select-sm" @bind="_enDisposition">
+                <label class="form-label small mb-0" for="ent-disposition">Disposition</label>
+                <select id="ent-disposition" class="form-select form-select-sm" @bind="_enDisposition">
                     @foreach (var d in Ui.Options<EntityDisposition>("EntityDisposition"))
                     {
                         <option value="@d">@Ui.Label(d)</option>
@@ -99,8 +99,8 @@
                 </select>
             </div>
             <div class="col-md-2">
-                <label class="form-label small mb-0">Source</label>
-                <input class="form-control form-control-sm" @bind="_enSource" placeholder="@($"{DetectionLabel}…")" />
+                <label class="form-label small mb-0" for="ent-source">Source</label>
+                <input id="ent-source" class="form-control form-control-sm" @bind="_enSource" placeholder="@($"{DetectionLabel}…")" />
             </div>
             @if (_enEditId is null)
             {
@@ -109,7 +109,7 @@
                 </div>
             }
             <div class="col-md-9">
-                <input class="form-control form-control-sm" @bind="_enDescription" placeholder="Description / context (optional)" />
+                <input class="form-control form-control-sm" aria-label="Description or context" @bind="_enDescription" placeholder="Description / context (optional)" />
             </div>
             @* PROD-45: an optional TLP marking for sharing this indicator; blank = the report's marking applies. *@
             <div class="col-md-3">
@@ -124,8 +124,8 @@
             @if (_enEditId is not null)
             {
                 <div class="col-md-6">
-                    <label class="form-label small mb-0">Reason for change <span class="text-muted">(optional)</span></label>
-                    <input class="form-control form-control-sm" @bind="_enReason" placeholder="e.g. re-assessed as benign after review" />
+                    <label class="form-label small mb-0" for="ent-reason">Reason for change <span class="text-muted">(optional)</span></label>
+                    <input id="ent-reason" class="form-control form-control-sm" @bind="_enReason" placeholder="e.g. re-assessed as benign after review" />
                 </div>
                 <div class="col-md-6 d-flex justify-content-end align-items-end gap-2">
                     <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEntityEdit">Cancel</button>
@@ -157,7 +157,7 @@
                         Review the list, then add them in one step. For a STIX 2.1 bundle or IOC CSV file,
                         <a href="@($"cases/import?into={CaseId}")">import it into this case</a> instead.
                     </p>
-                    <textarea class="form-control form-control-sm mb-2" rows="4" @bind="_bulkText" @bind:event="oninput"
+                    <textarea class="form-control form-control-sm mb-2" rows="4" aria-label="Paste indicators" @bind="_bulkText" @bind:event="oninput"
                               placeholder="1.2.3.4, evil.example[.]com&#10;hxxp://bad[.]site/x&#10;44d88612fea8a8f36de82e1278abb02f&#10;user@phish.example"></textarea>
                     <div class="d-flex gap-2 mb-2">
                         <button class="btn btn-sm btn-outline-primary" @onclick="ParseBulk"
@@ -177,8 +177,8 @@
                     {
                         <div class="row g-2 align-items-end mb-2">
                             <div class="col-md-3">
-                                <label class="form-label small mb-0">Disposition (all)</label>
-                                <select class="form-select form-select-sm" @bind="_bulkDisposition">
+                                <label class="form-label small mb-0" for="ent-bulk-disposition">Disposition (all)</label>
+                                <select id="ent-bulk-disposition" class="form-select form-select-sm" @bind="_bulkDisposition">
                                     @foreach (var d in Ui.Options<EntityDisposition>("EntityDisposition"))
                                     {
                                         <option value="@d">@Ui.Label(d)</option>
@@ -186,8 +186,8 @@
                                 </select>
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label small mb-0">Source (all)</label>
-                                <input class="form-control form-control-sm" @bind="_bulkSource" placeholder="@($"{DetectionLabel}…")" />
+                                <label class="form-label small mb-0" for="ent-bulk-source">Source (all)</label>
+                                <input id="ent-bulk-source" class="form-control form-control-sm" @bind="_bulkSource" placeholder="@($"{DetectionLabel}…")" />
                             </div>
                             <div class="col-md-6 text-md-end">
                                 <span class="small text-muted me-2">@_bulkRows.Count(r => r.Include) of @_bulkRows.Count selected</span>
@@ -203,9 +203,9 @@
                                     @foreach (var r in _bulkRows)
                                     {
                                         <tr class="@(r.Include ? "" : "text-muted")">
-                                            <td><input class="form-check-input" type="checkbox" @bind="r.Include" /></td>
+                                            <td><input class="form-check-input" type="checkbox" aria-label="Include @r.Value" @bind="r.Include" /></td>
                                             <td>
-                                                <select class="form-select form-select-sm" @bind="r.Type">
+                                                <select class="form-select form-select-sm" aria-label="Type for @r.Value" @bind="r.Type">
                                                     @foreach (var t in Ui.Options<EntityType>("EntityType"))
                                                     {
                                                         <option value="@t">@Ui.Label(t)</option>
@@ -379,8 +379,8 @@ else
                 <div class="card-header">Add relationship</div>
                 <div class="card-body row g-2 align-items-end">
                     <div class="col-md-4">
-                        <label class="form-label small mb-0">Source</label>
-                        <select class="form-select form-select-sm" @bind="_relSource">
+                        <label class="form-label small mb-0" for="ent-rel-source">Source</label>
+                        <select id="ent-rel-source" class="form-select form-select-sm" @bind="_relSource">
                             <option value="">Select…</option>
                             @foreach (var e in Case.Entities.OrderBy(x => x.Type))
                             {
@@ -389,8 +389,8 @@ else
                         </select>
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label small mb-0">Relationship</label>
-                        <select class="form-select form-select-sm" @bind="_relType">
+                        <label class="form-label small mb-0" for="ent-rel-type">Relationship</label>
+                        <select id="ent-rel-type" class="form-select form-select-sm" @bind="_relType">
                             @foreach (var t in Ui.Options<EntityRelationshipType>("EntityRelationshipType"))
                             {
                                 <option value="@t">@Ui.Label(t)</option>
@@ -398,8 +398,8 @@ else
                         </select>
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label small mb-0">Target</label>
-                        <select class="form-select form-select-sm" @bind="_relTarget">
+                        <label class="form-label small mb-0" for="ent-rel-target">Target</label>
+                        <select id="ent-rel-target" class="form-select form-select-sm" @bind="_relTarget">
                             <option value="">Select…</option>
                             @foreach (var e in Case.Entities.OrderBy(x => x.Type))
                             {

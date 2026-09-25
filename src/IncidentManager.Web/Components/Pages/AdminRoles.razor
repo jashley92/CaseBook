@@ -34,14 +34,14 @@
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-4">
-                    <label class="form-label">Name</label>
-                    <input class="form-control" @bind="_editing.Name" @bind:event="oninput"
+                    <label class="form-label" for="role-name">Name</label>
+                    <input id="role-name" class="form-control" @bind="_editing.Name" @bind:event="oninput"
                            disabled="@(!_editing.IsNew)" placeholder="e.g. Auditor" />
                     @if (!_editing.IsNew) { <div class="form-text">A role's name is its identity and can't be changed.</div> }
                 </div>
                 <div class="col-md-8">
-                    <label class="form-label">Description</label>
-                    <input class="form-control" @bind="_editing.Description" @bind:event="oninput" />
+                    <label class="form-label" for="role-desc">Description</label>
+                    <input id="role-desc" class="form-control" @bind="_editing.Description" @bind:event="oninput" />
                 </div>
             </div>
 
@@ -128,12 +128,12 @@ else
 {
     <div class="row g-2 align-items-end mb-3" style="max-width:44rem">
         <div class="col-sm-6">
-            <label class="form-label small mb-0">AD security group</label>
-            <input class="form-control form-control-sm" @bind="_newGroup" @bind:event="oninput" placeholder="e.g. SOC-Auditors" />
+            <label class="form-label small mb-0" for="role-map-group">AD security group</label>
+            <input id="role-map-group" class="form-control form-control-sm" @bind="_newGroup" @bind:event="oninput" placeholder="e.g. SOC-Auditors" />
         </div>
         <div class="col-sm-4">
-            <label class="form-label small mb-0">Role</label>
-            <select class="form-select form-select-sm" @bind="_newRole">
+            <label class="form-label small mb-0" for="role-map-role">Role</label>
+            <select id="role-map-role" class="form-select form-select-sm" @bind="_newRole">
                 @foreach (var r in _roles) { <option value="@r.Name">@r.Name</option> }
             </select>
         </div>

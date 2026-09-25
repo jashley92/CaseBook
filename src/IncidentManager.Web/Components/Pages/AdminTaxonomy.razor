@@ -55,7 +55,7 @@ else
                                     </button>
                                 </div>
                                 <div class="form-check form-switch mb-0" title="Show this option in the picker">
-                                    <input class="form-check-input" type="checkbox" checked="@(!m.Hidden)"
+                                    <input class="form-check-input" type="checkbox" aria-label="Show @m.DefaultLabel in the picker" checked="@(!m.Hidden)"
                                            @onchange="e => m.Hidden = !(bool)(e.Value ?? false)" />
                                 </div>
                                 <div style="min-width:11rem">
@@ -64,7 +64,7 @@ else
                                     else if (IsCustom(m)) { <span class="im-badge im-b-info ms-1">Custom</span> }
                                     <div class="small text-muted"><code>@m.Value</code></div>
                                 </div>
-                                <input class="form-control form-control-sm flex-grow-1" type="text" maxlength="60"
+                                <input class="form-control form-control-sm flex-grow-1" type="text" aria-label="Label for @m.DefaultLabel" maxlength="60"
                                        placeholder="@m.DefaultLabel" @bind="m.Label" @bind:event="oninput" />
                             </li>
                         }
@@ -82,7 +82,7 @@ else
                                 <div class="small text-muted"><code>@m.Value</code></div>
                             </div>
                             <div class="col-sm-8">
-                                <input class="form-control" type="text" maxlength="60"
+                                <input class="form-control" type="text" aria-label="Label for @m.DefaultLabel" maxlength="60"
                                        placeholder="@m.DefaultLabel" @bind="m.Label" @bind:event="oninput" />
                             </div>
                         </div>

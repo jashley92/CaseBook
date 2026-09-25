@@ -17,7 +17,7 @@
         <div class="fw-semibold mb-1"><span class="bi bi-check2-circle me-1"></span>Token “@_created.Token.Name” created. Copy it now.</div>
         <div class="small mb-2">It won't be shown again. CaseBook stores only a hash.</div>
         <div class="input-group input-group-sm" style="max-width:40rem">
-            <input class="form-control font-monospace" readonly value="@_created.Plaintext" />
+            <input class="form-control font-monospace" readonly aria-label="New API token" value="@_created.Plaintext" />
             <button class="btn btn-outline-secondary" type="button" @onclick="CopyToken">
                 <span class="bi @(_copied ? "bi-check2" : "bi-clipboard") me-1"></span>@(_copied ? "Copied" : "Copy")
             </button>
@@ -30,12 +30,12 @@
     <div class="fw-semibold mb-2">Create a token</div>
     <div class="row g-3">
         <div class="col-md-5">
-            <label class="form-label">Name <span class="text-danger">*</span></label>
-            <input class="form-control form-control-sm" @bind="_name" placeholder="e.g. my-triage-script" />
+            <label class="form-label" for="mytok-name">Name <span class="text-danger">*</span></label>
+            <input id="mytok-name" class="form-control form-control-sm" @bind="_name" placeholder="e.g. my-triage-script" />
         </div>
         <div class="col-md-3">
-            <label class="form-label">Expires <span class="text-danger">*</span></label>
-            <input type="date" class="form-control form-control-sm" @bind="_expiresDate"
+            <label class="form-label" for="mytok-expires">Expires <span class="text-danger">*</span></label>
+            <input id="mytok-expires" type="date" class="form-control form-control-sm" @bind="_expiresDate"
                    min="@DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-dd")"
                    max="@DateTime.UtcNow.Date.Add(ApiTokenService.MaxPersonalLifetime).ToString("yyyy-MM-dd")" />
             <div class="form-text">Up to @((int)ApiTokenService.MaxPersonalLifetime.TotalDays) days. A token only works with roles you still hold.</div>

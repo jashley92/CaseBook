@@ -494,25 +494,25 @@ else
                             {
                                 <p class="small text-muted mb-2">This <strong>Complex Event</strong> hasn't been triaged yet. Promoting it gives it its first formal classification.</p>
                             }
-                            <label class="form-label small">@(_case?.Classification is null ? "Promote to" : "New classification")</label>
-                            <select class="form-select mb-2" @bind="_newClass" @bind:after="OnReclassTargetChanged">@foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }</select>
-                            <label class="form-label small">Reason <span class="text-muted">(required)</span></label>
-                            <input class="form-control" placeholder="e.g. new evidence confirms data was exfiltrated" @bind="_reclassReason" @bind:event="oninput" />
+                            <label class="form-label small" for="ws-reclass-to">@(_case?.Classification is null ? "Promote to" : "New classification")</label>
+                            <select id="ws-reclass-to" class="form-select mb-2" @bind="_newClass" @bind:after="OnReclassTargetChanged">@foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }</select>
+                            <label class="form-label small" for="ws-reclass-reason">Reason <span class="text-muted">(required)</span></label>
+                            <input id="ws-reclass-reason" class="form-control" placeholder="e.g. new evidence confirms data was exfiltrated" @bind="_reclassReason" @bind:event="oninput" />
                             @RationaleHint(_reclassReason)
                             @GateModalSection()
                         }
                         else if (_activeModal == "severity")
                         {
-                            <label class="form-label small">New severity</label>
-                            <select class="form-select mb-2" @bind="_newSeverity">@foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@SevLabels.For(s)</option> }</select>
-                            <input class="form-control" placeholder="Reason (optional)" @bind="_severityReason" />
+                            <label class="form-label small" for="ws-severity">New severity</label>
+                            <select id="ws-severity" class="form-select mb-2" @bind="_newSeverity">@foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@SevLabels.For(s)</option> }</select>
+                            <input class="form-control" placeholder="Reason (optional)" aria-label="Reason" @bind="_severityReason" />
                         }
                         else if (_activeModal == "status")
                         {
-                            <label class="form-label small">New status</label>
-                            <select class="form-select mb-2" @bind="_newPhase" @bind:after="OnStatusTargetChanged">@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
-                            <label class="form-label small">Reason <span class="text-muted">@(_gateEval is { RequiresCommentary: true } ? "(required)" : "(optional)")</span></label>
-                            <input class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
+                            <label class="form-label small" for="ws-status">New status</label>
+                            <select id="ws-status" class="form-select mb-2" @bind="_newPhase" @bind:after="OnStatusTargetChanged">@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
+                            <label class="form-label small" for="ws-status-reason">Reason <span class="text-muted">@(_gateEval is { RequiresCommentary: true } ? "(required)" : "(optional)")</span></label>
+                            <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
                             @RationaleHint(_phaseReason)
                             @GateModalSection()
                         }
@@ -520,7 +520,7 @@ else
                         {
                             <p class="small text-muted mb-2">Marks this case as a duplicate of the one work continues on, links the two and adds a
                                 note to both. You then close this case as usual.</p>
-                            <label class="form-label small mb-1">Case to keep</label>
+                            <label class="form-label small mb-1" for="ws-supersede-query">Case to keep</label>
                             @if (_supersedeTargetId is not null)
                             {
                                 <div class="alert alert-info py-1 px-2 small d-flex align-items-center gap-2 mb-2">
@@ -537,7 +537,7 @@ else
                                     </button>
                                 }
                                 <div class="input-group input-group-sm mb-1">
-                                    <input class="form-control" placeholder="Search by case number or title" @bind="_supersedeQuery" @bind:event="oninput"
+                                    <input id="ws-supersede-query" class="form-control" placeholder="Search by case number or title" @bind="_supersedeQuery" @bind:event="oninput"
                                            @onkeydown="@(async e => { if (e.Key == "Enter") await SearchSupersede(); })" />
                                     <button type="button" class="btn btn-outline-secondary" @onclick="SearchSupersede">Search</button>
                                 </div>
@@ -613,18 +613,18 @@ else
                                 A determination can start disclosure clocks (for SEC registrants, a Form 8-K is due within four business days),
                                 and your notification deadlines may count from it. The record shows the call was made deliberately and on time.
                             </WhyThisMatters>
-                            <label class="form-label small">Determination</label>
-                            <select class="form-select mb-2" @bind="_materialityStatus">
+                            <label class="form-label small" for="ws-mat-status">Determination</label>
+                            <select id="ws-mat-status" class="form-select mb-2" @bind="_materialityStatus">
                                 <option value="@MaterialityStatus.UnderReview">Under review (with Legal / committee)</option>
                                 <option value="@MaterialityStatus.Material">Material</option>
                                 <option value="@MaterialityStatus.NotMaterial">Not material</option>
                             </select>
-                            <label class="form-label small">Decision-maker <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-                            <input class="form-control mb-2" placeholder="e.g. Disclosure Committee, General Counsel" @bind="_materialityDecisionMaker" />
-                            <label class="form-label small">Decision date <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-                            <input type="date" class="form-control mb-2" @bind="_materialityDecidedOn" />
-                            <label class="form-label small">Rationale <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-                            <textarea class="form-control" rows="2" placeholder="Why the case is or isn't material" @bind="_materialityRationale"></textarea>
+                            <label class="form-label small" for="ws-mat-maker">Decision-maker <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
+                            <input id="ws-mat-maker" class="form-control mb-2" placeholder="e.g. Disclosure Committee, General Counsel" @bind="_materialityDecisionMaker" />
+                            <label class="form-label small" for="ws-mat-date">Decision date <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
+                            <input id="ws-mat-date" type="date" class="form-control mb-2" @bind="_materialityDecidedOn" />
+                            <label class="form-label small" for="ws-mat-rationale">Rationale <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
+                            <textarea id="ws-mat-rationale" class="form-control" rows="2" placeholder="Why the case is or isn't material" @bind="_materialityRationale"></textarea>
                         }
                         else if (_activeModal == "archive")
                         {
@@ -633,8 +633,8 @@ else
                         else if (_activeModal == "reopen")
                         {
                             <p class="small text-muted mb-2">Reopen <code>@_case.CaseNumber</code>? It returns to the phase it was in before closing and the closure time is cleared. Closing it again re-runs the close gate.</p>
-                            <label class="form-label small">Reason <span class="text-muted">(required)</span></label>
-                            <input class="form-control" placeholder="Why is this case being reopened?" @bind="_reopenReason" @bind:event="oninput" />
+                            <label class="form-label small" for="ws-reopen-reason">Reason <span class="text-muted">(required)</span></label>
+                            <input id="ws-reopen-reason" class="form-control" placeholder="Why is this case being reopened?" @bind="_reopenReason" @bind:event="oninput" />
                         }
                         else if (_activeModal == "assign")
                         {
@@ -644,8 +644,8 @@ else
                             }
                             else
                             {
-                                <label class="form-label small">Person</label>
-                                <select class="form-select mb-2" @bind="_assignUserId">
+                                <label class="form-label small" for="ws-assign-user">Person</label>
+                                <select id="ws-assign-user" class="form-select mb-2" @bind="_assignUserId">
                                     <option value="">Select a person…</option>
                                     @foreach (var u in AssignableUsers())
                                     {
@@ -657,8 +657,8 @@ else
                                     <p class="small text-muted mb-2"><span class="bi bi-lock-fill" aria-hidden="true"></span> This case is restricted:
                                         assigning someone gives them access to it.</p>
                                 }
-                                <label class="form-label small">Role on this case</label>
-                                <select class="form-select" @bind="_assignRole">
+                                <label class="form-label small" for="ws-assign-role">Role on this case</label>
+                                <select id="ws-assign-role" class="form-select" @bind="_assignRole">
                                     @foreach (var r in Enum.GetValues<CaseAssignmentRole>())
                                     {
                                         <option value="@r">@Ui.Label(r)</option>
@@ -1287,7 +1287,7 @@ else
                         <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
                         @UnmetBlocking.Count required item@(UnmetBlocking.Count == 1 ? "" : "s") not met. To proceed anyway, enter an override justification.
                     </div>
-                    <input class="form-control form-control-sm" placeholder="Override justification (required)" @bind="_gateOverride" @bind:event="oninput" />
+                    <input class="form-control form-control-sm" placeholder="Override justification (required)" aria-label="Override justification" @bind="_gateOverride" @bind:event="oninput" />
                     @if (g.RequiresCommentary)
                     {
                         <div class="form-text @((_gateOverride?.Trim().Length ?? 0) < g.CommentaryMinLength ? "text-danger" : "text-success")">
@@ -1379,6 +1379,7 @@ else
     // UX-01: whether any of the three trap modals is currently open (drives arm/release in OnAfterRenderAsync).
     private bool AnyTrapModalOpen => _confirm is not null || _previewShotId is not null || _activeModal is not null || _confirmLeaveOpen;
     private bool _modalTrapArmed;
+    private string? _revealedTab;
 
     private async Task RunConfirm()
     {
@@ -1941,6 +1942,14 @@ else
             // U-14: case-local keyboard shortcuts (digit 1..9 / 0 = tab, n = new note).
             try { await JS.InvokeVoidAsync("imCaseHotkeys.register", _dotNetRef); }
             catch (JSException) { /* shortcuts are a progressive enhancement */ }
+        }
+
+        // Phones: the tab strip scrolls sideways, so keep the active tab in view after it changes.
+        if (_case is not null && _revealedTab != _activeTab)
+        {
+            _revealedTab = _activeTab;
+            try { await JS.InvokeVoidAsync("imMotion.revealActiveTab", ".im-workspace-tabs"); }
+            catch (JSException) { /* cosmetic */ }
         }
 
         // UX-01: move focus into a modal when it opens and back to the trigger when it closes.

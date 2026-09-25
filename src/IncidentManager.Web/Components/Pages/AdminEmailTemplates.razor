@@ -56,11 +56,11 @@ else
                         <h2 class="h6 mb-1">@sel.Title @if (sel.IsOverridden) { <span class="im-badge im-b-info ms-1">Customized</span> }</h2>
                         <p class="text-muted small mb-3">@sel.Description</p>
 
-                        <label class="form-label small mb-0">Subject</label>
-                        <input class="form-control form-control-sm mb-3" @bind="_subject" @bind:event="oninput" />
+                        <label class="form-label small mb-0" for="etpl-subject">Subject</label>
+                        <input id="etpl-subject" class="form-control form-control-sm mb-3" @bind="_subject" @bind:event="oninput" />
 
-                        <label class="form-label small mb-0">Body</label>
-                        <textarea class="form-control form-control-sm font-monospace mb-2" rows="12"
+                        <label class="form-label small mb-0" for="etpl-body">Body</label>
+                        <textarea id="etpl-body" class="form-control form-control-sm font-monospace mb-2" rows="12"
                                   style="line-height:1.5" @bind="_body" @bind:event="oninput"></textarea>
 
                         <div class="mb-3">
@@ -83,7 +83,7 @@ else
                             <button class="btn btn-outline-secondary btn-sm" @onclick="UpdatePreview" disabled="@_busy">Update preview</button>
                             <button class="btn btn-outline-danger btn-sm" @onclick="Reset" disabled="@(_busy || !sel.IsOverridden)">Reset to default</button>
                             <span class="vr mx-1"></span>
-                            <input class="form-control form-control-sm" style="max-width:16rem" placeholder="you@example.com"
+                            <input class="form-control form-control-sm" style="max-width:16rem" aria-label="Test email recipient" placeholder="you@example.com"
                                    @bind="_testRecipient" />
                             <button class="btn btn-outline-secondary btn-sm" @onclick="SendTest" disabled="@(_busy || string.IsNullOrWhiteSpace(_testRecipient))">Send test</button>
                         </div>

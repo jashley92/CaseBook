@@ -74,31 +74,31 @@
                 @if (_editingDetails)
                 {
                     <div class="mb-2">
-                        <label class="form-label small mb-0">Title</label>
-                        <input class="form-control form-control-sm" @bind="_edTitle" @bind:event="oninput" />
+                        <label class="form-label small mb-0" for="ov-title">Title</label>
+                        <input id="ov-title" class="form-control form-control-sm" @bind="_edTitle" @bind:event="oninput" />
                     </div>
                     <div class="mb-2">
-                        <label class="form-label small mb-0">@DetectionLabel case ID</label>
-                        <input class="form-control form-control-sm" @bind="_edDetection" />
+                        <label class="form-label small mb-0" for="ov-detection">@DetectionLabel case ID</label>
+                        <input id="ov-detection" class="form-control form-control-sm" @bind="_edDetection" />
                     </div>
                     <div class="mb-2">
-                        <label class="form-label small mb-0">Data context <span class="text-muted">(notes)</span></label>
-                        <input class="form-control form-control-sm" @bind="_edDataTypes" />
+                        <label class="form-label small mb-0" for="ov-data-context">Data context <span class="text-muted">(notes)</span></label>
+                        <input id="ov-data-context" class="form-control form-control-sm" @bind="_edDataTypes" />
                         <div class="form-text mt-0">Free-text notes. The impact assessment's data elements are the official list.</div>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label small mb-0">Impacted assets</label>
-                        <input class="form-control form-control-sm" @bind="_edImpacted" />
+                        <label class="form-label small mb-0" for="ov-impacted">Impacted assets</label>
+                        <input id="ov-impacted" class="form-control form-control-sm" @bind="_edImpacted" />
                     </div>
                     <div class="row g-2 mb-2">
                         <div class="col-sm-6">
-                            <label class="form-label small mb-0">Detected (@TimeDisp.Label)</label>
-                            <input type="datetime-local" class="form-control form-control-sm" @bind="_edDetected"
+                            <label class="form-label small mb-0" for="ov-detected">Detected (@TimeDisp.Label)</label>
+                            <input id="ov-detected" type="datetime-local" class="form-control form-control-sm" @bind="_edDetected"
                                    title="When this was first detected or reported, not when the case was opened. Starts the response SLA clock." />
                         </div>
                         <div class="col-sm-6">
-                            <label class="form-label small mb-0">Initial activity <span class="text-muted">(optional)</span></label>
-                            <input type="datetime-local" class="form-control form-control-sm" @bind="_edOccurred"
+                            <label class="form-label small mb-0" for="ov-occurred">Initial activity <span class="text-muted">(optional)</span></label>
+                            <input id="ov-occurred" type="datetime-local" class="form-control form-control-sm" @bind="_edOccurred"
                                    title="When adversary activity began (initial access), if known. Used to calculate dwell time." />
                         </div>
                     </div>
@@ -107,7 +107,7 @@
                         <div class="alert alert-warning py-1 px-2 small mb-2">@derr</div>
                     }
                     <div class="mb-2">
-                        <label class="form-label small mb-0">Summary <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links</span></label>
+                        <label class="form-label small mb-0" for="@SummaryEditorId">Summary <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links</span></label>
                         @* EasyMDE enhances this textarea (managed in this tab's OnAfterRenderAsync); value pulled on Save. *@
                         <textarea id="@SummaryEditorId" class="form-control"></textarea>
                     </div>
@@ -166,8 +166,8 @@
                 @if (_editingImpact)
                 {
                     <div class="mb-2">
-                        <label class="form-label small mb-0">Affected individuals (estimate)</label>
-                        <input type="number" min="0" class="form-control form-control-sm" @bind="_impCount" />
+                        <label class="form-label small mb-0" for="ov-imp-count">Affected individuals (estimate)</label>
+                        <input id="ov-imp-count" type="number" min="0" class="form-control form-control-sm" @bind="_impCount" />
                     </div>
                     <div class="mb-2">
                         <label class="form-label small mb-1 d-block">Data elements involved</label>
@@ -184,8 +184,8 @@
                         </div>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label small mb-0">Affected jurisdictions (state codes, comma-separated)</label>
-                        <input class="form-control form-control-sm" placeholder="e.g. NY, NJ, CT" @bind="_impStates" />
+                        <label class="form-label small mb-0" for="ov-imp-states">Affected jurisdictions (state codes, comma-separated)</label>
+                        <input id="ov-imp-states" class="form-control form-control-sm" placeholder="e.g. NY, NJ, CT" @bind="_impStates" />
                     </div>
                     @if (_impactError is { } ierr)
                     {
@@ -288,8 +288,8 @@
                             {
                                 <div class="d-flex align-items-end gap-2 flex-wrap">
                                     <div>
-                                        <label class="form-label small mb-0">Reported at (@TimeDisp.Label)</label>
-                                        <input type="datetime-local" class="form-control form-control-sm" @bind="_reportedAt"
+                                        <label class="form-label small mb-0" for="ov-reported-at">Reported at (@TimeDisp.Label)</label>
+                                        <input id="ov-reported-at" type="datetime-local" class="form-control form-control-sm" @bind="_reportedAt"
                                                title="When regulators were notified. Saving this stops the notification countdown." />
                                     </div>
                                     <button class="btn btn-sm btn-primary" @onclick="MarkReported">Save</button>
@@ -447,8 +447,8 @@
             @if (_addingLink)
             {
                 <div class="mb-2">
-                    <label class="form-label small mb-0">Relationship</label>
-                    <select class="form-select form-select-sm" @bind="_linkType">
+                    <label class="form-label small mb-0" for="ov-link-type">Relationship</label>
+                    <select id="ov-link-type" class="form-select form-select-sm" @bind="_linkType">
                         @foreach (var t in Enum.GetValues<CaseLinkType>())
                         {
                             <option value="@t">@Ui.CaseLinkLabel(t, true)</option>
@@ -456,7 +456,7 @@
                     </select>
                 </div>
                 <div class="mb-2">
-                    <label class="form-label small mb-0">Case</label>
+                    <label class="form-label small mb-0" for="ov-link-query">Case</label>
                     @if (_linkTargetId is not null)
                     {
                         <div class="d-flex align-items-center gap-2">
@@ -466,7 +466,7 @@
                     }
                     else
                     {
-                        <input class="form-control form-control-sm" placeholder="Search by number or title"
+                        <input id="ov-link-query" class="form-control form-control-sm" placeholder="Search by number or title"
                                @bind="_linkQuery" @bind:event="oninput" @bind:after="SearchLinkTargets" />
                         @if (_linkResults.Count > 0)
                         {
@@ -487,8 +487,8 @@
                     }
                 </div>
                 <div class="mb-2">
-                    <label class="form-label small mb-0">Note (optional)</label>
-                    <input class="form-control form-control-sm" @bind="_linkDesc" placeholder="Why are these related?" />
+                    <label class="form-label small mb-0" for="ov-link-note">Note (optional)</label>
+                    <input id="ov-link-note" class="form-control form-control-sm" @bind="_linkDesc" placeholder="Why are these related?" />
                 </div>
                 <button class="btn btn-sm btn-primary" @onclick="AddLink" disabled="@(_linkTargetId is null)">Add link</button>
                 <button class="btn btn-sm btn-outline-secondary" @onclick="CancelAddLink">Cancel</button>
