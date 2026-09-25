@@ -45,16 +45,16 @@
         @* Case details *@
         <div class="im-card nc-card">
             <div class="mb-3">
-                <label class="form-label">Title <span class="text-danger">*</span></label>
-                <InputText class="form-control form-control-lg" @bind-Value="_request.Title" @bind-Value:after="SyncSlug"
+                <label class="form-label" for="cc-title">Title <span class="text-danger">*</span></label>
+                <InputText id="cc-title" class="form-control form-control-lg" @bind-Value="_request.Title" @bind-Value:after="SyncSlug"
                            placeholder="e.g. Credential-phishing wave targeting Finance" />
                 <div class="form-text">Case number <code>@PreviewNumber</code> is assigned automatically.</div>
             </div>
 
             <div class="row g-3">
                 <div class="col-md-4">
-                    <label class="form-label">Classification</label>
-                    <InputSelect class="form-select" @bind-Value="_request.Classification">
+                    <label class="form-label" for="cc-classification">Classification</label>
+                    <InputSelect id="cc-classification" class="form-select" @bind-Value="_request.Classification">
                         <option value="">Complex Event</option>
                         @foreach (var c in Enum.GetValues<Classification>())
                         {
@@ -63,8 +63,8 @@
                     </InputSelect>
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label">Severity</label>
-                    <InputSelect class="form-select" @bind-Value="_request.Severity">
+                    <label class="form-label" for="cc-severity">Severity</label>
+                    <InputSelect id="cc-severity" class="form-select" @bind-Value="_request.Severity">
                         @foreach (var s in Enum.GetValues<Severity>())
                         {
                             <option value="@s">@SevLabels.For(s)</option>
@@ -73,8 +73,8 @@
                     <div class="form-text">Sets the response SLA clock. Defaults to @SevLabels.For(Severity.Medium).</div>
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label">Origin</label>
-                    <InputSelect class="form-select" @bind-Value="_request.Origin">
+                    <label class="form-label" for="cc-origin">Origin</label>
+                    <InputSelect id="cc-origin" class="form-select" @bind-Value="_request.Origin">
                         <option value="@CaseOrigin.InternalDetection">Internal detection</option>
                         <option value="@CaseOrigin.ThirdParty">Third-party / vendor</option>
                     </InputSelect>
@@ -83,16 +83,16 @@
                 @if (_request.Origin == CaseOrigin.ThirdParty)
                 {
                     <div class="col-md-4">
-                        <label class="form-label">Vendor name <span class="text-danger">*</span></label>
-                        <InputText class="form-control" @bind-Value="_request.VendorName" />
+                        <label class="form-label" for="cc-vendor-name">Vendor name <span class="text-danger">*</span></label>
+                        <InputText id="cc-vendor-name" class="form-control" @bind-Value="_request.VendorName" />
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label">Vendor contact</label>
-                        <InputText class="form-control" @bind-Value="_request.VendorContact" />
+                        <label class="form-label" for="cc-vendor-contact">Vendor contact</label>
+                        <InputText id="cc-vendor-contact" class="form-control" @bind-Value="_request.VendorContact" />
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label">Vendor reference</label>
-                        <InputText class="form-control" @bind-Value="_request.VendorReference" />
+                        <label class="form-label" for="cc-vendor-ref">Vendor reference</label>
+                        <InputText id="cc-vendor-ref" class="form-control" @bind-Value="_request.VendorReference" />
                     </div>
                 }
 
@@ -139,19 +139,19 @@
                 </div>
 
                 <div class="col-md-6">
-                    <label class="form-label">@DetectionLabel Case ID <span class="text-muted">(optional)</span></label>
-                    <InputText class="form-control" @bind-Value="_request.DetectionCaseId" placeholder="@($"e.g. {DetectionLabel}-40122")" />
+                    <label class="form-label" for="cc-detection-id">@DetectionLabel Case ID <span class="text-muted">(optional)</span></label>
+                    <InputText id="cc-detection-id" class="form-control" @bind-Value="_request.DetectionCaseId" placeholder="@($"e.g. {DetectionLabel}-40122")" />
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Data context <span class="text-muted">(optional)</span></label>
-                    <InputText class="form-control" @bind-Value="_request.DataTypesInvolved" placeholder="@(_dataTypesPrompt ?? "e.g. PII, PHI, credentials")" />
+                    <label class="form-label" for="cc-data-context">Data context <span class="text-muted">(optional)</span></label>
+                    <InputText id="cc-data-context" class="form-control" @bind-Value="_request.DataTypesInvolved" placeholder="@(_dataTypesPrompt ?? "e.g. PII, PHI, credentials")" />
                     @* E-36: the structured data elements (Impact assessment) are the authoritative record. *@
                     <div class="form-text">Free-text notes only. Notification decisions use the data elements recorded in the case's Impact assessment.</div>
                 </div>
 
                 <div class="col-12">
-                    <label class="form-label">Summary</label>
-                    <InputTextArea class="form-control" rows="3" @bind-Value="_request.Summary"
+                    <label class="form-label" for="cc-summary">Summary</label>
+                    <InputTextArea id="cc-summary" class="form-control" rows="3" @bind-Value="_request.Summary"
                                    placeholder="@(_summaryPrompt ?? "What happened, current status, and immediate impact.")" />
                     @* FR-21: a template's summary shows as grey prompt text (U-47b), never a filled value, so a
                        hurried user can mistake it for content and file an empty summary. Nudge softly (no block). *@
@@ -168,8 +168,8 @@
             <details class="nc-advanced">
                 <summary>Advanced</summary>
                 <div class="mt-2 nc-advanced-body">
-                    <label class="form-label">Case number <span class="text-muted">(optional)</span></label>
-                    <InputText class="form-control" @bind-Value="_request.CaseNumber" @bind-Value:after="CheckNumberAvailable" placeholder="@PreviewNumber" />
+                    <label class="form-label" for="cc-case-number">Case number <span class="text-muted">(optional)</span></label>
+                    <InputText id="cc-case-number" class="form-control" @bind-Value="_request.CaseNumber" @bind-Value:after="CheckNumberAvailable" placeholder="@PreviewNumber" />
                     @* FR-22: flag a collision here instead of only on submit. *@
                     @if (_numberAvailable == false)
                     {
