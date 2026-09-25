@@ -366,7 +366,7 @@ public sealed class CaseImportService
             }
             p.Timeline.Add(row);
         }
-        if (droppedTimeline > 0) p.Warnings.Add($"{droppedTimeline} timeline entr(y/ies) had no description and were skipped.");
+        if (droppedTimeline > 0) p.Warnings.Add(droppedTimeline == 1 ? "1 timeline entry had no description and was skipped." : $"{droppedTimeline} timeline entries had no description and were skipped.");
 
         // Entities (refang/auto-type + dedupe by type+value)
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -401,7 +401,7 @@ public sealed class CaseImportService
                 Source = string.IsNullOrWhiteSpace(e.Source) ? p.Origin : e.Source.Trim()
             });
         }
-        if (droppedEntities > 0) p.Warnings.Add($"{droppedEntities} entit(y/ies) had no value and were skipped.");
+        if (droppedEntities > 0) p.Warnings.Add(droppedEntities == 1 ? "1 entity had no value and was skipped." : $"{droppedEntities} entities had no value and were skipped.");
 
         // Action items
         var droppedTasks = 0;

@@ -45,7 +45,7 @@ public static partial class ReportTemplateFields
         (new("case.data_elements", "Data elements involved"), m => m.DataElementsSummary ?? ""),
         (new("case.notification_triggers", "Notification triggers"), m => m.NotificationTriggersSummary ?? ""),
         (new("case.jurisdictions", "Affected jurisdictions"), m => m.AffectedStates ?? ""),
-        (new("case.legal_referral", "Legal/Privacy referral note, if referred"), m => m.LegalReferred ? (m.LegalNote ?? "Referred") : ""),
+        (new("case.legal_referral", "Legal / Privacy referral note, if referred"), m => m.LegalReferred ? (m.LegalNote ?? "Referred") : ""),
         (new("case.legal_hold", "\"Yes\" when a legal hold is in effect, else \"No\""), m => m.LegalHold ? "Yes" : "No"),
         (new("case.materiality", "Materiality determination"), m => m.MaterialityStatus ?? ""),
         (new("case.materiality_decided_by", "Who made the materiality call"), m => m.MaterialityDecisionMaker ?? ""),

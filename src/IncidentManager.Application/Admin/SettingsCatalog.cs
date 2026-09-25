@@ -59,7 +59,7 @@ public static class SettingsCatalog
             "When off, notifications are logged, not delivered.", "false"),
         new SettingDefinition("Email:From", "From address", "Notifications", SettingKind.Text,
             "Envelope-from address for outbound notifications.", "incident-manager@localhost"),
-        new SettingDefinition("Email:LegalDistribution", "Legal/Privacy distribution", "Notifications", SettingKind.MultiText,
+        new SettingDefinition("Email:LegalDistribution", "Legal / Privacy distribution", "Notifications", SettingKind.MultiText,
             "Emailed when a case is escalated to Breach. One address per line.", ""),
         new SettingDefinition("Email:IntegrityAlertDistribution", "Integrity-alert distribution", "Notifications", SettingKind.MultiText,
             "Emailed if the audit hash chain fails verification, a possible sign of tampering. One address per line. A critical SIEM event is sent either way.", ""),
@@ -117,7 +117,7 @@ public static class SettingsCatalog
         // when a chat webhook is configured on the host (Chat:Webhook, server-side); they post to that shared
         // channel and are independent of email. All off by default.
         new SettingDefinition("Notifications:Chat:BreachEscalations", "Chat: breach escalations", "Notifications", SettingKind.Bool,
-            "Posts Breach escalations to the team chat channel (Slack/Teams), separately from the Legal/Privacy email. Needs a chat webhook on the host (Chat:Webhook).", "false"),
+            "Posts Breach escalations to the team chat channel (Slack/Teams), separately from the Legal / Privacy email. Needs a chat webhook on the host (Chat:Webhook).", "false"),
         new SettingDefinition("Notifications:Chat:Assignments", "Chat: assignments", "Notifications", SettingKind.Bool,
             "Posts case assignments to the shared team channel, not as direct messages. Needs a chat webhook on the host.", "false"),
         new SettingDefinition("Notifications:Chat:Mentions", "Chat: comment mentions", "Notifications", SettingKind.Bool,

@@ -1062,20 +1062,7 @@
     // --- Report section layout designer (Reporting:SectionLayout) ---
     private List<ReportSectionState> _layout = [];
 
-    private static readonly Dictionary<ReportSection, string> SectionLabels = new()
-    {
-        [ReportSection.Summary] = "Summary",
-        [ReportSection.BusinessImpact] = "Business Impact",
-        [ReportSection.EventTimeline] = "Event Timeline",
-        [ReportSection.InvestigationTimeline] = "Investigation Timeline",
-        [ReportSection.SystemsReviewed] = "Systems Reviewed",
-        [ReportSection.Indicators] = "Indicators of Compromise",
-        [ReportSection.Recommendations] = "Recommendations",
-        [ReportSection.Outcome] = "Outcome",
-        [ReportSection.Appendix] = "Appendix (full structured record)",
-    };
-
-    private static string SectionLabel(ReportSection s) => SectionLabels.GetValueOrDefault(s, s.ToString());
+    private static string SectionLabel(ReportSection s) => Ui.Label(s);
 
     private void MoveSection(int index, int delta)
     {

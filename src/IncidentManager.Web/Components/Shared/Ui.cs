@@ -127,6 +127,18 @@ public static class Ui
         _ => r.ToString()
     };
 
+    /// <summary>A report section's name as its heading reads in the generated report.</summary>
+    public static string Label(IncidentManager.Application.Reporting.ReportSection s) => s switch
+    {
+        IncidentManager.Application.Reporting.ReportSection.BusinessImpact => "Business Impact",
+        IncidentManager.Application.Reporting.ReportSection.EventTimeline => "Event Timeline",
+        IncidentManager.Application.Reporting.ReportSection.InvestigationTimeline => "Investigation Timeline",
+        IncidentManager.Application.Reporting.ReportSection.SystemsReviewed => "Systems Reviewed",
+        IncidentManager.Application.Reporting.ReportSection.Indicators => "Indicators of Compromise",
+        IncidentManager.Application.Reporting.ReportSection.Appendix => "Appendix (full structured record)",
+        _ => s.ToString()
+    };
+
     public static string Label(CaseAssignmentRole r) => r switch
     {
         CaseAssignmentRole.IncidentCommander => "Incident Commander",

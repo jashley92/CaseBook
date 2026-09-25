@@ -202,8 +202,8 @@ public static class EmailTemplateCatalog
 
         new EmailTemplateDefinition(
             "breach",
-            "Breach escalation (Legal/Privacy)",
-            "Sent to the Legal/Privacy distribution when a case is escalated to Breach.",
+            "Breach escalation (Legal / Privacy)",
+            "Sent to the Legal / Privacy distribution when a case is escalated to Breach.",
             "Case escalated to Breach: {{CaseNumber}}",
             """
             <h1>Case escalated to Breach</h1>
@@ -215,7 +215,7 @@ public static class EmailTemplateCatalog
             new[]
             {
                 CaseNumber, CaseTitle, Severity, Phase,
-                new EmailToken("ReferralNote", "A note shown when a Legal/Privacy referral is already recorded (else blank)."),
+                new EmailToken("ReferralNote", "A note shown when a Legal / Privacy referral is already recorded (else blank)."),
             },
             CtaLabel: "Open the case",
             CtaUrlToken: "CaseUrl"),

@@ -202,25 +202,12 @@
         public List<ReportSectionState> Layout = [];
     }
 
-    private static readonly Dictionary<ReportSection, string> SectionLabels = new()
-    {
-        [ReportSection.Summary] = "Summary",
-        [ReportSection.BusinessImpact] = "Business Impact",
-        [ReportSection.EventTimeline] = "Event Timeline",
-        [ReportSection.InvestigationTimeline] = "Investigation Timeline",
-        [ReportSection.SystemsReviewed] = "Systems Reviewed",
-        [ReportSection.Indicators] = "Indicators of Compromise",
-        [ReportSection.Recommendations] = "Recommendations",
-        [ReportSection.Outcome] = "Outcome",
-        [ReportSection.Appendix] = "Appendix (full structured record)",
-    };
-
-    private static string SectionLabel(ReportSection s) => SectionLabels.GetValueOrDefault(s, s.ToString());
+    private static string SectionLabel(ReportSection s) => Ui.Label(s);
 
     private static string SectionSummary(string? layout)
     {
         var enabled = ReportLayout.Resolve(layout);
-        return enabled.Count == 0 ? "(none)" : string.Join(", ", enabled.Select(s => SectionLabels.GetValueOrDefault(s, s.ToString())));
+        return enabled.Count == 0 ? "(none)" : string.Join(", ", enabled.Select(s => Ui.Label(s)));
     }
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
