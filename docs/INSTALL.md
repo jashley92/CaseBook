@@ -238,6 +238,9 @@ Then, signed in as a mapped user:
 - [ ] Perform one **restore rehearsal** and confirm chain + prior-seal verification on the copy — §1.3.
 - [ ] Confirm the evidence/seal/report dirs are in the **EDR** monitoring policy — §3.
 - [ ] *(Optional)* Externalize secrets to **CyberArk CCP** — see §6.1 below and OPERATIONS.md §6.
+- [ ] *(Recommended)* Turn on the **SQL Server ledger** for the audit trail, seals and custody events with
+      `deploy\Enable-Ledger.ps1`, and schedule `Export-LedgerDigest.ps1` to an immutable share. One-way: take a
+      full backup first. See OPERATIONS.md §7.
 - [ ] Walk the **Deploy-time Checklist** (§4) and record sign-off.
 
 ### 6.1 Optional — externalize secrets to CyberArk (F-19)

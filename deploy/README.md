@@ -14,6 +14,11 @@ Follow the full runbook in **[../docs/INSTALL.md](../docs/INSTALL.md)** (which i
 | `Verify-Install.ps1` | Readiness + smoke test: `-ConfigFile` validates the answers file resolves (account/groups/cert/paths/SQL) **before** installing; `-Url` is the post-install smoke test. |
 | `appsettings.Production.template.json` | Production config template; the installer substitutes `__PLACEHOLDERS__`. |
 | `sql/01-Create-Database.sql` | The DDL the DB installer runs (database, recovery model, login/user, grants). |
+| `Enable-Ledger.ps1` | *(Recommended, one-way)* Turn on the SQL Server ledger for the audit log, seals and custody events (E-10). Requires a full backup from the last 24 h. See **[../docs/OPERATIONS.md](../docs/OPERATIONS.md) §7**. |
+| `Export-LedgerDigest.ps1` | Save a ledger digest to `LedgerDigestPath` (schedule daily; exit 1 on failure). |
+| `Verify-LedgerDigests.ps1` | Verify the ledger tables against the saved digests (exit 1 = possible tampering). |
+| `lib/CaseBookSql.ps1` | SqlClient helpers the ledger scripts share (no SqlServer module or sqlcmd needed). |
+| `sql/02-Enable-Ledger.sql` | The DDL `Enable-Ledger.ps1` runs. |
 | `sql/casebook-schema-sqlserver.sql` | Idempotent full-schema script for DBAs who apply the schema by hand (`-SchemaMode DbaApplies`). |
 
 ## Simplest path: one answers file for both installers

@@ -3,6 +3,7 @@
 @inject IntegrityService IntegritySvc
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Abstractions.ILedgerStatus Ledger
 
 <PageTitle>Integrity &amp; audit</PageTitle>
 
@@ -25,7 +26,23 @@
     <div class="col-md-4">
         <div class="card">
             <div class="card-header">Audit entries</div>
-            <div class="card-body"><span class="fs-3 fw-bold">@_count</span></div>
+            <div class="card-body">
+                <span class="fs-3 fw-bold">@_count</span>
+                @* E-10: the SQL Server ledger, when the deploy step has turned it on. Hidden on SQLite (dev). *@
+                @if (_ledger is { Applicable: true } lg)
+                {
+                    <div class="small mt-2" title="SQL Server append-only ledger on the audit trail, seals and custody events. The database itself refuses changes to these rows, and saved digests prove they're unaltered.">
+                        @if (lg.AllOn)
+                        {
+                            <span class="im-badge im-b-ok">Ledger on</span> <span class="text-muted">Database refuses edits to these rows.</span>
+                        }
+                        else
+                        {
+                            <span class="im-badge im-b-neutral">Ledger off</span> <span class="text-muted">@(lg.OnCount == 0 ? "Audit rows are protected by the hash chain and seals." : $"{lg.OnCount} of {lg.Tables.Count} tables. Rerun Enable-Ledger.ps1.")</span>
+                        }
+                    </div>
+                }
+            </div>
         </div>
     </div>
     <div class="col-md-8">
@@ -116,7 +133,7 @@ else
                     <td>@s.UpToSequence</td>
                     <td class="small">@s.Algorithm</td>
                     <td><code class="small">@s.KeyId</code></td>
-                    <td class="small">@s.SealedBy</td>
+                    <td class="small">@Users.DisplayFor(s.SealedBy)</td>
                     <td>
                         <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => VerifySeal(s.Id)">Verify</button>
                         @if (_sealResults.TryGetValue(s.Id, out var r))
@@ -176,7 +193,10 @@ else
         _count = await IntegritySvc.AuditCountAsync();
         _recent = await IntegritySvc.RecentAsync(null, 100);
         _seals = await IntegritySvc.RecentSealsAsync();
+        _ledger = await Ledger.GetAsync();
     }
+
+    private IncidentManager.Application.Abstractions.LedgerStatus? _ledger;
 
     // Track the result so the app-wide banner + monitor reflect this manual check and a break here
     // raises the same alarm (email + SIEM) as the background monitor — de-duplicated per episode.

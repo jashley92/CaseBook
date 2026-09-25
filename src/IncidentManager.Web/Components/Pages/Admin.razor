@@ -15,6 +15,7 @@
 @inject IWebHostEnvironment Env
 @inject Microsoft.EntityFrameworkCore.IDbContextFactory<IncidentManager.Infrastructure.Persistence.AppDbContext> DbFactory
 @inject IncidentManager.Application.Abstractions.ISealSigner Signer
+@inject IncidentManager.Application.Abstractions.ILedgerStatus Ledger
 @inject IncidentManager.Application.Abstractions.IEmailSender Email
 @inject IncidentManager.Application.Abstractions.IChatNotifier Chat
 @inject IncidentManager.Web.Ops.BackupHealthReader Backup
@@ -424,6 +425,25 @@
                     <tr>
                         <td>Seal signing key id</td>
                         <td><code class="small">@Signer.KeyId</code> <span class="small text-muted ms-2">@Signer.Algorithm</span></td>
+                    </tr>
+                    <tr>
+                        <td>SQL Server ledger</td>
+                        <td>
+                            @if (_ledger is not { Applicable: true } lg)
+                            {
+                                <span class="small text-muted">Not applicable on this database provider.</span>
+                            }
+                            else if (lg.AllOn)
+                            {
+                                @StatusBadge(true, "On", "")
+                                <span class="small text-muted ms-2">Audit log, seals and custody events are append-only ledger tables. Schedule Export-LedgerDigest.ps1 and verify with Verify-LedgerDigests.ps1.</span>
+                            }
+                            else
+                            {
+                                @StatusBadge(false, "", lg.OnCount == 0 ? "Off" : $"{lg.OnCount} of {lg.Tables.Count} tables")
+                                <span class="small text-muted ms-2">Turn on with deploy\Enable-Ledger.ps1 (one-way). See OPERATIONS.md, "SQL Server ledger".</span>
+                            }
+                        </td>
                     </tr>
                     <tr><td>AD group → role mapping</td><td><span class="im-badge im-b-neutral">DB-managed</span> <span class="small text-muted ms-2">edit under Roles &amp; access</span></td></tr>
                     <tr>
@@ -973,6 +993,7 @@
         Toasts.Success("Test chat message posted to the configured channel.");
     }
 
+    private IncidentManager.Application.Abstractions.LedgerStatus? _ledger;
     private bool _siemTesting;
     private IReadOnlyList<IncidentManager.Web.Siem.SiemTestResult>? _siemResults;
 
@@ -1045,6 +1066,7 @@
     private async Task LoadAsync()
     {
         _effective = await Settings.GetEffectiveAsync();
+        _ledger = await Ledger.GetAsync();
         _form.Clear();
         foreach (var s in _effective)
             _form[s.Definition.Key] = s.Value;

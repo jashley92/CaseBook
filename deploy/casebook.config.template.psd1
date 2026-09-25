@@ -58,4 +58,7 @@
     # --- Optional email (stays disabled until turned on in-app under Administration -> Settings) ---
     SmtpHost    = ''                  # e.g. 'smtp.contoso.com'
     MailDomain  = ''                  # e.g. 'contoso.com' (the From address becomes casebook@<domain>)
+
+    # --- Optional SQL Server ledger (E-10; Enable-Ledger.ps1, Export-LedgerDigest.ps1, Verify-LedgerDigests.ps1) ---
+    LedgerDigestPath = ''             # e.g. '\\worm01\casebook-ledger' - an immutable share the DBA can't modify
 }

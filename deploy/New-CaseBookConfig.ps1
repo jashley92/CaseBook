@@ -152,6 +152,11 @@ Write-Host "Email (optional - stays disabled until enabled in-app)" -ForegroundC
 $SmtpHost   = Ask -Prompt 'SMTP host' -Default ''
 $MailDomain = Ask -Prompt 'Mail domain (From = casebook@<domain>)' -Default ''
 
+# --- Optional SQL Server ledger (E-10) ------------------------------------------
+Write-Host ""
+Write-Host "SQL Server ledger digests (optional - used by Enable-Ledger.ps1 / Export-LedgerDigest.ps1)" -ForegroundColor Cyan
+$LedgerDigestPath = Ask -Prompt 'Digest folder, ideally an immutable (WORM) share' -Default ''
+
 # --- Write the answers file ---------------------------------------------------
 function Q([string] $v) { "'" + ($v -replace "'", "''") + "'" }
 
@@ -182,6 +187,8 @@ $body = @"
 
     SmtpHost    = $(Q $SmtpHost)
     MailDomain  = $(Q $MailDomain)
+
+    LedgerDigestPath = $(Q $LedgerDigestPath)
 }
 "@
 

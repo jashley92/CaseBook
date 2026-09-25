@@ -155,3 +155,6 @@ you need it.
   the first request, then run the upgrade with the app already schema-current.
 - Match the runtime: a build targeting .NET 10 needs the **.NET 10 Hosting Bundle** on the server
   (the shared framework, not just the SDK). The preflight checks this and stops with guidance.
+- **Sites with the SQL Server ledger on** (OPERATIONS.md §7): upgrades work unchanged. The ledger tables only
+  accept new nullable columns, and the build enforces that for every release, so a migration can't fail on
+  them. Take a ledger digest (`Export-LedgerDigest.ps1`) before and after the upgrade for your records.

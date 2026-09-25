@@ -136,6 +136,7 @@ public static class DependencyInjection
 
         services.AddDbContextFactory<AppDbContext>(ConfigureProvider, lifetime: ServiceLifetime.Scoped);
         services.AddScoped<IAppDbContextFactory, Persistence.AppDbContextFactoryAdapter>();
+        services.AddScoped<ILedgerStatus, Persistence.SqlLedgerStatus>(); // E-10: shows whether the SQL Server ledger is on
 
         // A scoped context bridge for the few Infrastructure consumers that still resolve AppDbContext
         // directly and manage their own short scopes (RoleDirectory/UserDirectory create a scope per
