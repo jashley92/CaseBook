@@ -25,6 +25,7 @@ public sealed class CaseActionPermissionsTests
         nameof(CaseService.CanViewAsync),
         nameof(CaseService.GetRestrictedClearanceRolesAsync),
         nameof(CaseService.IsCaseNumberAvailableAsync),
+        nameof(CaseService.FindIdByNumberAsync),
         nameof(CaseService.ListAsync),
         nameof(CaseService.GetDetailAsync),
         nameof(CaseService.ListActiveDataElementsAsync),
