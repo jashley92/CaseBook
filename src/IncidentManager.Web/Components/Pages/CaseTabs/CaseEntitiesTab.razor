@@ -863,7 +863,12 @@ else
     public async Task OnNodesMoved(EntityPosition[] positions)
     {
         if (!CanEdit || positions is null || positions.Length == 0) return;
-        await Cases.SaveGraphLayoutAsync(CaseId, positions);
+        // Called from the graph script, so a refused save must be reported here rather than thrown back to JS.
+        try { await Cases.SaveGraphLayoutAsync(CaseId, positions); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            await InvokeAsync(() => Toasts.Error($"Couldn't save the graph layout. {ex.Message}"));
+        }
     }
 
     private async Task GraphFit() => await SafeGraphCall("entityGraph.fit", ActiveGraphId);
