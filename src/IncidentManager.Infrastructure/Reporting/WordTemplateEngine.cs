@@ -252,9 +252,10 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         {
             var main = doc.AddMainDocumentPart();
             main.Document = new Document();
+            ReportGenerator.ApplyHouseFonts(main);
             var body = main.Document.AppendChild(new Body());
 
-            body.AppendChild(ReportGenerator.P("{{case.number}} — {{case.title}}", bold: true, size: 32));
+            body.AppendChild(ReportGenerator.Title("{{case.number}} — {{case.title}}"));
             body.AppendChild(ReportGenerator.P("Classification: {{case.classification}}    Phase: {{case.phase}}    Severity: {{case.severity}}", size: 20));
             body.AppendChild(ReportGenerator.P("Detected: {{case.detected}}    Contained: {{case.contained}}    Closed: {{case.closed}}", size: 20));
             body.AppendChild(ReportGenerator.P("{{report.sharing}}", italic: true, size: 20));

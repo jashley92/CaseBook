@@ -26,7 +26,6 @@ entity-relationship graph. See the visjs project for full license text.
 |---------|---------|---------|
 | DocumentFormat.OpenXml | 3.5.1 | MIT |
 | Markdig | 1.3.2 | BSD-2-Clause |
-| PDFsharp-MigraDoc | 6.2.4 | MIT |
 | FluentValidation | 12.1.1 | Apache-2.0 |
 | Microsoft.AspNetCore.Authentication.Negotiate | 8.x | MIT |
 | Microsoft.EntityFrameworkCore (+ Relational, Sqlite, SqlServer, Design) | 8.x | MIT |

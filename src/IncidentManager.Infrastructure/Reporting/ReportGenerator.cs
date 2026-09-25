@@ -12,8 +12,8 @@ using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 namespace IncidentManager.Infrastructure.Reporting;
 
 /// <summary>
-/// Produces the case report as an editable Word document (DocumentFormat.OpenXml) or a final PDF
-/// (MigraDoc — see the .Pdf partial). Both render from the same <see cref="CaseReportModel"/>, so
+/// Produces the case report as a Word document (DocumentFormat.OpenXml). Reports are Word only: PDF was
+/// dropped because a PDF couldn't match customer Word templates. Renders from <see cref="CaseReportModel"/>, so
 /// the two formats stay in lock-step. The layout follows the house event-report template — a narrative
 /// body (Summary, Business Impact, Event/Investigation Timeline, Systems Reviewed, Recommendations,
 /// Outcome) with the full structured record in an Appendix — with a branded header/footer. Which body
@@ -25,6 +25,28 @@ public sealed partial class ReportGenerator : IReportGenerator
     /// <summary>Slate heading colour matching the house template.</summary>
     private const string HeadingColor = "44546A";
 
+    // House fonts: Microsoft 365's current defaults. A Word file names its fonts and the reader's Word draws them,
+    // so nothing is embedded; Word without Aptos (before Microsoft 365, 2023) substitutes a similar sans.
+    internal const string BodyFont = "Aptos";
+    internal const string HeadingFont = "Aptos Display";
+
+    /// <summary>Sets the document-wide default font (Aptos, 11 pt) in a styles part. Used by the built-in reports and
+    /// the starter template; a customer template keeps its own styles.</summary>
+    internal static void ApplyHouseFonts(MainDocumentPart main)
+    {
+        var styles = main.StyleDefinitionsPart ?? main.AddNewPart<StyleDefinitionsPart>();
+        styles.Styles = new Styles(new DocDefaults(
+            new RunPropertiesDefault(new RunPropertiesBaseStyle(
+                new RunFonts { Ascii = BodyFont, HighAnsi = BodyFont, EastAsia = BodyFont, ComplexScript = BodyFont },
+                new FontSize { Val = "22" }, new FontSizeComplexScript { Val = "22" })),
+            new ParagraphPropertiesDefault(new ParagraphPropertiesBaseStyle(
+                new SpacingBetweenLines { After = "80", Line = "259", LineRule = LineSpacingRuleValues.Auto }))));
+        styles.Styles.Save();
+    }
+
+    private static RunFonts HeadingFonts() =>
+        new() { Ascii = HeadingFont, HighAnsi = HeadingFont, EastAsia = HeadingFont, ComplexScript = HeadingFont };
+
     public byte[] GenerateWord(CaseReportModel m)
     {
         using var ms = new MemoryStream();
@@ -32,6 +54,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         {
             var main = doc.AddMainDocumentPart();
             main.Document = new Document();
+            ApplyHouseFonts(main);
             var body = main.Document.AppendChild(new Body());
 
             if (m.IsLessonsLearned)
@@ -41,7 +64,7 @@ public sealed partial class ReportGenerator : IReportGenerator
             else
             {
                 // Title + at-a-glance facts (always present).
-                body.AppendChild(P($"{m.CaseNumber} — {m.Title}", bold: true, size: 32));
+                body.AppendChild(Title($"{m.CaseNumber} — {m.Title}"));
                 AppendFacts(body, m);
 
                 // Administered body sections, in the configured order.
@@ -161,7 +184,7 @@ public sealed partial class ReportGenerator : IReportGenerator
     /// </summary>
     private static void AppendLessons(Body body, CaseReportModel m)
     {
-        body.AppendChild(P("Post-Incident Review", bold: true, size: 32));
+        body.AppendChild(Title("Post-Incident Review"));
         body.AppendChild(P($"{m.CaseNumber} — {m.Title}", size: 24));
         body.AppendChild(P($"Classification: {m.Classification}    Phase: {m.Phase}"
             + (m.ClosedAtUtc is { } closed ? $"    Closed: {closed:yyyy-MM-dd}" : ""), size: 20));
@@ -281,8 +304,9 @@ public sealed partial class ReportGenerator : IReportGenerator
     /// <summary>A section heading in the house style: bold, underlined, slate.</summary>
     internal static Paragraph Heading(string text, int size = 26)
     {
-        // Schema order within rPr: b, color, sz, u.
+        // Schema order within rPr: rFonts, b, color, sz, u.
         var runProps = new RunProperties(
+            HeadingFonts(),
             new Bold(),
             new Color { Val = HeadingColor },
             new FontSize { Val = size.ToString(CultureInfo.InvariantCulture) },
@@ -291,10 +315,15 @@ public sealed partial class ReportGenerator : IReportGenerator
         return new Paragraph(new ParagraphProperties(new SpacingBetweenLines { Before = "240", After = "60" }), run);
     }
 
+    /// <summary>The report title: Aptos Display, bold, 16 pt.</summary>
+    internal static Paragraph Title(string text) =>
+        new(new Run(new RunProperties(HeadingFonts(), new Bold(), new FontSize { Val = "32" }),
+            new Text(text) { Space = SpaceProcessingModeValues.Preserve }));
+
     /// <summary>An Appendix sub-heading: bold slate, smaller, not underlined.</summary>
     private static Paragraph SubHeading(string text)
     {
-        var runProps = new RunProperties(new Bold(), new Color { Val = HeadingColor }, new FontSize { Val = "22" });
+        var runProps = new RunProperties(HeadingFonts(), new Bold(), new Color { Val = HeadingColor }, new FontSize { Val = "22" });
         var run = new Run(runProps, new Text(text) { Space = SpaceProcessingModeValues.Preserve });
         return new Paragraph(new ParagraphProperties(new SpacingBetweenLines { Before = "160", After = "40" }), run);
     }

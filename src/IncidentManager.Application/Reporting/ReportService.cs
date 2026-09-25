@@ -95,9 +95,8 @@ public sealed class ReportService
     /// approval step (<see cref="ApproveAsync"/>) — generating no longer self-approves.
     /// </summary>
     /// <param name="template">PROD-47: which Word template to fill. Null = the case's profile default (the built-in
-    /// layout when it has none); <see cref="Guid.Empty"/> = the built-in layout; otherwise that library template.
-    /// Ignored for PDF, which always uses the built-in layout.</param>
-    public async Task<Report> GenerateAsync(Guid caseId, ReportFormat format, TlpLevel? tlp = null, CancellationToken ct = default,
+    /// layout when it has none); <see cref="Guid.Empty"/> = the built-in layout; otherwise that library template.</param>
+    public async Task<Report> GenerateAsync(Guid caseId, TlpLevel? tlp = null, CancellationToken ct = default,
         Guid? template = null)
     {
         if (!_user.Has(Permission.EditCases)) throw new Security.ForbiddenException(Permission.EditCases);
@@ -115,18 +114,18 @@ public sealed class ReportService
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
         var model = BuildModel(c, now, logo, sections, elemSummary, triggers, tlp);
 
-        // PROD-47: a Word report can be filled from a customer-designed template (the profile's default, or one
-        // picked for this report). PDFs keep the built-in layout (converting Word to PDF would need Word or
-        // LibreOffice on the server).
+        // PROD-47: the report can be filled from a customer-designed template (the profile's default, or one picked
+        // for this report). Reports are Word only: there's no way to turn a filled template into a matching PDF on
+        // the server without Word or LibreOffice, so PDF output was dropped rather than offer one that doesn't match.
         byte[]? rendered = null;
         ResolvedTemplate? used = null;
-        if (format == ReportFormat.Word && await ResolveTemplateAsync(db, c.ReportProfileId, template, ct) is { } t)
+        if (await ResolveTemplateAsync(db, c.ReportProfileId, template, ct) is { } t)
         {
             rendered = _templates!.Render(t.Bytes, model);
             used = t;
         }
 
-        return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.Case, format, model, now, ct, rendered, used);
+        return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.Case, model, now, ct, rendered, used);
     }
 
     /// <summary>
@@ -167,7 +166,7 @@ public sealed class ReportService
     /// hashed and approvable through the same path, but listed and versioned on its own so it is never mixed
     /// into the examiner-facing case report. Prints the admin-set legend (if any) on every page.
     /// </summary>
-    public async Task<Report> GenerateLessonsAsync(Guid caseId, ReportFormat format, TlpLevel? tlp = null, CancellationToken ct = default)
+    public async Task<Report> GenerateLessonsAsync(Guid caseId, TlpLevel? tlp = null, CancellationToken ct = default)
     {
         if (!_user.Has(Permission.EditCases)) throw new Security.ForbiddenException(Permission.EditCases);
         using var db = _factory.CreateDbContext();
@@ -176,7 +175,7 @@ public sealed class ReportService
 
         var now = _clock.UtcNow;
         var model = await BuildLessonsModelAsync(db, c, now, ct, tlp);
-        return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.LessonsLearned, format, model, now, ct);
+        return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.LessonsLearned, model, now, ct);
     }
 
     /// <summary>Renders, stores and records a report; versions number per case + kind + format.</summary>
@@ -206,11 +205,12 @@ public sealed class ReportService
     }
 
     private async Task<Report> StoreAsync(IAppDbContext db, Guid caseId, string caseNumber, ReportKind kind,
-        ReportFormat format, CaseReportModel model, DateTimeOffset now, CancellationToken ct, byte[]? rendered = null,
+        CaseReportModel model, DateTimeOffset now, CancellationToken ct, byte[]? rendered = null,
         ResolvedTemplate? template = null)
     {
-        var bytes = rendered ?? (format == ReportFormat.Word ? _generator.GenerateWord(model) : _generator.GeneratePdf(model));
-        var ext = format == ReportFormat.Word ? "docx" : "pdf";
+        const ReportFormat format = ReportFormat.Word;   // PDF generation was removed; stored PDFs stay readable
+        var bytes = rendered ?? _generator.GenerateWord(model);
+        const string ext = "docx";
         var version = await db.Reports.CountAsync(r => r.CaseId == caseId && r.Kind == kind && r.Format == format, ct) + 1;
         var fileName = kind == ReportKind.LessonsLearned
             ? $"{caseNumber}_lessons-learned_v{version}.{ext}"
@@ -242,7 +242,7 @@ public sealed class ReportService
     }
 
     /// <summary>
-    /// Approves and finalizes a generated PDF draft (E-15) — stamps the approver + timestamp and marks it
+    /// Approves and finalizes a generated draft (E-15) — stamps the approver + timestamp and marks it
     /// the locked final. Enforces need-to-know on the parent case and, when configured, separation of
     /// duties (approver ≠ generator). Asserts <c>ApproveReports</c> here too, not only via the web-layer policy.
     /// </summary>

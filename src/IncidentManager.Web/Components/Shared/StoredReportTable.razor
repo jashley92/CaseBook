@@ -44,7 +44,7 @@ else
                     <td class="small text-muted">@TimeDisp.Long(r.CreatedAtUtc)<br />@Users.DisplayFor(r.CreatedBy)</td>
                     <td>
                         <a class="btn btn-sm btn-outline-primary" href="reports/@r.Id" target="_blank">Download</a>
-                        @if (!r.IsFinal && r.Format == ReportFormat.Pdf)
+                        @if (!r.IsFinal)
                         {
                             <AuthorizeView Policy="@Policies.ApproveReports" Context="ap">
                                 <button class="btn btn-sm btn-dark" @onclick="() => OnApprove.InvokeAsync(r.Id)">Approve &amp; finalize</button>

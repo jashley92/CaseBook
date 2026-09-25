@@ -266,8 +266,8 @@ public sealed class LessonsLearnedTests : IDisposable
         _reporting.CurrentValue.LessonsLegend = "Confidential - Prepared at the Direction of Counsel";
 
         var reports = Reports();
-        var lessons = await reports.GenerateLessonsAsync(id, ReportFormat.Word);
-        var caseReport = await reports.GenerateAsync(id, ReportFormat.Word);
+        var lessons = await reports.GenerateLessonsAsync(id);
+        var caseReport = await reports.GenerateAsync(id);
 
         lessons.Kind.Should().Be(ReportKind.LessonsLearned);
         lessons.FileName.Should().Contain("lessons-learned").And.EndWith("_v1.docx");
@@ -295,9 +295,6 @@ public sealed class LessonsLearnedTests : IDisposable
         var (_, caseForValidation) = await reports.OpenAsync(caseReport.Id);
         DocxSchemaErrors(caseForValidation).Should().BeEmpty("the case report shares the same Word helpers");
 
-        // The PDF renders the same content without error.
-        var pdf = await reports.GenerateLessonsAsync(id, ReportFormat.Pdf);
-        pdf.Kind.Should().Be(ReportKind.LessonsLearned);
         lessonsText.Should().Contain("Prepared at the Direction of Counsel");
         caseText.Should().NotContain("Extend MFA").And.NotContain("Prepared at the Direction of Counsel");
 
@@ -317,7 +314,7 @@ public sealed class LessonsLearnedTests : IDisposable
         }
 
         var reports = Reports();
-        var report = await reports.GenerateAsync(id, ReportFormat.Word);
+        var report = await reports.GenerateAsync(id);
         var (_, stream) = await reports.OpenAsync(report.Id);
 
         DocxSchemaErrors(stream).Should().BeEmpty("Word should open the report without a repair prompt");

@@ -62,7 +62,7 @@
                             <option value="@t.Id">@t.Name</option>
                         }
                     </select>
-                    <span class="small text-muted">For Word drafts. The preview and PDFs use the built-in layout.</span>
+                    <span class="small text-muted">The preview above uses the built-in layout.</span>
                 </div>
             }
             @* PROD-45: the TLP marking printed on every page of the report generated next. *@
@@ -80,13 +80,10 @@
             <button class="btn btn-sm btn-outline-secondary" @onclick="TogglePreview">
                 <span class="bi bi-eye me-1"></span>@(State.ShowPreview ? "Hide preview" : "Preview")
             </button>
-            <button class="btn btn-sm btn-primary ms-2" @onclick="() => Generate(ReportFormat.Word)">
-                Generate Word draft
+            <button class="btn btn-sm btn-primary ms-2" @onclick="Generate">
+                Generate draft
             </button>
-            <button class="btn btn-sm btn-primary" @onclick="() => Generate(ReportFormat.Pdf)">
-                Generate PDF draft
-            </button>
-            <span class="ms-2 small text-muted">Reports are generated as drafts. A PDF becomes the locked final only when approved below.</span>
+            <span class="ms-2 small text-muted">Reports are Word documents, generated as drafts. Approve one below to make it the locked final. If someone needs a PDF, save the final as PDF in Word.</span>
             @if (_reportMsg is not null) { <div class="small text-muted mt-1">@_reportMsg</div> }
         </div>
     </div>
@@ -200,7 +197,7 @@
         StateHasChanged();
     }
 
-    private async Task Generate(ReportFormat format)
+    private async Task Generate()
     {
         // Persist a changed profile choice first so the generated report matches the selection on screen.
         if (_profileDirty)
@@ -210,12 +207,12 @@
         }
         IncidentManager.Domain.Entities.Report report;
         Guid? template = Guid.TryParse(_wordTemplate, out var tid) ? tid : null;
-        try { report = await Reports.GenerateAsync(CaseId, format, _tlp, template: template); }
+        try { report = await Reports.GenerateAsync(CaseId, _tlp, template: template); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't generate the report. {ex.Message}"); return; }
         _reportMsg = $"Generated draft {report.FileName} (SHA-256 {report.ContentSha256[..12]}…)";
         await LoadReports();
         await OnCaseChanged.InvokeAsync();
-        Toasts.Success($"{format} draft generated");
+        Toasts.Success("Draft generated");
     }
 
     private async Task ApproveReport(Guid reportId)

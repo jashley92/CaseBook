@@ -137,7 +137,7 @@ public sealed class ReportingIntegrationTests : IDisposable
         await using (var db = NewContext())
         {
             var svc = NewReportService(db);
-            var report = await svc.GenerateAsync(caseId, ReportFormat.Word);
+            var report = await svc.GenerateAsync(caseId);
 
             var (_, stream) = await svc.OpenAsync(report.Id);
             string documentXml;
@@ -185,7 +185,7 @@ public sealed class ReportingIntegrationTests : IDisposable
         await using (var db = NewContext())
         {
             var svc = NewReportService(db);
-            var report = await svc.GenerateAsync(caseId, ReportFormat.Word);
+            var report = await svc.GenerateAsync(caseId);
             var (_, stream) = await svc.OpenAsync(report.Id);
             string xml;
             await using (stream)
@@ -201,14 +201,14 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task Generated_pdf_is_a_pdf_and_its_stored_hash_matches_the_record()
+    public async Task A_generated_report_is_a_draft_until_approved_and_its_stored_hash_matches_the_record()
     {
         await using var db = NewContext();
         await DevDataSeeder.SeedAsync(db, _clock);
         var svc = NewReportService(db);
         var caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
 
-        var report = await svc.GenerateAsync(caseId, ReportFormat.Pdf);
+        var report = await svc.GenerateAsync(caseId);
         report.IsFinal.Should().BeFalse("generation now produces a draft (E-15)");
 
         // An analyst can generate but not approve: the service asserts ApproveReports, not just the UI.
@@ -223,14 +223,7 @@ public sealed class ReportingIntegrationTests : IDisposable
         // The file on disk hashes to exactly what we recorded.
         (await svc.VerifyFileAsync(report.Id)).Should().BeTrue();
 
-        // And it's genuinely a PDF.
-        var (_, stream) = await svc.OpenAsync(report.Id);
-        await using (stream)
-        {
-            var header = new byte[5];
-            _ = await stream.ReadAsync(header);
-            Encoding.ASCII.GetString(header, 0, 4).Should().Be("%PDF");
-        }
+        report.Format.Should().Be(ReportFormat.Word, "reports are Word only");
     }
 
     [Fact]
@@ -241,7 +234,7 @@ public sealed class ReportingIntegrationTests : IDisposable
         var svc = NewReportService(db);
         var caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-02_Vendor_SaaS_Breach")).Id;
 
-        var report = await svc.GenerateAsync(caseId, ReportFormat.Word);
+        var report = await svc.GenerateAsync(caseId);
 
         report.IsFinal.Should().BeFalse();
         (await svc.VerifyFileAsync(report.Id)).Should().BeTrue();
@@ -265,7 +258,7 @@ public sealed class ReportingIntegrationTests : IDisposable
         var theCase = await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave");
 
         // Generate a report while the current user can see the case, then lock the case down.
-        var report = await svc.GenerateAsync(theCase.Id, ReportFormat.Pdf);
+        var report = await svc.GenerateAsync(theCase.Id);
         theCase.IsRestricted = true;
         await db.SaveChangesAsync();
 
@@ -294,13 +287,13 @@ public sealed class ReportingIntegrationTests : IDisposable
         // An unrelated analyst can't generate (and so read) a restricted case's report by GUID.
         _user.UserId = "outsider";
         _user.RoleSet = [AppRole.Analyst];
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => svc.GenerateAsync(theCase.Id, ReportFormat.Pdf));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => svc.GenerateAsync(theCase.Id));
         ex.Message.Should().Be("Case not found.");
 
         // A manager sees every case but holds no EditCases, so generation is refused outright.
         _user.RoleSet = [AppRole.Manager];
         await Assert.ThrowsAsync<IncidentManager.Application.Security.ForbiddenException>(
-            () => svc.GenerateAsync(theCase.Id, ReportFormat.Pdf));
+            () => svc.GenerateAsync(theCase.Id));
         (await db.Reports.CountAsync()).Should().Be(0);
     }
 
@@ -357,17 +350,22 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task Approving_a_word_draft_is_rejected_only_a_pdf_can_be_the_final()
+    public async Task A_word_report_can_be_approved_as_the_final_and_its_file_verifies()
     {
+        // Reports are Word only, so a Word draft is what gets approved as the locked final. The stored file and
+        // its SHA-256 are the record.
         _user.RoleSet = [AppRole.IncidentCommander];
         await using var db = NewContext();
         await DevDataSeeder.SeedAsync(db, _clock);
         var svc = NewReportService(db);
         var caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-02_Vendor_SaaS_Breach")).Id;
-        var draft = await svc.GenerateAsync(caseId, ReportFormat.Word);
+        var draft = await svc.GenerateAsync(caseId);
 
-        var act = () => svc.ApproveAsync(draft.Id);
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*PDF*");
+        var final = await svc.ApproveAsync(draft.Id);
+        final.IsFinal.Should().BeTrue();
+        final.ApprovedBy.Should().Be(_user.UserId);
+        (await svc.VerifyFileAsync(final.Id)).Should().BeTrue();
+        await svc.Invoking(s => s.ApproveAsync(draft.Id)).Should().ThrowAsync<InvalidOperationException>().WithMessage("*already*");
     }
 
     [Fact]
@@ -378,7 +376,7 @@ public sealed class ReportingIntegrationTests : IDisposable
         await DevDataSeeder.SeedAsync(db, _clock);
         var svc = NewReportService(db);
         var caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
-        var draft = await svc.GenerateAsync(caseId, ReportFormat.Pdf);
+        var draft = await svc.GenerateAsync(caseId);
         await svc.ApproveAsync(draft.Id);
 
         var act = () => svc.ApproveAsync(draft.Id);
@@ -396,7 +394,7 @@ public sealed class ReportingIntegrationTests : IDisposable
         await DevDataSeeder.SeedAsync(db, _clock);
         var svc = NewReportService(db);
         var caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
-        var draft = await svc.GenerateAsync(caseId, ReportFormat.Pdf);
+        var draft = await svc.GenerateAsync(caseId);
 
         var selfApprove = () => svc.ApproveAsync(draft.Id);
         await selfApprove.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Two-person*");
@@ -435,7 +433,7 @@ public sealed class ReportingIntegrationTests : IDisposable
             model.Iocs.Should().Contain(i => i.Value == "evil-cdn[.]test" && i.Tlp == "TLP:RED");
             model.Iocs.Should().NotContain(i => i.Value == "FIN-WKS-99", "a compromised host is a victim, not an indicator");
 
-            var report = await svc.GenerateAsync(caseId, ReportFormat.Word, TlpLevel.Green);
+            var report = await svc.GenerateAsync(caseId, TlpLevel.Green);
             report.Tlp.Should().Be(TlpLevel.Green);
 
             var (_, stream) = await svc.OpenAsync(report.Id);
@@ -454,9 +452,9 @@ public sealed class ReportingIntegrationTests : IDisposable
             headerXml.Should().Contain("TLP:GREEN");
             footerXml.Should().Contain("TLP:GREEN");
 
-            // The PDF renders with the marking too (MigraDoc lays out the header table without error).
-            var pdf = await svc.GenerateAsync(caseId, ReportFormat.Pdf, TlpLevel.AmberStrict);
-            pdf.Tlp.Should().Be(TlpLevel.AmberStrict);
+            // A different marking is recorded on the report generated with it.
+            var amber = await svc.GenerateAsync(caseId, TlpLevel.AmberStrict);
+            amber.Tlp.Should().Be(TlpLevel.AmberStrict);
         }
     }
 
@@ -521,7 +519,7 @@ public sealed class ReportingIntegrationTests : IDisposable
             }
 
             // Profile default.
-            var word = await svc.GenerateAsync(caseId, ReportFormat.Word);
+            var word = await svc.GenerateAsync(caseId);
             word.TemplateName.Should().Be("House style");
             word.TemplateSha256.Should().HaveLength(64);
             var body = await BodyOf(word.Id);
@@ -530,13 +528,11 @@ public sealed class ReportingIntegrationTests : IDisposable
                 .And.Contain("2026-01_Phishing_Wave").And.Contain("203[.]0[.]113[.]66").And.NotContain("{{");
 
             // Another template picked for this report, then the built-in layout.
-            (await svc.GenerateAsync(caseId, ReportFormat.Word, template: boardId)).TemplateName.Should().Be("Board summary");
-            var builtIn = await svc.GenerateAsync(caseId, ReportFormat.Word, template: Guid.Empty);
+            (await svc.GenerateAsync(caseId, template: boardId)).TemplateName.Should().Be("Board summary");
+            var builtIn = await svc.GenerateAsync(caseId, template: Guid.Empty);
             builtIn.TemplateName.Should().BeNull();
             (await BodyOf(builtIn.Id)).Should().Contain("Systems Reviewed");
 
-            // PDF keeps the built-in layout and records no template.
-            (await svc.GenerateAsync(caseId, ReportFormat.Pdf)).TemplateName.Should().BeNull();
 
             // Preview: filled and marked, but not stored.
             var before = await db.Reports.CountAsync(r => r.CaseId == caseId);

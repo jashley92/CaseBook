@@ -43,7 +43,6 @@ public class ReportLayoutTests
         off.Should().NotContain("NOTE_MARKER", "notes are no longer part of the appendix");
         var on = WordXml(new ReportGenerator().GenerateWord(Model(ReportSection.Summary, ReportSection.AnalystNotes)));
         on.Should().Contain("Analyst Notes").And.Contain("NOTE_MARKER");
-        new ReportGenerator().GeneratePdf(Model(ReportSection.AnalystNotes)).Should().NotBeEmpty();
     }
 
     [Fact]
@@ -85,6 +84,23 @@ public class ReportLayoutTests
         var resolved = ReportLayout.Resolve("Summary,Bogus,Summary,Appendix");
         resolved.Count(s => s == ReportSection.Summary).Should().Be(1);
         resolved.Should().Contain(ReportSection.Appendix);
+    }
+
+    [Fact]
+    public void Reports_use_Aptos_with_Aptos_Display_headings()
+    {
+        var model = new CaseReportModel
+        {
+            Sections = new[] { ReportSection.Summary },
+            CaseNumber = "2026-09", Title = "Font test", Classification = "Incident", Phase = "Triage",
+            Severity = "Low", Origin = "Internal detection", Summary = "s",
+            GeneratedBy = "tester", GeneratedAtUtc = System.DateTimeOffset.UnixEpoch, ContentHash = new string('a', 64),
+        };
+        using var zip = new ZipArchive(new MemoryStream(new ReportGenerator().GenerateWord(model)), ZipArchiveMode.Read);
+        using var styles = new StreamReader(zip.GetEntry("word/styles.xml")!.Open(), Encoding.UTF8);
+        styles.ReadToEnd().Should().Contain("w:ascii=\"Aptos\"", "Aptos is the document default");
+        using var doc = new StreamReader(zip.GetEntry("word/document.xml")!.Open(), Encoding.UTF8);
+        doc.ReadToEnd().Should().Contain("w:ascii=\"Aptos Display\"", "the title and headings use Aptos Display");
     }
 
     [Fact]

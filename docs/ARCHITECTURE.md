@@ -383,7 +383,7 @@ sensitive-artifact access to the **out-of-chain** access log (C-05):
 |---|---|---|
 | `GET /evidence/{id}` | `ViewCases` | Streams evidence; records a **chain-of-custody "Downloaded" event** (`recordDownload: true`) + a C-05 row. |
 | `GET /evidence/{id}/inline` | `ViewCases` | Timeline thumbnail. **Sniffs magic bytes** (S-04) and serves **only a genuine raster image with the sniffed type** — an SVG or mislabeled file is refused. Passive views are deliberately **not** logged and record **no** custody event (S-03). |
-| `GET /reports/{id}` | `ViewCases` | Streams the Word/PDF; C-05 row. |
+| `GET /reports/{id}` | `ViewCases` | Streams the report (Word; PDFs from earlier releases still stream); C-05 row. |
 | `GET /export/metrics.csv` | `ViewCases` | Dashboard metrics, scoped to the caller's visible cases. |
 | `GET /export/iocs.csv` | `ViewCases` | Malicious-IOC blocklist feed, need-to-know scoped. |
 | `GET /export/case-audit.csv` | `ViewCases` + `CanViewAsync(case)` | One case's filtered audit trail. |
@@ -577,15 +577,17 @@ event-ID catalog (5001, 51xx…55xx) is documented in OPERATIONS §5; endpoints/
 flowchart LR
     Gen["ReportService.GenerateAsync"] --> Load["Load full case (AsNoTracking, all Includes)"]
     Load --> Model["BuildModel → CaseReportModel<br/>(+ ContentHash = SHA-256 of canonical case)"]
-    Model --> Fmt{"format"}
-    Fmt -- "Word" --> DOCX["ReportGenerator.GenerateWord<br/>(OpenXML)"]
-    Fmt -- "PDF" --> PDF["ReportGenerator.GeneratePdf<br/>(PDFsharp-MigraDoc)"]
+    Model --> Tpl{"Word template?"}
+    Tpl -- "no" --> DOCX["ReportGenerator.GenerateWord<br/>(OpenXML, built-in layout)"]
+    Tpl -- "profile default or picked" --> TPL["WordTemplateEngine.Render<br/>(customer .docx)"]
     DOCX --> Store["FileReportStore.SaveAsync<br/>→ StoragePath + Sha256"]
-    PDF --> Store
+    TPL --> Store
     Store --> Rec["Report row: version, hash, IsFinal=false (draft)"]
     Rec --> Approve["ApproveAsync (ApproveReports)<br/>optional maker-checker (E-15)<br/>→ IsFinal, ApprovedBy/At"]
 ```
 
+Reports are **Word only**: PDF output was removed because a PDF couldn't match a customer's Word template
+without Word or LibreOffice on the server. Previously generated PDFs stay stored and downloadable.
 Generation always produces a **working draft**; finalization is a **separate, permission-gated** approval
 step that can enforce **separation of duties** (approver ≠ generator) when `Reporting:RequireSeparateApprover`
 is on. Each file's **SHA-256 is persisted** on the `Report` row; `VerifyFileAsync` re-hashes the stored

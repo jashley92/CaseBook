@@ -34,7 +34,7 @@
                 <div class="atkm-colhead @(TacticPickable ? "atkm-colhead-btn" : "")" style="--tac:@Ui.TacticColor(col.Tactic)"
                      title="@(TacticPickable ? $"Pick {Ui.Label(col.Tactic)} as a tactic-only step" : Ui.TacticId(col.Tactic))"
                      role="@(TacticPickable ? "button" : null)" tabindex="@(TacticPickable ? "0" : null)"
-                     @onclick="() => PickTacticHeader(col.Tactic)" @onkeydown="e => { if (TacticPickable && IsActivate(e)) PickTacticHeader(col.Tactic); }">
+                     @onclick="() => PickTacticHeader(col.Tactic)" @onkeydown="async e => { if (TacticPickable && IsActivate(e)) await PickTacticHeader(col.Tactic); }">
                     <span class="bi @Ui.TacticGlyph(col.Tactic)" aria-hidden="true"></span>
                     <span class="atkm-colname">@Ui.Label(col.Tactic)</span>
                     @{ var selN = rows.Count(r => IsSel(r.Parent.Id, col.Tactic) || r.Subs.Any(s => IsSel(s.Id, col.Tactic))); }
@@ -49,7 +49,7 @@
                             <div class="atkm-cell @CellClass(pid, col.Tactic, row.ParentInTactic)"
                                  role="button" tabindex="0" aria-pressed="@(IsSel(pid, col.Tactic) ? "true" : "false")"
                                  aria-label="@($"{pid} {row.Parent.Name}, {Ui.Label(col.Tactic)}")"
-                                 @onclick="() => ToggleParent(row, col.Tactic)" @onkeydown="e => { if (IsActivate(e)) ToggleParent(row, col.Tactic); }">
+                                 @onclick="() => ToggleParent(row, col.Tactic)" @onkeydown="async e => { if (IsActivate(e)) await ToggleParent(row, col.Tactic); }">
                                 @if (row.Subs.Count > 0)
                                 {
                                     <button type="button" class="atkm-exp" @onclick="() => ToggleExpand(pid)" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true"
@@ -74,7 +74,7 @@
                                     <div class="atkm-cell atkm-subcell @CellClass(sub.Id, col.Tactic, true)"
                                          role="button" tabindex="0" aria-pressed="@(IsSel(sub.Id, col.Tactic) ? "true" : "false")"
                                          aria-label="@($"{sub.Id} {sub.Name}, {Ui.Label(col.Tactic)}")"
-                                         @onclick="() => ToggleTechnique(sub.Id, col.Tactic)" @onkeydown="e => { if (IsActivate(e)) ToggleTechnique(sub.Id, col.Tactic); }">
+                                         @onclick="() => ToggleTechnique(sub.Id, col.Tactic)" @onkeydown="async e => { if (IsActivate(e)) await ToggleTechnique(sub.Id, col.Tactic); }">
                                         <span class="atkm-tid"><code>@sub.Id</code></span>
                                         <span class="atkm-tname">@sub.Name</span>
                                         @if (IsSel(sub.Id, col.Tactic)) { <span class="bi bi-check2 atkm-tick" aria-hidden="true"></span> }

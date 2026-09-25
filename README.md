@@ -5,7 +5,7 @@
 A secure, on-prem web utility for the SOC to inventory and manage escalated security matters —
 **Adverse Events, Incidents, and Breaches** (the three IRP classifications) — end to end:
 timelines, evidence, analyst notes, after-action follow-ups, leadership dashboards, and
-auto-generated Word/PDF reports, on a **tamper-evident, hash-chained audit trail**.
+auto-generated Word reports, on a **tamper-evident, hash-chained audit trail**.
 
 ## Screenshots
 
@@ -108,9 +108,11 @@ bridges two campaigns for someone who can't see it.
 
 ![Campaign rollup](docs/screenshots/campaign-rollup.png)
 
-### Reporting — Word draft &amp; locked PDF
-Generate an editable **Word** working draft and a finalized, **locked PDF** carrying an embedded
-**SHA-256 content hash** — the version, final flag, hash, and author are recorded per artifact. Reports
+### Reporting — Word draft &amp; locked final
+Generate a **Word** report as a working draft, then approve it as the **locked final**. Each report carries the
+case's **SHA-256 content hash**, and the version, final flag, file hash, author and approver are recorded per
+artifact. Reports are Word only, so they always match your own template; save the final as PDF in Word when
+someone needs one. Reports
 **draw the attack chain** across ATT&amp;CK tactic lanes and the **entity relationship graph**, list
 **indicators of compromise** apart from everything examined, **defang** indicators so a forwarded report
 can't be clicked through, and carry a **TLP 2.0** marking on every page. Admins keep a library of their own
@@ -234,7 +236,7 @@ classification mix, phase pipeline, and activity bars deep-link straight into th
 - **.NET 10**, ASP.NET Core, **Blazor Server** (interactive)
 - **EF Core** — SQLite for local dev (zero-install), SQL Server 2022 in production
 - **Windows Integrated Authentication** (AD group → role mapping); a dev auth fallback for local use
-- Reporting: **DocumentFormat.OpenXml** (Word) + **PDFsharp-MigraDoc** (PDF) — both MIT-licensed
+- Reporting: **DocumentFormat.OpenXml** (Word, MIT-licensed); report text in Aptos with Aptos Display headings
 
 ## Architecture (Clean Architecture)
 

@@ -20,7 +20,7 @@ public sealed class SkiaReportDiagrams : IReportDiagrams
 
     private static SKTypeface LoadFace(string face)
     {
-        var bytes = new EmbeddedFontResolver().GetFont(face);
+        var bytes = EmbeddedFonts.Get(face);
         return SKTypeface.FromData(SKData.CreateCopy(bytes)) ?? SKTypeface.Default;
     }
 

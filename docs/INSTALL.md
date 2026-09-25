@@ -227,7 +227,7 @@ Then, signed in as a mapped user:
 - [ ] **Integrity → "Verify now"** reports the chain **VALID**.
 - [ ] Create a throwaway case; confirm it saves and appears in the audit trail. (Prod does **not**
       seed demo data — an empty case list on a fresh install is expected.)
-- [ ] Generate a Word draft + locked PDF to confirm the reporting stack and store paths.
+- [ ] Generate a report draft and approve it as the final to confirm the reporting stack and store paths.
 
 ---
 

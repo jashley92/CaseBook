@@ -271,8 +271,7 @@ else
 </p>
 <AuthorizeView Policy="@Policies.EditCases">
     <div class="d-flex gap-2 mb-2">
-        <button class="btn btn-sm btn-outline-primary" @onclick="() => GenerateReport(ReportFormat.Word)" disabled="@_saving">Generate Word draft</button>
-        <button class="btn btn-sm btn-primary" @onclick="() => GenerateReport(ReportFormat.Pdf)" disabled="@_saving">Generate PDF draft</button>
+        <button class="btn btn-sm btn-primary" @onclick="GenerateReport" disabled="@_saving">Generate draft</button>
     </div>
 </AuthorizeView>
 <StoredReportTable Reports="_reports" EmptyText="No lessons-learned report generated yet." OnApprove="ApproveReport" />
@@ -559,12 +558,12 @@ else
 
     // ---- Lessons-learned report ----------------------------------------------------------------------
 
-    private async Task GenerateReport(ReportFormat format)
+    private async Task GenerateReport()
     {
         _saving = true;
         try
         {
-            var r = await Reports.GenerateLessonsAsync(CaseId, format);
+            var r = await Reports.GenerateLessonsAsync(CaseId);
             _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
             Toasts.Success($"Generated {r.FileName}");
             await OnChanged.InvokeAsync();

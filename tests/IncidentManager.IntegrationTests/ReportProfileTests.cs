@@ -126,7 +126,7 @@ public sealed class ReportProfileTests : IDisposable
         await NewCaseService().SetReportProfileAsync(caseId, profileId);
 
         var svc = NewReportService();
-        var report = await svc.GenerateAsync(caseId, ReportFormat.Word);
+        var report = await svc.GenerateAsync(caseId);
         var xml = await ReadWordXmlAsync(svc, report.Id);
 
         xml.Should().Contain("Summary");
@@ -142,7 +142,7 @@ public sealed class ReportProfileTests : IDisposable
         var caseId = await SeededCaseIdAsync();
 
         var svc = NewReportService();
-        var report = await svc.GenerateAsync(caseId, ReportFormat.Word);
+        var report = await svc.GenerateAsync(caseId);
         var xml = await ReadWordXmlAsync(svc, report.Id);
 
         // Global default (blank layout) = every section, so the Appendix is present.
