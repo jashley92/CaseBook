@@ -13,7 +13,13 @@
 @inject IJSRuntime JS
 
 <AuthorizeView Policy="@Policies.EditCases">
-    <div class="card mb-3">
+    @* Phones: the composer folds behind a button so the notes start near the top. The editor redraws itself
+       when it becomes visible (autoRefresh). *@
+    <button type="button" class="btn btn-sm btn-outline-primary mb-3 d-sm-none" aria-expanded="@ComposerShown"
+            aria-controls="note-add-form" @onclick="() => _composerOpen = !ComposerShown">
+        <span class="bi @(ComposerShown ? "bi-chevron-up" : "bi-plus-lg") me-1" aria-hidden="true"></span>@(ComposerShown ? "Hide form" : "Add note")
+    </button>
+    <div id="note-add-form" class="card mb-3 @(ComposerShown ? "" : "im-phone-collapsed")">
         <div class="card-body">
             <label class="form-label small mb-1" for="@NoteAddEditorId">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links · <code>#</code> to tag an entity</span></label>
             @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add. *@
@@ -65,6 +71,9 @@ else
 }
 
 @code {
+    private bool _composerOpen;
+    // The 'n' shortcut (AutofocusComposer) opens it too, so the keyboard path never lands on a hidden editor.
+    private bool ComposerShown => _composerOpen || AutofocusComposer;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<AnalystNote> Notes { get; set; } = [];
     /// <summary>The case's entities/IOCs, offered as inline "#" tags in the note editors.</summary>
