@@ -139,7 +139,7 @@ Two ways to get one:
 
    ```razor
    <span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span>
-   <span class="@Ui.SeverityBadge(c.Severity)">@c.Severity</span>
+   <span class="@Ui.SeverityBadge(c.Severity)">@SevLabels.For(c.Severity)</span>
    <span class="@Ui.SlaBadge(sla.State)">
        <span class="bi @Ui.SlaGlyph(sla.State)" aria-hidden="true"></span> @Ui.SlaLabel(sla.State)
    </span>
