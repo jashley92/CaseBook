@@ -2040,6 +2040,7 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
 .im-case-list > tbody > tr { position: relative; }
 .im-case-list .case-cell-title { min-width: 12rem; }
 .im-case-list .case-num { max-width: 11rem; }
+.im-case-list .case-cell-origin { white-space: nowrap; }
 /* Laptop widths: Origin (also a filter) is the column that gives way so the rest fits without clipping. */
 @media (min-width: 641px) and (max-width: 1399.98px) {
     .im-case-list .case-cell-origin { display: none; }
