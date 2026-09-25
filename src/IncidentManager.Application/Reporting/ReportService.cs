@@ -61,6 +61,14 @@ public sealed class ReportService
         return _taxonomy?.Label("Classification", c?.ToString() ?? "ComplexEvent", def) ?? def;
     }
 
+    // Same wording as the Tasks tab, so the report never prints "InProgress" or "Cancelled".
+    private static string TaskStatusLabel(ActionItemStatus s) => s switch
+    {
+        ActionItemStatus.InProgress => "In progress",
+        ActionItemStatus.Cancelled => "Canceled",
+        _ => s.ToString()
+    };
+
     private string PhaseLabel(CasePhase p) =>
         _taxonomy?.Label("CasePhase", p.ToString(), p.ToString()) ?? p.ToString();
 
@@ -543,7 +551,7 @@ public sealed class ReportService
                 .OrderBy(x => x.Status)
                 // Owner may be a user id (playbook tasks default to the case owner) or free text; resolve
                 // ids to display names, pass free text through, so the examiner report never shows a raw id.
-                .Select(x => new ReportActionItemRow(x.Title, _users.DisplayFor(x.Owner), x.DueAtUtc, x.Status.ToString()))
+                .Select(x => new ReportActionItemRow(x.Title, _users.DisplayFor(x.Owner), x.DueAtUtc, TaskStatusLabel(x.Status)))
                 .ToList(),
             Assignments = c.Assignments
                 .OrderBy(x => x.Role)
