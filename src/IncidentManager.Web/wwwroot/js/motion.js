@@ -9,5 +9,16 @@ window.imMotion = {
             var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
         } catch (e) { /* no-op */ }
+    },
+    // Scroll a horizontally overflowing tab strip so its active tab is visible (phones), without moving the page.
+    revealActiveTab: function (selector) {
+        try {
+            var strip = document.querySelector(selector);
+            var tab = strip && strip.querySelector('.nav-link.active');
+            if (!tab || strip.scrollWidth <= strip.clientWidth) return;
+            var t = tab.getBoundingClientRect(), st = strip.getBoundingClientRect();
+            var target = strip.scrollLeft + (t.left - st.left) - (strip.clientWidth - t.width) / 2;
+            strip.scrollLeft = Math.max(0, target);
+        } catch (e) { /* no-op */ }
     }
 };
