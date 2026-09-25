@@ -56,6 +56,30 @@ const SHOTS = [
   { name: 'data-elements',      path: '/admin/data-elements',           settle: 1000 },
   { name: 'regulatory-deadlines', path: '/admin/settings/regulatory-deadlines', settle: 1000 },
   { name: 'config-bundle',      path: '/admin/config-bundle',           settle: 1000 },
+  // PROD-47: the Word template library. On an empty (throwaway) library it uploads the starter template twice under
+  // two names; then it opens a preview panel and scrolls the card to the top of the viewport.
+  { name: 'report-templates',   path: '/admin/settings/reporting',      settle: 1200,
+    before: `(async () => {
+      const card = () => [...document.querySelectorAll('.card')].find(c => c.querySelector('.card-header')?.textContent.includes('Word templates'));
+      if (card()?.querySelector('table') == null) {
+        const bytes = await (await fetch('/export/report-template-starter.docx')).arrayBuffer();
+        for (const [name, file] of [['Examiner pack', 'examiner-pack.docx'], ['Board summary', 'board-summary.docx']]) {
+          const box = document.getElementById('tpl-new-name');
+          box.value = name; box.dispatchEvent(new Event('input', { bubbles: true }));
+          await new Promise(r => setTimeout(r, 300));
+          const input = card().querySelector('input[type=file]');
+          const dt = new DataTransfer(); dt.items.add(new File([bytes], file));
+          input.files = dt.files; input.dispatchEvent(new Event('change', { bubbles: true }));
+          await new Promise(r => setTimeout(r, 1500));
+        }
+      }
+      document.querySelectorAll('.toast .btn-close, [aria-label="Dismiss"]').forEach(b => b.click());
+      const c = card();
+      if (c && !c.textContent.includes('Download preview'))
+        [...c.querySelectorAll('table button')].find(b => b.textContent.trim() === 'Preview')?.click();
+      await new Promise(r => setTimeout(r, 600));
+      if (c) window.scrollTo(0, c.getBoundingClientRect().top + window.scrollY - 70);
+    })()` },
   { name: 'roles-access',       path: '/admin/roles',                   settle: 1000 },
   { name: 'cases-filtered',     path: '/cases?classification=Breach',   settle: 1000 },
   // 2026-09-24 additions: post-incident review, the cross-case pages, and the quarterly program report.

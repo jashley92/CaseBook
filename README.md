@@ -123,6 +123,8 @@ loaded content are refused.
 
 ![Reporting](docs/screenshots/report.png)
 
+![Word template library](docs/screenshots/report-templates.png)
+
 ### Lessons learned &amp; improvement actions
 A structured **post-incident review** per case (what happened, contributing factors, what worked well,
 opportunities to improve — Markdown, like notes) and the **improvement actions** it identifies, each with
