@@ -1302,7 +1302,20 @@ else
                 {
                     <div class="alert alert-warning small mt-2 mb-1 py-2">
                         <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
-                        @UnmetBlocking.Count required item@(UnmetBlocking.Count == 1 ? "" : "s") not met. To proceed anyway, enter an override justification.
+                        @{ var toTick = UnmetBlocking.Count(r => r.Kind == GateRequirementKind.Attestation); var toFix = UnmetBlocking.Count - toTick; }
+                        @UnmetBlocking.Count required item@(UnmetBlocking.Count == 1 ? "" : "s") not met.
+                        @if (toFix == 0)
+                        {
+                            <span>Tick @(toTick == 1 ? "it" : "them") above if @(toTick == 1 ? "it's" : "they're") true, or enter an override justification to proceed anyway.</span>
+                        }
+                        else if (toTick > 0)
+                        {
+                            <span>Tick the statements above that are true. To proceed with anything still unmet, enter an override justification.</span>
+                        }
+                        else
+                        {
+                            <span>To proceed anyway, enter an override justification.</span>
+                        }
                     </div>
                     <input class="form-control form-control-sm" placeholder="Override justification (required)" aria-label="Override justification" @bind="_gateOverride" @bind:event="oninput" />
                     @if (g.RequiresCommentary)
