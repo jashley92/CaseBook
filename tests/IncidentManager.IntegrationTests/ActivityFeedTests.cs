@@ -91,6 +91,25 @@ public sealed class ActivityFeedTests : IDisposable
     }
 
     [Fact]
+    public async Task Opening_a_case_is_one_entry_and_the_bell_leaves_out_your_own_actions()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var alpha = await svc.CreateAsync(Req("Alpha"));
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(1);
+        await svc.ChangeSeverityAsync(alpha.Id, Severity.High, "Scope grew");
+
+        var feed = new ActivityFeedService(NewFactory(), _user, new StubUserDirectory());
+        (await feed.RecentAsync(20)).Select(i => i.Summary).Should().Equal("Changed the severity", "Added the case");
+
+        (await feed.RecentAsync(20, othersOnly: true)).Should().BeEmpty();
+        var colleague = new TestCurrentUser { UserId = "colleague" };
+        colleague.RoleSet = [AppRole.SysAdmin];
+        (await new ActivityFeedService(NewFactory(), colleague, new StubUserDirectory()).RecentAsync(20, othersOnly: true))
+            .Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task Feed_only_includes_cases_the_caller_can_see()
     {
         // Seed a restricted case as a privileged user...

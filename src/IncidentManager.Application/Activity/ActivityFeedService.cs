@@ -33,15 +33,19 @@ public sealed class ActivityFeedService
         _users = users;
     }
 
-    public async Task<IReadOnlyList<ActivityItem>> RecentAsync(int take = 20, CancellationToken ct = default)
+    /// <param name="othersOnly">Leave out the caller's own actions (the notification bell: you know what you did).</param>
+    public async Task<IReadOnlyList<ActivityItem>> RecentAsync(int take = 20, CancellationToken ct = default,
+        bool othersOnly = false)
     {
         using var db = _factory.CreateDbContext();
         var scoped = db.Cases.AsNoTracking().ForUser(_user);
 
         // Join audit entries to the caller's visible cases on the denormalized case number, so the
         // feed honours need-to-know and we recover the case id for deep-linking.
+        var me = _user.UserId;
         var rows = await (from a in db.AuditLog.AsNoTracking()
                           join c in scoped on a.CaseNumber equals c.CaseNumber
+                          where !othersOnly || a.Actor != me
                           orderby a.Sequence descending
                           select new
                           {
@@ -54,8 +58,20 @@ public sealed class ActivityFeedService
                               a.CaseNumber,
                               CaseId = c.Id
                           })
-                         .Take(take)
+                         .Take(take * 2)
                          .ToListAsync(ct);
+
+        // Opening a case also writes its opening phase, classification and severity: that's one act ("Added the
+        // case"), so those rows are folded into it rather than listed as three changes nobody made.
+        // Likewise a change record (a phase, severity, …) also touches the case row: the "Updated the case" beside
+        // it says nothing more, so it's dropped when the same save wrote something more specific.
+        var opened = rows.Where(r => r.EntityType == "Case" && r.Action == AuditAction.Create)
+            .Select(r => (r.CaseId, r.Actor, r.AtUtc)).ToHashSet();
+        var specific = rows.Where(r => r.EntityType != "Case")
+            .Select(r => (r.CaseId, r.Actor, r.AtUtc)).ToHashSet();
+        rows = rows.Where(r => !(OpeningValue.Contains(r.EntityType) && opened.Contains((r.CaseId, r.Actor, r.AtUtc))))
+            .Where(r => !(r.EntityType == "Case" && r.Action == AuditAction.Update && specific.Contains((r.CaseId, r.Actor, r.AtUtc))))
+            .Take(take).ToList();
 
         return rows.Select(r => new ActivityItem(
             r.Sequence, r.AtUtc, r.Actor, _users.DisplayFor(r.Actor),
@@ -63,8 +79,26 @@ public sealed class ActivityFeedService
             r.CaseNumber, r.CaseId)).ToList();
     }
 
+    private static readonly HashSet<string> OpeningValue = ["StatusChange", "ClassificationChange", "SeverityChange"];
+
     private static string Humanize(string? summary, AuditAction action, string entityType)
     {
+        // Change records are written as new rows; say what changed rather than "Added status change".
+        if (action == AuditAction.Create && entityType switch
+            {
+                "StatusChange" => "Changed the phase",
+                "ClassificationChange" => "Changed the classification",
+                "SeverityChange" => "Changed the severity",
+                "MaterialityChange" => "Recorded a materiality determination",
+                "CaseDataElement" => "Updated the impact assessment",
+                "CaseComment" => "Posted in the discussion",
+                "CaseLink" => "Linked a related case",
+                "PostIncidentReview" => "Started the post-incident review",
+                "ImprovementAction" => "Added an improvement action",
+                _ => null,
+            } is { } said)
+            return said;
+
         // Prefer a specific verb; fall back to the stored summary, then the raw action.
         var verb = action switch
         {
@@ -102,6 +136,8 @@ public sealed class ActivityFeedService
         "ActionItem" => "a task",
         "CaseAssignment" => "an assignment",
         "Evidence" => "evidence",
+        "PostIncidentReview" => "the post-incident review",
+        "ImprovementAction" => "an improvement action",
         _ => SpaceCamel(entityType)
     };
 

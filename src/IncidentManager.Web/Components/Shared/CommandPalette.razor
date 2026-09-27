@@ -143,6 +143,7 @@
 
     private async Task OpenPalette()
     {
+        Palette.Dismiss();
         _help = false;
         _open = true;
         _query = "";
@@ -159,6 +160,7 @@
     {
         if (_help) _help = false;
         else if (_open) ClosePalette();
+        else Palette.Dismiss();
     }
 
     private Task Go(string k) => k switch

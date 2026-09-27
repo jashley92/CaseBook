@@ -2,6 +2,8 @@
 @inject IJSRuntime JS
 @inject TimeDisplay TimeDisp
 @inject NavigationManager Nav
+@inject IncidentManager.Web.Services.CommandPaletteController Palette
+@implements IDisposable
 
 @* Top-bar account menu (U-21): initials avatar + dropdown showing identity, roles, the theme
    toggle (folded in from the old standalone button), and an About panel. Mirrors the
@@ -137,8 +139,19 @@
     private string _primaryRole = "";
     private string _otherRolesTooltip = "";
 
+    private void OnDismiss()
+    {
+        if (!_open) return;
+        _open = false;
+        _about = false;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => Palette.DismissRequested -= OnDismiss;
+
     protected override void OnInitialized()
     {
+        Palette.DismissRequested += OnDismiss;
         // S-14: built-in and custom roles. The most-privileged built-in role is primary; a user with only custom
         // roles shows the first of those.
         var ordered = Ui.OrderRoles(CurrentUser.RoleNames);

@@ -6,6 +6,7 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject TimeDisplay TimeDisp
+@inject IncidentManager.Web.Services.CommandPaletteController Palette
 
 <div class="notif">
     <button type="button" class="notif-btn" @onclick="Toggle"
@@ -23,11 +24,11 @@
         <div class="notif-panel" role="dialog" aria-label="Recent activity">
             <div class="notif-head">
                 <span class="fw-semibold">Recent activity</span>
-                <span class="text-muted small">Across your cases</span>
+                <span class="text-muted small text-nowrap">From others on your cases</span>
             </div>
             @if (_items.Count == 0)
             {
-                <div class="notif-empty text-muted">No recent activity.</div>
+                <div class="notif-empty text-muted">Nothing new from your team.</div>
             }
             else
             {
@@ -74,6 +75,14 @@
     {
         await Load();
         _sub = Notifier.SubscribeAll(OnAnyChange);
+        Palette.DismissRequested += OnDismiss;
+    }
+
+    private void OnDismiss()
+    {
+        if (!_open) return;
+        _open = false;
+        _ = InvokeAsync(StateHasChanged);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -93,7 +102,7 @@
         StateHasChanged();
     }
 
-    private async Task Load() => _items = await Feed.RecentAsync(20);
+    private async Task Load() => _items = await Feed.RecentAsync(20, othersOnly: true);
 
     private Task OnAnyChange(Guid _, string __) => InvokeAsync(async () =>
     {
@@ -149,5 +158,9 @@
         return TimeDisp.DateOnly(at);
     }
 
-    public void Dispose() => _sub?.Dispose();
+    public void Dispose()
+    {
+        _sub?.Dispose();
+        Palette.DismissRequested -= OnDismiss;
+    }
 }

@@ -14,4 +14,11 @@ public sealed class CommandPaletteController
 
     /// <summary>Ask the hosted palette to open.</summary>
     public void Open() => OpenRequested?.Invoke();
+
+    /// <summary>Raised on Escape (with no palette or help open) and when the palette opens: the top-bar
+    /// dropdowns (activity, account) close.</summary>
+    public event Action? DismissRequested;
+
+    /// <summary>Close any open top-bar dropdown.</summary>
+    public void Dismiss() => DismissRequested?.Invoke();
 }
