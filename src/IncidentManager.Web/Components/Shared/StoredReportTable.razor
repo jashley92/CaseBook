@@ -14,19 +14,20 @@ else if (Reports.Count == 0)
 else
 {
     <table class="table table-sm align-middle">
-        <thead><tr><th>File</th><th>Format</th><th>Ver</th><th>TLP</th><th>Status</th><th>SHA-256</th><th>Generated</th><th></th></tr></thead>
+        <thead><tr><th>File</th><th>Ver</th><th>TLP</th><th>Status</th><th>SHA-256</th><th>Generated</th><th></th></tr></thead>
         <tbody>
             @foreach (var r in Reports)
             {
                 <tr>
                     <td>
                         @r.FileName
+                        @* Reports are Word only; PDFs from earlier releases are still listed and downloadable. *@
+                        @if (r.Format == ReportFormat.Pdf) { <span class="im-badge im-b-neutral ms-1">PDF</span> }
                         @if (r.TemplateName is { } tn)
                         {
                             <div class="small text-muted" title="Filled from this Word template (SHA-256 @r.TemplateSha256)">Template: @tn</div>
                         }
                     </td>
-                    <td>@r.Format</td>
                     <td>@r.Version</td>
                     <td class="small text-nowrap">@(r.Tlp is { } rt ? IncidentManager.Domain.Enums.Tlp.Label(rt) : "—")</td>
                     <td>
@@ -34,6 +35,10 @@ else
                         {
                             <span class="im-badge im-b-ok">Final</span>
                             <div class="small text-muted">@Users.DisplayFor(r.ApprovedBy) · @TimeDisp.Long(r.ApprovedAtUtc)</div>
+                            @if (CurrentFinal is { } cf && cf.Id != r.Id)
+                            {
+                                <div class="small text-muted">Superseded by v@(cf.Version)</div>
+                            }
                         }
                         else
                         {
@@ -47,7 +52,7 @@ else
                         @if (!r.IsFinal)
                         {
                             <AuthorizeView Policy="@Policies.ApproveReports" Context="ap">
-                                <button class="btn btn-sm btn-dark" @onclick="() => OnApprove.InvokeAsync(r.Id)">Approve &amp; finalize</button>
+                                <button class="btn btn-sm btn-dark" @onclick="() => ConfirmApprove(r)">Approve &amp; finalize</button>
                             </AuthorizeView>
                         }
                     </td>
@@ -57,10 +62,32 @@ else
     </table>
 }
 
+<ConfirmDialog @ref="_confirm" />
+
 @code {
     /// <summary>The reports to list; null while loading.</summary>
     [Parameter] public IReadOnlyList<Report>? Reports { get; set; }
     [Parameter] public string EmptyText { get; set; } = "No reports generated yet.";
     /// <summary>Approve & finalize the given report id (the host tab owns the call + reload).</summary>
     [Parameter] public EventCallback<Guid> OnApprove { get; set; }
+
+    private ConfirmDialog _confirm = null!;
+
+    // The newest approved report is the current final; earlier finals stay on record and are shown as superseded.
+    // Derived for display only: a stored report is never changed after approval.
+    private Report? CurrentFinal => Reports?.Where(r => r.IsFinal).MaxBy(r => r.Version);
+
+    // Approval can't be undone, so it's confirmed first, naming what happens.
+    private void ConfirmApprove(Report r)
+    {
+        var replaces = CurrentFinal switch
+        {
+            { } cf when cf.Version > r.Version => $" v{cf.Version} stays the current final, since it's a later version.",
+            { } cf => $" It becomes the current final in place of v{cf.Version}, which stays on record.",
+            _ => "",
+        };
+        _confirm.Ask(this, "Approve as the final report",
+            $"{r.FileName} becomes a locked final. It can't be edited or un-approved, and you're recorded as the approver.{replaces}",
+            "Approve & finalize", () => OnApprove.InvokeAsync(r.Id));
+    }
 }
