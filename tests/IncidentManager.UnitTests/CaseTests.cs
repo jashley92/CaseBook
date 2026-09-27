@@ -341,6 +341,20 @@ public class CaseTests
     }
 
     [Fact]
+    public void A_case_has_one_incident_commander()
+    {
+        var c = NewCase();
+        c.Assign("ic1", "Ivy", CaseAssignmentRole.IncidentCommander, "sysadmin", Now);
+
+        c.Assign("ic2", "Ian", CaseAssignmentRole.IncidentCommander, "sysadmin", Now.AddHours(1));
+        c.IncidentCommander.Should().Be("ic2");
+        c.Assignments.Single(a => a.UserId == "ic1").Role.Should().Be(CaseAssignmentRole.Analyst, "the previous commander stays on the team");
+
+        c.Assign("ic2", "Ian", CaseAssignmentRole.Observer, "sysadmin", Now.AddHours(2));
+        c.IncidentCommander.Should().BeNull("the commander moved to another role");
+    }
+
+    [Fact]
     public void Unassign_removes_the_user_and_clears_commander_when_applicable()
     {
         var c = NewCase();

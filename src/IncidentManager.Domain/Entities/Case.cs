@@ -380,8 +380,9 @@ public class Case : AuditableEntity, IHashableEntity
     }
 
     /// <summary>
-    /// Assigns a user to the case with a role (idempotent by user). Assigning an Incident
-    /// Commander also sets <see cref="IncidentCommander"/>.
+    /// Assigns a user to the case with a role (idempotent by user: assigning someone already on the case changes
+    /// their role). A case has one Incident Commander: assigning one sets <see cref="IncidentCommander"/> and makes
+    /// the previous commander an analyst; moving the commander to another role clears it.
     /// </summary>
     public void Assign(string userId, string displayName, CaseAssignmentRole role, string assignedBy, DateTimeOffset nowUtc)
     {
@@ -406,7 +407,13 @@ public class Case : AuditableEntity, IHashableEntity
         }
 
         if (role == CaseAssignmentRole.IncidentCommander)
+        {
+            foreach (var other in Assignments.Where(a => a.UserId != userId && a.Role == CaseAssignmentRole.IncidentCommander))
+                other.Role = CaseAssignmentRole.Analyst;
             IncidentCommander = userId;
+        }
+        else if (IncidentCommander == userId)
+            IncidentCommander = null;
 
         Touch(assignedBy, nowUtc);
     }
