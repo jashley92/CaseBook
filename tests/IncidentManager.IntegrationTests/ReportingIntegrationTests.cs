@@ -554,6 +554,82 @@ public sealed class ReportingIntegrationTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Any_template_fills_either_report_and_lessons_reports_use_the_lessons_default()
+    {
+        // Templates aren't typed: a lessons template can print case fields, a case template can print the review.
+        _user.RoleSet = [AppRole.SysAdmin];
+        var engine = new WordTemplateEngine();
+        var templateStore = new FileReportTemplateStore(Options.Create(new ReportTemplateOptions { RootPath = Path.Combine(_reportDir, "templates") }),
+            Options.Create(new ReportBrandingOptions()));
+        var templates = new IncidentManager.Application.Admin.ReportTemplateService(NewFactory(), _user, _clock, engine, templateStore);
+        Guid caseId, lessonsId, caseStarterId;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            await DevDataSeeder.SeedComplianceShowcaseAsync(db, _clock);   // the vendor case's post-incident review
+            caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-02_Vendor_SaaS_Breach")).Id;
+        }
+        var lessonsUpload = await templates.UploadAsync("Lessons pack", "lessons.docx", engine.LessonsStarter());
+        lessonsUpload.Check.Ok.Should().BeTrue("the review and improvement fields are known fields");
+        lessonsId = lessonsUpload.Id!.Value;
+        caseStarterId = (await templates.UploadAsync("Case starter", "case.docx", engine.Starter())).Id!.Value;
+
+        var store = new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = _reportDir }));
+        var branding = new FileReportBrandingStore(Options.Create(new ReportBrandingOptions { RootPath = Path.Combine(_reportDir, "branding") }));
+        var svc = new ReportService(NewFactory(), new ReportGenerator(), store, _hasher, _user, _clock,
+            new IncidentManager.Application.Content.MarkdownService(), _reporting, branding, new StubUserDirectory(),
+            new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()),
+            diagrams: new SkiaReportDiagrams(), templates: engine, templateStore: templateStore);
+
+        async Task<string> BodyOf(Guid reportId)
+        {
+            var (_, stream) = await svc.OpenAsync(reportId);
+            using var ms = new MemoryStream();
+            await using (stream) await stream.CopyToAsync(ms);
+            ms.Position = 0;
+            using var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false);
+            new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(doc).Should().BeEmpty("Word opens it without repair");
+            return doc.MainDocumentPart!.Document.Body!.InnerText;
+        }
+
+        // No lessons default yet: the built-in layout.
+        (await svc.GenerateLessonsAsync(caseId)).TemplateName.Should().BeNull();
+
+        // The lessons default fills the review, the improvement actions and the report type.
+        await templates.SetLessonsDefaultAsync(lessonsId, true);
+        (await templates.ListAllAsync()).Single(t => t.Id == lessonsId).DefaultFor.Should().Equal("Lessons-learned reports");
+        var lessons = await svc.GenerateLessonsAsync(caseId);
+        lessons.TemplateName.Should().Be("Lessons pack");
+        lessons.Kind.Should().Be(ReportKind.LessonsLearned);
+        (await BodyOf(lessons.Id)).Should().Contain("Post-incident review").And.Contain("reused administrator credential")
+            .And.Contain("Reconcile the data-sharing inventory").And.Contain("2026-02_Vendor_SaaS_Breach").And.NotContain("{{");
+
+        // A case-report template picked for the lessons report prints case fields too; the built-in layout is still there.
+        (await BodyOf((await svc.GenerateLessonsAsync(caseId, template: caseStarterId)).Id))
+            .Should().Contain("Business impact").And.NotContain("{{");
+        (await svc.GenerateLessonsAsync(caseId, template: Guid.Empty)).TemplateName.Should().BeNull();
+
+        // And a case report can print the review when its template asks for it.
+        var caseReport = await svc.GenerateAsync(caseId, template: lessonsId);
+        (await BodyOf(caseReport.Id)).Should().Contain("Incident report").And.Contain("reused administrator credential");
+        // The built-in case report never does.
+        (await BodyOf((await svc.GenerateAsync(caseId, template: Guid.Empty)).Id)).Should().NotContain("reused administrator credential");
+
+        // One lessons default at a time, and it can't be archived or deleted while it's the default.
+        await templates.SetLessonsDefaultAsync(caseStarterId, true);
+        (await templates.ListAllAsync()).Where(t => t.IsLessonsDefault).Select(t => t.Id).Should().Equal(caseStarterId);
+        await templates.Invoking(t => t.UpdateAsync(caseStarterId, "Case starter", isActive: false))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*lessons-learned*");
+        await templates.Invoking(t => t.DeleteAsync(caseStarterId)).Should().ThrowAsync<InvalidOperationException>();
+        await templates.SetLessonsDefaultAsync(caseStarterId, false);
+        (await svc.GenerateLessonsAsync(caseId)).TemplateName.Should().BeNull("with no default, the built-in layout");
+
+        // An archived template can't become the default.
+        await templates.UpdateAsync(lessonsId, "Lessons pack", isActive: false);
+        await templates.Invoking(t => t.SetLessonsDefaultAsync(lessonsId, true)).Should().ThrowAsync<InvalidOperationException>();
+    }
+
     public void Dispose()
     {
         _connection.Dispose();

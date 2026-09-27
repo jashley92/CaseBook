@@ -45,8 +45,11 @@ public static class RichText
     /// Plain text for places that can't carry styling (table cells, CSV): list markers and line breaks are kept
     /// (one block per line, nested items indented), emphasis is dropped.
     /// </summary>
-    public static string ToText(string? markdown) =>
-        string.Join("\n", Parse(markdown).Select(b => b.Kind switch
+    public static string ToText(string? markdown) => BlocksToText(Parse(markdown));
+
+    /// <summary>The same plain text from blocks already parsed (and defanged).</summary>
+    public static string BlocksToText(IReadOnlyList<RichBlock> blocks) =>
+        string.Join("\n", blocks.Select(b => b.Kind switch
         {
             RichBlockKind.Bullet or RichBlockKind.Numbered => new string(' ', b.Level * 2) + b.Marker + " " + b.PlainText,
             RichBlockKind.Paragraph when b.Level > 0 => new string(' ', b.Level * 2) + b.PlainText,

@@ -710,6 +710,10 @@ app.MapGet("/export/report-template-starter.docx",
     (IncidentManager.Application.Reporting.IReportTemplateEngine templates) =>
         Results.File(templates.Starter(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "casebook-report-template-starter.docx"))
     .RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
+app.MapGet("/export/report-template-starter-lessons.docx",
+    (IncidentManager.Application.Reporting.IReportTemplateEngine templates) =>
+        Results.File(templates.LessonsStarter(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "casebook-lessons-template-starter.docx"))
+    .RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
 app.MapGet("/export/report-templates/{id:guid}", async (Guid id,
     IncidentManager.Application.Admin.ReportTemplateService templates, CancellationToken ct) =>
     await templates.GetFileAsync(id, ct) is { } t

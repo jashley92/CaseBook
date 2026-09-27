@@ -136,4 +136,25 @@ public class ReportLayoutTests
         using var s = zip.GetEntry("word/document.xml")!.Open();
         return new StreamReader(s, Encoding.UTF8).ReadToEnd();
     }
+
+    [Fact]
+    public void A_template_row_hashes_as_before_unless_it_is_the_lessons_default()
+    {
+        var t = new IncidentManager.Domain.Entities.ReportTemplate
+        {
+            Name = "House", FileName = "house.docx", Sha256 = "ab", SizeBytes = 1, CreatedBy = "admin",
+            CreatedAtUtc = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+        t.BuildCanonicalContent().Should().Be("House|house.docx|ab|1|True|admin|2026-09-01T00:00:00.0000000+00:00");
+        t.IsLessonsDefault = true;
+        t.BuildCanonicalContent().Should().EndWith("|lessons-default");
+    }
+
+    [Fact]
+    public void Review_and_improvement_fields_are_known_template_fields()
+    {
+        foreach (var f in new[] { "report.type", "review.what_happened", "review.opportunities", "improvement.title", "improvement.outcome" })
+            IncidentManager.Application.Reporting.ReportTemplateFields.IsKnown(f).Should().BeTrue(f);
+        IncidentManager.Application.Reporting.ReportTemplateFields.CollectionFor("improvement.owner").Should().Be("improvement");
+    }
 }

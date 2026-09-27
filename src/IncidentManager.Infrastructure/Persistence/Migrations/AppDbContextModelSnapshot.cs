@@ -1791,6 +1791,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("IsLessonsDefault")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long?>("ModifiedAtUtc")
                         .HasColumnType("INTEGER");
 

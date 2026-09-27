@@ -15,13 +15,15 @@
     <div class="card-body">
         <p class="small text-muted mb-2">
             Upload .docx files with <code>{{…}}</code> fields to give Word reports your own fonts, styles, headers and footers.
-            A report profile picks one as its default, and whoever generates a report can pick another.
-            A table row with a list field such as <code>{{ioc.value}}</code> repeats once per item, and
+            A report profile picks one as its default, one can be the default for lessons-learned reports, and whoever
+            generates a report can pick another. Any template can fill either report and use any field, so one template can
+            serve both (<code>{{report.type}}</code> names which report it is). A table row with a list field such as <code>{{ioc.value}}</code> repeats once per item, and
             <code>{{image.attack_chain}}</code> or <code>{{image.entity_graph}}</code> alone on a line becomes the picture.
             Templates with macros, embedded objects or external content are refused.
         </p>
         <div class="small mb-3">
-            <a class="me-3" href="export/report-template-starter.docx" download><span class="bi bi-download me-1" aria-hidden="true"></span>Download the starter template</a>
+            <a class="me-3" href="export/report-template-starter.docx" download><span class="bi bi-download me-1" aria-hidden="true"></span>Starter: case report</a>
+            <a class="me-3" href="export/report-template-starter-lessons.docx" download><span class="bi bi-download me-1" aria-hidden="true"></span>Starter: lessons-learned report</a>
             <details class="d-inline-block align-top">
                 <summary style="cursor:pointer; color: var(--im-accent-text)">Field reference</summary>
                 <div class="mt-2 im-template-fields">
@@ -153,13 +155,21 @@
                                 </td>
                                 <td class="small">@(t.DefaultFor.Count == 0 ? "—" : string.Join(", ", t.DefaultFor))</td>
                                 <td class="small text-muted">@TimeDisp.Short(t.UpdatedAtUtc) · @Users.DisplayFor(t.UpdatedBy)</td>
-                                <td class="text-nowrap text-end">
+                                <td class="text-end" style="min-width:16rem">
                                     <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => OpenPreview(t)">Preview</button>
                                     <label class="btn btn-sm btn-outline-secondary py-0 mb-0" title="Upload a new version of this template">
                                         Replace…
                                         <InputFile class="d-none" accept=".docx" OnChange="e => Replace(t, e)" />
                                     </label>
                                     <button class="btn btn-sm btn-link py-0" @onclick="() => BeginRename(t)" aria-label="Rename @t.Name">Rename</button>
+                                    @if (t.IsActive)
+                                    {
+                                        <button class="btn btn-sm btn-link py-0" aria-pressed="@(t.IsLessonsDefault ? "true" : "false")"
+                                                title="@(t.IsLessonsDefault ? "Lessons-learned reports use this template by default. Click to go back to the built-in layout." : "Make this the default for lessons-learned reports")"
+                                                @onclick="() => SetLessonsDefault(t, !t.IsLessonsDefault)">
+                                            @if (t.IsLessonsDefault) { <span class="bi bi-check2 me-1" aria-hidden="true"></span> }Lessons default
+                                        </button>
+                                    }
                                     <button class="btn btn-sm btn-link py-0" @onclick="() => SetActive(t, !t.IsActive)">@(t.IsActive ? "Archive" : "Restore")</button>
                                     <button class="btn btn-sm btn-link py-0 text-danger" @onclick="() => ConfirmDelete(t)" aria-label="Delete @t.Name">Delete…</button>
                                 </td>
@@ -273,6 +283,15 @@
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
         await Changed();
         Toasts.Success(active ? $"“{t.Name}” restored" : $"“{t.Name}” archived. It can't be picked for new reports.");
+    }
+
+    private async Task SetLessonsDefault(ReportTemplateView t, bool isDefault)
+    {
+        try { await Templates.SetLessonsDefaultAsync(t.Id, isDefault); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
+        await Changed();
+        Toasts.Success(isDefault ? $"Lessons-learned reports now use “{t.Name}” by default"
+                                 : "Lessons-learned reports now use the built-in layout by default");
     }
 
     private void ConfirmDelete(ReportTemplateView t) => _confirm.Ask(this, "Delete template",

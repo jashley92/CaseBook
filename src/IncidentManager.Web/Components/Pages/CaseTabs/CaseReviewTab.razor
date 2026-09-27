@@ -10,6 +10,7 @@
 @implements IAsyncDisposable
 @inject LessonsService Lessons
 @inject ReportService Reports
+@inject IncidentManager.Application.Admin.ReportTemplateService ReportTemplates
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject TimeDisplay TimeDisp
@@ -267,10 +268,30 @@ else
 @* ---- The separate lessons-learned report --------------------------------------------------------- *@
 <h6 class="mt-4 mb-2"><span class="bi bi-file-earmark-text me-1" aria-hidden="true"></span>Lessons-learned report</h6>
 <p class="small text-muted mb-2">
-    A separate document containing only this review and its improvement actions, stored and hashed like the case report.
-    It is never included in the case report.
+    A separate document containing this review and its improvement actions, stored and hashed like the case report.
+    The built-in case report never includes it (a Word template can, if an administrator adds the review fields).
 </p>
 <AuthorizeView Policy="@Policies.EditCases">
+    @* Which Word template fills it. Defaults to the library's lessons-learned default. *@
+    @if (_templates is { Count: > 0 })
+    {
+        var lessonsDefault = _templates.FirstOrDefault(t => t.IsLessonsDefault);
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <label class="form-label small mb-0" for="lessons-word-template">Word template</label>
+            <select id="lessons-word-template" class="form-select form-select-sm w-auto" @bind="_wordTemplate">
+                <option value="">@(lessonsDefault is { } ld ? $"Default ({ld.Name})" : "Built-in layout")</option>
+                @if (lessonsDefault is not null)
+                {
+                    <option value="@Guid.Empty">Built-in layout</option>
+                }
+                @foreach (var t in _templates)
+                {
+                    if (t.IsLessonsDefault) continue;
+                    <option value="@t.Id">@t.Name</option>
+                }
+            </select>
+        </div>
+    }
     @* PROD-45: the TLP marking printed on every page, as on the case report. *@
     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
         <label class="form-label small mb-0" for="lessons-tlp">Sharing (TLP)</label>
@@ -361,6 +382,7 @@ else
     {
         _view = await Lessons.GetForCaseAsync(CaseId);
         _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
+        _templates ??= await ReportTemplates.ListActiveAsync();
     }
 
     // Reconcile this tab's EasyMDE editors against what's on screen: the add-action Details composer, the
@@ -572,6 +594,9 @@ else
     // ---- Lessons-learned report ----------------------------------------------------------------------
 
     private TlpLevel? _tlpChoice;   // null = the admin default
+    // The Word template for the next draft: "" = the lessons-learned default, Guid.Empty = built-in, else that template.
+    private string _wordTemplate = "";
+    private List<IncidentManager.Application.Admin.ReportTemplateView>? _templates;
     private TlpLevel _tlp => _tlpChoice ?? ReportingOpts.CurrentValue.EffectiveDefaultTlp;
 
     private async Task GenerateReport()
@@ -579,7 +604,8 @@ else
         _saving = true;
         try
         {
-            var r = await Reports.GenerateLessonsAsync(CaseId, _tlp);
+            var r = await Reports.GenerateLessonsAsync(CaseId, _tlp,
+                template: Guid.TryParse(_wordTemplate, out var tid) ? tid : null);
             _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
             Toasts.Success($"Generated {r.FileName}");
             await OnChanged.InvokeAsync();

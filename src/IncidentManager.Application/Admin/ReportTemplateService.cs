@@ -8,14 +8,15 @@ namespace IncidentManager.Application.Admin;
 /// <summary>A library template for the admin list and the pickers.</summary>
 public sealed record ReportTemplateView(
     Guid Id, string Name, string FileName, long SizeBytes, bool IsActive,
-    DateTimeOffset UpdatedAtUtc, string UpdatedBy, IReadOnlyList<string> DefaultFor);
+    DateTimeOffset UpdatedAtUtc, string UpdatedBy, IReadOnlyList<string> DefaultFor, bool IsLessonsDefault = false);
 
 /// <summary>The outcome of an upload: the template check, and the new template's id when it was accepted.</summary>
 public sealed record ReportTemplateUpload(Reporting.TemplateCheck Check, Guid? Id);
 
 /// <summary>
 /// The Word report template library (PROD-47). Admins upload several customer-designed templates; a report
-/// profile names one as its default and whoever generates a Word report can pick another. Every upload is
+/// profile names one as its default, one can be the lessons-learned reports' default, and whoever generates a
+/// report can pick another. Any template can fill either report and use any field. Every upload is
 /// checked (a plain .docx with no macros, embedded objects or externally loaded content, using only known
 /// placeholders) before anything is stored. Reads are open to case editors (the Report tab picker); writes
 /// are admin-only. Changes are audited and hash-chained by the save interceptor.
@@ -122,6 +123,31 @@ public sealed class ReportTemplateService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Makes a template the default for lessons-learned reports (clearing any previous one), or stops it being the
+    /// default. Only an active template can be the default.
+    /// </summary>
+    public async Task SetLessonsDefaultAsync(Guid id, bool isDefault, CancellationToken ct = default)
+    {
+        AdminActionPermissions.Require<ReportTemplateService>(_user);
+        using var db = _factory.CreateDbContext();
+        var t = await FindAsync(db, id, ct);
+        if (isDefault && !t.IsActive)
+            throw new InvalidOperationException("Restore the template before making it the lessons-learned default.");
+        if (isDefault)
+            foreach (var other in await db.ReportTemplates.Where(x => x.IsLessonsDefault && x.Id != id).ToListAsync(ct))
+            {
+                other.IsLessonsDefault = false;
+                other.ModifiedBy = _user.UserId;
+                other.ModifiedAtUtc = _clock.UtcNow;
+            }
+        if (t.IsLessonsDefault == isDefault) { await db.SaveChangesAsync(ct); return; }
+        t.IsLessonsDefault = isDefault;
+        t.ModifiedBy = _user.UserId;
+        t.ModifiedAtUtc = _clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+    }
+
     /// <summary>Deletes a template and its file. Reports already generated from it keep its name and hash.</summary>
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
@@ -178,6 +204,9 @@ public sealed class ReportTemplateService
 
     private static async Task EnsureNotADefaultAsync(IAppDbContext db, Guid id, string verb, CancellationToken ct)
     {
+        if (await db.ReportTemplates.AnyAsync(t => t.Id == id && t.IsLessonsDefault, ct))
+            throw new InvalidOperationException(
+                $"Can't {verb} it: it's the default for lessons-learned reports. Make another template the lessons-learned default, or stop using this one for them, first.");
         var users = await db.ReportProfiles.AsNoTracking().Where(p => p.TemplateId == id).Select(p => p.Name).ToListAsync(ct);
         if (users.Count > 0)
             throw new InvalidOperationException(
@@ -196,7 +225,9 @@ public sealed class ReportTemplateService
             .OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
             .Select(t => new ReportTemplateView(t.Id, t.Name, t.FileName, t.SizeBytes, t.IsActive,
                 t.ModifiedAtUtc ?? t.CreatedAtUtc, t.ModifiedBy ?? t.CreatedBy,
-                defaults.Where(d => d.TemplateId == t.Id).Select(d => d.Name).OrderBy(n => n).ToList()))
+                defaults.Where(d => d.TemplateId == t.Id).Select(d => d.Name).OrderBy(n => n)
+                    .Concat(t.IsLessonsDefault ? ["Lessons-learned reports"] : []).ToList(),
+                t.IsLessonsDefault))
             .ToList();
     }
 

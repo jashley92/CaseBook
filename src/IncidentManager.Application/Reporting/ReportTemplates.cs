@@ -22,6 +22,9 @@ public interface IReportTemplateEngine
 
     /// <summary>A starter template using the main placeholders, for admins to restyle.</summary>
     byte[] Starter();
+
+    /// <summary>A starter for lessons-learned reports: the review and improvement-action fields.</summary>
+    byte[] LessonsStarter();
 }
 
 /// <summary>PROD-47: where uploaded templates live (one file per library template, keyed by its id), off the

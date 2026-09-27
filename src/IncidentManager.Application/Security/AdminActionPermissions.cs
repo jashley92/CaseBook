@@ -58,6 +58,7 @@ public static class AdminActionPermissions
             [Key<ReportTemplateService>(nameof(ReportTemplateService.ReplaceFileAsync))] = Permission.Administer,
             [Key<ReportTemplateService>(nameof(ReportTemplateService.UpdateAsync))] = Permission.Administer,
             [Key<ReportTemplateService>(nameof(ReportTemplateService.DeleteAsync))] = Permission.Administer,
+            [Key<ReportTemplateService>(nameof(ReportTemplateService.SetLessonsDefaultAsync))] = Permission.Administer,
             [Key<StageGateService>(nameof(StageGateService.CreateAsync))] = Permission.Administer,
             [Key<StageGateService>(nameof(StageGateService.UpdateAsync))] = Permission.Administer,
             [Key<StageGateService>(nameof(StageGateService.DeleteAsync))] = Permission.Administer,

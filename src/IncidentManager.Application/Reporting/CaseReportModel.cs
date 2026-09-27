@@ -27,8 +27,9 @@ public sealed record ReportIocRow(string Type, string Value, string Verdict, str
 public sealed record ReportAttackStep(int Order, DateTimeOffset OccurredAtUtc, string Tactics, string Actor,
     string Target, string? TechniqueId, string Description);
 
-/// <summary>Flat, presentation-ready projection of a case used by both the Word and PDF generators.</summary>
-public sealed class CaseReportModel
+/// <summary>Flat, presentation-ready projection of a case for the report generator and Word templates. A record, so
+/// a template can be filled from the case model with the review added (<c>with</c>).</summary>
+public sealed record CaseReportModel
 {
     // Deployment branding for the header (out of source; set in the admin console).
     public string? OrganizationName { get; init; }

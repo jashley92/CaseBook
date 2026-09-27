@@ -119,9 +119,11 @@ public sealed class ReportService
         // the server without Word or LibreOffice, so PDF output was dropped rather than offer one that doesn't match.
         byte[]? rendered = null;
         ResolvedTemplate? used = null;
-        if (await ResolveTemplateAsync(db, c.ReportProfileId, template, ct) is { } t)
+        if (await ResolveTemplateAsync(db, await ProfileTemplateIdAsync(db, c.ReportProfileId, ct), template, ct) is { } t)
         {
-            rendered = _templates!.Render(t.Bytes, model);
+            // A template may use any field, the review's included (the admin decides what it prints), so it's filled
+            // from the case model with the review added. The built-in layout never prints the review.
+            rendered = _templates!.Render(t.Bytes, await WithReviewAsync(db, c, model, ct));
             used = t;
         }
 
@@ -152,7 +154,7 @@ public sealed class ReportService
         var logo = await _branding.GetLogoAsync(ct);
         var sections = await ResolveSectionsAsync(db, c.ReportProfileId, ct);
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
-        var model = BuildModel(c, now, logo, sections, elemSummary, triggers, null);
+        var model = await WithReviewAsync(db, c, BuildModel(c, now, logo, sections, elemSummary, triggers, null), ct);
         var banner = $"PREVIEW of template “{tpl.Name}” with case {c.CaseNumber}, {now:yyyy-MM-dd HH:mm} UTC. " +
                      "Not a stored or approved report.";
         var rendered = _templates.Render(bytes, model, banner);
@@ -166,7 +168,10 @@ public sealed class ReportService
     /// hashed and approvable through the same path, but listed and versioned on its own so it is never mixed
     /// into the examiner-facing case report. Prints the admin-set legend (if any) on every page.
     /// </summary>
-    public async Task<Report> GenerateLessonsAsync(Guid caseId, TlpLevel? tlp = null, CancellationToken ct = default)
+    /// <param name="template">Which Word template to fill. Null = the library's lessons-learned default (the built-in
+    /// layout when there is none); <see cref="Guid.Empty"/> = the built-in layout; otherwise that library template.</param>
+    public async Task<Report> GenerateLessonsAsync(Guid caseId, TlpLevel? tlp = null, CancellationToken ct = default,
+        Guid? template = null)
     {
         if (!_user.Has(Permission.EditCases)) throw new Security.ForbiddenException(Permission.EditCases);
         using var db = _factory.CreateDbContext();
@@ -175,23 +180,56 @@ public sealed class ReportService
 
         var now = _clock.UtcNow;
         var model = await BuildLessonsModelAsync(db, c, now, ct, tlp);
-        return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.LessonsLearned, model, now, ct);
+
+        // A Word template may use any field, case fields included (the admin decides what it prints), so it's filled
+        // from the full case model carrying this report's identity: its kind, legend, review and content hash.
+        byte[]? rendered = null;
+        ResolvedTemplate? used = null;
+        var lessonsDefault = await db.ReportTemplates.AsNoTracking().Where(t => t.IsLessonsDefault && t.IsActive)
+            .Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
+        if (await ResolveTemplateAsync(db, lessonsDefault, template, ct) is { } t)
+        {
+            var full = await LoadFullCaseAsync(db, caseId, ct) ?? throw new InvalidOperationException("Case not found.");
+            var sections = await ResolveSectionsAsync(db, full.ReportProfileId, ct);
+            var (elemSummary, triggers) = await ImpactElementsAsync(db, full, ct);
+            var caseModel = BuildModel(full, now, await _branding.GetLogoAsync(ct), sections, elemSummary, triggers, tlp);
+            rendered = _templates!.Render(t.Bytes, caseModel with
+            {
+                Kind = ReportKind.LessonsLearned,
+                Legend = model.Legend,
+                Review = model.Review,
+                ImprovementActions = model.ImprovementActions,
+                ContentHash = model.ContentHash,
+            });
+            used = t;
+        }
+        return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.LessonsLearned, model, now, ct, rendered, used);
+    }
+
+    /// <summary>The template id a report profile names as its default, if any.</summary>
+    private static async Task<Guid?> ProfileTemplateIdAsync(IAppDbContext db, Guid? profileId, CancellationToken ct) =>
+        profileId is { } pid
+            ? await db.ReportProfiles.AsNoTracking().Where(p => p.Id == pid && p.IsActive).Select(p => p.TemplateId).FirstOrDefaultAsync(ct)
+            : null;
+
+    /// <summary>The case model with the post-incident review and improvement actions added, for a Word template.</summary>
+    private async Task<CaseReportModel> WithReviewAsync(IAppDbContext db, Case c, CaseReportModel model, CancellationToken ct)
+    {
+        var (review, actions, _) = await ReviewPartsAsync(db, c.Id, ReportDefanger.For(c.Entities, model.IndicatorsDefanged), ct);
+        return model with { Review = review, ImprovementActions = actions };
     }
 
     /// <summary>Renders, stores and records a report; versions number per case + kind + format.</summary>
     private sealed record ResolvedTemplate(string Name, string Sha256, byte[] Bytes);
 
     /// <summary>PROD-47: the Word template to fill (see <see cref="GenerateAsync"/>'s template argument), or null for
-    /// the built-in layout. A picked template must be active; a profile default that's gone falls back to built-in.</summary>
-    private async Task<ResolvedTemplate?> ResolveTemplateAsync(IAppDbContext db, Guid? profileId, Guid? choice, CancellationToken ct)
+    /// the built-in layout. A picked template must be active; a default that's gone falls back to built-in.</summary>
+    private async Task<ResolvedTemplate?> ResolveTemplateAsync(IAppDbContext db, Guid? defaultId, Guid? choice, CancellationToken ct)
     {
         if (_templates is null || _templateStore is null) return null;
         if (choice == Guid.Empty) return null;
 
-        Guid? id = choice;
-        if (id is null && profileId is { } pid)
-            id = await db.ReportProfiles.AsNoTracking().Where(p => p.Id == pid && p.IsActive).Select(p => p.TemplateId).FirstOrDefaultAsync(ct);
-        if (id is not { } tid) return null;
+        if ((choice ?? defaultId) is not { } tid) return null;
 
         var t = await db.ReportTemplates.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tid && x.IsActive, ct);
         if (t is null)
@@ -465,16 +503,11 @@ public sealed class ReportService
     private async Task<CaseReportModel> BuildLessonsModelAsync(IAppDbContext db, Case c, DateTimeOffset now, CancellationToken ct,
         TlpLevel? tlp = null)
     {
-        var review = await db.PostIncidentReviews.AsNoTracking().FirstOrDefaultAsync(x => x.CaseId == c.Id, ct);
-        var actions = Lessons.LessonsService.Ordered(
-            await db.ImprovementActions.AsNoTracking().Where(x => x.CaseId == c.Id).ToListAsync(ct)).ToList();
         var logo = await _branding.GetLogoAsync(ct);
         var opts = _reporting.CurrentValue;
         var d = ReportDefanger.For(
             await db.CaseEntities.AsNoTracking().Where(e => e.CaseId == c.Id).ToListAsync(ct), opts.DefangIndicators);
-
-        var canonical = string.Join('\n',
-            new[] { review?.BuildCanonicalContent() ?? "" }.Concat(actions.Select(a => a.BuildCanonicalContent())));
+        var (review, actions, canonical) = await ReviewPartsAsync(db, c.Id, d, ct);
 
         return new CaseReportModel
         {
@@ -494,18 +527,34 @@ public sealed class ReportService
             Severity = _severityLabels.For(c.Severity),
             Origin = c.Origin == CaseOrigin.ThirdParty ? "Third-party / vendor" : "Internal detection",
             ClosedAtUtc = c.ClosedAtUtc,
-            // The long fields are Markdown (edited like Notes/Summary): the review keeps its formatting as blocks;
-            // action details/outcome sit in table cells, so they print as list-aware plain text.
-            Review = review is null ? null : new ReportReview(d.Blocks(Content.RichText.Parse(review.WhatHappened)),
-                d.Blocks(Content.RichText.Parse(review.ContributingFactors)), d.Blocks(Content.RichText.Parse(review.WhatWorkedWell)),
-                d.Blocks(Content.RichText.Parse(review.OpportunitiesToImprove)), review.NoActionsIdentified),
-            ImprovementActions = actions.Select(a => new ReportImprovementActionRow(d.Text(a.Title), a.RelatedArea, d.NullableText(Plain(a.Details)),
-                a.Owner is null ? "Unassigned" : _users.DisplayFor(a.Owner), a.TargetDateUtc,
-                Lessons.LessonsService.StatusLabel(a.Status), d.NullableText(Plain(a.OutcomeNote)))).ToList(),
+            Review = review,
+            ImprovementActions = actions,
             GeneratedBy = _users.DisplayFor(_user.UserId),
             GeneratedAtUtc = now,
             ContentHash = _hasher.Hash(canonical)
         };
+    }
+
+    /// <summary>The post-incident review and improvement actions as printed, plus their canonical content (what the
+    /// lessons-learned report's provenance hash covers).</summary>
+    private async Task<(ReportReview? Review, List<ReportImprovementActionRow> Actions, string Canonical)> ReviewPartsAsync(
+        IAppDbContext db, Guid caseId, ReportDefanger d, CancellationToken ct)
+    {
+        var review = await db.PostIncidentReviews.AsNoTracking().FirstOrDefaultAsync(x => x.CaseId == caseId, ct);
+        var actions = Lessons.LessonsService.Ordered(
+            await db.ImprovementActions.AsNoTracking().Where(x => x.CaseId == caseId).ToListAsync(ct)).ToList();
+        var canonical = string.Join('\n',
+            new[] { review?.BuildCanonicalContent() ?? "" }.Concat(actions.Select(a => a.BuildCanonicalContent())));
+
+        // The long fields are Markdown (edited like Notes/Summary): the review keeps its formatting as blocks;
+        // action details/outcome sit in table cells, so they print as list-aware plain text.
+        var printed = review is null ? null : new ReportReview(d.Blocks(Content.RichText.Parse(review.WhatHappened)),
+            d.Blocks(Content.RichText.Parse(review.ContributingFactors)), d.Blocks(Content.RichText.Parse(review.WhatWorkedWell)),
+            d.Blocks(Content.RichText.Parse(review.OpportunitiesToImprove)), review.NoActionsIdentified);
+        var rows = actions.Select(a => new ReportImprovementActionRow(d.Text(a.Title), a.RelatedArea, d.NullableText(Plain(a.Details)),
+            a.Owner is null ? "Unassigned" : _users.DisplayFor(a.Owner), a.TargetDateUtc,
+            Lessons.LessonsService.StatusLabel(a.Status), d.NullableText(Plain(a.OutcomeNote)))).ToList();
+        return (printed, rows, canonical);
     }
 
     // Table cells can't carry styling: keep list markers and line breaks, drop emphasis.

@@ -58,13 +58,24 @@ public static partial class ReportTemplateFields
         (new("case.closed", "Closed (UTC)"), m => D(m.ClosedAtUtc)),
         (new("org.name", "Organization name (Administration → Organization)"), m => m.OrganizationName ?? ""),
         (new("org.team", "Team name"), m => m.TeamName ?? ""),
+        (new("report.type", "\"Incident report\" or \"Post-incident review\", so one template can serve both reports"),
+            m => m.IsLessonsLearned ? "Post-incident review" : "Incident report"),
         (new("report.tlp", "TLP marking, such as TLP:AMBER"), m => m.TlpLabel ?? ""),
         (new("report.sharing", "The TLP sharing sentence"), m => m.SharingLine ?? ""),
         (new("report.defang_note", "The note explaining defanged indicators (blank when not defanged)"), m => m.IndicatorsDefanged ? CaseReportModel.DefangNote : ""),
         (new("report.generated_by", "Who generated the report"), m => m.GeneratedBy),
         (new("report.generated_at", "When (UTC)"), m => D(m.GeneratedAtUtc)),
-        (new("report.content_hash", "Case content hash (integrity stamp)"), m => m.ContentHash),
+        (new("report.content_hash", "Content hash (integrity stamp): the case's, or the review's on a lessons-learned report"), m => m.ContentHash),
+        // Post-incident review (Lessons learned tab). Filled in both reports, so a case report template can include
+        // the review too; blank when no review is recorded.
+        (new("review.what_happened", "Review: what happened"), m => ReviewText(m, r => r.WhatHappened)),
+        (new("review.contributing_factors", "Review: contributing factors"), m => ReviewText(m, r => r.ContributingFactors)),
+        (new("review.what_worked_well", "Review: what worked well"), m => ReviewText(m, r => r.WhatWorkedWell)),
+        (new("review.opportunities", "Review: opportunities to improve"), m => ReviewText(m, r => r.OpportunitiesToImprove)),
     ];
+
+    private static string ReviewText(CaseReportModel m, Func<ReportReview, IReadOnlyList<Content.RichBlock>> part) =>
+        m.Review is { } r ? Content.RichText.BlocksToText(part(r)) : "";
 
     private sealed record CollectionDef(TemplateCollection Info, Func<CaseReportModel, IReadOnlyList<object>> Items,
         IReadOnlyDictionary<string, Func<object, string>> Values);
@@ -131,6 +142,14 @@ public static partial class ReportTemplateFields
         Coll("assignment", "Case team", m => m.Assignments,
             ("user", "Person", x => x.User),
             ("role", "Role on the case", x => x.Role)),
+        Coll("improvement", "Improvement actions from the post-incident review", m => m.ImprovementActions,
+            ("title", "Improvement action", x => x.Title),
+            ("area", "Related area", x => x.RelatedArea ?? ""),
+            ("details", "Details", x => x.Details ?? ""),
+            ("owner", "Owner", x => x.Owner),
+            ("target", "Target date", x => Day(x.TargetDateUtc)),
+            ("status", "Status", x => x.Status),
+            ("outcome", "Outcome note", x => x.OutcomeNote ?? "")),
     ];
 
     private static readonly Dictionary<string, Func<CaseReportModel, string>> Scalars =

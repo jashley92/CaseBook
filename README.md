@@ -117,9 +117,10 @@ someone needs one. Reports
 **indicators of compromise** apart from everything examined, **defang** indicators so a forwarded report
 can't be clicked through, and carry a **TLP 2.0** marking on every page. Admins keep a library of their own
 **Word templates** with `{{…}}` fields and **preview** each one filled with a real case before anyone uses it
-(nothing is stored). A report profile names a default template, and whoever generates a Word report can pick
-another; each report records which template filled it. Uploads with macros, embedded objects or externally
-loaded content are refused.
+(nothing is stored). A report profile names a default template, one template can be the lessons-learned
+reports' default, and whoever generates a report can pick another; each report records which template filled it.
+Any template can fill either report and use any field, so one house template can serve both. Uploads with macros,
+embedded objects or externally loaded content are refused.
 
 ![Reporting](docs/screenshots/report.png)
 
@@ -131,8 +132,8 @@ opportunities to improve — Markdown, like notes) and the **improvement actions
 an owner and target date and tracked to closure (closing needs an outcome note). Actions stay editable after
 the case closes and roll up into a cross-case **Improvement actions** register with CSV export. An optional
 **Lessons captured** check can be required on the Close gate for Incidents and Breaches. The review prints in
-its own stored, hashed **lessons-learned report**, never in the case report, with an optional admin-set
-confidentiality legend on every page. Wording is deliberately neutral, since these records are discoverable.
+its own stored, hashed **lessons-learned report** (the built-in case report never includes it), with an optional
+admin-set confidentiality legend on every page, in the built-in layout or a Word template. Wording is deliberately neutral, since these records are discoverable.
 **Draft from the case record** fills *What happened* with key times, the event sequence and every recorded
 decision, for the analyst to edit (template-based; CaseBook never calls an AI).
 

@@ -24,8 +24,13 @@ public class ReportTemplate : AuditableEntity, IHashableEntity
     /// <summary>Archived templates stay listed for admins (and in history) but can't be picked for new reports.</summary>
     public bool IsActive { get; set; } = true;
 
+    /// <summary>The template lessons-learned reports use by default (at most one). Lessons reports have no report
+    /// profiles, so the default lives on the template.</summary>
+    public bool IsLessonsDefault { get; set; }
+
     public string? RowHash { get; set; }
 
+    // The lessons flag is appended only when set, so rows hashed before it existed still verify.
     public string BuildCanonicalContent() => string.Join('|',
-        Name, FileName, Sha256, SizeBytes, IsActive, CreatedBy, CreatedAtUtc.ToString("o"));
+        Name, FileName, Sha256, SizeBytes, IsActive, CreatedBy, CreatedAtUtc.ToString("o")) + (IsLessonsDefault ? "|lessons-default" : "");
 }

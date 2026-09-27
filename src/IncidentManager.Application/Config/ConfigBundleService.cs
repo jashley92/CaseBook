@@ -96,7 +96,8 @@ public sealed partial class ConfigBundleService
                 var bytes = await _templateStore!.GetAsync(t.Id, ct)
                     ?? throw new InvalidOperationException(
                         $"The file for Word template \"{t.Name}\" is missing from the template store. Replace or delete the template, then export again.");
-                reportTemplates.Add(new ConfigReportTemplate(t.Name, t.FileName, t.IsActive, t.Sha256, Convert.ToBase64String(bytes)));
+                reportTemplates.Add(new ConfigReportTemplate(t.Name, t.FileName, t.IsActive, t.Sha256, Convert.ToBase64String(bytes),
+                    t.IsLessonsDefault));
             }
         }
         var templateNames = templateRows?.ToDictionary(t => t.Id, t => t.Name) ?? [];

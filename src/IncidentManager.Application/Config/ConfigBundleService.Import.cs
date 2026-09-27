@@ -277,6 +277,7 @@ public sealed partial class ConfigBundleService
             if (!library.TryGetValue(t.Name, out var existing))
             {
                 var created = new ReportTemplate { Name = t.Name, FileName = fileName, IsActive = t.IsActive,
+                    IsLessonsDefault = t.LessonsDefault,
                     Sha256 = t.Sha256.ToLowerInvariant(), SizeBytes = bytes.LongLength, CreatedBy = actor, CreatedAtUtc = now };
                 await _templateStore!.SaveAsync(created.Id, bytes, ct);
                 db.ReportTemplates.Add(created);
@@ -287,14 +288,23 @@ public sealed partial class ConfigBundleService
             {
                 var fileChanged = !string.Equals(existing.Sha256, t.Sha256, StringComparison.OrdinalIgnoreCase);
                 var changed = fileChanged || existing.Name != t.Name || existing.FileName != fileName
-                    || existing.IsActive != t.IsActive;
+                    || existing.IsActive != t.IsActive || existing.IsLessonsDefault != t.LessonsDefault;
                 if (fileChanged) await _templateStore!.SaveAsync(existing.Id, bytes, ct);
                 if (changed) { existing.Name = t.Name; existing.FileName = fileName; existing.IsActive = t.IsActive;
+                    existing.IsLessonsDefault = t.LessonsDefault;
                     existing.Sha256 = t.Sha256.ToLowerInvariant(); existing.SizeBytes = bytes.LongLength;
                     existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
                 Tally(false, changed);
             }
         }
+
+        // At most one lessons-learned default: when the bundle names one, a live template outside the bundle stops being it.
+        if (bundle.ReportTemplates?.Any(t => t.LessonsDefault) == true)
+            foreach (var other in libraryRows.Where(r => r.IsLessonsDefault
+                         && !bundle.ReportTemplates.Any(t => t.Name.Equals(r.Name, StringComparison.OrdinalIgnoreCase))))
+            {
+                other.IsLessonsDefault = false; other.ModifiedBy = actor; other.ModifiedAtUtc = now;
+            }
 
         // --- Report profiles ---
         // A bundle that carries the template library (v3) also sets each profile's default template (null = the built-in
@@ -442,6 +452,13 @@ public sealed partial class ConfigBundleService
             else if (!isActive)
                 problems.Add($"Report profile \"{profile}\" uses the Word template \"{template}\", which would be archived. A profile's default template must be active.");
         }
+
+        // The lessons-learned default: at most one, and it must be active.
+        var lessons = bundle.ReportTemplates.Where(t => t.LessonsDefault).ToList();
+        if (lessons.Count > 1)
+            problems.Add($"More than one Word template is marked as the lessons-learned default ({string.Join(", ", lessons.Select(t => $"\"{t.Name}\""))}).");
+        else if (lessons is [{ IsActive: false } archivedLessons])
+            problems.Add($"The lessons-learned default, \"{archivedLessons.Name}\", is archived. The default must be active.");
 
         if (problems.Count > 0)
             throw new InvalidOperationException("This bundle can't be imported. " + string.Join(" ", problems));

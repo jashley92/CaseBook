@@ -43,8 +43,10 @@ public sealed record ConfigReportProfile(string Name, string? Description, bool 
 
 /// <summary>A Word report template from the library (PROD-47, schema v3), carried with its file so a promoted
 /// report profile keeps its default. Matched on import by <see cref="Name"/>; the file is checked again before
-/// it's stored, and <see cref="Sha256"/> must match <see cref="ContentBase64"/>.</summary>
-public sealed record ConfigReportTemplate(string Name, string FileName, bool IsActive, string Sha256, string ContentBase64);
+/// it's stored, and <see cref="Sha256"/> must match <see cref="ContentBase64"/>. <see cref="LessonsDefault"/> marks the
+/// lessons-learned reports' default (left out of the JSON when false).</summary>
+public sealed record ConfigReportTemplate(string Name, string FileName, bool IsActive, string Sha256, string ContentBase64,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool LessonsDefault = false);
 
 /// <summary>A data-element reference row (X-03). Matched on import by its stable <see cref="Key"/>.</summary>
 public sealed record ConfigDataElement(

@@ -516,6 +516,27 @@ public sealed class ConfigBundleServiceTests : IDisposable
         var again = await target.Config.ImportAsync(parsed.Bundle);
         again.Added.Should().Be(0);
         again.Updated.Should().Be(0);
+
+        await AssertLessonsDefaultTravels(source, target);
+    }
+
+    private async Task AssertLessonsDefaultTravels(
+        (IAppDbContextFactory Factory, FileReportTemplateStore Store, ConfigBundleService Config) source,
+        (IAppDbContextFactory Factory, FileReportTemplateStore Store, ConfigBundleService Config) target)
+    {
+        var sourceTemplates = new IncidentManager.Application.Admin.ReportTemplateService(source.Factory, _user, _clock, _engine, source.Store);
+        await sourceTemplates.SetLessonsDefaultAsync((await sourceTemplates.ListAllAsync()).Single().Id, true);
+        var bundle = await source.Config.BuildBundleAsync();
+        bundle.ReportTemplates!.Single().LessonsDefault.Should().BeTrue();
+
+        // Two lessons defaults in one bundle are refused.
+        var twice = bundle with { ReportTemplates = [.. bundle.ReportTemplates, bundle.ReportTemplates[0] with { Name = "Copy" }] };
+        await target.Config.Invoking(c => c.PreviewAsync(twice)).Should()
+            .ThrowAsync<InvalidOperationException>().WithMessage("*More than one*lessons-learned default*");
+
+        await target.Config.ImportAsync(bundle);
+        using var db = target.Factory.CreateDbContext();
+        (await db.ReportTemplates.SingleAsync()).IsLessonsDefault.Should().BeTrue();
     }
 
     [Fact]
