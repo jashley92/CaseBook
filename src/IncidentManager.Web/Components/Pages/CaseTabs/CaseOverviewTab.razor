@@ -60,7 +60,7 @@
 <div class="row g-4">
     <div class="col-lg-7">
         @* Case narrative — details and impact assessment folded into one card. *@
-        <div class="card">
+        <div class="card" id="ov-details">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span>Details</span>
                 <AuthorizeView Policy="@Policies.EditCases" Context="ed">
@@ -154,7 +154,7 @@
 
                 <hr class="my-3" />
 
-                <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="d-flex justify-content-between align-items-center mb-2" id="ov-impact">
                     <h3 class="h6 mb-0">Impact assessment</h3>
                     <AuthorizeView Policy="@Policies.EditCases" Context="ie">
                         @if (!_editingImpact)
@@ -335,7 +335,7 @@
                 @if (_showReadiness)
                 {
                     <p class="text-muted small mb-2">What's needed to <strong>@StageGateTriggers.Label(rg.Trigger).ToLowerInvariant()</strong>. Checked when you make the change. You can override it with a recorded justification.</p>
-                    <GateChecklist Eval="rg" Attested="_readinessAttested" Interactive="false" />
+                    <GateChecklist Eval="rg" Attested="_readinessAttested" Interactive="false" OnFix="@(CanEdit ? EventCallback.Factory.Create<string>(this, FixReadiness) : default)" />
                 }
             </div>
         }
@@ -574,6 +574,9 @@
     [Parameter] public EventCallback<(string Message, string Verb, Func<Task> OnConfirm)> RequestConfirm { get; set; }
     /// <summary>Open one of the parent's action modals (used for the assign modal).</summary>
     [Parameter] public EventCallback<string> OnOpenModal { get; set; }
+
+    /// <summary>A readiness "Fix" this tab can't satisfy in place (a tab or a dialog); the workspace routes it.</summary>
+    [Parameter] public EventCallback<string> OnFix { get; set; }
     /// <summary>Bumped by the parent on a collaborator change, to re-pull related cases.</summary>
     [Parameter] public int RefreshToken { get; set; }
 
@@ -743,6 +746,34 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await ReconcileEditor();
+        if (_scrollTo is { } id)
+        {
+            _scrollTo = null;
+            try { await JS.InvokeVoidAsync("imMotion.scrollToId", id); } catch (JSException) { /* ignore */ }
+        }
+    }
+
+    // Stage readiness "Fix": open the editor that satisfies an unmet check, or hand off to the workspace for a
+    // tab or a dialog.
+    private string? _scrollTo;
+    public async Task FixReadiness(string checkKey)
+    {
+        switch (checkKey)
+        {
+            case GateCheckKeys.SummaryPresent or GateCheckKeys.DetectionCaseIdSet:
+                if (!_editingDetails) BeginEditDetails();
+                _scrollTo = "ov-details";
+                break;
+            case GateCheckKeys.AffectedIndividualsCountSet or GateCheckKeys.MinAffectedIndividuals
+                or GateCheckKeys.DataElementsSet or GateCheckKeys.AffectedStatesSet:
+                if (!_editingImpact) BeginEditImpact();
+                _scrollTo = "ov-impact";
+                break;
+            default:
+                await OnFix.InvokeAsync(checkKey);
+                return;
+        }
+        StateHasChanged();
     }
 
     // This tab owns a single EasyMDE editor — the Summary composer, shown only while editing details.

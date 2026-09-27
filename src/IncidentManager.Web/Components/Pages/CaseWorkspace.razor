@@ -4,6 +4,8 @@
 @inject CaseService Cases
 @inject IClock Clock
 @inject IJSRuntime JS
+@inject IncidentManager.Web.Services.CaseListMemory ListMemory
+@inject IncidentManager.Web.Services.CommandPaletteController Palette
 @inject NavigationManager Nav
 @inject IAuthorizationService AuthZ
 @inject IncidentManager.Application.Abstractions.ICaseChangeNotifier Notifier
@@ -26,8 +28,15 @@
 
 @if (_notFound)
 {
-    <h1>Case not found</h1>
-    <p>The case does not exist or you don't have access to it. <a href="cases">Back to cases</a>.</p>
+    <div class="empty-state my-5">
+        <div class="empty-state-icon"><span class="bi bi-folder-x" aria-hidden="true"></span></div>
+        <h1 class="h4 mb-2">Case not found</h1>
+        <p class="text-muted mb-3">It may have been archived, or it's restricted to its case team. Ask its incident commander if you need access.</p>
+        <div class="d-flex justify-content-center gap-2">
+            <a class="btn btn-primary" href="@ListMemory.BackHref">Back to cases</a>
+            <button type="button" class="btn btn-outline-secondary" @onclick="Palette.Open">Search cases</button>
+        </div>
+    </div>
 }
 else if (_case is null)
 {
@@ -36,7 +45,7 @@ else if (_case is null)
 else
 {
     @* UX-08: consistent back affordance — the "Cases" crumb replaces the old "← All cases" button. *@
-    <Breadcrumbs Items="@(new Crumb[] { new("Cases", "cases"), new(_case.CaseNumber) })" />
+    <Breadcrumbs Items="@(new Crumb[] { new("Cases", ListMemory.BackHref), new(_case.CaseNumber) })" />
     @* FR-05: warn before leaving the case (in-app SPA nav) with unsubmitted composer text. The browser-level
        beforeunload guard in markdown-editor.js covers refresh / tab-close / external nav; this covers a
        sidebar or case-link click the SPA router handles without a page unload. *@
@@ -388,7 +397,7 @@ else
         <CaseOverviewTab @ref="_overviewTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" CanLiftRestriction="@(_canEdit && CanLiftRestriction)"
                          RetentionMessage="@_retentionMsg" ReadinessEval="_readinessEval"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" OnOpenModal="OpenModal"
-                         RefreshToken="_liveRefresh" />
+                         OnFix="FixGateItem" RefreshToken="_liveRefresh" />
     }
     else if (_activeTab == "Timeline")
     {
@@ -640,16 +649,17 @@ else
                         {
                             @if (AssignableUsers() is { Count: 0 })
                             {
-                                <p class="text-muted small mb-0">Everyone in the directory is already assigned to this case.</p>
+                                <p class="text-muted small mb-0">There's no one in the directory to assign.</p>
                             }
                             else
                             {
                                 <label class="form-label small" for="ws-assign-user">Person</label>
-                                <select id="ws-assign-user" class="form-select mb-2" @bind="_assignUserId">
+                                <select id="ws-assign-user" class="form-select mb-2" @bind="_assignUserId" @bind:after="OnAssignUserChanged">
                                     <option value="">Select a person…</option>
                                     @foreach (var u in AssignableUsers())
                                     {
-                                        <option value="@u.UserId">@u.DisplayName</option>
+                                        var current = CurrentRole(u.UserId);
+                                        <option value="@u.UserId">@u.DisplayName@(current is { } r ? $" (now {Ui.Label(r)})" : "")</option>
                                     }
                                 </select>
                                 @if (_case.IsRestricted)
@@ -1157,8 +1167,15 @@ else
         _activeModal = name;
         _modalError = null;
         _actionsOpen = false;
-        // For a Complex Event (intake) the reclassify modal is a promotion — default to the first rung.
-        _newClass = _case.Classification ?? Classification.AdverseEvent;
+        // Reclassifying is almost always an escalation, so the picker starts on the next rung up (the first rung
+        // for a Complex Event); a Breach, the top, starts on itself. Picking a lower rung is still one change.
+        _newClass = _case.Classification switch
+        {
+            null => Classification.AdverseEvent,
+            Classification.AdverseEvent => Classification.Incident,
+            Classification.Incident => Classification.Breach,
+            var c => c.Value,
+        };
         _newSeverity = _case.Severity;
         _newPhase = _case.Phase;
 
@@ -1280,7 +1297,7 @@ else
         @if (_gateEval is { } g)
         {
             <div class="mt-3">
-                <GateChecklist Eval="g" Attested="_attested" OnChanged="StateHasChanged" />
+                <GateChecklist Eval="g" Attested="_attested" OnChanged="StateHasChanged" OnFix="FixGateItem" />
                 @if (NeedsOverride)
                 {
                     <div class="alert alert-warning small mt-2 mb-1 py-2">
@@ -1434,7 +1451,7 @@ else
     private string ModalPrimaryLabel() => _activeModal switch
     {
         "archive" => "Archive",
-        "assign" => "Assign",
+        "assign" => CurrentRole(_assignUserId) is null ? "Assign" : "Change role",
         "reopen" => "Reopen",
         "holdrelease" => Cases.LegalHoldReleaseNeedsSecondApprover ? "Request release" : "Release hold",
         "supersede" => "Supersede",
@@ -1448,7 +1465,7 @@ else
     // — no modal leaves "Apply" enabled only to error on click. (The on-click checks stay as a safety net.)
     private bool ModalPrimaryDisabled() => _activeModal switch
     {
-        "assign" => string.IsNullOrEmpty(_assignUserId),
+        "assign" => string.IsNullOrEmpty(_assignUserId) || CurrentRole(_assignUserId) == _assignRole,
         "reopen" => string.IsNullOrWhiteSpace(_reopenReason),
         "holdrelease" => string.IsNullOrWhiteSpace(_holdReleaseReason),
         "supersede" => _supersedeTargetId is null || string.IsNullOrWhiteSpace(_supersedeReason),
@@ -1552,10 +1569,11 @@ else
                 case "assign":
                     if (string.IsNullOrWhiteSpace(_assignUserId)) { _modalError = "Select a person to assign."; return; }
                     var assignName = Users.Resolve(_assignUserId)?.DisplayName ?? _assignUserId;
+                    var wasOn = CurrentRole(_assignUserId) is not null;
                     await Cases.AssignAsync(Id, _assignUserId, assignName, _assignRole);
+                    done = wasOn ? $"{assignName} is now {Ui.Label(_assignRole)}" : $"Assigned {assignName}";
                     _assignUserId = "";
                     _assignRole = CaseAssignmentRole.Analyst;
-                    done = $"Assigned {assignName}";
                     break;
                 default:
                     done = "";
@@ -1651,6 +1669,33 @@ else
 
     private bool _advancing;
 
+    // A stage-gate "Fix" link (from the Overview readiness card or a gate dialog): close any dialog and go to
+    // what satisfies the check.
+    private async Task FixGateItem(string checkKey)
+    {
+        _activeModal = null;
+        switch (checkKey)
+        {
+            case GateCheckKeys.AtLeastOneEntity or GateCheckKeys.AtLeastOneMaliciousEntity: await SetTab("Entities"); break;
+            case GateCheckKeys.AtLeastOneEvidence: await SetTab("Evidence"); break;
+            case GateCheckKeys.AtLeastOneReport: await SetTab("Report"); break;
+            case GateCheckKeys.LessonsCaptured: await SetTab("Review"); break;
+            case GateCheckKeys.IncidentCommanderAssigned:
+                await OpenModal("assign");
+                _assignRole = CaseAssignmentRole.IncidentCommander;
+                break;
+            case GateCheckKeys.MaterialityDetermined: await OpenModal("materiality"); break;
+            default:
+                // Details and impact fields live on the Overview tab, which opens the editor.
+                _pendingOverviewFix = checkKey;
+                await SetTab("Overview");
+                break;
+        }
+    }
+
+    // A details/impact fix raised from a gate dialog on another tab: handed to the Overview tab once it renders.
+    private string? _pendingOverviewFix;
+
     private int? TabCount(string tab)
     {
         if (_case is null) return null;
@@ -1734,13 +1779,20 @@ else
         }
     }
 
-    // Directory users not yet assigned to this case — the pool the assign modal offers.
-    private List<UserSummary> AssignableUsers() =>
-        _case is null
-            ? new List<UserSummary>()
-            : Users.All()
-                .Where(u => _case.Assignments.All(a => !string.Equals(a.UserId, u.UserId, StringComparison.OrdinalIgnoreCase)))
-                .ToList();
+    // Everyone in the directory: picking someone already on the case changes their role (e.g. an analyst
+    // taking over as incident commander), so the list marks their current role.
+    private List<UserSummary> AssignableUsers() => _case is null ? new List<UserSummary>() : Users.All().ToList();
+
+    private CaseAssignmentRole? CurrentRole(string userId) =>
+        _case?.Assignments.FirstOrDefault(a => string.Equals(a.UserId, userId, StringComparison.OrdinalIgnoreCase))?.Role;
+
+    // Picking someone already on the case starts from the role they'd most likely move to: the commander seat if
+    // it's what the dialog was opened for, otherwise their next step up.
+    private void OnAssignUserChanged()
+    {
+        if (CurrentRole(_assignUserId) is { } now && now == _assignRole)
+            _assignRole = now == CaseAssignmentRole.IncidentCommander ? CaseAssignmentRole.Analyst : CaseAssignmentRole.IncidentCommander;
+    }
 
     private async Task OpenShot(Guid evidenceId)
     {
@@ -1940,6 +1992,11 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_pendingOverviewFix is { } fix && _overviewTab is not null)
+        {
+            _pendingOverviewFix = null;
+            await _overviewTab.FixReadiness(fix);
+        }
         if (firstRender)
         {
             // Attach the paste/drag-drop listeners once (idempotent in the shim; each zone only acts while

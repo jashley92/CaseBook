@@ -12,6 +12,7 @@
 @inject IncidentManager.Application.Compliance.INotificationDeadlineSettingsProvider NotifySettings
 @inject ISeverityLabels SevLabels
 @inject NavigationManager Nav
+@inject IncidentManager.Web.Services.CaseListMemory ListMemory
 @inject ToastService Toasts
 @inject IAuthorizationService Authz
 @inject AuthenticationStateProvider AuthState
@@ -740,6 +741,7 @@ else
     // Runs on initial load and on every query-string change (e.g. a dashboard drill-in).
     protected override async Task OnParametersSetAsync()
     {
+        ListMemory.Remember(Nav.Uri);
         // Scope is driven by ?scope=mine; the legacy /cases/mine route is honoured as an alias so old
         // links and bookmarks still land on the user's own caseload.
         var relative = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].TrimEnd('/');
