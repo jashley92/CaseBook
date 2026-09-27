@@ -16,6 +16,7 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @inject ISeverityLabels SevLabels
+@inject Microsoft.Extensions.Options.IOptionsMonitor<IncidentManager.Application.Reporting.ReportingOptions> ReportingOpts
 
 @if (_view is null)
 {
@@ -270,6 +271,18 @@ else
     It is never included in the case report.
 </p>
 <AuthorizeView Policy="@Policies.EditCases">
+    @* PROD-45: the TLP marking printed on every page, as on the case report. *@
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <label class="form-label small mb-0" for="lessons-tlp">Sharing (TLP)</label>
+        <select id="lessons-tlp" class="form-select form-select-sm w-auto" value="@_tlp"
+                @onchange="e => _tlpChoice = Enum.TryParse<TlpLevel>(e.Value?.ToString(), out var t) ? t : null">
+            @foreach (var t in Enum.GetValues<TlpLevel>())
+            {
+                <option value="@t">@Tlp.Label(t)</option>
+            }
+        </select>
+        <span class="small text-muted">@Tlp.Meaning(_tlp)</span>
+    </div>
     <div class="d-flex gap-2 mb-2">
         <button class="btn btn-sm btn-primary" @onclick="GenerateReport" disabled="@_saving">Generate draft</button>
     </div>
@@ -558,12 +571,15 @@ else
 
     // ---- Lessons-learned report ----------------------------------------------------------------------
 
+    private TlpLevel? _tlpChoice;   // null = the admin default
+    private TlpLevel _tlp => _tlpChoice ?? ReportingOpts.CurrentValue.EffectiveDefaultTlp;
+
     private async Task GenerateReport()
     {
         _saving = true;
         try
         {
-            var r = await Reports.GenerateLessonsAsync(CaseId);
+            var r = await Reports.GenerateLessonsAsync(CaseId, _tlp);
             _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
             Toasts.Success($"Generated {r.FileName}");
             await OnChanged.InvokeAsync();
