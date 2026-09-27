@@ -104,7 +104,7 @@
         <div class="card-body row g-2 align-items-end">
             <div class="col-md-4">
                 <label class="form-label small mb-0" for="task-title">Task</label>
-                <input id="task-title" class="form-control form-control-sm" @bind="_taskTitle" @bind:event="oninput" />
+                <input id="task-title" class="form-control form-control-sm" @bind="_taskTitle" @bind:event="oninput" @onkeydown="OnTitleKey" />
             </div>
             <div class="col-md-2">
                 <label class="form-label small mb-0" for="task-owner">Owner</label>
@@ -178,7 +178,7 @@ else
                 var isOpen = t.Status != ActionItemStatus.Done && t.Status != ActionItemStatus.Cancelled;
                 var threadOpen = _openThreads.Contains(t.Id);
                 var comments = CommentsFor(t.Id);
-                <tr class="im-enter @(t.IsOverdue(Clock.UtcNow) ? "table-danger" : "") @FlashClass?.Invoke(t.Id)" style="@FlashStyle?.Invoke(t.Id)" @key="t.Id">
+                <tr class="im-enter @(t.IsOverdue(Clock.UtcNow) ? "im-row-danger" : "") @FlashClass?.Invoke(t.Id)" style="@FlashStyle?.Invoke(t.Id)" @key="t.Id">
                     @if (CanEdit)
                     {
                         <td>
@@ -207,6 +207,13 @@ else
                     <td>@(t.DueAtUtc is { } due ? TimeDisp.Short(due) : "—")</td>
                     <td>@StatusLabel(t.Status)</td>
                     <td class="text-end text-nowrap">
+                        @if (CanEdit && isOpen)
+                        {
+                            <button class="btn btn-sm btn-outline-success me-1" title="Mark done"
+                                    aria-label="@($"Mark done: {t.Title}")" @onclick="() => MarkDone(t.Id)">
+                                <span class="bi bi-check2" aria-hidden="true"></span>
+                            </button>
+                        }
                         @if (CanEdit)
                         {
                             <button class="btn btn-sm btn-outline-secondary me-1" title="Edit this task"
@@ -473,6 +480,15 @@ else
         if (CanEdit) await AddTask();
     }
 
+    // Enter in the title adds the task, like any one-line form (held Enter doesn't add it twice).
+    private bool _adding;
+    private async Task OnTitleKey(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || e.Repeat || e.CtrlKey || e.MetaKey || _adding) return;
+        _adding = true;
+        try { await AddTask(); } finally { _adding = false; }
+    }
+
     private async Task AddTask()
     {
         if (string.IsNullOrWhiteSpace(_taskTitle)) return;
@@ -519,6 +535,16 @@ else
     {
         _selected.Clear();
         if (on) foreach (var id in openIds) _selected.Add(id);
+    }
+
+    // One task: done in one click, without selecting it first.
+    private async Task MarkDone(Guid id)
+    {
+        try { await Cases.SetActionItemStatusAsync(CaseId, id, ActionItemStatus.Done); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
+        _selected.Remove(id);
+        Toasts.Success("Task done");
+        await OnChanged.InvokeAsync();
     }
 
     private async Task MarkSelectedDone()

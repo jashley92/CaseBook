@@ -83,7 +83,7 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label small mb-0" for="ent-value">Value</label>
-                <input id="ent-value" class="form-control form-control-sm" @bind="_enValue" @bind:event="oninput" placeholder="e.g. 203.0.113.66" />
+                <input id="ent-value" class="form-control form-control-sm" @bind="_enValue" @bind:event="oninput" @onkeydown="OnValueKey" placeholder="e.g. 203.0.113.66" />
             </div>
             <div class="col-md-2">
                 <label class="form-label small mb-0" for="ent-label">Label</label>
@@ -590,6 +590,15 @@ else
 
     /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — add the entity in the composer.</summary>
     public async Task SubmitAsync() => await AddEntity();
+
+    // Enter in the value adds the entity, like any one-line form (held Enter doesn't add it twice).
+    private bool _adding;
+    private async Task OnValueKey(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || e.Repeat || e.CtrlKey || e.MetaKey || _adding) return;
+        _adding = true;
+        try { await AddEntity(); } finally { _adding = false; }
+    }
 
     private async Task AddEntity()
     {

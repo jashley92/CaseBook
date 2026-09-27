@@ -252,7 +252,7 @@ else
         }
         @if (_canEdit && NextPhase() is { } np)
         {
-            <button class="btn btn-sm btn-primary ms-2" @onclick="() => AdvanceTo(np)">Advance to @Ui.Label(np) →</button>
+            <button class="btn btn-sm btn-primary ms-2" disabled="@_advancing" @onclick="() => AdvanceTo(np)">Advance to @Ui.Label(np) →</button>
         }
         @if (_canEdit && _case.Phase == CasePhase.Closed)
         {
@@ -1622,11 +1622,17 @@ else
 
         // Ungated forward steps: apply directly, but surface any domain error as a toast instead of
         // letting it reach the unhandled-error bar.
+        // The button re-renders in place as "Advance to <the phase after>", so a double-click would step twice:
+        // ignore clicks while a step runs and for a moment after.
+        if (_advancing) return;
+        _advancing = true;
         try
         {
             await Cases.ChangePhaseAsync(Id, phase, null);
             await Reload();
             Toasts.Success($"Phase changed to {Ui.Label(phase)}");
+            StateHasChanged();
+            await Task.Delay(700);
         }
         catch (ForbiddenException)
         {
@@ -1637,7 +1643,13 @@ else
         {
             Toasts.Error(ex.Message);
         }
+        finally
+        {
+            _advancing = false;
+        }
     }
+
+    private bool _advancing;
 
     private int? TabCount(string tab)
     {
