@@ -42,6 +42,10 @@ public sealed class CreateCaseRequest
     /// <summary>S-08: open the case restricted to need-to-know. The filer is added to the case team if their role
     /// wouldn't otherwise see restricted cases.</summary>
     public bool IsRestricted { get; set; }
+
+    /// <summary>Put the filer on the case team as an analyst, so it shows in their My work. The intake form
+    /// offers it ticked; the filer can untick it to leave the case unassigned.</summary>
+    public bool AssignToMe { get; set; }
 }
 
 /// <summary>Lightweight row for case lists and queues.</summary>

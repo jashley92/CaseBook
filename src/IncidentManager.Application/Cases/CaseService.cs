@@ -384,10 +384,12 @@ public sealed class CaseService
             c.ImpactedAssets = request.ImpactedAssets;
             c.DetectedAtUtc = detectedAtUtc;          // FR-03: real detection time (Case.Open defaults it to now)
             c.OccurredAtUtc = request.OccurredAtUtc;
+            if (request.AssignToMe)
+                c.Assign(_user.UserId, SelfDisplayName, CaseAssignmentRole.Analyst, _user.UserId, now);
             if (request.IsRestricted)
             {
                 // S-08: keep the filer on a case they're restricting (they have no IC/assignment yet).
-                if (!CaseRestrictionPolicy.KeepsAccess(_user, null, []))
+                if (!request.AssignToMe && !CaseRestrictionPolicy.KeepsAccess(_user, null, []))
                     c.Assign(_user.UserId, SelfDisplayName, CaseAssignmentRole.Analyst, _user.UserId, now);
                 c.IsRestricted = true;
             }

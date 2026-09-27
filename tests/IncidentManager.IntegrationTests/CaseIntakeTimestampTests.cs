@@ -82,6 +82,22 @@ public sealed class CaseIntakeTimestampTests : IDisposable
     }
 
     [Fact]
+    public async Task The_filer_can_put_themselves_on_the_case_at_intake()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+
+        var mine = await svc.CreateAsync(Req("Mine", r => r.AssignToMe = true));
+        var unassigned = await svc.CreateAsync(Req("Unassigned"));
+        var restricted = await svc.CreateAsync(Req("Restricted", r => { r.AssignToMe = true; r.IsRestricted = true; }));
+
+        (await db.Assignments.AsNoTracking().Where(a => a.CaseId == mine.Id).SingleAsync())
+            .Should().Match<IncidentManager.Domain.Entities.CaseAssignment>(a => a.UserId == _user.UserId && a.Role == CaseAssignmentRole.Analyst);
+        (await db.Assignments.AsNoTracking().AnyAsync(a => a.CaseId == unassigned.Id)).Should().BeFalse();
+        (await db.Assignments.AsNoTracking().CountAsync(a => a.CaseId == restricted.Id)).Should().Be(1, "one assignment, not two");
+    }
+
+    [Fact]
     public async Task An_omitted_detection_time_defaults_to_filing_time()
     {
         await using var db = NewContext();
