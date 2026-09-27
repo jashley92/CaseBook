@@ -1963,7 +1963,9 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
    table itself the scroll box (display:block + width:100% + overflow-x) keeps it constrained to the card
    while its columns scroll; nowrap keeps columns readable rather than cramping into unreadable wraps. */
 @media (max-width: 640px) {
-    .im-table {
+    /* Every table in a case-workspace tab too (IOCs & entities, Tasks, Report, Audit, …): an analyst on call may be
+       on a phone, and these were wider than the screen. */
+    .im-table, .tabbody table.table {
         display: block;
         width: 100%;
         overflow-x: auto;
