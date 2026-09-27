@@ -66,7 +66,7 @@
                 </div>
             }
             @* PROD-45: the TLP marking printed on every page of the report generated next. *@
-            <div class="d-flex align-items-center gap-2 mb-2">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
                 <label class="form-label small mb-0" for="report-tlp">Sharing (TLP)</label>
                 <select id="report-tlp" class="form-select form-select-sm w-auto" value="@_tlp" @onchange="OnTlpChanged">
                     @foreach (var t in Enum.GetValues<TlpLevel>())
