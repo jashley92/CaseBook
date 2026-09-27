@@ -155,7 +155,9 @@ else
                 @if (_case.IsExercise) { <span class="im-badge im-b-info" title="Tabletop exercise or drill">Exercise</span> }
             </div>
         </div>
-        <div class="d-flex align-items-center gap-2">
+        @* ms-auto: when a long case number pushes these onto their own line they stay at the right edge, so the
+           right-anchored Actions menu opens into view instead of off the left of the screen. *@
+        <div class="d-flex align-items-center gap-2 ms-auto">
             <CasePresence CaseId="_case.Id" />
             @* PROD-20: pin this case so it's one keystroke away (palette) and on My Work. Personal, any viewer. *@
             <button type="button" class="btn btn-sm @(_isPinned ? "btn-warning" : "btn-outline-secondary")"
