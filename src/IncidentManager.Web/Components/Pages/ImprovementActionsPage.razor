@@ -77,7 +77,7 @@
                 @foreach (var r in _register.Rows)
                 {
                     var a = r.Action;
-                    <tr class="@(a.IsPastTarget ? "table-warning" : "")" @key="a.Id">
+                    <tr class="@(a.IsPastTarget ? "im-row-warn" : "")" @key="a.Id">
                         <td class="text-nowrap">
                             <a href="@($"cases/{a.CaseId}?tab=Review")"><code>@r.CaseNumber</code></a>
                             @if (r.IsExercise) { <span class="im-badge im-b-neutral ms-1">Exercise</span> }

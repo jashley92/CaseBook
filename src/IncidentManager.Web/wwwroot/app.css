@@ -2,6 +2,15 @@ html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
+/* Reserve the page scrollbar's width on short pages too, so switching between a short and a long tab doesn't
+   shift the layout (the case header's actions used to jump to a new line). */
+html { scrollbar-gutter: stable; }
+
+/* Flagged table rows (past target, overdue): a tint that works in both themes. Bootstrap's .table-warning /
+   .table-danger are light-only pastels that wash out links and muted text on the dark theme. */
+.im-row-warn { --bs-table-bg-state: color-mix(in srgb, var(--bs-warning) 14%, transparent); }
+.im-row-danger { --bs-table-bg-state: color-mix(in srgb, var(--bs-danger) 14%, transparent); }
+
 a, .btn-link {
     color: var(--im-accent-text);
 }
@@ -711,8 +720,9 @@ h1:focus {
 .notif-actor { font-weight: 600; }
 .notif-summary { color: var(--bs-body-color); }
 
-.notif-meta { margin-top: 0.15rem; font-size: 0.78rem; color: var(--bs-secondary-color, #6c757d); }
-.notif-caselink { text-decoration: none; color: var(--im-accent, #4f8cff); font-weight: 600; }
+.notif-meta { display: flex; min-width: 0; margin-top: 0.15rem; font-size: 0.78rem; color: var(--bs-secondary-color, #6c757d); }
+.notif-caselink { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; color: var(--im-accent, #4f8cff); font-weight: 600; }
+.notif-time { flex: 0 0 auto; }
 .notif-caselink:hover { text-decoration: underline; }
 .notif-sep { margin: 0 0.35rem; }
 
@@ -1890,6 +1900,12 @@ h1:focus {
 .im-crumbs a:hover, .im-crumbs a:focus-visible { color: var(--im-accent-text); text-decoration: underline; }
 .im-crumbs [aria-current="page"] { color: var(--im-text); font-weight: 600; }
 .im-crumbs .bi { margin-right: 4px; }
+/* Phones: the current page's crumb repeats the heading right below it (a long case number took three lines),
+   so only the way back stays, as "‹ Cases". */
+@media (max-width: 640px) {
+    .im-crumbs li:last-child:not(:first-child) { display: none; }
+    .im-crumbs li:nth-last-child(2) a::before { content: "\2039"; margin-right: var(--im-space-1); }
+}
 
 /* Card / panel. */
 .im-card { background: var(--im-surface); border: 1px solid var(--im-border); border-radius: var(--im-radius-lg); padding: var(--im-space-4); color: var(--im-text); }

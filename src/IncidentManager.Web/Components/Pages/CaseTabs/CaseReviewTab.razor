@@ -175,7 +175,7 @@ else
         <tbody>
             @foreach (var a in _view.Actions)
             {
-                <tr class="@(a.IsPastTarget ? "table-warning" : "")" @key="a.Id">
+                <tr class="@(a.IsPastTarget ? "im-row-warn" : "")" @key="a.Id">
                     <td>
                         @a.Title
                         @if (!string.IsNullOrWhiteSpace(a.Details))
