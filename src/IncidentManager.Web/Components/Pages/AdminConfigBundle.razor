@@ -5,6 +5,7 @@
 @layout AdminLayout
 @inject ConfigBundleService Config
 @inject ToastService Toasts
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
 
 <PageTitle>Configuration bundle</PageTitle>
 
@@ -85,7 +86,7 @@
                     <div class="alert @(_verification.SignedByThisInstance ? "alert-success" : "alert-info") py-2 mb-2">
                         <span class="bi bi-shield-check me-1"></span>Signature valid:
                         @(_verification.SignedByThisInstance ? "signed by this instance" : "signed by another instance")
-                        (key <code>@Trunc(_verification.KeyId)</code>). Exported by <strong>@_verification.ExportedBy</strong>
+                        (key <code>@Trunc(_verification.KeyId)</code>). Exported by <strong title="@_verification.ExportedBy">@Users.DisplayFor(_verification.ExportedBy)</strong>
                         from <strong>@_verification.SourceHost</strong> on @_verification.ExportedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
                     </div>
                 }
