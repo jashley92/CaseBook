@@ -55,7 +55,7 @@
                                    checked="@_editing.Permissions.Contains(perm)"
                                    @onchange="e => TogglePerm(perm, (bool)(e.Value ?? false))" />
                             <label class="form-check-label" for="perm-@perm">
-                                <code class="small">@perm</code>
+                                @Ui.Label(perm)
                                 <span class="text-muted small d-block">@desc</span>
                             </label>
                         </div>
@@ -91,14 +91,14 @@ else
             {
                 <tr>
                     <td>
-                        <span class="fw-semibold">@r.Name</span>
+                        <span class="fw-semibold">@Ui.RoleLabel(r.Name)</span>
                         @if (r.IsSystem) { <span class="im-badge im-b-neutral ms-1">System</span> }
                         <div class="small text-muted">@r.Description</div>
                     </td>
                     <td>
-                        @foreach (var p in r.GetPermissions().OrderBy(x => x.ToString()))
+                        @foreach (var p in r.GetPermissions().OrderBy(x => x))
                         {
-                            <span class="im-badge im-b-info me-1 mb-1">@p</span>
+                            <span class="im-badge im-b-info me-1 mb-1">@Ui.Label(p)</span>
                         }
                         @if (r.GetPermissions().Count == 0) { <span class="text-muted">—</span> }
                     </td>
@@ -134,7 +134,7 @@ else
         <div class="col-sm-4">
             <label class="form-label small mb-0" for="role-map-role">Role</label>
             <select id="role-map-role" class="form-select form-select-sm" @bind="_newRole">
-                @foreach (var r in _roles) { <option value="@r.Name">@r.Name</option> }
+                @foreach (var r in _roles) { <option value="@r.Name">@Ui.RoleLabel(r.Name)</option> }
             </select>
         </div>
         <div class="col-sm-2">
@@ -160,7 +160,7 @@ else
             {
                 <tr>
                     <td><code class="small">@m.AdGroup</code></td>
-                    <td>@m.RoleName</td>
+                    <td>@Ui.RoleLabel(m.RoleName)</td>
                     <td class="text-end">
                         <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => ConfirmRemoveMapping(m)">Remove</button>
                     </td>
@@ -188,7 +188,7 @@ else
             @foreach (var b in _review.Broad)
             {
                 <tr>
-                    <td class="fw-semibold">@b.RoleName</td>
+                    <td class="fw-semibold">@Ui.RoleLabel(b.RoleName)</td>
                     <td>
                         @if (b.ViewAllCases) { <span class="im-badge im-b-warn me-1">All cases</span> }
                         @if (b.ViewRestricted) { <span class="im-badge im-b-info">Restricted</span> }
@@ -247,7 +247,7 @@ else
                         <td>@u.DisplayName @if (u.UserPrincipalName is { } upn) { <div class="small text-muted">@upn</div> }</td>
                         <td>
                             @if (u.Roles.Count == 0) { <span class="text-muted small">none</span> }
-                            else { @foreach (var r in u.Roles) { <span class="im-badge im-b-neutral me-1">@r</span> } }
+                            else { @foreach (var r in u.Roles) { <span class="im-badge im-b-neutral me-1">@Ui.RoleLabel(r)</span> } }
                         </td>
                         <td class="small">
                             @TimeDisp.Short(u.LastSeenUtc)

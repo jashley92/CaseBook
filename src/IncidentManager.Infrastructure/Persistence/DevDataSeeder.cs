@@ -394,7 +394,7 @@ public static class DevDataSeeder
                 Check(GateCheckKeys.IncidentCommanderAssigned, blocking: false)),
 
             Gate(StageGateTrigger.EscalateToBreach, "Breach readiness",
-                "The regulatory determination fields the report and compliance bundle depend on (C-04).",
+                "The regulatory determination fields the report and compliance bundle depend on.",
                 Check(GateCheckKeys.SummaryPresent),
                 Check(GateCheckKeys.AffectedIndividualsCountSet),
                 Check(GateCheckKeys.DataElementsSet),
@@ -403,7 +403,7 @@ public static class DevDataSeeder
                 Attest("Impact assessment reviewed with leadership / Legal")),
 
             Gate(StageGateTrigger.CloseCase, "Closure readiness",
-                "A defensible, complete record before the case is closed (C-04).",
+                "A defensible, complete record before the case is closed.",
                 Check(GateCheckKeys.SummaryPresent),
                 Check(GateCheckKeys.AtLeastOneReport, blocking: false),
                 Attest("Post-incident review complete"),
