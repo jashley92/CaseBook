@@ -50,7 +50,7 @@ public class SettingsCatalogTests
 
     [Fact]
     public void Every_sla_hours_setting_has_the_cap() =>
-        SettingsCatalog.Editable.Where(d => d.Key.StartsWith("Sla:") && d.Key != "Sla:AtRiskThresholdPercent")
+        SettingsCatalog.Editable.Where(d => d.Key.StartsWith("Sla:", StringComparison.Ordinal) && d.Key != "Sla:AtRiskThresholdPercent")
             .Should().NotBeEmpty().And.OnlyContain(d => d.Max == IncidentManager.Application.Sla.SlaPolicy.MaxTargetHours);
 
     [Theory]

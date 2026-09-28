@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Domain.Entities;
@@ -89,50 +90,59 @@ public sealed class DashboardService
         var cases = db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises(); // PROD-43: drills stay out of posture metrics
 
         var open = cases.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived);
-
-        var openCount = await open.CountAsync(ct);
-        var breaches = await open.CountAsync(c => c.Classification == Classification.Breach, ct);
-        var incidents = await open.CountAsync(c => c.Classification == Classification.Incident, ct);
-        var adverse = await open.CountAsync(c => c.Classification == Classification.AdverseEvent, ct);
-        var internalOrigin = await open.CountAsync(c => c.Origin == CaseOrigin.InternalDetection, ct);
-        var thirdParty = await open.CountAsync(c => c.Origin == CaseOrigin.ThirdParty, ct);
-        var legalReferred = await open.CountAsync(c => c.LegalReferral.IsReferred, ct);
-
         var now = _clock.UtcNow;
-        // F-08: every figure below is counted or averaged in the database; nothing loads a row per case.
-        // Overdue tasks are counted on the caller's visible, non-exercise cases only.
-        var overdue = await cases.SelectMany(c => c.ActionItems).CountAsync(a =>
-            a.DueAtUtc != null && a.DueAtUtc < now
-            && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled, ct);
+        var slaTargets = _sla.Current;
+
+        // F-08: the case-level figures come from two scans, each a single SELECT of conditional aggregates (OneScan),
+        // so nothing loads a row per case and no figure costs its own table scan. Open-case figures scan only the open
+        // cases (a few percent of the table); the historical ones scan every visible case.
+        var openScan = new OneScan<Case>();
+        var openCount = openScan.Count(c => true);
+        var breaches = openScan.Count(c => c.Classification == Classification.Breach);
+        var incidents = openScan.Count(c => c.Classification == Classification.Incident);
+        var adverse = openScan.Count(c => c.Classification == Classification.AdverseEvent);
+        var internalOrigin = openScan.Count(c => c.Origin == CaseOrigin.InternalDetection);
+        var thirdParty = openScan.Count(c => c.Origin == CaseOrigin.ThirdParty);
 
         // SLA against the administered per-severity targets (Sla:*), via SlaQueries (the SlaPolicy rules as filters):
         //  • open cases → the headline at-risk/breached signal (the earliest running clock);
         //  • any case that reached a milestone → historical compliance (Met/Missed) per clock.
         // Everything here is settings-aligned — no target is hardcoded in the app or the UI.
-        var slaTargets = _sla.Current;
-        var slaBreached = await open.CountAsync(Sla.SlaQueries.Headline(breached: true, slaTargets, now), ct);
-        var slaAtRisk = await open.CountAsync(Sla.SlaQueries.Headline(breached: false, slaTargets, now), ct);
-        async Task<(int Met, int Missed)> MetMissed(Sla.SlaClock clock) =>
-            (await cases.CountAsync(Sla.SlaQueries.Reached(clock, met: true, slaTargets), ct),
-             await cases.CountAsync(Sla.SlaQueries.Reached(clock, met: false, slaTargets), ct));
-        var (cMet, cMissed) = await MetMissed(Sla.SlaClock.Containment);
-        var (rMet, rMissed) = await MetMissed(Sla.SlaClock.Resolution);
-        var (dMet, dMissed) = await MetMissed(Sla.SlaClock.Detection);
+        var slaBreached = openScan.Count(Sla.SlaQueries.Headline(breached: true, slaTargets, now));
+        var slaAtRisk = openScan.Count(Sla.SlaQueries.Headline(breached: false, slaTargets, now));
+        var phaseCounts = Enum.GetValues<CasePhase>().Where(p => p != CasePhase.Closed)
+            .Select(p => (Phase: p, Count: openScan.Count(c => c.Phase == p))).ToList();
+        await openScan.RunAsync(open, ct);
 
-        var byPhase = await open
-            .GroupBy(c => c.Phase)
-            .Select(g => new PhaseCount(g.Key, g.Count()))
-            .ToListAsync(ct);
-
+        var historyScan = new OneScan<Case>();
+        // Missed = judged (reached, with a target) − met: one elapsed-time calculation per clock per row, not two.
+        (Func<int> Met, Func<int> Missed) MetMissed(Sla.SlaClock clock)
+        {
+            var met = historyScan.Count(Sla.SlaQueries.Reached(clock, met: true, slaTargets));
+            var judged = historyScan.Count(Sla.SlaQueries.Judged(clock, slaTargets));
+            return (met, () => judged() - met());
+        }
+        var (cMet, cMissed) = MetMissed(Sla.SlaClock.Containment);
+        var (rMet, rMissed) = MetMissed(Sla.SlaClock.Resolution);
+        var (dMet, dMissed) = MetMissed(Sla.SlaClock.Detection);
         // Mean time-to-contain / resolve over cases that reached those milestones.
-        var meanToContain = MeanHours(await cases
-            .Where(c => c.ContainedAtUtc != null && c.DetectedAtUtc != null)
-            .Select(c => (double?)DbTime.TicksBetween(c.DetectedAtUtc, c.ContainedAtUtc))
-            .AverageAsync(ct));
-        var meanToResolve = MeanHours(await cases
-            .Where(c => c.ResolvedAtUtc != null && c.DetectedAtUtc != null)
-            .Select(c => (double?)DbTime.TicksBetween(c.DetectedAtUtc, c.ResolvedAtUtc))
-            .AverageAsync(ct));
+        var meanToContainTicks = historyScan.Average(c => c.ContainedAtUtc != null && c.DetectedAtUtc != null
+            ? (double?)DbTime.TicksBetween(c.DetectedAtUtc, c.ContainedAtUtc) : null);
+        var meanToResolveTicks = historyScan.Average(c => c.ResolvedAtUtc != null && c.DetectedAtUtc != null
+            ? (double?)DbTime.TicksBetween(c.DetectedAtUtc, c.ResolvedAtUtc) : null);
+        await historyScan.RunAsync(cases, ct);
+
+        var byPhase = phaseCounts.Where(p => p.Count() > 0).Select(p => new PhaseCount(p.Phase, p.Count())).ToList();
+        var meanToContain = MeanHours(meanToContainTicks());
+        var meanToResolve = MeanHours(meanToResolveTicks());
+
+        // Legal referral lives in a grouped (owned) property that EF can't read inside the single-scan aggregate.
+        var legalReferred = await open.CountAsync(c => c.LegalReferral.IsReferred, ct);
+
+        // Overdue tasks, on the caller's visible, non-exercise cases only.
+        var overdue = await cases.SelectMany(c => c.ActionItems).CountAsync(a =>
+            a.DueAtUtc != null && a.DueAtUtc < now
+            && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled, ct);
 
         static double? MeanHours(double? meanTicks)
             => meanTicks is { } t ? Math.Round(t / TimeSpan.TicksPerHour, 1) : null;
@@ -160,9 +170,9 @@ public sealed class DashboardService
         var trend = await BuildTrendAsync(cases, now, months: 12, _zone?.Current ?? TimeZoneInfo.Utc, ct);
 
         return new DashboardMetrics(
-            openCount, breaches, incidents, adverse, internalOrigin, thirdParty, legalReferred, overdue,
-            slaAtRisk, slaBreached,
-            cMet, cMissed, rMet, rMissed, dMet, dMissed,
+            openCount(), breaches(), incidents(), adverse(), internalOrigin(), thirdParty(), legalReferred, overdue,
+            slaAtRisk(), slaBreached(),
+            cMet(), cMissed(), rMet(), rMissed(), dMet(), dMissed(),
             meanToContain, meanToResolve,
             ndSettings.Enabled, notifyAwaiting, notifyAtRisk, notifyBreached, meanHoursToReport,
             byPhase.OrderBy(p => p.Phase).ToList(),

@@ -15,27 +15,80 @@ public static class SlaQueries
 {
     private static readonly Severity[] Graded = Enum.GetValues<Severity>().Where(s => s != Severity.Informational).ToArray();
 
-    /// <summary>Cases that reached <paramref name="clock"/>'s milestone within target (<paramref name="met"/>) or after it.</summary>
+    /// <summary>
+    /// Cases that reached <paramref name="clock"/>'s milestone within target (<paramref name="met"/>) or after it.
+    /// The elapsed time is computed once and compared with the case's own target, looked up by severity (and the breach
+    /// override) in a single CASE, rather than recomputed for every severity group: far cheaper per row at scale.
+    /// </summary>
     public static Expression<Func<Case, bool>> Reached(SlaClock clock, bool met, SlaTargets targets)
     {
-        var any = False;
+        var groups = new List<(Expression<Func<Case, bool>> InGroup, long Ticks)>();
         foreach (var severity in Graded)
         {
             if (clock == SlaClock.Detection)
             {
                 // The detection target has no breach override (SlaPolicy.EvaluateDetection).
                 if (targets.HoursFor(clock, severity) is { } hours)
-                    any = Or(any, And(IsSeverity(severity), ReachedWithin(clock, met, hours * TimeSpan.TicksPerHour)));
+                    groups.Add((IsSeverity(severity), hours * TimeSpan.TicksPerHour));
                 continue;
             }
             foreach (var breach in new[] { false, true })
             {
                 if (targets.HoursFor(clock, severity, breach ? Classification.Breach : null) is { } hours)
-                    any = Or(any, And(InGroup(severity, breach), ReachedWithin(clock, met, hours * TimeSpan.TicksPerHour)));
+                    groups.Add((InGroup(severity, breach), hours * TimeSpan.TicksPerHour));
             }
         }
-        return any;
+        if (groups.Count == 0) return False;
+
+        // The case's target in ticks: CASE WHEN <group> THEN <ticks> … ELSE NULL END. No target, no match.
+        var elapsed = Elapsed(clock);
+        var c = elapsed.Parameters[0];
+        Expression target = Expression.Constant(null, typeof(long?));
+        foreach (var (inGroup, ticks) in Enumerable.Reverse(groups))
+            target = Expression.Condition(new Rebind(inGroup.Parameters[0], c).Visit(inGroup.Body),
+                Expression.Constant(ticks, typeof(long?)), target);
+
+        // Met: reached no later than start + target (SlaPolicy: reached <= due). A null elapsed (not reached) never counts.
+        var compare = met ? Expression.LessThanOrEqual(elapsed.Body, target) : Expression.GreaterThan(elapsed.Body, target);
+        return Expression.Lambda<Func<Case, bool>>(compare, c);
     }
+
+    /// <summary>
+    /// Cases that reached <paramref name="clock"/>'s milestone and have a target for it: met + missed. Needs no elapsed
+    /// time, so a count of missed is this minus <see cref="Reached"/> with met, one date calculation fewer per row.
+    /// </summary>
+    public static Expression<Func<Case, bool>> Judged(SlaClock clock, SlaTargets targets)
+    {
+        var any = False;
+        foreach (var severity in Graded)
+        {
+            if (clock == SlaClock.Detection)
+            {
+                if (targets.HoursFor(clock, severity) is not null) any = Or(any, IsSeverity(severity));
+                continue;
+            }
+            foreach (var breach in new[] { false, true })
+                if (targets.HoursFor(clock, severity, breach ? Classification.Breach : null) is not null)
+                    any = Or(any, InGroup(severity, breach));
+        }
+        Expression<Func<Case, bool>> reached = clock switch
+        {
+            SlaClock.Containment => c => c.DetectedAtUtc != null && c.ContainedAtUtc != null,
+            SlaClock.Resolution => c => c.DetectedAtUtc != null && c.ResolvedAtUtc != null,
+            SlaClock.Detection => c => c.OccurredAtUtc != null && c.DetectedAtUtc != null,
+            _ => throw new ArgumentOutOfRangeException(nameof(clock))
+        };
+        return And(reached, any);
+    }
+
+    // Each clock's start and milestone, as an elapsed time in ticks (null until both are recorded).
+    private static Expression<Func<Case, long?>> Elapsed(SlaClock clock) => clock switch
+    {
+        SlaClock.Containment => c => DbTime.TicksBetween(c.DetectedAtUtc, c.ContainedAtUtc),
+        SlaClock.Resolution => c => DbTime.TicksBetween(c.DetectedAtUtc, c.ResolvedAtUtc),
+        SlaClock.Detection => c => DbTime.TicksBetween(c.OccurredAtUtc, c.DetectedAtUtc),
+        _ => throw new ArgumentOutOfRangeException(nameof(clock))
+    };
 
     /// <summary>
     /// Open cases whose headline status (<see cref="SlaPolicy.Evaluate"/>) is <see cref="SlaState.Breached"/>, or
@@ -84,21 +137,6 @@ public static class SlaQueries
         return c => c.DetectedAtUtc <= riskCutoff && c.DetectedAtUtc > dueCutoff;
     }
 
-    // Each clock's start and milestone; met means the milestone came no later than start + target.
-    private static Expression<Func<Case, bool>> ReachedWithin(SlaClock clock, bool met, long limit)
-        => And(c => c.DetectedAtUtc != null, Milestone(clock, met, limit));
-
-    private static Expression<Func<Case, bool>> Milestone(SlaClock clock, bool met, long limit) => (clock, met) switch
-    {
-        (SlaClock.Containment, true) => c => c.ContainedAtUtc != null && DbTime.TicksBetween(c.DetectedAtUtc, c.ContainedAtUtc) <= limit,
-        (SlaClock.Containment, false) => c => c.ContainedAtUtc != null && DbTime.TicksBetween(c.DetectedAtUtc, c.ContainedAtUtc) > limit,
-        (SlaClock.Resolution, true) => c => c.ResolvedAtUtc != null && DbTime.TicksBetween(c.DetectedAtUtc, c.ResolvedAtUtc) <= limit,
-        (SlaClock.Resolution, false) => c => c.ResolvedAtUtc != null && DbTime.TicksBetween(c.DetectedAtUtc, c.ResolvedAtUtc) > limit,
-        (SlaClock.Detection, true) => c => c.OccurredAtUtc != null && DbTime.TicksBetween(c.OccurredAtUtc, c.DetectedAtUtc) <= limit,
-        (SlaClock.Detection, false) => c => c.OccurredAtUtc != null && DbTime.TicksBetween(c.OccurredAtUtc, c.DetectedAtUtc) > limit,
-        _ => throw new ArgumentOutOfRangeException(nameof(clock))
-    };
-
     private static Expression<Func<Case, bool>> IsSeverity(Severity severity) => c => c.Severity == severity;
 
     // The breach override applies only to cases classified Breach; everything else (including unclassified
@@ -111,8 +149,8 @@ public static class SlaQueries
 
     private static readonly Expression<Func<Case, bool>> False = c => false;
 
-    private static Expression<Func<Case, bool>> And(Expression<Func<Case, bool>> a, Expression<Func<Case, bool>> b)
-        => Combine(a, b, Expression.AndAlso);
+    internal static Expression<Func<Case, bool>> And(Expression<Func<Case, bool>> a, Expression<Func<Case, bool>> b)
+        => ReferenceEquals(a, False) || ReferenceEquals(b, False) ? False : Combine(a, b, Expression.AndAlso);
 
     private static Expression<Func<Case, bool>> Or(Expression<Func<Case, bool>> a, Expression<Func<Case, bool>> b)
         => ReferenceEquals(a, False) ? b : Combine(a, b, Expression.OrElse);
