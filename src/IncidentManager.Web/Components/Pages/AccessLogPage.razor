@@ -98,8 +98,8 @@ else
                     </td>
                     <td class="small">@(string.IsNullOrWhiteSpace(r.TargetLabel) ? "" : r.TargetLabel)</td>
                     <td class="text-end">@r.Count</td>
-                    <td class="small">@TimeDisp.Short(r.FirstSeenUtc)</td>
-                    <td class="small">@TimeDisp.Short(r.LastSeenUtc)</td>
+                    <td class="small im-data">@TimeDisp.Short(r.FirstSeenUtc)</td>
+                    <td class="small im-data">@TimeDisp.Short(r.LastSeenUtc)</td>
                 </tr>
             }
         </tbody>

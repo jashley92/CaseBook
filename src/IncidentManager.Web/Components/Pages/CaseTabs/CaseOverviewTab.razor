@@ -538,7 +538,7 @@
                             @foreach (var h in History().OrderByDescending(x => x.At))
                             {
                                 <tr>
-                                    <td class="small">@TimeDisp.Long(h.At)</td>
+                                    <td class="small im-data">@TimeDisp.Long(h.At)</td>
                                     <td class="small">@h.Attribute</td>
                                     <td class="small">@h.Change</td>
                                     <td class="small">@Users.DisplayFor(h.By)</td>

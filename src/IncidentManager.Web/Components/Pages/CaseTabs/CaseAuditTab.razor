@@ -96,7 +96,7 @@ else
                             }
                             @a.Sequence
                         </td>
-                        <td class="small">@a.AtUtc.ToString("u")</td>
+                        <td class="small im-data">@a.AtUtc.ToString("u")</td>
                         <td>@Users.DisplayFor(a.Actor)</td>
                         <td>@AuditLabels.Label(a.Action)</td>
                         <td>
@@ -167,8 +167,8 @@ else
                         <tr>
                             <td>@Users.DisplayFor(v.ActorUserId)@if (v.WasRestricted) { <span class="im-badge im-b-warn ms-2">restricted</span> }</td>
                             <td class="text-end">@v.Count</td>
-                            <td class="small">@TimeDisp.Short(v.FirstSeenUtc)</td>
-                            <td class="small">@TimeDisp.Short(v.LastSeenUtc)</td>
+                            <td class="small im-data">@TimeDisp.Short(v.FirstSeenUtc)</td>
+                            <td class="small im-data">@TimeDisp.Short(v.LastSeenUtc)</td>
                         </tr>
                     }
                 </tbody>

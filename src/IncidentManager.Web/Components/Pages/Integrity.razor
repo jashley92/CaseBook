@@ -129,7 +129,7 @@ else
             @foreach (var s in _seals)
             {
                 <tr>
-                    <td class="small">@s.SealedAtUtc.ToString("u")</td>
+                    <td class="small im-data">@s.SealedAtUtc.ToString("u")</td>
                     <td>@s.UpToSequence</td>
                     <td class="small">@s.Algorithm</td>
                     <td><code class="small">@s.KeyId</code></td>
@@ -162,7 +162,7 @@ else
             {
                 <tr>
                     <td>@a.Sequence</td>
-                    <td class="small">@a.AtUtc.ToString("u")</td>
+                    <td class="small im-data">@a.AtUtc.ToString("u")</td>
                     <td>@Users.DisplayFor(a.Actor)</td>
                     <td>@AuditLabels.Label(a.Action)</td>
                     <td>@AuditLabels.Entity(a.EntityType)</td>

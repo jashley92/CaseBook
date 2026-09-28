@@ -205,7 +205,7 @@
                             @foreach (var e in _rollup.Timeline)
                             {
                                 <tr>
-                                    <td class="small text-nowrap">@TimeDisp.Short(e.OccurredAtUtc)</td>
+                                    <td class="small im-data text-nowrap">@TimeDisp.Short(e.OccurredAtUtc)</td>
                                     <td><a href="cases/@e.CaseId" class="text-decoration-none"><code>@e.CaseNumber</code></a></td>
                                     <td class="small">@Ui.Label(e.Type)</td>
                                     <td>@e.Description

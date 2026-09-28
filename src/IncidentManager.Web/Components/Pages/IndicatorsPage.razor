@@ -119,8 +119,8 @@
                             <span class="im-badge @(r.CaseCount > 1 ? "im-b-warn" : "im-b-neutral")">@r.CaseCount</span>
                             @if (r.OpenCaseCount > 0) { <span class="small text-muted ms-1">@r.OpenCaseCount open</span> }
                         </td>
-                        <td class="small text-nowrap">@TimeDisp.DateOnly(r.FirstSeenUtc)</td>
-                        <td class="small text-nowrap">@TimeDisp.DateOnly(r.LastSeenUtc)</td>
+                        <td class="small im-data text-nowrap">@TimeDisp.DateOnly(r.FirstSeenUtc)</td>
+                        <td class="small im-data text-nowrap">@TimeDisp.DateOnly(r.LastSeenUtc)</td>
                         <td class="text-end">
                             <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => Toggle(key)"
                                     aria-expanded="@(open ? "true" : "false")" title="Show the cases this indicator appears on">
@@ -146,7 +146,7 @@
                                                 <td><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
                                                 <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
                                                 <td><span class="@Ui.DispositionBadge(c.Disposition)">@Ui.Label(c.Disposition)</span></td>
-                                                <td class="small text-nowrap">@TimeDisp.DateOnly(c.AddedAtUtc)</td>
+                                                <td class="small im-data text-nowrap">@TimeDisp.DateOnly(c.AddedAtUtc)</td>
                                             </tr>
                                         }
                                     </tbody>

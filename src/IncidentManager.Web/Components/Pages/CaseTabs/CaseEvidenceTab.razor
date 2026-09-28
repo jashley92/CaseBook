@@ -121,7 +121,7 @@
                                             @foreach (var c in events)
                                             {
                                                 <tr>
-                                                    <td class="small text-nowrap">@TimeDisp.Long(c.AtUtc)</td>
+                                                    <td class="small im-data text-nowrap">@TimeDisp.Long(c.AtUtc)</td>
                                                     <td class="small"><span class="bi @CustodyGlyph(c.Action) me-1" aria-hidden="true"></span>@c.Action</td>
                                                     <td class="small">@Users.DisplayFor(c.Actor)</td>
                                                     <td class="small text-muted">@c.Details</td>

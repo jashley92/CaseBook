@@ -30,7 +30,7 @@ public class TimeDisplayTests
         t.Configure("Etc/GMT+5", TimeDisplayMode.Local); // UTC-05:00
 
         t.Long(Instant).Should().Be("2026-08-16 19:33:00 UTC-05:00");
-        t.Short(Instant).Should().Be("Aug 16, 19:33 UTC-05:00");
+        t.Short(Instant).Should().Be("2026-08-16 19:33 UTC-05:00");
         t.TimeOnly(Instant).Should().Be("19:33 UTC-05:00");
         t.DateOnly(Instant).Should().Be("2026-08-16");
     }
@@ -42,7 +42,7 @@ public class TimeDisplayTests
         t.Configure("Etc/GMT+5", TimeDisplayMode.Local, twelveHourClock: true);
 
         t.Long(Instant).Should().Be("2026-08-16 7:33:00 PM UTC-05:00");
-        t.Short(Instant).Should().Be("Aug 16, 7:33 PM UTC-05:00");
+        t.Short(Instant).Should().Be("2026-08-16 7:33 PM UTC-05:00");
         t.TimeOnly(Instant).Should().Be("7:33 PM UTC-05:00");
         t.DateOnly(Instant).Should().Be("2026-08-16");
 

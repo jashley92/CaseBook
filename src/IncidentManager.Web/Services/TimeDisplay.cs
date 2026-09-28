@@ -107,11 +107,12 @@ public sealed class TimeDisplay
 
     public string Long(DateTimeOffset? ts, string dash = "—") => ts is { } t ? Long(t) : dash;
 
-    /// <summary>Compact stamp for dense rails: month/day, time to the minute, zone label.</summary>
+    /// <summary>Compact stamp for lists and rails: the full date, time to the minute, zone label. Same order as
+    /// <see cref="Long"/> so columns of times sort and compare by eye.</summary>
     public string Short(DateTimeOffset ts)
     {
         var z = ToZone(ts);
-        return $"{z.ToString("MMM d, " + Hm, Inv)} {OffsetLabel(z.Offset)}";
+        return $"{z.ToString("yyyy-MM-dd " + Hm, Inv)} {OffsetLabel(z.Offset)}";
     }
 
     /// <summary>Time of day only, with a zone label (e.g. "04:57 UTC") — for the dashboard "as of" line.</summary>

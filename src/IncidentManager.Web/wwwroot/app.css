@@ -1,6 +1,13 @@
+/* Type (design review P7): Windows-native UI text, and a monospace "data" face for the values analysts compare
+   (case numbers, IOCs, hashes, hosts, timestamps). Both ship with Windows 11, so nothing is downloaded; other
+   platforms fall back to their own system faces. */
 html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: var(--im-font-ui);
 }
+/* Figures line up in every table and stat. */
+.table, .im-table, .im-data, .stat-value, .im-stat-value { font-variant-numeric: tabular-nums; }
+.im-data { font-family: var(--im-font-data); font-size: .92em; letter-spacing: 0; white-space: nowrap; }
+.table > :not(caption) > * > * { font-size: var(--im-text-table); }
 
 /* Reserve the page scrollbar's width on short pages too, so switching between a short and a long tab doesn't
    shift the layout (the case header's actions used to jump to a new line). */
@@ -216,6 +223,12 @@ h1:focus {
     --im-text-md: 1.05rem;
     --im-text-lg: 1.15rem;
     --im-text-xl: 1.6rem;    /* page + stat-value titles */
+    --im-text-table: .875rem; /* table cells (14px) */
+
+    --im-font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --im-font-data: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, "SFMono-Regular", Menlo, monospace;
+    --bs-body-font-family: var(--im-font-ui);
+    --bs-font-monospace: var(--im-font-data);
 
     /* Bootstrap bridge: retint global components without repainting each element.
        Primary stays charcoal (the brand's "black"); links pick up the gold. */
