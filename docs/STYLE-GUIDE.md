@@ -320,6 +320,14 @@ for an analyst mid-investigation, not a marketing page.
 7. **Status wording**: an SLA or deadline clock that is late or nearly late says by how much
    (`Ui.SlaTiming`: "2d 4h over", "6h left"), not just "Overdue". "Unassigned" is muted, not a warning.
 
+9. **Color roles**: primary buttons are neutral ink (`--im-action-*`: charcoal on light, light ink on dark).
+   Gold marks where you are: the active nav item and tab, a selected or previewed row, focus, a checked box.
+   Amber and red are for status only.
+
+10. **Case preview**: to let someone check a case from a list without leaving it, use `<CasePeek>`, beside the
+    list where there's room or with `Drawer="true"` elsewhere. It is read-only, and opening it is logged as a
+    case open. Anything that changes the case stays in the workspace.
+
 8. **ARIA states** bound to a bool go through `Ui.Aria(flag)`. Blazor renders `aria-pressed="@flag"` as an
    empty attribute when true and drops it when false.
 
