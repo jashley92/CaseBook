@@ -10,15 +10,28 @@ using static IncidentManager.Application.Common.Csv;
 
 namespace IncidentManager.Application.Dashboards;
 
-/// <summary>A calendar quarter (UTC). <see cref="End"/> is exclusive.</summary>
+/// <summary>
+/// A calendar quarter. Where it begins and ends depends on the organization's reporting time zone
+/// (<see cref="IOrganizationTimeZone"/>), so the bounds take the zone; the quarter itself is just year + number.
+/// </summary>
 public sealed record ProgramPeriod(int Year, int Quarter)
 {
-    public DateTimeOffset Start => new(Year, (Quarter - 1) * 3 + 1, 1, 0, 0, 0, TimeSpan.Zero);
-    public DateTimeOffset End => Start.AddMonths(3);
+    /// <summary>When the quarter begins: local midnight on its first day in <paramref name="zone"/>.</summary>
+    public DateTimeOffset StartUtc(TimeZoneInfo zone) => ZonedMonths.StartUtc(Year, (Quarter - 1) * 3 + 1, zone);
+
+    /// <summary>When the next quarter begins; the quarter's exclusive end.</summary>
+    public DateTimeOffset EndUtc(TimeZoneInfo zone) => Next.StartUtc(zone);
+
     public string Label => $"Q{Quarter} {Year}";
     public ProgramPeriod Previous => Quarter == 1 ? new(Year - 1, 4) : new(Year, Quarter - 1);
+    public ProgramPeriod Next => Quarter == 4 ? new(Year + 1, 1) : new(Year, Quarter + 1);
 
-    public static ProgramPeriod Containing(DateTimeOffset t) => new(t.UtcDateTime.Year, (t.UtcDateTime.Month - 1) / 3 + 1);
+    /// <summary>The quarter that <paramref name="t"/> falls in, on the calendar of <paramref name="zone"/>.</summary>
+    public static ProgramPeriod Containing(DateTimeOffset t, TimeZoneInfo zone)
+    {
+        var (year, month) = ZonedMonths.Of(t, zone);
+        return new(year, (month - 1) / 3 + 1);
+    }
 
     /// <summary>Validates a requested quarter; null for nonsense.</summary>
     public static ProgramPeriod? TryCreate(int year, int quarter) =>
@@ -52,8 +65,20 @@ public sealed record ProgramTechnique(string TechniqueId, string Name, int Cases
 
 /// <param name="Current">The requested quarter.</param>
 /// <param name="Previous">The quarter before, for comparison.</param>
+/// <param name="Zone">The reporting time zone the quarter was cut in (UTC when not given).</param>
 public sealed record ProgramReport(ProgramPeriod Period, ProgramSnapshot Current, ProgramSnapshot Previous,
-    IReadOnlyList<ProgramTechnique> TopTechniques, bool IncludesExercises, DateTimeOffset GeneratedAtUtc);
+    IReadOnlyList<ProgramTechnique> TopTechniques, bool IncludesExercises, DateTimeOffset GeneratedAtUtc,
+    TimeZoneInfo? Zone = null)
+{
+    public TimeZoneInfo ReportingZone => Zone ?? TimeZoneInfo.Utc;
+
+    /// <summary>The quarter's first and last calendar days in the reporting time zone.</summary>
+    public DateOnly FirstDay => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(Period.StartUtc(ReportingZone), ReportingZone).DateTime);
+    public DateOnly LastDay => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(Period.EndUtc(ReportingZone), ReportingZone).DateTime).AddDays(-1);
+
+    /// <summary>The zone's name as Administration lists it, for example "Eastern (New York)".</summary>
+    public string ZoneLabel => Admin.SettingsCatalog.TimeZoneLabel(ReportingZone);
+}
 
 /// <summary>
 /// E-31: the quarterly program-metrics roll-up — distinct from the per-case report and the live dashboard. For a
@@ -71,10 +96,12 @@ public sealed class ProgramReportService
     private readonly IClock _clock;
     private readonly ISlaTargetsProvider _sla;
     private readonly AttackCoverageService _attack;
+    private readonly IOrganizationTimeZone? _zone;
 
     public ProgramReportService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
-        ISlaTargetsProvider sla, AttackCoverageService attack)
+        ISlaTargetsProvider sla, AttackCoverageService attack, IOrganizationTimeZone? zone = null)
     {
+        _zone = zone;
         _factory = factory;
         _user = user;
         _clock = clock;
@@ -104,7 +131,9 @@ public sealed class ProgramReportService
             .ToListAsync(ct);
 
         var targets = _sla.Current;
-        var coverage = await _attack.GetForPeriodAsync(period.Start, period.End, includeExercises, ct);
+        // Quarters are cut in the organization's reporting time zone, like the dashboard's months.
+        var zone = _zone?.Current ?? TimeZoneInfo.Utc;
+        var coverage = await _attack.GetForPeriodAsync(period.StartUtc(zone), period.EndUtc(zone), includeExercises, ct);
         var top = coverage.Tactics.SelectMany(t => t.Techniques)
             .GroupBy(t => t.TechniqueId)
             .Select(g => new ProgramTechnique(g.Key, g.First().Name, g.SelectMany(t => t.Cases).Select(c => c.CaseId).Distinct().Count()))
@@ -112,9 +141,9 @@ public sealed class ProgramReportService
             .Take(10).ToList();
 
         return new ProgramReport(period,
-            Snapshot(period, rows, breachFirstAt, reviews, actions, targets),
-            Snapshot(period.Previous, rows, breachFirstAt, reviews, actions, targets),
-            top, includeExercises, _clock.UtcNow);
+            Snapshot(period.StartUtc(zone), period.EndUtc(zone), rows, breachFirstAt, reviews, actions, targets),
+            Snapshot(period.Previous.StartUtc(zone), period.Previous.EndUtc(zone), rows, breachFirstAt, reviews, actions, targets),
+            top, includeExercises, _clock.UtcNow, zone);
     }
 
     private sealed record CaseRow(Guid Id, Classification? Classification, Severity Severity, CasePhase Phase,
@@ -125,10 +154,10 @@ public sealed class ProgramReportService
         DateTimeOffset? TargetDateUtc, string? RelatedArea);
 
     // Everything is computed in memory: DateTimeOffset comparison and arithmetic stay off SQLite (F-08).
-    private static ProgramSnapshot Snapshot(ProgramPeriod p, List<CaseRow> rows, Dictionary<Guid, DateTimeOffset> breachAt,
-        List<DateTimeOffset> reviews, List<ActionRow> actions, SlaTargets targets)
+    private static ProgramSnapshot Snapshot(DateTimeOffset start, DateTimeOffset end, List<CaseRow> rows,
+        Dictionary<Guid, DateTimeOffset> breachAt, List<DateTimeOffset> reviews, List<ActionRow> actions, SlaTargets targets)
     {
-        bool In(DateTimeOffset? t) => t is { } v && v >= p.Start && v < p.End;
+        bool In(DateTimeOffset? t) => t is { } v && v >= start && v < end;
 
         var opened = rows.Where(r => In(r.CreatedAtUtc)).ToList();
 
@@ -147,7 +176,7 @@ public sealed class ProgramReportService
         foreach (var r in rows)
         {
             var (cont, res) = SlaPolicy.Breakdown(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc,
-                targets, p.End, r.Classification);
+                targets, end, r.Classification);
             if (In(r.ContainedAtUtc)) { if (cont.State == SlaState.Met) cMet++; else if (cont.State == SlaState.Missed) cMiss++; }
             if (In(r.ResolvedAtUtc)) { if (res.State == SlaState.Met) rMet++; else if (res.State == SlaState.Missed) rMiss++; }
             if (In(r.DetectedAtUtc))
@@ -157,12 +186,12 @@ public sealed class ProgramReportService
             }
         }
 
-        var openAtEnd = actions.Where(a => a.CreatedAtUtc < p.End && (a.ClosedAtUtc is null || a.ClosedAtUtc >= p.End)).ToList();
+        var openAtEnd = actions.Where(a => a.CreatedAtUtc < end && (a.ClosedAtUtc is null || a.ClosedAtUtc >= end)).ToList();
 
         return new ProgramSnapshot(
             Opened: opened.Count,
             Closed: rows.Count(r => In(r.ClosedAtUtc)),
-            OpenAtEnd: rows.Count(r => r.CreatedAtUtc < p.End && (r.ClosedAtUtc is null || r.ClosedAtUtc >= p.End)),
+            OpenAtEnd: rows.Count(r => r.CreatedAtUtc < end && (r.ClosedAtUtc is null || r.ClosedAtUtc >= end)),
             OpenedByClassification: opened.GroupBy(r => r.Classification)
                 .Select(g => new CountBy<Classification?>(g.Key, g.Count())).OrderBy(x => x.Key is null ? -1 : (int)x.Key).ToList(),
             OpenedBySeverity: opened.GroupBy(r => r.Severity)
@@ -179,7 +208,7 @@ public sealed class ProgramReportService
             ActionsCompleted: actions.Count(a => a.Status == ImprovementActionStatus.Completed && In(a.ClosedAtUtc)),
             ActionsNotPursued: actions.Count(a => a.Status == ImprovementActionStatus.NotPursued && In(a.ClosedAtUtc)),
             ActionsOpenAtEnd: openAtEnd.Count,
-            ActionsPastTargetAtEnd: openAtEnd.Count(a => a.TargetDateUtc is { } t && t < p.End),
+            ActionsPastTargetAtEnd: openAtEnd.Count(a => a.TargetDateUtc is { } t && t < end),
             ActionAreas: actions.Where(a => In(a.CreatedAtUtc))
                 .GroupBy(a => string.IsNullOrWhiteSpace(a.RelatedArea) ? "Unspecified" : a.RelatedArea.Trim(), StringComparer.OrdinalIgnoreCase)
                 .Select(g => new CountBy<string>(g.First().RelatedArea?.Trim() is { Length: > 0 } s ? s : "Unspecified", g.Count()))
@@ -193,6 +222,8 @@ public sealed class ProgramReportService
         var sb = new StringBuilder();
         sb.Append("# CaseBook program report ").Append(r.Period.Label)
           .Append(r.IncludesExercises ? " (includes exercise cases)" : "")
+          .Append(", ").Append(r.FirstDay.ToString("yyyy-MM-dd", inv)).Append(" to ").Append(r.LastDay.ToString("yyyy-MM-dd", inv))
+          .Append(" (").Append(r.ZoneLabel).Append(')')
           .Append(", generated ").Append(r.GeneratedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm", inv)).Append(" UTC\r\n");
         sb.Append("section,metric,").Append(Escape(r.Period.Label)).Append(',').Append(Escape(r.Period.Previous.Label)).Append("\r\n");
         void Row(string section, string metric, string cur, string prev) =>

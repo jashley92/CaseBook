@@ -54,9 +54,9 @@ public static class SettingsCatalog
             "Used for links, active states, focus rings and highlights. Blank uses the built-in gold.", "", CustomEditor: true),
         new SettingDefinition("Branding:InkColor", "Primary action color", "Organization", SettingKind.Text,
             "Used for primary buttons and structural ink. Blank uses the built-in charcoal.", "", CustomEditor: true),
-        // F-08: where calendar months begin for the dashboard trend and its drill-in. Daylight saving follows the zone.
+        // F-08: where calendar months and quarters begin (dashboard trend and drill-in, E-31 program report). DST follows the zone.
         new SettingDefinition("Organization:TimeZone", "Reporting time zone", "Organization", SettingKind.Text,
-            "Where the dashboard's monthly trend starts and ends each month. Daylight saving follows the zone. Stored times, the audit trail and exports stay in UTC.",
+            "Where months and quarters begin on the dashboard trend and the quarterly program report. Daylight saving follows the zone. Stored times and the audit trail stay in UTC.",
             "America/New_York",
             Options: [new("America/New_York", "Eastern (New York)"), new("America/Chicago", "Central (Chicago)"),
                 new("America/Denver", "Mountain (Denver)"), new("America/Phoenix", "Mountain, no daylight saving (Phoenix)"),
@@ -264,6 +264,11 @@ public static class SettingsCatalog
         Editable.Select(d => d.Group).Distinct().ToList();
 
     public static bool IsEditable(string key) => ByKey.ContainsKey(key);
+
+    /// <summary>A time zone's name as the reporting time zone list shows it, or its id when it isn't listed.</summary>
+    public static string TimeZoneLabel(TimeZoneInfo zone) =>
+        ByKey["Organization:TimeZone"].Options!.FirstOrDefault(o => string.Equals(o.Value, zone.Id, StringComparison.OrdinalIgnoreCase))?.Label
+        ?? zone.Id;
 
     /// <summary>
     /// Validates and canonicalizes a raw value for a setting. Throws <see cref="ArgumentException"/>

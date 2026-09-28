@@ -39,10 +39,18 @@ public sealed class ProgramReportTests : IDisposable
             .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()))
             .Options;
 
-    private ProgramReportService Service(SlaTargets? targets = null)
+    private ProgramReportService Service(SlaTargets? targets = null, TimeZoneInfo? zone = null)
     {
         var f = new TestDbContextFactory(Options());
-        return new(f, _user, _clock, new TestSlaTargets(targets), new AttackCoverageService(f, _user, _clock));
+        return new(f, _user, _clock, new TestSlaTargets(targets), new AttackCoverageService(f, _user, _clock),
+            zone is null ? null : new FixedZone(zone));
+    }
+
+    private static readonly TimeZoneInfo Eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+
+    private sealed class FixedZone(TimeZoneInfo zone) : IncidentManager.Application.Abstractions.IOrganizationTimeZone
+    {
+        public TimeZoneInfo Current => zone;
     }
 
     private async Task SeedAsync()
@@ -131,10 +139,37 @@ public sealed class ProgramReportTests : IDisposable
     [Fact]
     public void Quarters_are_calendar_quarters()
     {
-        ProgramPeriod.Containing(new DateTimeOffset(2026, 9, 24, 0, 0, 0, TimeSpan.Zero)).Should().Be(new ProgramPeriod(2026, 3));
+        ProgramPeriod.Containing(new DateTimeOffset(2026, 9, 24, 0, 0, 0, TimeSpan.Zero), TimeZoneInfo.Utc).Should().Be(new ProgramPeriod(2026, 3));
         new ProgramPeriod(2026, 1).Previous.Should().Be(new ProgramPeriod(2025, 4));
-        new ProgramPeriod(2026, 4).End.Should().Be(new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        new ProgramPeriod(2026, 4).EndUtc(TimeZoneInfo.Utc).Should().Be(new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero));
         ProgramPeriod.TryCreate(2026, 5).Should().BeNull();
+    }
+
+    // Quarters are cut in the reporting time zone, like the dashboard's months: 02:00 UTC on 1 April is still
+    // 31 March (EDT), so a case opened then is a Q1 case in New York and a Q2 case in UTC.
+    [Fact]
+    public async Task Quarters_follow_the_reporting_time_zone()
+    {
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.Cases.Add(Case.Open(2026, 1, "Edge", "Quarter edge", Classification.Incident, Severity.Low,
+                CaseOrigin.InternalDetection, "ic", new DateTimeOffset(2026, 4, 1, 2, 0, 0, TimeSpan.Zero)));
+            await db.SaveChangesAsync();
+        }
+
+        var eastern = await Service(zone: Eastern).BuildAsync(Q2);
+        (eastern.Current.Opened, eastern.Previous.Opened).Should().Be((0, 1));
+        (eastern.FirstDay, eastern.LastDay).Should().Be((new DateOnly(2026, 4, 1), new DateOnly(2026, 6, 30)));
+        eastern.ZoneLabel.Should().Be("Eastern (New York)");
+        ProgramReportService.ToCsv(eastern, c => c?.ToString() ?? "", s => s.ToString())
+            .Should().Contain("2026-04-01 to 2026-06-30 (Eastern (New York))");
+
+        var utc = await Service(zone: TimeZoneInfo.Utc).BuildAsync(Q2);
+        (utc.Current.Opened, utc.Previous.Opened).Should().Be((1, 0));
+
+        ProgramPeriod.Containing(new DateTimeOffset(2026, 4, 1, 2, 0, 0, TimeSpan.Zero), Eastern).Should().Be(new ProgramPeriod(2026, 1));
+        ProgramPeriod.Containing(new DateTimeOffset(2026, 4, 1, 4, 0, 0, TimeSpan.Zero), Eastern).Should().Be(Q2);
     }
 
     // ---- PROD-15: the scheduled executive report ----
@@ -176,6 +211,26 @@ public sealed class ProgramReportTests : IDisposable
         sent.Reports.Should().ContainSingle();
         sent.Reports[0].Period.Should().Be(Q2);
         sent.Reports[0].Current.Opened.Should().Be(3, "A, B and the restricted case; the drill stays out");
+    }
+
+    // The quarter turns over at local midnight in the reporting time zone, so the report for the quarter just ended
+    // doesn't go out while it's still that quarter in New York.
+    [Fact]
+    public async Task The_executive_report_waits_for_the_quarter_to_end_in_the_reporting_time_zone()
+    {
+        await SeedAsync();
+        var sent = new CapturingNotifications();
+        var tracker = new IncidentManager.Application.Notifications.ExecutiveReportTracker();
+        IncidentManager.Application.Notifications.ExecutiveReportScanner Scanner() =>
+            new(new TestDbContextFactory(Options()), new TestSlaTargets(), sent, tracker, _clock, new FixedZone(Eastern));
+
+        _clock.UtcNow = new DateTimeOffset(2026, 7, 1, 2, 0, 0, TimeSpan.Zero);      // 22:00 on 30 June in New York
+        (await Scanner().ScanAndSendAsync()).Should().BeFalse();
+
+        _clock.UtcNow = new DateTimeOffset(2026, 7, 1, 4, 30, 0, TimeSpan.Zero);     // 00:30 on 1 July in New York
+        (await Scanner().ScanAndSendAsync()).Should().BeTrue();
+        sent.Reports.Single().Period.Should().Be(Q2);
+        sent.Reports.Single().ZoneLabel.Should().Be("Eastern (New York)");
     }
 
     public void Dispose() => _connection.Dispose();

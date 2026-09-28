@@ -6,6 +6,7 @@
    prints cleanly to PDF (print styles hide the app chrome). Neutral wording: these figures are discoverable. *@
 @using IncidentManager.Application.Dashboards
 @using IncidentManager.Application.Sla
+@inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
 @inject ProgramReportService Program
 @inject ISeverityLabels SevLabels
 @inject IClock Clock
@@ -54,7 +55,7 @@
 <div class="pr-report">
     <h2 class="h5 mb-1">Program report · @r.Period.Label</h2>
     <p class="small text-muted mb-3">
-        @r.Period.Start.UtcDateTime.ToString("yyyy-MM-dd") to @r.Period.End.AddDays(-1).UtcDateTime.ToString("yyyy-MM-dd") (UTC), compared with @r.Period.Previous.Label.
+        @r.FirstDay.ToString("yyyy-MM-dd") to @r.LastDay.ToString("yyyy-MM-dd") (@r.ZoneLabel), compared with @r.Period.Previous.Label.
         Cases you can see@(r.IncludesExercises ? ", including exercise cases" : ", excluding exercise cases").
         Generated @r.GeneratedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
         @if (_period == Current) { <strong>This quarter is still in progress.</strong> }
@@ -185,7 +186,7 @@
     private ProgramPeriod _period = null!;
     private bool _includeExercises;
 
-    private ProgramPeriod Current => ProgramPeriod.Containing(Clock.UtcNow);
+    private ProgramPeriod Current => ProgramPeriod.Containing(Clock.UtcNow, OrgZone.Current);
 
     // The in-progress quarter and the seven before it.
     private IEnumerable<ProgramPeriod> Quarters

@@ -40,7 +40,8 @@ public sealed class ExecutiveReportScanner(
     ISlaTargetsProvider sla,
     ICaseNotifications notifications,
     IExecutiveReportTracker tracker,
-    IClock clock)
+    IClock clock,
+    IOrganizationTimeZone? zone = null)
 {
     /// <summary>How many days into a new quarter the previous quarter's report may still go out.</summary>
     public const int SendWindowDays = 7;
@@ -49,14 +50,16 @@ public sealed class ExecutiveReportScanner(
     public async Task<bool> ScanAndSendAsync(CancellationToken ct = default)
     {
         var now = clock.UtcNow;
-        var current = ProgramPeriod.Containing(now);
-        if ((now - current.Start).TotalDays >= SendWindowDays) return false;
+        // Quarters turn over at local midnight in the organization's reporting time zone.
+        var tz = zone?.Current ?? TimeZoneInfo.Utc;
+        var current = ProgramPeriod.Containing(now, tz);
+        if ((now - current.StartUtc(tz)).TotalDays >= SendWindowDays) return false;
 
         var period = current.Previous;
         if (!tracker.TryMarkSent(period)) return false;
 
         var viewer = new ReportViewer();
-        var program = new ProgramReportService(factory, viewer, clock, sla, new AttackCoverageService(factory, viewer, clock));
+        var program = new ProgramReportService(factory, viewer, clock, sla, new AttackCoverageService(factory, viewer, clock), zone);
         var report = await program.BuildAsync(period, includeExercises: false, ct);
         await notifications.OnExecutiveReportAsync(report, ct);
         return true;
