@@ -202,7 +202,7 @@
                                                           @oninput="e => _form[def.Key] = e.Value?.ToString()"></textarea>
                                                 break;
                                             case SettingKind.Int:
-                                                <input class="form-control" id="@def.Key" type="number" min="0" style="max-width:12rem"
+                                                <input class="form-control" id="@def.Key" type="number" min="@def.Min" max="@def.Max" style="max-width:12rem"
                                                        value="@_form[def.Key]"
                                                        @oninput="e => _form[def.Key] = e.Value?.ToString()" />
                                                 break;

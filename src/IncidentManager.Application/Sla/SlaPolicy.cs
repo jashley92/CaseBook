@@ -89,6 +89,12 @@ public static class SlaPolicy
     public const int DefaultAtRiskThresholdPercent = 80;
 
     /// <summary>
+    /// The longest target accepted, in hours (one year). Longer isn't a response-time target, and an unbounded value
+    /// pushes date arithmetic past the calendar's range. Administration rejects more; the targets provider ignores it.
+    /// </summary>
+    public const int MaxTargetHours = 8760;
+
+    /// <summary>
     /// The single headline status for a case: the earliest still-running clock (containment before
     /// resolution) if any, otherwise the most-advanced historical outcome. Informational severity and
     /// cases with no detection stamp have no SLA.

@@ -71,6 +71,8 @@ public static class DependencyInjection
         services.AddSingleton<ISettingsReloader, Configuration.ConfigurationReloader>();
 
         services.AddSingleton<IClock, SystemClock>();
+        // F-08: the organization's reporting time zone (calendar months on the dashboard), read live from config.
+        services.AddSingleton<IOrganizationTimeZone, Time.ConfigurationOrganizationTimeZone>();
         // E-16: reads per-severity SLA targets from live config (appsettings + DB override) on demand.
         services.AddSingleton<Application.Sla.ISlaTargetsProvider, Sla.ConfigurationSlaTargetsProvider>();
         // PROD-07: reads the notification-deadline settings (incl. the on/off toggle) from live config on demand.

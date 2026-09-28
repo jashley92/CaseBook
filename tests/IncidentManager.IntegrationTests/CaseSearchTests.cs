@@ -57,6 +57,37 @@ public sealed class CaseSearchTests : IDisposable
         Origin = CaseOrigin.InternalDetection
     };
 
+    // The dashboard trend's month drill-in lists the same cases the bar counted: months in the reporting time zone.
+    [Fact]
+    public async Task Opened_month_drill_in_uses_the_reporting_time_zone()
+    {
+        await using (var db = NewContext())
+        {
+            // 03:00 UTC on 1 February is 22:00 on 31 January in New York.
+            db.Cases.Add(IncidentManager.Domain.Entities.Case.Open(2026, 1, "Late January", "Late January",
+                Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "system", new DateTimeOffset(2026, 2, 1, 3, 0, 0, TimeSpan.Zero)));
+            db.Cases.Add(IncidentManager.Domain.Entities.Case.Open(2026, 2, "Early February", "Early February",
+                Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "system", new DateTimeOffset(2026, 2, 1, 5, 0, 0, TimeSpan.Zero)));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext())
+        {
+            var eastern = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+                new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+                zone: new EasternZone());
+            var january = await eastern.ListAsync(new CaseFilter { OpenedYear = 2026, OpenedMonth = 1 });
+            var february = await eastern.ListAsync(new CaseFilter { OpenedYear = 2026, OpenedMonth = 2 });
+            january.Items.Select(c => c.Title).Should().Equal("Late January");
+            february.Items.Select(c => c.Title).Should().Equal("Early February");
+        }
+    }
+
+    private sealed class EasternZone : IncidentManager.Application.Abstractions.IOrganizationTimeZone
+    {
+        public TimeZoneInfo Current { get; } = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+    }
+
     [Fact]
     public async Task Origin_filter_returns_only_matching_cases()
     {

@@ -7,7 +7,7 @@ namespace IncidentManager.Infrastructure.Sla;
 /// <summary>
 /// Reads the per-severity response-time targets from the live configuration each time they are asked for,
 /// so an administered change (which flows in via the DB settings provider) is picked up without a restart.
-/// Keys: <c>Sla:Containment:{Severity}</c>, <c>Sla:Resolution:{Severity}</c> (hours; blank/0 = no target)
+/// Keys: <c>Sla:Containment:{Severity}</c>, <c>Sla:Resolution:{Severity}</c> (hours; blank, 0 or over a year = no target)
 /// and <c>Sla:AtRiskThresholdPercent</c>.
 /// </summary>
 public sealed class ConfigurationSlaTargetsProvider : ISlaTargetsProvider
@@ -33,7 +33,7 @@ public sealed class ConfigurationSlaTargetsProvider : ISlaTargetsProvider
             foreach (var clock in Clocks)
             foreach (var severity in Severities)
             {
-                if (int.TryParse(_config[$"Sla:{clock}:{severity}"], out var h) && h > 0)
+                if (int.TryParse(_config[$"Sla:{clock}:{severity}"], out var h) && h is > 0 and <= SlaPolicy.MaxTargetHours)
                     hours[(clock, severity)] = h;
             }
 
@@ -45,7 +45,7 @@ public sealed class ConfigurationSlaTargetsProvider : ISlaTargetsProvider
             foreach (var clock in BreachClocks)
             foreach (var severity in Severities)
             {
-                if (int.TryParse(_config[$"Sla:Breach:{clock}:{severity}"], out var h) && h > 0)
+                if (int.TryParse(_config[$"Sla:Breach:{clock}:{severity}"], out var h) && h is > 0 and <= SlaPolicy.MaxTargetHours)
                     breach[(clock, severity)] = h;
             }
 

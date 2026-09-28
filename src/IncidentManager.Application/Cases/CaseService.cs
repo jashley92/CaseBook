@@ -52,6 +52,7 @@ public sealed record RelatedCaseSuggestion(Guid CaseId, string CaseNumber, strin
 /// </summary>
 public sealed class CaseService
 {
+    private readonly IOrganizationTimeZone? _zone;
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
@@ -75,8 +76,10 @@ public sealed class CaseService
         Security.ISecurityEventSink? siem = null,
         Microsoft.Extensions.Options.IOptionsMonitor<LegalHoldOptions>? legalHold = null,
         Compliance.INotificationDeadlineSettingsProvider? notifySettings = null,
-        Admin.NotificationRuleService? notifyRules = null)
+        Admin.NotificationRuleService? notifyRules = null,
+        IOrganizationTimeZone? zone = null)
     {
+        _zone = zone;
         _legalHold = legalHold;
         _notifySettings = notifySettings;
         _notifyRules = notifyRules;
@@ -210,14 +213,14 @@ public sealed class CaseService
             q = q.Where(c => ids.Contains(c.Id));
         }
 
+        // The dashboard trend's month drill-in: the same calendar month, in the organization's reporting time zone.
         if (filter is { OpenedYear: { } oy, OpenedMonth: { } om })
         {
-            var start = new DateTimeOffset(oy, om, 1, 0, 0, 0, TimeSpan.Zero);
-            var end = start.AddMonths(1);
-            var dated = await q.Select(c => new { c.Id, c.CreatedAtUtc }).ToListAsync(ct);
-            var monthIds = dated.Where(x => x.CreatedAtUtc >= start && x.CreatedAtUtc < end)
-                .Select(x => x.Id).ToList();
-            q = q.Where(c => monthIds.Contains(c.Id));
+            var zone = _zone?.Current ?? TimeZoneInfo.Utc;
+            var start = ZonedMonths.StartUtc(oy, om, zone);
+            var next = new DateTime(oy, om, 1).AddMonths(1);
+            var end = ZonedMonths.StartUtc(next.Year, next.Month, zone);
+            q = q.Where(c => c.CreatedAtUtc >= start && c.CreatedAtUtc < end);
         }
         if (filter.OnlyMine)
         {

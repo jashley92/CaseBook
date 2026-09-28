@@ -55,7 +55,7 @@ public sealed class DashboardTrendTests : IDisposable
 
         await using (var db = NewContext())
         {
-            var trend = await DashboardService.BuildTrendAsync(db.Cases.AsNoTracking(), now, months: 3);
+            var trend = await DashboardService.BuildTrendAsync(db.Cases.AsNoTracking(), now, months: 3, TimeZoneInfo.Utc);
 
             trend.Should().HaveCount(3);
             var jan = trend.Single(t => t.Month == 1);

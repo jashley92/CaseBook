@@ -66,11 +66,13 @@ public sealed class DashboardService
     private readonly Sla.ISlaTargetsProvider _sla;
     private readonly Compliance.INotificationDeadlineSettingsProvider _notify;
     private readonly Admin.NotificationRuleService _rules;
+    private readonly IOrganizationTimeZone? _zone;
 
     public DashboardService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
         Sla.ISlaTargetsProvider sla, Compliance.INotificationDeadlineSettingsProvider notify,
-        Admin.NotificationRuleService rules)
+        Admin.NotificationRuleService rules, IOrganizationTimeZone? zone = null)
     {
+        _zone = zone;
         _factory = factory;
         _user = user;
         _clock = clock;
@@ -153,7 +155,7 @@ public sealed class DashboardService
                 .AverageAsync(ct));
         }
 
-        var trend = await BuildTrendAsync(cases, now, months: 12, ct);
+        var trend = await BuildTrendAsync(cases, now, months: 12, _zone?.Current ?? TimeZoneInfo.Utc, ct);
 
         return new DashboardMetrics(
             openCount, breaches, incidents, adverse, internalOrigin, thirdParty, legalReferred, overdue,
@@ -168,17 +170,18 @@ public sealed class DashboardService
     /// <summary>
     /// A month-by-month trend reconstructed from each case's open (<c>CreatedAtUtc</c>) and close
     /// (<c>ClosedAtUtc</c>) timestamps — so "opened", "closed" and "open at month end" are exact
-    /// historical figures without needing stored snapshots. F-08: only cases opened or closed inside the
-    /// window are loaded (two timestamps each); everything opened earlier and still open is one count.
+    /// historical figures without needing stored snapshots. Months are calendar months in the organization's
+    /// reporting time zone (<paramref name="zone"/>). F-08: only cases opened or closed inside the window are
+    /// loaded (two timestamps each); everything opened earlier and still open is one count.
     /// </summary>
     public static async Task<IReadOnlyList<TrendPoint>> BuildTrendAsync(
-        IQueryable<Case> cases, DateTimeOffset now, int months, CancellationToken ct = default)
+        IQueryable<Case> cases, DateTimeOffset now, int months, TimeZoneInfo zone, CancellationToken ct = default)
     {
-        var current = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
-        var starts = Enumerable.Range(0, months)
-            .Select(i => current.AddMonths(-(months - 1 - i)))
-            .ToList();
-        var windowStart = starts[0];
+        var (year, month) = ZonedMonths.Of(now, zone);
+        var current = new DateTime(year, month, 1);
+        var monthStarts = Enumerable.Range(0, months + 1).Select(i => current.AddMonths(i - (months - 1))).ToList();
+        var bounds = monthStarts.Select(m => ZonedMonths.StartUtc(m.Year, m.Month, zone)).ToList();
+        var windowStart = bounds[0];
 
         var carriedOpen = await cases.CountAsync(c => c.CreatedAtUtc < windowStart && c.ClosedAtUtc == null, ct);
         var spans = await cases
@@ -186,14 +189,14 @@ public sealed class DashboardService
             .Select(c => new { c.CreatedAtUtc, c.ClosedAtUtc })
             .ToListAsync(ct);
 
-        return starts.Select(start =>
+        return Enumerable.Range(0, months).Select(i =>
         {
-            var end = start.AddMonths(1);
+            var (start, end) = (bounds[i], bounds[i + 1]);
             var opened = spans.Count(s => s.CreatedAtUtc >= start && s.CreatedAtUtc < end);
             var closed = spans.Count(s => s.ClosedAtUtc is { } c && c >= start && c < end);
             var openAtEnd = carriedOpen
                 + spans.Count(s => s.CreatedAtUtc < end && (s.ClosedAtUtc is null || s.ClosedAtUtc >= end));
-            return new TrendPoint(start.Year, start.Month, opened, closed, openAtEnd);
+            return new TrendPoint(monthStarts[i].Year, monthStarts[i].Month, opened, closed, openAtEnd);
         }).ToList();
     }
 }

@@ -328,6 +328,15 @@ public class Case : AuditableEntity, IHashableEntity
             throw new ArgumentException("The detected time can't be in the future.", nameof(detectedAtUtc));
         if (occurredAtUtc is { } occurred && occurred > detectedAtUtc)
             throw new ArgumentException("Activity can't begin after it was detected.", nameof(occurredAtUtc));
+        // Response times run from detection, so it can't move past a milestone already reached. Checked only when the
+        // detected time changes, so an older record that breaks the rule can still have its other details edited.
+        if (detectedAtUtc != DetectedAtUtc)
+        {
+            if (ContainedAtUtc is { } contained && detectedAtUtc > contained)
+                throw new ArgumentException("The detected time can't be after the case was contained.", nameof(detectedAtUtc));
+            if (ResolvedAtUtc is { } resolved && detectedAtUtc > resolved)
+                throw new ArgumentException("The detected time can't be after the case was resolved.", nameof(detectedAtUtc));
+        }
 
         Title = title.Trim();
         Summary = summary;

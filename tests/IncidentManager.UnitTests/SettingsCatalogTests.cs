@@ -35,6 +35,54 @@ public class SettingsCatalogTests
         words.Should().Throw<ArgumentException>();
     }
 
+    [Theory]
+    [InlineData("Sla:Containment:Critical")]
+    [InlineData("Sla:Detection:Low")]
+    [InlineData("Sla:Breach:Resolution:High")]
+    public void Sla_targets_are_capped_at_one_year(string key)
+    {
+        var def = SettingsCatalog.ByKey[key];
+        SettingsCatalog.Normalize(def, "8760").Should().Be("8760");
+        SettingsCatalog.Normalize(def, "").Should().BeNull("blank disables the target");
+        var tooLong = () => SettingsCatalog.Normalize(def, "8761");
+        tooLong.Should().Throw<ArgumentException>().WithMessage("*from 0 to 8,760*");
+    }
+
+    [Fact]
+    public void Every_sla_hours_setting_has_the_cap() =>
+        SettingsCatalog.Editable.Where(d => d.Key.StartsWith("Sla:") && d.Key != "Sla:AtRiskThresholdPercent")
+            .Should().NotBeEmpty().And.OnlyContain(d => d.Max == IncidentManager.Application.Sla.SlaPolicy.MaxTargetHours);
+
+    [Theory]
+    [InlineData("Sla:AtRiskThresholdPercent")]
+    [InlineData("Compliance:NotificationDeadlines:AtRiskThresholdPercent")]
+    public void At_risk_thresholds_must_be_1_to_100(string key)
+    {
+        var def = SettingsCatalog.ByKey[key];
+        SettingsCatalog.Normalize(def, "1").Should().Be("1");
+        SettingsCatalog.Normalize(def, "100").Should().Be("100");
+        foreach (var bad in new[] { "0", "101" })
+        {
+            var act = () => SettingsCatalog.Normalize(def, bad);
+            act.Should().Throw<ArgumentException>(bad);
+        }
+    }
+
+    [Fact]
+    public void A_fixed_choice_setting_takes_only_a_listed_value()
+    {
+        var zone = SettingsCatalog.ByKey["Organization:TimeZone"];
+        SettingsCatalog.Normalize(zone, "america/chicago").Should().Be("America/Chicago");
+        SettingsCatalog.Normalize(zone, "").Should().Be("", "blank uses the default");
+        var unknown = () => SettingsCatalog.Normalize(zone, "Mars/Olympus_Mons");
+        unknown.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Every_listed_time_zone_resolves_on_this_host() =>
+        SettingsCatalog.ByKey["Organization:TimeZone"].Options!
+            .Where(o => !TimeZoneInfo.TryFindSystemTimeZoneById(o.Value, out _)).Should().BeEmpty();
+
     [Fact]
     public void Normalize_multitext_trims_lines_and_drops_blanks()
     {

@@ -21,7 +21,9 @@ public sealed record SettingDefinition(
     string Description,
     string? Default = null,
     bool CustomEditor = false,
-    IReadOnlyList<SettingOption>? Options = null);
+    IReadOnlyList<SettingOption>? Options = null,
+    int Min = 0,
+    int? Max = null);
 
 /// <summary>One allowed value of a fixed-choice text setting, shown as a dropdown instead of a free-text box.</summary>
 public sealed record SettingOption(string Value, string Label);
@@ -52,6 +54,16 @@ public static class SettingsCatalog
             "Used for links, active states, focus rings and highlights. Blank uses the built-in gold.", "", CustomEditor: true),
         new SettingDefinition("Branding:InkColor", "Primary action color", "Organization", SettingKind.Text,
             "Used for primary buttons and structural ink. Blank uses the built-in charcoal.", "", CustomEditor: true),
+        // F-08: where calendar months begin for the dashboard trend and its drill-in. Daylight saving follows the zone.
+        new SettingDefinition("Organization:TimeZone", "Reporting time zone", "Organization", SettingKind.Text,
+            "Where the dashboard's monthly trend starts and ends each month. Daylight saving follows the zone. Stored times, the audit trail and exports stay in UTC.",
+            "America/New_York",
+            Options: [new("America/New_York", "Eastern (New York)"), new("America/Chicago", "Central (Chicago)"),
+                new("America/Denver", "Mountain (Denver)"), new("America/Phoenix", "Mountain, no daylight saving (Phoenix)"),
+                new("America/Los_Angeles", "Pacific (Los Angeles)"), new("America/Anchorage", "Alaska (Anchorage)"),
+                new("Pacific/Honolulu", "Hawaii (Honolulu)"), new("UTC", "UTC"), new("Europe/London", "UK (London)"),
+                new("Europe/Dublin", "Ireland (Dublin)"), new("Europe/Paris", "Central Europe (Paris)"),
+                new("Asia/Kolkata", "India (Kolkata)"), new("Asia/Singapore", "Singapore"), new("Australia/Sydney", "Australia East (Sydney)")]),
         new SettingDefinition("Organization:DefaultJurisdictions", "Default jurisdictions", "Organization", SettingKind.Text,
             "Pre-fills affected jurisdictions on a case's impact assessment when none are set, for example \"NY, NJ, PA\". Editable per case.", ""),
 
@@ -151,49 +163,49 @@ public static class SettingsCatalog
             "Hours between full passes. Each pass re-hashes every stored file, so keep it slow. " +
             "A pass also runs at startup. Default 24.", "24"),
         new SettingDefinition("Sla:Containment:Critical", "Containment: Critical (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to containment for Critical cases. Blank disables the SLA for this severity.", "4"),
+            "Target hours from detection to containment for Critical cases. Blank disables the SLA for this severity.", "4", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Containment:High", "Containment: High (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to containment for High cases. Blank disables the SLA for this severity.", "12"),
+            "Target hours from detection to containment for High cases. Blank disables the SLA for this severity.", "12", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Containment:Medium", "Containment: Medium (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to containment for Medium cases. Blank disables the SLA for this severity.", "24"),
+            "Target hours from detection to containment for Medium cases. Blank disables the SLA for this severity.", "24", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Containment:Low", "Containment: Low (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to containment for Low cases. Blank disables the SLA for this severity.", "72"),
+            "Target hours from detection to containment for Low cases. Blank disables the SLA for this severity.", "72", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Resolution:Critical", "Resolution: Critical (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to resolution (recovery) for Critical cases. Blank disables the SLA for this severity.", "24"),
+            "Target hours from detection to resolution (recovery) for Critical cases. Blank disables the SLA for this severity.", "24", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Resolution:High", "Resolution: High (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to resolution (recovery) for High cases. Blank disables the SLA for this severity.", "72"),
+            "Target hours from detection to resolution (recovery) for High cases. Blank disables the SLA for this severity.", "72", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Resolution:Medium", "Resolution: Medium (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to resolution (recovery) for Medium cases. Blank disables the SLA for this severity.", "168"),
+            "Target hours from detection to resolution (recovery) for Medium cases. Blank disables the SLA for this severity.", "168", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Resolution:Low", "Resolution: Low (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to resolution (recovery) for Low cases. Blank disables the SLA for this severity.", "336"),
+            "Target hours from detection to resolution (recovery) for Low cases. Blank disables the SLA for this severity.", "336", Max: Sla.SlaPolicy.MaxTargetHours),
         // PROD-08: detection SLA (occurred → detected). Blank by default: dwell targets are an org choice.
         new SettingDefinition("Sla:Detection:Critical", "Detection: Critical (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from Occurred to detection for Critical cases, measured only when Occurred is recorded. Blank disables it."),
+            "Target hours from Occurred to detection for Critical cases, measured only when Occurred is recorded. Blank disables it.", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Detection:High", "Detection: High (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from Occurred to detection for High cases, measured only when Occurred is recorded. Blank disables it."),
+            "Target hours from Occurred to detection for High cases, measured only when Occurred is recorded. Blank disables it.", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Detection:Medium", "Detection: Medium (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from Occurred to detection for Medium cases, measured only when Occurred is recorded. Blank disables it."),
+            "Target hours from Occurred to detection for Medium cases, measured only when Occurred is recorded. Blank disables it.", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Detection:Low", "Detection: Low (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from Occurred to detection for Low cases, measured only when Occurred is recorded. Blank disables it."),
+            "Target hours from Occurred to detection for Low cases, measured only when Occurred is recorded. Blank disables it.", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:AtRiskThresholdPercent", "At-risk threshold (%)", "Response SLA", SettingKind.Int,
-            "Percent of a target that must elapse before an open case is flagged at risk (1–100).", "80"),
+            "Percent of a target that must elapse before an open case is flagged at risk (1–100).", "80", Min: 1, Max: 100),
         // PROD-08: optional per-classification targets — Breach cases only, falling back to the general target.
         new SettingDefinition("Sla:Breach:Containment:Critical", "Breach containment: Critical (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the containment target for Critical cases Breach cases. Blank uses the general target."),
+            "Overrides the containment target for Critical cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Breach:Containment:High", "Breach containment: High (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the containment target for High cases Breach cases. Blank uses the general target."),
+            "Overrides the containment target for High cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Breach:Containment:Medium", "Breach containment: Medium (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the containment target for Medium cases Breach cases. Blank uses the general target."),
+            "Overrides the containment target for Medium cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Breach:Containment:Low", "Breach containment: Low (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the containment target for Low cases Breach cases. Blank uses the general target."),
+            "Overrides the containment target for Low cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Breach:Resolution:Critical", "Breach resolution: Critical (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the resolution target for Critical cases Breach cases. Blank uses the general target."),
+            "Overrides the resolution target for Critical cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Breach:Resolution:High", "Breach resolution: High (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the resolution target for High cases Breach cases. Blank uses the general target."),
+            "Overrides the resolution target for High cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Breach:Resolution:Medium", "Breach resolution: Medium (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the resolution target for Medium cases Breach cases. Blank uses the general target."),
+            "Overrides the resolution target for Medium cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
         new SettingDefinition("Sla:Breach:Resolution:Low", "Breach resolution: Low (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the resolution target for Low cases Breach cases. Blank uses the general target."),
+            "Overrides the resolution target for Low cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
 
         // PROD-07 / UX-15: regulatory notification-deadline clock. Off by default; per-jurisdiction timers are
         // managed as reference data in the "Per-jurisdiction rules" editor on the same Regulatory deadlines page.
@@ -209,7 +221,7 @@ public static class SettingsCatalog
         new SettingDefinition("Compliance:NotificationDeadlines:DefaultWindowHours", "Default window (hours)", "Deadline clock", SettingKind.Int,
             "Window used for any triggered jurisdiction without its own rule below.", "72"),
         new SettingDefinition("Compliance:NotificationDeadlines:AtRiskThresholdPercent", "At-risk threshold (%)", "Deadline clock", SettingKind.Int,
-            "Percent of a jurisdiction's window that must elapse before its deadline is flagged at risk (1–100).", "80"),
+            "Percent of a jurisdiction's window that must elapse before its deadline is flagged at risk (1–100).", "80", Min: 1, Max: 100),
 
         new SettingDefinition("Severity:Label:Critical", "Critical label", "Severity labels", SettingKind.Text,
             "Display name for Critical, for example \"SEV-1\". Level, order, color and SLA don't change.", "Critical"),
@@ -268,8 +280,11 @@ public static class SettingsCatalog
 
             case SettingKind.Int:
                 if (string.IsNullOrWhiteSpace(v)) return null;
-                if (int.TryParse(v, out var n) && n >= 0) return n.ToString(CultureInfo.InvariantCulture);
-                throw new ArgumentException($"{def.Label} must be a whole number (0 or more).");
+                if (int.TryParse(v, out var n) && n >= def.Min && (def.Max is null || n <= def.Max))
+                    return n.ToString(CultureInfo.InvariantCulture);
+                throw new ArgumentException(def.Max is { } max
+                    ? $"{def.Label} must be a whole number from {def.Min} to {max:N0}."
+                    : $"{def.Label} must be a whole number ({def.Min} or more).");
 
             case SettingKind.MultiText:
                 if (string.IsNullOrWhiteSpace(v)) return "";
@@ -279,6 +294,10 @@ public static class SettingsCatalog
                 return string.Join("\n", lines);
 
             default:
+                // A fixed-choice setting only takes one of its listed values (canonical casing); blank uses the default.
+                if (def.Options is { } options && !string.IsNullOrEmpty(v))
+                    return options.FirstOrDefault(o => string.Equals(o.Value, v, StringComparison.OrdinalIgnoreCase))?.Value
+                           ?? throw new ArgumentException($"{def.Label} must be one of the listed options.");
                 return v ?? "";
         }
     }

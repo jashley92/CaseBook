@@ -110,10 +110,13 @@ public sealed class AppDbContext : DbContext, IAppDbContext
         }
 
         // F-08: DbTime.TicksBetween, so elapsed-time aggregates (SLA met/missed, mean time to contain) run in the
-        // database. SQLite already holds ticks, so it's a subtraction; SQL Server counts nanoseconds and scales
-        // to ticks (DATEDIFF_BIG's nanosecond range is about 292 years).
+        // database. SQLite already holds ticks, so it's a subtraction. SQL Server can't count nanoseconds across
+        // more than ~292 years (one mistyped year would fail the whole dashboard), so it counts whole seconds and
+        // adds the difference of the sub-second parts: still exact to the tick, over any valid date range.
         var ticksBetween = typeof(DbTime).GetMethod(nameof(DbTime.TicksBetween))!;
-        var longMapping = this.GetService<IRelationalTypeMappingSource>().FindMapping(typeof(long))!;
+        var mappings = this.GetService<IRelationalTypeMappingSource>();
+        var longMapping = mappings.FindMapping(typeof(long))!;
+        var intMapping = mappings.FindMapping(typeof(int))!;
         if (Database.IsSqlite())
         {
             modelBuilder.HasDbFunction(ticksBetween).HasTranslation(a =>
@@ -121,10 +124,20 @@ public sealed class AppDbContext : DbContext, IAppDbContext
         }
         else
         {
-            modelBuilder.HasDbFunction(ticksBetween).HasTranslation(a => new SqlBinaryExpression(ExpressionType.Divide,
-                new SqlFunctionExpression("DATEDIFF_BIG", [new SqlFragmentExpression("nanosecond"), a[0], a[1]],
-                    nullable: true, argumentsPropagateNullability: [false, true, true], typeof(long), longMapping),
-                new SqlConstantExpression(100L, longMapping), typeof(long), longMapping));
+            SqlExpression Fn(string name, Type type, RelationalTypeMapping mapping, string part, params SqlExpression[] args) =>
+                new SqlFunctionExpression(name, [new SqlFragmentExpression(part), .. args], nullable: true,
+                    argumentsPropagateNullability: [false, .. args.Select(_ => true)], type, mapping);
+            SqlExpression Binary(ExpressionType op, SqlExpression l, SqlExpression r, Type type, RelationalTypeMapping mapping) =>
+                new SqlBinaryExpression(op, l, r, type, mapping);
+
+            modelBuilder.HasDbFunction(ticksBetween).HasTranslation(a => Binary(ExpressionType.Add,
+                Binary(ExpressionType.Multiply, Fn("DATEDIFF_BIG", typeof(long), longMapping, "second", a[0], a[1]),
+                    new SqlConstantExpression(TimeSpan.TicksPerSecond, longMapping), typeof(long), longMapping),
+                Binary(ExpressionType.Divide,
+                    Binary(ExpressionType.Subtract, Fn("DATEPART", typeof(int), intMapping, "nanosecond", a[1]),
+                        Fn("DATEPART", typeof(int), intMapping, "nanosecond", a[0]), typeof(int), intMapping),
+                    new SqlConstantExpression(100, intMapping), typeof(int), intMapping),
+                typeof(long), longMapping));
         }
     }
 }

@@ -276,6 +276,39 @@ public class CaseTests
     }
 
     [Fact]
+    public void UpdateDetails_rejects_moving_detection_past_a_milestone_already_reached()
+    {
+        var c = NewCase();
+        var detected = Now.AddHours(-10);
+        c.UpdateDetails("Title", null, null, null, null, detected, null, "analyst1", Now);
+        c.ContainedAtUtc = Now.AddHours(-6);
+        c.ResolvedAtUtc = Now.AddHours(-2);
+
+        var afterContainment = () => c.UpdateDetails("Title", null, null, null, null, Now.AddHours(-5), null, "analyst1", Now);
+        afterContainment.Should().Throw<ArgumentException>().WithMessage("*after the case was contained*");
+
+        c.ContainedAtUtc = null;
+        var afterResolution = () => c.UpdateDetails("Title", null, null, null, null, Now.AddHours(-1), null, "analyst1", Now);
+        afterResolution.Should().Throw<ArgumentException>().WithMessage("*after the case was resolved*");
+
+        // Exactly at the milestone is allowed (a zero-length response).
+        c.UpdateDetails("Title", null, null, null, null, Now.AddHours(-2), null, "analyst1", Now);
+        c.DetectedAtUtc.Should().Be(Now.AddHours(-2));
+    }
+
+    [Fact]
+    public void UpdateDetails_still_saves_other_edits_on_a_record_that_already_breaks_the_milestone_rule()
+    {
+        var c = NewCase();
+        c.DetectedAtUtc = Now.AddHours(-1);
+        c.ContainedAtUtc = Now.AddHours(-3);   // older data, from before the rule
+
+        c.UpdateDetails("Renamed", null, null, null, null, Now.AddHours(-1), null, "analyst1", Now);
+
+        c.Title.Should().Be("Renamed");
+    }
+
+    [Fact]
     public void UpdateDetails_backdates_the_intake_timestamps_that_drive_the_sla_and_dwell_metrics()
     {
         var c = NewCase();
