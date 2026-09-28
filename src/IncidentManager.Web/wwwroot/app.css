@@ -2089,7 +2089,7 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
     color: #fff; font-size: .62rem; font-weight: 700;
 }
 .im-case-list .case-owner-name { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; }
-.im-case-list .case-owner-none { color: var(--im-warn); white-space: nowrap; }
+.im-case-list .case-owner-none { color: var(--im-text-muted); font-style: italic; white-space: nowrap; }
 /* Narrower desktops: the owner column shows initials only (the full name is in the tooltip). */
 @media (min-width: 641px) and (max-width: 1599.98px) {
     .im-case-list .case-owner-name { display: none; }
@@ -2123,6 +2123,36 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
     /* Last line of the card: owner on the left, age on the right. */
     .im-case-list .case-cell-owner { order: 1; flex: 1 0 calc(100% - 5rem); font-size: var(--im-text-xs); }
     .im-case-list .case-cell-age { order: 2; margin-left: auto; }
+}
+
+/* ============================================================================
+   Cases toolbar (design review P2): count chips that are also filters, then the filter controls, on one
+   wrapping row; rarer toggles, active-filter chips and saved views appear below only when in use.
+   ============================================================================ */
+.im-cases-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; padding-bottom: .6rem; margin-bottom: .6rem; border-bottom: 1px solid var(--im-border); }
+.im-counts { display: flex; flex-wrap: wrap; gap: .35rem; }
+.im-count {
+    display: inline-flex; align-items: center; gap: .35rem; height: 1.85rem; padding: 0 .7rem;
+    border: 1px solid var(--im-border-strong); border-radius: var(--im-radius-pill); background: transparent;
+    color: var(--im-text-muted); font-size: var(--im-text-sm); white-space: nowrap; cursor: pointer;
+}
+.im-count b { color: var(--im-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.im-count:hover { border-color: var(--im-text-muted); color: var(--im-text); }
+.im-count.on { border-color: var(--im-accent-strong); background: var(--im-accent-bg); color: var(--im-text); }
+.im-count:focus-visible { outline: none; box-shadow: 0 0 0 .2rem var(--im-focus); }
+.im-count-dot { width: .45rem; height: .45rem; border-radius: 50%; }
+.im-count-dot.is-danger { background: var(--im-danger); }
+.im-count-dot.is-warn { background: var(--im-warn); }
+.im-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-left: auto; }
+.im-filter-row .form-select { width: auto; }
+.im-filter-search { width: 15rem; }
+.im-filter-more { display: flex; flex-wrap: wrap; gap: .4rem 1.25rem; margin: -.2rem 0 .6rem; }
+.im-filter-chips { margin-bottom: .6rem; }
+.im-views-panel { border: 1px solid var(--im-border); border-radius: var(--im-radius); background: var(--im-surface); padding: .6rem .75rem; margin-bottom: .75rem; }
+.im-views-panel .card { margin-bottom: 0 !important; }
+@media (max-width: 640px) {
+    .im-filter-row { margin-left: 0; width: 100%; }
+    .im-filter-row .form-select, .im-filter-search { flex: 1 1 45%; width: auto; }
 }
 
 /* ============================================================================

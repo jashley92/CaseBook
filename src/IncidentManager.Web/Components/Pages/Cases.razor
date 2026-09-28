@@ -24,10 +24,16 @@
     <Actions>
         <div class="im-seg" role="group" aria-label="Case scope">
             <button type="button" class="btn @(_onlyMine ? "active" : "")"
-                    @onclick="() => SetScope(true)" aria-pressed="@_onlyMine" title="Cases you own or are assigned to">Mine</button>
+                    @onclick="() => SetScope(true)" aria-pressed="@Ui.Aria(_onlyMine)" title="Cases you own or are assigned to">Mine</button>
             <button type="button" class="btn @(!_onlyMine ? "active" : "")"
-                    @onclick="() => SetScope(false)" aria-pressed="@(!_onlyMine)" title="All cases you can see">All</button>
+                    @onclick="() => SetScope(false)" aria-pressed="@Ui.Aria(!_onlyMine)" title="All cases you can see">All</button>
         </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" aria-expanded="@Ui.Aria(_viewsOpen || _savingView)"
+                @onclick="() => _viewsOpen = !_viewsOpen" title="Saved and shared views of this list">
+            <span class="bi bi-bookmark-star" aria-hidden="true"></span>
+            @(ActiveViewName is { } av ? av : "Views")
+            <span class="bi @(_viewsOpen || _savingView ? "bi-chevron-up" : "bi-chevron-down") small" aria-hidden="true"></span>
+        </button>
         <a class="btn btn-sm btn-outline-secondary d-none d-sm-inline-block" href="export/iocs.csv" download
            title="Confirmed-malicious IOCs from your visible cases, as a blocklist for SIEM, firewall or EDR">
             <span class="bi bi-shield-exclamation" aria-hidden="true"></span> Export IOC feed (CSV)
@@ -44,25 +50,132 @@
     </Actions>
 </PageHeader>
 
-@* Summary of the caller's open caseload — same figures as the dashboard, so the two stay in step.
-   Each tile deep-links into the matching filtered list below. *@
-@if (_dash is { } d)
+@* Design review P2: one toolbar instead of tiles + views + filters + chips. The counts are the same figures
+   as the dashboard (so the two stay in step) and each is also the filter that lists them. *@
+@{ var showAdvanced = _showMoreFilters || _includeClosed || _includeExercises || _notifyOnly || _referredOnly || _onHoldOnly; }
+<div class="im-cases-bar" role="toolbar" aria-label="Case filters">
+    @if (_dash is { } d)
+    {
+        <div class="im-counts" role="group" aria-label="Quick filters">
+            <button type="button" class="im-count @(!_hasActiveFilter ? "on" : "")" aria-pressed="@Ui.Aria(!_hasActiveFilter)"
+                    @onclick="ClearFilters" title="All open cases"><b>@d.OpenCount</b> open</button>
+            <button type="button" class="im-count @(_classification == nameof(Classification.Breach) ? "on" : "")"
+                    aria-pressed="@Ui.Aria(_classification == nameof(Classification.Breach))" @onclick="ToggleBreaches"
+                    title="Open cases classified as a breach">
+                @if (d.Breaches > 0) { <span class="im-count-dot is-danger" aria-hidden="true"></span> }<b>@d.Breaches</b> breaches
+            </button>
+            <button type="button" class="im-count @(_slaAtRiskOnly ? "on" : "")" aria-pressed="@Ui.Aria(_slaAtRiskOnly)"
+                    @onclick="ToggleSla" title="Open cases approaching or past their response-time target">
+                @if (d.SlaBreached > 0) { <span class="im-count-dot is-danger" aria-hidden="true"></span> }
+                else if (d.SlaAtRisk > 0) { <span class="im-count-dot is-warn" aria-hidden="true"></span> }
+                <b>@(d.SlaBreached + d.SlaAtRisk)</b> SLA over or at risk
+            </button>
+            <button type="button" class="im-count @(_overdueOnly ? "on" : "")" aria-pressed="@Ui.Aria(_overdueOnly)"
+                    @onclick="ToggleOverdue" title="Cases with a task past its due date">
+                <b>@d.OverdueActionItems</b> overdue tasks
+            </button>
+        </div>
+    }
+
+    @* Phones: the filter controls fold behind one button so the list starts near the top; the chips still
+       show what's applied. *@
+    <button type="button" class="btn btn-sm btn-outline-secondary d-sm-none" aria-expanded="@Ui.Aria(_filtersOpen)"
+            @onclick="() => _filtersOpen = !_filtersOpen">
+        <span class="bi bi-funnel me-1" aria-hidden="true"></span>@(_filtersOpen ? "Hide filters" : "Filters")
+    </button>
+    <div class="im-filter-row @(_filtersOpen ? "" : "im-phone-collapsed")">
+        <select id="cases-class" class="form-select form-select-sm" aria-label="Classification" @bind="_classification" @bind:after="ApplyFilters">
+            <option value="">All classifications</option>
+            @foreach (var c in Enum.GetValues<Classification>())
+            {
+                <option value="@c">@Ui.Label(c)</option>
+            }
+        </select>
+        <select id="cases-phase" class="form-select form-select-sm" aria-label="Phase" @bind="_phase" @bind:after="ApplyFilters">
+            <option value="">All phases</option>
+            @foreach (var p in Enum.GetValues<CasePhase>())
+            {
+                <option value="@p">@Ui.Label(p)</option>
+            }
+        </select>
+        <select id="cases-min-severity" class="form-select form-select-sm" aria-label="Minimum severity" @bind="_minSeverity" @bind:after="ApplyFilters">
+            <option value="">Any severity</option>
+            @foreach (var s in Enum.GetValues<Severity>())
+            {
+                <option value="@s">@SevLabels.For(s) or higher</option>
+            }
+        </select>
+        <select id="cases-origin" class="form-select form-select-sm" aria-label="Origin" @bind="_origin" @bind:after="ApplyFilters">
+            <option value="">Any origin</option>
+            <option value="@nameof(CaseOrigin.InternalDetection)">Internal</option>
+            <option value="@nameof(CaseOrigin.ThirdParty)">Third-party</option>
+        </select>
+        <input id="cases-search" class="form-control form-control-sm im-filter-search" placeholder="Search number, title, note or IOC"
+               aria-label="Search cases" @bind="_search" @bind:after="ApplyFilters" />
+        @* FR-16: the rarer toggles collapse behind "More filters"; they auto-reveal whenever one is active so a
+           set filter is never hidden (each also shows as a chip). *@
+        <button type="button" class="btn btn-sm btn-link px-1" aria-expanded="@Ui.Aria(showAdvanced)" @onclick="() => _showMoreFilters = !_showMoreFilters">
+            <span class="bi @(showAdvanced ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span> More filters
+        </button>
+    </div>
+</div>
+
+@if (showAdvanced)
 {
-    <div class="im-tiles">
-        <StatTile Icon="bi-folder2-open" Value="d.OpenCount" Label="Open cases" Tone="accent" Href="cases" />
-        <StatTile Icon="bi-shield-exclamation" Value="d.Breaches" Label="Open breaches"
-                  Tone="@(d.Breaches > 0 ? "danger" : "accent")" Href="cases?classification=Breach" />
-        <StatTile Icon="bi-clock-history" Value="@(d.SlaBreached + d.SlaAtRisk)" Label="SLA at risk / overdue"
-                  Tone="@(d.SlaBreached > 0 ? "danger" : (d.SlaAtRisk > 0 ? "warn" : "ok"))" Href="cases?sla=true" />
-        <StatTile Icon="bi-list-check" Value="d.OverdueActionItems" Label="Overdue tasks"
-                  Tone="@(d.OverdueActionItems > 0 ? "danger" : "ok")"
-                  Href="@(d.OverdueActionItems > 0 ? "cases?overdue=true&closed=true" : null)" />
+    <div class="im-filter-more @(_filtersOpen ? "" : "im-phone-collapsed")">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="closed" @bind="_includeClosed" @bind:after="ApplyFilters" />
+            <label class="form-check-label small" for="closed">Include closed</label>
+        </div>
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="exercises" @bind="_includeExercises" @bind:after="ApplyFilters" />
+            <label class="form-check-label small" for="exercises" title="Tabletop and drill cases are hidden by default">Show exercises</label>
+        </div>
+        @if (NotifySettings.Current.Enabled || _notifyOnly)
+        {
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="notify" @bind="_notifyOnly" @bind:after="ApplyFilters" />
+                <label class="form-check-label small" for="notify" title="Open cases whose regulatory notification deadline is near or past">Notification deadline at risk</label>
+            </div>
+        }
+        @* UX-10: SOC/IC roll-up of Legal obligations across the queue — Legal reads the reports, not the app. *@
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="referred" @bind="_referredOnly" @bind:after="ApplyFilters" />
+            <label class="form-check-label small" for="referred" title="Cases referred to Legal / Privacy">Referred to Legal</label>
+        </div>
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="hold" @bind="_onHoldOnly" @bind:after="ApplyFilters" />
+            <label class="form-check-label small" for="hold" title="Cases that must be preserved under a legal hold">On legal hold</label>
+        </div>
     </div>
 }
 
-@* PROD-09: saved / shared case-queue views. Each view is a name + the current filter query string;
+@* FR-16: removable active-filter chips, so a zero-row result can be unwound one filter at a time. Only shown
+   when something is applied. *@
+@{ var chips = ActiveFilterChips().ToList(); }
+@if (chips.Count > 0)
+{
+    <div class="im-chips im-filter-chips">
+        @foreach (var chip in chips)
+        {
+            <span class="im-chip" title="Remove this filter">
+                <span class="im-chip-name">@chip.Label</span>
+                <button type="button" class="im-chip-x" aria-label="Remove filter: @chip.Label" @onclick="() => RemoveFilter(chip.Clear)">×</button>
+            </span>
+        }
+        @if (chips.Count > 1)
+        {
+            <button type="button" class="btn btn-sm btn-link p-0 ms-1 align-baseline" @onclick="ClearFilters">Clear all</button>
+        }
+    </div>
+}
+
+@if (_viewsOpen || _savingView)
+{
+    <div class="im-views-panel">
+        @* PROD-09: saved / shared case-queue views. Each view is a name + the current filter query string;
    personal by default, or shared to the whole team. *@
-<div class="d-flex flex-wrap align-items-center gap-2 mt-3 @(_views is { Count: > 0 } ? "" : "im-phone-collapsed")">
+<div class="d-flex flex-wrap align-items-center gap-2">
     <span class="text-muted small"><span class="bi bi-bookmark-star" aria-hidden="true"></span> Views</span>
     @if (_views is { Count: > 0 })
     {
@@ -80,7 +193,7 @@
                     @* PROD-24: mark one of your own views as the default Cases landing (captures Mine/All too). *@
                     <button type="button" class="btn @(v.IsDefault ? "btn-warning" : "btn-outline-secondary")"
                             title="@(v.IsDefault ? "Your default view. Cases opens here." : "Set as your default view")"
-                            aria-pressed="@v.IsDefault" aria-label="@($"{(v.IsDefault ? "Unset" : "Set")} {v.Name} as default view")"
+                            aria-pressed="@Ui.Aria(v.IsDefault)" aria-label="@($"{(v.IsDefault ? "Unset" : "Set")} {v.Name} as default view")"
                             @onclick="() => ToggleDefault(v)">
                         <span class="bi @(v.IsDefault ? "bi-star-fill" : "bi-star")" aria-hidden="true"></span>
                     </button>
@@ -101,7 +214,7 @@
     </button>
 </div>
 
-@if (_savingView)
+        @if (_savingView)
 {
     <div class="card my-2" style="max-width:32rem">
         <div class="card-body">
@@ -132,145 +245,8 @@
         </div>
     </div>
 }
-
-@* Phones: the filter form folds behind one button so the case list starts near the top; the chips below
-   still show what's applied. Desktop always shows the form. *@
-<button type="button" class="btn btn-sm btn-outline-secondary mt-3 d-sm-none" aria-expanded="@_filtersOpen"
-        @onclick="() => _filtersOpen = !_filtersOpen">
-    <span class="bi bi-funnel me-1" aria-hidden="true"></span>@(_filtersOpen ? "Hide filters" : "Filters")
-</button>
-<div class="row g-2 align-items-end my-3 @(_filtersOpen ? "" : "im-phone-collapsed")">
-    <div class="col-auto">
-        <label class="form-label small mb-0" for="cases-class">Classification</label>
-        <select id="cases-class" class="form-select form-select-sm" @bind="_classification" @bind:after="ApplyFilters">
-            <option value="">All</option>
-            @foreach (var c in Enum.GetValues<Classification>())
-            {
-                <option value="@c">@Ui.Label(c)</option>
-            }
-        </select>
     </div>
-    <div class="col-auto">
-        <label class="form-label small mb-0" for="cases-phase">Phase</label>
-        <select id="cases-phase" class="form-select form-select-sm" @bind="_phase" @bind:after="ApplyFilters">
-            <option value="">All</option>
-            @foreach (var p in Enum.GetValues<CasePhase>())
-            {
-                <option value="@p">@Ui.Label(p)</option>
-            }
-        </select>
-    </div>
-    <div class="col-auto">
-        <label class="form-label small mb-0" for="cases-min-severity">Min severity</label>
-        <select id="cases-min-severity" class="form-select form-select-sm" @bind="_minSeverity" @bind:after="ApplyFilters">
-            <option value="">Any</option>
-            @foreach (var s in Enum.GetValues<Severity>())
-            {
-                <option value="@s">@SevLabels.For(s)</option>
-            }
-        </select>
-    </div>
-    <div class="col-auto">
-        <label class="form-label small mb-0" for="cases-origin">Origin</label>
-        <select id="cases-origin" class="form-select form-select-sm" @bind="_origin" @bind:after="ApplyFilters">
-            <option value="">All</option>
-            <option value="@nameof(CaseOrigin.InternalDetection)">Internal</option>
-            <option value="@nameof(CaseOrigin.ThirdParty)">Third-party</option>
-        </select>
-    </div>
-    <div class="col-auto">
-        <label class="form-label small mb-0" for="cases-search">Search</label>
-        <input id="cases-search" class="form-control form-control-sm" placeholder="Number, title, note, or IOC"
-               @bind="_search" @bind:after="ApplyFilters" />
-    </div>
-    <div class="col-auto">
-        <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="closed" @bind="_includeClosed" @bind:after="ApplyFilters" />
-            <label class="form-check-label small" for="closed">Include closed</label>
-        </div>
-        <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="exercises" @bind="_includeExercises" @bind:after="ApplyFilters" />
-            <label class="form-check-label small" for="exercises" title="Tabletop and drill cases are hidden by default">Show exercises</label>
-        </div>
-    </div>
-    @* FR-16: the four status roll-up toggles collapse behind "More filters" to cut the density; they auto-
-       reveal whenever one is active so a set filter is never hidden (and each also shows as a chip below). *@
-    @{ var showAdvanced = _showMoreFilters || _overdueOnly || _slaAtRiskOnly || _notifyOnly || _referredOnly || _onHoldOnly; }
-    <div class="col-auto">
-        <button type="button" class="btn btn-sm btn-link p-0" @onclick="() => _showMoreFilters = !_showMoreFilters">
-            <span class="bi @(showAdvanced ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span> More filters
-        </button>
-    </div>
-    @if (showAdvanced)
-    {
-        <div class="col-auto">
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="overdue" @bind="_overdueOnly" @bind:after="ApplyFilters" />
-                <label class="form-check-label small" for="overdue">Overdue only</label>
-            </div>
-        </div>
-        <div class="col-auto">
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="sla" @bind="_slaAtRiskOnly" @bind:after="ApplyFilters" />
-                <label class="form-check-label small" for="sla" title="Open cases approaching or past their response-time target">SLA at risk</label>
-            </div>
-        </div>
-        @if (NotifySettings.Current.Enabled || _notifyOnly)
-        {
-            <div class="col-auto">
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="notify" @bind="_notifyOnly" @bind:after="ApplyFilters" />
-                    <label class="form-check-label small" for="notify" title="Open cases whose regulatory notification deadline is near or past">Notification deadline at risk</label>
-                </div>
-            </div>
-        }
-        @* UX-10: SOC/IC roll-up of Legal obligations across the queue — Legal reads the reports, not the app. *@
-        <div class="col-auto">
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="referred" @bind="_referredOnly" @bind:after="ApplyFilters" />
-                <label class="form-check-label small" for="referred" title="Cases referred to Legal / Privacy">Referred to Legal</label>
-            </div>
-        </div>
-        <div class="col-auto">
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="hold" @bind="_onHoldOnly" @bind:after="ApplyFilters" />
-                <label class="form-check-label small" for="hold" title="Cases that must be preserved under a legal hold">On legal hold</label>
-            </div>
-        </div>
-    }
-    @if (_hasActiveFilter)
-    {
-        <div class="col-auto">
-            <button class="btn btn-sm btn-outline-secondary" @onclick="ClearFilters">Clear</button>
-        </div>
-    }
-</div>
-
-@* FR-16: removable active-filter chips, so it's obvious what's applied and a zero-row result can be
-   unwound one filter at a time instead of reasoning backward about which of ten filters killed it. The
-   row is always rendered (with a reserved height and a muted hint when empty) so toggling a filter never
-   shifts the table down — it fills the reserved space instead of inserting a new row. *@
-@{ var chips = ActiveFilterChips().ToList(); }
-<div class="im-chips mb-3" style="min-height: 2rem;">
-    @if (chips.Count > 0)
-    {
-        @foreach (var chip in chips)
-        {
-            <span class="im-chip" title="Remove this filter">
-                <span class="im-chip-name">@chip.Label</span>
-                <button type="button" class="im-chip-x" aria-label="Remove filter: @chip.Label" @onclick="() => RemoveFilter(chip.Clear)">×</button>
-            </span>
-        }
-        @if (chips.Count > 1)
-        {
-            <button type="button" class="btn btn-sm btn-link p-0 ms-1 align-baseline" @onclick="ClearFilters">Clear all</button>
-        }
-    }
-    else
-    {
-        <span class="text-muted small">No filters applied</span>
-    }
-</div>
+}
 
 @if (_assignee is not null)
 {
@@ -337,11 +313,7 @@ else if (_page.Total == 0)
 }
 else
 {
-    <div class="im-card">
-    <div class="im-section-head">
-        <span><span class="bi bi-folder2-open" aria-hidden="true"></span> Case list</span>
-        <span class="im-section-note">@_page.Total case@(_page.Total == 1 ? "" : "s")@(_hasActiveFilter ? " · filtered" : "")</span>
-    </div>
+    <div class="im-case-list-wrap">
 
     @* E-18 / U-15: metered bulk-action bar. Surfaces only over a coherent cohort (a filter is set, or the
        Mine scope) — never the naked All queue — and only for editors. Count-capped at @MaxBulk, and every
@@ -462,12 +434,12 @@ else
         }
     </div>
 
-    @if (_page is { Total: > 0 } && (_page.TotalPages > 1 || _pageSize != DefaultPageSize))
+    @if (_page is { Total: > 0 })
     {
         <nav class="d-flex justify-content-between align-items-center gap-2 flex-wrap mt-2">
             <span class="text-muted small">
                 @if (_page.TotalPages > 1) { <text>Page @_page.Page of @_page.TotalPages · </text> }
-                @_page.Total case@(_page.Total == 1 ? "" : "s")
+                @_page.Total case@(_page.Total == 1 ? "" : "s")@(_hasActiveFilter ? " · filtered" : "")
             </span>
             <div class="d-flex align-items-center gap-2 flex-wrap">
                 <label class="text-muted small mb-0">Per page
@@ -903,6 +875,24 @@ else
     }
 
     private void RemoveFilter(Action clear) { clear(); ApplyFilters(); }
+
+    // Design review P2: the count chips toggle their filter.
+    private void ToggleBreaches()
+    {
+        _classification = _classification == nameof(Classification.Breach) ? "" : nameof(Classification.Breach);
+        ApplyFilters();
+    }
+    private void ToggleSla() { _slaAtRiskOnly = !_slaAtRiskOnly; ApplyFilters(); }
+    private void ToggleOverdue()
+    {
+        _overdueOnly = !_overdueOnly;
+        // The overdue-task count includes closed cases, so the list it opens does too.
+        if (_overdueOnly) _includeClosed = true;
+        ApplyFilters();
+    }
+
+    private bool _viewsOpen;
+    private string? ActiveViewName => _views?.FirstOrDefault(IsActiveView)?.Name;
 
     // --- PROD-09: saved / shared views ---------------------------------------
     private async Task ReloadViews() => _views = await Views.ListAsync();
