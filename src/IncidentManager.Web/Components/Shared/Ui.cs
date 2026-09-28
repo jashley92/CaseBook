@@ -119,6 +119,10 @@ public static class Ui
              .ThenBy(n => n, StringComparer.OrdinalIgnoreCase)
              .ToList();
 
+    /// <summary>A true/false ARIA state as the literal the spec requires. Blazor renders a bare bool attribute as
+    /// empty when true and drops it when false, so aria-pressed="@flag" would never announce "not pressed".</summary>
+    public static string Aria(bool on) => on ? "true" : "false";
+
     public static string Label(AppRole r) => r switch
     {
         AppRole.IncidentCommander => "Incident Commander",

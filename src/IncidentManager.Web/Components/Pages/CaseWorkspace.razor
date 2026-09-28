@@ -164,7 +164,7 @@ else
             @* PROD-20: pin this case so it's one keystroke away (palette) and on My Work. Personal, any viewer. *@
             <button type="button" class="btn btn-sm @(_isPinned ? "btn-warning" : "btn-outline-secondary")"
                     title="@(_isPinned ? "Unpin this case" : "Pin this case for quick access")"
-                    aria-pressed="@_isPinned" aria-label="@(_isPinned ? "Unpin this case" : "Pin this case")"
+                    aria-pressed="@Ui.Aria(_isPinned)" aria-label="@(_isPinned ? "Unpin this case" : "Pin this case")"
                     @onclick="TogglePin">
                 <span class="bi @(_isPinned ? "bi-pin-angle-fill" : "bi-pin-angle")" aria-hidden="true"></span>
             </button>

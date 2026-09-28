@@ -250,9 +250,9 @@ else
                 <span>Relationship graph</span>
                 @* PROD-29: this case's own graph, or how it connects to other cases through shared indicators and links. *@
                 <span class="seg" role="radiogroup" aria-label="Graph view">
-                    <button type="button" class="seg-opt @(!_crossView ? "on" : "")" role="radio" aria-checked="@(!_crossView)"
+                    <button type="button" class="seg-opt @(!_crossView ? "on" : "")" role="radio" aria-checked="@Ui.Aria(!_crossView)"
                             @onclick="() => SetCrossView(false)">This case</button>
-                    <button type="button" class="seg-opt @(_crossView ? "on" : "")" role="radio" aria-checked="@_crossView"
+                    <button type="button" class="seg-opt @(_crossView ? "on" : "")" role="radio" aria-checked="@Ui.Aria(_crossView)"
                             @onclick="() => SetCrossView(true)"
                             title="This case, the indicators it shares with other cases you can see, and its case links">Across cases</button>
                 </span>
@@ -318,10 +318,10 @@ else
             <span class="seg" role="radiogroup" aria-label="Indicator display"
                   title="Defanged shows network and URL indicators as hxxp://evil[.]com so they're safe to copy.">
                 <button type="button" class="seg-opt @(!_defangView ? "on" : "")"
-                        role="radio" aria-checked="@(!_defangView)"
+                        role="radio" aria-checked="@Ui.Aria(!_defangView)"
                         @onclick="() => _defangView = false">Live</button>
                 <button type="button" class="seg-opt @(_defangView ? "on" : "")"
-                        role="radio" aria-checked="@_defangView"
+                        role="radio" aria-checked="@Ui.Aria(_defangView)"
                         @onclick="() => _defangView = true">Defanged</button>
             </span>
         </div>

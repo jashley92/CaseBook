@@ -69,9 +69,9 @@
         <div class="ms-auto d-flex align-items-end gap-2">
             <span class="seg" role="radiogroup" aria-label="Indicator display"
                   title="Defanged shows addresses and URLs as hxxp://evil[.]com, safe to copy out">
-                <button type="button" class="seg-opt @(!_defang ? "on" : "")" role="radio" aria-checked="@(!_defang)"
+                <button type="button" class="seg-opt @(!_defang ? "on" : "")" role="radio" aria-checked="@Ui.Aria(!_defang)"
                         @onclick="() => _defang = false">Live</button>
-                <button type="button" class="seg-opt @(_defang ? "on" : "")" role="radio" aria-checked="@_defang"
+                <button type="button" class="seg-opt @(_defang ? "on" : "")" role="radio" aria-checked="@Ui.Aria(_defang)"
                         @onclick="() => _defang = true">Defanged</button>
             </span>
             <a class="btn btn-sm btn-outline-primary" href="export/iocs.csv" download

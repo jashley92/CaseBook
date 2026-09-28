@@ -10,7 +10,7 @@
    NotificationBell dropdown pattern (button + backdrop + panel), CSP-safe and theme-aware. *@
 <div class="profile">
     <button type="button" class="profile-btn" @onclick="Toggle"
-            title="@DisplayName" aria-haspopup="true" aria-expanded="@_open" aria-label="Account menu">
+            title="@DisplayName" aria-haspopup="true" aria-expanded="@Ui.Aria(_open)" aria-label="Account menu">
         <span class="profile-avatar" aria-hidden="true">@Initials</span>
     </button>
 
@@ -75,10 +75,10 @@
                 <span class="profile-seg-label">Theme</span>
                 <span class="seg" role="radiogroup" aria-label="Theme">
                     <button type="button" class="seg-opt @(!_dark ? "on" : "")"
-                            role="radio" aria-checked="@(!_dark)"
+                            role="radio" aria-checked="@Ui.Aria(!_dark)"
                             @onclick="() => SetTheme(false)">Light</button>
                     <button type="button" class="seg-opt @(_dark ? "on" : "")"
-                            role="radio" aria-checked="@_dark"
+                            role="radio" aria-checked="@Ui.Aria(_dark)"
                             @onclick="() => SetTheme(true)">Dark</button>
                 </span>
             </div>
@@ -90,10 +90,10 @@
                 <span class="profile-seg-label">Rows</span>
                 <span class="seg" role="radiogroup" aria-label="List rows">
                     <button type="button" class="seg-opt @(!_compact ? "on" : "")"
-                            role="radio" aria-checked="@(!_compact)"
+                            role="radio" aria-checked="@Ui.Aria(!_compact)"
                             @onclick="() => SetDensity(false)">Comfortable</button>
                     <button type="button" class="seg-opt @(_compact ? "on" : "")"
-                            role="radio" aria-checked="@_compact"
+                            role="radio" aria-checked="@Ui.Aria(_compact)"
                             @onclick="() => SetDensity(true)">Compact</button>
                 </span>
             </div>
@@ -106,10 +106,10 @@
                 <span class="profile-seg-label">Show times in</span>
                 <span class="seg" role="radiogroup" aria-label="Time zone">
                     <button type="button" class="seg-opt @(TimeDisp.Mode == TimeDisplayMode.Utc ? "on" : "")"
-                            role="radio" aria-checked="@(TimeDisp.Mode == TimeDisplayMode.Utc)"
+                            role="radio" aria-checked="@Ui.Aria(TimeDisp.Mode == TimeDisplayMode.Utc)"
                             @onclick="() => SetTimeZone(TimeDisplayMode.Utc)">UTC</button>
                     <button type="button" class="seg-opt @(TimeDisp.Mode == TimeDisplayMode.Local ? "on" : "")"
-                            role="radio" aria-checked="@(TimeDisp.Mode == TimeDisplayMode.Local)"
+                            role="radio" aria-checked="@Ui.Aria(TimeDisp.Mode == TimeDisplayMode.Local)"
                             @onclick="() => SetTimeZone(TimeDisplayMode.Local)">Local</button>
                 </span>
             </div>
@@ -119,16 +119,16 @@
                 <span class="profile-seg-label">Clock</span>
                 <span class="seg" role="radiogroup" aria-label="Clock format">
                     <button type="button" class="seg-opt @(!TimeDisp.TwelveHourClock ? "on" : "")"
-                            role="radio" aria-checked="@(!TimeDisp.TwelveHourClock)"
+                            role="radio" aria-checked="@Ui.Aria(!TimeDisp.TwelveHourClock)"
                             @onclick="() => SetClock(false)">24h</button>
                     <button type="button" class="seg-opt @(TimeDisp.TwelveHourClock ? "on" : "")"
-                            role="radio" aria-checked="@TimeDisp.TwelveHourClock"
+                            role="radio" aria-checked="@Ui.Aria(TimeDisp.TwelveHourClock)"
                             @onclick="() => SetClock(true)">12h</button>
                 </span>
             </div>
             <div class="profile-seg-hint">Local is @TimeDisp.LocalLabel. Reports, exports and the audit trail always stay in 24-hour UTC.</div>
 
-            <button type="button" class="profile-item" role="menuitem" @onclick="() => _about = !_about" aria-expanded="@_about">
+            <button type="button" class="profile-item" role="menuitem" @onclick="() => _about = !_about" aria-expanded="@Ui.Aria(_about)">
                 <span class="bi bi-info-circle" aria-hidden="true"></span>
                 <span>About</span>
                 <span class="bi bi-chevron-@(_about ? "up" : "down") profile-item-caret" aria-hidden="true"></span>

@@ -15,7 +15,7 @@
 <AuthorizeView Policy="@Policies.EditCases">
     @* Phones: the composer folds behind a button so the notes start near the top. The editor redraws itself
        when it becomes visible (autoRefresh). *@
-    <button type="button" class="btn btn-sm btn-outline-primary mb-3 d-sm-none" aria-expanded="@ComposerShown"
+    <button type="button" class="btn btn-sm btn-outline-primary mb-3 d-sm-none" aria-expanded="@Ui.Aria(ComposerShown)"
             aria-controls="note-add-form" @onclick="() => _composerOpen = !ComposerShown">
         <span class="bi @(ComposerShown ? "bi-chevron-up" : "bi-plus-lg") me-1" aria-hidden="true"></span>@(ComposerShown ? "Hide form" : "Add note")
     </button>

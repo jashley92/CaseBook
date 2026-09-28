@@ -88,7 +88,7 @@ else
                             @if (hasRaw)
                             {
                                 <button type="button" class="btn btn-sm btn-link p-0 me-1 align-baseline"
-                                        @onclick="() => ToggleRaw(a.Sequence)" aria-expanded="@open"
+                                        @onclick="() => ToggleRaw(a.Sequence)" aria-expanded="@Ui.Aria(open)"
                                         title="@(open ? "Hide raw change data" : "Show raw change data")"
                                         aria-label="@(open ? $"Hide raw change data for entry {a.Sequence}" : $"Show raw change data for entry {a.Sequence}")">
                                     <span class="bi @(open ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>

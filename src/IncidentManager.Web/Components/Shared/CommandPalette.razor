@@ -42,7 +42,7 @@
                         grp = c.Group;
                         <div class="cmdk-group">@c.Group</div>
                     }
-                    <button type="button" role="option" aria-selected="@(idx == _selected)"
+                    <button type="button" role="option" aria-selected="@Ui.Aria(idx == _selected)"
                             class="cmdk-item @(idx == _selected ? "sel" : "")"
                             @onclick="() => Activate(idx)" @onmouseenter="() => _selected = idx">
                         <span class="bi @c.Icon cmdk-item-ic" aria-hidden="true"></span>

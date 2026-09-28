@@ -96,7 +96,7 @@
         }
     }
     @* Phones: the add-task form folds behind a button so the task list starts near the top. *@
-    <button type="button" class="btn btn-sm btn-outline-primary mb-3 d-sm-none" aria-expanded="@_addOpen"
+    <button type="button" class="btn btn-sm btn-outline-primary mb-3 d-sm-none" aria-expanded="@Ui.Aria(_addOpen)"
             aria-controls="task-add-form" @onclick="() => _addOpen = !_addOpen">
         <span class="bi @(_addOpen ? "bi-chevron-up" : "bi-plus-lg") me-1" aria-hidden="true"></span>@(_addOpen ? "Hide form" : "Add task")
     </button>
@@ -223,7 +223,7 @@ else
                         }
                         <button class="btn btn-sm @(threadOpen ? "btn-secondary" : "btn-outline-secondary")"
                                 title="@(comments.Count == 0 ? "Add a comment" : $"{comments.Count} comment{(comments.Count == 1 ? "" : "s")}")"
-                                aria-expanded="@threadOpen" @onclick="() => ToggleThread(t.Id)">
+                                aria-expanded="@Ui.Aria(threadOpen)" @onclick="() => ToggleThread(t.Id)">
                             <span class="bi bi-chat-left-text" aria-hidden="true"></span>
                             @if (comments.Count > 0) { <span class="ms-1">@comments.Count</span> }
                         </button>
