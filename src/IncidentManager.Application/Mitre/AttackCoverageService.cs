@@ -68,16 +68,17 @@ public sealed class AttackCoverageService
             .Where(c => (since is null || (c.DetectedAtUtc ?? c.CreatedAtUtc) >= since)
                         && (until is null || (c.DetectedAtUtc ?? c.CreatedAtUtc) < until))
             .ToDictionary(c => c.Id, c => new CoverageCase(c.Id, c.CaseNumber, c.Title));
-        var ids = inPeriod.Keys.ToList();
+        // Tags come back for every visible case (a subquery, not a list of ids) and are narrowed to the window here.
+        var ids = q.Select(c => c.Id);
 
-        var tags = await db.CaseTechniques.AsNoTracking()
+        var tags = (await db.CaseTechniques.AsNoTracking()
             .Where(t => ids.Contains(t.CaseId))
             .Select(t => new { t.CaseId, t.TechniqueId, t.Tactic })
-            .ToListAsync(ct);
-        var steps = await db.TimelineEntries.AsNoTracking()
+            .ToListAsync(ct)).Where(t => inPeriod.ContainsKey(t.CaseId)).ToList();
+        var steps = (await db.TimelineEntries.AsNoTracking()
             .Where(e => ids.Contains(e.CaseId) && e.Kind == TimelineKind.Event)
             .Select(e => new { e.CaseId, e.TechniqueId, Tactics = e.Tactics.Select(x => x.Tactic).ToList() })
-            .ToListAsync(ct);
+            .ToListAsync(ct)).Where(e => inPeriod.ContainsKey(e.CaseId)).ToList();
 
         // Flatten every observation to (case, tactic, technique?) — a tactic-only step still lights its column.
         var obs = new List<(Guid CaseId, MitreTactic Tactic, string? Technique)>();

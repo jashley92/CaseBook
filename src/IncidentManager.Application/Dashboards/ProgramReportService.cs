@@ -90,7 +90,8 @@ public sealed class ProgramReportService
 
         var rows = await cases.Select(c => new CaseRow(c.Id, c.Classification, c.Severity, c.Phase, c.CreatedAtUtc,
             c.OccurredAtUtc, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.ReportedAtUtc, c.ClosedAtUtc)).ToListAsync(ct);
-        var ids = rows.Select(r => r.Id).ToList();
+        // The child tables filter by a subquery over the same visible cases rather than a list of every id.
+        var ids = cases.Select(c => c.Id);
 
         var breachFirstAt = (await db.ClassificationChanges.AsNoTracking()
                 .Where(x => ids.Contains(x.CaseId) && x.To == Classification.Breach)
