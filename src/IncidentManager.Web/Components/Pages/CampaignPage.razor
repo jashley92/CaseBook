@@ -6,19 +6,19 @@
 @inject ISeverityLabels SevLabels
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 
-<PageTitle>Campaign</PageTitle>
+<PageTitle>@(AnchorNumber is { } n ? $"Campaign {n}" : "Campaign")</PageTitle>
 
 <div class="campaign">
     @if (_loaded && _rollup is null)
     {
         <h1>Campaign not found</h1>
-        <p>The case doesn't exist, or you don't have access to it. <a href="cases">Back to cases</a>.</p>
+        <p>This campaign doesn't exist, or you don't have access to its cases. <a href="campaigns">Back to campaigns</a>.</p>
     }
     else
     {
-        <PageHeader Title="Campaign rollup"
+        <PageHeader Title="@(AnchorNumber ?? "Campaign")"
                     Crumbs="_crumbs"
-                    Subtitle="@(_rollup is null ? null : $"{_rollup.MemberCount} linked case{(_rollup.MemberCount == 1 ? "" : "s")}")">
+                    Subtitle="@(_rollup is null ? null : $"Campaign of {_rollup.MemberCount} linked case{(_rollup.MemberCount == 1 ? "" : "s")}")">
             <Actions>
                 @if (_rollup is not null && _rollup.MemberCount > 1)
                 {
@@ -228,16 +228,10 @@
     private CampaignRollup? _rollup;
     private bool _loaded;
 
-    // UX-08: Cases › [anchor case] › Campaign. The middle crumb is the back affordance to the case the
-    // user came from (the anchor is the lowest-numbered member, a stable entry point from any member).
-    private IReadOnlyList<Crumb> _crumbs =>
-        _rollup is { } r
-            ? [
-                new Crumb("Cases", "cases"),
-                new Crumb(r.Members.FirstOrDefault(m => m.CaseId == r.AnchorCaseId)?.CaseNumber ?? "Case", $"cases/{r.AnchorCaseId}"),
-                new Crumb("Campaign"),
-              ]
-            : [new Crumb("Cases", "cases"), new Crumb("Campaign")];
+    // Campaigns › [campaign]. A campaign is named by its anchor case (the lowest-numbered member), as on the
+    // Campaigns list; each member case links from the table below.
+    private string? AnchorNumber => _rollup?.Members.FirstOrDefault(m => m.CaseId == _rollup.AnchorCaseId)?.CaseNumber;
+    private IReadOnlyList<Crumb> _crumbs => [new Crumb("Campaigns", "campaigns"), new Crumb(AnchorNumber ?? "Campaign")];
 
     protected override async Task OnParametersSetAsync()
     {
