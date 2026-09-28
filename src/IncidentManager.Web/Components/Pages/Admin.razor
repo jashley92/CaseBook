@@ -68,7 +68,7 @@
                                 <p class="small text-muted mb-2">
                                     A notification is delivered only when <strong>Send email</strong> is on, a
                                     <strong>From address</strong> is set, and the trigger is enabled with a reachable
-                                    recipient. This panel reflects unsaved selections. Click <strong>Save</strong> to apply them.
+                                    recipient. This panel reflects unsaved selections. Click <strong>Save changes</strong> to apply them.
                                     Reminder scans pick up changes within a few minutes.
                                 </p>
                                 <ul class="list-unstyled mb-0 small">
@@ -152,7 +152,6 @@
                                 {
                                     <span class="small text-warning-emphasis">Unsaved changes</span>
                                 }
-                                <button class="btn btn-sm btn-primary" @onclick="() => SaveGroup(group)" aria-label="@($"Save {group}")">Save</button>
                             </div>
                         </div>
                         <div class="card-body">
@@ -266,7 +265,6 @@
                                         <span class="small text-warning-emphasis">Unsaved changes</span>
                                     }
                                     <button class="btn btn-sm btn-outline-secondary" @onclick="ResetBrand">Reset to defaults</button>
-                                    <button class="btn btn-sm btn-primary" @onclick="SaveBrand">Save brand colors</button>
                                 </div>
                             </div>
                             <div class="card-body">
@@ -329,7 +327,6 @@
                                     {
                                         <span class="small text-warning-emphasis">Unsaved changes</span>
                                     }
-                                    <button class="btn btn-sm btn-primary" @onclick="SaveLayout">Save layout</button>
                                 </div>
                             </div>
                             <div class="card-body">
@@ -424,6 +421,18 @@
                             </div>
                         </div>
                     }
+                }
+
+                @* Design review Phase 3: one Save for the whole section, pinned to the bottom while anything in it is
+                   unsaved. Saving everything at once also means saving one card can't discard edits in another. *@
+                @if (SectionDirty)
+                {
+                    <div class="adm-savebar" role="region" aria-label="Unsaved changes">
+                        <span class="bi bi-pencil-square" aria-hidden="true"></span>
+                        <span>Unsaved changes in <strong>@ActiveTitle</strong></span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="DiscardSection" disabled="@_savingSection">Discard</button>
+                        <button type="button" class="btn btn-sm btn-primary" @onclick="SaveSection" disabled="@_savingSection">Save changes</button>
+                    </div>
                 }
             }
         }
@@ -1158,14 +1167,6 @@
     private void ToggleSection(int index, bool enabled) =>
         _layout[index] = _layout[index] with { Enabled = enabled };
 
-    private async Task SaveLayout()
-    {
-        try { await Settings.SetAsync("Reporting:SectionLayout", ReportLayout.Serialize(_layout)); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
-        await LoadAsync();
-        Toasts.Success("Saved report section layout.");
-    }
-
     // --- Brand colours (X-08 white-label palette) ---
     private string? _accentColor;
     private string? _inkColor;
@@ -1194,30 +1195,6 @@
         await JS.InvokeVoidAsync("imBrand.apply", css);
     }
 
-    private async Task SaveBrand()
-    {
-        _brandError = null;
-        var accent = NullIfBlank(_accentColor);
-        var ink = NullIfBlank(_inkColor);
-        if (accent is not null && !BrandPalette.IsValidHex(accent)) { _brandError = "Accent color must be a hex value like #2563eb."; return; }
-        if (ink is not null && !BrandPalette.IsValidHex(ink)) { _brandError = "Primary action color must be a hex value like #232a33."; return; }
-
-        try
-        {
-            if (accent is null) await Settings.ResetAsync("Branding:AccentColor"); else await Settings.SetAsync("Branding:AccentColor", accent);
-            if (ink is null) await Settings.ResetAsync("Branding:InkColor"); else await Settings.SetAsync("Branding:InkColor", ink);
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
-        {
-            _brandError = ex.Message;
-            return;
-        }
-
-        await LoadAsync();
-        await JS.InvokeVoidAsync("imBrand.apply", BrandPalette.BuildCss(accent, ink) ?? "");
-        Toasts.Success("Saved brand colors.");
-    }
-
     private async Task ResetBrand()
     {
         try
@@ -1233,7 +1210,7 @@
         _accentColor = null;
         _inkColor = null;
         _brandError = null;
-        await LoadAsync();
+        await ReloadKeepingEdits(dropBrand: true);
         await JS.InvokeVoidAsync("imBrand.apply", "");
         Toasts.Info("Brand colors reset to defaults.");
     }
@@ -1262,7 +1239,7 @@
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
             await Branding.SaveLogoAsync(ms.ToArray(), ct);
-            await LoadAsync();
+            await ReloadKeepingEdits();
             Toasts.Success("Report logo updated.");
         }
         catch (IOException)
@@ -1278,7 +1255,7 @@
     private async Task RemoveLogo()
     {
         await Branding.ClearLogoAsync();
-        await LoadAsync();
+        await ReloadKeepingEdits();
         Toasts.Info("Report logo removed.");
     }
 
@@ -1287,23 +1264,44 @@
 
     private void SetBool(string key, bool on) => _form[key] = on ? "true" : "false";
 
-    private async Task SaveGroup(string group)
+    // --- Section save (design review Phase 3): one Save for everything on the active section ---
+    private bool _savingSection;
+    private IEnumerable<string> SectionGroups => ActiveGroups ?? [];
+    private bool SectionHasBrand => SectionGroups.Contains("Organization");
+    private bool SectionHasLayout => SectionGroups.Contains("Report defaults");
+    private bool SectionDirty =>
+        SectionGroups.Any(GroupDirty) || (SectionHasBrand && BrandDirty) || (SectionHasLayout && LayoutDirty);
+
+    private async Task SaveSection()
     {
         if (_effective is null) return;
+        _brandError = null;
+        var saveBrand = SectionHasBrand && BrandDirty;
+        var accent = NullIfBlank(_accentColor);
+        var ink = NullIfBlank(_inkColor);
+        if (saveBrand && accent is not null && !BrandPalette.IsValidHex(accent)) { _brandError = "Accent color must be a hex value like #2563eb."; return; }
+        if (saveBrand && ink is not null && !BrandPalette.IsValidHex(ink)) { _brandError = "Primary action color must be a hex value like #232a33."; return; }
 
+        _savingSection = true;
         var changed = 0;
         try
         {
-            foreach (var s in _effective.Where(e => e.Definition.Group == group))
+            foreach (var s in _effective.Where(e => SectionGroups.Contains(e.Definition.Group)).ToList())
             {
-                var key = s.Definition.Key;
-                var current = s.Value ?? "";
-                var next = _form.GetValueOrDefault(key) ?? "";
-                if (!string.Equals(current, next, StringComparison.Ordinal))
-                {
-                    await Settings.SetAsync(key, _form.GetValueOrDefault(key));
-                    changed++;
-                }
+                if (!Differs(s.Definition.Key)) continue;
+                await Settings.SetAsync(s.Definition.Key, _form.GetValueOrDefault(s.Definition.Key));
+                changed++;
+            }
+            if (SectionHasLayout && LayoutDirty)
+            {
+                await Settings.SetAsync("Reporting:SectionLayout", ReportLayout.Serialize(_layout));
+                changed++;
+            }
+            if (saveBrand)
+            {
+                if (accent is null) await Settings.ResetAsync("Branding:AccentColor"); else await Settings.SetAsync("Branding:AccentColor", accent);
+                if (ink is null) await Settings.ResetAsync("Branding:InkColor"); else await Settings.SetAsync("Branding:InkColor", ink);
+                changed++;
             }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
@@ -1311,16 +1309,54 @@
             Toasts.Error(ex.Message);
             return;
         }
+        finally
+        {
+            _savingSection = false;
+        }
+
+        await ReloadKeepingEdits(SectionKeys(), dropBrand: SectionHasBrand, dropLayout: SectionHasLayout);
+        if (saveBrand) await JS.InvokeVoidAsync("imBrand.apply", BrandPalette.BuildCss(accent, ink) ?? "");
+        Toasts.Success($"Saved {IncidentManager.Application.Common.Plural.Of(changed, "change")} to {ActiveTitle}.");
+    }
+
+    private async Task DiscardSection()
+    {
+        var brandWasDirty = SectionHasBrand && BrandDirty;
+        _brandError = null;
+        await ReloadKeepingEdits(SectionKeys(), dropBrand: SectionHasBrand, dropLayout: SectionHasLayout);
+        if (brandWasDirty)
+            await JS.InvokeVoidAsync("imBrand.apply",
+                BrandPalette.BuildCss(NullIfBlank(SavedValue("Branding:AccentColor")), NullIfBlank(SavedValue("Branding:InkColor"))) ?? "");
+        Toasts.Info("Discarded unsaved changes.");
+    }
+
+    private HashSet<string> SectionKeys() =>
+        _effective?.Where(e => SectionGroups.Contains(e.Definition.Group)).Select(e => e.Definition.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+
+    // Reload the saved settings but carry every other unsaved edit over: the form keeps edits while the admin moves
+    // between sections, so saving, discarding or resetting one thing mustn't silently wipe the rest.
+    private async Task ReloadKeepingEdits(IReadOnlyCollection<string>? drop = null, bool dropBrand = false, bool dropLayout = false)
+    {
+        var keep = _effective?
+            .Where(e => Differs(e.Definition.Key) && (drop is null || !drop.Contains(e.Definition.Key)))
+            .ToDictionary(e => e.Definition.Key, e => _form.GetValueOrDefault(e.Definition.Key))
+            ?? new Dictionary<string, string?>();
+        var keepBrand = !dropBrand && BrandDirty ? (_accentColor, _inkColor) : ((string?, string?)?)null;
+        var keepLayout = !dropLayout && LayoutDirty ? _layout.ToList() : null;
 
         await LoadAsync();
-        Toasts.Success(changed == 0 ? $"No changes to save in {group}." : $"Saved {IncidentManager.Application.Common.Plural.Of(changed, $"{group} setting")}.");
+
+        foreach (var (k, v) in keep) _form[k] = v;
+        if (keepBrand is { } b) (_accentColor, _inkColor) = b;
+        if (keepLayout is not null) _layout = keepLayout;
     }
 
     private async Task ResetOne(string key)
     {
         try { await Settings.ResetAsync(key); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
-        await LoadAsync();
+        await ReloadKeepingEdits([key]);
         Toasts.Info("Reverted to default.");
     }
 

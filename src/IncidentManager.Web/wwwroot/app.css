@@ -2211,6 +2211,16 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
     .im-peek-btn, .im-peek-open, .im-peek { display: none !important; }
 }
 
+/* Administration settings: one Save bar per section, pinned to the bottom while anything in it is unsaved. */
+.adm-savebar {
+    position: sticky; bottom: .75rem; z-index: 20;
+    display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+    margin-top: 1rem; padding: .6rem .85rem;
+    border: 1px solid var(--im-accent-strong); border-radius: var(--im-radius);
+    background: var(--im-surface); color: var(--im-text); box-shadow: var(--im-shadow);
+}
+.adm-savebar > .bi { color: var(--im-accent-text); }
+
 /* ============================================================================
    Cases toolbar (design review P2): count chips that are also filters, then the filter controls, on one
    wrapping row; rarer toggles, active-filter chips and saved views appear below only when in use.
