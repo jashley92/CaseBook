@@ -16,7 +16,8 @@
 <p class="text-muted">
     A role is a set of <strong>permissions</strong>. Built-in <em>system</em> roles are locked. Build
     <strong>custom roles</strong> from the same permissions, and map any role to AD security groups.
-    Changes take effect at next sign-in.
+    Role and mapping changes reach signed-in users within a few minutes. Someone added to a new AD group gets its
+    access the next time they sign in to Windows.
 </p>
 
 @* ---------- Roles ---------- *@
@@ -47,7 +48,7 @@
 
             <label class="form-label mt-3">Permissions</label>
             <div class="row">
-                @foreach (var (perm, desc) in AllPermissions)
+                @foreach (var perm in Enum.GetValues<Permission>())
                 {
                     <div class="col-md-6">
                         <div class="form-check">
@@ -55,8 +56,8 @@
                                    checked="@_editing.Permissions.Contains(perm)"
                                    @onchange="e => TogglePerm(perm, (bool)(e.Value ?? false))" />
                             <label class="form-check-label" for="perm-@perm">
-                                @Ui.Label(perm)
-                                <span class="text-muted small d-block">@desc</span>
+                                @AccessSummary.Label(perm)
+                                <span class="text-muted small d-block">@Capitalized(AccessSummary.Meaning(perm))</span>
                             </label>
                         </div>
                     </div>
@@ -98,7 +99,7 @@ else
                     <td>
                         @foreach (var p in r.GetPermissions().OrderBy(x => x))
                         {
-                            <span class="im-badge im-b-info me-1 mb-1">@Ui.Label(p)</span>
+                            <span class="im-badge im-b-info me-1 mb-1">@AccessSummary.Label(p)</span>
                         }
                         @if (r.GetPermissions().Count == 0) { <span class="text-muted">—</span> }
                     </td>
@@ -284,17 +285,8 @@ else
     private string _newGroup = "";
     private string _newRole = "";
 
-    private static readonly (Permission Perm, string Desc)[] AllPermissions =
-    [
-        (Permission.ViewCases, "See cases within need-to-know scope"),
-        (Permission.ViewAllCases, "See every case (overrides need-to-know)"),
-        (Permission.EditCases, "Create and edit case content"),
-        (Permission.ChangeClassification, "Change Adverse Event / Incident / Breach"),
-        (Permission.ApproveReports, "Approve and finalize reports"),
-        (Permission.ViewRestricted, "Open restricted (need-to-know) cases"),
-        (Permission.ManageLegal, "Manage Legal/Privacy referral workflow"),
-        (Permission.Administer, "Administer the app (settings, roles, integrity)"),
-    ];
+    // The same permission names and meanings as each person's My access page.
+    private static string Capitalized(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
 
     private sealed class RoleEdit
     {

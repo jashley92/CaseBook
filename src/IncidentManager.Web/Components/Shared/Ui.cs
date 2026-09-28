@@ -119,20 +119,6 @@ public static class Ui
              .ThenBy(n => n, StringComparer.OrdinalIgnoreCase)
              .ToList();
 
-    /// <summary>A permission's name as an admin reads it ("Change classification", not ChangeClassification).</summary>
-    public static string Label(Permission p) => p switch
-    {
-        Permission.ViewCases => "View cases",
-        Permission.ViewAllCases => "View all cases",
-        Permission.EditCases => "Edit cases",
-        Permission.ChangeClassification => "Change classification",
-        Permission.ApproveReports => "Approve reports",
-        Permission.ViewRestricted => "View restricted cases",
-        Permission.ManageLegal => "Manage Legal referrals",
-        Permission.Administer => "Administer",
-        _ => p.ToString()
-    };
-
     public static string Label(AppRole r) => r switch
     {
         AppRole.IncidentCommander => "Incident Commander",
