@@ -58,7 +58,7 @@ else
                if (m.Breaches > 0) bits.Add(($"{m.Breaches} open breach{(m.Breaches == 1 ? "" : "es")}", "cases?classification=Breach"));
                if (m.SlaBreached > 0) bits.Add(($"{m.SlaBreached} SLA breach{(m.SlaBreached == 1 ? "" : "es")}", "cases?sla=true"));
                if (m.NotifyBreached > 0) bits.Add(($"{m.NotifyBreached} notification deadline{(m.NotifyBreached == 1 ? "" : "s")} overdue", "cases?notify=true"));
-               if (m.OverdueActionItems > 0) bits.Add(($"{m.OverdueActionItems} overdue task{(m.OverdueActionItems == 1 ? "" : "s")}", "cases?overdue=true")); }
+               if (m.OverdueActionItems > 0) bits.Add(($"{m.OverdueActionItems} overdue task{(m.OverdueActionItems == 1 ? "" : "s")}", "cases?overdue=true&closed=true")); }
             <span>
                 @for (var i = 0; i < bits.Count; i++)
                 {
