@@ -265,6 +265,27 @@ public static class SettingsCatalog
 
     public static bool IsEditable(string key) => ByKey.ContainsKey(key);
 
+    /// <summary>Why <paramref name="value"/> breaks the setting's rules, or null when it's acceptable.</summary>
+    public static string? Problem(SettingDefinition def, string? value)
+    {
+        try { Normalize(def, value); return null; }
+        catch (ArgumentException ex) { return ex.Message; }
+    }
+
+    /// <summary>
+    /// Administrable settings whose current value breaks today's rules, for example one saved before a limit existed
+    /// or set in appsettings. Such a value blocks saving its Administration section until it's corrected.
+    /// <paramref name="read"/> returns a key's effective value; blank values (the default applies) are skipped.
+    /// </summary>
+    public static IReadOnlyList<(SettingDefinition Definition, string Value, string Problem)> FindInvalid(Func<string, string?> read) =>
+        Editable
+            .Select(d => (Definition: d, Value: read(d.Key)))
+            .Where(x => !string.IsNullOrWhiteSpace(x.Value))
+            .Select(x => (x.Definition, Value: x.Value!, Problem: Problem(x.Definition, x.Value)))
+            .Where(x => x.Problem is not null)
+            .Select(x => (x.Definition, x.Value, x.Problem!))
+            .ToList();
+
     /// <summary>A time zone's name as the reporting time zone list shows it, or its id when it isn't listed.</summary>
     public static string TimeZoneLabel(TimeZoneInfo zone) =>
         ByKey["Organization:TimeZone"].Options!.FirstOrDefault(o => string.Equals(o.Value, zone.Id, StringComparison.OrdinalIgnoreCase))?.Label

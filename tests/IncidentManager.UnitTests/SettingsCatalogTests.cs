@@ -84,6 +84,25 @@ public class SettingsCatalogTests
             .Where(o => !TimeZoneInfo.TryFindSystemTimeZoneById(o.Value, out _)).Should().BeEmpty();
 
     [Fact]
+    public void FindInvalid_reports_values_that_break_todays_rules_and_skips_blanks()
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["Sla:Containment:High"] = "9000",          // over the one-year cap
+            ["Sla:Containment:Low"] = "72",             // fine
+            ["Sla:AtRiskThresholdPercent"] = "0",       // below 1
+            ["Organization:TimeZone"] = "Mars/Base",    // not a listed choice
+            ["Sla:Resolution:Low"] = "",                // blank: the default applies
+        };
+
+        var invalid = SettingsCatalog.FindInvalid(k => values.GetValueOrDefault(k));
+
+        invalid.Select(i => i.Definition.Key).Should().BeEquivalentTo(
+            ["Sla:Containment:High", "Sla:AtRiskThresholdPercent", "Organization:TimeZone"]);
+        invalid.Single(i => i.Definition.Key == "Sla:Containment:High").Problem.Should().Contain("8,760");
+    }
+
+    [Fact]
     public void Normalize_multitext_trims_lines_and_drops_blanks()
     {
         var input = "  a@x.com \r\n\r\n b@x.com  \n";

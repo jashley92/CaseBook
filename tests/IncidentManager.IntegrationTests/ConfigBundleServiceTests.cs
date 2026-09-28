@@ -150,6 +150,33 @@ public sealed class ConfigBundleServiceTests : IDisposable
         _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
     }
 
+    // A bundle carries settings from another instance (or an older release); each must pass today's rules. The preview
+    // rejects it with every problem listed, and applying it anyway writes nothing.
+    [Fact]
+    public async Task A_bundle_with_a_setting_outside_its_limits_is_rejected_at_preview_and_import()
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var bad = live with
+        {
+            Settings = live.Settings.Where(s => s.Key is not ("Sla:Containment:High" or "Sla:AtRiskThresholdPercent"))
+                .Append(new ConfigSetting("Sla:Containment:High", "9000"))
+                .Append(new ConfigSetting("Sla:AtRiskThresholdPercent", "101"))
+                .Append(new ConfigSetting("Reporting:OrganizationName", "Renamed by the bundle")).ToList(),
+        };
+
+        var preview = () => svc.PreviewAsync(bad);
+        (await preview.Should().ThrowAsync<ArgumentException>())
+            .Which.Message.Should().Contain("Containment: High (hours)").And.Contain("At-risk threshold (%)");
+
+        var import = () => svc.ImportAsync(bad);
+        await import.Should().ThrowAsync<ArgumentException>();
+        (await db.AppSettings.AsNoTracking().AnyAsync(s => s.Value == "Renamed by the bundle"))
+            .Should().BeFalse("nothing from a rejected bundle is written");
+    }
+
     [Fact]
     public async Task Reimporting_an_unchanged_bundle_shows_no_changes()
     {

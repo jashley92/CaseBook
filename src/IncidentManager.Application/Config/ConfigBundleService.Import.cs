@@ -78,6 +78,7 @@ public sealed partial class ConfigBundleService
     {
         var live = await BuildBundleAsync(ct);
         await CheckReportTemplatesAsync(incoming, ct);   // a bad template stops the import here, before the preview
+        CheckSettings(incoming);                         // so does a setting outside its limits
         var items = new List<ConfigDiffItem>();
 
         Diff("Setting", incoming.Settings.Where(IsImportableSetting), live.Settings, s => s.Key, items);
@@ -128,6 +129,17 @@ public sealed partial class ConfigBundleService
     private static bool IsImportableSetting(ConfigSetting s) =>
         SettingsCatalog.IsEditable(s.Key) || s.Key.StartsWith(TaxonomyCatalog.KeyPrefix, StringComparison.OrdinalIgnoreCase);
 
+    // Every importable setting must pass the same rules as the Administration form (limits, listed choices). Throws with
+    // every problem listed, so nothing is written and the admin sees them all at the preview.
+    private static void CheckSettings(ConfigBundle bundle)
+    {
+        var problems = bundle.Settings.Where(IsImportableSetting)
+            .Select(s => SettingsCatalog.ByKey.TryGetValue(s.Key, out var def) ? SettingsCatalog.Problem(def, s.Value) : null)
+            .OfType<string>().ToList();
+        if (problems.Count > 0)
+            throw new ArgumentException("This bundle can't be imported: " + string.Join(" ", problems));
+    }
+
     /// <summary>
     /// Applies a bundle as a non-destructive upsert (nothing is deleted). Existing items are matched by natural
     /// key and updated only when they differ; missing items are created. System roles' code-owned permissions
@@ -142,6 +154,7 @@ public sealed partial class ConfigBundleService
         var addedMappings = new List<string>();
 
         var templateFiles = await CheckReportTemplatesAsync(bundle, ct);
+        CheckSettings(bundle);
 
         using var db = _factory.CreateDbContext();
         var now = _clock.UtcNow;

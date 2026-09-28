@@ -1109,6 +1109,11 @@
         checks.Add(WritableCheck("Report output writable", Config["ReportOutput:RootPath"]));
         checks.Add(new HealthCheck("Seal signing key present", SigningKeyPresent(),
             SigningKeyPresent() ? Signer.KeyId : "missing, so seals can't be signed"));
+        // A value saved before today's limits (or set in appsettings) blocks saving its section until corrected.
+        var invalid = SettingsCatalog.FindInvalid(key => Config[key]);
+        checks.Add(new HealthCheck("Settings within limits", invalid.Count == 0, invalid.Count == 0
+            ? "every setting passes its rules"
+            : string.Join(" ", invalid.Select(i => $"{i.Problem} It's currently {i.Value}."))));
         checks.Add(new HealthCheck("Schema up to date", _pendingMigrations is { Count: 0 },
             _pendingMigrations is { Count: > 0 } ? $"{_pendingMigrations.Count} pending" : "no pending migrations"));
 
