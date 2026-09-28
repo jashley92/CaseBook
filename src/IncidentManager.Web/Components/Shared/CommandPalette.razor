@@ -258,6 +258,10 @@
                         $"{Ui.Label(it.Classification)} · {SevLabels.For(it.Severity)} · {Ui.Label(it.Phase)}",
                         () => GoTo($"cases/{caseId}")));
                 }
+                // More matches than fit here (an indicator on hundreds of cases, say): hand off to the case list.
+                if (page.Total > page.Items.Count)
+                    items.Add(new Cmd("Cases", "bi-search", $"See all {page.Total} matching cases", "Opens the case list, closed cases included",
+                        () => GoTo($"cases?q={Uri.EscapeDataString(q)}&closed=true")));
             }
             catch { /* transient — keep the static matches already gathered */ }
         }
