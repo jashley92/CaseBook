@@ -368,7 +368,7 @@ else
     @* PROD-25: keyboard row navigation. Focus the table (click or Tab) then j/k (or ↑/↓) move the cursor and
        Enter/o opens it — no default to prevent, so Tab still leaves the table. (x-to-select waits on E-18's
        metered bulk bar to have something to act on.) *@
-    <table class="table table-hover align-middle im-table im-case-list" tabindex="0" @onkeydown="OnListKey"
+    <table class="table table-hover align-middle im-table im-list im-case-list" tabindex="0" @onkeydown="OnListKey"
            aria-label="Case list. Use j and k to move, Enter to open.">
         <thead>
             <tr>
@@ -379,22 +379,22 @@ else
                                checked="@PageAllSelected" @onchange="e => TogglePage((bool)(e.Value ?? false))" />
                     </th>
                 }
-                <th>Case #</th>
+                @SortTh("Case #", CaseSort.CaseNumber)
                 <th>Title</th>
                 <th>Classification</th>
-                <th>Phase</th>
-                <th>Severity</th>
-                <th>SLA</th>
+                @SortTh("Phase", CaseSort.Phase)
+                @SortTh("Severity", CaseSort.Severity)
+                @SortTh("SLA", CaseSort.Sla)
                 <th class="case-cell-owner">Owner</th>
                 <th class="case-cell-origin">Origin</th>
-                <th>Opened</th>
+                @SortTh("Opened", CaseSort.Opened)
             </tr>
         </thead>
         <tbody>
             @for (var i = 0; i < _page.Items.Count; i++)
             {
                 var c = _page.Items[i];
-                <tr @key="c.Id" class="@(i == _cursor ? "table-active" : "") @(_selected.Contains(c.Id) ? "im-row-selected" : "") @(_flashCaseIds.Contains(c.Id) ? "im-enter im-flash" : "")">
+                <tr @key="c.Id" class="@(i == _cursor ? "table-active" : "") @EdgeClass(c.Severity) @(_selected.Contains(c.Id) ? "im-row-selected" : "") @(_flashCaseIds.Contains(c.Id) ? "im-enter im-flash" : "")">
                     @if (BulkEligible)
                     {
                         var atCap = !_selected.Contains(c.Id) && _selected.Count >= MaxBulk;
@@ -408,11 +408,13 @@ else
                         <code title="@c.CaseNumber">@c.CaseNumber</code>
                         @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
                     </td>
-                    <td class="case-cell-title">
-                        <a href="cases/@c.Id" class="link-body-emphasis text-decoration-none fw-medium case-title" title="@c.Title"><span class="im-clamp-2">@c.Title</span></a>
-                        @if (c.LegalReferred) { <span class="im-badge im-b-neutral ms-1" title="Referred to Legal / Privacy">Legal</span> }
-                        @if (c.LegalHold) { <span class="im-badge im-b-danger ms-1" title="Under a legal hold: preserve, don't delete">Hold</span> }
-                        @if (c.IsExercise) { <span class="im-badge im-b-info ms-1" title="Exercise case, excluded from dashboards, reminders and feeds">Exercise</span> }
+                    <td class="case-cell-title im-cell-fill">
+                        <div class="case-title-line">
+                            <a href="cases/@c.Id" class="link-body-emphasis text-decoration-none fw-medium case-title im-ellipsis" title="@c.Title">@c.Title</a>
+                            @if (c.LegalReferred) { <span class="im-badge im-b-neutral" title="Referred to Legal / Privacy">Legal</span> }
+                            @if (c.LegalHold) { <span class="im-badge im-b-danger" title="Under a legal hold: preserve, don't delete">Hold</span> }
+                            @if (c.IsExercise) { <span class="im-badge im-b-info" title="Exercise case, excluded from dashboards, reminders and feeds">Exercise</span> }
+                        </div>
                     </td>
                     <td><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
                     <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
@@ -428,7 +430,7 @@ else
                         else
                         {
                             <span class="@Ui.SlaBadge(sla.State)" title="@SlaTitle(sla)">
-                                <span class="bi @Ui.SlaGlyph(sla.State)" aria-hidden="true"></span> @Ui.SlaLabel(sla.State)
+                                <span class="bi @Ui.SlaGlyph(sla.State)" aria-hidden="true"></span> @SlaText(sla)
                             </span>
                         }
                     </td>
@@ -617,6 +619,9 @@ else
     // FR-10: pagination position + page size live in the URL too, so a refresh / dropped circuit / bookmark
     // keeps the reader on the same page instead of snapping back to page 1.
     [SupplyParameterFromQuery(Name = "page")] public int? QPage { get; set; }
+    // Design review P1: column sort, in the URL like the filters (omitted at the default, newest first).
+    [SupplyParameterFromQuery(Name = "sort")] public string? QSort { get; set; }
+    [SupplyParameterFromQuery(Name = "dir")] public string? QDir { get; set; }
     [SupplyParameterFromQuery(Name = "size")] public int? QPageSize { get; set; }
 
     private CasePage? _page;
@@ -778,6 +783,10 @@ else
         // FR-10: page position + size come from the URL, not just component state. A filter change navigates
         // without the `page` param (see CurrentParams), so it naturally falls back to page 1; a paging or
         // page-size change navigates *with* these params, landing here to reload at that position.
+        _sort = SortKeys.FirstOrDefault(k => string.Equals(k.Value, QSort, StringComparison.OrdinalIgnoreCase)).Key;
+        _sortDesc = QDir is "asc" ? false : QDir is "desc" ? true : CaseSorts.DefaultDescending(_sort);
+        _filter.Sort = _sort;
+        _filter.SortDescending = _sortDesc;
         _pageSize = PageSizeOptions.Contains(QPageSize ?? 0) ? QPageSize!.Value : DefaultPageSize;
         _filter.PageSize = _pageSize;
         _filter.Page = QPage is int qp && qp > 0 ? qp : 1;
@@ -814,7 +823,44 @@ else
         // FR-10: page size persists across filter changes (omitted at the default to keep URLs clean). `page`
         // is deliberately NOT here — a filter change should restart at page 1; paging adds it in GoToPage.
         ["size"] = _pageSize == DefaultPageSize ? null : _pageSize.ToString(),
+        ["sort"] = _sort == CaseSort.Opened ? null : SortKeys[_sort],
+        ["dir"] = _sortDesc == CaseSorts.DefaultDescending(_sort) ? null : (_sortDesc ? "desc" : "asc"),
     };
+
+    private CaseSort _sort = CaseSort.Opened;
+    private bool _sortDesc = true;
+    private static readonly Dictionary<CaseSort, string> SortKeys = new()
+    {
+        [CaseSort.Opened] = "opened", [CaseSort.Updated] = "updated", [CaseSort.Severity] = "severity",
+        [CaseSort.Sla] = "sla", [CaseSort.Phase] = "phase", [CaseSort.CaseNumber] = "case",
+    };
+
+    // A header click sorts by that column in its natural direction; clicking the sorted column flips it.
+    private void SetSort(CaseSort sort)
+    {
+        if (_sort == sort) _sortDesc = !_sortDesc;
+        else { _sort = sort; _sortDesc = CaseSorts.DefaultDescending(sort); }
+        ApplyFilters();
+    }
+
+    private RenderFragment SortTh(string label, CaseSort sort)
+    {
+        var on = _sort == sort;
+        var ariaSort = on ? (_sortDesc ? "descending" : "ascending") : "none";
+        var icon = on ? (_sortDesc ? "bi-arrow-down" : "bi-arrow-up") : "bi-arrow-down-up";
+        return @<th aria-sort="@ariaSort"><button type="button" class="im-sort @(on ? "on" : "")" @onclick="() => SetSort(sort)">@label<span class="bi @icon" aria-hidden="true"></span></button></th>;
+    }
+
+    private static string EdgeClass(Severity s) => s switch
+    {
+        Severity.Critical => "im-edge-critical",
+        Severity.High => "im-edge-high",
+        _ => ""
+    };
+
+    // Late or nearly late clocks say by how much; the rest keep their one-word state.
+    private static string SlaText(SlaStatus st) =>
+        st.State is SlaState.Breached or SlaState.AtRisk && Ui.SlaTiming(st) is { Length: > 0 } t ? t : Ui.SlaLabel(st.State);
 
     // A select/search change rewrites the query string; OnParametersSetAsync then reloads. We always
     // target the /cases base so scope lives in one place (?scope=mine), normalising the /cases/mine alias.

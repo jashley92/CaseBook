@@ -11,6 +11,19 @@ window.imTheme = (function () {
     return { toggle: toggle, apply: apply, current: current };
 })();
 
+// List row density: comfortable (default) or compact. Applied before paint by theme-init.js; CSS keys off
+// documentElement's data-density="compact".
+window.imDensity = (function () {
+    const PREF = 'im-density';
+    function current() { return document.documentElement.getAttribute('data-density') === 'compact' ? 'compact' : 'comfortable'; }
+    function apply(d) {
+        if (d === 'compact') { document.documentElement.setAttribute('data-density', 'compact'); }
+        else { document.documentElement.removeAttribute('data-density'); }
+        try { localStorage.setItem(PREF, d === 'compact' ? 'compact' : 'comfortable'); } catch (e) { /* private mode */ }
+    }
+    return { apply: apply, current: current };
+})();
+
 // Sidebar collapse (icons-only). The initial state is applied by theme-init.js in <head> before
 // paint; this flips and persists it. CSS keys off documentElement's data-nav="collapsed".
 window.imNav = (function () {

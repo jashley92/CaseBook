@@ -117,9 +117,36 @@ public sealed class CaseFilter
     /// <summary>Free text matched across case number, title, summary, entity/IOC values, and note bodies.</summary>
     public string? Search { get; set; }
 
+    /// <summary>Column the list is ordered by (newest first when unset).</summary>
+    public CaseSort Sort { get; set; } = CaseSort.Opened;
+
+    /// <summary>Order direction. Each column's natural direction is <see cref="CaseSorts.DefaultDescending"/>.</summary>
+    public bool SortDescending { get; set; } = true;
+
     /// <summary>1-based page number.</summary>
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 25;
+}
+
+/// <summary>The case list's sortable columns.</summary>
+public enum CaseSort
+{
+    Opened,
+    Updated,
+    Severity,
+    Sla,
+    Phase,
+    CaseNumber
+}
+
+public static class CaseSorts
+{
+    /// <summary>The direction a column sorts in first: worst or newest at the top, A–Z for text.</summary>
+    public static bool DefaultDescending(CaseSort sort) => sort switch
+    {
+        CaseSort.Sla or CaseSort.Phase or CaseSort.CaseNumber => false,
+        _ => true
+    };
 }
 
 /// <summary>A page of case rows plus the total matching count, for paged list views.</summary>

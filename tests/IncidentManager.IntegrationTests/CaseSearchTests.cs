@@ -256,5 +256,47 @@ public sealed class CaseSearchTests : IDisposable
         (await svc.FindIdByNumberAsync("  ")).Should().BeNull();
     }
 
+    [Fact]
+    public async Task The_list_sorts_by_severity_or_by_how_late_the_sla_clock_is()
+    {
+        var now = _clock.UtcNow;
+        IncidentManager.Domain.Entities.Case Open(int seq, string name, Severity sev, double hoursSinceDetection)
+        {
+            var c = IncidentManager.Domain.Entities.Case.Open(2026, seq, name, name, Classification.Incident, sev,
+                CaseOrigin.InternalDetection, "system", now.AddHours(-hoursSinceDetection));
+            c.DetectedAtUtc = now.AddHours(-hoursSinceDetection);
+            return c;
+        }
+        await using (var db = NewContext())
+        {
+            db.Cases.AddRange(
+                Open(1, "Medium late", Severity.Medium, 100),   // 72h target: 28h over
+                Open(2, "Critical fresh", Severity.Critical, 1), // 4h target: 3h left
+                Open(3, "High late", Severity.High, 30),        // 24h target: 6h over
+                Open(4, "Low untimed", Severity.Low, 2));       // no target
+            await db.SaveChangesAsync();
+        }
+
+        var targets = new SlaTargets(new Dictionary<(SlaClock, Severity), int>
+        {
+            [(SlaClock.Containment, Severity.Critical)] = 4,
+            [(SlaClock.Containment, Severity.High)] = 24,
+            [(SlaClock.Containment, Severity.Medium)] = 72,
+        }, SlaPolicy.DefaultAtRiskThresholdPercent);
+        await using (var db = NewContext())
+        {
+            var svc = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+                new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(targets));
+
+            (await svc.ListAsync(new CaseFilter { Sort = CaseSort.Sla, SortDescending = false })).Items.Select(i => i.Title)
+                .Should().Equal("Medium late", "High late", "Critical fresh", "Low untimed");
+            (await svc.ListAsync(new CaseFilter { Sort = CaseSort.Severity })).Items.Select(i => i.Title)
+                .Should().Equal("Critical fresh", "High late", "Medium late", "Low untimed");
+            var page2 = await svc.ListAsync(new CaseFilter { Sort = CaseSort.Sla, SortDescending = false, Page = 2, PageSize = 2 });
+            page2.Items.Select(i => i.Title).Should().Equal("Critical fresh", "Low untimed");
+            page2.Total.Should().Be(4);
+        }
+    }
+
     public void Dispose() => _connection.Dispose();
 }

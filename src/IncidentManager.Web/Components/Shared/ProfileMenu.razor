@@ -83,6 +83,21 @@
                 </span>
             </div>
 
+            @* Design review P1: list row density. Comfortable suits most people; compact fits about a quarter more
+               rows for long triage sessions. *@
+            <div class="profile-seg-row" role="group" aria-label="List rows">
+                <span class="bi bi-list" aria-hidden="true"></span>
+                <span class="profile-seg-label">Rows</span>
+                <span class="seg" role="radiogroup" aria-label="List rows">
+                    <button type="button" class="seg-opt @(!_compact ? "on" : "")"
+                            role="radio" aria-checked="@(!_compact)"
+                            @onclick="() => SetDensity(false)">Comfortable</button>
+                    <button type="button" class="seg-opt @(_compact ? "on" : "")"
+                            role="radio" aria-checked="@_compact"
+                            @onclick="() => SetDensity(true)">Compact</button>
+                </span>
+            </div>
+
             @* U-29: on-screen time-zone display. A segmented toggle showing both modes so the current one is
                explicit — not an action label. Storage/reports/audit stay UTC; this only reformats timestamps
                in the working views, each labelled with its zone. *@
@@ -196,6 +211,8 @@
             _about = false;
             // Reflect the live theme so the toggle label is right whichever way it was last set.
             try { _dark = string.Equals(await JS.InvokeAsync<string>("imTheme.current"), "dark", StringComparison.OrdinalIgnoreCase); }
+            catch (JSException) { }
+            try { _compact = string.Equals(await JS.InvokeAsync<string>("imDensity.current"), "compact", StringComparison.OrdinalIgnoreCase); }
             catch { /* interop not ready — label defaults to "dark" */ }
         }
     }
@@ -211,6 +228,14 @@
     }
 
     // U-48: switch the on-screen clock and remember it in the browser; Changed re-renders every stamp.
+    private bool _compact;
+    private async Task SetDensity(bool compact)
+    {
+        if (_compact == compact) return;
+        try { await JS.InvokeVoidAsync("imDensity.apply", compact ? "compact" : "comfortable"); _compact = compact; }
+        catch (JSException) { }
+    }
+
     private async Task SetClock(bool twelveHour)
     {
         if (TimeDisp.TwelveHourClock == twelveHour) return;

@@ -196,10 +196,11 @@ public sealed class CaseService
             var now = _clock.UtcNow;
             var targets = _sla.Current;
             var rows = await q
-                .Select(c => new { c.Id, c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc })
+                .Select(c => new { c.Id, c.Severity, c.Phase, c.Classification, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc })
                 .ToListAsync(ct);
+            // Classification included so Breach-specific targets count, as on the list's SLA badge.
             var flaggedIds = rows.Where(r => Sla.SlaPolicy
-                    .Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now)
+                    .Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification)
                     .NeedsAttention)
                 .Select(r => r.Id).ToList();
             q = q.Where(c => flaggedIds.Contains(c.Id));
@@ -269,11 +270,64 @@ public sealed class CaseService
         var page = filter.Page < 1 ? 1 : filter.Page;
         var size = filter.PageSize < 1 ? 25 : filter.PageSize;
 
-        var items = await q
-            .OrderByDescending(c => c.CreatedAtUtc)
-            .Skip((page - 1) * size)
-            .Take(size)
-            .Select(c => new CaseListItem(
+        List<CaseListItem> items;
+        if (filter.Sort == CaseSort.Sla)
+        {
+            // SLA position is a per-severity time calculation against the administered targets, so it's ranked in
+            // memory (as the at-risk filter is) and only the page's rows are then loaded.
+            var pageIds = await SlaOrderedIdsAsync(q, filter.SortDescending, (page - 1) * size, size, ct);
+            var rows = await q.Where(c => pageIds.Contains(c.Id)).Select(ListItem).ToListAsync(ct);
+            items = rows.OrderBy(r => pageIds.IndexOf(r.Id)).ToList();
+        }
+        else
+        {
+            items = await Ordered(q, filter.Sort, filter.SortDescending)
+                .Skip((page - 1) * size)
+                .Take(size)
+                .Select(ListItem)
+                .ToListAsync(ct);
+        }
+
+        return new CasePage(items, total, page, size);
+    }
+
+    private static IQueryable<Case> Ordered(IQueryable<Case> q, CaseSort sort, bool desc) => sort switch
+    {
+        CaseSort.Severity => desc
+            ? q.OrderByDescending(c => c.Severity).ThenByDescending(c => c.CreatedAtUtc)
+            : q.OrderBy(c => c.Severity).ThenByDescending(c => c.CreatedAtUtc),
+        CaseSort.Phase => desc
+            ? q.OrderByDescending(c => c.Phase).ThenByDescending(c => c.Severity)
+            : q.OrderBy(c => c.Phase).ThenByDescending(c => c.Severity),
+        CaseSort.CaseNumber => desc ? q.OrderByDescending(c => c.CaseNumber) : q.OrderBy(c => c.CaseNumber),
+        CaseSort.Updated => desc
+            ? q.OrderByDescending(c => c.ModifiedAtUtc ?? c.CreatedAtUtc)
+            : q.OrderBy(c => c.ModifiedAtUtc ?? c.CreatedAtUtc),
+        _ => desc ? q.OrderByDescending(c => c.CreatedAtUtc) : q.OrderBy(c => c.CreatedAtUtc),
+    };
+
+    // Running clocks first, by time left (most overdue first ascending); cases with no running clock follow,
+    // newest first. Descending reverses the running clocks only.
+    private async Task<List<Guid>> SlaOrderedIdsAsync(IQueryable<Case> q, bool desc, int skip, int take, CancellationToken ct)
+    {
+        var now = _clock.UtcNow;
+        var targets = _sla.Current;
+        var rows = await q
+            .Select(c => new { c.Id, c.Severity, c.Phase, c.Classification, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.CreatedAtUtc })
+            .ToListAsync(ct);
+        var ranked = rows.Select(r => new
+        {
+            r.Id,
+            r.CreatedAtUtc,
+            Status = Sla.SlaPolicy.Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification)
+        }).ToList();
+        var running = ranked.Where(r => r.Status.IsActive && r.Status.Remaining is not null);
+        running = desc ? running.OrderByDescending(r => r.Status.Remaining) : running.OrderBy(r => r.Status.Remaining);
+        var rest = ranked.Where(r => !(r.Status.IsActive && r.Status.Remaining is not null)).OrderByDescending(r => r.CreatedAtUtc);
+        return running.Concat(rest).Skip(skip).Take(take).Select(r => r.Id).ToList();
+    }
+
+    private static readonly System.Linq.Expressions.Expression<Func<Case, CaseListItem>> ListItem = c => new CaseListItem(
                 c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, c.Severity, c.Origin,
                 c.IsRestricted, c.LegalReferral.IsReferred, c.LegalHold, c.CreatedAtUtc, c.IncidentCommander,
                 c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.IsExercise,
@@ -283,11 +337,7 @@ public sealed class CaseService
                 Math.Max(0, c.Assignments.Count(a => a.Role != CaseAssignmentRole.Observer) - 1),
                 c.Assignments.Where(a => a.Role != CaseAssignmentRole.Observer)
                     .OrderBy(a => a.Role).ThenBy(a => a.AssignedAtUtc)
-                    .Select(a => a.UserId).FirstOrDefault()))
-            .ToListAsync(ct);
-
-        return new CasePage(items, total, page, size);
-    }
+                    .Select(a => a.UserId).FirstOrDefault());
 
     /// <summary>Loads a case with all detail for the workspace, enforcing access scoping.</summary>
     public async Task<Case?> GetDetailAsync(Guid id, CancellationToken ct = default)

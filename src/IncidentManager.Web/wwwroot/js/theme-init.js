@@ -10,6 +10,11 @@
         document.documentElement.setAttribute('data-bs-theme', 'light');
     }
     try {
+        if (localStorage.getItem('im-density') === 'compact') {
+            document.documentElement.setAttribute('data-density', 'compact');
+        }
+    } catch (e) { /* private mode — comfortable rows */ }
+    try {
         if (localStorage.getItem('im-nav') === 'collapsed') {
             document.documentElement.setAttribute('data-nav', 'collapsed');
         }
