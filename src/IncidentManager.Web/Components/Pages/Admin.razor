@@ -23,8 +23,13 @@
 @inject IncidentManager.Application.Abstractions.ISecretResolutionHealth SecretHealth
 @inject ISeverityLabels SevLabels
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 
 <PageTitle>Administration</PageTitle>
+
+@* Edits are kept while moving between settings sections (one page), but leaving for anywhere else drops
+   them, so ask first. The browser's own prompt covers refresh and tab close. *@
+<NavigationLock OnBeforeInternalNavigation="OnBeforeLeave" ConfirmExternalNavigation="@HasUnsavedChanges" />
 
 <PageHeader Title="@ActiveTitle"
            Subtitle="@ActiveSubtitle">
@@ -142,7 +147,13 @@
                     <div class="card mb-3">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <span>@group</span>
-                            <button class="btn btn-sm btn-primary" @onclick="() => SaveGroup(group)" aria-label="@($"Save {group}")">Save</button>
+                            <div class="d-flex align-items-center gap-2">
+                                @if (GroupDirty(group))
+                                {
+                                    <span class="small text-warning-emphasis">Unsaved changes</span>
+                                }
+                                <button class="btn btn-sm btn-primary" @onclick="() => SaveGroup(group)" aria-label="@($"Save {group}")">Save</button>
+                            </div>
                         </div>
                         <div class="card-body">
                             @foreach (var s in _effective.Where(e => e.Definition.Group == group && !e.Definition.CustomEditor))
@@ -249,8 +260,12 @@
                         <div class="card mb-3">
                             <div class="card-header d-flex justify-content-between align-items-center">
                                 <span><span class="bi bi-palette me-1"></span>Brand colors</span>
-                                <div>
-                                    <button class="btn btn-sm btn-outline-secondary me-2" @onclick="ResetBrand">Reset to defaults</button>
+                                <div class="d-flex align-items-center gap-2">
+                                    @if (BrandDirty)
+                                    {
+                                        <span class="small text-warning-emphasis">Unsaved changes</span>
+                                    }
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="ResetBrand">Reset to defaults</button>
                                     <button class="btn btn-sm btn-primary" @onclick="SaveBrand">Save brand colors</button>
                                 </div>
                             </div>
@@ -308,7 +323,13 @@
                         <div class="card mb-3">
                             <div class="card-header d-flex justify-content-between align-items-center">
                                 <span><span class="bi bi-list-ol me-1"></span>Report sections</span>
-                                <button class="btn btn-sm btn-primary" @onclick="SaveLayout">Save layout</button>
+                                <div class="d-flex align-items-center gap-2">
+                                    @if (LayoutDirty)
+                                    {
+                                        <span class="small text-warning-emphasis">Unsaved changes</span>
+                                    }
+                                    <button class="btn btn-sm btn-primary" @onclick="SaveLayout">Save layout</button>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <p class="small text-muted">
@@ -777,6 +798,43 @@
 
 @code {
     private ConfirmDialog _confirm = null!;
+
+    // --- Unsaved changes ---
+    private bool Differs(string key) =>
+        !string.Equals(_form.GetValueOrDefault(key) ?? "", SavedValue(key) ?? "", StringComparison.Ordinal);
+    private bool GroupDirty(string group) =>
+        _effective?.Any(e => e.Definition.Group == group && Differs(e.Definition.Key)) ?? false;
+    private bool BrandDirty =>
+        _effective is not null
+        && (NullIfBlank(_accentColor) != NullIfBlank(SavedValue("Branding:AccentColor"))
+            || NullIfBlank(_inkColor) != NullIfBlank(SavedValue("Branding:InkColor")));
+    private bool LayoutDirty =>
+        _effective is not null
+        && ReportLayout.Serialize(_layout) != ReportLayout.Serialize(ReportLayout.Parse(SavedValue("Reporting:SectionLayout")).ToList());
+    private bool HasUnsavedChanges =>
+        (_effective?.Any(e => Differs(e.Definition.Key)) ?? false) || BrandDirty || LayoutDirty;
+
+    private bool _leaveConfirmed;
+    private void OnBeforeLeave(LocationChangingContext ctx)
+    {
+        if (_leaveConfirmed) { _leaveConfirmed = false; return; }
+        var path = Nav.ToBaseRelativePath(ctx.TargetLocation).Split('?', '#')[0].TrimEnd('/');
+        if (path is "admin" || path.StartsWith("admin/settings", StringComparison.OrdinalIgnoreCase)) return; // same page
+        if (path.Contains("session-expired", StringComparison.OrdinalIgnoreCase) || !HasUnsavedChanges) return;
+        ctx.PreventNavigation();
+        var target = ctx.TargetLocation;
+        _confirm.Ask(this, "Leave without saving?",
+            "You have settings changes that haven't been saved. If you leave now, they're lost.",
+            "Leave without saving", async () =>
+            {
+                // Drop a live palette preview so the next page shows the saved colors.
+                if (BrandDirty)
+                    await JS.InvokeVoidAsync("imBrand.apply",
+                        BrandPalette.BuildCss(NullIfBlank(SavedValue("Branding:AccentColor")), NullIfBlank(SavedValue("Branding:InkColor"))) ?? "");
+                _leaveConfirmed = true;
+                Nav.NavigateTo(target);
+            });
+    }
 
     private void ConfirmRemoveLogo() => _confirm.Ask(this, "Remove logo",
         "Remove the report logo? New reports won't show it. Reports already generated keep it.",
