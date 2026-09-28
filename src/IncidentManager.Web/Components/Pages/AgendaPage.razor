@@ -193,7 +193,9 @@
         "You'll need to subscribe again with the new link.",
         "Reset link", async () => { SetFeed(await Feeds.ResetMyLinkAsync()); Toasts.Success("New calendar link ready. Re-subscribe with it."); });
 
-    private async Task Load() => _board = await Svc.GetBoardAsync(string.IsNullOrEmpty(_owner) ? null : _owner);
+    // Today / this week follow the zone the viewer's timestamps are shown in (UTC, or their local zone), so the
+    // groups agree with the times on each row.
+    private async Task Load() => _board = await Svc.GetBoardAsync(string.IsNullOrEmpty(_owner) ? null : _owner, TimeDisp.Zone);
 
     private async Task OnOwnerChanged(ChangeEventArgs e) => await ChangeOwner(e.Value?.ToString() ?? "");
 

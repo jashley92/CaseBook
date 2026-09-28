@@ -59,7 +59,8 @@ public sealed class AgendaService
     /// Builds the board for the current user. <paramref name="ownerFilter"/> is null/empty for everyone,
     /// <see cref="MineOwnerFilter"/> for the caller's own items, or a specific owner value.
     /// </summary>
-    public async Task<AgendaBoard> GetBoardAsync(string? ownerFilter = null, CancellationToken ct = default)
+    /// <paramref name="zone"/> decides where "today" ends (the viewer's display zone); UTC when not given.
+    public async Task<AgendaBoard> GetBoardAsync(string? ownerFilter = null, TimeZoneInfo? zone = null, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var now = _clock.UtcNow;
@@ -85,7 +86,7 @@ public sealed class AgendaService
 
         var buckets = Enum.GetValues<AgendaBucketKind>()
             .Select(kind => new AgendaBucket(kind, items
-                .Where(i => Bucket(i.DueAtUtc, now) == kind)
+                .Where(i => Bucket(i.DueAtUtc, now, zone ?? TimeZoneInfo.Utc) == kind)
                 .OrderBy(i => i.DueAtUtc ?? DateTimeOffset.MaxValue)
                 .ThenBy(i => i.CaseNumber, StringComparer.OrdinalIgnoreCase)
                 .ToList()))
@@ -144,15 +145,18 @@ public sealed class AgendaService
         string? IncidentCommander, Guid ActionItemId, string Title, DateTimeOffset? DueAtUtc, string? Owner,
         bool IsMine);
 
-    /// <summary>Buckets a due date relative to <paramref name="now"/> (UTC calendar day boundaries).</summary>
-    private static AgendaBucketKind Bucket(DateTimeOffset? due, DateTimeOffset now)
+    /// <summary>
+    /// Buckets a due date relative to <paramref name="now"/>, with calendar days in <paramref name="zone"/>: today ends
+    /// at local midnight, and "this week" runs through the six days after it. Shared with the email digest.
+    /// </summary>
+    public static AgendaBucketKind Bucket(DateTimeOffset? due, DateTimeOffset now, TimeZoneInfo zone)
     {
         if (due is not { } d) return AgendaBucketKind.NoDueDate;
         if (d < now) return AgendaBucketKind.Overdue;
 
-        var startOfTomorrow = now.UtcDateTime.Date.AddDays(1);
-        if (d.UtcDateTime < startOfTomorrow) return AgendaBucketKind.Today;
-        if (d.UtcDateTime < startOfTomorrow.AddDays(6)) return AgendaBucketKind.ThisWeek; // through end of the week ahead
+        var today = ZonedDays.Of(now, zone);
+        if (d < ZonedDays.StartUtc(today.AddDays(1), zone)) return AgendaBucketKind.Today;
+        if (d < ZonedDays.StartUtc(today.AddDays(7), zone)) return AgendaBucketKind.ThisWeek; // through end of the week ahead
         return AgendaBucketKind.Later;
     }
 

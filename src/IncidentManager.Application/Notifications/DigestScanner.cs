@@ -12,14 +12,16 @@ namespace IncidentManager.Application.Notifications;
 /// (the same self-scoped feed that backs the per-user calendar), so a user only ever sees their own work.
 /// Read-only over case data — it records nothing and never changes case state, so it stays out of the audit
 /// chain. Sends once per period via <see cref="IDigestTracker"/>. The scheduled hosted service calls
-/// <see cref="ScanAndNotifyAsync"/> on a regular cadence.
+/// <see cref="ScanAndNotifyAsync"/> on a regular cadence. Days and weeks follow the organization's reporting time
+/// zone, so "today" ends at local midnight and a new day's digest goes out after it, not at UTC midnight.
 /// </summary>
 public sealed class DigestScanner(
     UserNotificationPreferenceService prefs,
     AgendaService agenda,
     ICaseNotifications notifications,
     IDigestTracker tracker,
-    IClock clock)
+    IClock clock,
+    IOrganizationTimeZone? zone = null)
 {
     /// <summary>Sends a digest to each subscriber who has items and hasn't been sent one this period. Returns
     /// how many digests were sent.</summary>
@@ -29,20 +31,21 @@ public sealed class DigestScanner(
         if (subscribers.Count == 0) return 0;
 
         var now = clock.UtcNow;
+        var tz = zone?.Current ?? TimeZoneInfo.Utc;
         var sent = 0;
 
         foreach (var sub in subscribers)
         {
             var items = await agenda.GetFeedItemsAsync(sub.UserId, ct);
 
-            var overdue = Band(items, now, Bucket.Overdue);
-            var today = Band(items, now, Bucket.Today);
-            var thisWeek = Band(items, now, Bucket.ThisWeek);
+            var overdue = Band(items, now, tz, AgendaBucketKind.Overdue);
+            var today = Band(items, now, tz, AgendaBucketKind.Today);
+            var thisWeek = Band(items, now, tz, AgendaBucketKind.ThisWeek);
             if (overdue.Count == 0 && today.Count == 0 && thisWeek.Count == 0)
                 continue; // nothing worth a digest → don't send, and don't consume the period slot
 
             // Once per period: only mark (and thus consume the slot) when we actually have something to send.
-            if (!tracker.TryMarkSent(sub.UserId, sub.Cadence, PeriodKey(sub.Cadence, now)))
+            if (!tracker.TryMarkSent(sub.UserId, sub.Cadence, PeriodKey(sub.Cadence, ZonedDays.Of(now, tz))))
                 continue;
 
             await notifications.OnDigestAsync(new UserDigest(sub.UserId, sub.Cadence, overdue, today, thisWeek), ct);
@@ -52,30 +55,21 @@ public sealed class DigestScanner(
         return sent;
     }
 
-    private enum Bucket { Overdue, Today, ThisWeek }
-
-    /// <summary>The dated feed items falling in a band, as digest items, in due order. Mirrors
-    /// <see cref="AgendaService"/>'s UTC calendar-day banding.</summary>
-    private static IReadOnlyList<DigestItem> Band(IReadOnlyList<AgendaItem> items, DateTimeOffset now, Bucket band)
-    {
-        var startOfTomorrow = now.UtcDateTime.Date.AddDays(1);
-        return items
-            .Where(i => i.DueAtUtc is { } d && InBand(d, now, startOfTomorrow, band))
+    /// <summary>The dated feed items falling in a band, as digest items, in due order. Uses the agenda's banding.</summary>
+    private static IReadOnlyList<DigestItem> Band(IReadOnlyList<AgendaItem> items, DateTimeOffset now, TimeZoneInfo zone,
+        AgendaBucketKind band) =>
+        items
+            .Where(i => i.DueAtUtc is not null && AgendaService.Bucket(i.DueAtUtc, now, zone) == band)
             .OrderBy(i => i.DueAtUtc)
             .Select(i => new DigestItem(i.CaseNumber, i.Title, i.Severity, i.DueAtUtc!.Value))
             .ToList();
-    }
 
-    private static bool InBand(DateTimeOffset due, DateTimeOffset now, DateTime startOfTomorrow, Bucket band) => band switch
+    /// <summary>The period a digest belongs to: the local date for Daily, the ISO year-week for Weekly.</summary>
+    private static string PeriodKey(DigestCadence cadence, DateOnly today)
     {
-        Bucket.Overdue => due < now,
-        Bucket.Today => due >= now && due.UtcDateTime < startOfTomorrow,
-        Bucket.ThisWeek => due.UtcDateTime >= startOfTomorrow && due.UtcDateTime < startOfTomorrow.AddDays(6),
-        _ => false
-    };
-
-    /// <summary>The period a digest belongs to: the UTC date for Daily, the ISO year-week for Weekly.</summary>
-    private static string PeriodKey(DigestCadence cadence, DateTimeOffset now) => cadence == DigestCadence.Weekly
-        ? string.Create(CultureInfo.InvariantCulture, $"{ISOWeek.GetYear(now.UtcDateTime)}-W{ISOWeek.GetWeekOfYear(now.UtcDateTime):00}")
-        : now.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var day = today.ToDateTime(TimeOnly.MinValue);
+        return cadence == DigestCadence.Weekly
+            ? string.Create(CultureInfo.InvariantCulture, $"{ISOWeek.GetYear(day)}-W{ISOWeek.GetWeekOfYear(day):00}")
+            : today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    }
 }

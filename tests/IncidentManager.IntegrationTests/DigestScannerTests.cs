@@ -74,8 +74,15 @@ public sealed class DigestScannerTests : IDisposable
 
     private UserNotificationPreferenceService NewPrefs() => new(NewFactory(), _user, _clock);
     private AgendaService NewAgenda() => new(NewFactory(), _user, new FakeDirectory(), _clock);
-    private DigestScanner NewScanner(ICaseNotifications n, IDigestTracker t) =>
-        new(NewPrefs(), NewAgenda(), n, t, _clock);
+    private DigestScanner NewScanner(ICaseNotifications n, IDigestTracker t, TimeZoneInfo? zone = null) =>
+        new(NewPrefs(), NewAgenda(), n, t, _clock, zone is null ? null : new FixedZone(zone));
+
+    private sealed class FixedZone(TimeZoneInfo zone) : IOrganizationTimeZone
+    {
+        public TimeZoneInfo Current => zone;
+    }
+
+    private static readonly TimeZoneInfo Eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
 
     /// <summary>A visible case with one item per band owned by analyst1, plus noise (later/undated/done).</summary>
     private void SeedItemsForAnalyst1()
@@ -118,6 +125,38 @@ public sealed class DigestScannerTests : IDisposable
         d.DueToday.Should().ContainSingle().Which.TaskTitle.Should().Be("Today");
         d.DueThisWeek.Should().ContainSingle().Which.TaskTitle.Should().Be("ThisWeek");
         d.TotalItems.Should().Be(3); // later / undated / done excluded
+    }
+
+    // Days follow the reporting time zone: at 19:30 in New York (23:30 UTC), a task due at 22:00 New York time is due
+    // today, though it's already tomorrow in UTC. And the day's digest doesn't go out again at UTC midnight.
+    [Fact]
+    public async Task Today_and_the_daily_period_follow_the_reporting_time_zone()
+    {
+        _clock.UtcNow = new DateTimeOffset(2026, 9, 10, 23, 30, 0, TimeSpan.Zero);
+        using (var db = NewContext())
+        {
+            var c = Case.Open(2026, 1, "Case A", "Visible case", Classification.Incident, Severity.High,
+                CaseOrigin.InternalDetection, "ic1", _clock.UtcNow);
+            c.ActionItems.Add(new ActionItem { CaseId = c.Id, Title = "Tonight", Owner = "analyst1",
+                DueAtUtc = new DateTimeOffset(2026, 9, 11, 2, 0, 0, TimeSpan.Zero), Status = ActionItemStatus.Open });
+            db.Cases.Add(c);
+            db.SaveChanges();
+        }
+        await OptInAsync("analyst1", DigestCadence.Daily);
+
+        var eastern = new CapturingNotifications();
+        var tracker = new DigestTracker();
+        (await NewScanner(eastern, tracker, Eastern).ScanAndNotifyAsync()).Should().Be(1);
+        eastern.Digests.Single().DueToday.Should().ContainSingle().Which.TaskTitle.Should().Be("Tonight");
+
+        var utc = new CapturingNotifications();
+        (await NewScanner(utc, new DigestTracker()).ScanAndNotifyAsync()).Should().Be(1);
+        utc.Digests.Single().DueThisWeek.Should().ContainSingle("in UTC it's already due tomorrow");
+
+        _clock.UtcNow = new DateTimeOffset(2026, 9, 11, 1, 0, 0, TimeSpan.Zero);   // 21:00 on the 10th in New York
+        (await NewScanner(eastern, tracker, Eastern).ScanAndNotifyAsync()).Should().Be(0, "still the same local day");
+        _clock.UtcNow = new DateTimeOffset(2026, 9, 11, 4, 30, 0, TimeSpan.Zero);  // 00:30 on the 11th in New York
+        (await NewScanner(eastern, tracker, Eastern).ScanAndNotifyAsync()).Should().Be(1, "a new local day");
     }
 
     [Fact]
