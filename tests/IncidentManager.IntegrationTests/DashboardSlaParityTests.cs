@@ -138,20 +138,24 @@ public abstract class DashboardSlaParityTests : IDisposable
         await using (var db = NewContext())
         {
             db.Cases.AddRange(Opened(1, new(2026, 2, 1, 3, 0, 0, TimeSpan.Zero)), Opened(2, new(2026, 7, 1, 3, 30, 0, TimeSpan.Zero)),
-                Opened(3, new(2026, 7, 1, 4, 0, 0, TimeSpan.Zero)));   // exactly midnight EDT: July
+                Opened(3, new(2026, 7, 1, 4, 0, 0, TimeSpan.Zero)),    // exactly midnight EDT: July
+                Opened(4, new(2026, 1, 1, 3, 0, 0, TimeSpan.Zero)));   // 22:00 on 31 December in New York: last year
             await db.SaveChangesAsync();
         }
         var manager = Viewers[0];
 
         var eastern = (await NewDashboard(manager, zone: Eastern).GetAsync()).Trend;
-        eastern.Single(t => t is { Year: 2026, Month: 1 }).Opened.Should().Be(1);
         eastern.Single(t => t is { Year: 2026, Month: 2 }).Opened.Should().Be(0);
         eastern.Single(t => t is { Year: 2026, Month: 6 }).Opened.Should().Be(1);
         eastern.Single(t => t is { Year: 2026, Month: 7 }).Opened.Should().Be(1);
+        eastern.Single(t => t is { Year: 2025, Month: 12 }).Opened.Should().Be(1);
+        eastern.Single(t => t is { Year: 2026, Month: 1 }).Opened.Should().Be(1, "only the late-January case");
 
         var utc = (await NewDashboard(manager, zone: TimeZoneInfo.Utc).GetAsync()).Trend;
         utc.Single(t => t is { Year: 2026, Month: 2 }).Opened.Should().Be(1);
         utc.Single(t => t is { Year: 2026, Month: 7 }).Opened.Should().Be(2);
+        utc.Single(t => t is { Year: 2026, Month: 1 }).Opened.Should().Be(1);
+        utc.Single(t => t is { Year: 2025, Month: 12 }).Opened.Should().Be(0);
     }
 
     protected async Task OverdueTasksAreScopedToVisibleCases()

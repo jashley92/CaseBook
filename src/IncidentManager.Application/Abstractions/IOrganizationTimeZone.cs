@@ -17,9 +17,11 @@ public static class ZonedMonths
     public static DateTimeOffset StartUtc(int year, int month, TimeZoneInfo zone)
     {
         var local = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Unspecified);
-        // A zone that springs forward at midnight has no 00:00 that day; the month then starts at 01:00.
+        // A zone that springs forward at midnight has no 00:00 that day; the month then starts when the clock resumes.
         if (zone.IsInvalidTime(local)) local = local.AddHours(1);
-        return new DateTimeOffset(local, zone.GetUtcOffset(local)).ToUniversalTime();
+        // One that falls back at midnight has 00:00 twice; the month starts at the first, which has the larger offset.
+        var offset = zone.IsAmbiguousTime(local) ? zone.GetAmbiguousTimeOffsets(local).Max() : zone.GetUtcOffset(local);
+        return new DateTimeOffset(local, offset).ToUniversalTime();
     }
 
     /// <summary>The local year and month containing <paramref name="instant"/>.</summary>
