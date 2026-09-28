@@ -120,6 +120,13 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
           restore-keys: nuget-${{ runner.os }}-
 
+      # Tests that need production's database engine ([SqlServerFact]; skipped in the SQLite run above), e.g. the
+      # F-08 dashboard queries whose elapsed-time math becomes DATEDIFF_BIG on SQL Server.
+      - name: SQL Server tests
+        env:
+          CASEBOOK_TEST_SQL: Server=localhost,1433;User Id=sa;Password=${{ env.SA_PASSWORD }};TrustServerCertificate=True;Encrypt=False
+        run: dotnet test tests/IncidentManager.IntegrationTests -c Release --filter "FullyQualifiedName~SqlServerTests" --verbosity minimal
+
       - name: Upgrade from recent releases
         env:
           CASEBOOK_TEST_SQL: Server=localhost,1433;User Id=sa;Password=${{ env.SA_PASSWORD }};TrustServerCertificate=True;Encrypt=False

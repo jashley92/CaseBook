@@ -131,6 +131,13 @@ export SQLCMD='docker exec casebook-sql /opt/mssql-tools18/bin/sqlcmd -C -S loca
 tools/upgrade-test/upgrade-path.sh v1.0.0          # v1.0.0 -> your working tree
 ```
 
+The same `CASEBOOK_TEST_SQL` also runs the integration tests that need SQL Server itself (`[SqlServerFact]`;
+skipped in a plain `dotnet test`). Each creates and drops its own database:
+
+```bash
+dotnet test tests/IncidentManager.IntegrationTests --filter "FullyQualifiedName~SqlServerTests"
+```
+
 ---
 
 ## Rollback

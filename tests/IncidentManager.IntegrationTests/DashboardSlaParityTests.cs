@@ -15,14 +15,14 @@ namespace IncidentManager.IntegrationTests;
 /// <summary>
 /// F-08: the dashboard now counts and averages in the database (SlaQueries, DbTime). These tests hold it to the
 /// previous in-memory calculation, which ran SlaPolicy over every visible case, across a varied random case set
-/// that includes milestones landing exactly on a target.
+/// that includes milestones landing exactly on a target. Runs on SQLite (dev) and, when a server is available, on
+/// SQL Server (production) — see the two classes at the end of this file.
 /// </summary>
-public sealed class DashboardSlaParityTests : IDisposable
+public abstract class DashboardSlaParityTests : IDisposable
 {
-    private readonly SqliteConnection _connection;
-    private readonly FixedClock _clock = new(new DateTimeOffset(2026, 9, 28, 12, 0, 0, TimeSpan.Zero));
+    protected readonly FixedClock _clock = new(new DateTimeOffset(2026, 9, 28, 12, 0, 0, TimeSpan.Zero));
 
-    private static readonly SlaTargets Targets = new(
+    protected static readonly SlaTargets Targets = new(
         new Dictionary<(SlaClock, Severity), int>
         {
             [(SlaClock.Containment, Severity.Critical)] = 4,
@@ -45,24 +45,15 @@ public sealed class DashboardSlaParityTests : IDisposable
             [(SlaClock.Detection, Severity.Critical)] = 1, // ignored: detection has no breach override
         });
 
-    public DashboardSlaParityTests()
-    {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-        using var db = NewContext();
-        db.Database.EnsureCreated();
-    }
-
     // No audit interceptor: the seed controls timestamps directly.
-    private DbContextOptions<AppDbContext> Options() => new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
-    private AppDbContext NewContext() => new(Options());
+    protected abstract DbContextOptions<AppDbContext> Options();
+    protected AppDbContext NewContext() => new(Options());
 
     private DashboardService NewDashboard(TestCurrentUser user) =>
         new(new TestDbContextFactory(Options()), user, _clock, new TestSlaTargets(Targets), new NotifyOff(),
             new NotificationRuleService(new TestDbContextFactory(Options()), user, _clock));
 
-    [Fact]
-    public async Task Database_counts_match_the_in_memory_SlaPolicy_calculation()
+    protected async Task CountsMatchTheInMemoryCalculation()
     {
         var seeded = await SeedAsync(seed: 8, count: 400);
 
@@ -104,8 +95,7 @@ public sealed class DashboardSlaParityTests : IDisposable
             .Should().OnlyContain(n => n > 0);
     }
 
-    [Fact]
-    public async Task Overdue_tasks_on_cases_the_user_cannot_see_are_not_counted()
+    protected async Task OverdueTasksAreScopedToVisibleCases()
     {
         var now = _clock.UtcNow;
         var visible = Case.Open(2026, 1, "Open", "Open", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "s", now.AddDays(-3));
@@ -124,23 +114,6 @@ public sealed class DashboardSlaParityTests : IDisposable
             .OverdueActionItems.Should().Be(1);
         (await NewDashboard(new TestCurrentUser { UserId = "mgr", RoleSet = [AppRole.Manager] }).GetAsync())
             .OverdueActionItems.Should().Be(2, "a manager sees the restricted case, but drills never count");
-    }
-
-    // Production runs on SQL Server, which the SQLite suite never executes; check the translation it would send.
-    [Fact]
-    public void Sql_Server_translates_the_filters_and_elapsed_time()
-    {
-        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlServer("Server=unused;Database=unused").Options);
-        var now = _clock.UtcNow;
-
-        var met = db.Cases.Where(SlaQueries.Reached(SlaClock.Containment, met: true, Targets)).Select(c => c.Id).ToQueryString();
-        var headline = db.Cases.Where(SlaQueries.Headline(breached: true, Targets, now)).Select(c => c.Id).ToQueryString();
-        var mean = db.Cases.Select(c => (double?)IncidentManager.Application.Abstractions.DbTime.TicksBetween(c.DetectedAtUtc, c.ContainedAtUtc)).ToQueryString();
-
-        met.Should().Contain("DATEDIFF_BIG(nanosecond, [c].[DetectedAtUtc], [c].[ContainedAtUtc]) / CAST(100 AS bigint)");
-        mean.Should().Contain("DATEDIFF_BIG(nanosecond, [c].[DetectedAtUtc], [c].[ContainedAtUtc])");
-        headline.Should().Contain("[c].[DetectedAtUtc] <= @");
     }
 
     private async Task<List<Case>> SeedAsync(int seed, int count)
@@ -249,5 +222,81 @@ public sealed class DashboardSlaParityTests : IDisposable
         public NotificationDeadlineSettings Current => NotificationDeadlineSettings.Off;
     }
 
-    public void Dispose() => _connection.Dispose();
+    public virtual void Dispose() { }
+}
+
+/// <summary>F-08 parity on SQLite: the development database and the default test run.</summary>
+public sealed class DashboardSlaParitySqliteTests : DashboardSlaParityTests
+{
+    private readonly SqliteConnection _connection = new("Data Source=:memory:");
+
+    public DashboardSlaParitySqliteTests()
+    {
+        _connection.Open();
+        using var db = NewContext();
+        db.Database.EnsureCreated();
+    }
+
+    protected override DbContextOptions<AppDbContext> Options() =>
+        new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
+
+    [Fact]
+    public Task Database_counts_match_the_in_memory_SlaPolicy_calculation() => CountsMatchTheInMemoryCalculation();
+
+    [Fact]
+    public Task Overdue_tasks_on_cases_the_user_cannot_see_are_not_counted() => OverdueTasksAreScopedToVisibleCases();
+
+    // Production runs on SQL Server, which the SQLite suite never executes; check the translation it would send.
+    [Fact]
+    public void Sql_Server_translates_the_filters_and_elapsed_time()
+    {
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlServer("Server=unused;Database=unused").Options);
+        var now = _clock.UtcNow;
+
+        var met = db.Cases.Where(SlaQueries.Reached(SlaClock.Containment, met: true, Targets)).Select(c => c.Id).ToQueryString();
+        var headline = db.Cases.Where(SlaQueries.Headline(breached: true, Targets, now)).Select(c => c.Id).ToQueryString();
+        var mean = db.Cases.Select(c => (double?)IncidentManager.Application.Abstractions.DbTime.TicksBetween(c.DetectedAtUtc, c.ContainedAtUtc)).ToQueryString();
+
+        met.Should().Contain("DATEDIFF_BIG(nanosecond, [c].[DetectedAtUtc], [c].[ContainedAtUtc]) / CAST(100 AS bigint)");
+        mean.Should().Contain("DATEDIFF_BIG(nanosecond, [c].[DetectedAtUtc], [c].[ContainedAtUtc])");
+        headline.Should().Contain("[c].[DetectedAtUtc] <= @");
+    }
+
+    public override void Dispose() => _connection.Dispose();
+}
+
+/// <summary>
+/// F-08 parity on SQL Server 2022, the production database, where the elapsed-time function becomes DATEDIFF_BIG.
+/// Runs when <c>CASEBOOK_TEST_SQL</c> names a server (docs/UPGRADE.md; the CI upgrade-path job sets it) and is
+/// skipped otherwise. Each test gets its own throwaway database, dropped afterwards.
+/// </summary>
+public sealed class DashboardSlaParitySqlServerTests : DashboardSlaParityTests
+{
+    private readonly string? _connectionString;
+
+    public DashboardSlaParitySqlServerTests()
+    {
+        if (SqlServerFactAttribute.Server is not { } server) return;
+        _connectionString = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(server)
+            { InitialCatalog = $"casebook_test_{Guid.NewGuid():N}" }.ConnectionString;
+        using var db = NewContext();
+        db.Database.EnsureCreated();
+    }
+
+    protected override DbContextOptions<AppDbContext> Options() =>
+        new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(_connectionString!).Options;
+
+    [SqlServerFact]
+    public Task Database_counts_match_the_in_memory_SlaPolicy_calculation() => CountsMatchTheInMemoryCalculation();
+
+    [SqlServerFact]
+    public Task Overdue_tasks_on_cases_the_user_cannot_see_are_not_counted() => OverdueTasksAreScopedToVisibleCases();
+
+    public override void Dispose()
+    {
+        if (_connectionString is null) return;
+        using var db = NewContext();
+        db.Database.EnsureDeleted();
+    }
 }
