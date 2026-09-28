@@ -28,39 +28,35 @@ a, .btn-link {
     color: var(--im-accent-text);
 }
 
-/* Primary action = the brand's charcoal "ink" in light; the brand gold pops on dark. */
+/* Primary action (design review P6): high-contrast neutral in both themes, charcoal ink on light and light ink
+   on dark. Gold is kept for "where you are" (active nav, selected row, current tab, focus) so a button never
+   reads like a warning and an amber status never reads like a button. */
 .btn-primary {
-    color: #fff;
-    background-color: var(--im-ink);
-    border-color: var(--im-ink);
+    color: var(--im-action-fg);
+    background-color: var(--im-action-bg);
+    border-color: var(--im-action-bg);
 }
 .btn-primary:hover, .btn-primary:focus, .btn-primary:active {
-    color: #fff;
-    background-color: var(--im-ink-hover);
-    border-color: var(--im-ink-hover);
+    color: var(--im-action-fg);
+    background-color: var(--im-action-hover);
+    border-color: var(--im-action-hover);
 }
-[data-bs-theme="dark"] .btn-primary,
-[data-bs-theme="dark"] .btn-primary:hover,
-[data-bs-theme="dark"] .btn-primary:focus,
-[data-bs-theme="dark"] .btn-primary:active {
-    color: #1a1a1a;
-    background-color: var(--im-gold);
-    border-color: var(--im-gold);
-}
-[data-bs-theme="dark"] .btn-primary:hover {
-    background-color: var(--im-gold-strong);
-    border-color: var(--im-gold-strong);
+.btn-primary:disabled, .btn-primary.disabled {
+    color: var(--im-action-fg);
+    background-color: var(--im-action-bg);
+    border-color: var(--im-action-bg);
+    opacity: .45;
 }
 
 /* Secondary "accent" action. Bootstrap compiles .btn-outline-primary to its stock blue (it doesn't follow
    --bs-primary), which read as off-brand next to the gold/charcoal palette, so it's retinted here to the
    gold accent in both themes. Selected state (e.g. the active option in a segmented control) fills gold. */
 .btn-outline-primary {
-    --bs-btn-color: var(--im-accent-text);
-    --bs-btn-border-color: var(--im-accent-strong);
-    --bs-btn-hover-color: var(--im-accent-text);
-    --bs-btn-hover-bg: var(--im-accent-bg);
-    --bs-btn-hover-border-color: var(--im-accent-strong);
+    --bs-btn-color: var(--im-text);
+    --bs-btn-border-color: var(--im-text-muted);
+    --bs-btn-hover-color: var(--im-text);
+    --bs-btn-hover-bg: var(--im-neutral-bg);
+    --bs-btn-hover-border-color: var(--im-text);
     --bs-btn-focus-shadow-rgb: 224, 175, 18;
     --bs-btn-active-color: #1a1a1a;
     --bs-btn-active-bg: var(--im-accent);
@@ -236,12 +232,20 @@ h1:focus {
        Primary stays charcoal (the brand's "black"); links pick up the gold. */
     --bs-primary: #232a33;
     --bs-primary-rgb: 35, 42, 51;
+
+    /* Action (primary button) colors: charcoal ink on light. */
+    --im-action-bg: var(--im-ink);
+    --im-action-hover: var(--im-ink-hover);
+    --im-action-fg: #ffffff;
     --bs-link-color: var(--im-accent-text);
     --bs-link-hover-color: #6e5500;
     --bs-border-radius: var(--im-radius);
 }
 
 [data-bs-theme="dark"] {
+    --im-action-bg: #e6edf5;
+    --im-action-hover: #c9d3de;
+    --im-action-fg: #12171e;
     --im-bg: #12171e;
     --im-surface: #1a212a;
     --im-surface-2: #202a34;
