@@ -135,7 +135,7 @@
                                 <table class="table table-sm mb-0 im-table">
                                     <thead><tr><th>Case</th><th>Classification</th><th>Phase</th><th>Verdict on this case</th><th>Added</th></tr></thead>
                                     <tbody>
-                                        @foreach (var c in r.Cases)
+                                        @foreach (var c in r.Cases.Take(CasesShown))
                                         {
                                             <tr>
                                                 <td>
@@ -151,6 +151,13 @@
                                         }
                                     </tbody>
                                 </table>
+                                @if (r.Cases.Count > CasesShown)
+                                {
+                                    @* A widespread indicator can sit on hundreds of cases: the case list pages and filters them. *@
+                                    <a class="small d-inline-block mt-1" href="@($"cases?q={Uri.EscapeDataString(r.Value)}&closed=true{(_includeExercises ? "&exercises=true" : "")}")">
+                                        See all @r.Cases.Count cases in the case list
+                                    </a>
+                                }
                             </td>
                         </tr>
                     }
@@ -202,6 +209,8 @@
         };
         _library = await Indicators.SearchAsync(new IndicatorFilter(_search, scope, type, _sharedOnly, _disposition, _includeExercises));
     }
+
+    private const int CasesShown = 10;
 
     private static string RowKey(IndicatorRow r) => $"{r.Type}|{r.Value.ToLowerInvariant()}";
 

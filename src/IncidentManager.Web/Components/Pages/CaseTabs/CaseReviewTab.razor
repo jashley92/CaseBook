@@ -26,9 +26,8 @@
 }
 
 <p class="small text-muted mb-3">
-    Record what the team learned and the improvements to follow up. Improvement actions stay tracked in the
-    <a href="improvement-actions">improvement-action register</a> after the case closes. This review stays out of the
-    built-in case report and prints in its own report below.
+    Record what the team learned and what to improve. Improvement actions stay on the
+    <a href="improvement-actions">improvement-action register</a> after the case closes.
     @if (NeedsReview)
     {
         @if (IsComplete)
@@ -268,8 +267,8 @@ else
 @* ---- The separate lessons-learned report --------------------------------------------------------- *@
 <h6 class="mt-4 mb-2"><span class="bi bi-file-earmark-text me-1" aria-hidden="true"></span>Lessons-learned report</h6>
 <p class="small text-muted mb-2">
-    A separate document containing this review and its improvement actions, stored and hashed like the case report.
-    The built-in case report never includes it (a Word template can, if an administrator adds the review fields).
+    This review and its improvement actions as their own document, stored and hashed like the case report. The
+    built-in case report leaves the review out (a Word template can include it if an administrator adds the review fields).
 </p>
 <AuthorizeView Policy="@Policies.EditCases">
     @* Which Word template fills it. Defaults to the library's lessons-learned default. *@

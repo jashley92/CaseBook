@@ -71,24 +71,24 @@
     {
         <table class="table table-sm table-hover align-middle im-table mb-0">
             <thead>
-                <tr><th>Case</th><th>Improvement action</th><th>Related area</th><th>Owner</th><th>Target</th><th>Status</th></tr>
+                <tr><th>Improvement action</th><th>Case</th><th>Related area</th><th>Owner</th><th>Target</th><th>Status</th></tr>
             </thead>
             <tbody>
                 @foreach (var r in _register.Rows)
                 {
                     var a = r.Action;
                     <tr class="@(a.IsPastTarget ? "im-row-warn" : "")" @key="a.Id">
-                        <td class="text-nowrap">
-                            <a href="@($"cases/{a.CaseId}?tab=Review")"><code>@r.CaseNumber</code></a>
-                            @if (r.IsExercise) { <span class="im-badge im-b-neutral ms-1">Exercise</span> }
-                            <div class="small text-muted text-truncate" style="max-width:14rem" title="@r.CaseTitle">@r.CaseTitle</div>
-                        </td>
-                        <td>
+                        <td style="min-width:14rem">
                             @a.Title
                             @if (!string.IsNullOrWhiteSpace(a.OutcomeNote))
                             {
                                 <div class="small text-muted" style="white-space:pre-line"><span class="fw-semibold">Outcome:</span> @IncidentManager.Application.Content.RichText.ToText(a.OutcomeNote)</div>
                             }
+                        </td>
+                        <td class="text-nowrap">
+                            <a href="@($"cases/{a.CaseId}?tab=Review")"><code>@r.CaseNumber</code></a>
+                            @if (r.IsExercise) { <span class="im-badge im-b-neutral ms-1">Exercise</span> }
+                            <div class="small text-muted text-truncate" style="max-width:14rem" title="@r.CaseTitle">@r.CaseTitle</div>
                         </td>
                         <td>@(a.RelatedArea ?? "—")</td>
                         <td>
