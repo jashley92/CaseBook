@@ -125,6 +125,11 @@ else if (_pending.Count > 0)
             <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="Reset">Clear</button>
         }
     </div>
+    @if (_parseError is not null)
+    {
+        @* Stays put next to the document (not a toast) so it can be read while fixing the text. *@
+        <div class="alert alert-danger small mt-2 mb-0" role="alert">@_parseError</div>
+    }
 
     @if (_showSample)
     {
@@ -430,6 +435,7 @@ else if (_pending.Count > 0)
     private CaseImportPreview? _preview;
     private bool _applying;
     private string? _error;
+    private string? _parseError;
     private bool _showSample;
     private string? _existingNumber;
     private string? _existingError;
@@ -484,10 +490,11 @@ else if (_pending.Count > 0)
         _related = [];
         // PROD-06: a STIX bundle or IOC CSV is converted into an entities-only import document first.
         var converted = IocImportConverter.Convert(_text, _fileName);
+        _parseError = null;
         if (!converted.Ok)
         {
             _preview = null;
-            Toasts.Error(converted.Error!);
+            _parseError = converted.Error;
             return;
         }
         _preview = await Import.BuildPreviewAsync(converted.Document!, IntoCaseId);
@@ -511,6 +518,7 @@ else if (_pending.Count > 0)
 
     private void Reset()
     {
+        _parseError = null;
         _preview = null;
         _text = null;
         _error = null;

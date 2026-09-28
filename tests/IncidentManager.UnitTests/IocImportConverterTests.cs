@@ -119,4 +119,13 @@ public class IocImportConverterTests
             .Should().Equal((EntityType.FileHash, "abc"), (EntityType.EmailAddress, "o'brien@x.example"));
         IocImportConverter.PatternObservables("[ipv4-addr:value ISSUBSET '10.0.0.0/8']").Should().BeEmpty();
     }
+
+    [Fact]
+    public void Broken_json_says_where_the_parser_gave_up()
+    {
+        var r = IocImportConverter.Convert("{\n  \"case\": {\n    \"title\": \"x\",\n");
+
+        r.Ok.Should().BeFalse();
+        r.Error.Should().StartWith("This isn't valid JSON.").And.Contain("around line 4");
+    }
 }

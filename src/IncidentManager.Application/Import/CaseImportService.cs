@@ -55,9 +55,9 @@ public sealed class CaseImportService
         {
             doc = JsonSerializer.Deserialize<CaseImportDocument>(json, CaseImportJson.Options);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            return CaseImportParse.Fail("This isn't valid JSON. Check the document and try again.");
+            return CaseImportParse.Fail(IocImportConverter.InvalidJson(ex));
         }
 
         if (doc is null)

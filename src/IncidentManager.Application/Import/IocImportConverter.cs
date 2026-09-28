@@ -37,6 +37,12 @@ public static partial class IocImportConverter
     /// <summary>Hard cap on indicators from one file — a partner share, not a feed.</summary>
     public const int MaxIndicators = 2000;
 
+    /// <summary>Says where the parser gave up, so a truncated or hand-edited document can be fixed rather than guessed at.</summary>
+    internal static string InvalidJson(JsonException ex) =>
+        ex.LineNumber is { } line
+            ? $"This isn't valid JSON. The problem is around line {line + 1}, character {(ex.BytePositionInLine ?? 0) + 1}. A document cut short or with text around it is the usual cause."
+            : "This isn't valid JSON. Check the document and try again.";
+
     /// <summary>Sniffs the text and converts it. A CaseBook case-import document is returned as-is (via <see cref="CaseImportService.Parse"/>).</summary>
     public static IocImportConversion Convert(string? text, string? fileName = null)
     {
@@ -48,7 +54,7 @@ public static partial class IocImportConverter
         {
             JsonDocument json;
             try { json = JsonDocument.Parse(trimmed, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip }); }
-            catch (JsonException) { return new(ImportSourceFormat.CaseImport, null, "This isn't valid JSON. Check the document and try again.", []); }
+            catch (JsonException ex) { return new(ImportSourceFormat.CaseImport, null, InvalidJson(ex), []); }
 
             using (json)
             {
