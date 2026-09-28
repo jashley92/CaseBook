@@ -2140,6 +2140,42 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.ToTable("TimelineEntries", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.UserDisplayPreference", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("CompactRows")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("DarkTheme")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("LocalTime")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("NavCollapsed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("TwelveHourClock")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("UpdatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("UserDisplayPreferences", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.UserNotificationPreference", b =>
                 {
                     b.Property<Guid>("Id")

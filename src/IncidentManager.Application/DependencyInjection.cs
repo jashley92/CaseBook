@@ -78,6 +78,7 @@ public static class DependencyInjection
         // (DbContext + scoped AgendaService per pass); a singleton tracker so "already sent this period"
         // survives between passes.
         services.AddScoped<Notifications.UserNotificationPreferenceService>();
+        services.AddScoped<Preferences.UserDisplayPreferenceService>();
         services.AddScoped<Notifications.DigestScanner>();
         services.AddSingleton<Notifications.IDigestTracker, Notifications.DigestTracker>();
         services.AddScoped<Notifications.ExecutiveReportScanner>();       // PROD-15: quarterly executive report email

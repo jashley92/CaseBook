@@ -1,13 +1,24 @@
 ﻿@using IncidentManager.Application.Branding
+@using IncidentManager.Application.Preferences
 @inject IConfiguration Config
+@inject UserDisplayPreferenceService DisplayPrefsSvc
 <!DOCTYPE html>
-<html lang="en">
+@* The signed-in user's saved display preferences go on the root element, so the right theme, sidebar and density
+   paint first time on any workstation. theme-init.js sees data-prefs="server", uses these and refreshes the
+   browser's copy; without them (no saved row yet, or signed out) it falls back to what the browser remembers. *@
+<html lang="en"
+      data-prefs="@(_prefs is null ? null : "server")"
+      data-bs-theme="@(_prefs is null ? null : _prefs.DarkTheme ? "dark" : "light")"
+      data-nav="@(_prefs?.NavCollapsed == true ? "collapsed" : null)"
+      data-density="@(_prefs?.CompactRows == true ? "compact" : null)"
+      data-pref-time="@(_prefs is null ? null : _prefs.LocalTime ? "local" : "utc")"
+      data-pref-clock="@(_prefs is null ? null : _prefs.TwelveHourClock ? "12" : "24")">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
-    <script src="js/theme-init.js?v=20260927a"></script>
+    <script src="js/theme-init.js?v=20260928a"></script>
     <link rel="stylesheet" href="bootstrap/bootstrap.min.css?v=5.3.3" />
     <link rel="stylesheet" href="lib/bootstrap-icons/bootstrap-icons.min.css?v=1.11.3" />
     <link rel="stylesheet" href="lib/easymde/easymde.min.css?v=2.18.0" />
@@ -58,9 +69,9 @@
     @* Self-hosted scripts carry ?v= so edits actually ship — browsers cache them by URL, and without a
        version bump a stale copy is served after a change. Keep this in sync when a js/ file changes. *@
     <script src="_framework/blazor.web.js"></script>
-    <script src="js/theme.js?v=20260927a"></script>
+    <script src="js/theme.js?v=20260928a"></script>
     <script src="js/brand.js?v=20260903a"></script>
-    <script src="js/time.js?v=20260924a"></script>
+    <script src="js/time.js?v=20260928a"></script>
     <script src="js/motion.js?v=20260927b"></script>
     <script src="js/hotkeys.js?v=20260925a"></script>
     <script src="js/case-hotkeys.js?v=20260924a"></script>
@@ -75,3 +86,14 @@
 </body>
 
 </html>
+
+@code {
+    private DisplayPrefs? _prefs;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Never let a preference lookup stop the page rendering: the browser's remembered values stand in.
+        try { _prefs = await DisplayPrefsSvc.GetMineAsync(); }
+        catch (Exception ex) when (ex is System.Data.Common.DbException or InvalidOperationException) { _prefs = null; }
+    }
+}

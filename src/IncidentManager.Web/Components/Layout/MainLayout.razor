@@ -2,6 +2,7 @@
 @inject TimeDisplay TimeDisp
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject IncidentManager.Application.Preferences.UserDisplayPreferenceService DisplayPrefs
 @implements IDisposable
 
 @* UX-02: first focusable element on the page, so a keyboard/AT user can skip the sidebar. *@
@@ -98,7 +99,9 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || TimeDisp.Initialized) return;
+        if (!firstRender) return;
+        await StartDisplayPrefSync();
+        if (TimeDisp.Initialized) return;
         try
         {
             var zone = await JS.InvokeAsync<string>("imTime.zone");
@@ -120,9 +123,45 @@
         StateHasChanged();
     });
 
+    // --- Display preferences follow the account ---
+    // theme.js / time.js report every theme, sidebar, density, time-zone or clock change here, and the whole set is
+    // saved to the user's profile. Someone with nothing saved yet gets what their browser remembers copied up once,
+    // so moving to account-level preferences doesn't reset anybody.
+    private DotNetObjectReference<MainLayout>? _prefsRef;
+
+    private async Task StartDisplayPrefSync()
+    {
+        try
+        {
+            _prefsRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("imPrefs.register", _prefsRef);
+            if (await DisplayPrefs.GetMineAsync() is null) await OnDisplayPrefsChanged();
+        }
+        catch (JSException) { /* interop unavailable: the browser keeps its own copy */ }
+        catch (JSDisconnectedException) { }
+    }
+
+    [JSInvokable]
+    public async Task OnDisplayPrefsChanged()
+    {
+        try
+        {
+            var prefs = new IncidentManager.Application.Preferences.DisplayPrefs(
+                DarkTheme: await JS.InvokeAsync<string>("imTheme.current") == "dark",
+                NavCollapsed: await JS.InvokeAsync<bool>("imNav.collapsed"),
+                LocalTime: await JS.InvokeAsync<string>("imTime.mode") == "local",
+                TwelveHourClock: await JS.InvokeAsync<string>("imTime.clock") == "12",
+                CompactRows: await JS.InvokeAsync<string>("imDensity.current") == "compact");
+            await DisplayPrefs.SaveMineAsync(prefs);
+        }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+    }
+
     public void Dispose()
     {
         TimeDisp.Changed -= OnTimeChanged;
         Nav.LocationChanged -= OnLocationChanged;
+        _prefsRef?.Dispose();
     }
 }

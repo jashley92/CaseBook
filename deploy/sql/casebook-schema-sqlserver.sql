@@ -2042,3 +2042,42 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260928154841_AddUserDisplayPreferences'
+)
+BEGIN
+    CREATE TABLE [UserDisplayPreferences] (
+        [Id] uniqueidentifier NOT NULL,
+        [UserId] nvarchar(200) NOT NULL,
+        [DarkTheme] bit NOT NULL,
+        [NavCollapsed] bit NOT NULL,
+        [LocalTime] bit NOT NULL,
+        [TwelveHourClock] bit NOT NULL,
+        [CompactRows] bit NOT NULL,
+        [UpdatedAtUtc] datetimeoffset NOT NULL,
+        CONSTRAINT [PK_UserDisplayPreferences] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260928154841_AddUserDisplayPreferences'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_UserDisplayPreferences_UserId] ON [UserDisplayPreferences] ([UserId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260928154841_AddUserDisplayPreferences'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260928154841_AddUserDisplayPreferences', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

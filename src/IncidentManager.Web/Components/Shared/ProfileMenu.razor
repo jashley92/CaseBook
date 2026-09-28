@@ -126,7 +126,7 @@
                             @onclick="() => SetClock(true)">12h</button>
                 </span>
             </div>
-            <div class="profile-seg-hint">Local is @TimeDisp.LocalLabel. Reports, exports and the audit trail always stay in 24-hour UTC.</div>
+            <div class="profile-seg-hint">Local is @TimeDisp.LocalLabel. Reports, exports and the audit trail always stay in 24-hour UTC. These settings follow your account to any workstation.</div>
 
             <button type="button" class="profile-item" role="menuitem" @onclick="() => _about = !_about" aria-expanded="@Ui.Aria(_about)">
                 <span class="bi bi-info-circle" aria-hidden="true"></span>

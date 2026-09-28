@@ -45,6 +45,7 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     DbSet<SavedView> SavedViews { get; }
     DbSet<PinnedCase> PinnedCases { get; }
     DbSet<UserNotificationPreference> UserNotificationPreferences { get; }
+    DbSet<UserDisplayPreference> UserDisplayPreferences { get; }
     DbSet<CaseComment> CaseComments { get; }
     DbSet<PostIncidentReview> PostIncidentReviews { get; }
     DbSet<ImprovementAction> ImprovementActions { get; }

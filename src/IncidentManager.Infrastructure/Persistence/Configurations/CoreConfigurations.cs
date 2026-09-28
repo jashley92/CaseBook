@@ -594,6 +594,16 @@ public sealed class UserNotificationPreferenceConfiguration : IEntityTypeConfigu
     }
 }
 
+public sealed class UserDisplayPreferenceConfiguration : IEntityTypeConfiguration<UserDisplayPreference>
+{
+    public void Configure(EntityTypeBuilder<UserDisplayPreference> b)
+    {
+        b.ToTable("UserDisplayPreferences");
+        b.Property(x => x.UserId).HasMaxLength(200).IsRequired();
+        b.HasIndex(x => x.UserId).IsUnique(); // one preference row per user
+    }
+}
+
 public sealed class ApiTokenConfiguration : IEntityTypeConfiguration<ApiToken>
 {
     public void Configure(EntityTypeBuilder<ApiToken> b)

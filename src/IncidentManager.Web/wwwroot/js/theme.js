@@ -1,3 +1,18 @@
+// Display preferences follow the account: every change below (theme, density, sidebar, and the time
+// zone / clock in time.js) tells the layout, which saves the full set to the user's profile. Coalesced
+// so a burst of changes is one save. The browser keeps its own copy too (theme-init.js).
+window.imPrefs = (function () {
+    let ref = null;
+    let timer = null;
+    function register(dotnetRef) { ref = dotnetRef; }
+    function changed() {
+        if (!ref) return;
+        clearTimeout(timer);
+        timer = setTimeout(function () { ref.invokeMethodAsync('OnDisplayPrefsChanged').catch(function () { }); }, 300);
+    }
+    return { register: register, changed: changed };
+})();
+
 // Light/dark theme toggle. The initial theme is set by an inline script in the <head> (before
 // paint, to avoid a flash); this just flips and persists it. Bootstrap 5.3 reads data-bs-theme.
 window.imTheme = (function () {
@@ -6,6 +21,7 @@ window.imTheme = (function () {
     function apply(t) {
         document.documentElement.setAttribute('data-bs-theme', t);
         try { localStorage.setItem(THEME_PREF, t); } catch (e) { /* private mode */ }
+        window.imPrefs.changed();
     }
     function toggle() { apply(current() === 'dark' ? 'light' : 'dark'); }
     return { toggle: toggle, apply: apply, current: current };
@@ -20,6 +36,7 @@ window.imDensity = (function () {
         if (d === 'compact') { document.documentElement.setAttribute('data-density', 'compact'); }
         else { document.documentElement.removeAttribute('data-density'); }
         try { localStorage.setItem(PREF, d === 'compact' ? 'compact' : 'comfortable'); } catch (e) { /* private mode */ }
+        window.imPrefs.changed();
     }
     return { apply: apply, current: current };
 })();
@@ -33,6 +50,7 @@ window.imNav = (function () {
         if (isCollapsed) { document.documentElement.setAttribute('data-nav', 'collapsed'); }
         else { document.documentElement.removeAttribute('data-nav'); }
         try { localStorage.setItem(NAV_PREF, isCollapsed ? 'collapsed' : 'expanded'); } catch (e) { /* private mode */ }
+        window.imPrefs.changed();
     }
     function toggle() { apply(!collapsed()); }
     return { toggle: toggle, apply: apply, collapsed: collapsed };
