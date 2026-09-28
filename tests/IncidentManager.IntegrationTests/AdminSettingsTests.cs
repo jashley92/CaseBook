@@ -90,6 +90,20 @@ public sealed class AdminSettingsTests : IDisposable
         row.UpdatedBy.Should().Be("admin1");
     }
 
+    // Changing the reporting time zone regroups past months and quarters, so the change must be on the record.
+    [Fact]
+    public async Task Changing_the_reporting_time_zone_is_audited()
+    {
+        await using var db = NewContext();
+        await NewService(db).SetAsync("Organization:TimeZone", "america/chicago");
+
+        var row = await db.AppSettings.AsNoTracking().SingleAsync(s => s.Key == "Organization:TimeZone");
+        row.Value.Should().Be("America/Chicago");
+        var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+        chain.Should().Contain(a => a.EntityType == nameof(IncidentManager.Domain.Entities.AppSetting) && a.EntityId == row.Id.ToString());
+        _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
+    }
+
     [Fact]
     public async Task Reset_removes_the_override_so_the_default_returns()
     {

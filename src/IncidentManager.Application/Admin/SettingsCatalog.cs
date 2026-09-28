@@ -56,7 +56,7 @@ public static class SettingsCatalog
             "Used for primary buttons and structural ink. Blank uses the built-in charcoal.", "", CustomEditor: true),
         // F-08: where calendar months and quarters begin (dashboard trend and drill-in, E-31 program report). DST follows the zone.
         new SettingDefinition("Organization:TimeZone", "Reporting time zone", "Organization", SettingKind.Text,
-            "Where months and quarters begin on the dashboard trend and the quarterly program report. Daylight saving follows the zone. Stored times and the audit trail stay in UTC.",
+            "Where days, months and quarters begin: the dashboard trend, the quarterly program report and the daily digest. Daylight saving follows the zone. Set it once, before go-live: changing it later regroups past months and quarters, so a regenerated report won't match one already sent. Stored times and the audit trail stay in UTC.",
             "America/New_York",
             Options: [new("America/New_York", "Eastern (New York)"), new("America/Chicago", "Central (Chicago)"),
                 new("America/Denver", "Mountain (Denver)"), new("America/Phoenix", "Mountain, no daylight saving (Phoenix)"),
