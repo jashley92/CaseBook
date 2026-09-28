@@ -10,6 +10,7 @@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
+@inject IJSRuntime JS
 @inject Microsoft.Extensions.Options.IOptionsMonitor<IncidentManager.Application.Reporting.ReportingOptions> ReportingOpts
 
 <AuthorizeView Policy="@Policies.EditCases">
@@ -50,7 +51,7 @@
             {
                 <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
                     <label class="form-label small mb-0" for="report-word-template">Word template</label>
-                    <select id="report-word-template" class="form-select form-select-sm w-auto" @bind="_wordTemplate">
+                    <select id="report-word-template" class="form-select form-select-sm w-auto" @bind="_wordTemplate" @bind:after="OnTemplateChanged">
                         <option value="">@(ProfileTemplateName is { } pt ? $"Profile default ({pt})" : "Built-in layout")</option>
                         @if (ProfileTemplateName is not null)
                         {
@@ -62,7 +63,6 @@
                             <option value="@t.Id">@t.Name</option>
                         }
                     </select>
-                    <span class="small text-muted">The in-app preview shows the content, not the template's styling.</span>
                 </div>
             }
             @* PROD-45: the TLP marking printed on every page of the report generated next. *@
@@ -92,11 +92,33 @@
     {
         <div class="card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <span><span class="bi bi-eye me-1"></span>Preview <span class="small text-muted">· what the generated report will contain</span></span>
+                <span>
+                    <span class="bi bi-eye me-1"></span>Preview
+                    @if (_filledName is not null)
+                    {
+                        <span class="small text-muted">· Word template “@_filledName”, filled with this case. Fonts not installed on this computer are replaced, and page breaks can differ slightly from Word.</span>
+                    }
+                    else
+                    {
+                        <span class="small text-muted">· what the generated report will contain</span>
+                    }
+                </span>
                 <button class="btn-close" aria-label="Hide preview" @onclick="TogglePreview"></button>
             </div>
             <div class="card-body bg-body-tertiary">
-                <ReportPreview Model="_previewModel" />
+                @if (_filledBytes is not null)
+                {
+                    @if (_docxError is not null)
+                    {
+                        <p class="text-danger small mb-0" role="alert">@_docxError</p>
+                    }
+                    @* docx-view.js owns this element's contents; Blazor never renders children into it. *@
+                    <div class="im-docx-preview" role="region" aria-label="Report preview" @ref="_docxHost"></div>
+                }
+                else
+                {
+                    <ReportPreview Model="_previewModel" />
+                }
             </div>
         </div>
     }
@@ -120,6 +142,12 @@
     private Guid? _selectedProfileId;   // dropdown selection (may differ from the saved case value until saved)
     private bool _profileDirty;         // selection changed but not yet saved to the case
     private IncidentManager.Application.Reporting.CaseReportModel? _previewModel;
+    // The filled Word template shown instead of the built-in preview when the report would use one.
+    private string? _filledName;
+    private byte[]? _filledBytes;
+    private bool _docxPending;   // new bytes to hand to docx-view.js after the next render
+    private string? _docxError;
+    private ElementReference _docxHost;
     private int _loadedToken = int.MinValue;
     private TlpLevel? _tlpChoice;   // PROD-45: the analyst's pick; null = the admin default
     // PROD-47: the Word template for the next Word draft. "" = the selected profile's default, Guid.Empty = built-in.
@@ -183,18 +211,47 @@
         if (State.ShowPreview) await RefreshPreview();
     }
 
+    private async Task OnTemplateChanged()
+    {
+        if (State.ShowPreview) await RefreshPreview();
+    }
+
+    private Guid? TemplateChoice => Guid.TryParse(_wordTemplate, out var tid) ? tid : null;
+
     private async Task RefreshPreview()
     {
+        _docxError = null;
         try
         {
-            _previewModel = await Reports.BuildPreviewModelAsync(CaseId, _selectedProfileId, _tlp);
+            // A report filled from a Word template is previewed as that document; otherwise the built-in layout.
+            var filled = await Reports.FillTemplatePreviewAsync(CaseId, _selectedProfileId, _tlp, TemplateChoice);
+            (_filledName, _filledBytes) = filled is { } f ? (f.TemplateName, f.Bytes) : (null, null);
+            _docxPending = filled is not null;
+            _previewModel = filled is null ? await Reports.BuildPreviewModelAsync(CaseId, _selectedProfileId, _tlp) : null;
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
             Toasts.Error(ex.Message);
-            _previewModel = null;
+            (_previewModel, _filledName, _filledBytes, _docxPending) = (null, null, null, false);
         }
         StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_docxPending || _filledBytes is null || !State.ShowPreview) return;
+        _docxPending = false;
+        try
+        {
+            using var stream = new DotNetStreamReference(new MemoryStream(_filledBytes));
+            await JS.InvokeVoidAsync("imDocxView.render", _docxHost, stream);
+        }
+        catch (JSException)
+        {
+            _docxError = "Couldn't show the Word preview in this browser. Generate a draft to see the report.";
+            StateHasChanged();
+        }
+        catch (JSDisconnectedException) { }
     }
 
     private async Task Generate()
@@ -206,8 +263,7 @@
             if (_profileDirty) return; // the save failed and said why; don't generate against the old profile
         }
         IncidentManager.Domain.Entities.Report report;
-        Guid? template = Guid.TryParse(_wordTemplate, out var tid) ? tid : null;
-        try { report = await Reports.GenerateAsync(CaseId, _tlp, template: template); }
+        try { report = await Reports.GenerateAsync(CaseId, _tlp, template: TemplateChoice); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't generate the report. {ex.Message}"); return; }
         _reportMsg = $"Generated draft {report.FileName} (SHA-256 {report.ContentSha256[..12]}…)";
         await LoadReports();

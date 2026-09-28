@@ -330,9 +330,13 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
                 new Paragraph(new ParagraphProperties(new Justification { Val = JustificationValues.Right }),
                     new Run(new RunProperties(new Bold()), new Text("{{report.tlp}}"))),
                 ReportGenerator.PageNumberParagraph());
+            // Letter with 1" margins, stated rather than left to the reader's defaults: Word assumes them, but the Report
+            // tab's in-browser preview draws a page with no stated size edge to edge. Schema order: references, pgSz, pgMar.
             body.AppendChild(new SectionProperties(
                 new HeaderReference { Type = HeaderFooterValues.Default, Id = main.GetIdOfPart(headerPart) },
-                new FooterReference { Type = HeaderFooterValues.Default, Id = main.GetIdOfPart(footerPart) }));
+                new FooterReference { Type = HeaderFooterValues.Default, Id = main.GetIdOfPart(footerPart) },
+                new PageSize { Width = 12240U, Height = 15840U },
+                new PageMargin { Top = 1440, Right = 1440U, Bottom = 1440, Left = 1440U, Header = 720U, Footer = 720U, Gutter = 0U }));
             main.Document.Save();
         }
         return ms.ToArray();

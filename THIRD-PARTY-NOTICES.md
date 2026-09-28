@@ -10,6 +10,8 @@ Each is used under its respective open-source license, reproduced or linked belo
 | [vis-network](https://github.com/visjs/vis-network) | 9.1.9 | Apache-2.0 / MIT (dual) | `src/IncidentManager.Web/wwwroot/lib/vis-network/` |
 | [Bootstrap Icons](https://github.com/twbs/icons) | 1.11.3 | MIT | `src/IncidentManager.Web/wwwroot/lib/bootstrap-icons/` |
 | [EasyMDE](https://github.com/Ionaru/easy-markdown-editor) | 2.18.0 | MIT | `src/IncidentManager.Web/wwwroot/lib/easymde/` |
+| [docx-preview](https://github.com/VolodymyrBaydalka/docxjs) | 0.4.1 | Apache-2.0 | `src/IncidentManager.Web/wwwroot/lib/docx-preview/` |
+| [JSZip](https://github.com/Stuk/jszip) | 3.10.2 | MIT (dual MIT / GPL-3.0; used under MIT) | `src/IncidentManager.Web/wwwroot/lib/docx-preview/` |
 | [DejaVu Sans](https://dejavu-fonts.github.io/) | 2.37 | Bitstream Vera / Arev (permissive, redistributable) | `src/IncidentManager.Infrastructure/Reporting/Fonts/` |
 
 DejaVu Sans faces (Regular/Bold/Oblique/BoldOblique) are embedded in the Infrastructure
@@ -19,6 +21,9 @@ independent of host-installed fonts. Full license text: `Reporting/Fonts/LICENSE
 vis-network is dual-licensed under Apache License 2.0 and MIT; it is redistributed
 here in minified form (`vis-network.min.js`, `vis-network.min.css`) to power the
 entity-relationship graph. See the visjs project for full license text.
+
+docx-preview (with its dependency JSZip) is redistributed in minified form to show a filled
+Word template in the case Report tab's preview, in the browser. It loads only on that tab.
 
 ## NuGet dependencies
 

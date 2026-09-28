@@ -423,6 +423,30 @@ public sealed class ReportService
         return BuildModel(c, _clock.UtcNow, logo, sections, elemSummary, triggers, tlp);
     }
 
+    /// <summary>
+    /// The Word template the next report would be filled from, filled with the case as Generate would fill it, for the
+    /// Report tab to show in place of the built-in preview. Null when the report would use the built-in layout. Nothing
+    /// is stored. <paramref name="template"/> is read as in <see cref="GenerateAsync"/>; the default is the template of
+    /// <paramref name="selectedProfileId"/>, the profile on screen (Generate saves that choice first).
+    /// </summary>
+    public async Task<(string TemplateName, byte[] Bytes)?> FillTemplatePreviewAsync(
+        Guid caseId, Guid? selectedProfileId, TlpLevel? tlp = null, Guid? template = null, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var canAccess = await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct);
+        if (!canAccess) throw new InvalidOperationException("Case not found.");
+        if (await ResolveTemplateAsync(db, await ProfileTemplateIdAsync(db, selectedProfileId, ct), template, ct) is not { } t)
+            return null;
+
+        var c = await LoadFullCaseAsync(db, caseId, ct)
+            ?? throw new InvalidOperationException("Case not found.");
+        var logo = await _branding.GetLogoAsync(ct);
+        var sections = await ResolveSectionsAsync(db, selectedProfileId, ct);
+        var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
+        var model = BuildModel(c, _clock.UtcNow, logo, sections, elemSummary, triggers, tlp);
+        return (t.Name, _templates!.Render(t.Bytes, await WithReviewAsync(db, c, model, ct)));
+    }
+
     private static Task<Case?> LoadFullCaseAsync(IAppDbContext db, Guid caseId, CancellationToken ct) =>
         // S8733: eager-loading many independent collections in one query is a Cartesian explosion (row count =
         // the product of every collection's size). Split into one correlated query per collection. Read-only

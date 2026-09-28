@@ -2319,3 +2319,13 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 [data-bs-theme="dark"] .text-success { color: var(--bs-success-text-emphasis) !important; }
 [data-bs-theme="dark"] .btn-outline-danger  { --bs-btn-color: var(--bs-danger-text-emphasis); }
 [data-bs-theme="dark"] .btn-outline-success { --bs-btn-color: var(--bs-success-text-emphasis); }
+
+/* Report tab: a filled Word template rendered by docx-view.js. Pages stay white like paper in either theme; the
+   wrapper scrolls sideways rather than squeezing a page that's wider than the card. */
+.im-docx-preview { overflow-x: auto; }
+/* The wrapper centres its pages; sized to the widest page (never narrower than the card), so a page wider than a phone
+   scrolls instead of being centred off the left edge where no scrollbar reaches. */
+.im-docx-preview .docx-wrapper { background: var(--bs-secondary-bg); padding: 1rem; width: max-content; min-width: 100%; box-sizing: border-box; }
+.im-docx-preview .docx-wrapper > section.docx { color: #000; margin-bottom: 1rem; }
+/* A template that states no page size (Word assumes Letter, 1" margins) would otherwise render edge to edge. */
+.im-docx-preview .docx-wrapper > section.docx:not([style*="width"]) { width: 8.5in; min-height: 11in; padding: 1in; }

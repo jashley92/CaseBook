@@ -69,6 +69,20 @@ public class WordTemplateEngineTests
         check.Placeholders.Should().Contain(["case.title", "ioc.value", "image.attack_chain", "report.tlp"]);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void The_starters_state_their_page_size_and_margins(bool lessons)
+    {
+        // The Report tab's in-browser preview draws a page that states no size edge to edge; Word would assume Letter.
+        using var ms = new MemoryStream(lessons ? _engine.LessonsStarter() : _engine.Starter());
+        using var doc = WordprocessingDocument.Open(ms, false);
+        var section = doc.MainDocumentPart!.Document.Body!.Elements<SectionProperties>().Single();
+        section.GetFirstChild<PageSize>()!.Width!.Value.Should().Be(12240U);
+        section.GetFirstChild<PageMargin>()!.Left!.Value.Should().Be(1440U);
+        new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(doc).Should().BeEmpty();
+    }
+
     [Fact]
     public void Rendering_fills_fields_repeats_rows_and_embeds_pictures()
     {

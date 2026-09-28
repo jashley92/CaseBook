@@ -548,6 +548,20 @@ public sealed class ReportingIntegrationTests : IDisposable
             }
             (await db.Reports.CountAsync(r => r.CaseId == caseId)).Should().Be(before, "a preview is never stored as a report");
 
+            // The Report tab's preview: the template Generate would use for the profile on screen, filled the same way.
+            var shown = (await svc.FillTemplatePreviewAsync(caseId, profileId))!.Value;
+            shown.TemplateName.Should().Be("House style");
+            using (var ms = new MemoryStream(shown.Bytes))
+            using (var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false))
+                doc.MainDocumentPart!.Document.Body!.InnerText.Should().Contain("2026-01_Phishing_Wave")
+                    .And.Contain("Business impact").And.NotContain("PREVIEW").And.NotContain("{{");
+            (await svc.FillTemplatePreviewAsync(caseId, profileId, template: boardId))!.Value.TemplateName.Should().Be("Board summary");
+            (await svc.FillTemplatePreviewAsync(caseId, profileId, template: Guid.Empty)).Should().BeNull("the built-in layout has its own preview");
+            (await svc.FillTemplatePreviewAsync(caseId, null)).Should().BeNull("the global default layout names no template");
+            await svc.Invoking(s => s.FillTemplatePreviewAsync(Guid.NewGuid(), profileId)).Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("Case not found.");
+            (await db.Reports.CountAsync(r => r.CaseId == caseId)).Should().Be(before, "the Report tab's preview isn't stored either");
+
             // Only admins preview.
             _user.RoleSet = [AppRole.Analyst];
             await svc.Invoking(s => s.PreviewTemplateAsync(boardId, caseId)).Should().ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
