@@ -74,15 +74,16 @@
                     </div>
                     <table class="table table-sm table-hover align-middle im-table mb-0">
                         <thead>
-                            <tr><th>Case #</th><th>Task</th><th>Sev.</th><th>Owner</th><th>Due</th><th></th></tr>
+                            <tr><th>Task</th><th>Case</th><th>Sev.</th><th>Owner</th><th>Due</th><th></th></tr>
                         </thead>
                         <tbody>
-                            @foreach (var i in bucket.Items)
+                            @foreach (var i in Shown(bucket))
                             {
                                 <tr>
-                                    <td><code>@i.CaseNumber</code></td>
-                                    <td>@i.Title
-                                        <span class="d-block text-muted small">@i.CaseTitle</span>
+                                    <td style="min-width:12rem">@i.Title</td>
+                                    <td>
+                                        <code>@i.CaseNumber</code>
+                                        <span class="im-clamp-2 text-muted small" title="@i.CaseTitle">@i.CaseTitle</span>
                                     </td>
                                     <td><span class="@Ui.SeverityBadge(i.Severity)">@SevLabels.For(i.Severity)</span></td>
                                     <td class="small">
@@ -96,6 +97,12 @@
                             }
                         </tbody>
                     </table>
+                    @if (bucket.Items.Count > PageRows && !_expanded.Contains(bucket.Kind))
+                    {
+                        <button type="button" class="btn btn-link btn-sm mt-2 p-0" @onclick="() => _expanded.Add(bucket.Kind)">
+                            Show all @bucket.Items.Count
+                        </button>
+                    }
                 </section>
             }
         }
@@ -127,8 +134,10 @@
             else
             {
                 <p class="text-muted small mb-0">
-                    Calendar subscription is off. Use <strong>Add to calendar</strong> above for a one-time import, or ask an
-                    administrator to set <code>Agenda:FeedKey</code> to turn on a syncing subscription.
+                    Syncing calendar subscriptions aren't turned on. Use <strong>Add to calendar</strong> above for a one-time import.
+                    <AuthorizeView Policy="@Policies.Administer">
+                        To turn them on, set <code>Agenda:FeedKey</code> in the server configuration.
+                    </AuthorizeView>
                 </p>
             }
         </section>
@@ -144,6 +153,11 @@
     private ConfirmDialog _confirm = null!;
 
     [SupplyParameterFromQuery(Name = "owner")] private string? OwnerQuery { get; set; }
+
+    // A long bucket (a backlog of overdue tasks) shows its first rows until asked for the rest.
+    private const int PageRows = 25;
+    private readonly HashSet<AgendaBucketKind> _expanded = [];
+    private IEnumerable<AgendaItem> Shown(AgendaBucket b) => _expanded.Contains(b.Kind) ? b.Items : b.Items.Take(PageRows);
 
     protected override async Task OnInitializedAsync()
     {
@@ -172,6 +186,9 @@
     {
         _owner = owner;
         _board = null;
+        _expanded.Clear();
+        // Keep the choice in the address so Back, a refresh or a shared link returns to the same view.
+        Nav.NavigateTo(Nav.GetUriWithQueryParameter("owner", string.IsNullOrEmpty(owner) ? null : owner), replace: true);
         await Load();
     }
 
