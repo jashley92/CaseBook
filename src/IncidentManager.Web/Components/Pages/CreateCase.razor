@@ -46,8 +46,10 @@
         <div class="im-card nc-card">
             <div class="mb-3">
                 <label class="form-label" for="cc-title">Title <span class="text-danger">*</span></label>
-                <InputText id="cc-title" class="form-control form-control-lg" @bind-Value="_request.Title" @bind-Value:after="SyncSlug"
-                           placeholder="e.g. Credential-phishing wave targeting Finance" />
+                <InputText id="cc-title" class="@($"form-control form-control-lg {Invalid("cc-title")}")" @bind-Value="_request.Title" @bind-Value:after="SyncSlug"
+                           placeholder="e.g. Credential-phishing wave targeting Finance"
+                           aria-invalid="@(_fieldErrors.ContainsKey("cc-title") ? "true" : null)" aria-describedby="cc-title-err" />
+                @if (_fieldErrors.TryGetValue("cc-title", out var titleErr)) { <div id="cc-title-err" class="invalid-feedback d-block">@titleErr</div> }
                 <div class="form-text">Case number <code>@PreviewNumber</code> is assigned automatically.</div>
             </div>
 
@@ -84,7 +86,9 @@
                 {
                     <div class="col-md-4">
                         <label class="form-label" for="cc-vendor-name">Vendor name <span class="text-danger">*</span></label>
-                        <InputText id="cc-vendor-name" class="form-control" @bind-Value="_request.VendorName" />
+                        <InputText id="cc-vendor-name" class="@($"form-control {Invalid("cc-vendor-name")}")" @bind-Value="_request.VendorName" @bind-Value:after='() => _fieldErrors.Remove("cc-vendor-name")'
+                                   aria-invalid="@(_fieldErrors.ContainsKey("cc-vendor-name") ? "true" : null)" aria-describedby="cc-vendor-name-err" />
+                        @if (_fieldErrors.TryGetValue("cc-vendor-name", out var vendorErr)) { <div id="cc-vendor-name-err" class="invalid-feedback d-block">@vendorErr</div> }
                     </div>
                     <div class="col-md-4">
                         <label class="form-label" for="cc-vendor-contact">Vendor contact</label>
@@ -377,6 +381,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusField is { } f)
+        {
+            _focusField = null;
+            try { await JS.InvokeVoidAsync("imMotion.focusId", f); } catch (JSException) { }
+        }
         if (!firstRender) return;
         try
         {
@@ -423,7 +432,11 @@
 
     // U-42: one Title field drives the case-number slug. Keep the (validator-required) DescriptiveName in
     // sync with a compacted slug source so the auto number stays short instead of echoing the full title.
-    private void SyncSlug() => _request.DescriptiveName = SlugSource(_request.Title);
+    private void SyncSlug()
+    {
+        _request.DescriptiveName = SlugSource(_request.Title);
+        if (!string.IsNullOrWhiteSpace(_request.Title)) _fieldErrors.Remove("cc-title");
+    }
 
     private static string SlugSource(string? title)
     {
@@ -458,9 +471,27 @@
         }
     }
 
+    // Required fields, checked here so the message sits under the field (and focus goes there) rather than in
+    // a summary. The service validates again.
+    private readonly Dictionary<string, string> _fieldErrors = new();
+    private string? _focusField;
+    private string Invalid(string id) => _fieldErrors.ContainsKey(id) ? "is-invalid" : "";
+
+    private bool CheckRequired()
+    {
+        _fieldErrors.Clear();
+        if (string.IsNullOrWhiteSpace(_request.Title))
+            _fieldErrors["cc-title"] = "Give the case a title. It also becomes the case number.";
+        if (_request.Origin == CaseOrigin.ThirdParty && string.IsNullOrWhiteSpace(_request.VendorName))
+            _fieldErrors["cc-vendor-name"] = "Name the vendor that reported it.";
+        _focusField = _fieldErrors.Keys.FirstOrDefault();
+        return _fieldErrors.Count == 0;
+    }
+
     private async Task Submit()
     {
         _error = null;
+        if (_created is null && !CheckRequired()) return;
 
         // FR-04: the duplicate/campaign check must not be skippable. If indicators were entered but the check
         // is stale (typed then clicked Create without ever blurring / checking), run it now; if it surfaces

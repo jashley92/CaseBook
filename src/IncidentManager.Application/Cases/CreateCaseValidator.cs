@@ -11,7 +11,7 @@ public sealed class CreateCaseValidator : AbstractValidator<CreateCaseRequest>
             .NotEmpty().WithMessage("A short descriptive name is required (used in the case number).")
             .MaximumLength(120);
 
-        RuleFor(x => x.Title).NotEmpty().MaximumLength(300);
+        RuleFor(x => x.Title).NotEmpty().WithMessage("A title is required.").MaximumLength(300);
         RuleFor(x => x.Summary).MaximumLength(8000);
         RuleFor(x => x.DetectionCaseId).MaximumLength(100);
 

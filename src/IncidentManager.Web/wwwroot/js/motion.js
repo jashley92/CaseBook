@@ -2,6 +2,16 @@
 window.imMotion = {
     // Smooth-scroll an element into view by id (used by the timeline "jump to new" pill).
     // Falls back to an instant jump when the viewer prefers reduced motion.
+    // Bring a form field into view and put the caret in it (e.g. the first field a submit found missing).
+    focusId: function (id) {
+        try {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.focus({ preventScroll: true });
+            var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+        } catch (e) { /* no-op */ }
+    },
     scrollToId: function (id) {
         try {
             var el = document.getElementById(id);
