@@ -37,15 +37,28 @@
 </p>
 
 <AuthorizeView Policy="@Policies.EditCases">
-    @* Phones: the composer folds behind a button so the entries start near the top. Editing an entry opens it. *@
+    @* Design review P5: the composer folds behind a one-line bar at every width, so the history starts at the
+       top of the tab. It opens for a new case with no entries yet, when editing, and when a screenshot is pasted. *@
     @if (_tlEditId is null)
     {
-        <button type="button" class="btn btn-sm btn-outline-primary mb-3 d-sm-none" aria-expanded="@Ui.Aria(_composerOpen)"
-                aria-controls="timeline-dropzone" @onclick="() => _composerOpen = !_composerOpen">
-            <span class="bi @(_composerOpen ? "bi-chevron-up" : "bi-plus-lg") me-1" aria-hidden="true"></span>@(_composerOpen ? "Hide form" : "Add to timeline")
-        </button>
+        @if (!ComposerVisible)
+        {
+            <button type="button" class="tl-add-bar" aria-expanded="false" aria-controls="timeline-dropzone"
+                    @onclick="() => _composerOpen = true">
+                <span class="bi bi-plus-lg" aria-hidden="true"></span>
+                <span>Add a step: @(IsThirdParty ? "disclosure" : "event") or investigation entry</span>
+                <span class="ms-auto small">or paste a screenshot</span>
+            </button>
+        }
+        else
+        {
+            <div class="d-flex justify-content-end mb-1">
+                <button type="button" class="btn btn-sm btn-link p-0" aria-expanded="true" aria-controls="timeline-dropzone"
+                        @onclick="() => _composerOpen = false">Hide form</button>
+            </div>
+        }
     }
-    <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "") @(_composerOpen || _tlEditId is not null ? "" : "im-phone-collapsed")">
+    <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "") @(ComposerVisible ? "" : "d-none")">
         <div class="card-body">
             @* U-40: hidden sink the paste shim feeds a pasted screenshot into; staged then attached on Add. *@
             <InputFile id="timeline-file-paste" class="d-none" accept="image/*" OnChange="OnTimelinePasted" />
@@ -582,6 +595,8 @@ else
 
     // U-40: a screenshot pasted into the composer, staged in memory and attached as evidence on Add.
     private bool _composerOpen;
+    // Open when asked, while editing, or on a case with nothing on its timeline yet (the first entry is the job).
+    private bool ComposerVisible => _composerOpen || _tlEditId is not null || !Case.TimelineEntries.Any(x => x.IsCurrent);
     private byte[]? _tlShotBytes;
     // The staged screenshot's evidence id once uploaded, so a retry after a failed save links the same file
     // instead of uploading a second copy.
@@ -724,6 +739,7 @@ else
 
     private async Task OnTimelinePasted(InputFileChangeEventArgs e)
     {
+        _composerOpen = true; // a pasted screenshot is staged in the form, so show it
         try
         {
             var f = e.File;
