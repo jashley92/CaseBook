@@ -2126,6 +2126,22 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
 }
 
 /* ============================================================================
+   Case workspace sticky strip (design review P4): tabs pinned under the top bar; a slim identity bar joins
+   them once the header has scrolled away (data-stuck, set by imMotion.watchHead).
+   ============================================================================ */
+.ws-sticky { position: sticky; top: var(--im-topbar-h); z-index: 20; background: var(--im-bg); }
+.ws-slim { display: none; align-items: center; gap: .4rem; min-height: 2.5rem; padding: .3rem 0; border-bottom: 1px solid var(--im-border); }
+.ws-sticky[data-stuck] .ws-slim { display: flex; }
+.ws-slim .im-casehead-num { font-size: var(--im-text-sm); font-weight: 600; }
+.ws-slim-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--im-text-sm); }
+.im-workspace-tabs .im-tab-sep { flex: none; width: 1px; align-self: stretch; margin: .45rem .35rem; background: var(--im-border-strong); list-style: none; }
+@media (max-width: 640px) {
+    .ws-sticky { top: 0; }
+    .ws-slim .im-badge:not(.im-sla-breached):not(.im-sla-atrisk), .ws-slim-title { display: none; }
+    .ws-slim .btn { display: none; }
+}
+
+/* ============================================================================
    Cases toolbar (design review P2): count chips that are also filters, then the filter controls, on one
    wrapping row; rarer toggles, active-filter chips and saved views appear below only when in use.
    ============================================================================ */

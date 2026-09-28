@@ -88,7 +88,7 @@ else
     }
     @* FR-17: wrap so the action group (Advance / Actions) drops below the title on a phone instead of
        overflowing the row and forcing whole-page horizontal scroll. *@
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div id="ws-head" class="d-flex justify-content-between align-items-start flex-wrap gap-2">
         <div>
             <h1 class="mb-1">
                 <code class="im-casehead-num">@_case.CaseNumber</code>
@@ -253,7 +253,7 @@ else
         </div>
     </div>
 
-    <div class="d-flex align-items-center flex-wrap gap-1 my-3 im-phase-rail" role="list" aria-label="Case phase">
+    <div class="d-flex align-items-center flex-wrap gap-1 my-2 im-phase-rail" role="list" aria-label="Case phase">
         @{ var _phases = Enum.GetValues<CasePhase>(); var _curIdx = Array.IndexOf(_phases, _case.Phase); }
         @for (var i = 0; i < _phases.Length; i++)
         {
@@ -298,10 +298,36 @@ else
         </div>
     }
 
-    <ul class="nav nav-tabs mb-3 im-workspace-tabs">
+    @* Design review P4: the tabs stay under the top bar while the case scrolls, and once the header above has
+       scrolled away a one-line bar keeps the case's identity, state and next step in view. *@
+    <div id="ws-sticky" class="ws-sticky mb-3">
+        <div class="ws-slim" aria-hidden="true">
+            <code class="im-casehead-num">@_case.CaseNumber</code>
+            <span class="@Ui.ClassificationBadge(_case.Classification)">@Ui.Label(_case.Classification)</span>
+            <span class="@Ui.SeverityBadge(_case.Severity)">@SevLabels.For(_case.Severity)</span>
+            <span class="@Ui.PhaseBadge(_case.Phase)">@Ui.Label(_case.Phase)</span>
+            @if (slaHead.State != SlaState.NoTarget)
+            {
+                <span class="@Ui.SlaBadge(slaHead.State)" title="@slaHeadTitle">
+                    <span class="bi @Ui.SlaGlyph(slaHead.State)" aria-hidden="true"></span>
+                    @(slaHead.State is SlaState.Breached or SlaState.AtRisk && slaHeadTiming.Length > 0 ? slaHeadTiming : Ui.SlaLabel(slaHead.State))
+                </span>
+            }
+            <span class="ws-slim-title text-muted">@_case.Title</span>
+            @if (_canEdit && NextPhase() is { } snp)
+            {
+                <button class="btn btn-sm btn-primary ms-auto" tabindex="-1" disabled="@_advancing" @onclick="() => AdvanceTo(snp)">Advance to @Ui.Label(snp) →</button>
+            }
+        </div>
+    <ul class="nav nav-tabs im-workspace-tabs">
         @foreach (var tab in _tabs)
         {
             var _tabNo = (Array.IndexOf(_tabs, tab) + 1) % 10;   // U-14: the digit shortcut for this tab (the 10th is 0)
+            @if (tab == "Review")
+            {
+                @* The record tabs come first; the outputs built from them (lessons, report, audit trail) after. *@
+                <li class="im-tab-sep" aria-hidden="true"></li>
+            }
             <li class="nav-item">
                 <button class="nav-link @(_activeTab == tab ? "active" : "")" @onclick="() => SetTab(tab)"
                         title="@($"Shortcut: {_tabNo}")">
@@ -310,6 +336,7 @@ else
             </li>
         }
     </ul>
+    </div>
 
     @if (_confirm is not null)
     {
@@ -1686,6 +1713,7 @@ else
 
     private bool _advancing;
     private bool _titleExpanded;
+    private Guid? _watchedHeadFor;
 
     // A stage-gate "Fix" link (from the Overview readiness card or a gate dialog): close any dialog and go to
     // what satisfies the check.
@@ -2010,6 +2038,13 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // P4: start watching this case's header once it's on screen (again after navigating to another case).
+        if (_case is not null && _watchedHeadFor != _case.Id)
+        {
+            _watchedHeadFor = _case.Id;
+            try { await JS.InvokeVoidAsync("imMotion.watchHead", "ws-head", "ws-sticky"); }
+            catch (JSException) { } catch (JSDisconnectedException) { }
+        }
         if (_pendingOverviewFix is { } fix && _overviewTab is not null)
         {
             _pendingOverviewFix = null;
