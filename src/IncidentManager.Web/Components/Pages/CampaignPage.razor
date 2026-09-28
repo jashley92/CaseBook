@@ -118,7 +118,7 @@
                                 <td><code>@m.CaseNumber</code>
                                     @if (m.IsRestricted) { <span class="bi bi-lock-fill text-muted ms-1" title="Restricted" aria-label="Restricted"></span> }
                                 </td>
-                                <td>@m.Title</td>
+                                <td><span class="im-clamp-2" title="@m.Title">@m.Title</span></td>
                                 <td><span class="@Ui.ClassificationBadge(m.Classification)">@Ui.Label(m.Classification)</span></td>
                                 <td><span class="@Ui.PhaseBadge(m.Phase)">@Ui.Label(m.Phase)</span></td>
                                 <td><span class="@Ui.SeverityBadge(m.Severity)">@SevLabels.For(m.Severity)</span></td>

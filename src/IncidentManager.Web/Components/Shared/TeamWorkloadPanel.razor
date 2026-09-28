@@ -189,7 +189,7 @@ else
                                                            @onchange="e => ToggleReassign(c.Id, (bool)(e.Value ?? false))" />
                                                 </td>
                                                 <td><code>@c.CaseNumber</code></td>
-                                                <td>@c.Title</td>
+                                                <td><span class="im-clamp-2" title="@c.Title">@c.Title</span></td>
                                                 <td><span class="@Ui.SeverityBadge(c.Severity)">@SevLabels.For(c.Severity)</span></td>
                                                 <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
                                             </tr>

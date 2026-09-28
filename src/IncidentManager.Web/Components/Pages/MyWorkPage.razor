@@ -88,7 +88,7 @@
                                         <td><code>@c.CaseNumber</code>
                                             @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
                                         </td>
-                                        <td>@c.Title</td>
+                                        <td><span class="im-clamp-2" title="@c.Title">@c.Title</span></td>
                                         <td><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
                                         <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
                                         <td><span class="@Ui.SeverityBadge(c.Severity)">@SevLabels.For(c.Severity)</span></td>
@@ -239,7 +239,7 @@
                             @foreach (var e in _work.RecentEscalations)
                             {
                                 <li>
-                                    <a class="mw-esc-case" href="cases/@e.CaseId"><code>@e.CaseNumber</code> @e.Title</a>
+                                    <a class="mw-esc-case im-clamp-2" href="cases/@e.CaseId" title="@e.Title"><code>@e.CaseNumber</code> @e.Title</a>
                                     <span class="mw-esc-move">
                                         <span class="@Ui.ClassificationBadge(e.From)">@Ui.Label(e.From)</span>
                                         <span class="bi bi-arrow-right" aria-hidden="true"></span>

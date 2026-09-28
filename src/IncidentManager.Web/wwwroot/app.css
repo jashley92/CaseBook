@@ -542,6 +542,8 @@ h1:focus {
 
 /* Case-list title link — reads as text until hovered (the row also has an explicit Open button). */
 .case-title:hover { text-decoration: underline !important; }
+/* A long title (a pasted alert subject, say) stays two lines in a list; the full text is on hover. */
+.im-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 
 /* Case-list "Case #" column — cap width so a long descriptive slug (U-42b) can't widen the row;
    the full number is available on hover (title) and on the case page. */

@@ -121,7 +121,9 @@ else
             {
                 <div class="text-danger small mb-2">@_renumberError</div>
             }
-            <div class="mb-2 im-casehead-title">@_case.Title</div>
+            @* A pasted-in, very long title would push the tabs off screen: show two lines, click for the rest. *@
+            <div class="mb-2 im-casehead-title @(_titleExpanded ? "" : "im-clamp-2")" title="@(_titleExpanded ? null : _case.Title)"
+                 @onclick="() => _titleExpanded = !_titleExpanded">@_case.Title</div>
             <div>
                 <span class="@Ui.ClassificationBadge(_case.Classification)">@Ui.Label(_case.Classification)</span>
                 <span class="@Ui.SeverityBadge(_case.Severity)">@SevLabels.For(_case.Severity)</span>
@@ -1683,6 +1685,7 @@ else
     }
 
     private bool _advancing;
+    private bool _titleExpanded;
 
     // A stage-gate "Fix" link (from the Overview readiness card or a gate dialog): close any dialog and go to
     // what satisfies the check.

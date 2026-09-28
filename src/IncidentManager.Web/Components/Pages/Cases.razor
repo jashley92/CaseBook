@@ -409,7 +409,7 @@ else
                         @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
                     </td>
                     <td class="case-cell-title">
-                        <a href="cases/@c.Id" class="link-body-emphasis text-decoration-none fw-medium case-title">@c.Title</a>
+                        <a href="cases/@c.Id" class="link-body-emphasis text-decoration-none fw-medium case-title" title="@c.Title"><span class="im-clamp-2">@c.Title</span></a>
                         @if (c.LegalReferred) { <span class="im-badge im-b-neutral ms-1" title="Referred to Legal / Privacy">Legal</span> }
                         @if (c.LegalHold) { <span class="im-badge im-b-danger ms-1" title="Under a legal hold: preserve, don't delete">Hold</span> }
                         @if (c.IsExercise) { <span class="im-badge im-b-info ms-1" title="Exercise case, excluded from dashboards, reminders and feeds">Exercise</span> }
