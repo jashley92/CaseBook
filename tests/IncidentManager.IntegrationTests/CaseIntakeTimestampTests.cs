@@ -120,6 +120,19 @@ public sealed class CaseIntakeTimestampTests : IDisposable
         await act.Should().ThrowAsync<ArgumentException>().WithMessage("*future*");
     }
 
+    // A mistyped year (1725 for 2025) is rejected at intake too, including imported cases, which come through here.
+    [Fact]
+    public async Task Initial_activity_more_than_ten_years_before_detection_is_rejected()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+
+        var act = async () => await svc.CreateAsync(Req("Typo", r => r.OccurredAtUtc = new DateTimeOffset(1725, 6, 1, 0, 0, 0, TimeSpan.Zero)));
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*10 years before detection*");
+        (await db.Cases.AnyAsync()).Should().BeFalse();
+    }
+
     [Fact]
     public async Task Activity_after_detection_is_rejected()
     {

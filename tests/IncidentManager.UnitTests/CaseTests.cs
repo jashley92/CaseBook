@@ -297,6 +297,24 @@ public class CaseTests
     }
 
     [Fact]
+    public void UpdateDetails_rejects_initial_activity_more_than_ten_years_before_detection()
+    {
+        var c = NewCase();
+        var detected = Now.AddHours(-1);
+
+        var typo = () => c.UpdateDetails("Title", null, null, null, null, detected, new DateTimeOffset(1725, 6, 1, 0, 0, 0, TimeSpan.Zero), "analyst1", Now);
+        typo.Should().Throw<ArgumentException>().WithMessage("*10 years before detection*");
+
+        c.UpdateDetails("Title", null, null, null, null, detected, detected.AddYears(-10), "analyst1", Now);
+        c.OccurredAtUtc.Should().Be(detected.AddYears(-10), "exactly ten years is allowed");
+
+        // An older record already holding an implausible time can still have other details edited.
+        c.OccurredAtUtc = new DateTimeOffset(1725, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        c.UpdateDetails("Renamed", null, null, null, null, detected, c.OccurredAtUtc, "analyst1", Now);
+        c.Title.Should().Be("Renamed");
+    }
+
+    [Fact]
     public void UpdateDetails_still_saves_other_edits_on_a_record_that_already_breaks_the_milestone_rule()
     {
         var c = NewCase();

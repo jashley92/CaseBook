@@ -466,6 +466,7 @@ public sealed class CaseService
             throw new ArgumentException("The detected time can't be in the future.");
         if (request.OccurredAtUtc is { } occurred && occurred > detectedAtUtc)
             throw new ArgumentException("Activity can't begin after it was detected.");
+        Case.EnsurePlausibleDwell(request.OccurredAtUtc, detectedAtUtc);
 
         // Retry on the rare auto-sequence collision (the unique CaseNumber / per-scheme sequence indexes
         // are the guard). A fresh context per attempt so a failed save's audit entry never lingers into the

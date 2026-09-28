@@ -318,6 +318,19 @@ public class Case : AuditableEntity, IHashableEntity
     /// moment the case was filed in the tool (E-34). Lifecycle milestones that the workflow captures
     /// automatically — contained/resolved/closed — are not edited here.
     /// </summary>
+    /// <summary>How long before detection initial activity may be recorded: ten years.</summary>
+    public const int MaxDwellYears = 10;
+
+    /// <summary>
+    /// Rejects an initial-activity time more than <see cref="MaxDwellYears"/> years before detection. Older is almost
+    /// certainly a mistyped year, and it would distort dwell time and the detection SLA figures.
+    /// </summary>
+    public static void EnsurePlausibleDwell(DateTimeOffset? occurredAtUtc, DateTimeOffset detectedAtUtc)
+    {
+        if (occurredAtUtc is { } occurred && occurred < detectedAtUtc.AddYears(-MaxDwellYears))
+            throw new ArgumentException($"Initial activity can't be more than {MaxDwellYears} years before detection. Check the year.");
+    }
+
     public void UpdateDetails(string title, string? summary, string? detectionCaseId, string? dataTypesInvolved,
         string? impactedAssets, DateTimeOffset detectedAtUtc, DateTimeOffset? occurredAtUtc,
         string actor, DateTimeOffset nowUtc)
@@ -328,6 +341,8 @@ public class Case : AuditableEntity, IHashableEntity
             throw new ArgumentException("The detected time can't be in the future.");
         if (occurredAtUtc is { } occurred && occurred > detectedAtUtc)
             throw new ArgumentException("Activity can't begin after it was detected.");
+        if (occurredAtUtc != OccurredAtUtc || detectedAtUtc != DetectedAtUtc)
+            EnsurePlausibleDwell(occurredAtUtc, detectedAtUtc);
         // Response times run from detection, so it can't move past a milestone already reached. Checked only when the
         // detected time changes, so an older record that breaks the rule can still have its other details edited.
         if (detectedAtUtc != DetectedAtUtc)
