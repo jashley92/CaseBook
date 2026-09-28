@@ -193,7 +193,7 @@ public class Case : AuditableEntity, IHashableEntity
     public void Reclassify(Classification to, string reason, string actor, DateTimeOffset nowUtc)
     {
         if (string.IsNullOrWhiteSpace(reason))
-            throw new ArgumentException("A reason is required to change classification.", nameof(reason));
+            throw new ArgumentException("A reason is required to change classification.");
         if (to == Classification) return;
 
         var from = Classification;
@@ -234,7 +234,7 @@ public class Case : AuditableEntity, IHashableEntity
     public void AssignCustomNumber(string number, string actor, DateTimeOffset nowUtc)
     {
         if (string.IsNullOrWhiteSpace(number))
-            throw new ArgumentException("A case number is required.", nameof(number));
+            throw new ArgumentException("A case number is required.");
 
         CaseNumber = number.Trim();
         HasCustomNumber = true;
@@ -297,7 +297,7 @@ public class Case : AuditableEntity, IHashableEntity
         if (Phase != CasePhase.Closed)
             throw new InvalidOperationException("Only a closed case can be reopened.");
         if (string.IsNullOrWhiteSpace(reason))
-            throw new ArgumentException("A reason is required to reopen a case.", nameof(reason));
+            throw new ArgumentException("A reason is required to reopen a case.");
 
         // Return to the phase it was in when it closed, so the lifecycle reads truthfully.
         var priorPhase = StatusChanges
@@ -323,19 +323,19 @@ public class Case : AuditableEntity, IHashableEntity
         string actor, DateTimeOffset nowUtc)
     {
         if (string.IsNullOrWhiteSpace(title))
-            throw new ArgumentException("Title is required.", nameof(title));
+            throw new ArgumentException("Title is required.");
         if (detectedAtUtc > nowUtc)
-            throw new ArgumentException("The detected time can't be in the future.", nameof(detectedAtUtc));
+            throw new ArgumentException("The detected time can't be in the future.");
         if (occurredAtUtc is { } occurred && occurred > detectedAtUtc)
-            throw new ArgumentException("Activity can't begin after it was detected.", nameof(occurredAtUtc));
+            throw new ArgumentException("Activity can't begin after it was detected.");
         // Response times run from detection, so it can't move past a milestone already reached. Checked only when the
         // detected time changes, so an older record that breaks the rule can still have its other details edited.
         if (detectedAtUtc != DetectedAtUtc)
         {
             if (ContainedAtUtc is { } contained && detectedAtUtc > contained)
-                throw new ArgumentException("The detected time can't be after the case was contained.", nameof(detectedAtUtc));
+                throw new ArgumentException("The detected time can't be after the case was contained.");
             if (ResolvedAtUtc is { } resolved && detectedAtUtc > resolved)
-                throw new ArgumentException("The detected time can't be after the case was resolved.", nameof(detectedAtUtc));
+                throw new ArgumentException("The detected time can't be after the case was resolved.");
         }
 
         Title = title.Trim();
@@ -357,7 +357,7 @@ public class Case : AuditableEntity, IHashableEntity
         string? affectedStates, string actor, DateTimeOffset nowUtc)
     {
         if (affectedIndividualsCount is < 0)
-            throw new ArgumentException("The affected-individual count can't be negative.", nameof(affectedIndividualsCount));
+            throw new ArgumentException("The affected-individual count can't be negative.");
 
         AffectedIndividualsCount = affectedIndividualsCount;
 
@@ -396,7 +396,7 @@ public class Case : AuditableEntity, IHashableEntity
     public void Assign(string userId, string displayName, CaseAssignmentRole role, string assignedBy, DateTimeOffset nowUtc)
     {
         if (string.IsNullOrWhiteSpace(userId))
-            throw new ArgumentException("A user is required to assign.", nameof(userId));
+            throw new ArgumentException("A user is required to assign.");
 
         var existing = Assignments.FirstOrDefault(a => a.UserId == userId);
         if (existing is null)
@@ -464,16 +464,16 @@ public class Case : AuditableEntity, IHashableEntity
         if (Classification is null or Domain.Enums.Classification.AdverseEvent)
             throw new InvalidOperationException("Materiality is determined only for Incidents and Breaches.");
         if (decidedOnUtc is { } future && future > nowUtc)
-            throw new ArgumentException("The decision date can't be in the future.", nameof(decidedOnUtc));
+            throw new ArgumentException("The decision date can't be in the future.");
 
         if (status is MaterialityStatus.Material or MaterialityStatus.NotMaterial)
         {
             if (string.IsNullOrWhiteSpace(decisionMaker))
-                throw new ArgumentException("A final determination must record who made the decision.", nameof(decisionMaker));
+                throw new ArgumentException("A final determination must record who made the decision.");
             if (string.IsNullOrWhiteSpace(rationale))
-                throw new ArgumentException("A final determination must record the rationale.", nameof(rationale));
+                throw new ArgumentException("A final determination must record the rationale.");
             if (decidedOnUtc is null)
-                throw new ArgumentException("A final determination must record the decision date.", nameof(decidedOnUtc));
+                throw new ArgumentException("A final determination must record the decision date.");
         }
 
         var from = Materiality.Status;
@@ -508,7 +508,7 @@ public class Case : AuditableEntity, IHashableEntity
         string? description, string? source, string actor, DateTimeOffset nowUtc)
     {
         if (string.IsNullOrWhiteSpace(value))
-            throw new ArgumentException("An entity value is required.", nameof(value));
+            throw new ArgumentException("An entity value is required.");
 
         // Refang defanged IOC notation on entry so correlation (E-08), links (E-05) and the pushed
         // feed (E-13) all match on canonical values — and so this dedup catches "1.1.1[.]1" == "1.1.1.1".
@@ -546,7 +546,7 @@ public class Case : AuditableEntity, IHashableEntity
         EntityDisposition disposition, string? description, string? source, string actor, DateTimeOffset nowUtc)
     {
         if (string.IsNullOrWhiteSpace(value))
-            throw new ArgumentException("An entity value is required.", nameof(value));
+            throw new ArgumentException("An entity value is required.");
 
         var entity = Entities.FirstOrDefault(e => e.Id == entityId)
             ?? throw new InvalidOperationException("Entity not found on this case.");
@@ -591,7 +591,7 @@ public class Case : AuditableEntity, IHashableEntity
         string actor, DateTimeOffset nowUtc, TimelineEntryType type = TimelineEntryType.Other)
     {
         if (string.IsNullOrWhiteSpace(description))
-            throw new ArgumentException("A description is required.", nameof(description));
+            throw new ArgumentException("A description is required.");
 
         var entry = TimelineEntries.FirstOrDefault(t => t.Id == entryId && t.Kind == TimelineKind.Event)
             ?? throw new InvalidOperationException("Event step not found on this case.");
@@ -599,9 +599,9 @@ public class Case : AuditableEntity, IHashableEntity
         var normalisedTechnique = string.IsNullOrWhiteSpace(techniqueId) ? null : CaseTechnique.NormaliseId(techniqueId);
 
         if (actorEntityId is { } aid && Entities.All(e => e.Id != aid))
-            throw new ArgumentException("The actor is not an entity on this case.", nameof(actorEntityId));
+            throw new ArgumentException("The actor is not an entity on this case.");
         if (targetEntityId is { } tid && Entities.All(e => e.Id != tid))
-            throw new ArgumentException("The target is not an entity on this case.", nameof(targetEntityId));
+            throw new ArgumentException("The target is not an entity on this case.");
 
         entry.OccurredAtUtc = occurredAtUtc;
         entry.Type = type;   // vendor-disclosure stage for third-party cases (E-32); Other for first-party
@@ -632,7 +632,7 @@ public class Case : AuditableEntity, IHashableEntity
         string newDescription, string? source, string actor, DateTimeOffset nowUtc)
     {
         if (string.IsNullOrWhiteSpace(newDescription))
-            throw new ArgumentException("A description is required.", nameof(newDescription));
+            throw new ArgumentException("A description is required.");
 
         var current = TimelineEntries.FirstOrDefault(t =>
                 t.Id == entryId && t.Kind == TimelineKind.Investigation && t.IsCurrent)
@@ -669,14 +669,14 @@ public class Case : AuditableEntity, IHashableEntity
         string actor, DateTimeOffset nowUtc, Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other)
     {
         if (string.IsNullOrWhiteSpace(description))
-            throw new ArgumentException("A description is required.", nameof(description));
+            throw new ArgumentException("A description is required.");
 
         var normalisedTechnique = string.IsNullOrWhiteSpace(techniqueId) ? null : CaseTechnique.NormaliseId(techniqueId);
 
         if (actorEntityId is { } aid && Entities.All(e => e.Id != aid))
-            throw new ArgumentException("The actor is not an entity on this case.", nameof(actorEntityId));
+            throw new ArgumentException("The actor is not an entity on this case.");
         if (targetEntityId is { } tid && Entities.All(e => e.Id != tid))
-            throw new ArgumentException("The target is not an entity on this case.", nameof(targetEntityId));
+            throw new ArgumentException("The target is not an entity on this case.");
 
         var entry = new TimelineEntry
         {
@@ -750,7 +750,7 @@ public class Case : AuditableEntity, IHashableEntity
     public AnalystNote EditNote(Guid noteId, string newBody, string actor, DateTimeOffset nowUtc)
     {
         if (string.IsNullOrWhiteSpace(newBody))
-            throw new ArgumentException("Note body is required.", nameof(newBody));
+            throw new ArgumentException("Note body is required.");
 
         var current = Notes.FirstOrDefault(n => n.Id == noteId && n.IsCurrent)
             ?? throw new InvalidOperationException("Note not found or already superseded.");
@@ -777,9 +777,9 @@ public class Case : AuditableEntity, IHashableEntity
     public void MarkReported(DateTimeOffset reportedAtUtc, string actor, DateTimeOffset nowUtc)
     {
         if (reportedAtUtc > nowUtc)
-            throw new ArgumentException("The reported time can't be in the future.", nameof(reportedAtUtc));
+            throw new ArgumentException("The reported time can't be in the future.");
         if (DetectedAtUtc is { } detected && reportedAtUtc < detected)
-            throw new ArgumentException("The reported time can't be earlier than the detected time.", nameof(reportedAtUtc));
+            throw new ArgumentException("The reported time can't be earlier than the detected time.");
 
         ReportedAtUtc = reportedAtUtc;
         Touch(actor, nowUtc);

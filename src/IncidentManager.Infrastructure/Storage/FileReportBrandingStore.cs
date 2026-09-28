@@ -43,7 +43,7 @@ public sealed class FileReportBrandingStore : IReportBrandingStore
         var isJpeg = contentType.Contains("jpeg", StringComparison.OrdinalIgnoreCase)
                      || contentType.Contains("jpg", StringComparison.OrdinalIgnoreCase);
         if (!isPng && !isJpeg)
-            throw new ArgumentException("Logo must be a PNG or JPEG image.", nameof(contentType));
+            throw new ArgumentException("Logo must be a PNG or JPEG image.");
 
         // Only one logo file exists at a time; clear the other format first.
         Clear();

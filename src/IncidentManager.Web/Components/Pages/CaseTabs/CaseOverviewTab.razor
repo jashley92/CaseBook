@@ -102,15 +102,17 @@
                                    title="When adversary activity began (initial access), if known. Used to calculate dwell time." />
                         </div>
                     </div>
-                    @if (_detailsError is { } derr)
-                    {
-                        <div class="alert alert-warning py-1 px-2 small mb-2">@derr</div>
-                    }
                     <div class="mb-2">
                         <label class="form-label small mb-0" for="@SummaryEditorId">Summary <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links</span></label>
                         @* EasyMDE enhances this textarea (managed in this tab's OnAfterRenderAsync); value pulled on Save. *@
                         <textarea id="@SummaryEditorId" class="form-control"></textarea>
                     </div>
+                    @* Beside Save, where the eye is when it's pressed: the Summary editor above is tall enough to push a
+                       message at the date fields off-screen. *@
+                    @if (_detailsError is { } derr)
+                    {
+                        <div class="alert alert-warning py-1 px-2 small mb-2" role="alert">@derr</div>
+                    }
                     <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveDetails" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => _editingDetails = false)">Cancel</button>
                 }

@@ -40,7 +40,7 @@ public class Report : AuditableEntity
     public void Approve(string approver, DateTimeOffset nowUtc)
     {
         if (string.IsNullOrWhiteSpace(approver))
-            throw new ArgumentException("An approver is required.", nameof(approver));
+            throw new ArgumentException("An approver is required.");
         if (IsFinal)
             throw new InvalidOperationException("This report is already approved and final.");
 

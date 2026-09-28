@@ -650,7 +650,7 @@ public sealed class CaseService
     {
         Require();
         if (string.IsNullOrWhiteSpace(reason))
-            throw new ArgumentException("A reason is required to reopen a case.", nameof(reason));
+            throw new ArgumentException("A reason is required to reopen a case.");
 
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
