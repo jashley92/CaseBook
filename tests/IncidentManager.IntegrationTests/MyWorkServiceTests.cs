@@ -55,10 +55,11 @@ public sealed class MyWorkServiceTests : IDisposable
             a.ActionItems.Add(Task_("Upcoming review", owner: null, due: D(20), ActionItemStatus.Open));  // upcoming
             a.ActionItems.Add(Task_("Old closed task", owner: null, due: D(1), ActionItemStatus.Done));   // excluded
 
-            // B — mine (IC), open, Critical, escalated Incident→Breach two days ago (in window).
+            // B — mine (IC), open, Critical, escalated Adverse Event→Incident→Breach in the window (one row).
             // An undated task owned by me must appear, sorting to the bottom.
-            var b = Case.Open(2026, 2, "bravo", "Bravo", Classification.Incident, Severity.Critical, CaseOrigin.InternalDetection, "analyst2", D(5));
+            var b = Case.Open(2026, 2, "bravo", "Bravo", Classification.AdverseEvent, Severity.Critical, CaseOrigin.InternalDetection, "analyst2", D(5));
             b.Assign("analyst1", "Analyst One", CaseAssignmentRole.IncidentCommander, "analyst2", D(5));
+            b.Reclassify(Classification.Incident, "Confirmed compromise", "analyst1", D(10));
             b.Reclassify(Classification.Breach, "Confirmed exfiltration", "analyst1", D(11));
             b.ActionItems.Add(Task_("Draft lessons", owner: "analyst1", due: null, ActionItemStatus.Open));
 
@@ -104,10 +105,10 @@ public sealed class MyWorkServiceTests : IDisposable
             work.Tasks.Single(t => t.Title == "Draft lessons").OwnedByMe.Should().BeTrue();
             work.Tasks.Single(t => t.Title == "Patch server").OwnedByMe.Should().BeFalse();
 
-            // Recent escalations: only B's in-window Incident→Breach; C's old one and D's (invisible) drop out.
+            // Recent escalations: B once, from where it started to where it is; C's old one and D's (invisible) drop out.
             work.RecentEscalations.Should().ContainSingle()
                 .Which.Should().Match<Escalation>(e =>
-                    e.CaseNumber.Contains("bravo") && e.From == Classification.Incident && e.To == Classification.Breach);
+                    e.CaseNumber.Contains("bravo") && e.From == Classification.AdverseEvent && e.To == Classification.Breach && e.ChangedAtUtc == D(11));
         }
     }
 

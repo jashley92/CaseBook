@@ -99,11 +99,19 @@ public sealed class MyWorkService
             select new { c.Id, c.CaseNumber, c.Title, cc.From, cc.To, cc.ChangedBy, cc.ChangedAtUtc })
             .ToListAsync(ct);
 
+        // One row per case: a case that went Adverse Event → Incident → Breach in the window reads as one move
+        // from where it started to where it is, dated by the latest step.
         var recentEscalations = escRows
             .Where(e => e.ChangedAtUtc >= since && e.To > e.From!.Value)
+            .GroupBy(e => e.Id)
+            .Select(g =>
+            {
+                var first = g.MinBy(e => e.ChangedAtUtc)!;
+                var last = g.MaxBy(e => e.ChangedAtUtc)!;
+                return new Escalation(last.Id, last.CaseNumber, last.Title, first.From!.Value, last.To, last.ChangedBy, last.ChangedAtUtc);
+            })
             .OrderByDescending(e => e.ChangedAtUtc)
             .Take(10)
-            .Select(e => new Escalation(e.Id, e.CaseNumber, e.Title, e.From!.Value, e.To, e.ChangedBy, e.ChangedAtUtc))
             .ToList();
 
         return new MyWork(openCases, tasks, recentEscalations);
