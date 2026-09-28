@@ -97,6 +97,10 @@
                                                     aria-label="@($"Unpin {c.CaseNumber}")" @onclick="() => Unpin(c.Id)">
                                                 <span class="bi bi-pin-angle" aria-hidden="true"></span>
                                             </button>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 me-1 im-peek-open" title="Preview this case"
+                                                    aria-label="@($"Preview {c.CaseNumber}")" aria-pressed="@Ui.Aria(_peekId == c.Id)" @onclick="() => TogglePeek(c.Id)">
+                                                <span class="bi bi-layout-sidebar-reverse" aria-hidden="true"></span>
+                                            </button>
                                             <a class="btn btn-sm btn-outline-primary py-0" href="cases/@c.Id">Open</a>
                                         </td>
                                     </tr>
@@ -144,7 +148,13 @@
                                         <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
                                         <td><span class="@Ui.SeverityBadge(c.Severity)">@SevLabels.For(c.Severity)</span></td>
                                         <td class="text-muted small">@Ui.Age(c.CreatedAtUtc, Clock.UtcNow)</td>
-                                        <td><a class="btn btn-sm btn-outline-primary py-0" href="cases/@c.Id">Open</a></td>
+                                        <td class="text-nowrap">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 me-1 im-peek-open" title="Preview this case"
+                                                    aria-label="@($"Preview {c.CaseNumber}")" aria-pressed="@Ui.Aria(_peekId == c.Id)" @onclick="() => TogglePeek(c.Id)">
+                                                <span class="bi bi-layout-sidebar-reverse" aria-hidden="true"></span>
+                                            </button>
+                                            <a class="btn btn-sm btn-outline-primary py-0" href="cases/@c.Id">Open</a>
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -208,6 +218,10 @@
                                         </td>
                                         <td>@DueBadge(t.DueAtUtc)</td>
                                         <td class="text-end text-nowrap">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 me-1 im-peek-open" title="Preview this case"
+                                                    aria-label="@($"Preview {t.CaseNumber}")" aria-pressed="@Ui.Aria(_peekId == t.CaseId)" @onclick="() => TogglePeek(t.CaseId)">
+                                                <span class="bi bi-layout-sidebar-reverse" aria-hidden="true"></span>
+                                            </button>
                                             @* PROD-21: complete a task in place — no trip into the case's Tasks tab. *@
                                             <AuthorizeView Policy="@Policies.EditCases">
                                                 <button class="btn btn-sm btn-outline-success py-0 me-1" @onclick="() => MarkDone(t)"
@@ -256,7 +270,16 @@
     </div>
 </div>
 
+@if (_peekId is { } peek)
+{
+    <CasePeek CaseId="peek" Drawer="true" OnClose="() => _peekId = null" />
+}
+
 @code {
+    // Design review P3: a read-only case preview drawer, so checking a case doesn't mean leaving this page.
+    private Guid? _peekId;
+    private void TogglePeek(Guid id) => _peekId = _peekId == id ? null : id;
+
     private MyWork? _work;
     private bool _hasDashboard;
 

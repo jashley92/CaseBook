@@ -123,6 +123,22 @@ public static class Ui
     /// empty when true and drops it when false, so aria-pressed="@flag" would never announce "not pressed".</summary>
     public static string Aria(bool on) => on ? "true" : "false";
 
+    public static string Label(MaterialityStatus s) => s switch
+    {
+        MaterialityStatus.UnderReview => "Under review",
+        MaterialityStatus.Material => "Material",
+        MaterialityStatus.NotMaterial => "Not material",
+        _ => "Undetermined"
+    };
+
+    public static string MaterialityBadge(MaterialityStatus s) => s switch
+    {
+        MaterialityStatus.Material => "im-badge im-b-danger",
+        MaterialityStatus.NotMaterial => "im-badge im-b-ok",
+        MaterialityStatus.UnderReview => "im-badge im-b-warn",
+        _ => "im-badge im-b-neutral"
+    };
+
     public static string Label(AppRole r) => r switch
     {
         AppRole.IncidentCommander => "Incident Commander",

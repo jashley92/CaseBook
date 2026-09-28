@@ -313,7 +313,8 @@ else if (_page.Total == 0)
 }
 else
 {
-    <div class="im-case-list-wrap">
+    <div class="im-case-list-wrap @(_peekId is not null ? "has-peek" : "")" @onkeydown="OnPeekKey">
+    <div class="im-case-list-main">
 
     @* E-18 / U-15: metered bulk-action bar. Surfaces only over a coherent cohort (a filter is set, or the
        Mine scope) — never the naked All queue — and only for editors. Count-capped at @MaxBulk, and every
@@ -341,7 +342,7 @@ else
        Enter/o opens it — no default to prevent, so Tab still leaves the table. (x-to-select waits on E-18's
        metered bulk bar to have something to act on.) *@
     <table class="table table-hover align-middle im-table im-list im-case-list" tabindex="0" @onkeydown="OnListKey"
-           aria-label="Case list. Use j and k to move, Enter to open.">
+           aria-label="Case list. Use j and k to move, p to preview, Enter to open.">
         <thead>
             <tr>
                 @if (BulkEligible)
@@ -353,20 +354,20 @@ else
                 }
                 @SortTh("Case #", CaseSort.CaseNumber)
                 <th>Title</th>
-                <th>Classification</th>
-                @SortTh("Phase", CaseSort.Phase)
+                <th class="case-cell-class">Classification</th>
+                @SortTh("Phase", CaseSort.Phase, "case-cell-phase")
                 @SortTh("Severity", CaseSort.Severity)
                 @SortTh("SLA", CaseSort.Sla)
                 <th class="case-cell-owner">Owner</th>
                 <th class="case-cell-origin">Origin</th>
-                @SortTh("Opened", CaseSort.Opened)
+                @SortTh("Opened", CaseSort.Opened, "case-cell-age")
             </tr>
         </thead>
         <tbody>
             @for (var i = 0; i < _page.Items.Count; i++)
             {
                 var c = _page.Items[i];
-                <tr @key="c.Id" class="@(i == _cursor ? "table-active" : "") @EdgeClass(c.Severity) @(_selected.Contains(c.Id) ? "im-row-selected" : "") @(_flashCaseIds.Contains(c.Id) ? "im-enter im-flash" : "")">
+                <tr @key="c.Id" class="@(i == _cursor ? "table-active" : "") @EdgeClass(c.Severity) @(_peekId == c.Id ? "im-row-peek" : "") @(_selected.Contains(c.Id) ? "im-row-selected" : "") @(_flashCaseIds.Contains(c.Id) ? "im-enter im-flash" : "")">
                     @if (BulkEligible)
                     {
                         var atCap = !_selected.Contains(c.Id) && _selected.Count >= MaxBulk;
@@ -377,6 +378,10 @@ else
                         </td>
                     }
                     <td class="case-num" style="@(i == _cursor ? "box-shadow:inset 3px 0 0 var(--im-accent)" : null)">
+                        <button type="button" class="im-peek-btn case-above" aria-pressed="@Ui.Aria(_peekId == c.Id)"
+                                aria-label="@($"Preview {c.CaseNumber}")" title="Preview (p)" @onclick="() => TogglePeek(c.Id)">
+                            <span class="bi @(_peekId == c.Id ? "bi-layout-sidebar-inset-reverse" : "bi-layout-sidebar-reverse")" aria-hidden="true"></span>
+                        </button>
                         <code title="@c.CaseNumber">@c.CaseNumber</code>
                         @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
                     </td>
@@ -388,8 +393,8 @@ else
                             @if (c.IsExercise) { <span class="im-badge im-b-info" title="Exercise case, excluded from dashboards, reminders and feeds">Exercise</span> }
                         </div>
                     </td>
-                    <td><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
-                    <td><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
+                    <td class="case-cell-class"><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
+                    <td class="case-cell-phase"><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>
                     <td><span class="@Ui.SeverityBadge(c.Severity)">@SevLabels.For(c.Severity)</span></td>
                     <td>
                         @{
@@ -427,7 +432,7 @@ else
         </tbody>
     </table>
     <div class="form-text mt-1 d-none d-md-block">
-        <span class="bi bi-keyboard me-1" aria-hidden="true"></span>Tip: focus the list, then <kbd>j</kbd>/<kbd>k</kbd> move and <kbd>Enter</kbd> opens@(BulkEligible ? "" : ".")
+        <span class="bi bi-keyboard me-1" aria-hidden="true"></span>Tip: focus the list, then <kbd>j</kbd>/<kbd>k</kbd> move, <kbd>p</kbd> previews and <kbd>Enter</kbd> opens@(BulkEligible ? "" : ".")
         @if (BulkEligible)
         {
             <text>, <kbd>x</kbd> selects for a bulk action.</text>
@@ -462,6 +467,11 @@ else
                 }
             </div>
         </nav>
+    }
+    </div>
+    @if (_peekId is { } peek)
+    {
+        <CasePeek CaseId="peek" OnClose="ClosePeek" />
     }
     </div>
 }
@@ -679,10 +689,21 @@ else
     // PROD-25: a keyboard row cursor over the current page. -1 = none until the first j/k. Reset on reload.
     private int _cursor = -1;
 
+    // Design review P3: the case preview panel beside the list. Component state only (not the URL), so opening
+    // and moving it never reloads the list.
+    private Guid? _peekId;
+    private void TogglePeek(Guid id) => _peekId = _peekId == id ? null : id;
+    private void ClosePeek() => _peekId = null;
+    private void OnPeekKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && _peekId is not null) _peekId = null;
+    }
+
     private void OnListKey(KeyboardEventArgs e)
     {
         if (_page is not { Items.Count: > 0 } p) return;
         var n = p.Items.Count;
+        var before = _cursor;
         switch (e.Key)
         {
             case "j" or "ArrowDown":
@@ -694,12 +715,17 @@ else
             case "Enter" or "o":
                 if (_cursor >= 0 && _cursor < n) Nav.NavigateTo($"cases/{p.Items[_cursor].Id}");
                 break;
+            // Design review P3/P8: p previews the cursor row; while a preview is open it follows the cursor.
+            case "p" when _cursor >= 0 && _cursor < n:
+                TogglePeek(p.Items[_cursor].Id);
+                break;
             // PROD-25 + E-18: x toggles the cursor row into the bulk selection (editors, cohort only).
             case "x" when BulkEligible && _cursor >= 0 && _cursor < n:
                 var id = p.Items[_cursor].Id;
                 ToggleSelect(id, !_selected.Contains(id));
                 break;
         }
+        if (_peekId is not null && _cursor != before && _cursor >= 0 && _cursor < n) _peekId = p.Items[_cursor].Id;
     }
 
     private async Task ToggleDefault(SavedViewItem v)
@@ -815,12 +841,12 @@ else
         ApplyFilters();
     }
 
-    private RenderFragment SortTh(string label, CaseSort sort)
+    private RenderFragment SortTh(string label, CaseSort sort, string? cls = null)
     {
         var on = _sort == sort;
         var ariaSort = on ? (_sortDesc ? "descending" : "ascending") : "none";
         var icon = on ? (_sortDesc ? "bi-arrow-down" : "bi-arrow-up") : "bi-arrow-down-up";
-        return @<th aria-sort="@ariaSort"><button type="button" class="im-sort @(on ? "on" : "")" @onclick="() => SetSort(sort)">@label<span class="bi @icon" aria-hidden="true"></span></button></th>;
+        return @<th class="@cls" aria-sort="@ariaSort"><button type="button" class="im-sort @(on ? "on" : "")" @onclick="() => SetSort(sort)">@label<span class="bi @icon" aria-hidden="true"></span></button></th>;
     }
 
     private static string EdgeClass(Severity s) => s switch

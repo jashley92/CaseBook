@@ -149,7 +149,7 @@ else
                 @if (_case.LegalReferral.IsReferred) { <span class="im-badge im-b-neutral">Legal referred</span> }
                 @if (_case.Materiality.Status != MaterialityStatus.Undetermined)
                 {
-                    <span class="@MaterialityBadgeClass(_case.Materiality.Status)" title="Materiality determination">@MaterialityLabel(_case.Materiality.Status)</span>
+                    <span class="@Ui.MaterialityBadge(_case.Materiality.Status)" title="Materiality determination">@Ui.Label(_case.Materiality.Status)</span>
                 }
                 @if (_case.IsRestricted) { <span class="im-badge im-b-warn">Restricted</span> }
                 @if (_case.LegalHold) { <span class="im-badge im-b-danger">Legal hold</span> }
@@ -1476,22 +1476,6 @@ else
     /// <summary>Whether the materiality picker's current selection is a final call (needs full provenance).</summary>
     private bool MaterialityIsFinal => _materialityStatus is MaterialityStatus.Material or MaterialityStatus.NotMaterial;
 
-    private static string MaterialityLabel(MaterialityStatus s) => s switch
-    {
-        MaterialityStatus.UnderReview => "Under review",
-        MaterialityStatus.Material => "Material",
-        MaterialityStatus.NotMaterial => "Not material",
-        _ => "Undetermined"
-    };
-
-    private static string MaterialityBadgeClass(MaterialityStatus s) => s switch
-    {
-        MaterialityStatus.Material => "im-badge im-b-danger",
-        MaterialityStatus.NotMaterial => "im-badge im-b-ok",
-        MaterialityStatus.UnderReview => "im-badge im-b-warn",
-        _ => "im-badge im-b-neutral"
-    };
-
     private string ModalPrimaryLabel() => _activeModal switch
     {
         "archive" => "Archive",
@@ -1598,7 +1582,7 @@ else
                         ? new DateTimeOffset(DateTime.SpecifyKind(d.Date, DateTimeKind.Utc)) : null;
                     await Cases.RecordMaterialityAsync(Id, _materialityStatus, _materialityDecisionMaker, decidedOn,
                         _materialityRationale, _materialityBaseline);
-                    done = $"Materiality recorded: {MaterialityLabel(_materialityStatus)}";
+                    done = $"Materiality recorded: {Ui.Label(_materialityStatus)}";
                     break;
                 case "archive":
                     await Cases.SetArchivedAsync(Id, true);

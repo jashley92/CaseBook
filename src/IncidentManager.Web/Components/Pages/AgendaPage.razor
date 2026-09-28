@@ -92,7 +92,13 @@
                                         else { <span class="text-muted">Unassigned</span> }
                                     </td>
                                     <td>@DueCell(i.DueAtUtc, bucket.Kind)</td>
-                                    <td><a class="btn btn-sm btn-outline-primary py-0" href="cases/@i.CaseId?tab=Tasks">Open</a></td>
+                                    <td class="text-nowrap">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 me-1 im-peek-open" title="Preview this case"
+                                                    aria-label="@($"Preview {i.CaseNumber}")" aria-pressed="@Ui.Aria(_peekId == i.CaseId)" @onclick="() => TogglePeek(i.CaseId)">
+                                                <span class="bi bi-layout-sidebar-reverse" aria-hidden="true"></span>
+                                            </button>
+                                        <a class="btn btn-sm btn-outline-primary py-0" href="cases/@i.CaseId?tab=Tasks">Open</a>
+                                    </td>
                                 </tr>
                             }
                         </tbody>
@@ -144,7 +150,16 @@
     }
 </div>
 
+@if (_peekId is { } peek)
+{
+    <CasePeek CaseId="peek" Drawer="true" OnClose="() => _peekId = null" />
+}
+
 @code {
+    // Design review P3: a read-only case preview drawer, so checking a case doesn't mean leaving this page.
+    private Guid? _peekId;
+    private void TogglePeek(Guid id) => _peekId = _peekId == id ? null : id;
+
     private AgendaBoard? _board;
     private string _owner = "";      // "" = everyone, "@me" = mine, else a specific owner id
     private string? _feedUrl;

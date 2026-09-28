@@ -960,18 +960,10 @@
         // off-app decision-maker (when recorded) is appended so the curated view names who made the call.
         foreach (var x in Case.MaterialityChanges)
             yield return new HistoryRow(x.ChangedAtUtc, "Materiality",
-                $"{MaterialityLabel(x.From)} → {MaterialityLabel(x.To)}"
+                $"{Ui.Label(x.From)} → {Ui.Label(x.To)}"
                     + (string.IsNullOrWhiteSpace(x.DecisionMaker) ? "" : $" (by {x.DecisionMaker})"),
                 x.Rationale, x.ChangedBy);
     }
-
-    private static string MaterialityLabel(MaterialityStatus s) => s switch
-    {
-        MaterialityStatus.UnderReview => "Under review",
-        MaterialityStatus.Material => "Material",
-        MaterialityStatus.NotMaterial => "Not material",
-        _ => "Undetermined"
-    };
 
     // --- Assignments / techniques ---
     private async Task DoUnassign(string userId)

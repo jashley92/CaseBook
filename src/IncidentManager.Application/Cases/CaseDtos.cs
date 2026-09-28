@@ -128,6 +128,23 @@ public sealed class CaseFilter
     public int PageSize { get; set; } = 25;
 }
 
+/// <summary>
+/// Design review P3: what the read-only case preview panel shows, enough to answer "do I need to open this?"
+/// without loading the full case graph.
+/// </summary>
+public sealed record CasePreview(
+    Guid Id, string CaseNumber, string Title, Classification? Classification, CasePhase Phase, Severity Severity,
+    bool IsRestricted, bool LegalReferred, bool LegalHold, bool IsExercise, MaterialityStatus Materiality,
+    DateTimeOffset CreatedAtUtc, DateTimeOffset? DetectedAtUtc, DateTimeOffset? ContainedAtUtc, DateTimeOffset? ResolvedAtUtc,
+    string? Summary, int OpenTasks, CasePreviewTask? NextTask, CasePreviewEntry? Latest,
+    IReadOnlyList<CasePreviewIndicator> Indicators, int IndicatorCount, IReadOnlyList<CasePreviewPerson> Team);
+
+public sealed record CasePreviewTask(string Title, string? Owner, DateTimeOffset? DueAtUtc);
+public sealed record CasePreviewEntry(string Description, DateTimeOffset OccurredAtUtc, TimelineKind Kind);
+/// <param name="OtherCases">How many other cases the viewer can see carry the same value.</param>
+public sealed record CasePreviewIndicator(EntityType Type, string Value, EntityDisposition Disposition, int OtherCases);
+public sealed record CasePreviewPerson(string Name, CaseAssignmentRole Role);
+
 /// <summary>The case list's sortable columns.</summary>
 public enum CaseSort
 {

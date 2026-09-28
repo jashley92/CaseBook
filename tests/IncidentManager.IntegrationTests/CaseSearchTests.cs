@@ -298,5 +298,50 @@ public sealed class CaseSearchTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task The_preview_shows_the_next_task_and_shared_indicators_within_need_to_know()
+    {
+        Guid alpha, gamma;
+        await using (var db = NewContext())
+        {
+            var svc = NewService(db);
+            alpha = (await svc.CreateAsync(Req("Alpha"))).Id;
+            var beta = (await svc.CreateAsync(Req("Beta"))).Id;
+            gamma = (await svc.CreateAsync(Req("Gamma"))).Id;
+            await svc.AddEntityAsync(alpha, EntityType.IpAddress, "203.0.113.66", null, EntityDisposition.Malicious, null, null);
+            await svc.AddEntityAsync(alpha, EntityType.Host, "FIN-WKS-07", null, EntityDisposition.Benign, null, null);
+            await svc.AddEntityAsync(beta, EntityType.IpAddress, "203.0.113.66", null, EntityDisposition.Unknown, null, null);
+            await svc.AddEntityAsync(gamma, EntityType.IpAddress, "203.0.113.66", null, EntityDisposition.Malicious, null, null);
+            await svc.AddActionItemAsync(alpha, "Later", null, _clock.UtcNow.AddDays(3));
+            await svc.AddActionItemAsync(alpha, "Undated", null, null);
+            await svc.AddActionItemAsync(alpha, "Sooner", null, _clock.UtcNow.AddDays(1));
+            var g = await db.Cases.FirstAsync(c => c.Id == gamma);
+            g.IsRestricted = true;
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext())
+        {
+            var p = await NewService(db).GetPreviewAsync(alpha);
+            p!.OpenTasks.Should().Be(3);
+            p.NextTask!.Title.Should().Be("Sooner");
+            p.IndicatorCount.Should().Be(2);
+            p.Indicators[0].Value.Should().Be("203.0.113.66", "malicious indicators lead");
+            p.Indicators[0].OtherCases.Should().Be(2);
+        }
+
+        // An analyst who isn't on the restricted case can't preview it, and it doesn't count toward "other cases".
+        var analyst = new TestCurrentUser { UserId = "analyst-not-assigned" };
+        analyst.RoleSet = [AppRole.Analyst];
+        await using (var db = NewContext())
+        {
+            var svc = new CaseService(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options),
+                analyst, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(), new NoOpCaseNotifications(),
+                new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            (await svc.GetPreviewAsync(gamma)).Should().BeNull();
+            (await svc.GetPreviewAsync(alpha))!.Indicators[0].OtherCases.Should().Be(1);
+        }
+    }
+
     public void Dispose() => _connection.Dispose();
 }

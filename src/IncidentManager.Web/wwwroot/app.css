@@ -2153,6 +2153,65 @@ a.im-stat:hover { border-color: var(--im-accent-strong); transform: translateY(-
 }
 
 /* ============================================================================
+   Case preview panel (design review P3): beside the list on wide screens, a drawer on laptops, not on phones
+   (the list's cards open the case directly there). Read-only.
+   ============================================================================ */
+.im-case-list-wrap.has-peek { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; gap: 1rem; align-items: start; }
+.im-case-list-main { min-width: 0; overflow-x: clip; }
+/* While a preview is open beside the list, the columns it repeats step aside so the rest fit. */
+@media (min-width: 1200px) {
+    .has-peek .im-case-list .case-cell-class, .has-peek .im-case-list .case-cell-phase,
+    .has-peek .im-case-list .case-cell-origin, .has-peek .im-case-list .case-cell-age { display: none; }
+}
+.im-peek {
+    position: sticky; top: calc(var(--im-topbar-h) + .5rem);
+    max-height: calc(100vh - var(--im-topbar-h) - 1rem); overflow-y: auto;
+    display: flex; flex-direction: column; gap: .7rem;
+    padding: .8rem .95rem; border: 1px solid var(--im-border); border-radius: var(--im-radius);
+    background: var(--im-surface); color: var(--im-text);
+}
+.im-peek-head { display: flex; align-items: center; gap: .5rem; }
+.im-peek-num { font-size: var(--im-text-sm); font-weight: 600; color: var(--im-text); }
+.im-peek-title { font-size: var(--im-text-md); font-weight: 600; line-height: 1.3; margin: 0; overflow-wrap: anywhere; }
+.im-peek-badges { display: flex; flex-wrap: wrap; gap: .3rem; }
+.im-peek-sec { border-top: 1px solid var(--im-border); padding-top: .6rem; }
+.im-peek-h {
+    display: flex; gap: .5rem; margin: 0 0 .3rem; font-size: var(--im-text-xs); font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase; color: var(--im-text-muted);
+}
+.im-peek-h > span { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.im-peek-clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.im-peek-iocs { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+.im-peek-iocs li { display: flex; align-items: center; gap: .4rem; min-width: 0; font-size: var(--im-text-sm); }
+.im-peek-ioc { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.im-peek-actions { display: flex; gap: .4rem; margin-top: auto; padding-top: .2rem; }
+.im-peek-btn {
+    display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; margin-right: .3rem; padding: 0;
+    border: 1px solid transparent; border-radius: var(--im-radius-sm); background: none; color: var(--im-text-muted);
+    vertical-align: middle;
+}
+.im-peek-btn:hover { color: var(--im-text); border-color: var(--im-border-strong); }
+.im-peek-btn[aria-pressed="true"] { color: var(--im-accent-text); border-color: var(--im-accent-strong); background: var(--im-accent-bg); }
+.im-peek-btn:focus-visible { outline: none; box-shadow: 0 0 0 .2rem var(--im-focus); }
+.im-list > tbody > tr.im-row-peek > td { background-color: var(--im-accent-bg); }
+.im-list > tbody > tr.im-row-peek > td:first-child { box-shadow: inset 3px 0 0 var(--im-accent); }
+.im-peek.is-drawer {
+    position: fixed; z-index: 40; right: 0; top: var(--im-topbar-h); bottom: 0; width: min(24rem, 92vw);
+    max-height: none; border-radius: 0; border-width: 0 0 0 1px; box-shadow: var(--im-shadow-lg);
+}
+.im-peek-open[aria-pressed="true"] { color: var(--im-accent-text); border-color: var(--im-accent-strong); background: var(--im-accent-bg); }
+@media (max-width: 1199.98px) {
+    .im-case-list-wrap.has-peek { display: block; }
+    .im-peek {
+        position: fixed; z-index: 40; right: 0; top: var(--im-topbar-h); bottom: 0; width: min(24rem, 92vw);
+        max-height: none; border-radius: 0; border-width: 0 0 0 1px; box-shadow: var(--im-shadow-lg);
+    }
+}
+@media (max-width: 640px) {
+    .im-peek-btn, .im-peek-open, .im-peek { display: none !important; }
+}
+
+/* ============================================================================
    Cases toolbar (design review P2): count chips that are also filters, then the filter controls, on one
    wrapping row; rarer toggles, active-filter chips and saved views appear below only when in use.
    ============================================================================ */

@@ -339,6 +339,76 @@ public sealed class CaseService
                     .OrderBy(a => a.Role).ThenBy(a => a.AssignedAtUtc)
                     .Select(a => a.UserId).FirstOrDefault());
 
+    /// <summary>
+    /// Design review P3: the case preview panel's summary, scoped like every read (null when the case doesn't exist
+    /// or isn't visible). A handful of narrow queries instead of the workspace's full graph.
+    /// </summary>
+    public async Task<CasePreview?> GetPreviewAsync(Guid id, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var visible = Scoped(db.Cases.AsNoTracking());
+        var head = await visible.Where(c => c.Id == id)
+            .Select(c => new
+            {
+                c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, c.Severity, c.IsRestricted,
+                Referred = c.LegalReferral.IsReferred, c.LegalHold, c.IsExercise, Materiality = c.Materiality.Status,
+                c.CreatedAtUtc, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.Summary
+            })
+            .FirstOrDefaultAsync(ct);
+        if (head is null) return null;
+
+        // Date ordering happens in memory (DateTimeOffset comparisons stay off SQLite, F-08).
+        var open = await db.ActionItems.AsNoTracking()
+            .Where(a => a.CaseId == id && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled)
+            .Select(a => new CasePreviewTask(a.Title, a.Owner, a.DueAtUtc))
+            .ToListAsync(ct);
+        var next = open.OrderBy(a => a.DueAtUtc is null).ThenBy(a => a.DueAtUtc).FirstOrDefault();
+
+        var entries = await db.TimelineEntries.AsNoTracking()
+            .Where(e => e.CaseId == id && e.IsCurrent)
+            .Select(e => new CasePreviewEntry(e.Description, e.OccurredAtUtc, e.Kind))
+            .ToListAsync(ct);
+        var latest = entries.MaxBy(e => e.OccurredAtUtc);
+
+        var entities = await db.CaseEntities.AsNoTracking()
+            .Where(e => e.CaseId == id)
+            .Select(e => new { e.Type, e.Value, e.Disposition })
+            .ToListAsync(ct);
+        var top = entities
+            .OrderBy(e => e.Disposition switch
+            {
+                EntityDisposition.Malicious => 0, EntityDisposition.Compromised => 1, EntityDisposition.Suspicious => 2,
+                EntityDisposition.Unknown => 3, _ => 4
+            })
+            .Take(5).ToList();
+#pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower() to SQL LOWER(); culture overloads don't translate.
+        var keys = top.Select(e => e.Value.ToLower()).Distinct().ToList();
+        var visibleIds = visible.Select(c => c.Id);
+        var shared = keys.Count == 0
+            ? new Dictionary<string, int>()
+            : (await db.CaseEntities.AsNoTracking()
+                .Where(e => e.CaseId != id && visibleIds.Contains(e.CaseId) && keys.Contains(e.Value.ToLower()))
+                .Select(e => new { Key = e.Value.ToLower(), e.CaseId })
+                .ToListAsync(ct))
+                .GroupBy(x => x.Key).ToDictionary(g => g.Key, g => g.Select(x => x.CaseId).Distinct().Count());
+#pragma warning restore CA1304, CA1311, CA1862
+        var indicators = top
+            .Select(e => new CasePreviewIndicator(e.Type, e.Value, e.Disposition,
+                shared.GetValueOrDefault(e.Value.ToLowerInvariant())))
+            .ToList();
+
+        var team = await db.Assignments.AsNoTracking()
+            .Where(a => a.CaseId == id && a.Role != CaseAssignmentRole.Observer)
+            .OrderBy(a => a.Role).ThenBy(a => a.AssignedAtUtc)
+            .Select(a => new CasePreviewPerson(a.UserDisplayName, a.Role))
+            .ToListAsync(ct);
+
+        return new CasePreview(head.Id, head.CaseNumber, head.Title, head.Classification, head.Phase, head.Severity,
+            head.IsRestricted, head.Referred, head.LegalHold, head.IsExercise, head.Materiality,
+            head.CreatedAtUtc, head.DetectedAtUtc, head.ContainedAtUtc, head.ResolvedAtUtc, head.Summary,
+            open.Count, next, latest, indicators, entities.Count, team);
+    }
+
     /// <summary>Loads a case with all detail for the workspace, enforcing access scoping.</summary>
     public async Task<Case?> GetDetailAsync(Guid id, CancellationToken ct = default)
     {
