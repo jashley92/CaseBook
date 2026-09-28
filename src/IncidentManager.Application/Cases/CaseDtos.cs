@@ -142,7 +142,7 @@ public sealed record CasePreview(
 public sealed record CasePreviewTask(string Title, string? Owner, DateTimeOffset? DueAtUtc);
 public sealed record CasePreviewEntry(string Description, DateTimeOffset OccurredAtUtc, TimelineKind Kind);
 /// <param name="OtherCases">How many other cases the viewer can see carry the same value.</param>
-public sealed record CasePreviewIndicator(EntityType Type, string Value, EntityDisposition Disposition, int OtherCases);
+public sealed record CasePreviewIndicator(Guid EntityId, EntityType Type, string Value, EntityDisposition Disposition, int OtherCases);
 public sealed record CasePreviewPerson(string Name, CaseAssignmentRole Role);
 
 /// <summary>The case list's sortable columns.</summary>

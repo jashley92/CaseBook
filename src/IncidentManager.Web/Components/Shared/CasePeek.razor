@@ -105,8 +105,9 @@
                             <span class="@Ui.DispositionBadge(i.Disposition)">@Ui.Label(i.Disposition)</span>
                             @if (i.OtherCases > 0)
                             {
-                                <a class="small text-nowrap" href="@($"cases?q={Uri.EscapeDataString(i.Value)}&closed=true")"
-                                   title="Other cases with this indicator">+@i.OtherCases</a>
+                                @* PROD-10: pivot by entity id so the indicator value never rides in a URL. *@
+                                <a class="small text-nowrap" href="indicators?entity=@i.EntityId"
+                                   title="Every case this indicator appears on">+@i.OtherCases</a>
                             }
                         </li>
                     }

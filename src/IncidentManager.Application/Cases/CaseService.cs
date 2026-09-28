@@ -372,7 +372,7 @@ public sealed class CaseService
 
         var entities = await db.CaseEntities.AsNoTracking()
             .Where(e => e.CaseId == id)
-            .Select(e => new { e.Type, e.Value, e.Disposition })
+            .Select(e => new { e.Id, e.Type, e.Value, e.Disposition })
             .ToListAsync(ct);
         var top = entities
             .OrderBy(e => e.Disposition switch
@@ -393,7 +393,7 @@ public sealed class CaseService
                 .GroupBy(x => x.Key).ToDictionary(g => g.Key, g => g.Select(x => x.CaseId).Distinct().Count());
 #pragma warning restore CA1304, CA1311, CA1862
         var indicators = top
-            .Select(e => new CasePreviewIndicator(e.Type, e.Value, e.Disposition,
+            .Select(e => new CasePreviewIndicator(e.Id, e.Type, e.Value, e.Disposition,
                 shared.GetValueOrDefault(e.Value.ToLowerInvariant())))
             .ToList();
 
