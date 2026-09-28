@@ -320,6 +320,9 @@ for an analyst mid-investigation, not a marketing page.
 7. **Status wording**: an SLA or deadline clock that is late or nearly late says by how much
    (`Ui.SlaTiming`: "2d 4h over", "6h left"), not just "Overdue". "Unassigned" is muted, not a warning.
 
+8. **ARIA states** bound to a bool go through `Ui.Aria(flag)`. Blazor renders `aria-pressed="@flag"` as an
+   empty attribute when true and drops it when false.
+
 9. **Color roles**: primary buttons are neutral ink (`--im-action-*`: charcoal on light, light ink on dark).
    Gold marks where you are: the active nav item and tab, a selected or previewed row, focus, a checked box.
    Amber and red are for status only.
@@ -328,8 +331,12 @@ for an analyst mid-investigation, not a marketing page.
     list where there's room or with `Drawer="true"` elsewhere. It is read-only, and opening it is logged as a
     case open. Anything that changes the case stays in the workspace.
 
-8. **ARIA states** bound to a bool go through `Ui.Aria(flag)`. Blazor renders `aria-pressed="@flag"` as an
-   empty attribute when true and drops it when false.
+11. **Settings pages save per section**: one Save bar appears at the bottom while anything on the section is
+    unsaved, with Discard beside it. Individual cards mark "Unsaved changes" but don't carry their own Save.
+    Anything that reloads settings keeps unsaved edits it didn't touch.
+
+12. **Indicator values stay out of URLs.** Link to the Indicators pivot by entity id (`indicators?entity=…`),
+    or expand in place.
 
 ---
 
