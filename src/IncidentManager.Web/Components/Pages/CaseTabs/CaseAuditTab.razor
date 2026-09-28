@@ -59,7 +59,7 @@
 
 @if (_audit is null)
 {
-    <p><em>Loading&hellip;</em></p>
+    <LoadingBlock />
 }
 else
 {
@@ -151,7 +151,7 @@ else
         </p>
         @if (_viewedBy is null)
         {
-            <p class="small text-muted"><em>Loading&hellip;</em></p>
+            <LoadingBlock Rows="2" Columns="3" />
         }
         else if (_viewedBy.Count == 0)
         {

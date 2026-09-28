@@ -48,7 +48,7 @@ else
     {
         <div class="im-card">
         <div class="table-responsive">
-            <table class="table align-middle wl-table im-table mb-0">
+            <table class="table align-middle wl-table im-table im-list mb-0">
                 <thead>
                     <tr>
                         <th>Analyst</th>
@@ -168,7 +168,7 @@ else
 
                         @if (_reassignCases is null)
                         {
-                            <p class="text-muted small"><em>Loading…</em></p>
+                            <LoadingBlock Rows="2" Columns="3" />
                         }
                         else if (_reassignCases.Count == 0)
                         {

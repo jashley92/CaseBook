@@ -1,0 +1,10 @@
+@* Design review P9: the one loading state for data that arrives after the page connects. A status line for
+   screen readers and placeholder rows for everyone else, in place of a bare "Loading…". *@
+<span class="visually-hidden" role="status">@Label</span>
+<SkeletonTable Rows="Rows" Columns="Columns" TableClass="table-sm" />
+
+@code {
+    [Parameter] public int Rows { get; set; } = 3;
+    [Parameter] public int Columns { get; set; } = 4;
+    [Parameter] public string Label { get; set; } = "Loading…";
+}

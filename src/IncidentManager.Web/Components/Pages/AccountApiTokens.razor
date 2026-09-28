@@ -74,7 +74,7 @@
 <h4 class="mt-4 mb-2">Your tokens</h4>
 @if (_tokens is null)
 {
-    <p><em>Loading&hellip;</em></p>
+    <LoadingBlock />
 }
 else if (_tokens.Count == 0)
 {

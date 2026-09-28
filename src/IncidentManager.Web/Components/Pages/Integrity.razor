@@ -115,7 +115,7 @@
 database. Verifying a seal confirms its signature is authentic and that history at that point is unchanged.</p>
 @if (_seals is null)
 {
-    <p><em>Loading&hellip;</em></p>
+    <LoadingBlock />
 }
 else if (_seals.Count == 0)
 {
@@ -151,7 +151,7 @@ else
 <h4>Recent audit trail</h4>
 @if (_recent is null)
 {
-    <p><em>Loading&hellip;</em></p>
+    <LoadingBlock />
 }
 else
 {

@@ -72,7 +72,7 @@
                         <span><span class="bi @meta.Icon" aria-hidden="true"></span> @meta.Label</span>
                         <span class="im-badge @meta.Badge">@bucket.Items.Count</span>
                     </div>
-                    <table class="table table-sm table-hover align-middle im-table mb-0">
+                    <table class="table table-sm table-hover align-middle im-table im-list mb-0">
                         <thead>
                             <tr><th>Task</th><th>Case</th><th>Sev.</th><th>Owner</th><th>Due</th><th></th></tr>
                         </thead>
@@ -80,10 +80,10 @@
                             @foreach (var i in Shown(bucket))
                             {
                                 <tr>
-                                    <td style="min-width:12rem">@i.Title</td>
-                                    <td>
+                                    <td class="im-cell-fill" style="min-width:12rem"><span class="im-ellipsis" title="@i.Title">@i.Title</span></td>
+                                    <td style="max-width:18rem">
                                         <code>@i.CaseNumber</code>
-                                        <span class="im-clamp-2 text-muted small" title="@i.CaseTitle">@i.CaseTitle</span>
+                                        <span class="im-ellipsis text-muted small" title="@i.CaseTitle">@i.CaseTitle</span>
                                     </td>
                                     <td><span class="@Ui.SeverityBadge(i.Severity)">@SevLabels.For(i.Severity)</span></td>
                                     <td class="small">

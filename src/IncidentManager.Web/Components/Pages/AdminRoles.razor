@@ -81,7 +81,7 @@
 
 @if (_roles is null)
 {
-    <p><em>Loading&hellip;</em></p>
+    <LoadingBlock />
 }
 else
 {
@@ -146,7 +146,7 @@ else
 
 @if (_mappings is null)
 {
-    <p><em>Loading&hellip;</em></p>
+    <LoadingBlock />
 }
 else if (_mappings.Count == 0)
 {
@@ -178,7 +178,7 @@ Broad access comes from roles and their AD groups. Case-level access goes to the
 
 @if (_review is null)
 {
-    <p><em>Loading&hellip;</em></p>
+    <LoadingBlock />
 }
 else
 {

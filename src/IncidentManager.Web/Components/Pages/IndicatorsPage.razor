@@ -100,7 +100,7 @@
     }
     else
     {
-        <table class="table table-sm align-middle im-table mb-0">
+        <table class="table table-sm align-middle im-table im-list mb-0">
             <thead>
                 <tr><th>Indicator</th><th>Worst verdict</th><th>Cases</th><th>First seen</th><th>Last seen</th><th></th></tr>
             </thead>
@@ -110,7 +110,7 @@
                     var key = RowKey(r);
                     var open = _expanded.Contains(key);
                     <tr @key="key">
-                        <td>
+                        <td class="im-wrap">
                             <span class="text-nowrap small text-muted me-1">@Ui.EntityGlyph(r.Type) @Ui.Label(r.Type)</span>
                             <code class="small text-break">@Display(r)</code>
                         </td>

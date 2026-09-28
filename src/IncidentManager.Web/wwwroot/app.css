@@ -2184,7 +2184,10 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
     white-space: nowrap; vertical-align: bottom;
 }
 .im-card .im-list > thead > tr > th { background: var(--im-surface); }
+/* Inside a horizontal scroll box the header would stick relative to that box, not the page: leave it in place. */
+.table-responsive > .im-list > thead > tr > th, .overflow-auto > .im-list > thead > tr > th { position: static; }
 .im-cell-fill { width: 100%; max-width: 0; }
+.im-list > tbody > tr > td.im-wrap { white-space: normal; }
 .im-ellipsis { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .im-sort {
     display: inline-flex; align-items: center; gap: .3rem; padding: 0; border: 0; background: none;
