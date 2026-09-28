@@ -295,6 +295,34 @@ for an analyst mid-investigation, not a marketing page.
 
 - Clickable list rows stretch their title link over the row (see `.im-case-list`) instead of adding an "Open" button per row.
 
+4. **Lists of records** (cases, tasks, indicators, people) use the list-table spec: add `im-list` to the
+   `im-table`. Rows are one line at the viewer's density (`--im-row-h`: 40px comfortable, 34px compact,
+   set from the profile menu), the header sticks under the top bar, and High/Critical rows get a severity
+   mark on their edge via `im-edge-high` / `im-edge-critical` on the `<tr>`.
+
+   - The column that should absorb spare width takes `im-cell-fill`, with its text in `im-ellipsis`
+     (full text in `title`). A cell that must wrap (a long URL or hash) takes `im-wrap`.
+   - Sortable columns render their header as a `<button class="im-sort">` inside a `<th aria-sort>`,
+     with the sort kept in the URL alongside the filters. Each column sorts first in its natural
+     direction: worst or newest at the top.
+   - Don't put an `im-list` inside `.table-responsive`; the header can't stick inside a scroll box
+     (a guard leaves it static there).
+   - Don't wrap a page's main list in a titled `im-card`; it sits on the page. Cards are for panels.
+
+5. **Technical values** (case numbers, IOCs, hashes, hostnames, timestamps) use the data face:
+   `<code>` does already, and a timestamp-only cell takes `im-data`. Every table uses tabular figures.
+   UI text is `--im-font-ui` (Segoe UI Variable on Windows 11); data is `--im-font-data` (Cascadia Mono).
+   Lists format times with `TimeDisplay.Short` (`2026-09-22 21:01 UTC`).
+
+6. **Loading**: anything that loads after the page connects shows `<LoadingBlock />` (a screen-reader
+   status plus placeholder rows). Never a bare "Loading…".
+
+7. **Status wording**: an SLA or deadline clock that is late or nearly late says by how much
+   (`Ui.SlaTiming`: "2d 4h over", "6h left"), not just "Overdue". "Unassigned" is muted, not a warning.
+
+8. **ARIA states** bound to a bool go through `Ui.Aria(flag)`. Blazor renders `aria-pressed="@flag"` as an
+   empty attribute when true and drops it when false.
+
 ---
 
 ## 7. Conformance checklist
@@ -307,4 +335,5 @@ Run this against any new or changed page before review:
 - [ ] Spacing / radius / elevation / type use the scale tokens (`--im-space-*`, `--im-radius-*`, `--im-shadow-*`, `--im-text-*`), not ad-hoc px/rem; new media queries use the 641 / 720 / 980 breakpoints.
 - [ ] No em-dashes in prose, labels, tooltips or titles.
 - [ ] Content uses `im-card` + `im-section-head`; summary rows use `im-tiles` + `<StatTile>`; tables carry `im-table`.
+- [ ] Record lists carry `im-list` (one-line rows, sticky header, severity edge); technical values use the data face; loading uses `<LoadingBlock />`; bool ARIA states use `Ui.Aria`.
 - [ ] Verified in both light and dark (`data-bs-theme` toggle), no drift or unreadable contrast.
