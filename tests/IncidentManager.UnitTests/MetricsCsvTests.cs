@@ -42,6 +42,14 @@ public class MetricsCsvTests
     }
 
     [Fact]
+    public void The_trend_time_zone_is_stated_when_known()
+    {
+        MetricsCsv.Build(Sample() with { TrendZone = "Eastern (New York)" }, At)
+            .Should().Contain("Trend months in,Eastern (New York)");
+        MetricsCsv.Build(Sample(), At).Should().NotContain("Trend months in");
+    }
+
+    [Fact]
     public void A_null_mean_is_written_as_an_empty_value()
     {
         var csv = MetricsCsv.Build(Sample(), At);

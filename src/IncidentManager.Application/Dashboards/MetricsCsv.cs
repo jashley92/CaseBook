@@ -22,6 +22,8 @@ public static class MetricsCsv
             sb.Append(Escape(metric)).Append(',').Append(Escape(value)).Append("\r\n");
 
         Row("Generated (UTC)", generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
+        // Which calendar the monthly and quarterly trend below follows (the organization's reporting time zone).
+        if (m.TrendZone is { } zone) Row("Trend months in", zone);
         Row("Open items", m.OpenCount.ToString(CultureInfo.InvariantCulture));
         Row("Breaches", m.Breaches.ToString(CultureInfo.InvariantCulture));
         Row("Incidents", m.Incidents.ToString(CultureInfo.InvariantCulture));

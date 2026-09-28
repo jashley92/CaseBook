@@ -42,7 +42,9 @@ public sealed record DashboardMetrics(
     int NotifyBreached,
     double? MeanHoursToReport,
     IReadOnlyList<PhaseCount> ByPhase,
-    IReadOnlyList<TrendPoint> Trend)
+    IReadOnlyList<TrendPoint> Trend,
+    // The reporting time zone the trend's months were cut in, as Administration names it (e.g. "Eastern (New York)").
+    string? TrendZone = null)
 {
     /// <summary>Percent of contained cases that met their per-severity containment target, or null when none had one.</summary>
     public int? ContainmentCompliancePercent => Percent(ContainmentMet, ContainmentMissed);
@@ -164,7 +166,8 @@ public sealed class DashboardService
             meanToContain, meanToResolve,
             ndSettings.Enabled, notifyAwaiting, notifyAtRisk, notifyBreached, meanHoursToReport,
             byPhase.OrderBy(p => p.Phase).ToList(),
-            trend);
+            trend,
+            Admin.SettingsCatalog.TimeZoneLabel(_zone?.Current ?? TimeZoneInfo.Utc));
     }
 
     /// <summary>
