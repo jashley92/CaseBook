@@ -175,35 +175,24 @@ public sealed class CaseService
         if (filter.ReferredOnly) q = q.Where(c => c.LegalReferral.IsReferred);
         if (filter.OnHoldOnly) q = q.Where(c => c.LegalHold);
 
-        // Overdue and opened-month are date comparisons that don't translate on SQLite, so resolve
-        // the matching case ids in memory (small, on-prem data set) and narrow the query by id.
+        // F-08: a date comparison against a value translates on both providers (SQLite stores ticks), so this runs
+        // in the database.
         if (filter.OverdueOnly)
         {
             var now = _clock.UtcNow;
-            var open = await db.ActionItems.AsNoTracking()
-                .Where(a => a.DueAtUtc != null
-                            && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled)
-                .Select(a => new { a.CaseId, a.DueAtUtc })
-                .ToListAsync(ct);
-            var overdueIds = open.Where(x => x.DueAtUtc!.Value < now).Select(x => x.CaseId).Distinct().ToList();
-            q = q.Where(c => overdueIds.Contains(c.Id));
+            q = q.Where(c => c.ActionItems.Any(a => a.DueAtUtc != null && a.DueAtUtc < now
+                && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled));
         }
 
-        // SLA at-risk/breached is a per-severity time comparison against the administered targets, so
-        // resolve the matching ids in memory (same pattern as overdue) and narrow the query by id.
+        // SLA at-risk/breached against the administered targets, as a database filter (F-08: SlaQueries restates
+        // SlaPolicy.Evaluate, including Breach-specific targets, as on the list's SLA badge). A closed case's clocks
+        // have stopped, so it never needs attention.
         if (filter.SlaAtRiskOnly)
         {
             var now = _clock.UtcNow;
             var targets = _sla.Current;
-            var rows = await q
-                .Select(c => new { c.Id, c.Severity, c.Phase, c.Classification, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc })
-                .ToListAsync(ct);
-            // Classification included so Breach-specific targets count, as on the list's SLA badge.
-            var flaggedIds = rows.Where(r => Sla.SlaPolicy
-                    .Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification)
-                    .NeedsAttention)
-                .Select(r => r.Id).ToList();
-            q = q.Where(c => flaggedIds.Contains(c.Id));
+            q = q.Where(c => c.Phase != CasePhase.Closed)
+                 .Where(Sla.SlaQueries.NeedsAttention(targets, now));
         }
 
         if (filter.NotifyDeadlineOnly)

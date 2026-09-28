@@ -1,6 +1,10 @@
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Domain.Entities;
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace IncidentManager.Infrastructure.Persistence;
@@ -103,6 +107,24 @@ public sealed class AppDbContext : DbContext, IAppDbContext
                         property.SetValueConverter(toTicksNullable);
                 }
             }
+        }
+
+        // F-08: DbTime.TicksBetween, so elapsed-time aggregates (SLA met/missed, mean time to contain) run in the
+        // database. SQLite already holds ticks, so it's a subtraction; SQL Server counts nanoseconds and scales
+        // to ticks (DATEDIFF_BIG's nanosecond range is about 292 years).
+        var ticksBetween = typeof(DbTime).GetMethod(nameof(DbTime.TicksBetween))!;
+        var longMapping = this.GetService<IRelationalTypeMappingSource>().FindMapping(typeof(long))!;
+        if (Database.IsSqlite())
+        {
+            modelBuilder.HasDbFunction(ticksBetween).HasTranslation(a =>
+                new SqlBinaryExpression(ExpressionType.Subtract, a[1], a[0], typeof(long), longMapping));
+        }
+        else
+        {
+            modelBuilder.HasDbFunction(ticksBetween).HasTranslation(a => new SqlBinaryExpression(ExpressionType.Divide,
+                new SqlFunctionExpression("DATEDIFF_BIG", [new SqlFragmentExpression("nanosecond"), a[0], a[1]],
+                    nullable: true, argumentsPropagateNullability: [false, true, true], typeof(long), longMapping),
+                new SqlConstantExpression(100L, longMapping), typeof(long), longMapping));
         }
     }
 }
