@@ -81,6 +81,33 @@ public enum ActionItemStatus
     Cancelled = 4
 }
 
+/// <summary>
+/// INV-13: what kind of response work a task is, so tasks group by the phase they belong to and an advance can
+/// say what's still open. <see cref="General"/> (the default) is any task not tied to a phase.
+/// </summary>
+public enum TaskKind
+{
+    General = 0,
+    Investigate = 1,
+    Contain = 2,
+    Eradicate = 3,
+    Recover = 4,
+    Notify = 5
+}
+
+public static class TaskKindExtensions
+{
+    /// <summary>The phase a kind of task belongs to (the work to finish before moving past it), if any.</summary>
+    public static CasePhase? Phase(this TaskKind k) => k switch
+    {
+        TaskKind.Investigate => CasePhase.Triage,
+        TaskKind.Contain => CasePhase.Containment,
+        TaskKind.Eradicate => CasePhase.Eradication,
+        TaskKind.Recover => CasePhase.Recovery,
+        _ => null
+    };
+}
+
 /// <summary>Lifecycle of an improvement action from a post-incident review (PROD-41).</summary>
 public enum ImprovementActionStatus
 {

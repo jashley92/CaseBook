@@ -2288,3 +2288,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929064238_AddTaskKind'
+)
+BEGIN
+    ALTER TABLE [ActionItems] ADD [Kind] int NOT NULL DEFAULT 0;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929064238_AddTaskKind'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260929064238_AddTaskKind', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

@@ -14,6 +14,12 @@ public class ActionItem : AuditableEntity, IHashableEntity
     public string? Owner { get; set; }
     public DateTimeOffset? DueAtUtc { get; set; }
     public ActionItemStatus Status { get; set; } = ActionItemStatus.Open;
+
+    /// <summary>INV-13: the kind of response work this is; General for a task not tied to a phase.</summary>
+    public TaskKind Kind { get; set; } = TaskKind.General;
+
+    /// <summary>INV-13: open (not done or cancelled).</summary>
+    public bool IsOpen => Status is not (ActionItemStatus.Done or ActionItemStatus.Cancelled);
     public DateTimeOffset? CompletedAtUtc { get; set; }
 
     public bool IsOverdue(DateTimeOffset nowUtc) =>
@@ -21,6 +27,11 @@ public class ActionItem : AuditableEntity, IHashableEntity
 
     public string? RowHash { get; set; }
 
-    public string BuildCanonicalContent() => string.Join('|',
-        CaseId, Title, Description, Owner, DueAtUtc?.ToString("o"), (int)Status, CompletedAtUtc?.ToString("o"));
+    // INV-13: the kind is folded in only when it isn't General, so existing rows keep their exact hash.
+    public string BuildCanonicalContent()
+    {
+        var content = string.Join('|',
+            CaseId, Title, Description, Owner, DueAtUtc?.ToString("o"), (int)Status, CompletedAtUtc?.ToString("o"));
+        return Kind == TaskKind.General ? content : string.Join('|', content, "kind", (int)Kind);
+    }
 }

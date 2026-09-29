@@ -199,7 +199,7 @@ public sealed class CaseImportService
         {
             if (!a.Applied)
             {
-                await _cases.AddActionItemAsync(caseId, a.Title, a.Owner, a.DueAtUtc, ct);
+                await _cases.AddActionItemAsync(caseId, a.Title, a.Owner, a.DueAtUtc, ct: ct);
                 a.Applied = true;
             }
             actionItems++;

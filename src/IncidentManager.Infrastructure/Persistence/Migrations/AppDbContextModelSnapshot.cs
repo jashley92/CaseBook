@@ -43,6 +43,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<long?>("DueAtUtc")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long?>("ModifiedAtUtc")
                         .HasColumnType("INTEGER");
 

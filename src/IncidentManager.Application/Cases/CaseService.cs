@@ -1518,14 +1518,14 @@ public sealed class CaseService
     }
 
     public async Task AddActionItemAsync(Guid id, string title, string? owner, DateTimeOffset? dueAtUtc,
-        CancellationToken ct = default)
+        TaskKind kind = TaskKind.General, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.ActionItems.Add(new ActionItem
         {
-            CaseId = c.Id, Title = title, Owner = owner, DueAtUtc = dueAtUtc,
+            CaseId = c.Id, Title = title, Owner = owner, DueAtUtc = dueAtUtc, Kind = kind,
             CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
         });
         await db.SaveChangesAsync(ct);
@@ -1748,7 +1748,8 @@ public sealed class CaseService
     /// by the audit trail (before → after) like any structured-record edit.
     /// </summary>
     public async Task UpdateActionItemAsync(Guid caseId, Guid actionItemId, string title, string? owner,
-        DateTimeOffset? dueAtUtc, ActionItemStatus status, string? description, CancellationToken ct = default)
+        DateTimeOffset? dueAtUtc, ActionItemStatus status, string? description, TaskKind? kind = null,
+        CancellationToken ct = default)
     {
         Require();
         var cleanTitle = (title ?? "").Trim();
@@ -1765,6 +1766,7 @@ public sealed class CaseService
         item.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         item.Status = status;
         item.CompletedAtUtc = status == ActionItemStatus.Done ? (item.CompletedAtUtc ?? _clock.UtcNow) : null;
+        if (kind is { } k) item.Kind = k;
         item.ModifiedBy = _user.UserId;
         item.ModifiedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);

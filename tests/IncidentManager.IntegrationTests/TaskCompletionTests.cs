@@ -102,6 +102,24 @@ public sealed class TaskCompletionTests : IDisposable
         await noResult.Should().ThrowAsync<ArgumentException>().WithMessage("*result*");
     }
 
+    // --- INV-13: task kinds ---
+
+    [Fact]
+    public async Task A_task_keeps_its_kind_and_the_kind_can_be_changed_on_edit()
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+        await svc.AddActionItemAsync(caseId, "Isolate FIN-WKS-07", null, null, TaskKind.Contain);
+        var task = (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Title == "Isolate FIN-WKS-07");
+        task.Kind.Should().Be(TaskKind.Contain);
+
+        await svc.UpdateActionItemAsync(caseId, task.Id, task.Title, null, null, ActionItemStatus.Open, null, TaskKind.Eradicate);
+        (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Id == task.Id).Kind.Should().Be(TaskKind.Eradicate);
+
+        // Leaving the kind out of an edit keeps it.
+        await svc.UpdateActionItemAsync(caseId, task.Id, "Isolate FIN-WKS-07 now", null, null, ActionItemStatus.Open, null);
+        (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Id == task.Id).Kind.Should().Be(TaskKind.Eradicate);
+    }
+
     // --- INV-07: promoting a note or comment to the timeline ---
 
     [Fact]

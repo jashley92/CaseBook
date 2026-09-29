@@ -64,6 +64,8 @@ public static class GateCheckKeys
     /// improvement action or an explicit "no actions identified". Self-scoping like
     /// <see cref="MaterialityDetermined"/>: vacuously satisfied below the Incident rung.</summary>
     public const string LessonsCaptured = nameof(LessonsCaptured);
+    /// <summary>INV-13: no task on the case is still open (done or cancelled). Typically on the close gate.</summary>
+    public const string NoOpenTasks = nameof(NoOpenTasks);
 }
 
 /// <summary>
@@ -116,6 +118,8 @@ public static class GateCheckRegistry
         new(GateCheckKeys.LessonsCaptured,
             _ => "Post-incident review recorded (Incidents & Breaches)",
             (f, _) => f.Classification is not (Classification.Incident or Classification.Breach) || f.LessonsCaptured),
+        // INV-13: every task done or cancelled — a deliberate "nothing left hanging" check, usually on close.
+        new(GateCheckKeys.NoOpenTasks, _ => "No tasks left open", (f, _) => f.OpenTaskCount == 0),
     ];
 
     private static readonly IReadOnlyDictionary<string, GateCheckDescriptor> _byKey =

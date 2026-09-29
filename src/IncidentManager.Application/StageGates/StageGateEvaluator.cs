@@ -79,9 +79,13 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
         var lessonsCaptured = review is not null && !string.IsNullOrWhiteSpace(review.WhatHappened)
             && (review.NoActionsIdentified || await db.ImprovementActions.AnyAsync(a => a.CaseId == caseId, ct));
 
+        // INV-13: tasks still open (not done or cancelled).
+        var openTasks = await db.ActionItems.CountAsync(a => a.CaseId == caseId
+            && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled, ct);
+
         return new GateCaseFacts(
             c.HasSummary, c.HasAffectedCount, c.HasDataElements, c.HasAffectedStates, c.HasDetectionCaseId,
             entityCount, maliciousCount, evidenceCount, reportCount, c.HasIncidentCommander,
-            c.AffectedIndividualsCount, c.Classification, c.MaterialityDetermined, lessonsCaptured);
+            c.AffectedIndividualsCount, c.Classification, c.MaterialityDetermined, lessonsCaptured, openTasks);
     }
 }

@@ -580,6 +580,7 @@ else
                             <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
                             @RationaleHint(_phaseReason)
                             @WhenItHappened()
+                            @OpenTasksWarning()
                             @GateModalSection()
                         }
                         else if (_activeModal == "supersede")
@@ -1427,6 +1428,35 @@ else
             </div>
         </div>
     </text>;
+
+    // INV-13: moving forward, list the tasks still open for the phases being left behind (or every open task when
+    // closing). A warning only: the analyst can advance anyway, and the tasks stay open.
+    private RenderFragment OpenTasksWarning() => @<text>
+        @{ var open = OpenTasksBehind(); }
+        @if (open.Count > 0)
+        {
+            <div class="alert alert-warning py-2 px-3 small mt-2 mb-0" role="status">
+                <div class="fw-semibold mb-1">@IncidentManager.Application.Common.Plural.Of(open.Count, "task") still open</div>
+                <ul class="mb-1 ps-3">
+                    @foreach (var t in open.Take(5))
+                    {
+                        <li>@t.Title <span class="text-muted">· @CaseTabs.CaseTasksTab.KindLabel(t.Kind)@(string.IsNullOrWhiteSpace(t.Owner) ? "" : $" · {Users.DisplayFor(t.Owner)}")</span></li>
+                    }
+                </ul>
+                @if (open.Count > 5) { <div class="text-muted">…and @(open.Count - 5) more.</div> }
+                <div class="text-muted">You can continue anyway. They stay open.</div>
+            </div>
+        }
+    </text>;
+
+    private List<ActionItem> OpenTasksBehind()
+    {
+        if (_case is null || _newPhase <= _case.Phase) return [];
+        return _case.ActionItems
+            .Where(t => t.IsOpen && (_newPhase == CasePhase.Closed || (t.Kind.Phase() is { } p && p < _newPhase)))
+            .OrderBy(t => t.Kind).ThenBy(t => t.DueAtUtc)
+            .ToList();
+    }
 
     /// <summary>The chosen time as UTC, or null when the analyst left it at the default (it happened now).</summary>
     private DateTimeOffset? EffectiveUtc() =>

@@ -102,7 +102,7 @@
     </button>
     <div id="task-add-form" class="card mb-3 @(_addOpen ? "" : "im-phone-collapsed")">
         <div class="card-body row g-2 align-items-end">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label small mb-0" for="task-title">Task</label>
                 <input id="task-title" class="form-control form-control-sm" @bind="_taskTitle" @bind:event="oninput" @onkeydown="OnTitleKey" />
             </div>
@@ -124,6 +124,15 @@
                 }
             </div>
             <div class="col-md-2">
+                <label class="form-label small mb-0" for="task-kind">Kind</label>
+                <select id="task-kind" class="form-select form-select-sm" @bind="_taskKind">
+                    @foreach (var k in Enum.GetValues<TaskKind>())
+                    {
+                        <option value="@k">@KindLabel(k)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
                 <label class="form-label small mb-0" for="task-due-date">Due date</label>
                 <input id="task-due-date" type="date" class="form-control form-control-sm" @bind="_taskDueDate" />
             </div>
@@ -132,7 +141,7 @@
                 <input id="task-due-time" type="time" class="form-control form-control-sm" @bind="_taskDueTime"
                        title="Leave blank for end of day." />
             </div>
-            <div class="col-md-2">
+            <div class="col-md-1">
                 <button class="btn btn-sm btn-primary w-100" title="Ctrl / ⌘ + Enter" @onclick="AddTask" disabled="@string.IsNullOrWhiteSpace(_taskTitle)">Add task</button>
             </div>
         </div>
@@ -173,8 +182,21 @@ else
             </tr>
         </thead>
         <tbody>
-            @foreach (var t in Case.ActionItems.OrderBy(x => x.Status).ThenBy(x => x.DueAtUtc))
+            @{ TaskKind? lastKind = null; }
+            @foreach (var t in OrderedTasks())
             {
+                @if (Grouped && t.Kind != lastKind)
+                {
+                    lastKind = t.Kind;
+                    var inKind = Case.ActionItems.Where(x => x.Kind == t.Kind).ToList();
+                    @* INV-13: tasks grouped by the kind of response work, with how many are done. *@
+                    <tr class="im-task-group" @key="@($"group-{t.Kind}")">
+                        <td colspan="@colCount">
+                            <span class="fw-semibold">@KindLabel(t.Kind)</span>
+                            <span class="text-muted small ms-2">@inKind.Count(x => !x.IsOpen) of @inKind.Count done</span>
+                        </td>
+                    </tr>
+                }
                 var isOpen = t.Status != ActionItemStatus.Done && t.Status != ActionItemStatus.Cancelled;
                 var threadOpen = _openThreads.Contains(t.Id);
                 var comments = CommentsFor(t.Id);
@@ -296,6 +318,15 @@ else
                                         <input class="form-control form-control-sm mt-1" aria-label="External owner name" @bind="_editOwnerExternal" @bind:event="oninput"
                                                placeholder="External owner name" />
                                     }
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small mb-0" for="task-edit-kind">Kind</label>
+                                    <select id="task-edit-kind" class="form-select form-select-sm" @bind="_editKind">
+                                        @foreach (var k in Enum.GetValues<TaskKind>())
+                                        {
+                                            <option value="@k">@KindLabel(k)</option>
+                                        }
+                                    </select>
                                 </div>
                                 <div class="col-md-2">
                                     <label class="form-label small mb-0" for="task-edit-status">Status</label>
@@ -484,11 +515,35 @@ else
     private TimeOnly? _editDueTime;
     private string? _editDescription;
 
+    // --- INV-13: task kinds ---
+    private TaskKind _taskKind = TaskKind.General;
+    private TaskKind _editKind = TaskKind.General;
+
+    /// <summary>Group by kind once any task has one; otherwise the plain list, as before.</summary>
+    private bool Grouped => Case.ActionItems.Any(x => x.Kind != TaskKind.General);
+
+    private IEnumerable<ActionItem> OrderedTasks() => Grouped
+        ? Case.ActionItems.OrderBy(x => x.Kind == TaskKind.General ? int.MaxValue : (int)x.Kind)
+            .ThenBy(x => x.Status).ThenBy(x => x.DueAtUtc)
+        : Case.ActionItems.OrderBy(x => x.Status).ThenBy(x => x.DueAtUtc);
+
+    public static string KindLabel(TaskKind k) => k switch
+    {
+        TaskKind.General => "General",
+        TaskKind.Investigate => "Investigate",
+        TaskKind.Contain => "Contain",
+        TaskKind.Eradicate => "Eradicate",
+        TaskKind.Recover => "Recover",
+        TaskKind.Notify => "Notify",
+        _ => k.ToString()
+    };
+
     private void BeginEdit(ActionItem t)
     {
         _editingTaskId = t.Id;
         _editTitle = t.Title;
         _editStatus = t.Status;
+        _editKind = t.Kind;
         _editDescription = t.Description;
         // Seed the owner picker: a directory user shows as itself, a free-text/external owner via the sentinel.
         if (string.IsNullOrWhiteSpace(t.Owner)) { _editOwner = ""; _editOwnerExternal = null; }
@@ -519,7 +574,7 @@ else
         try
         {
             await Cases.UpdateActionItemAsync(CaseId, id, _editTitle, owner,
-                ToDueUtc(_editDueDate, _editDueTime), _editStatus, _editDescription);
+                ToDueUtc(_editDueDate, _editDueTime), _editStatus, _editDescription, _editKind);
             _editingTaskId = null;
             await OnChanged.InvokeAsync();
             Toasts.Success("Task updated");
@@ -557,7 +612,7 @@ else
             var u => u
         };
         // A failed save keeps what was typed so the analyst can fix it and retry.
-        try { await Cases.AddActionItemAsync(CaseId, _taskTitle, owner, ResolveDueUtc()); }
+        try { await Cases.AddActionItemAsync(CaseId, _taskTitle, owner, ResolveDueUtc(), _taskKind); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't add the task. {ex.Message}"); return; }
         _taskTitle = ""; _taskOwner = null; _taskOwnerExternal = null; _taskDueDate = null; _taskDueTime = null;
         await OnChanged.InvokeAsync();
