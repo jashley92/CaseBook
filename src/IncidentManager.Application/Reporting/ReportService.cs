@@ -70,6 +70,52 @@ public sealed class ReportService
         _ => s.ToString()
     };
 
+    /// <summary>
+    /// The report's account of the response: the analyst's investigation entries and (INV-16, when enabled) the
+    /// response milestones, interleaved by when they happened. An item entered more than an hour after it happened
+    /// can carry a neutral "Recorded …" note (<see cref="ReportingOptions.MarkLateEntries"/>).
+    /// </summary>
+    private List<ReportTimelineItem> InvestigationTimeline(Case c, ReportDefanger d, ReportingOptions opts)
+    {
+        string Late(DateTimeOffset happened, DateTimeOffset recorded) =>
+            opts.MarkLateEntries && recorded - happened > Cases.CaseService.BackdateReasonThreshold
+                ? $" (Recorded {recorded.ToString("u", System.Globalization.CultureInfo.InvariantCulture)}.)"
+                : "";
+
+        var rows = c.TimelineEntries
+            .Where(x => x.Kind == TimelineKind.Investigation && x.IsCurrent)
+            // Investigation descriptions are Markdown; flatten to readable plain text for the report. An edited
+            // entry was first recorded when its original version was.
+            .Select(x => (At: x.OccurredAtUtc, Order: x.CreatedAtUtc, Item: new ReportTimelineItem(x.OccurredAtUtc,
+                TaxLabel("TimelineEntryType", x.Type.ToString()),
+                d.Text(Content.RichText.ToText(x.Description)) + Late(x.OccurredAtUtc, FirstRecorded(c, x)), x.Source)))
+            .ToList();
+
+        if (opts.IncludeMilestones)
+        {
+            var labels = new Cases.MilestoneLabels(ClassificationLabel, _severityLabels.For, PhaseLabel, MaterialityLabel);
+            // A report listing its own earlier versions reads oddly, so final-report milestones stay out.
+            foreach (var m in Cases.CaseMilestones.Project(c, labels).Where(m => m.Kind != Cases.MilestoneKind.ReportFinal))
+            {
+                var text = m.Detail is { } detail ? $"{m.Title}. {detail}" : m.Title;
+                if (m.RecordedAtUtc is { } rec) text += Late(m.AtUtc, rec);
+                rows.Add((m.AtUtc, m.AtUtc, new ReportTimelineItem(m.AtUtc, ReportTimelineItem.Milestone, d.Text(text),
+                    m.Actor is { } who ? _users.DisplayFor(who) : null)));
+            }
+        }
+
+        return rows.OrderBy(r => r.At).ThenBy(r => r.Order).Select(r => r.Item).ToList();
+    }
+
+    // When an investigation entry was first put on the record: its original version's creation time.
+    private static DateTimeOffset FirstRecorded(Case c, TimelineEntry e)
+    {
+        var first = e;
+        while (first.SupersedesEntryId is { } prior && c.TimelineEntries.FirstOrDefault(x => x.Id == prior) is { } p)
+            first = p;
+        return first.CreatedAtUtc;
+    }
+
     private string PhaseLabel(CasePhase p) =>
         _taxonomy?.Label("CasePhase", p.ToString(), p.ToString()) ?? p.ToString();
 
@@ -455,6 +501,9 @@ public sealed class ReportService
             .AsSplitQuery()
             .Include(x => x.ClassificationChanges)
             .Include(x => x.SeverityChanges)
+            .Include(x => x.StatusChanges)        // INV-16: milestones in the investigation timeline
+            .Include(x => x.MaterialityChanges)
+            .Include(x => x.GatePassages)
             .Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics)
             .Include(x => x.Evidence)
             .Include(x => x.Notes)
@@ -667,12 +716,7 @@ public sealed class ReportService
                     x.TechniqueId,
                     d.Text(x.Description)))
                 .ToList(),
-            InvestigationTimeline = c.TimelineEntries
-                .Where(x => x.Kind == TimelineKind.Investigation && x.IsCurrent)
-                .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
-                // Investigation descriptions are Markdown; flatten to readable plain text for the report.
-                .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), d.Text(Content.RichText.ToText(x.Description)), x.Source))
-                .ToList(),
+            InvestigationTimeline = InvestigationTimeline(c, d, opts),
             Evidence = c.Evidence
                 .OrderBy(x => x.CreatedAtUtc)
                 .Select(x => new ReportEvidenceItem(x.OriginalFileName, x.SizeBytes, x.Sha256, x.CreatedAtUtc, _users.DisplayFor(x.CreatedBy)))

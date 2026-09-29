@@ -50,6 +50,20 @@ public sealed class ReportingOptions
     public bool DefangIndicators { get; set; } = true;
 
     /// <summary>
+    /// INV-16: include the response milestones (classification, severity and phase changes, stage gates,
+    /// materiality, reporting, completed tasks, evidence added) in the report's investigation timeline, dated
+    /// when they happened. On by default: the timeline is the report's account of the response.
+    /// </summary>
+    public bool IncludeMilestones { get; set; } = true;
+
+    /// <summary>
+    /// INV-16: mark investigation-timeline entries and milestones entered more than an hour after they happened
+    /// with a neutral "Recorded …" note. On by default: the audit trail shows the recorded time anyway, and
+    /// stating it openly reads better to an examiner than having them find it.
+    /// </summary>
+    public bool MarkLateEntries { get; set; } = true;
+
+    /// <summary>
     /// PROD-45: the TLP marking a report is generated with unless the analyst picks another (CLEAR, GREEN, AMBER,
     /// AMBER+STRICT or RED). Default AMBER: incident reports are normally shared on a need-to-know basis.
     /// </summary>

@@ -119,7 +119,7 @@ public sealed partial class ReportGenerator : IReportGenerator
 
             case ReportSection.InvestigationTimeline:
                 body.AppendChild(Heading("Investigation Timeline"));
-                body.AppendChild(P("Analyst and team actions.", italic: true, size: 18));
+                body.AppendChild(P(ReportTimelineItem.InvestigationSubtitle(m.InvestigationTimeline), italic: true, size: 18));
                 body.AppendChild(WordTable(
                     ["When (UTC)", "Type", "Description", "Source"],
                     m.InvestigationTimeline.Select(x => new[] { x.OccurredAtUtc.ToString("u"), x.Type, x.Description, x.Source ?? "" })));

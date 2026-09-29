@@ -4,7 +4,15 @@ using IncidentManager.Domain.Enums;
 namespace IncidentManager.Application.Reporting;
 
 public sealed record ReportClassificationItem(DateTimeOffset AtUtc, string From, string To, string Reason, string By);
-public sealed record ReportTimelineItem(DateTimeOffset OccurredAtUtc, string Type, string Description, string? Source);
+public sealed record ReportTimelineItem(DateTimeOffset OccurredAtUtc, string Type, string Description, string? Source)
+{
+    /// <summary>INV-16: the <see cref="Type"/> of a response milestone in the investigation timeline.</summary>
+    public const string Milestone = "Milestone";
+
+    /// <summary>The subtitle of the investigation-timeline section, naming the milestones when it carries them.</summary>
+    public static string InvestigationSubtitle(IEnumerable<ReportTimelineItem> items) =>
+        items.Any(x => x.Type == Milestone) ? "Analyst and team actions, with the response milestones." : "Analyst and team actions.";
+}
 public sealed record ReportEvidenceItem(string FileName, long SizeBytes, string Sha256, DateTimeOffset UploadedAtUtc, string UploadedBy);
 /// <summary>An analyst note: <see cref="Body"/> is plain text; <see cref="Blocks"/> keeps its Markdown formatting for print.</summary>
 public sealed record ReportNoteItem(DateTimeOffset AtUtc, string Author, string Body, IReadOnlyList<RichBlock>? Blocks = null);

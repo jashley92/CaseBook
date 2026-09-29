@@ -201,6 +201,48 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task The_investigation_timeline_carries_milestones_in_the_order_things_happened_and_marks_late_entries()
+    {
+        // INV-16: the report's account of the response includes the milestones, dated when they happened.
+        _user.RoleSet = [AppRole.IncidentCommander];
+        Guid caseId;
+        var detected = _clock.UtcNow;
+        await using (var db = NewContext())
+        {
+            var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
+                new CaseNumberGenerator(db), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            caseId = (await cases.CreateAsync(new IncidentManager.Application.Cases.CreateCaseRequest
+            {
+                DescriptiveName = "Late", Title = "Recorded after containment", Classification = Classification.Incident,
+                Severity = Severity.High, Origin = CaseOrigin.InternalDetection
+            })).Id;
+            _clock.UtcNow = detected.AddHours(6);
+            await cases.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Containment,
+                detected.AddHours(1), "RevokedSessionsEntry", null);
+            await cases.ChangePhaseAsync(caseId, CasePhase.Containment, "Isolated on the call", effectiveAtUtc: detected.AddHours(2));
+        }
+
+        await using (var db = NewContext())
+        {
+            var timeline = (await NewReportService(db).BuildPreviewModelAsync(caseId, null)).InvestigationTimeline;
+
+            var entry = timeline.Single(x => x.Description.StartsWith("RevokedSessionsEntry", StringComparison.Ordinal));
+            var phase = timeline.Single(x => x.Type == "Milestone" && x.Description.StartsWith("Phase New", StringComparison.Ordinal));
+            timeline.ToList().IndexOf(entry).Should().BeLessThan(timeline.ToList().IndexOf(phase));
+            phase.OccurredAtUtc.Should().Be(detected.AddHours(2));
+            phase.Description.Should().Contain("Isolated on the call").And.Contain("(Recorded ");
+            entry.Description.Should().Contain("(Recorded ");
+            timeline.Should().Contain(x => x.Type == "Milestone" && x.Description.StartsWith("Case opened", StringComparison.Ordinal));
+
+            _reporting.CurrentValue.IncludeMilestones = false;
+            _reporting.CurrentValue.MarkLateEntries = false;
+            var plain = (await NewReportService(db).BuildPreviewModelAsync(caseId, null)).InvestigationTimeline;
+            plain.Should().NotContain(x => x.Type == "Milestone");
+            plain.Should().ContainSingle().Which.Description.Should().Be("RevokedSessionsEntry");
+        }
+    }
+
+    [Fact]
     public async Task A_generated_report_is_a_draft_until_approved_and_its_stored_hash_matches_the_record()
     {
         await using var db = NewContext();

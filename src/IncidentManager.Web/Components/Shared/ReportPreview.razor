@@ -106,7 +106,7 @@ else
                         break;
 
                     case ReportSection.InvestigationTimeline:
-                        <p class="small fst-italic text-muted mb-1">Analyst and team actions.</p>
+                        <p class="small fst-italic text-muted mb-1">@ReportTimelineItem.InvestigationSubtitle(Model.InvestigationTimeline)</p>
                         <div class="table-responsive">
                             <table class="table table-sm table-bordered small mb-0">
                                 <thead><tr><th>When (UTC)</th><th>Type</th><th>Description</th><th>Source</th></tr></thead>
