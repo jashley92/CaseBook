@@ -152,6 +152,34 @@ public sealed class AccessLogService : IAccessLogService
             .ToListAsync(ct);
     }
 
+    public async Task<DateTimeOffset?> LastViewedAsync(Guid caseId, CancellationToken ct = default)
+    {
+        if (!_user.IsAuthenticated) return null;
+        try
+        {
+            using var db = _factory.CreateDbContext();
+            var me = _user.UserId;
+            var sessions = (await db.CaseAccessEvents.AsNoTracking()
+                    .Where(e => e.CaseId == caseId && e.ActorUserId == me && e.AccessType == AccessType.CaseOpen)
+                    .Select(e => new { e.FirstSeenUtc, e.LastSeenUtc })
+                    .ToListAsync(ct))
+                .OrderByDescending(e => e.LastSeenUtc).ToList();
+            if (sessions.Count == 0) return null;
+
+            // The page loads twice (server prerender, then interactive), and the first pass already recorded this
+            // visit. A session started moments ago is this visit, so the one before it is the last view; a longer
+            // session still being extended means the viewer never left, so there's nothing "since" to show.
+            var recent = _clock.UtcNow - TimeSpan.FromMinutes(1);
+            var latest = sessions[0];
+            if (latest.FirstSeenUtc > recent) return sessions.Count > 1 ? sessions[1].LastSeenUtc : null;
+            return latest.LastSeenUtc > recent ? null : latest.LastSeenUtc;
+        }
+        catch (Exception)
+        {
+            return null; // best-effort, like recording: a lookup failure never blocks opening a case
+        }
+    }
+
     public async Task<IReadOnlyList<string>> ActorsAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();

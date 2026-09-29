@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @implements IAsyncDisposable
 @inject CaseService Cases
+@inject IncidentManager.Application.Activity.ActivityFeedService Feed
 @inject IClock Clock
 @inject IJSRuntime JS
 @inject IncidentManager.Web.Services.CaseListMemory ListMemory
@@ -280,6 +281,20 @@ else
         </span>
     </div>
 
+    @* INV-04: what other people changed since this viewer last had the case open, with a one-click view of it. *@
+    @if (_sinceCount > 0 && !_sinceDismissed && _lastViewed is { } lastViewed)
+    {
+        <div class="im-since small mb-2" role="status">
+            <span class="bi bi-clock-history" aria-hidden="true"></span>
+            <span>
+                <strong>@IncidentManager.Application.Common.Plural.Of(_sinceCount, "change")</strong>
+                since you last viewed this case (@TimeDisp.Short(lastViewed))@(_sincePeople.Count > 0 ? $", by {string.Join(", ", _sincePeople)}" : "").
+            </span>
+            <button type="button" class="btn btn-sm btn-link p-0" @onclick="ShowSinceOnTimeline">Show on the timeline</button>
+            <button type="button" class="btn-close ms-auto" aria-label="Dismiss" @onclick="() => _sinceDismissed = true"></button>
+        </div>
+    }
+
     @* F-12: a pending two-person legal-hold release. Anyone can see it; Manage Legal can approve (not the
        requester) or withdraw it. *@
     @if (_case.LegalHold && _case.LegalHoldReleasePending)
@@ -443,7 +458,8 @@ else
            paste-shim registration (element ids kept in the child), and the live-collab "new entries" pill. *@
         <CaseTimelineTab @ref="_timelineTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" CanChangeClassification="_canReclassify"
                          DetectionLabel="@DetectionLabel" OnChanged="Reload" OnPreview="OpenShot"
-                         FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts" />
+                         FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts"
+                         ChangedSinceUtc="_timelineSince" OnClearSince="() => _timelineSince = null" />
         @* U-32: a floating "jump to what just arrived" pill when a collaborator adds timeline entries. *@
         @if (_newTimelineIds.Count > 0)
         {
@@ -1143,6 +1159,18 @@ else
         // C-05: record the authorized case-detail open (best-effort; coalesced into a view-session).
         if (_case is not null)
         {
+            // INV-04: read when this viewer last had the case open before recording this visit, once per case.
+            if (_sinceCheckedFor != _case.Id)
+            {
+                _sinceCheckedFor = _case.Id;
+                _sinceDismissed = false;
+                _timelineSince = null;
+                _sinceCount = 0;
+                _sincePeople = [];
+                _lastViewed = await AccessLog.LastViewedAsync(_case.Id);
+                if (_lastViewed is { } lv)
+                    (_sinceCount, _sincePeople) = await Feed.ChangesSinceAsync(_case.Id, lv);
+            }
             await AccessLog.RecordCaseOpenAsync(_case.Id, _case.CaseNumber, _case.IsRestricted);
             _isPinned = await Shortcuts.IsPinnedAsync(_case.Id); // PROD-20: header star + palette action state
         }
@@ -1710,6 +1738,20 @@ else
     }
 
     private bool _titleExpanded;
+
+    // --- INV-04: since you last viewed ---
+    private Guid? _sinceCheckedFor;
+    private DateTimeOffset? _lastViewed;
+    private int _sinceCount;
+    private IReadOnlyList<string> _sincePeople = [];
+    private bool _sinceDismissed;
+    private DateTimeOffset? _timelineSince;
+
+    private async Task ShowSinceOnTimeline()
+    {
+        _timelineSince = _lastViewed;
+        await SetTab("Timeline");
+    }
 
     // INV-07: the notes and comments already put on the timeline, so their tabs can say so.
     private IReadOnlySet<string> PromotedSources() => _case is null ? new HashSet<string>()

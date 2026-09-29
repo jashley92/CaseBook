@@ -306,11 +306,13 @@
     // Only current versions are shown; superseded Investigation edits live in history (below) and the audit trail.
     var tlAll = _msOnly ? new List<TimelineEntry>()
         : Case.TimelineEntries.Where(x => (_tlLens is null || x.Kind == _tlLens) && x.IsCurrent).ToList();
-    var tlView = FilteredTimeline(tlAll);
+    var tlView = FilteredTimeline(tlAll)
+        .Where(e => ChangedSinceUtc is not { } since || (e.ModifiedAtUtc ?? e.CreatedAtUtc) > since).ToList();
     // INV-01: response milestones, derived from the case record. Shown in All (unless hidden) and their own lens;
     // an entry filter (type / tactic / source) doesn't apply to them, so they step aside while one is active.
     var msAll = _msOnly || (_tlLens is null && _showMilestones) ? Milestones() : [];
-    var msView = FiltersActive ? [] : msAll;
+    var msView = FiltersActive ? []
+        : ChangedSinceUtc is { } msSince ? msAll.Where(m => (m.RecordedAtUtc ?? m.AtUtc) > msSince).ToList() : msAll;
     var rows = MergeRows(tlView, msView);
     var totalAll = tlAll.Count + msAll.Count;
     // The attack chain is always event-only, regardless of lens (shown under All and Event).
@@ -441,6 +443,15 @@
             <span class="bi @(_tlOldestFirst ? "bi-sort-down-alt" : "bi-sort-up-alt")" aria-hidden="true"></span>
             @(_tlOldestFirst ? "Oldest first" : "Newest first")
         </button>
+        @if (ChangedSinceUtc is { } sinceChip)
+        {
+            @* INV-04: only what was added or changed since the viewer last had the case open. *@
+            <span class="im-badge im-b-info">
+                Changed since @TimeDisp.Short(sinceChip)
+                <button type="button" class="btn-close btn-close-sm ms-1 align-middle" style="font-size:.55rem" aria-label="Show everything"
+                        @onclick="OnClearSince"></button>
+            </span>
+        }
         @if (FiltersActive)
         {
             <button type="button" class="btn btn-sm btn-link text-decoration-none px-1"
@@ -1206,6 +1217,10 @@ else
             <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = _tlWhen.AddMinutes(15)" aria-label="15 minutes later">+15 min</button>
         </div>
     </text>;
+
+    // --- INV-04: show only what changed since the viewer last had the case open (set by the workspace) ---
+    [Parameter] public DateTimeOffset? ChangedSinceUtc { get; set; }
+    [Parameter] public EventCallback OnClearSince { get; set; }
 
     // --- INV-05b: correcting when a transition happened ---
     [Parameter] public bool CanChangeClassification { get; set; }

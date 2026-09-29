@@ -33,6 +33,25 @@ public sealed class ActivityFeedService
         _users = users;
     }
 
+    /// <summary>
+    /// INV-04: what other people changed on one case since <paramref name="sinceUtc"/> — how many audit entries,
+    /// and who. Need-to-know scoped: nothing for a case the caller can't see.
+    /// </summary>
+    public async Task<(int Count, IReadOnlyList<string> People)> ChangesSinceAsync(Guid caseId, DateTimeOffset sinceUtc,
+        CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var number = await db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Id == caseId)
+            .Select(c => c.CaseNumber).FirstOrDefaultAsync(ct);
+        if (number is null) return (0, []);
+        var me = _user.UserId;
+        var rows = await db.AuditLog.AsNoTracking()
+            .Where(a => a.CaseNumber == number && a.Actor != me && a.AtUtc > sinceUtc)
+            .Select(a => a.Actor)
+            .ToListAsync(ct);
+        return (rows.Count, rows.Distinct().Select(a => _users.DisplayFor(a)).ToList());
+    }
+
     /// <param name="othersOnly">Leave out the caller's own actions (the notification bell: you know what you did).</param>
     public async Task<IReadOnlyList<ActivityItem>> RecentAsync(int take = 20, CancellationToken ct = default,
         bool othersOnly = false)

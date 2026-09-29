@@ -40,6 +40,12 @@ public interface IAccessLogService
     /// <summary>Coalesced case-open sessions for one case (the per-case "Viewed by" panel).</summary>
     Task<IReadOnlyList<CaseAccessEvent>> ForCaseAsync(Guid caseId, int take = 200, CancellationToken ct = default);
 
+    /// <summary>
+    /// INV-04: when the current user last had this case open, before now (the end of their most recent
+    /// view-session), or null if they never have. Read before the current open is recorded.
+    /// </summary>
+    Task<DateTimeOffset?> LastViewedAsync(Guid caseId, CancellationToken ct = default);
+
     /// <summary>Distinct actors present in the log, to populate the console's actor filter.</summary>
     Task<IReadOnlyList<string>> ActorsAsync(CancellationToken ct = default);
 }

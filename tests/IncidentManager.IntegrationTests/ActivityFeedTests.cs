@@ -110,6 +110,34 @@ public sealed class ActivityFeedTests : IDisposable
     }
 
     [Fact]
+    public async Task Changes_since_last_viewed_count_only_what_other_people_did_after_that_time()
+    {
+        // INV-04: "since you last viewed" counts colleagues' changes after the viewer's last visit.
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var alpha = await svc.CreateAsync(Req("Alpha"));
+        var lastViewed = _clock.UtcNow.AddMinutes(1);
+        _clock.UtcNow = lastViewed.AddMinutes(5);
+        await svc.ChangeSeverityAsync(alpha.Id, Severity.High, "My own change");   // mine: not counted
+
+        var colleague = new TestCurrentUser { UserId = "colleague", RoleSet = [AppRole.SysAdmin] };
+        var theirs = new CaseService(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection)
+                .AddInterceptors(new AuditChainInterceptor(_hasher, colleague, _clock, new CaseChangeNotifier())).Options),
+            colleague, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(), new NoOpCaseNotifications(),
+            new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(5);
+        await theirs.AddNoteAsync(alpha.Id, "Colleague's note");
+
+        var (count, people) = await new ActivityFeedService(NewFactory(), _user, new StubUserDirectory())
+            .ChangesSinceAsync(alpha.Id, lastViewed);
+
+        count.Should().BeGreaterThan(0);
+        people.Should().Equal("colleague");
+        (await new ActivityFeedService(NewFactory(), _user, new StubUserDirectory())
+            .ChangesSinceAsync(alpha.Id, _clock.UtcNow)).Count.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Feed_only_includes_cases_the_caller_can_see()
     {
         // Seed a restricted case as a privileged user...
