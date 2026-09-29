@@ -63,12 +63,12 @@ else
                     </small>
                     <AuthorizeView Policy="@Policies.EditCases" Context="edit">
                         <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => StartNoteEdit(n)">Edit</button>
-                        @if (!Promoted.Contains($"note:{n.Id}"))
+                        @if (!IsPromoted(n))
                         {
                             <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => _promoting = n.Id">Add to timeline</button>
                         }
                     </AuthorizeView>
-                    @if (Promoted.Contains($"note:{n.Id}"))
+                    @if (IsPromoted(n))
                     {
                         <span class="im-badge im-b-info ms-2"><span class="bi bi-clock-history" aria-hidden="true"></span> On the timeline</span>
                     }
@@ -95,6 +95,14 @@ else
     /// <summary>INV-07: the sources already promoted to the timeline ("note:&lt;id&gt;" …).</summary>
     [Parameter] public IReadOnlySet<string> Promoted { get; set; } = new HashSet<string>();
     private Guid? _promoting;
+
+    // INV-20: a note stays "on the timeline" after it's edited — any version of it may have been promoted.
+    private bool IsPromoted(AnalystNote n)
+    {
+        for (AnalystNote? v = n; v is not null; v = v.SupersedesNoteId is { } prior ? Notes.FirstOrDefault(x => x.Id == prior) : null)
+            if (Promoted.Contains($"note:{v.Id}")) return true;
+        return false;
+    }
     private async Task PromotedDone() { _promoting = null; await OnChanged.InvokeAsync(); }
     /// <summary>Reload the case after a note write so the list (and the rest of the workspace) refreshes.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
