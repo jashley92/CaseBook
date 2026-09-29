@@ -67,6 +67,11 @@ public sealed class ImportTimelineRow
     public string Description { get; set; } = string.Empty;
     public string? Source { get; set; }
     public string? Warning { get; set; }
+
+    // INV-18: a Decision row's details; the why is required to apply it as a decision.
+    public string? Rationale { get; set; }
+    public string? OptionsConsidered { get; set; }
+    public string? DecidedBy { get; set; }
 }
 
 /// <summary>One editable entity/IOC row in the preview.</summary>

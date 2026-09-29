@@ -93,6 +93,10 @@ Notes:
 - Indicators may be **defanged** (`hxxp://`, `1.1.1[.]1`) — CaseBook refangs and auto-types them; the entity
   `type` is optional.
 - `origin` is recorded as the provenance (source) of imported indicators and timeline entries.
+- A timeline entry of `type` **`Decision`** records something the team decided: the decision in `description`,
+  why in `rationale` (required for a decision), and optionally `optionsConsidered` and `decidedBy`. A decision
+  without a `rationale` is imported as `Communication`, flagged in the preview so the reviewer can add the why.
+  `Handoff` isn't an importable type (a handoff is made in CaseBook, to a person).
 - Enum fields (classification, severity, kind, type, disposition, …) and their allowed values are defined in
   the schema; unknown values fall back to a safe default and are flagged in the review preview.
 

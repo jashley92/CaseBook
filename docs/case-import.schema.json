@@ -19,7 +19,7 @@
     },
     "origin": {
       "type": "string",
-      "description": "Provenance recorded as the source of imported indicators and timeline entries (e.g. \u0022AI-assisted (Copilot)\u0022, \u0022manual\u0022, \u0022XSIAM\u0022)."
+      "description": "Provenance recorded as the source of imported indicators and timeline entries (e.g. \"AI-assisted (Copilot)\", \"manual\", \"XSIAM\")."
     },
     "target": {
       "$ref": "#/$defs/target"
@@ -87,7 +87,7 @@
             "Incident",
             "Breach"
           ],
-          "description": "Omit or \u0022ComplexEvent\u0022 files an intake Complex Event."
+          "description": "Omit or \"ComplexEvent\" files an intake Complex Event."
         },
         "severity": {
           "type": "string",
@@ -108,7 +108,7 @@
         },
         "summary": {
           "type": "string",
-          "description": "The case\u0027s own summary field (distinct from the top-level summary note)."
+          "description": "The case's own summary field (distinct from the top-level summary note)."
         },
         "detectedAtUtc": {
           "type": "string",
@@ -169,7 +169,8 @@
             "ScopeConfirmed",
             "DataConfirmed",
             "Remediation",
-            "RegulatoryNotification"
+            "RegulatoryNotification",
+            "Decision"
           ]
         },
         "description": {
@@ -179,6 +180,18 @@
         "source": {
           "type": "string",
           "description": "Optional origin of this entry (defaults to the document origin)."
+        },
+        "rationale": {
+          "type": "string",
+          "description": "For type Decision: why it was decided (required for a decision). Ignored for other types."
+        },
+        "optionsConsidered": {
+          "type": "string",
+          "description": "For type Decision: the other options considered. Optional."
+        },
+        "decidedBy": {
+          "type": "string",
+          "description": "For type Decision: who made the decision, e.g. \"Incident Commander with Legal\". Optional."
         }
       }
     },

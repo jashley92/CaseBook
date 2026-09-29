@@ -258,10 +258,27 @@ else if (_pending.Count > 0)
                                     @if (t.Warning is not null) { <div class="form-text text-warning small">@t.Warning</div> }
                                 </td>
                                 <td><select class="form-select form-select-sm" aria-label="Kind" @bind="t.Kind">@foreach (var k in Enum.GetValues<TimelineKind>()) { <option value="@k">@k</option> }</select></td>
-                                <td><select class="form-select form-select-sm" aria-label="Type" @bind="t.Type">@foreach (var ty in Enum.GetValues<TimelineEntryType>()) { <option value="@ty">@Ui.Label(ty)</option> }</select></td>
+                                <td><select class="form-select form-select-sm" aria-label="Type" @bind="t.Type">@foreach (var ty in Enum.GetValues<TimelineEntryType>().Where(x => x != TimelineEntryType.Handoff)) { <option value="@ty">@Ui.Label(ty)</option> }</select></td>
                                 <td><input class="form-control form-control-sm" aria-label="Description" @bind="t.Description" /></td>
                                 <td><input class="form-control form-control-sm" aria-label="Source" @bind="t.Source" /></td>
                             </tr>
+                            @if (t.Type == TimelineEntryType.Decision)
+                            {
+                                @* INV-18: a decision is imported with its why. *@
+                                <tr class="@(t.Include ? "" : "opacity-50")">
+                                    <td></td>
+                                    <td colspan="5">
+                                        <div class="row g-2">
+                                            <div class="col-md-6">
+                                                <input class="form-control form-control-sm @(t.Include && string.IsNullOrWhiteSpace(t.Rationale) ? "is-invalid" : "")"
+                                                       aria-label="Why it was decided" placeholder="Why it was decided (required)" @bind="t.Rationale" @bind:event="oninput" />
+                                            </div>
+                                            <div class="col-md-3"><input class="form-control form-control-sm" aria-label="Options considered" placeholder="Options considered" @bind="t.OptionsConsidered" /></div>
+                                            <div class="col-md-3"><input class="form-control form-control-sm" aria-label="Decided by" placeholder="Decided by" @bind="t.DecidedBy" /></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
                         }
                     </tbody>
                 </table>
@@ -531,6 +548,8 @@ else if (_pending.Count > 0)
     private static bool CanApply(CaseImportPreview p)
     {
         if (!p.HasAnything) return false;
+        // INV-18: an included decision needs its why.
+        if (p.Timeline.Any(t => t.Include && t.Type == TimelineEntryType.Decision && string.IsNullOrWhiteSpace(t.Rationale))) return false;
         return p.TargetKind == CaseImportTargetKind.NewCase
             ? p.NewCase is { } nc && !string.IsNullOrWhiteSpace(nc.Title)
             : p.ExistingCaseId is not null;

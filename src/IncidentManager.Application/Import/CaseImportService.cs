@@ -137,6 +137,10 @@ public sealed class CaseImportService
     /// </summary>
     public async Task<CaseImportResult> ApplyAsync(CaseImportPreview p, CancellationToken ct = default)
     {
+        // INV-18: checked before anything is written, so a missing why can't leave a half-applied import.
+        if (p.Timeline.Any(t => t.Include && t.Type == TimelineEntryType.Decision && string.IsNullOrWhiteSpace(t.Rationale)))
+            throw new ArgumentException("A decision on the timeline needs its why. Add it, or change the entry's type.");
+
         Guid caseId;
         string caseNumber;
         var created = false;
@@ -176,7 +180,10 @@ public sealed class CaseImportService
             if (!t.Applied)
             {
                 await _cases.AddTimelineEntryAsync(caseId, t.Kind, t.Type, t.OccurredAtUtc,
-                    t.Description, t.Source ?? origin, null, ct: ct);
+                    t.Description, t.Source ?? origin, null,
+                    decision: t.Type == TimelineEntryType.Decision
+                        ? new CaseService.DecisionDetails(t.Rationale ?? "", t.OptionsConsidered, t.DecidedBy) : null,
+                    ct: ct);
                 t.Applied = true;
             }
             timeline++;
@@ -347,12 +354,22 @@ public sealed class CaseImportService
             var row = new ImportTimelineRow
             {
                 Kind = ParseEnum(t.Kind, TimelineKind.Investigation, "timeline kind", p.Warnings),
-                // INV-06: a Decision needs its rationale, which the import schema doesn't carry yet, so it isn't
-                // an importable type; it falls back like any unknown type, with a warning.
                 Type = ImportableTimelineType(ParseEnum(t.Type, TimelineEntryType.Communication, "timeline type", p.Warnings), p.Warnings),
                 Description = desc!,
                 Source = string.IsNullOrWhiteSpace(t.Source) ? p.Origin : t.Source.Trim()
             };
+            // INV-18: a decision comes in with its why; without one it's imported as Communication, with a note.
+            if (row.Type == TimelineEntryType.Decision)
+            {
+                row.Rationale = Blank(Clamp(t.Rationale, 4000, "Decision rationale", p.Warnings));
+                row.OptionsConsidered = Blank(Clamp(t.OptionsConsidered, 2000, "Options considered", p.Warnings));
+                row.DecidedBy = Blank(Clamp(t.DecidedBy, 300, "Decided by", p.Warnings));
+                if (row.Rationale is null)
+                {
+                    row.Type = TimelineEntryType.Communication;
+                    row.Warning = "A decision needs its why. Imported as Communication; add the why and set the type back to Decision to keep it as a decision.";
+                }
+            }
             if (t.OccurredAtUtc is { } occ)
             {
                 row.OccurredAtUtc = occ;
@@ -463,6 +480,8 @@ public sealed class CaseImportService
         };
     }
 
+    private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
     private static string? Clamp(string? value, int max, string field, List<string> warnings)
     {
         var v = value?.Trim();
@@ -484,12 +503,8 @@ public sealed class CaseImportService
     // INV-06: a Decision needs a rationale, which the import schema doesn't carry yet.
     private static TimelineEntryType ImportableTimelineType(TimelineEntryType t, List<string> warnings)
     {
-        if (t == TimelineEntryType.Decision)
-            warnings.Add("Timeline type 'Decision' can't be imported yet (it needs a rationale). Using Communication instead; record the decision in CaseBook.");
-        else if (t == TimelineEntryType.Handoff)
-            warnings.Add("Timeline type 'Handoff' can't be imported (use Hand off in CaseBook). Using Communication instead.");
-        else
-            return t;
+        if (t != TimelineEntryType.Handoff) return t;
+        warnings.Add("Timeline type 'Handoff' can't be imported (use Hand off in CaseBook). Using Communication instead.");
         return TimelineEntryType.Communication;
     }
 

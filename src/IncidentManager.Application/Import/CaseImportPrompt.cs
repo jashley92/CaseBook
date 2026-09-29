@@ -96,6 +96,7 @@ public static class CaseImportPrompt
         sb.AppendLine("ALLOWED VALUES");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- timeline.kind: {kinds}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- timeline.type: {timelineTypes}");
+        sb.AppendLine("- A timeline entry of type Decision records something the team decided: put the decision in description, why in rationale (required), and optionally optionsConsidered and decidedBy.");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- entities.type: {entityTypes}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- entities.disposition: {dispositions}");
         if (!o.TargetIsExisting)

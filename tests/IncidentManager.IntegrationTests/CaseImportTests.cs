@@ -398,6 +398,54 @@ public sealed class CaseImportTests : IDisposable
     private static string FullDocJson() => JsonSerializer.Serialize(FullDoc(), CaseImportJson.Options);
 
     [Fact]
+    public async Task A_decision_imports_with_its_why_and_one_without_becomes_communication()
+    {
+        // INV-18: decisions travel through the import with their rationale.
+        var doc = FullDoc();
+        doc.Timeline = new()
+        {
+            new() { OccurredAtUtc = new DateTimeOffset(2026, 9, 19, 9, 0, 0, TimeSpan.Zero), Type = "Decision",
+                    Description = "Reset all three users' credentials", Rationale = "Sign-in logs for two users are incomplete",
+                    OptionsConsidered = "Reset only the confirmed user", DecidedBy = "Incident Commander" },
+            new() { OccurredAtUtc = new DateTimeOffset(2026, 9, 19, 9, 30, 0, TimeSpan.Zero), Type = "Decision",
+                    Description = "Notify the carrier" },
+        };
+
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            var svc = NewImportService(db);
+            var preview = await svc.BuildPreviewAsync(doc);
+            preview.Timeline[0].Type.Should().Be(TimelineEntryType.Decision);
+            preview.Timeline[1].Type.Should().Be(TimelineEntryType.Communication);
+            preview.Timeline[1].Warning.Should().Contain("needs its why");
+            caseId = (await svc.ApplyAsync(preview)).CaseId;
+        }
+
+        await using (var verify = NewContext())
+        {
+            var decision = await verify.Set<TimelineEntry>().SingleAsync(t => t.CaseId == caseId && t.Type == TimelineEntryType.Decision);
+            decision.Rationale.Should().Be("Sign-in logs for two users are incomplete");
+            decision.OptionsConsidered.Should().Be("Reset only the confirmed user");
+            decision.DecidedBy.Should().Be("Incident Commander");
+        }
+    }
+
+    [Fact]
+    public async Task Applying_a_decision_row_without_a_why_is_refused_before_anything_is_written()
+    {
+        await using var db = NewContext();
+        var svc = NewImportService(db);
+        var preview = await svc.BuildPreviewAsync(FullDoc());
+        preview.Timeline[0].Type = TimelineEntryType.Decision;   // changed in the preview, no why given
+
+        var act = () => svc.ApplyAsync(preview);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+        (await db.Cases.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task Submit_stages_a_pending_import_and_writes_nothing_yet()
     {
         Guid pid;

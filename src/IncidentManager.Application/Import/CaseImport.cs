@@ -68,6 +68,11 @@ public sealed class CaseImportTimelineEntry
     public string? Type { get; set; }
     public string? Description { get; set; }
     public string? Source { get; set; }
+
+    // INV-18: a Decision entry's details (ignored for other types).
+    public string? Rationale { get; set; }
+    public string? OptionsConsidered { get; set; }
+    public string? DecidedBy { get; set; }
 }
 
 /// <summary>One entity/IOC to import. <see cref="Type"/> is optional (auto-detected) and a string (safe fallback).</summary>

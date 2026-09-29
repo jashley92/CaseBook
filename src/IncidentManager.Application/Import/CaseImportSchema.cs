@@ -91,6 +91,10 @@ public static class CaseImportSchema
                         ["type"] = EnumProp(ImportableTimelineTypes(), null),
                         ["description"] = Str("What happened."),
                         ["source"] = Str("Optional origin of this entry (defaults to the document origin)."),
+                        // INV-18: a decision, recorded with why it was made.
+                        ["rationale"] = Str("For type Decision: why it was decided (required for a decision). Ignored for other types."),
+                        ["optionsConsidered"] = Str("For type Decision: the other options considered. Optional."),
+                        ["decidedBy"] = Str("For type Decision: who made the decision, e.g. \"Incident Commander with Legal\". Optional."),
                     },
                 },
                 ["entity"] = new JsonObject
@@ -146,10 +150,9 @@ public static class CaseImportSchema
         ["items"] = Ref(def),
     };
 
-    // INV-06 / INV-15: every timeline type except Decision (it needs a rationale the schema doesn't carry yet) and
-    // Handoff (a person-to-person act inside CaseBook, not something an import brings in).
-    public static readonly string[] NotImportableTimelineTypes =
-        [nameof(TimelineEntryType.Decision), nameof(TimelineEntryType.Handoff)];
+    // INV-15: every timeline type except Handoff (a person-to-person act inside CaseBook, not something an import
+    // brings in). Decision is importable with its rationale (INV-18).
+    public static readonly string[] NotImportableTimelineTypes = [nameof(TimelineEntryType.Handoff)];
 
     private static JsonArray ImportableTimelineTypes()
     {
