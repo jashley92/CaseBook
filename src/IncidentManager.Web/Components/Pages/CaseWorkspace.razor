@@ -473,7 +473,8 @@ else
                          DetectionLabel="@DetectionLabel" OnChanged="Reload" OnPreview="OpenShot"
                          FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts"
                          ChangedSinceUtc="_timelineSince" OnClearSince="() => _timelineSince = null"
-                         PresetEntityFilter="_timelineEntity" OnOpenEntity="OpenEntity" />
+                         PresetEntityFilter="_timelineEntity" OnOpenEntity="OpenEntity"
+                         AutofocusComposer="_timelineAutofocus" OnAutofocusHandled="() => _timelineAutofocus = false" />
         @* U-32: a floating "jump to what just arrived" pill when a collaborator adds timeline entries. *@
         @if (_newTimelineIds.Count > 0)
         {
@@ -521,7 +522,8 @@ else
         @* UX-13: extracted to CaseTasksTab. Self-loads its playbooks and builds due-dates; the parent keeps
            the flash and hotkey dispatch (@ref) and reloads the case after a write. *@
         <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
-                      OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh" />
+                      OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh"
+                      AutofocusComposer="_tasksAutofocus" OnAutofocusHandled="() => _tasksAutofocus = false" />
     }
     else if (_activeTab == "Review")
     {
@@ -929,6 +931,8 @@ else
     // keeps a ref for hotkey dispatch (Ctrl+Enter submit) and a flag for the 'n' focus shortcut.
     private CaseNotesTab? _notesTab;
     private bool _notesAutofocus;
+    private bool _timelineAutofocus;   // INV-14
+    private bool _tasksAutofocus;      // INV-14
 
     // Tasks: the tab is extracted to CaseTasksTab (UX-13), which owns the add-task + apply-playbook flow.
     private CaseTasksTab? _tasksTab;
@@ -2251,6 +2255,20 @@ else
         {
             _notesAutofocus = true;        // CaseNotesTab focuses its composer once mounted, then clears this
             await SetTab("Notes");
+            StateHasChanged();
+        }
+
+        // INV-14: capture from any tab — 'l' logs an investigation entry on the timeline, 't' adds a task.
+        if (cmd == "log" && _canEdit)
+        {
+            _timelineAutofocus = true;
+            await SetTab("Timeline");
+            StateHasChanged();
+        }
+        if (cmd == "task" && _canEdit)
+        {
+            _tasksAutofocus = true;
+            await SetTab("Tasks");
             StateHasChanged();
         }
     }

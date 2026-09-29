@@ -88,6 +88,13 @@
             <li><span class="cmdk-keys"><kbd>p</kbd></span><span>Case list: preview the cursor row</span></li>
             <li><span class="cmdk-keys"><kbd>Enter</kbd></span><span>Case list: open the cursor row</span></li>
             <li><span class="cmdk-keys"><kbd>1</kbd>&ndash;<kbd>0</kbd></span><span>In a case: switch tabs</span></li>
+            @if (CurrentUser.Has(Permission.EditCases))
+            {
+                <li><span class="cmdk-keys"><kbd>l</kbd></span><span>In a case: log to the timeline</span></li>
+                <li><span class="cmdk-keys"><kbd>t</kbd></span><span>In a case: add a task</span></li>
+                <li><span class="cmdk-keys"><kbd>n</kbd></span><span>In a case: write a note</span></li>
+                <li><span class="cmdk-keys"><kbd>Ctrl</kbd>&thinsp;/&thinsp;<kbd>&#8984;</kbd><kbd>Enter</kbd></span><span>In a case: save what you're writing</span></li>
+            }
             <li><span class="cmdk-keys"><kbd>?</kbd></span><span>Show this help</span></li>
             <li><span class="cmdk-keys"><kbd>Esc</kbd></span><span>Close any overlay</span></li>
         </ul>

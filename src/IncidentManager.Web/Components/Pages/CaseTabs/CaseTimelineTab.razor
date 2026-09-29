@@ -917,6 +917,13 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await ReconcileEditor();
+        if (_autofocusPending && _mdEditors.Contains(InvEditorId))
+        {
+            _autofocusPending = false;
+            try { await JS.InvokeVoidAsync("markdownEditor.focus", InvEditorId); }
+            catch (JSException) { /* editor not ready; harmless */ }
+            await OnAutofocusHandled.InvokeAsync();
+        }
         // UX-01 focus trap for the correction dialog (INV-05b), as the workspace does for its own modals.
         if ((_corr is not null) != _corrTrapArmed)
         {
@@ -1309,6 +1316,11 @@ else
         </div>
     </text>;
 
+    // --- INV-14: the 'l' shortcut opens the composer on an investigation entry and focuses it ---
+    [Parameter] public bool AutofocusComposer { get; set; }
+    [Parameter] public EventCallback OnAutofocusHandled { get; set; }
+    private bool _autofocusPending;
+
     // --- INV-11: open an entity in the panel; filter to one entity when asked from the panel ---
     [Parameter] public EventCallback<Guid> OnOpenEntity { get; set; }
     [Parameter] public Guid? PresetEntityFilter { get; set; }
@@ -1316,6 +1328,14 @@ else
 
     protected override void OnParametersSet()
     {
+        if (AutofocusComposer && !_autofocusPending && CanEdit && _tlEditId is null)
+        {
+            _autofocusPending = true;
+            _msOnly = false;
+            if (_tlLens == TimelineKind.Event) _tlLens = null;
+            _tlAddKind = TimelineKind.Investigation;
+            _composerOpen = true;
+        }
         if (PresetEntityFilter != _appliedPreset)
         {
             _appliedPreset = PresetEntityFilter;

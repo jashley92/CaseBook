@@ -104,7 +104,7 @@
         <div class="card-body row g-2 align-items-end">
             <div class="col-md-3">
                 <label class="form-label small mb-0" for="task-title">Task</label>
-                <input id="task-title" class="form-control form-control-sm" @bind="_taskTitle" @bind:event="oninput" @onkeydown="OnTitleKey" />
+                <input id="task-title" class="form-control form-control-sm" @ref="_titleInput" @bind="_taskTitle" @bind:event="oninput" @onkeydown="OnTitleKey" />
             </div>
             <div class="col-md-2">
                 <label class="form-label small mb-0" for="task-owner">Owner</label>
@@ -514,6 +514,21 @@ else
     private DateTime? _editDueDate;
     private TimeOnly? _editDueTime;
     private string? _editDescription;
+
+    // --- INV-14: the 't' shortcut opens the add form and puts the caret in the title ---
+    [Parameter] public bool AutofocusComposer { get; set; }
+    [Parameter] public EventCallback OnAutofocusHandled { get; set; }
+    private ElementReference _titleInput;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!AutofocusComposer || !CanEdit) return;
+        _addOpen = true;
+        try { await _titleInput.FocusAsync(); }
+        catch (InvalidOperationException) { /* not rendered yet */ }
+        catch (JSException) { /* circuit/JS not ready */ }
+        await OnAutofocusHandled.InvokeAsync();
+    }
 
     // --- INV-13: task kinds ---
     private TaskKind _taskKind = TaskKind.General;
