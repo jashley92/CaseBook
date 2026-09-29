@@ -2356,6 +2356,16 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
    prefix, and shrink on phones; the human title under it reads as the subtitle it is. */
 .im-casehead-num { overflow-wrap: anywhere; }
 .im-casehead-title { font-size: var(--im-text-md); font-weight: 500; color: var(--im-text); }
+
+/* INV-02: a compact case header — number and title on one line, state and phase on the next. */
+.im-casehead-main { min-width: 0; flex: 1 1 32rem; }
+.im-casehead-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.25rem 0.9rem; margin-bottom: 0.4rem; }
+.im-casehead-line h1 { font-size: 1.55rem; }
+.im-casehead-line .im-casehead-title { flex: 1 1 16rem; min-width: 0; cursor: pointer; color: var(--im-text-muted); }
+.im-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.im-casehead-state { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; margin: 0.35rem 0 0.5rem; }
+.im-casehead-state .im-phase-rail { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.2rem; margin-left: 0.5rem; }
+.im-casehead-state .im-phase-rail .im-badge { font-size: 0.7rem; padding: 0.1rem 0.45rem; }
 @media (max-width: 640px) {
     h1 .im-casehead-num { font-size: 1.3rem; }
 }
@@ -2368,6 +2378,7 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 @media (max-width: 640px) {
     .im-phase-rail .im-phase-other { display: none; }
     .im-phase-rail .im-phase-cur::before { content: "Phase: "; font-weight: 400; opacity: .8; }
+    .im-casehead-state .im-phase-rail { margin-left: 0; }
 }
 
 /* Dark theme: Bootstrap's .text-danger / .text-success keep their light-theme hues (#dc3545 / #198754), which

@@ -89,8 +89,11 @@ else
     @* FR-17: wrap so the action group (Advance / Actions) drops below the title on a phone instead of
        overflowing the row and forcing whole-page horizontal scroll. *@
     <div id="ws-head" class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-        <div>
-            <h1 class="mb-1">
+        <div class="im-casehead-main">
+            @* INV-02: the case number and its title share one line, and the state (badges, phase, next step)
+               shares the next, so the tabs start about half as far down the page. *@
+            <div class="im-casehead-line">
+            <h1 class="mb-0">
                 <code class="im-casehead-num">@_case.CaseNumber</code>
                 @if (_canEdit && !_renumbering)
                 {
@@ -121,46 +124,26 @@ else
             {
                 <div class="text-danger small mb-2">@_renumberError</div>
             }
-            @* A pasted-in, very long title would push the tabs off screen: show two lines, click for the rest. *@
-            <div class="mb-2 im-casehead-title @(_titleExpanded ? "" : "im-clamp-2")" title="@(_titleExpanded ? null : _case.Title)"
+            @* A pasted-in, very long title would push the tabs off screen: show one line, click for the rest. *@
+            <div class="im-casehead-title @(_titleExpanded ? "" : "im-clamp-1")" title="@(_titleExpanded ? null : _case.Title)"
                  @onclick="() => _titleExpanded = !_titleExpanded">@_case.Title</div>
-            <div>
-                <span class="@Ui.ClassificationBadge(_case.Classification)">@Ui.Label(_case.Classification)</span>
-                <span class="@Ui.SeverityBadge(_case.Severity)">@SevLabels.For(_case.Severity)</span>
-                @{
-                    var slaHead = SlaPolicy.Evaluate(_case.Severity, _case.Phase, _case.DetectedAtUtc,
-                        _case.ContainedAtUtc, _case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow, _case.Classification);
-                    var slaHeadClock = slaHead.Clock is { } hc ? Ui.SlaClockLabel(hc) : "SLA";
-                    var slaHeadTiming = Ui.SlaTiming(slaHead);
-                    var slaHeadTitle = slaHeadTiming.Length > 0 ? $"{slaHeadClock} · {slaHeadTiming}" : slaHeadClock;
-                }
-                @if (slaHead.State != SlaState.NoTarget)
-                {
-                    <span class="@Ui.SlaBadge(slaHead.State)" title="@slaHeadTitle">
-                        <span class="bi @Ui.SlaGlyph(slaHead.State)" aria-hidden="true"></span> SLA: @Ui.SlaLabel(slaHead.State)
-                    </span>
-                }
-                @if (_notifyDeadlines?.Headline is { } nh)
-                {
-                    <span class="@Ui.SlaBadge(nh.State)" title="@($"Notify {nh.JurisdictionLabel}{(nh.DueAtUtc is { } due ? " · due " + TimeDisp.Short(due) : "")}")">
-                        <span class="bi bi-megaphone" aria-hidden="true"></span> Notify: @Ui.SlaLabel(nh.State)
-                    </span>
-                }
-                @if (_case.LegalReferral.IsReferred) { <span class="im-badge im-b-neutral">Legal referred</span> }
-                @if (_case.Materiality.Status != MaterialityStatus.Undetermined)
-                {
-                    <span class="@Ui.MaterialityBadge(_case.Materiality.Status)" title="Materiality determination">@Ui.Label(_case.Materiality.Status)</span>
-                }
-                @if (_case.IsRestricted) { <span class="im-badge im-b-warn">Restricted</span> }
-                @if (_case.LegalHold) { <span class="im-badge im-b-danger">Legal hold</span> }
-                @if (_case.IsArchived) { <span class="im-badge im-b-neutral">Archived</span> }
-                @if (_case.IsExercise) { <span class="im-badge im-b-info" title="Tabletop exercise or drill">Exercise</span> }
             </div>
         </div>
         @* ms-auto: when a long case number pushes these onto their own line they stay at the right edge, so the
            right-anchored Actions menu opens into view instead of off the left of the screen. *@
         <div class="d-flex align-items-center gap-2 ms-auto">
             <CasePresence CaseId="_case.Id" />
+            @* INV-02: the next step sits with the case's actions, so the phase stepper fits beside the badges. *@
+            @if (_canEdit && NextPhase() is { } np)
+            {
+                <button class="btn btn-sm btn-primary" @onclick="() => AdvanceTo(np)">Advance to @Ui.Label(np) →</button>
+            }
+            @if (_canEdit && _case.Phase == CasePhase.Closed)
+            {
+                <button class="btn btn-sm btn-outline-primary" @onclick='() => OpenModal("reopen")'>
+                    <span class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></span>Reopen case
+                </button>
+            }
             @* PROD-20: pin this case so it's one keystroke away (palette) and on My Work. Personal, any viewer. *@
             <button type="button" class="btn btn-sm @(_isPinned ? "btn-warning" : "btn-outline-secondary")"
                     title="@(_isPinned ? "Unpin this case" : "Pin this case for quick access")"
@@ -253,26 +236,48 @@ else
         </div>
     </div>
 
-    <div class="d-flex align-items-center flex-wrap gap-1 my-2 im-phase-rail" role="list" aria-label="Case phase">
-        @{ var _phases = Enum.GetValues<CasePhase>(); var _curIdx = Array.IndexOf(_phases, _case.Phase); }
-        @for (var i = 0; i < _phases.Length; i++)
-        {
-            var isDone = i < _curIdx;
-            var isCur = i == _curIdx;
-            <span role="listitem" aria-current="@(isCur ? "step" : null)"
-                  class="im-badge rounded-pill @(isCur ? "im-b-info im-phase-cur" : isDone ? "im-b-ok im-phase-other" : "im-b-neutral im-phase-other")">@Ui.Label(_phases[i])</span>
-            @if (i < _phases.Length - 1) { <span class="text-muted small im-phase-other" aria-hidden="true">›</span> }
+    <div class="im-casehead-state">
+        <span class="@Ui.ClassificationBadge(_case.Classification)">@Ui.Label(_case.Classification)</span>
+        <span class="@Ui.SeverityBadge(_case.Severity)">@SevLabels.For(_case.Severity)</span>
+        @{
+            var slaHead = SlaPolicy.Evaluate(_case.Severity, _case.Phase, _case.DetectedAtUtc,
+                _case.ContainedAtUtc, _case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow, _case.Classification);
+            var slaHeadClock = slaHead.Clock is { } hc ? Ui.SlaClockLabel(hc) : "SLA";
+            var slaHeadTiming = Ui.SlaTiming(slaHead);
+            var slaHeadTitle = slaHeadTiming.Length > 0 ? $"{slaHeadClock} · {slaHeadTiming}" : slaHeadClock;
         }
-        @if (_canEdit && NextPhase() is { } np)
+        @if (slaHead.State != SlaState.NoTarget)
         {
-            <button class="btn btn-sm btn-primary ms-2" @onclick="() => AdvanceTo(np)">Advance to @Ui.Label(np) →</button>
+            <span class="@Ui.SlaBadge(slaHead.State)" title="@slaHeadTitle">
+                <span class="bi @Ui.SlaGlyph(slaHead.State)" aria-hidden="true"></span> SLA: @Ui.SlaLabel(slaHead.State)
+            </span>
         }
-        @if (_canEdit && _case.Phase == CasePhase.Closed)
+        @if (_notifyDeadlines?.Headline is { } nh)
         {
-            <button class="btn btn-sm btn-outline-primary ms-2" @onclick='() => OpenModal("reopen")'>
-                <span class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></span>Reopen case
-            </button>
+            <span class="@Ui.SlaBadge(nh.State)" title="@($"Notify {nh.JurisdictionLabel}{(nh.DueAtUtc is { } due ? " · due " + TimeDisp.Short(due) : "")}")">
+                <span class="bi bi-megaphone" aria-hidden="true"></span> Notify: @Ui.SlaLabel(nh.State)
+            </span>
         }
+        @if (_case.LegalReferral.IsReferred) { <span class="im-badge im-b-neutral">Legal referred</span> }
+        @if (_case.Materiality.Status != MaterialityStatus.Undetermined)
+        {
+            <span class="@Ui.MaterialityBadge(_case.Materiality.Status)" title="Materiality determination">@Ui.Label(_case.Materiality.Status)</span>
+        }
+        @if (_case.IsRestricted) { <span class="im-badge im-b-warn">Restricted</span> }
+        @if (_case.LegalHold) { <span class="im-badge im-b-danger">Legal hold</span> }
+        @if (_case.IsArchived) { <span class="im-badge im-b-neutral">Archived</span> }
+        @if (_case.IsExercise) { <span class="im-badge im-b-info" title="Tabletop exercise or drill">Exercise</span> }
+        <span class="im-phase-rail" role="list" aria-label="Case phase">
+            @{ var _phases = Enum.GetValues<CasePhase>(); var _curIdx = Array.IndexOf(_phases, _case.Phase); }
+            @for (var i = 0; i < _phases.Length; i++)
+            {
+                var isDone = i < _curIdx;
+                var isCur = i == _curIdx;
+                <span role="listitem" aria-current="@(isCur ? "step" : null)"
+                      class="im-badge rounded-pill @(isCur ? "im-b-info im-phase-cur" : isDone ? "im-b-ok im-phase-other" : "im-b-neutral im-phase-other")">@Ui.Label(_phases[i])</span>
+                @if (i < _phases.Length - 1) { <span class="text-muted small im-phase-other" aria-hidden="true">›</span> }
+            }
+        </span>
     </div>
 
     @* F-12: a pending two-person legal-hold release. Anyone can see it; Manage Legal can approve (not the
@@ -323,9 +328,10 @@ else
         @foreach (var tab in _tabs)
         {
             var _tabNo = (Array.IndexOf(_tabs, tab) + 1) % 10;   // U-14: the digit shortcut for this tab (the 10th is 0)
-            @if (tab == "Review")
+            @if (tab is "Discussion" or "Review" or "Audit")
             {
-                @* The record tabs come first; the outputs built from them (lessons, report, audit trail) after. *@
+                @* INV-02: the record tabs, then working together (discussion, tasks), then what's built from them
+                   (lessons, report), then the audit trail. *@
                 <li class="im-tab-sep" aria-hidden="true"></li>
             }
             <li class="nav-item">
