@@ -159,6 +159,21 @@ public sealed partial class ReportGenerator : IReportGenerator
                 AppendOutcome(body, m);
                 break;
 
+            case ReportSection.CaseBrief:
+                body.AppendChild(Heading("Case Brief"));
+                if (m.Brief is not { } brief)
+                {
+                    body.AppendChild(P("(no brief written)"));
+                    break;
+                }
+                body.AppendChild(P($"The team's working understanding, version {brief.Version}, revised {brief.RevisedAtUtc:u} by {brief.RevisedBy}.", italic: true, size: 18));
+                foreach (var (label, text) in BriefParts(brief))
+                {
+                    body.AppendChild(P(label, bold: true, size: 20));
+                    body.AppendChild(P(text));
+                }
+                break;
+
             case ReportSection.AnalystNotes:
                 body.AppendChild(Heading("Analyst Notes"));
                 body.AppendChild(P("Working notes recorded during the investigation, as written.", italic: true, size: 18));
@@ -242,6 +257,16 @@ public sealed partial class ReportGenerator : IReportGenerator
             any = true;
         }
         if (!any) body.AppendChild(P("(no impact assessment recorded)"));
+    }
+
+    // INV-19: the brief's written parts, in their fixed order.
+    internal static IEnumerable<(string Label, string Text)> BriefParts(ReportBrief b)
+    {
+        if (b.Situation is { } s1) yield return ("Situation", s1);
+        if (b.WorkingAssessment is { } s2) yield return ("Working assessment", s2);
+        if (b.Known is { } s3) yield return ("Known", s3);
+        if (b.OpenQuestions is { } s4) yield return ("Open questions", s4);
+        if (b.NextSteps is { } s5) yield return ("Next steps", s5);
     }
 
     private static void AppendOutcome(Body body, CaseReportModel m)

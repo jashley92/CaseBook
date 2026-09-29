@@ -202,6 +202,20 @@ else
                         </ul>
                         break;
 
+                    case ReportSection.CaseBrief:
+                        @if (Model.Brief is { } brief)
+                        {
+                            <p class="small fst-italic text-muted mb-1">The team's working understanding, version @brief.Version, revised @brief.RevisedAtUtc.ToString("u") by @brief.RevisedBy.</p>
+                            @foreach (var (label, text) in new (string, string?)[] { ("Situation", brief.Situation), ("Working assessment", brief.WorkingAssessment), ("Known", brief.Known), ("Open questions", brief.OpenQuestions), ("Next steps", brief.NextSteps) })
+                            {
+                                if (text is null) continue;
+                                <p class="small fw-semibold mb-0">@label</p>
+                                <p class="small" style="white-space:pre-wrap">@text</p>
+                            }
+                        }
+                        else { <p class="small mb-0">(no brief written)</p> }
+                        break;
+
                     case ReportSection.AnalystNotes:
                         <p class="small fst-italic text-muted mb-1">Working notes recorded during the investigation, as written.</p>
                         @if (Model.Notes.Count == 0) { <p class="small mb-0">(none)</p> }
@@ -260,6 +274,7 @@ else
         ReportSection.Recommendations => "Recommendations",
         ReportSection.Outcome => "Outcome",
         ReportSection.AnalystNotes => "Analyst Notes",
+        ReportSection.CaseBrief => "Case Brief",
         ReportSection.Appendix => "Appendix",
         _ => s.ToString()
     };

@@ -243,6 +243,52 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task The_case_brief_prints_only_when_the_layout_turns_it_on()
+    {
+        // INV-19: the brief is working understanding, so it is opt-in in the case report.
+        _user.RoleSet = [AppRole.IncidentCommander];
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
+                new CaseNumberGenerator(db), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            caseId = (await cases.CreateAsync(new IncidentManager.Application.Cases.CreateCaseRequest
+            {
+                DescriptiveName = "Brief", Title = "Brief case", Classification = Classification.Incident,
+                Severity = Severity.High, Origin = CaseOrigin.InternalDetection
+            })).Id;
+            await cases.ReviseBriefAsync(caseId, null, "Ransomware staging on **two** finance hosts", "Commodity loader",
+                null, null, "- Restore test (Robin)");
+        }
+
+        async Task<string> WordXml()
+        {
+            await using var db = NewContext();
+            var svc = NewReportService(db);
+            var report = await svc.GenerateAsync(caseId);
+            var (_, stream) = await svc.OpenAsync(report.Id);
+            await using (stream)
+            {
+                using var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read);
+                await using var doc = zip.GetEntry("word/document.xml")!.Open();
+                return await new StreamReader(doc).ReadToEndAsync();
+            }
+        }
+
+        await using (var db = NewContext())
+        {
+            var brief = (await NewReportService(db).BuildPreviewModelAsync(caseId, null)).Brief!;
+            brief.Situation.Should().Be("Ransomware staging on two finance hosts");   // Markdown flattened
+            brief.Version.Should().Be(1);
+        }
+        (await WordXml()).Should().NotContain("Case Brief");
+
+        _reporting.CurrentValue.SectionLayout = "Summary,CaseBrief,Outcome";
+        var xml = await WordXml();
+        xml.Should().Contain("Case Brief").And.Contain("Commodity loader");
+    }
+
+    [Fact]
     public async Task An_entry_lists_the_evidence_it_cites_in_the_report()
     {
         // INV-10: a conclusion points at what it rests on, in the app and in the report.

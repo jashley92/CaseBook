@@ -121,6 +121,10 @@ public sealed class ReportService
         return sb.ToString();
     }
 
+    // INV-19: a brief part as report text — Markdown flattened, indicators defanged.
+    private string? BriefText(string? markdown, ReportDefanger d) =>
+        string.IsNullOrWhiteSpace(markdown) ? null : d.Text(_markdown.ToPlainText(markdown).Trim());
+
     // INV-10: the evidence an entry cites, by file name.
     private static string Cited(Case c, TimelineEntry e)
     {
@@ -528,6 +532,7 @@ public sealed class ReportService
             .Include(x => x.MaterialityChanges)
             .Include(x => x.GatePassages)
             .Include(x => x.Citations)            // INV-10: evidence an entry cites
+            .Include(x => x.Briefs)               // INV-19: the case brief, for an opt-in section
             .Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics)
             .Include(x => x.Evidence)
             .Include(x => x.Notes)
@@ -741,6 +746,11 @@ public sealed class ReportService
                     d.Text(x.Description)))
                 .ToList(),
             InvestigationTimeline = InvestigationTimeline(c, d, opts),
+            Brief = c.Briefs.FirstOrDefault(b => b.IsCurrent) is { } brief
+                ? new ReportBrief(brief.Version, brief.CreatedAtUtc, _users.DisplayFor(brief.CreatedBy),
+                    BriefText(brief.Situation, d), BriefText(brief.WorkingAssessment, d), BriefText(brief.Known, d),
+                    BriefText(brief.OpenQuestions, d), BriefText(brief.NextSteps, d))
+                : null,
             Evidence = c.Evidence
                 .OrderBy(x => x.CreatedAtUtc)
                 .Select(x => new ReportEvidenceItem(x.OriginalFileName, x.SizeBytes, x.Sha256, x.CreatedAtUtc, _users.DisplayFor(x.CreatedBy)))

@@ -9,6 +9,9 @@ namespace IncidentManager.Application.Reporting;
 public enum ReportSection
 {
     Summary,
+    /// <summary>INV-19: the team's case brief (situation, working assessment, known, open questions, next steps).
+    /// Off unless a layout turns it on: it is working understanding, not the confirmed record.</summary>
+    CaseBrief,
     BusinessImpact,
     EventTimeline,
     InvestigationTimeline,
@@ -36,7 +39,7 @@ public static class ReportLayout
     private static readonly ReportSection[] All = Enum.GetValues<ReportSection>();
 
     /// <summary>Sections that start switched off when a layout doesn't mention them (a new or blank layout).</summary>
-    private static readonly HashSet<ReportSection> OffByDefault = [ReportSection.AnalystNotes];
+    private static readonly HashSet<ReportSection> OffByDefault = [ReportSection.AnalystNotes, ReportSection.CaseBrief];
 
     /// <summary>Full ordered layout (every section, with its enabled flag) for the admin editor.</summary>
     public static IReadOnlyList<ReportSectionState> Parse(string? raw)

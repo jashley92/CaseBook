@@ -12,7 +12,8 @@ public class ReportLayoutTests
     [Fact]
     public void Blank_layout_enables_every_section_except_analyst_notes_in_enum_order()
     {
-        var expected = System.Enum.GetValues<ReportSection>().Where(s => s != ReportSection.AnalystNotes);
+        // INV-19: the case brief is off by default too.
+        var expected = System.Enum.GetValues<ReportSection>().Where(s => s is not (ReportSection.AnalystNotes or ReportSection.CaseBrief));
         ReportLayout.Resolve(null).Should().Equal(expected);
         ReportLayout.Resolve("").Should().Equal(expected);
     }
@@ -71,11 +72,19 @@ public class ReportLayoutTests
     {
         // Only two sections stored (as if saved before others existed): the rest come back enabled, except
         // Analyst Notes, which stays off until a layout turns it on.
-        var expected = System.Enum.GetValues<ReportSection>().Where(s => s != ReportSection.AnalystNotes).ToList();
+        var expected = System.Enum.GetValues<ReportSection>().Where(s => s is not (ReportSection.AnalystNotes or ReportSection.CaseBrief)).ToList();
         var resolved = ReportLayout.Resolve("Outcome,Summary");
         resolved.Should().StartWith(ReportSection.Outcome);
         resolved.Should().Contain(expected); // none dropped
         resolved.Count.Should().Be(expected.Count);
+    }
+
+    [Fact]
+    public void The_case_brief_stays_out_of_existing_layouts_and_prints_only_when_turned_on()
+    {
+        // INV-19: an upgrade must never start printing the brief (working understanding) in existing reports.
+        ReportLayout.Resolve("Summary,Outcome,Appendix").Should().NotContain(ReportSection.CaseBrief);
+        ReportLayout.Resolve("Summary,CaseBrief,Outcome").Should().Contain(ReportSection.CaseBrief);
     }
 
     [Fact]

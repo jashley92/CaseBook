@@ -39,6 +39,12 @@ public static partial class ReportTemplateFields
         (new("case.vendor", "Vendor name (third-party cases)"), m => m.VendorName ?? ""),
         (new("case.detection_id", "Detection-source case ID, such as the XSIAM incident"), m => m.DetectionCaseId ?? ""),
         (new("case.summary", "Summary (plain text, paragraphs kept)"), m => m.Summary ?? ""),
+        // INV-19: the case brief (working understanding). A template decides whether to use these.
+        (new("brief.situation", "Case brief: situation"), m => m.Brief?.Situation ?? ""),
+        (new("brief.working_assessment", "Case brief: working assessment"), m => m.Brief?.WorkingAssessment ?? ""),
+        (new("brief.known", "Case brief: known"), m => m.Brief?.Known ?? ""),
+        (new("brief.open_questions", "Case brief: open questions"), m => m.Brief?.OpenQuestions ?? ""),
+        (new("brief.next_steps", "Case brief: next steps"), m => m.Brief?.NextSteps ?? ""),
         (new("case.data_context", "Data context (analyst notes)"), m => m.DataTypesInvolved ?? ""),
         (new("case.impacted_assets", "Impacted assets"), m => m.ImpactedAssets ?? ""),
         (new("case.affected_individuals", "Affected individuals"), m => m.AffectedIndividualsCount?.ToString("N0", CultureInfo.InvariantCulture) ?? ""),

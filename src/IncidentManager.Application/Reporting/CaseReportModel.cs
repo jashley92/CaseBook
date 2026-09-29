@@ -13,6 +13,10 @@ public sealed record ReportTimelineItem(DateTimeOffset OccurredAtUtc, string Typ
     public static string InvestigationSubtitle(IEnumerable<ReportTimelineItem> items) =>
         items.Any(x => x.Type == Milestone) ? "Analyst and team actions, with the response milestones." : "Analyst and team actions.";
 }
+/// <summary>INV-19: the case brief as plain text (Markdown flattened, indicators defanged), with its version.</summary>
+public sealed record ReportBrief(int Version, DateTimeOffset RevisedAtUtc, string RevisedBy,
+    string? Situation, string? WorkingAssessment, string? Known, string? OpenQuestions, string? NextSteps);
+
 public sealed record ReportEvidenceItem(string FileName, long SizeBytes, string Sha256, DateTimeOffset UploadedAtUtc, string UploadedBy);
 /// <summary>An analyst note: <see cref="Body"/> is plain text; <see cref="Blocks"/> keeps its Markdown formatting for print.</summary>
 public sealed record ReportNoteItem(DateTimeOffset AtUtc, string Author, string Body, IReadOnlyList<RichBlock>? Blocks = null);
@@ -125,6 +129,9 @@ public sealed record CaseReportModel
     public IReadOnlyList<ReportTimelineItem> InvestigationTimeline { get; init; } = [];
     public IReadOnlyList<ReportEvidenceItem> Evidence { get; init; } = [];
     public IReadOnlyList<ReportNoteItem> Notes { get; init; } = [];
+
+    /// <summary>INV-19: the current case brief, if one has been written.</summary>
+    public ReportBrief? Brief { get; init; }
     public IReadOnlyList<ReportActionItemRow> ActionItems { get; init; } = [];
 
     // Lessons-learned report only (Kind == LessonsLearned).
