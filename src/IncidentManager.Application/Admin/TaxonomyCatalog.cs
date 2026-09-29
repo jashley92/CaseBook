@@ -87,6 +87,7 @@ public static class TaxonomyCatalog
                 new("Communication", "Communication"),
                 new("Evidence", "Evidence"),
                 new("Escalation", "Escalation"),
+                new("Decision", "Decision"),   // INV-06
                 new("Note", "Note"),
                 new("Other", "Other"),
                 // FR-23: third-party disclosure milestones (Disclosure timeline).

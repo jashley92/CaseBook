@@ -86,6 +86,9 @@ public static class CaseNarrative
             decisions.Add((x.EffectiveAt, $"Classification changed from {ClassificationWord(x.From)} to {ClassificationWord(x.To)}{Because(x.Reason)}"));
         foreach (var x in c.SeverityChanges.Where(x => x.From is not null))
             decisions.Add((x.EffectiveAt, $"Severity changed from {severityLabel(x.From!.Value)} to {severityLabel(x.To)}{Because(x.Reason)}"));
+        // INV-06: decisions the team recorded on the investigation timeline, with their rationale.
+        foreach (var e in c.TimelineEntries.Where(e => e.Type == TimelineEntryType.Decision && e.IsCurrent))
+            decisions.Add((e.OccurredAtUtc, $"Decision: {Content.RichText.ToText(e.Description).Trim().TrimEnd('.')}{Because(e.Rationale)}"));
         foreach (var x in c.StatusChanges.Where(x => x.From is not null))
             decisions.Add((x.EffectiveAt, $"Moved from {PhaseWord(x.From!.Value)} to {PhaseWord(x.To)}{Because(x.Reason)}"));
         if (decisions.Count > 0)

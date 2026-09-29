@@ -2162,3 +2162,40 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929033644_AddDecisionEntries'
+)
+BEGIN
+    ALTER TABLE [TimelineEntries] ADD [DecidedBy] nvarchar(300) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929033644_AddDecisionEntries'
+)
+BEGIN
+    ALTER TABLE [TimelineEntries] ADD [OptionsConsidered] nvarchar(2000) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929033644_AddDecisionEntries'
+)
+BEGIN
+    ALTER TABLE [TimelineEntries] ADD [Rationale] nvarchar(4000) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929033644_AddDecisionEntries'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260929033644_AddDecisionEntries', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

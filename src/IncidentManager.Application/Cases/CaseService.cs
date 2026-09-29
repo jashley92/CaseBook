@@ -594,6 +594,9 @@ public sealed class CaseService
         return c;
     }
 
+    /// <summary>INV-06: the details of a Decision entry — why, what else was considered, and who decided.</summary>
+    public sealed record DecisionDetails(string Rationale, string? OptionsConsidered = null, string? DecidedBy = null);
+
     /// <summary>INV-05: a transition dated more than this far before it is recorded needs a reason, so the record
     /// says why it was entered late.</summary>
     public static readonly TimeSpan BackdateReasonThreshold = TimeSpan.FromHours(1);
@@ -867,15 +870,20 @@ public sealed class CaseService
 
     public async Task AddTimelineEntryAsync(Guid id, TimelineKind kind, TimelineEntryType type,
         DateTimeOffset occurredAtUtc, string description, string? source, Guid? evidenceId = null,
-        CancellationToken ct = default)
+        DecisionDetails? decision = null, CancellationToken ct = default)
     {
         Require();
+        TimelineEntry.EnsureDecisionHasRationale(type, decision?.Rationale);
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        var isDecision = type == TimelineEntryType.Decision;
         c.TimelineEntries.Add(new TimelineEntry
         {
             CaseId = c.Id, Kind = kind, Type = type, OccurredAtUtc = occurredAtUtc, Description = description,
-            Source = source, EvidenceId = evidenceId, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
+            Source = source, EvidenceId = evidenceId, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow,
+            Rationale = isDecision ? decision?.Rationale.Trim() : null,
+            OptionsConsidered = isDecision && !string.IsNullOrWhiteSpace(decision?.OptionsConsidered) ? decision.OptionsConsidered.Trim() : null,
+            DecidedBy = isDecision && !string.IsNullOrWhiteSpace(decision?.DecidedBy) ? decision.DecidedBy.Trim() : null
         });
         await db.SaveChangesAsync(ct);
     }
@@ -920,12 +928,13 @@ public sealed class CaseService
     /// </summary>
     public async Task EditInvestigationEntryAsync(Guid id, Guid entryId, TimelineEntryType type,
         DateTimeOffset occurredAtUtc, string description, string? source, string? reason = null,
-        CancellationToken ct = default)
+        DecisionDetails? decision = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
-        c.EditInvestigationEntry(entryId, type, occurredAtUtc, description, source, _user.UserId, _clock.UtcNow);
+        c.EditInvestigationEntry(entryId, type, occurredAtUtc, description, source, _user.UserId, _clock.UtcNow,
+            decision?.Rationale, decision?.OptionsConsidered, decision?.DecidedBy);
         db.PendingChangeReason = reason;
         await db.SaveChangesAsync(ct);
     }

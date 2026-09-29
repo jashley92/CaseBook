@@ -664,10 +664,12 @@ public class Case : AuditableEntity, IHashableEntity
     /// be clarified without breaking the record of what was documented and when.
     /// </summary>
     public TimelineEntry EditInvestigationEntry(Guid entryId, TimelineEntryType type, DateTimeOffset occurredAtUtc,
-        string newDescription, string? source, string actor, DateTimeOffset nowUtc)
+        string newDescription, string? source, string actor, DateTimeOffset nowUtc,
+        string? rationale = null, string? optionsConsidered = null, string? decidedBy = null)
     {
         if (string.IsNullOrWhiteSpace(newDescription))
             throw new ArgumentException("A description is required.");
+        TimelineEntry.EnsureDecisionHasRationale(type, rationale);
 
         var current = TimelineEntries.FirstOrDefault(t =>
                 t.Id == entryId && t.Kind == TimelineKind.Investigation && t.IsCurrent)
@@ -686,6 +688,10 @@ public class Case : AuditableEntity, IHashableEntity
             SupersedesEntryId = current.Id,
             IsCurrent = true,
             EvidenceId = current.EvidenceId, // an attached screenshot (U-40) carries to the new version
+            // INV-06: only a Decision keeps its decision details.
+            Rationale = type == TimelineEntryType.Decision ? Clean(rationale) : null,
+            OptionsConsidered = type == TimelineEntryType.Decision ? Clean(optionsConsidered) : null,
+            DecidedBy = type == TimelineEntryType.Decision ? Clean(decidedBy) : null,
             CreatedBy = actor,
             CreatedAtUtc = nowUtc
         };
@@ -1070,6 +1076,8 @@ public class Case : AuditableEntity, IHashableEntity
                 $"The {what} change can't be dated before the previous {what} change ({later.UtcDateTime:yyyy-MM-dd HH:mm} UTC).");
         return at;
     }
+
+    private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     private void Touch(string actor, DateTimeOffset nowUtc)
     {

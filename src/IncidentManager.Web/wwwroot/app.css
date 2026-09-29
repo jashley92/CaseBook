@@ -1221,6 +1221,24 @@ h1:focus {
 .tl-ms-detail { font-size: 0.875rem; color: var(--bs-secondary-color, #6c757d); }
 .tl-ms-flagged { --kind: var(--im-warn); }
 .tl-ms-flagged .tl-dot { border-style: solid; }
+/* INV-06: a DECISION is an analyst entry in the brand gold, with its reasons set out beneath it. */
+.tl-kind-inv.tl-kind-dec { --kind: var(--im-accent-strong); }
+.tl-decision {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.15rem 0.75rem;
+    margin: 0.35rem 0 0;
+    padding-left: 0.65rem;
+    border-left: 2px solid color-mix(in srgb, var(--im-accent-strong) 55%, transparent);
+    font-size: 0.875rem;
+}
+.tl-decision dt { font-weight: 600; color: var(--bs-secondary-color, #6c757d); }
+.tl-decision dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* INV-05b catch-up aids: step the "Occurred" time without retyping it. */
+.tl-nudges { display: flex; gap: 0.6rem; margin-top: 0.15rem; font-size: 0.78rem; }
+.tl-nudges .btn { font-size: inherit; text-decoration: none; }
+
 /* INV-05: a change dated earlier than it was entered says so, in a neutral tone. */
 .tl-late { color: var(--im-warn); }
 .tl-late .bi { margin-right: 0.15rem; }

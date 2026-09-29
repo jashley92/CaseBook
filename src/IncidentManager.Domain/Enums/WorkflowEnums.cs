@@ -35,7 +35,10 @@ public enum TimelineEntryType
     ScopeConfirmed = 11,           // vendor confirmed the scope / affected systems
     DataConfirmed = 12,            // our data confirmed present in the exposed set
     Remediation = 13,              // vendor remediation / containment status
-    RegulatoryNotification = 14    // a regulatory notification was made on this matter
+    RegulatoryNotification = 14,   // a regulatory notification was made on this matter
+
+    // INV-06: a decision the team made, recorded with its rationale (Investigation timeline).
+    Decision = 15
 }
 
 /// <summary>

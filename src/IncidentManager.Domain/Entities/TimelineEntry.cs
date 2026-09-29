@@ -60,6 +60,25 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
     /// <summary>False once a newer version supersedes this Investigation entry.</summary>
     public bool IsCurrent { get; set; } = true;
 
+    // ---- INV-06: a Decision entry (Type == Decision) records why, what else was considered, and who decided ----
+
+    /// <summary>Why the decision was made. Required for a Decision entry; null otherwise.</summary>
+    public string? Rationale { get; set; }
+
+    /// <summary>The other options the team considered, if any.</summary>
+    public string? OptionsConsidered { get; set; }
+
+    /// <summary>Who made the decision, as free text (e.g. "Incident Commander with Legal"); the analyst who
+    /// recorded it is <see cref="AuditableEntity.CreatedBy"/>.</summary>
+    public string? DecidedBy { get; set; }
+
+    /// <summary>INV-06: a Decision entry must say why.</summary>
+    public static void EnsureDecisionHasRationale(TimelineEntryType type, string? rationale)
+    {
+        if (type == TimelineEntryType.Decision && string.IsNullOrWhiteSpace(rationale))
+            throw new ArgumentException("Record why the decision was made.");
+    }
+
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent()
@@ -82,7 +101,12 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
 
         // A linked screenshot (U-40) is tamper-evident too, but folded in ONLY when present so existing
         // screenshot-less rows keep their exact canonical (no re-baseline). Appended last, deterministically.
-        return EvidenceId is { } eid ? string.Join('|', content, "ev", eid) : content;
+        if (EvidenceId is { } eid) content = string.Join('|', content, "ev", eid);
+
+        // INV-06: a decision's rationale / options / decider, folded in only when present (no re-baseline).
+        if (Rationale is not null || OptionsConsidered is not null || DecidedBy is not null)
+            content = string.Join('|', content, "dec", Rationale, OptionsConsidered, DecidedBy);
+        return content;
     }
 }
 

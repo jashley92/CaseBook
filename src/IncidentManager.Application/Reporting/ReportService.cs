@@ -88,7 +88,7 @@ public sealed class ReportService
             // entry was first recorded when its original version was.
             .Select(x => (At: x.OccurredAtUtc, Order: x.CreatedAtUtc, Item: new ReportTimelineItem(x.OccurredAtUtc,
                 TaxLabel("TimelineEntryType", x.Type.ToString()),
-                d.Text(Content.RichText.ToText(x.Description)) + Late(x.OccurredAtUtc, FirstRecorded(c, x)), x.Source)))
+                d.Text(EntryText(x)) + Late(x.OccurredAtUtc, FirstRecorded(c, x)), x.Source)))
             .ToList();
 
         if (opts.IncludeMilestones)
@@ -105,6 +105,20 @@ public sealed class ReportService
         }
 
         return rows.OrderBy(r => r.At).ThenBy(r => r.Order).Select(r => r.Item).ToList();
+    }
+
+    // An investigation entry as report text (Markdown flattened). INV-06: a decision prints as a sentence
+    // followed by its rationale, the options considered and who decided.
+    private static string EntryText(TimelineEntry e)
+    {
+        var text = Content.RichText.ToText(e.Description).Trim();
+        if (e.Type != TimelineEntryType.Decision) return text;
+        var sb = new System.Text.StringBuilder(text);
+        if (text.Length > 0 && !".!?".Contains(text[^1])) sb.Append('.');
+        if (e.Rationale is { } why) sb.Append(" Why: ").Append(why.TrimEnd('.')).Append('.');
+        if (e.OptionsConsidered is { } options) sb.Append(" Options considered: ").Append(options.TrimEnd('.')).Append('.');
+        if (e.DecidedBy is { } who) sb.Append(" Decided by: ").Append(who.TrimEnd('.')).Append('.');
+        return sb.ToString();
     }
 
     // When an investigation entry was first put on the record: its original version's creation time.

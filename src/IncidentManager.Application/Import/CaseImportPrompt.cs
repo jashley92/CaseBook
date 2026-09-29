@@ -28,7 +28,8 @@ public static class CaseImportPrompt
         var originExample = string.IsNullOrWhiteSpace(o.ToolName) ? "AI-assisted" : $"AI-assisted ({o.ToolName.Trim()})";
 
         var kinds = Names<TimelineKind>();
-        var timelineTypes = Names<TimelineEntryType>();
+        // INV-06: Decision isn't importable yet (the schema doesn't carry its rationale).
+        var timelineTypes = string.Join(", ", Enum.GetNames<TimelineEntryType>().Where(n => n != nameof(TimelineEntryType.Decision)));
         var entityTypes = Names<EntityType>();
         var dispositions = Names<EntityDisposition>();
         // null classification = Complex Event, so offer it alongside the ladder values.

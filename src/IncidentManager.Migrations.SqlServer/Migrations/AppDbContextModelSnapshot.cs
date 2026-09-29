@@ -2092,6 +2092,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(16000)
@@ -2114,6 +2118,14 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
 
                     b.Property<DateTimeOffset>("OccurredAtUtc")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("OptionsConsidered")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Rationale")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)

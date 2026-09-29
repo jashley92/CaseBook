@@ -243,6 +243,39 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_decision_prints_with_why_and_who_decided_and_cannot_be_recorded_without_a_reason()
+    {
+        // INV-06: the report's investigation timeline carries decisions with their rationale.
+        _user.RoleSet = [AppRole.IncidentCommander];
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
+                new CaseNumberGenerator(db), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            caseId = (await cases.CreateAsync(new IncidentManager.Application.Cases.CreateCaseRequest
+            {
+                DescriptiveName = "Dec", Title = "Decision case", Classification = Classification.Incident,
+                Severity = Severity.High, Origin = CaseOrigin.InternalDetection
+            })).Id;
+            var noWhy = () => cases.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Decision,
+                _clock.UtcNow, "Isolate the host", null);
+            await noWhy.Should().ThrowAsync<ArgumentException>();
+
+            await cases.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Decision, _clock.UtcNow,
+                "Isolate FIN-WKS-07; defer reimage", null,
+                decision: new IncidentManager.Application.Cases.CaseService.DecisionDetails("Keep volatile evidence for scoping", "Immediate reimage", "Incident Commander"));
+        }
+
+        await using (var db = NewContext())
+        {
+            _reporting.CurrentValue.IncludeMilestones = false;
+            var item = (await NewReportService(db).BuildPreviewModelAsync(caseId, null)).InvestigationTimeline.Single();
+            item.Type.Should().Be("Decision");
+            item.Description.Should().Be("Isolate FIN-WKS-07; defer reimage. Why: Keep volatile evidence for scoping. Options considered: Immediate reimage. Decided by: Incident Commander.");
+        }
+    }
+
+    [Fact]
     public async Task A_generated_report_is_a_draft_until_approved_and_its_stored_hash_matches_the_record()
     {
         await using var db = NewContext();

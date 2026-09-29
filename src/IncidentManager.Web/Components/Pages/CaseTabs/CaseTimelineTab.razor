@@ -130,6 +130,7 @@
                         <div class="col-md-4">
                             <label class="form-label small mb-0" for="tl-atk-when">Occurred (@TimeDisp.Label)</label>
                             <input id="tl-atk-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                            @TimeNudges()
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small mb-0" for="tl-atk-actor">Actor <span class="text-muted">(from IOCs)</span></label>
@@ -171,6 +172,7 @@
                         <div class="col-md-4">
                             <label class="form-label small mb-0" for="tl-disc-when">Occurred (@TimeDisp.Label)</label>
                             <input id="tl-disc-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                            @TimeNudges()
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small mb-0" for="tl-disc-stage">Milestone</label>
@@ -233,6 +235,7 @@
                     <div class="col-md-3">
                         <label class="form-label small mb-0" for="tl-inv-when">Occurred (@TimeDisp.Label)</label>
                         <input id="tl-inv-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                            @TimeNudges()
                     </div>
                     <div class="col-md-3">
                         <label class="form-label small mb-0" for="tl-inv-source">Source</label>
@@ -241,14 +244,35 @@
                 </div>
                 <div class="mt-3">
                     <label class="form-label small mb-1" for="@InvEditorId">
-                        Notes <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, bullet/numbered lists, links</span>
+                        @(IsDecision ? "The decision" : "Notes") <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, bullet/numbered lists, links</span>
                     </label>
                     @if (_tlEditId is null)
                     {
-                        <ComposerHint>What the team did and when: actions, decisions, meetings. Appears in the report's investigation timeline and doesn't notify anyone.</ComposerHint>
+                        <ComposerHint>@(IsDecision
+                            ? "What was decided. Say why below: the decision and its reasons appear together in the report's investigation timeline. Write facts and reasons; this is part of the case record."
+                            : "What the team did and when: actions, decisions, meetings. Appears in the report's investigation timeline and doesn't notify anyone.")</ComposerHint>
                     }
                     @* EasyMDE enhances this textarea (managed in this tab's OnAfterRenderAsync); value pulled on Add/Save. *@
                     <textarea id="@InvEditorId" class="form-control"></textarea>
+                    @if (IsDecision)
+                    {
+                        @* INV-06: a decision is recorded with why, what else was considered, and who decided. *@
+                        <div class="row g-2 mt-1">
+                            <div class="col-12">
+                                <label class="form-label small mb-0" for="tl-dec-why">Why <span class="text-muted">(required)</span></label>
+                                <textarea id="tl-dec-why" class="form-control form-control-sm" rows="2" maxlength="4000" @bind="_decWhy" @bind:event="oninput"
+                                          placeholder="e.g. sign-in logs for the other two users are incomplete, and resetting is low cost"></textarea>
+                            </div>
+                            <div class="col-md-7">
+                                <label class="form-label small mb-0" for="tl-dec-options">Options considered <span class="text-muted">(optional)</span></label>
+                                <input id="tl-dec-options" class="form-control form-control-sm" maxlength="2000" @bind="_decOptions" placeholder="e.g. reset only the confirmed account" />
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label small mb-0" for="tl-dec-by">Decided by <span class="text-muted">(optional)</span></label>
+                                <input id="tl-dec-by" class="form-control form-control-sm" maxlength="300" @bind="_decBy" placeholder="e.g. Incident Commander with Legal" />
+                            </div>
+                        </div>
+                    }
                     @if (_tlEditId is not null)
                     {
                         <div class="mt-2">
@@ -588,16 +612,24 @@ else
             }
             else
             {
-                <li class="tl-item tl-kind-inv im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" id="tl-@e.Id" @key="e.Id">
+                var isDecision = e.Type == TimelineEntryType.Decision;
+                <li class="tl-item tl-kind-inv @(isDecision ? "tl-kind-dec" : "") im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" id="tl-@e.Id" @key="e.Id">
                     <span class="tl-dot" style="--tl-color:@Ui.TimelineColor(e.Type)" aria-hidden="true">
                         <span class="bi @Ui.TimelineGlyph(e.Type)"></span>
                     </span>
                     <div class="tl-body">
                         <div class="tl-head">
-                            <span class="tl-kind-label"><span class="bi bi-search" aria-hidden="true"></span> Investigation</span>
-                            <span class="tactic-chip" style="--tac:@Ui.TimelineColor(e.Type)">
-                                <span class="bi @Ui.TimelineGlyph(e.Type)" aria-hidden="true"></span> @Ui.Label(e.Type)
-                            </span>
+                            @if (isDecision)
+                            {
+                                <span class="tl-kind-label"><span class="bi bi-signpost-2" aria-hidden="true"></span> @Ui.Label(e.Type)</span>
+                            }
+                            else
+                            {
+                                <span class="tl-kind-label"><span class="bi bi-search" aria-hidden="true"></span> Investigation</span>
+                                <span class="tactic-chip" style="--tac:@Ui.TimelineColor(e.Type)">
+                                    <span class="bi @Ui.TimelineGlyph(e.Type)" aria-hidden="true"></span> @Ui.Label(e.Type)
+                                </span>
+                            }
                             @if (e.Version > 1)
                             {
                                 <span class="im-badge im-b-neutral">v@(e.Version)</span>
@@ -605,6 +637,14 @@ else
                             <time class="tl-time" title="@TimeDisp.Long(e.OccurredAtUtc)"><span class="tl-time-abs">@TimeDisp.Short(e.OccurredAtUtc)</span><span class="tl-time-rel">@Ui.RelativeTime(e.OccurredAtUtc, Clock.UtcNow)</span></time>
                         </div>
                         <div class="tl-desc md-body">@((MarkupString)Md.ToHtml(e.Description, CaseId))</div>
+                        @if (isDecision)
+                        {
+                            <dl class="tl-decision">
+                                @if (e.Rationale is { } why) { <dt>Why</dt><dd>@why</dd> }
+                                @if (e.OptionsConsidered is { } options) { <dt>Options considered</dt><dd>@options</dd> }
+                                @if (e.DecidedBy is { } by) { <dt>Decided by</dt><dd>@by</dd> }
+                            </dl>
+                        }
                         @if (e.EvidenceId is { } shotId)
                         {
                             @* U-40: attached screenshot — click the thumbnail to preview it in a lightbox. *@
@@ -927,19 +967,21 @@ else
         catch (JSException) { /* editor not mounted; fall back to bound value */ }
 
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
+        if (IsDecision && string.IsNullOrWhiteSpace(_decWhy)) { Toasts.Error("Record why the decision was made."); return; }
         var whenUtc = WallToUtc(_tlWhen);
         Guid? shotId;
         try
         {
             shotId = await UploadTimelineShotAsync();
-            await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, _tlDesc, _tlSource, evidenceId: shotId);
+            await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, _tlDesc, _tlSource,
+                evidenceId: shotId, decision: Decision());
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error($"Couldn't add the timeline entry. {ex.Message}");
             return;
         }
-        _tlDesc = ""; _tlSource = null; ClearTimelineShot();
+        _tlDesc = ""; _tlSource = null; ClearTimelineShot(); ClearDecision();
         ComposerDrafts?.Remove(InvEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
         Toasts.Success(shotId is null ? "Timeline entry added" : "Timeline entry added with screenshot");
@@ -1055,6 +1097,7 @@ else
         _tlWhen = UtcToWall(e.OccurredAtUtc);
         _tlSource = e.Source;
         _tlDesc = e.Description;
+        _decWhy = e.Rationale; _decOptions = e.OptionsConsidered; _decBy = e.DecidedBy;
         try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, e.Description); }
         catch (JSException) { /* editor not mounted yet; ReconcileEditor seeds it from _tlDesc */ }
     }
@@ -1066,7 +1109,8 @@ else
         catch (JSException) { /* fall back to bound value */ }
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = WallToUtc(_tlWhen);
-        try { await Cases.EditInvestigationEntryAsync(CaseId, id, _tlType, whenUtc, _tlDesc, _tlSource, _tlReason); }
+        if (IsDecision && string.IsNullOrWhiteSpace(_decWhy)) { Toasts.Error("Record why the decision was made."); return; }
+        try { await Cases.EditInvestigationEntryAsync(CaseId, id, _tlType, whenUtc, _tlDesc, _tlSource, _tlReason, Decision()); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error($"Couldn't save the entry. {ex.Message}"); return; }
         await CancelTimelineEdit();
         await OnChanged.InvokeAsync();
@@ -1077,7 +1121,7 @@ else
     private async Task CancelTimelineEdit()
     {
         var wasInvestigationEdit = _tlAddKind == TimelineKind.Investigation && _tlEditId is not null;
-        _tlEditId = null; _tlReason = null;
+        _tlEditId = null; _tlReason = null; ClearDecision();
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = "";
         _evtTactic = MitreTactic.Unspecified; _evtAttackMode = false; // FR-24: back to the default disclosure composer
         if (wasInvestigationEdit)
@@ -1105,6 +1149,29 @@ else
         }
         return history;
     }
+
+    // --- INV-06: decision entries ---
+    private string? _decWhy;
+    private string? _decOptions;
+    private string? _decBy;
+
+    private bool IsDecision => _tlAddKind == TimelineKind.Investigation && _tlType == TimelineEntryType.Decision;
+
+    private CaseService.DecisionDetails? Decision() =>
+        IsDecision ? new CaseService.DecisionDetails(_decWhy ?? "", _decOptions, _decBy) : null;
+
+    private void ClearDecision() { _decWhy = null; _decOptions = null; _decBy = null; }
+
+    // Catch-up aids: after containment, entries are often recorded in a burst. The composer keeps the last time
+    // used; these step it back or forward so a busy hour can be rebuilt quickly.
+    private RenderFragment TimeNudges() => @<text>
+        <div class="tl-nudges" role="group" aria-label="Adjust the time">
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = UtcToWall(DateTimeOffset.UtcNow)">Now</button>
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = _tlWhen.AddHours(-1)" aria-label="One hour earlier">&minus;1 h</button>
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = _tlWhen.AddMinutes(-15)" aria-label="15 minutes earlier">&minus;15 min</button>
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = _tlWhen.AddMinutes(15)" aria-label="15 minutes later">+15 min</button>
+        </div>
+    </text>;
 
     // --- INV-05b: correcting when a transition happened ---
     [Parameter] public bool CanChangeClassification { get; set; }

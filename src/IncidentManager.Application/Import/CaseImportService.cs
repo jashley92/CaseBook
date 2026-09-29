@@ -176,7 +176,7 @@ public sealed class CaseImportService
             if (!t.Applied)
             {
                 await _cases.AddTimelineEntryAsync(caseId, t.Kind, t.Type, t.OccurredAtUtc,
-                    t.Description, t.Source ?? origin, null, ct);
+                    t.Description, t.Source ?? origin, null, ct: ct);
                 t.Applied = true;
             }
             timeline++;
@@ -347,7 +347,9 @@ public sealed class CaseImportService
             var row = new ImportTimelineRow
             {
                 Kind = ParseEnum(t.Kind, TimelineKind.Investigation, "timeline kind", p.Warnings),
-                Type = ParseEnum(t.Type, TimelineEntryType.Communication, "timeline type", p.Warnings),
+                // INV-06: a Decision needs its rationale, which the import schema doesn't carry yet, so it isn't
+                // an importable type; it falls back like any unknown type, with a warning.
+                Type = ImportableTimelineType(ParseEnum(t.Type, TimelineEntryType.Communication, "timeline type", p.Warnings), p.Warnings),
                 Description = desc!,
                 Source = string.IsNullOrWhiteSpace(t.Source) ? p.Origin : t.Source.Trim()
             };
@@ -477,6 +479,14 @@ public sealed class CaseImportService
         if (Enum.TryParse<TEnum>(raw.Trim(), ignoreCase: true, out var v) && Enum.IsDefined(v)) return v;
         warnings.Add($"Unknown {field} '{raw}'. Using {fallback} instead.");
         return fallback;
+    }
+
+    // INV-06: a Decision needs a rationale, which the import schema doesn't carry yet.
+    private static TimelineEntryType ImportableTimelineType(TimelineEntryType t, List<string> warnings)
+    {
+        if (t != TimelineEntryType.Decision) return t;
+        warnings.Add("Timeline type 'Decision' can't be imported yet (it needs a rationale). Using Communication instead; record the decision in CaseBook.");
+        return TimelineEntryType.Communication;
     }
 
     private static string SlugSource(string? title)

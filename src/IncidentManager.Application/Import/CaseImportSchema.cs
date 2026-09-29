@@ -88,7 +88,7 @@ public static class CaseImportSchema
                     {
                         ["occurredAtUtc"] = DateTime("When it happened (defaults to now if omitted; future entries are excluded)."),
                         ["kind"] = EnumOf<TimelineKind>(),
-                        ["type"] = EnumOf<TimelineEntryType>(),
+                        ["type"] = EnumProp(ImportableTimelineTypes(), null),
                         ["description"] = Str("What happened."),
                         ["source"] = Str("Optional origin of this entry (defaults to the document origin)."),
                     },
@@ -145,6 +145,14 @@ public static class CaseImportSchema
         ["type"] = "array",
         ["items"] = Ref(def),
     };
+
+    // INV-06: every timeline type except Decision, which needs a rationale the schema doesn't carry yet.
+    private static JsonArray ImportableTimelineTypes()
+    {
+        var values = new JsonArray();
+        foreach (var n in Enum.GetNames<TimelineEntryType>().Where(n => n != nameof(TimelineEntryType.Decision))) values.Add(n);
+        return values;
+    }
 
     private static JsonObject EnumOf<TEnum>(string? description = null) where TEnum : struct, Enum
     {

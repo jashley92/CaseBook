@@ -53,6 +53,10 @@ public sealed class TimelineEntryConfiguration : IEntityTypeConfiguration<Timeli
 {
     public void Configure(EntityTypeBuilder<TimelineEntry> b)
     {
+        // INV-06: a Decision entry's details.
+        b.Property(x => x.Rationale).HasMaxLength(4000);
+        b.Property(x => x.OptionsConsidered).HasMaxLength(2000);
+        b.Property(x => x.DecidedBy).HasMaxLength(300);
         b.ToTable("TimelineEntries");
         b.Property(x => x.Description).HasMaxLength(16000).IsRequired();
         b.Property(x => x.Source).HasMaxLength(200);
