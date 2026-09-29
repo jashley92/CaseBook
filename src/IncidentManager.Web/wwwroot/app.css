@@ -1221,6 +1221,23 @@ h1:focus {
 .tl-ms-detail { font-size: 0.875rem; color: var(--bs-secondary-color, #6c757d); }
 .tl-ms-flagged { --kind: var(--im-warn); }
 .tl-ms-flagged .tl-dot { border-style: solid; }
+/* INV-03: day headers break the chronology into days, counted from detection. */
+.tl-day {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0.35rem 0 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color, #6c757d);
+}
+.tl-day::after { content: ""; flex: 1; height: 1px; background: var(--bs-border-color, #dee2e6); }
+.tl-day:first-child { margin-top: 0; }
+/* Entry counts on the lens buttons. */
+.tl-count { font-size: 0.72em; opacity: 0.75; margin-left: 0.2rem; font-variant-numeric: tabular-nums; }
+
 /* INV-06: a DECISION is an analyst entry in the brand gold, with its reasons set out beneath it. */
 .tl-kind-inv.tl-kind-dec { --kind: var(--im-accent-strong); }
 .tl-decision {

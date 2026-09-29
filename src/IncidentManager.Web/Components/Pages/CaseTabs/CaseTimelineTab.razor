@@ -20,13 +20,13 @@
 
 <div class="im-seg mb-2" role="group" aria-label="Timeline lens">
     <button class="btn btn-sm @(_tlLens is null && !_msOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens is null && !_msOnly)"
-            @onclick="() => SwitchLens(null)">All</button>
+            @onclick="() => SwitchLens(null)">All <span class="tl-count">@(CurrentEntries.Count() + Milestones().Count)</span></button>
     <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Event)"
-            @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Disclosure" : "Event")</button>
+            @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Disclosure" : "Event") <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Event)</span></button>
     <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Investigation)"
-            @onclick="() => SwitchLens(TimelineKind.Investigation)">Investigation</button>
+            @onclick="() => SwitchLens(TimelineKind.Investigation)">Investigation <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Investigation)</span></button>
     <button class="btn btn-sm @(_msOnly ? "active" : "")" aria-pressed="@Ui.Aria(_msOnly)"
-            @onclick="SwitchToMilestones">Milestones</button>
+            @onclick="SwitchToMilestones">Milestones <span class="tl-count">@Milestones().Count</span></button>
 </div>
 <p class="text-muted small">
     @(_msOnly
@@ -408,11 +408,31 @@
             <input class="form-control form-control-sm w-auto" style="max-width:14rem" @bind="_tlFilterSource"
                    @bind:event="oninput" placeholder="Filter by source…" aria-label="Filter by source" />
         }
+        @if (!_msOnly && Case.Entities.Count > 0)
+        {
+            @* INV-03: everything that touches one entity — as actor or target, or tagged inline with # in the text. *@
+            <select class="form-select form-select-sm w-auto" style="max-width:16rem" @bind="_tlFilterEntityStr" aria-label="Filter by entity">
+                <option value="">Any entity</option>
+                @foreach (var en in Case.Entities.OrderBy(x => x.Type).ThenBy(EntityShort))
+                {
+                    <option value="@en.Id">@Ui.Label(en.Type): @EntityShort(en)</option>
+                }
+            </select>
+        }
         @if (_tlLens is null && !_msOnly)
         {
             <div class="form-check form-switch mb-0 small" title="Show classification, phase, gate and other response milestones in the chronology">
                 <input class="form-check-input" type="checkbox" role="switch" id="tl-show-ms" @bind="_showMilestones" />
                 <label class="form-check-label" for="tl-show-ms">Milestones</label>
+            </div>
+        }
+        @if (Case.DetectedAtUtc is not null)
+        {
+            @* INV-03: responders talk in time since detection ("T+26h we had the session"). *@
+            <div class="im-seg" role="group" aria-label="How times are shown">
+                <button type="button" class="btn btn-sm @(_tPlus ? "" : "active")" aria-pressed="@Ui.Aria(!_tPlus)" @onclick="() => _tPlus = false">Clock</button>
+                <button type="button" class="btn btn-sm @(_tPlus ? "active" : "")" aria-pressed="@Ui.Aria(_tPlus)" @onclick="() => _tPlus = true"
+                        title="Time since the case was detected">T+ detection</button>
             </div>
         }
         <button type="button" class="btn btn-sm btn-outline-secondary"
@@ -461,8 +481,16 @@ else
 {
     <div class="tl-panel">
     <ol class="tl">
+        @{ DateOnly? lastDay = null; }
         @foreach (var row in rows)
         {
+            var day = LocalDay(row.At);
+            if (day != lastDay)
+            {
+                lastDay = day;
+                @* INV-03: a day header, counted from the day the case was detected. *@
+                <li class="tl-day" @key="@($"day-{day}")"><span>@DayLabel(day)</span></li>
+            }
             if (row.Milestone is { } m)
             {
                 @* INV-01: a milestone derived from the case record. Read-only; its source record is the thing to change. *@
@@ -472,7 +500,7 @@ else
                         <div class="tl-head">
                             <span class="tl-kind-label"><span class="bi bi-flag" aria-hidden="true"></span> Milestone</span>
                             <span class="tl-ms-title">@m.Title</span>
-                            <time class="tl-time" title="@TimeDisp.Long(m.AtUtc)"><span class="tl-time-abs">@TimeDisp.Short(m.AtUtc)</span><span class="tl-time-rel">@Ui.RelativeTime(m.AtUtc, Clock.UtcNow)</span></time>
+                            @TimeLabel(m.AtUtc)
                         </div>
                         @if (m.Detail is { } detail)
                         {
@@ -561,7 +589,7 @@ else
                                     <span class="bi @Ui.TimelineGlyph(e.Type)" aria-hidden="true"></span> @Ui.Label(e.Type)
                                 </span>
                             }
-                            <time class="tl-time" title="@TimeDisp.Long(e.OccurredAtUtc)"><span class="tl-time-abs">@TimeDisp.Short(e.OccurredAtUtc)</span><span class="tl-time-rel">@Ui.RelativeTime(e.OccurredAtUtc, Clock.UtcNow)</span></time>
+                            @TimeLabel(e.OccurredAtUtc)
                         </div>
                         <div class="tl-desc">@e.Description</div>
                         @if (e.EvidenceId is { } shotId)
@@ -634,7 +662,7 @@ else
                             {
                                 <span class="im-badge im-b-neutral">v@(e.Version)</span>
                             }
-                            <time class="tl-time" title="@TimeDisp.Long(e.OccurredAtUtc)"><span class="tl-time-abs">@TimeDisp.Short(e.OccurredAtUtc)</span><span class="tl-time-rel">@Ui.RelativeTime(e.OccurredAtUtc, Clock.UtcNow)</span></time>
+                            @TimeLabel(e.OccurredAtUtc)
                         </div>
                         <div class="tl-desc md-body">@((MarkupString)Md.ToHtml(e.Description, CaseId))</div>
                         @if (isDecision)
@@ -660,6 +688,12 @@ else
                             }
                             <span>logged by @Users.DisplayFor(e.CreatedBy)</span>
                             @{ var history = InvestigationHistory(e); }
+                            @{ var firstRecorded = history.Count > 0 ? history[^1].CreatedAtUtc : e.CreatedAtUtc; }
+                            @if (firstRecorded - e.OccurredAtUtc > CaseService.BackdateReasonThreshold)
+                            {
+                                @* INV-03: entered well after it happened — said openly, as on milestones and in the report. *@
+                                <span class="tl-late" title="Entered @TimeDisp.Long(firstRecorded)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Short(firstRecorded)</span>
+                            }
                             @if (history.Count > 0)
                             {
                                 <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => ToggleHistory(e.Id)">
@@ -1262,7 +1296,55 @@ else
     private sealed record TlRow(DateTimeOffset At, DateTimeOffset Tiebreak, TimelineEntry? Entry, CaseMilestone? Milestone);
 
     private bool FiltersActive =>
-        _tlFilterType is not null || _tlFilterTactic is not null || !string.IsNullOrWhiteSpace(_tlFilterSource);
+        _tlFilterType is not null || _tlFilterTactic is not null || !string.IsNullOrWhiteSpace(_tlFilterSource)
+        || _tlFilterEntity is not null;
+
+    // --- INV-03: reading aids ---
+    private Guid? _tlFilterEntity;
+    private string _tlFilterEntityStr
+    {
+        get => _tlFilterEntity?.ToString() ?? "";
+        set => _tlFilterEntity = Guid.TryParse(value, out var g) ? g : null;
+    }
+    private bool _tPlus;
+
+    private IEnumerable<TimelineEntry> CurrentEntries => Case.TimelineEntries.Where(x => x.IsCurrent);
+
+    // An entry touches an entity when it names it as actor or target, or tags it inline (#) in its text.
+    private static bool Touches(TimelineEntry e, Guid entityId) =>
+        e.ActorEntityId == entityId || e.TargetEntityId == entityId
+        || e.Description.Contains($"entity:{entityId}", StringComparison.OrdinalIgnoreCase);
+
+    private DateOnly LocalDay(DateTimeOffset utc) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime);
+
+    private string DayLabel(DateOnly day)
+    {
+        var text = day.ToString("ddd d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
+        if (Case.DetectedAtUtc is not { } detected) return text;
+        var n = day.DayNumber - LocalDay(detected).DayNumber;
+        return n >= 0 ? $"{text} · Day {n}" : $"{text} · before detection";
+    }
+
+    // One time label for every row: clock time (with "5d ago"), or time since detection when T+ is on.
+    private RenderFragment TimeLabel(DateTimeOffset at) => @<text>
+        @if (_tPlus && Case.DetectedAtUtc is { } detected)
+        {
+            <time class="tl-time" title="@TimeDisp.Long(at)"><span class="tl-time-abs">@SinceDetection(at - detected)</span><span class="tl-time-rel">@TimeDisp.Short(at)</span></time>
+        }
+        else
+        {
+            <time class="tl-time" title="@TimeDisp.Long(at)"><span class="tl-time-abs">@TimeDisp.Short(at)</span><span class="tl-time-rel">@Ui.RelativeTime(at, Clock.UtcNow)</span></time>
+        }
+    </text>;
+
+    private static string SinceDetection(TimeSpan span)
+    {
+        var sign = span < TimeSpan.Zero ? "T−" : "T+";
+        var a = span.Duration();
+        if (a.TotalDays >= 1) return $"{sign}{(int)a.TotalDays}d {a.Hours}h";
+        if (a.TotalHours >= 1) return $"{sign}{(int)a.TotalHours}h {a.Minutes:00}m";
+        return $"{sign}{a.Minutes}m";
+    }
 
     private async Task SwitchToMilestones()
     {
@@ -1306,6 +1388,7 @@ else
         _tlFilterType = null;
         _tlFilterTactic = null;
         _tlFilterSource = "";
+        _tlFilterEntity = null;
     }
 
     private List<TimelineEntry> FilteredTimeline(IEnumerable<TimelineEntry> entries)
@@ -1316,6 +1399,7 @@ else
                 : (_tlFilterType is null || x.Type == _tlFilterType))
             .Where(x => string.IsNullOrWhiteSpace(_tlFilterSource)
                 || (x.Source ?? "").Contains(_tlFilterSource, StringComparison.OrdinalIgnoreCase))
+            .Where(x => _tlFilterEntity is not { } en || Touches(x, en))
             .OrderBy(x => x.OccurredAtUtc)
             .ThenBy(x => x.CreatedAtUtc)
             .ToList();
