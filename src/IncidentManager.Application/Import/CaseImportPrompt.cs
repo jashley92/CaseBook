@@ -29,7 +29,7 @@ public static class CaseImportPrompt
 
         var kinds = Names<TimelineKind>();
         // INV-06: Decision isn't importable yet (the schema doesn't carry its rationale).
-        var timelineTypes = string.Join(", ", Enum.GetNames<TimelineEntryType>().Where(n => n != nameof(TimelineEntryType.Decision)));
+        var timelineTypes = string.Join(", ", Enum.GetNames<TimelineEntryType>().Where(n => !CaseImportSchema.NotImportableTimelineTypes.Contains(n)));
         var entityTypes = Names<EntityType>();
         var dispositions = Names<EntityDisposition>();
         // null classification = Complex Event, so offer it alongside the ladder values.

@@ -489,6 +489,7 @@ public static class Ui
         TimelineEntryType.Escalation => "bi-arrow-up-circle",
         TimelineEntryType.Note => "bi-journal-text",
         TimelineEntryType.Decision => "bi-signpost-2",   // INV-06
+        TimelineEntryType.Handoff => "bi-arrow-left-right", // INV-15
         // FR-23 disclosure milestones
         TimelineEntryType.Notified => "bi-envelope-exclamation",
         TimelineEntryType.ScopeConfirmed => "bi-clipboard-check",
@@ -511,6 +512,7 @@ public static class Ui
         TimelineEntryType.Escalation => "#d63384",      // pink
         TimelineEntryType.Note => "#6c757d",            // gray
         TimelineEntryType.Decision => "#e0af12",        // gold (INV-06)
+        TimelineEntryType.Handoff => "#0dcaf0",         // cyan (INV-15)
         // FR-23 disclosure milestones
         TimelineEntryType.Notified => "#0d6efd",              // blue
         TimelineEntryType.ScopeConfirmed => "#6f42c1",        // indigo

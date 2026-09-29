@@ -146,11 +146,15 @@ public static class CaseImportSchema
         ["items"] = Ref(def),
     };
 
-    // INV-06: every timeline type except Decision, which needs a rationale the schema doesn't carry yet.
+    // INV-06 / INV-15: every timeline type except Decision (it needs a rationale the schema doesn't carry yet) and
+    // Handoff (a person-to-person act inside CaseBook, not something an import brings in).
+    public static readonly string[] NotImportableTimelineTypes =
+        [nameof(TimelineEntryType.Decision), nameof(TimelineEntryType.Handoff)];
+
     private static JsonArray ImportableTimelineTypes()
     {
         var values = new JsonArray();
-        foreach (var n in Enum.GetNames<TimelineEntryType>().Where(n => n != nameof(TimelineEntryType.Decision))) values.Add(n);
+        foreach (var n in Enum.GetNames<TimelineEntryType>().Where(n => !NotImportableTimelineTypes.Contains(n))) values.Add(n);
         return values;
     }
 

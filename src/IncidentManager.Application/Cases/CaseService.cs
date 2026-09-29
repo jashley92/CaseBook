@@ -1594,6 +1594,44 @@ public sealed class CaseService
         return seeded;
     }
 
+    /// <summary>
+    /// INV-15: records a handoff on the investigation timeline — where the case stands, what's done and what's open —
+    /// to the person taking it on, and optionally hands them the caller's open tasks on this case. Posting it to
+    /// Discussion (so the recipient is notified) is the caller's choice, done through the comment service.
+    /// Returns the number of tasks reassigned.
+    /// </summary>
+    public async Task<int> HandOffAsync(Guid caseId, string toUserId, string body, bool reassignMyOpenTasks,
+        CancellationToken ct = default)
+    {
+        Require();
+        var text = (body ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(toUserId)) throw new ArgumentException("Choose who you're handing the case to.");
+        if (string.Equals(toUserId, _user.UserId, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Choose someone other than yourself.");
+        if (text.Length == 0) throw new ArgumentException("Say where the case stands.");
+        if (text.Length > 8000) throw new ArgumentException("Keep the handoff to 8,000 characters or fewer.");
+
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, caseId, ct);
+        var now = _clock.UtcNow;
+        c.TimelineEntries.Add(new TimelineEntry
+        {
+            CaseId = c.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Handoff, OccurredAtUtc = now,
+            Description = text, Source = "Handoff", CreatedBy = _user.UserId, CreatedAtUtc = now
+        });
+        var moved = 0;
+        if (reassignMyOpenTasks)
+            foreach (var t in c.ActionItems.Where(t => t.IsOpen && string.Equals(t.Owner, _user.UserId, StringComparison.OrdinalIgnoreCase)))
+            {
+                t.Owner = toUserId;
+                t.ModifiedBy = _user.UserId;
+                t.ModifiedAtUtc = now;
+                moved++;
+            }
+        await db.SaveChangesAsync(ct);
+        return moved;
+    }
+
     /// <summary>INV-10: sets which evidence a timeline entry cites (replacing its current set).</summary>
     public async Task CiteEvidenceAsync(Guid caseId, Guid entryId, IReadOnlyCollection<Guid> evidenceIds,
         CancellationToken ct = default)

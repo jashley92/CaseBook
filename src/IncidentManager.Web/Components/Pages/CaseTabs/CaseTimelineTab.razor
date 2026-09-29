@@ -654,7 +654,7 @@ else
             else
             {
                 var isDecision = e.Type == TimelineEntryType.Decision;
-                <li class="tl-item tl-kind-inv @(isDecision ? "tl-kind-dec" : "") im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" id="tl-@e.Id" @key="e.Id">
+                <li class="tl-item tl-kind-inv @(isDecision ? "tl-kind-dec" : "") @(e.Type == TimelineEntryType.Handoff ? "tl-kind-handoff" : "") im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" id="tl-@e.Id" @key="e.Id">
                     <span class="tl-dot" style="--tl-color:@Ui.TimelineColor(e.Type)" aria-hidden="true">
                         <span class="bi @Ui.TimelineGlyph(e.Type)"></span>
                     </span>
@@ -663,6 +663,11 @@ else
                             @if (isDecision)
                             {
                                 <span class="tl-kind-label"><span class="bi bi-signpost-2" aria-hidden="true"></span> @Ui.Label(e.Type)</span>
+                            }
+                            else if (e.Type == TimelineEntryType.Handoff)
+                            {
+                                @* INV-15: a handoff reads as its own kind, not an ordinary investigation note. *@
+                                <span class="tl-kind-label"><span class="bi bi-arrow-left-right" aria-hidden="true"></span> @Ui.Label(e.Type)</span>
                             }
                             else
                             {

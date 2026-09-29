@@ -3,6 +3,7 @@
 @implements IAsyncDisposable
 @inject CaseService Cases
 @inject IncidentManager.Application.Activity.ActivityFeedService Feed
+@inject IncidentManager.Application.Cases.CaseCommentService Comments
 @inject IClock Clock
 @inject IJSRuntime JS
 @inject IncidentManager.Web.Services.CaseListMemory ListMemory
@@ -170,6 +171,7 @@ else
                             {
                                 <button class="dropdown-item" @onclick="AssignToMe">Assign to me</button>
                             }
+                            <button class="dropdown-item" @onclick='() => OpenModal("handoff")'>Hand off…</button>
                             <button class="dropdown-item" @onclick='() => OpenModal("severity")'>Change severity…</button>
                             <button class="dropdown-item" @onclick='() => OpenModal("status")'>Change phase…</button>
                             <button class="dropdown-item" @onclick='() => OpenModal("legal")'>Refer to Legal / Privacy…</button>
@@ -585,6 +587,36 @@ else
                             @RationaleHint(_reclassReason)
                             @WhenItHappened()
                             @GateModalSection()
+                        }
+                        else if (_activeModal == "handoff")
+                        {
+                            @* INV-15: a structured handoff, prefilled from the record; edit freely. *@
+                            <label class="form-label small mb-0" for="ws-ho-to">Hand the case to</label>
+                            <select id="ws-ho-to" class="form-select form-select-sm mb-2" @bind="_hoTo">
+                                <option value="">Choose a person…</option>
+                                @foreach (var u in Users.All().Where(u => !string.Equals(u.UserId, _myId, StringComparison.OrdinalIgnoreCase)).OrderBy(u => u.DisplayName))
+                                {
+                                    <option value="@u.UserId">@u.DisplayName</option>
+                                }
+                            </select>
+                            <label class="form-label small mb-0" for="ws-ho-state">Where it stands</label>
+                            <textarea id="ws-ho-state" class="form-control form-control-sm mb-2" rows="3" @bind="_hoState" @bind:event="oninput"></textarea>
+                            <label class="form-label small mb-0" for="ws-ho-done">Done since the last handoff</label>
+                            <textarea id="ws-ho-done" class="form-control form-control-sm mb-2" rows="3" @bind="_hoDone" @bind:event="oninput"></textarea>
+                            <label class="form-label small mb-0" for="ws-ho-open">Still open</label>
+                            <textarea id="ws-ho-open" class="form-control form-control-sm mb-2" rows="3" @bind="_hoOpen" @bind:event="oninput"></textarea>
+                            <label class="form-label small mb-0" for="ws-ho-watch">Watch for <span class="text-muted">(optional)</span></label>
+                            <textarea id="ws-ho-watch" class="form-control form-control-sm mb-2" rows="2" @bind="_hoWatch" @bind:event="oninput"
+                                      placeholder="e.g. if the other two users' sign-ins show new locations, re-open the scope with Privacy"></textarea>
+                            <div class="form-check small">
+                                <input class="form-check-input" type="checkbox" id="ws-ho-post" @bind="_hoPost" />
+                                <label class="form-check-label" for="ws-ho-post">Post it to Discussion and notify them</label>
+                            </div>
+                            <div class="form-check small">
+                                <input class="form-check-input" type="checkbox" id="ws-ho-tasks" @bind="_hoTasks" />
+                                <label class="form-check-label" for="ws-ho-tasks">Give them my open tasks on this case (@MyOpenTaskCount)</label>
+                            </div>
+                            <p class="small text-muted mt-2 mb-0">Recorded on the timeline as a handoff.</p>
                         }
                         else if (_activeModal == "severity")
                         {
@@ -1280,6 +1312,7 @@ else
         _when = _whenDefault = UtcToWall(Clock.UtcNow);
 
         if (name == "holdrelease") _holdReleaseReason = null;   // don't carry a cancelled attempt's text over
+        if (name == "handoff") PrefillHandoff();
 
         if (name is "restrict" or "unrestrict")
         {
@@ -1588,6 +1621,7 @@ else
     {
         "reclass" => _case?.Classification is null ? "Promote onto the ladder" : "Reclassify case",
         "severity" => "Change severity",
+        "handoff" => "Hand off the case",
         "status" => "Change phase",
         "legal" => "Refer to Legal / Privacy",
         "holdrelease" => Cases.LegalHoldReleaseNeedsSecondApprover ? "Request legal hold release" : "Release legal hold",
@@ -1611,6 +1645,7 @@ else
         "reopen" => "Reopen",
         "holdrelease" => Cases.LegalHoldReleaseNeedsSecondApprover ? "Request release" : "Release hold",
         "supersede" => "Supersede",
+        "handoff" => "Hand off",
         "restrict" => "Restrict",
         "unrestrict" => "Lift restriction",
         _ => "Apply"
@@ -1639,6 +1674,7 @@ else
             || GateRationaleError(_phaseReason) is not null
             || _when is null || (Backdated && string.IsNullOrWhiteSpace(_phaseReason)),
         "severity" => _when is null || (Backdated && string.IsNullOrWhiteSpace(_severityReason)),
+        "handoff" => string.IsNullOrWhiteSpace(_hoTo) || string.IsNullOrWhiteSpace(_hoState),
         _ => false
     };
 
@@ -1660,6 +1696,15 @@ else
                     _reclassReason = "";
                     done = $"Reclassified to {Ui.Label(_newClass)}";
                     break;
+                case "handoff":
+                {
+                    var body = HandoffBody();
+                    var moved = await Cases.HandOffAsync(Id, _hoTo!, body, _hoTasks);
+                    if (_hoPost) await Comments.AddAsync(Id, body, null, [_hoTo!]);
+                    var toName = Users.DisplayFor(_hoTo);
+                    done = $"Handed off to {toName}" + (moved > 0 ? $" · {IncidentManager.Application.Common.Plural.Of(moved, "task")} reassigned" : "");
+                    break;
+                }
                 case "severity":
                     await Cases.ChangeSeverityAsync(Id, _newSeverity, _severityReason, EffectiveUtc());
                     _severityReason = null;
@@ -1793,6 +1838,67 @@ else
     }
 
     private bool _titleExpanded;
+
+    // --- INV-15: structured handoff ---
+    private string? _hoTo;
+    private string? _hoState;
+    private string? _hoDone;
+    private string? _hoOpen;
+    private string? _hoWatch;
+    private bool _hoPost = true;
+    private bool _hoTasks = true;
+
+    private int MyOpenTaskCount => _case?.ActionItems.Count(t => t.IsOpen
+        && string.Equals(t.Owner, _myId, StringComparison.OrdinalIgnoreCase)) ?? 0;
+
+    // Prefilled from the record: the brief's situation (or the summary), what was logged since the last handoff,
+    // and the open tasks. The analyst edits it before handing off.
+    private void PrefillHandoff()
+    {
+        if (_case is null) return;
+        _hoTo = null;
+        _hoWatch = null;
+        _hoPost = true;
+        _hoTasks = true;
+        _hoState = _case.Briefs.FirstOrDefault(b => b.IsCurrent)?.Situation ?? _case.Summary;
+        var since = _case.TimelineEntries.Where(e => e.IsCurrent && e.Type == TimelineEntryType.Handoff)
+            .Select(e => (DateTimeOffset?)e.CreatedAtUtc).Max() ?? _case.CreatedAtUtc;
+        var done = _case.TimelineEntries
+            .Where(e => e.IsCurrent && e.CreatedAtUtc > since && e.Type != TimelineEntryType.Handoff)
+            .OrderBy(e => e.OccurredAtUtc)
+            .Select(e => "- " + OneLine(e.Description))
+            .Concat(_case.ActionItems.Where(t => t.Status == ActionItemStatus.Done && t.CompletedAtUtc > since)
+                .Select(t => $"- Done: {t.Title}"))
+            .ToList();
+        _hoDone = done.Count > 0 ? string.Join("\n", done) : null;
+        var open = _case.ActionItems.Where(t => t.IsOpen).OrderBy(t => t.DueAtUtc)
+            .Select(t => $"- {t.Title}" + (string.IsNullOrWhiteSpace(t.Owner) ? "" : $" ({Users.DisplayFor(t.Owner)})"))
+            .ToList();
+        _hoOpen = open.Count > 0 ? string.Join("\n", open) : null;
+    }
+
+    private string OneLine(string markdown)
+    {
+        var text = Md.ToPlainText(markdown).Replace('\n', ' ').Trim();
+        return text.Length <= 140 ? text : text[..137] + "…";
+    }
+
+    // The handoff as Markdown: the same text goes on the timeline and, if chosen, into Discussion.
+    private string HandoffBody()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append("**Handed to ").Append(Users.DisplayFor(_hoTo)).Append("**\n\n");
+        void Part(string label, string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return;
+            sb.Append("**").Append(label).Append("**\n\n").Append(text.Trim()).Append("\n\n");
+        }
+        Part("Where it stands", _hoState);
+        Part("Done since the last handoff", _hoDone);
+        Part("Still open", _hoOpen);
+        Part("Watch for", _hoWatch);
+        return sb.ToString().TrimEnd();
+    }
 
     // --- INV-12: the context panel beside the tabs (wide screens) ---
     private bool _railOpen = true;

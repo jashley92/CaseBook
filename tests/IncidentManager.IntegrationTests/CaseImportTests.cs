@@ -96,9 +96,9 @@ public sealed class CaseImportTests : IDisposable
         SchemaEnum(root, "entity", "type").Should().BeEquivalentTo(Enum.GetNames<EntityType>());
         SchemaEnum(root, "entity", "disposition").Should().BeEquivalentTo(Enum.GetNames<EntityDisposition>());
         SchemaEnum(root, "timelineEntry", "kind").Should().BeEquivalentTo(Enum.GetNames<TimelineKind>());
-        // INV-06: Decision isn't importable yet (the schema doesn't carry its rationale).
+        // INV-06 / INV-15: Decision and Handoff aren't importable.
         SchemaEnum(root, "timelineEntry", "type").Should().BeEquivalentTo(
-            Enum.GetNames<TimelineEntryType>().Where(n => n != nameof(TimelineEntryType.Decision)));
+            Enum.GetNames<TimelineEntryType>().Where(n => !CaseImportSchema.NotImportableTimelineTypes.Contains(n)));
         SchemaEnum(root, "newCase", "severity").Should().BeEquivalentTo(Enum.GetNames<Severity>());
         SchemaEnum(root, "newCase", "origin").Should().BeEquivalentTo(Enum.GetNames<CaseOrigin>());
         SchemaEnum(root, "newCase", "classification").Should()

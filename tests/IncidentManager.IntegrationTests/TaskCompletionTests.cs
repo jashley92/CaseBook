@@ -120,6 +120,38 @@ public sealed class TaskCompletionTests : IDisposable
         (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Id == task.Id).Kind.Should().Be(TaskKind.Eradicate);
     }
 
+    // --- INV-15: structured handoff ---
+
+    [Fact]
+    public async Task A_handoff_is_recorded_on_the_timeline_and_can_hand_over_my_open_tasks()
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+        await svc.AddActionItemAsync(caseId, "Mine, open", _user.UserId, null);
+        await svc.AddActionItemAsync(caseId, "Someone else's", "other", null);
+
+        var moved = await svc.HandOffAsync(caseId, "robin", "**Where it stands**\n\nContained; eradication next.", reassignMyOpenTasks: true);
+
+        var c = (await svc.GetDetailAsync(caseId))!;
+        moved.Should().Be(1);
+        c.ActionItems.Single(t => t.Title == "Mine, open").Owner.Should().Be("robin");
+        c.ActionItems.Single(t => t.Title == "Someone else's").Owner.Should().Be("other");
+        var entry = c.TimelineEntries.Single(e => e.Type == TimelineEntryType.Handoff);
+        entry.Kind.Should().Be(TimelineKind.Investigation);
+        entry.Description.Should().Contain("eradication next");
+    }
+
+    [Fact]
+    public async Task A_handoff_needs_someone_else_and_something_to_say()
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+
+        var toMe = () => svc.HandOffAsync(caseId, _user.UserId, "State", false);
+        var empty = () => svc.HandOffAsync(caseId, "robin", " ", false);
+
+        await toMe.Should().ThrowAsync<ArgumentException>();
+        await empty.Should().ThrowAsync<ArgumentException>();
+    }
+
     // --- INV-07: promoting a note or comment to the timeline ---
 
     [Fact]

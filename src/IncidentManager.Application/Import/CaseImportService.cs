@@ -484,8 +484,12 @@ public sealed class CaseImportService
     // INV-06: a Decision needs a rationale, which the import schema doesn't carry yet.
     private static TimelineEntryType ImportableTimelineType(TimelineEntryType t, List<string> warnings)
     {
-        if (t != TimelineEntryType.Decision) return t;
-        warnings.Add("Timeline type 'Decision' can't be imported yet (it needs a rationale). Using Communication instead; record the decision in CaseBook.");
+        if (t == TimelineEntryType.Decision)
+            warnings.Add("Timeline type 'Decision' can't be imported yet (it needs a rationale). Using Communication instead; record the decision in CaseBook.");
+        else if (t == TimelineEntryType.Handoff)
+            warnings.Add("Timeline type 'Handoff' can't be imported (use Hand off in CaseBook). Using Communication instead.");
+        else
+            return t;
         return TimelineEntryType.Communication;
     }
 

@@ -1324,6 +1324,8 @@ h1:focus {
 
 /* INV-06: a DECISION is an analyst entry in the brand gold, with its reasons set out beneath it. */
 .tl-kind-inv.tl-kind-dec { --kind: var(--im-accent-strong); }
+/* INV-15: a handoff between people, in its own hue. */
+.tl-kind-inv.tl-kind-handoff { --kind: #0dcaf0; }
 .tl-decision {
     display: grid;
     grid-template-columns: max-content 1fr;

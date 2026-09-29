@@ -38,7 +38,10 @@ public enum TimelineEntryType
     RegulatoryNotification = 14,   // a regulatory notification was made on this matter
 
     // INV-06: a decision the team made, recorded with its rationale (Investigation timeline).
-    Decision = 15
+    Decision = 15,
+
+    // INV-15: a handoff — where the case stands, what's done and open — to the person taking it on.
+    Handoff = 16
 }
 
 /// <summary>
