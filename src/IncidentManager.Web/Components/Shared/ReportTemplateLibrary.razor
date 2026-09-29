@@ -9,6 +9,9 @@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
+@inject ReportService Reports
+@inject IncidentManager.Application.Access.IAccessLogService Access
+@inject IJSRuntime JS
 
 <div class="card mb-3">
     <div class="card-header"><span class="bi bi-file-earmark-word me-1" aria-hidden="true"></span>Word templates</div>
@@ -79,11 +82,11 @@
             <div class="border rounded p-2 mb-3 small im-template-preview" role="region" aria-label="Preview @pv.Name">
                 <div class="d-flex justify-content-between align-items-center mb-1">
                     <span class="fw-semibold"><span class="bi bi-eye me-1" aria-hidden="true"></span>Preview “@pv.Name”</span>
-                    <button type="button" class="btn-close" aria-label="Close preview" @onclick="() => _previewFor = null"></button>
+                    <button type="button" class="btn-close" aria-label="Close preview" @onclick="ClosePreview"></button>
                 </div>
                 <p class="text-muted mb-2">
-                    Fills the template with a case's data and downloads it. Nothing is saved to the case and no report version
-                    is created. The document opens with a PREVIEW line. The download is recorded in the access log.
+                    Fills the template with a case's data, to show here or download. Nothing is saved to the case and no report
+                    version is created. The document opens with a PREVIEW line. Either way it's recorded in the access log.
                 </p>
                 @if (_cases is null)
                 {
@@ -98,18 +101,33 @@
                     <div class="d-flex flex-wrap gap-2 align-items-end">
                         <div>
                             <label class="form-label small mb-0" for="tpl-preview-case">Case</label>
-                            <select id="tpl-preview-case" class="form-select form-select-sm" style="max-width:32rem" @bind="_previewCaseId">
+                            <select id="tpl-preview-case" class="form-select form-select-sm" style="max-width:32rem" @bind="_previewCaseId" @bind:after="ClearShown">
                                 @foreach (var c in _cases)
                                 {
                                     <option value="@c.Id">@c.CaseNumber · @c.Title@(c.IsExercise ? " (exercise)" : "")</option>
                                 }
                             </select>
                         </div>
+                        <button type="button" class="btn btn-sm btn-primary" @onclick="() => ShowHere(pv)">
+                            <span class="bi bi-eye me-1" aria-hidden="true"></span>Show here
+                        </button>
                         <a class="btn btn-sm btn-outline-primary" href="export/report-templates/@pv.Id/preview?caseId=@_previewCaseId" download>
                             <span class="bi bi-download me-1" aria-hidden="true"></span>Download preview
                         </a>
                     </div>
-                    <div class="form-text">Pick a case with an attack chain and entities to see the pictures filled in.</div>
+                    <div class="form-text">
+                        Pick a case with an attack chain and entities to see the pictures filled in. Shown here, fonts not installed
+                        on this computer are replaced and page breaks can differ slightly from Word.
+                    </div>
+                    @if (_shownBytes is not null)
+                    {
+                        @if (_shownError is not null)
+                        {
+                            <p class="text-danger mt-2 mb-0" role="alert">@_shownError</p>
+                        }
+                        @* docx-view.js owns this element's contents; Blazor never renders children into it. *@
+                        <div class="im-docx-preview mt-2" role="region" aria-label="Filled template" @ref="_shownHost"></div>
+                    }
                 }
             </div>
         }
@@ -197,6 +215,11 @@
     private ReportTemplateView? _previewFor;
     private List<CaseListItem>? _cases;
     private Guid _previewCaseId;
+    // "Show here": the filled template drawn in the page by docx-view.js.
+    private byte[]? _shownBytes;
+    private bool _shownPending;
+    private string? _shownError;
+    private ElementReference _shownHost;
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -249,6 +272,7 @@
             if (!check.Ok) { _problems = check.Problems; return; }
             await Changed();
             Toasts.Success($"“{t.Name}” now uses {e.File.Name}. Preview it with a case below.");
+            ClearShown();   // what was shown came from the old file
             await OpenPreview(t);
         }
         catch (IOException) { _problems = [$"A template must be {ReportTemplateService.MaxTemplateBytes / 1024 / 1024} MB or smaller."]; }
@@ -257,6 +281,7 @@
 
     private async Task OpenPreview(ReportTemplateView t)
     {
+        if (_previewFor?.Id != t.Id) ClearShown();
         _previewFor = t;
         if (_cases is null)
         {
@@ -264,6 +289,45 @@
             _cases = page.Items.ToList();
             if (_cases.Count > 0) _previewCaseId = _cases[0].Id;
         }
+    }
+
+    private void ClosePreview()
+    {
+        _previewFor = null;
+        ClearShown();
+    }
+
+    private void ClearShown() => (_shownBytes, _shownPending, _shownError) = (null, false, null);
+
+    private async Task ShowHere(ReportTemplateView t)
+    {
+        ClearShown();
+        try
+        {
+            var (fileName, bytes, _) = await Reports.PreviewTemplateAsync(t.Id, _previewCaseId);
+            // The admin sees the case's data without opening the case, so it's logged like the download.
+            await Access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, _previewCaseId,
+                $"Word template preview (shown in Administration): {fileName}", t.Id);
+            (_shownBytes, _shownPending) = (bytes, true);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_shownPending || _shownBytes is null) return;
+        _shownPending = false;
+        try
+        {
+            using var stream = new DotNetStreamReference(new MemoryStream(_shownBytes));
+            await JS.InvokeVoidAsync("imDocxView.render", _shownHost, stream);
+        }
+        catch (JSException)
+        {
+            _shownError = "Couldn't show the template in this browser. Download the preview instead.";
+            StateHasChanged();
+        }
+        catch (JSDisconnectedException) { }
     }
 
     private void BeginRename(ReportTemplateView t) { _renaming = t.Id; _renameValue = t.Name; }
@@ -300,7 +364,7 @@
         {
             try { await Templates.DeleteAsync(t.Id); }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
-            if (_previewFor?.Id == t.Id) _previewFor = null;
+            if (_previewFor?.Id == t.Id) ClosePreview();
             await Changed();
             Toasts.Info("Template deleted.");
         });
