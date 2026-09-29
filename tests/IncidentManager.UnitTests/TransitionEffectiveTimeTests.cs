@@ -86,6 +86,73 @@ public class TransitionEffectiveTimeTests
         m.RecordedAtUtc.Should().Be(T0.AddHours(6));
     }
 
+    // --- INV-05b: correcting when a recorded transition happened ---
+
+    [Fact]
+    public void Correcting_a_phase_change_moves_its_milestone_and_keeps_the_recorded_time()
+    {
+        var c = NewCase();
+        c.ChangePhase(CasePhase.Containment, "Isolated", "an1", T0.AddHours(6));
+        var change = c.StatusChanges.Last();
+
+        var k = c.CorrectTransitionTime(TransitionKind.Phase, change.Id, T0.AddHours(2), "Isolated on the call", "ic1", T0.AddHours(8));
+
+        change.EffectiveAt.Should().Be(T0.AddHours(2));
+        change.ChangedAtUtc.Should().Be(T0.AddHours(6));
+        c.ContainedAtUtc.Should().Be(T0.AddHours(2));
+        k.FromEffectiveUtc.Should().Be(T0.AddHours(6));
+        k.ToEffectiveUtc.Should().Be(T0.AddHours(2));
+        c.TimeCorrections.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void A_correction_stays_in_order_with_the_changes_before_and_after_it()
+    {
+        var c = NewCase();
+        c.ChangePhase(CasePhase.Triage, null, "an1", T0.AddHours(1));
+        c.ChangePhase(CasePhase.Containment, null, "an1", T0.AddHours(3));
+        c.ChangePhase(CasePhase.Eradication, null, "an1", T0.AddHours(5));
+        var containment = c.StatusChanges.Single(x => x.To == CasePhase.Containment);
+
+        var tooEarly = () => c.CorrectTransitionTime(TransitionKind.Phase, containment.Id, T0.AddMinutes(30), "x", "ic1", T0.AddHours(6));
+        var tooLate = () => c.CorrectTransitionTime(TransitionKind.Phase, containment.Id, T0.AddHours(5.5), "x", "ic1", T0.AddHours(6));
+
+        tooEarly.Should().Throw<ArgumentException>().WithMessage("*made before it*");
+        tooLate.Should().Throw<ArgumentException>().WithMessage("*made after it*");
+        c.TimeCorrections.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_correction_needs_a_reason_and_the_opening_state_cannot_be_redated()
+    {
+        var c = NewCase();
+        c.ChangeSeverity(Severity.High, "Scope grew", "an1", T0.AddHours(2));
+        var opening = c.SeverityChanges.Single(x => x.From is null);
+        var change = c.SeverityChanges.Single(x => x.From is not null);
+
+        var noReason = () => c.CorrectTransitionTime(TransitionKind.Severity, change.Id, T0.AddHours(1), " ", "an1", T0.AddHours(3));
+        var openingState = () => c.CorrectTransitionTime(TransitionKind.Severity, opening.Id, T0.AddHours(1), "x", "an1", T0.AddHours(3));
+
+        noReason.Should().Throw<ArgumentException>().WithMessage("*reason*");
+        openingState.Should().Throw<InvalidOperationException>().WithMessage("*opening state*");
+    }
+
+    [Fact]
+    public void A_corrected_milestone_offers_its_transition_for_correction()
+    {
+        var c = NewCase();
+        c.Reclassify(Classification.Incident, "Confirmed", "ic1", T0.AddHours(3));
+        var change = c.ClassificationChanges.Last();
+        c.CorrectTransitionTime(TransitionKind.Classification, change.Id, T0.AddHours(1), "Agreed on the call", "ic1", T0.AddHours(4));
+
+        var m = CaseMilestones.Project(c, new MilestoneLabels(x => x?.ToString() ?? "CE", s => s.ToString(), p => p.ToString(), s => s.ToString()))
+            .Single(x => x.Kind == MilestoneKind.Classification);
+
+        m.AtUtc.Should().Be(T0.AddHours(1));
+        m.RecordedAtUtc.Should().Be(T0.AddHours(3));
+        m.Transition.Should().Be((TransitionKind.Classification, change.Id));
+    }
+
     [Fact]
     public void Backdating_needs_a_reason_only_beyond_an_hour()
     {

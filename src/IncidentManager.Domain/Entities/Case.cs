@@ -133,6 +133,9 @@ public class Case : AuditableEntity, IHashableEntity
     public List<EntityRelationship> EntityRelationships { get; set; } = new();
     public List<CaseTechnique> Techniques { get; set; } = new();
 
+    /// <summary>INV-05b: later corrections of when a transition happened (append-only).</summary>
+    public List<TransitionTimeCorrection> TimeCorrections { get; set; } = new();
+
     /// <summary>Saved graph node positions (cosmetic; not audited/hashed).</summary>
     public List<EntityLayout> EntityLayouts { get; set; } = new();
 
@@ -974,6 +977,78 @@ public class Case : AuditableEntity, IHashableEntity
 
         EntityRelationships.Remove(rel);
         Touch(actor, nowUtc);
+    }
+
+    /// <summary>
+    /// INV-05b: corrects when an already-recorded transition happened. Append-only: a
+    /// <see cref="TransitionTimeCorrection"/> records the old and new time and why; the change record's effective
+    /// time is updated so every reader sees it, and its recorded time never moves. The new time must still be in
+    /// order with the changes of the same kind made before and after it (in the order they were recorded), not in
+    /// the future, and not before detection. Re-dating the change that set Contained, Resolved or Closed moves
+    /// that milestone with it. The opening classification and severity can't be re-dated: they are the case's
+    /// starting point, stamped when it was opened.
+    /// </summary>
+    public TransitionTimeCorrection CorrectTransitionTime(TransitionKind kind, Guid changeId,
+        DateTimeOffset newEffectiveUtc, string reason, string actor, DateTimeOffset nowUtc)
+    {
+        reason = (reason ?? "").Trim();
+        if (reason.Length == 0)
+            throw new ArgumentException("Give a reason for correcting when this happened.");
+        if (reason.Length > 2000)
+            throw new ArgumentException("Keep the reason to 2,000 characters or fewer.");
+
+        // The changes of this kind that can be re-dated, in the order they were made.
+        var changes = kind switch
+        {
+            TransitionKind.Classification => ClassificationChanges
+                .Where(x => x.From is not null || x.ChangedAtUtc > CreatedAtUtc)
+                .Select(x => (x.Id, x.ChangedAtUtc, x.EffectiveAt, Set: (Action<DateTimeOffset?>)(v => x.EffectiveAtUtc = v), To: (CasePhase?)null)),
+            TransitionKind.Phase => StatusChanges.Where(x => x.From is not null)
+                .Select(x => (x.Id, x.ChangedAtUtc, x.EffectiveAt, Set: (Action<DateTimeOffset?>)(v => x.EffectiveAtUtc = v), To: (CasePhase?)x.To)),
+            TransitionKind.Severity => SeverityChanges.Where(x => x.From is not null)
+                .Select(x => (x.Id, x.ChangedAtUtc, x.EffectiveAt, Set: (Action<DateTimeOffset?>)(v => x.EffectiveAtUtc = v), To: (CasePhase?)null)),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+        };
+        var ordered = changes.OrderBy(x => x.ChangedAtUtc).ToList();
+        var i = ordered.FindIndex(x => x.Id == changeId);
+        if (i < 0)
+            throw new InvalidOperationException("That change isn't on this case, or it's the opening state, which can't be re-dated.");
+
+        var target = ordered[i];
+        var what = kind switch { TransitionKind.Phase => "phase", TransitionKind.Severity => "severity", _ => "classification" };
+        if (newEffectiveUtc > nowUtc)
+            throw new ArgumentException($"The {what} change can't be dated in the future.");
+        if (DetectedAtUtc is { } detected && newEffectiveUtc < detected)
+            throw new ArgumentException($"The {what} change can't be dated before the case was detected.");
+        if (i > 0 && newEffectiveUtc < ordered[i - 1].EffectiveAt)
+            throw new ArgumentException(
+                $"The {what} change can't be dated before the {what} change made before it ({ordered[i - 1].EffectiveAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC).");
+        if (i < ordered.Count - 1 && newEffectiveUtc > ordered[i + 1].EffectiveAt)
+            throw new ArgumentException(
+                $"The {what} change can't be dated after the {what} change made after it ({ordered[i + 1].EffectiveAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC).");
+
+        var old = target.EffectiveAt;
+        if (newEffectiveUtc == old)
+            throw new ArgumentException("That's already when it happened.");
+
+        target.Set(newEffectiveUtc == target.ChangedAtUtc ? null : newEffectiveUtc);
+
+        // The milestone this phase change set moves with it.
+        switch (target.To)
+        {
+            case CasePhase.Containment when ContainedAtUtc == old: ContainedAtUtc = newEffectiveUtc; break;
+            case CasePhase.Recovery when ResolvedAtUtc == old: ResolvedAtUtc = newEffectiveUtc; break;
+            case CasePhase.Closed when ClosedAtUtc == old: ClosedAtUtc = newEffectiveUtc; break;
+        }
+
+        var correction = new TransitionTimeCorrection
+        {
+            CaseId = Id, Kind = kind, ChangeId = changeId, FromEffectiveUtc = old, ToEffectiveUtc = newEffectiveUtc,
+            Reason = reason, CreatedBy = actor, CreatedAtUtc = nowUtc
+        };
+        TimeCorrections.Add(correction);
+        Touch(actor, nowUtc);
+        return correction;
     }
 
     /// <summary>

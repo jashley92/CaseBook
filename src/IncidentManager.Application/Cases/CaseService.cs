@@ -427,6 +427,7 @@ public sealed class CaseService
             .Include(x => x.DataElements)
             .Include(x => x.Reports)
             .Include(x => x.GatePassages)   // INV-01: shown on the timeline as milestones
+            .Include(x => x.TimeCorrections)  // INV-05b: the "time corrected" history on those milestones
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         return c;
     }
@@ -775,6 +776,25 @@ public sealed class CaseService
             throw new StaleEditException(c.MaterialityConcurrencyStamp(),
                 "Someone else changed the materiality determination while you were editing. Reload and try again.");
         c.RecordMateriality(status, decisionMaker, decidedOnUtc, rationale, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// INV-05b: corrects when an already-recorded classification, phase or severity change happened. Append-only:
+    /// a hashed correction record keeps the old and new time and the reason, and the change's audited update
+    /// carries the same reason. Re-dating a classification change needs the same permission as making one.
+    /// </summary>
+    public async Task CorrectTransitionTimeAsync(Guid id, TransitionKind kind, Guid changeId,
+        DateTimeOffset happenedAtUtc, string reason, CancellationToken ct = default)
+    {
+        Require();
+        if (kind == TransitionKind.Classification && !_user.Has(Permission.ChangeClassification))
+            throw new ForbiddenException(Permission.ChangeClassification, nameof(CorrectTransitionTimeAsync));
+
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.CorrectTransitionTime(kind, changeId, happenedAtUtc, reason, _user.UserId, _clock.UtcNow);
+        db.PendingChangeReason = reason.Trim();   // the change row's audited update carries the reason too
         await db.SaveChangesAsync(ct);
     }
 

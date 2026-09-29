@@ -508,6 +508,18 @@ public sealed class CaseCommentConfiguration : IEntityTypeConfiguration<CaseComm
     }
 }
 
+public sealed class TransitionTimeCorrectionConfiguration : IEntityTypeConfiguration<TransitionTimeCorrection>
+{
+    public void Configure(EntityTypeBuilder<TransitionTimeCorrection> b)
+    {
+        b.ToTable("TransitionTimeCorrections");
+        b.Property(x => x.Reason).HasMaxLength(2000).IsRequired();
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.HasIndex(x => x.CaseId);
+    }
+}
+
 public sealed class PostIncidentReviewConfiguration : IEntityTypeConfiguration<PostIncidentReview>
 {
     public void Configure(EntityTypeBuilder<PostIncidentReview> b)

@@ -465,7 +465,37 @@ else
                                 @* INV-05: dated to when it happened; say openly that it was entered later. *@
                                 <span class="tl-late" title="Entered @TimeDisp.Long(rec)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Short(rec)</span>
                             }
+                            @if (m.Transition is { } tr)
+                            {
+                                var corrections = CorrectionsFor(tr.ChangeId);
+                                @if (corrections.Count > 0)
+                                {
+                                    <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => ToggleCorrections(tr.ChangeId)"
+                                            aria-expanded="@Ui.Aria(_corrOpen.Contains(tr.ChangeId))">
+                                        <span class="bi bi-clock-history" aria-hidden="true"></span>
+                                        Time corrected@(corrections.Count > 1 ? $" ({corrections.Count})" : "")
+                                    </button>
+                                }
+                                @if (CanCorrect(tr.Kind))
+                                {
+                                    <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => StartCorrection(m)">
+                                        <span class="bi bi-pencil" aria-hidden="true"></span> Correct time
+                                    </button>
+                                }
+                            }
                         </div>
+                        @if (m.Transition is { } open && _corrOpen.Contains(open.ChangeId))
+                        {
+                            <div class="tl-history mt-2">
+                                @foreach (var k in CorrectionsFor(open.ChangeId))
+                                {
+                                    <div class="tl-history-item small">
+                                        <div class="text-muted">@Users.DisplayFor(k.CreatedBy) · @TimeDisp.Long(k.CreatedAtUtc)</div>
+                                        <div>Moved from <span class="im-data">@TimeDisp.Long(k.FromEffectiveUtc)</span> to <span class="im-data">@TimeDisp.Long(k.ToEffectiveUtc)</span>. @k.Reason</div>
+                                    </div>
+                                }
+                            </div>
+                        }
                     </div>
                 </li>
                 continue;
@@ -627,6 +657,54 @@ else
     </div>
 }
 
+@if (_corr is { Transition: { } ct } cm)
+{
+    @* INV-05b: correct when an already-recorded transition happened. Append-only; the recorded time stays. *@
+    <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="tl-corr-title"
+         style="background:var(--im-scrim)" @onclick="CancelCorrection" @onkeydown="OnCorrectionKey">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="tl-corr-title">Correct when this happened</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CancelCorrection"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small mb-2"><strong>@cm.Title</strong></p>
+                    <dl class="row g-1 mb-2 small">
+                        <dt class="col-4 fw-normal text-muted">Recorded</dt><dd class="col-8 mb-0 im-data">@TimeDisp.Long(cm.RecordedAtUtc ?? cm.AtUtc)</dd>
+                        <dt class="col-4 fw-normal text-muted">Currently dated</dt><dd class="col-8 mb-0 im-data">@TimeDisp.Long(cm.AtUtc)</dd>
+                    </dl>
+                    <label class="form-label small mb-0" for="tl-corr-when">When it happened (@TimeDisp.Label)</label>
+                    <input id="tl-corr-when" type="datetime-local" class="form-control form-control-sm mb-2" @bind="_corrWhen" @bind:event="oninput" />
+                    <label class="form-label small mb-0" for="tl-corr-reason">Reason for the correction <span class="text-muted">(required)</span></label>
+                    <textarea id="tl-corr-reason" class="form-control form-control-sm" rows="2" maxlength="2000"
+                              placeholder="e.g. escalated on the containment call at 14:20; entered after sessions were revoked"
+                              @bind="_corrReason" @bind:event="oninput"></textarea>
+                    <div class="small mt-3">
+                        <div class="fw-semibold mb-1">What this changes</div>
+                        <ul class="mb-0 ps-3">
+                            @foreach (var line in CorrectionImpact(cm, ct))
+                            {
+                                <li>@line</li>
+                            }
+                        </ul>
+                    </div>
+                    @if (_corrError is not null)
+                    {
+                        <p class="text-danger small mt-2 mb-0" role="alert">@_corrError</p>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <span class="small text-muted me-auto">The original record is kept. This correction is added to the audit trail.</span>
+                    <button class="btn btn-outline-secondary" @onclick="CancelCorrection">Cancel</button>
+                    <button class="btn btn-primary" disabled="@(_corrWhen is null || string.IsNullOrWhiteSpace(_corrReason) || _corrSaving)"
+                            @onclick="SaveCorrection">Save correction</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
@@ -750,6 +828,13 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await ReconcileEditor();
+        // UX-01 focus trap for the correction dialog (INV-05b), as the workspace does for its own modals.
+        if ((_corr is not null) != _corrTrapArmed)
+        {
+            _corrTrapArmed = _corr is not null;
+            try { await JS.InvokeVoidAsync(_corrTrapArmed ? "imModal.arm" : "imModal.release"); }
+            catch (JSException) { /* focus trap is a progressive enhancement */ }
+        }
     }
 
     // This tab owns a single EasyMDE editor — the Investigation composer, shown only when adding/editing
@@ -1019,6 +1104,88 @@ else
             cursor = prior.SupersedesEntryId;
         }
         return history;
+    }
+
+    // --- INV-05b: correcting when a transition happened ---
+    [Parameter] public bool CanChangeClassification { get; set; }
+
+    private CaseMilestone? _corr;
+    private DateTime? _corrWhen;
+    private string? _corrReason;
+    private string? _corrError;
+    private bool _corrSaving;
+    private bool _corrTrapArmed;
+    private readonly HashSet<Guid> _corrOpen = new();
+
+    private bool CanCorrect(TransitionKind kind) => CanEdit && (kind != TransitionKind.Classification || CanChangeClassification);
+
+    private List<TransitionTimeCorrection> CorrectionsFor(Guid changeId) =>
+        Case.TimeCorrections.Where(x => x.ChangeId == changeId).OrderByDescending(x => x.CreatedAtUtc).ToList();
+
+    private void ToggleCorrections(Guid changeId)
+    {
+        if (!_corrOpen.Remove(changeId)) _corrOpen.Add(changeId);
+    }
+
+    private void StartCorrection(CaseMilestone m)
+    {
+        _corr = m;
+        _corrWhen = UtcToWall(m.AtUtc);
+        _corrReason = null;
+        _corrError = null;
+    }
+
+    private void CancelCorrection() { _corr = null; _corrError = null; }
+
+    private void OnCorrectionKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CancelCorrection();
+    }
+
+    // What the correction moves, stated before saving. Regulatory clocks never move: they start from the
+    // materiality decision or detection, not from a transition.
+    private IEnumerable<string> CorrectionImpact(CaseMilestone m, (TransitionKind Kind, Guid ChangeId) t)
+    {
+        var newAt = _corrWhen is { } w ? WallToUtc(w) : (DateTimeOffset?)null;
+        var moves = newAt is { } at && at != m.AtUtc;
+        if (moves)
+            yield return $"The timeline shows this at {TimeDisp.Long(newAt!.Value)} instead of {TimeDisp.Long(m.AtUtc)}.";
+        if (moves && t.Kind == TransitionKind.Phase && Case.StatusChanges.FirstOrDefault(x => x.Id == t.ChangeId) is { } sc)
+        {
+            var (label, current) = sc.To switch
+            {
+                CasePhase.Containment => ("Contained", Case.ContainedAtUtc),
+                CasePhase.Recovery => ("Resolved", Case.ResolvedAtUtc),
+                CasePhase.Closed => ("Closed", Case.ClosedAtUtc),
+                _ => ((string?)null, (DateTimeOffset?)null)
+            };
+            if (label is not null && current == m.AtUtc)
+                yield return $"{label} moves with it, so the response-time and SLA figures are recalculated.";
+        }
+        yield return "Regulatory notification deadlines don't change. They start from the materiality decision or detection.";
+        yield return $"The recorded time ({TimeDisp.Long(m.RecordedAtUtc ?? m.AtUtc)}) stays as it is.";
+    }
+
+    private async Task SaveCorrection()
+    {
+        if (_corr?.Transition is not { } t || _corrWhen is not { } w || string.IsNullOrWhiteSpace(_corrReason)) return;
+        _corrSaving = true;
+        _corrError = null;
+        try
+        {
+            await Cases.CorrectTransitionTimeAsync(CaseId, t.Kind, t.ChangeId, WallToUtc(w), _corrReason);
+            _corr = null;
+            await OnChanged.InvokeAsync();
+            Toasts.Success("Time corrected");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _corrError = ex.Message;
+        }
+        finally
+        {
+            _corrSaving = false;
+        }
     }
 
     // --- INV-01: response milestones ---

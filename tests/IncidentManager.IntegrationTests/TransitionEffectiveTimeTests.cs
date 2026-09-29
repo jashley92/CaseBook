@@ -1,6 +1,7 @@
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Infrastructure.Persistence.Interceptors;
@@ -99,6 +100,42 @@ public sealed class TransitionEffectiveTimeTests : IDisposable
         (await svc.GetDetailAsync(created.Id))!.ClassificationChanges
             .Single(x => x.To == Classification.Incident).EffectiveAt.Should().Be(_clock.UtcNow.AddHours(-3));
         await early.Should().ThrowAsync<ArgumentException>().WithMessage("*before the case was detected*");
+    }
+
+    [Fact]
+    public async Task A_correction_is_saved_with_its_reason_and_moves_contained()
+    {
+        var svc = NewService();
+        var created = await svc.CreateAsync(Req());
+        var detected = _clock.UtcNow;
+        _clock.UtcNow = detected.AddHours(6);
+        await svc.ChangePhaseAsync(created.Id, CasePhase.Containment, "Isolated");
+        var changeId = (await svc.GetDetailAsync(created.Id))!.StatusChanges.Single(x => x.To == CasePhase.Containment).Id;
+        _clock.UtcNow = detected.AddHours(8);
+
+        await svc.CorrectTransitionTimeAsync(created.Id, TransitionKind.Phase, changeId, detected.AddHours(2), "Isolated on the call; entered later");
+
+        var c = (await svc.GetDetailAsync(created.Id))!;
+        c.ContainedAtUtc.Should().Be(detected.AddHours(2));
+        c.TimeCorrections.Should().ContainSingle().Which.Reason.Should().Be("Isolated on the call; entered later");
+        await using var db = new AppDbContext(Options());
+        (await db.AuditLog.AnyAsync(a => a.Reason == "Isolated on the call; entered later")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Correcting_a_classification_change_needs_the_classification_permission()
+    {
+        var svc = NewService();
+        var created = await svc.CreateAsync(Req());
+        _clock.UtcNow = _clock.UtcNow.AddHours(2);
+        await svc.ReclassifyAsync(created.Id, Classification.Incident, "Confirmed");
+        var changeId = (await svc.GetDetailAsync(created.Id))!.ClassificationChanges.Single(x => x.To == Classification.Incident).Id;
+        // A custom role that may edit cases but not change their classification.
+        _user.PermissionSet = [Permission.ViewCases, Permission.EditCases];
+
+        var act = () => svc.CorrectTransitionTimeAsync(created.Id, TransitionKind.Classification, changeId, _clock.UtcNow.AddHours(-1), "x");
+
+        await act.Should().ThrowAsync<ForbiddenException>();
     }
 
     public void Dispose() => _connection.Dispose();

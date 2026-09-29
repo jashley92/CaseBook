@@ -2149,6 +2149,56 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.ToTable("TimelineEntries", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.TransitionTimeCorrection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ChangeId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("FromEffectiveUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("ModifiedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ToEffectiveUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseId");
+
+                    b.ToTable("TransitionTimeCorrections", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.UserDisplayPreference", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2550,6 +2600,15 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.TransitionTimeCorrection", b =>
+                {
+                    b.HasOne("IncidentManager.Domain.Entities.Case", null)
+                        .WithMany("TimeCorrections")
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.Case", b =>
                 {
                     b.Navigation("ActionItems");
@@ -2581,6 +2640,8 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Navigation("StatusChanges");
 
                     b.Navigation("Techniques");
+
+                    b.Navigation("TimeCorrections");
 
                     b.Navigation("TimelineEntries");
                 });

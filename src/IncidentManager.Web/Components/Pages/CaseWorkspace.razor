@@ -435,7 +435,7 @@ else
         @* UX-13: extracted to CaseTimelineTab. It owns its Investigation EasyMDE editor; the parent keeps
            the flash, the screenshot lightbox (OnPreview→OpenShot), the Ctrl+Enter hotkey (via @ref), the
            paste-shim registration (element ids kept in the child), and the live-collab "new entries" pill. *@
-        <CaseTimelineTab @ref="_timelineTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
+        <CaseTimelineTab @ref="_timelineTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" CanChangeClassification="_canReclassify"
                          DetectionLabel="@DetectionLabel" OnChanged="Reload" OnPreview="OpenShot"
                          FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts" />
         @* U-32: a floating "jump to what just arrived" pill when a collaborator adds timeline entries. *@

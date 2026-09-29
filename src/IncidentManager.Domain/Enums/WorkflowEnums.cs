@@ -168,3 +168,11 @@ public enum CaseLinkType
     /// <summary>Symmetric: both cases are part of the same campaign / attack wave.</summary>
     PartOfCampaign = 2
 }
+
+/// <summary>INV-05b: which kind of case transition a <see cref="Entities.TransitionTimeCorrection"/> re-dates.</summary>
+public enum TransitionKind
+{
+    Classification = 0,
+    Phase = 1,
+    Severity = 2
+}

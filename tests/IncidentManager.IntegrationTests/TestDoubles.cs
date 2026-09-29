@@ -55,7 +55,9 @@ public sealed class TestCurrentUser : ICurrentUser
     public IReadOnlyList<string> RoleNames => RoleSet.Select(r => r.ToString()).Concat(CustomRoleNames).ToList();
 
     // Effective permissions derive from the role set, mirroring production claim expansion.
-    public IReadOnlySet<Permission> Permissions => RoleDefinitions.PermissionsFor(RoleSet);
+    /// <summary>An explicit permission set standing in for a custom role; null uses the built-in roles.</summary>
+    public HashSet<Permission>? PermissionSet { get; set; }
+    public IReadOnlySet<Permission> Permissions => PermissionSet ?? RoleDefinitions.PermissionsFor(RoleSet);
     public bool Has(Permission permission) => Permissions.Contains(permission);
 }
 

@@ -28,6 +28,8 @@ public enum MilestoneKind
 /// <param name="Flagged">True when the milestone deserves attention, such as a gate that was overridden.</param>
 /// <param name="RecordedAtUtc">INV-05: when the change was recorded, set only when it was dated to an earlier
 /// effective time (<see cref="AtUtc"/>) — so the timeline can say it was recorded later.</param>
+/// <param name="Transition">INV-05b: for a classification, phase or severity change, its kind and record id, so
+/// the time it happened can be corrected. Null for every other milestone.</param>
 public sealed record CaseMilestone(
     string Key,
     DateTimeOffset AtUtc,
@@ -37,7 +39,8 @@ public sealed record CaseMilestone(
     string? Actor,
     string Source,
     bool Flagged = false,
-    DateTimeOffset? RecordedAtUtc = null);
+    DateTimeOffset? RecordedAtUtc = null,
+    (TransitionKind Kind, Guid ChangeId)? Transition = null);
 
 /// <summary>Display labels the projection needs, supplied by the caller (they're admin-customizable).</summary>
 public sealed record MilestoneLabels(
@@ -70,17 +73,20 @@ public static class CaseMilestones
         foreach (var x in c.ClassificationChanges.Where(x => !IsInitial(c)(x)))
             list.Add(new CaseMilestone($"cls:{x.Id}", x.EffectiveAt, MilestoneKind.Classification,
                 $"Classification {labels.Classification(x.From)} → {labels.Classification(x.To)}",
-                Blank(x.Reason), x.ChangedBy, "classification change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc)));
+                Blank(x.Reason), x.ChangedBy, "classification change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc),
+                Transition: (TransitionKind.Classification, x.Id)));
 
         foreach (var x in c.SeverityChanges.Where(x => x.From is not null))
             list.Add(new CaseMilestone($"sev:{x.Id}", x.EffectiveAt, MilestoneKind.Severity,
                 $"Severity {labels.Severity(x.From!.Value)} → {labels.Severity(x.To)}",
-                Blank(x.Reason), x.ChangedBy, "severity change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc)));
+                Blank(x.Reason), x.ChangedBy, "severity change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc),
+                Transition: (TransitionKind.Severity, x.Id)));
 
         foreach (var x in c.StatusChanges.Where(x => x.From is not null))
             list.Add(new CaseMilestone($"phase:{x.Id}", x.EffectiveAt, MilestoneKind.Phase,
                 $"Phase {labels.Phase(x.From!.Value)} → {labels.Phase(x.To)}",
-                Blank(x.Reason), x.ChangedBy, "phase change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc)));
+                Blank(x.Reason), x.ChangedBy, "phase change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc),
+                Transition: (TransitionKind.Phase, x.Id)));
 
         foreach (var x in c.MaterialityChanges)
         {

@@ -33,6 +33,8 @@ public static class CaseActionPermissions
             [nameof(CaseService.ChangePhaseAsync)] = Permission.EditCases,
             [nameof(CaseService.ReopenAsync)] = Permission.EditCases,
             [nameof(CaseService.ChangeSeverityAsync)] = Permission.EditCases,
+            // INV-05b: re-dating a classification change also needs ChangeClassification (checked in the method).
+            [nameof(CaseService.CorrectTransitionTimeAsync)] = Permission.EditCases,
 
             // Regulatory / legal milestones
             [nameof(CaseService.ReferToLegalAsync)] = Permission.ManageLegal,

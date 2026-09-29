@@ -47,6 +47,7 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     DbSet<UserNotificationPreference> UserNotificationPreferences { get; }
     DbSet<UserDisplayPreference> UserDisplayPreferences { get; }
     DbSet<CaseComment> CaseComments { get; }
+    DbSet<TransitionTimeCorrection> TransitionTimeCorrections { get; }
     DbSet<PostIncidentReview> PostIncidentReviews { get; }
     DbSet<ImprovementAction> ImprovementActions { get; }
     DbSet<PendingImport> PendingImports { get; }

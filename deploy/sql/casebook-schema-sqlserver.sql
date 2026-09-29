@@ -2118,3 +2118,47 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929032611_AddTransitionTimeCorrections'
+)
+BEGIN
+    CREATE TABLE [TransitionTimeCorrections] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [Kind] int NOT NULL,
+        [ChangeId] uniqueidentifier NOT NULL,
+        [FromEffectiveUtc] datetimeoffset NOT NULL,
+        [ToEffectiveUtc] datetimeoffset NOT NULL,
+        [Reason] nvarchar(2000) NOT NULL,
+        [RowHash] nvarchar(64) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(max) NULL,
+        CONSTRAINT [PK_TransitionTimeCorrections] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_TransitionTimeCorrections_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929032611_AddTransitionTimeCorrections'
+)
+BEGIN
+    CREATE INDEX [IX_TransitionTimeCorrections_CaseId] ON [TransitionTimeCorrections] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929032611_AddTransitionTimeCorrections'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260929032611_AddTransitionTimeCorrections', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
