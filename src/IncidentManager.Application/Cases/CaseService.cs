@@ -426,6 +426,7 @@ public sealed class CaseService
             .Include(x => x.Techniques)
             .Include(x => x.DataElements)
             .Include(x => x.Reports)
+            .Include(x => x.GatePassages)   // INV-01: shown on the timeline as milestones
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         return c;
     }

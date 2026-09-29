@@ -1202,6 +1202,26 @@ h1:focus {
     border-color: var(--kind);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--kind) 12%, transparent);
 }
+/* INV-01: response MILESTONES (derived from the case record) are the quiet third kind — a small dashed,
+   hollow dot in a neutral tone, muted text, so they give the chronology its structure without competing with
+   the adversary events and analyst entries. An overridden gate is flagged in the warning tone. */
+.tl-kind-ms { --kind: var(--im-neutral); padding-bottom: 0.55rem; }
+.tl-kind-ms .tl-dot {
+    width: 1.35rem;
+    height: 1.35rem;
+    margin: 0.2rem;
+    font-size: 0.7rem;
+    color: var(--kind);
+    background: var(--bs-body-bg, #fff);
+    border: 1.5px dashed var(--kind);
+    box-shadow: none;
+}
+.tl-kind-ms .tl-kind-label { font-weight: 600; }
+.tl-ms-title { font-size: 0.9rem; font-weight: 600; color: var(--bs-body-color); }
+.tl-ms-detail { font-size: 0.875rem; color: var(--bs-secondary-color, #6c757d); }
+.tl-ms-flagged { --kind: var(--im-warn); }
+.tl-ms-flagged .tl-dot { border-style: solid; }
+
 /* Left lane + a very faint wash tie the whole subsection to its kind. */
 /* Design review P5: the kind colour stays on the dot and the label; entries themselves sit on the plain
    surface, so a long attack narrative doesn't turn into a wall of tinted cards. */

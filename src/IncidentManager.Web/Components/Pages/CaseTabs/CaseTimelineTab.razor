@@ -16,26 +16,33 @@
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
 @inject IJSRuntime JS
+@inject ISeverityLabels SevLabels
 
 <div class="im-seg mb-2" role="group" aria-label="Timeline lens">
-    <button class="btn btn-sm @(_tlLens is null ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens is null)"
+    <button class="btn btn-sm @(_tlLens is null && !_msOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens is null && !_msOnly)"
             @onclick="() => SwitchLens(null)">All</button>
     <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Event)"
             @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Disclosure" : "Event")</button>
     <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Investigation)"
             @onclick="() => SwitchLens(TimelineKind.Investigation)">Investigation</button>
+    <button class="btn btn-sm @(_msOnly ? "active" : "")" aria-pressed="@Ui.Aria(_msOnly)"
+            @onclick="SwitchToMilestones">Milestones</button>
 </div>
 <p class="text-muted small">
-    @(_tlLens switch
-    {
-        TimelineKind.Event => IsThirdParty
-            ? "The vendor-disclosure narrative: what the vendor reported and what we confirmed about our data."
-            : "The attack narrative: facts and timing of what happened.",
-        TimelineKind.Investigation => "Analyst and team actions during the investigation.",
-        _ => "The full chronology: what happened and what the team did, interleaved."
-    })
+    @(_msOnly
+        ? "Response milestones from the case record: classification, severity and phase changes, stage gates, materiality, reporting, completed tasks and evidence."
+        : _tlLens switch
+        {
+            TimelineKind.Event => IsThirdParty
+                ? "The vendor-disclosure narrative: what the vendor reported and what we confirmed about our data."
+                : "The attack narrative: facts and timing of what happened.",
+            TimelineKind.Investigation => "Analyst and team actions during the investigation.",
+            _ => "The full chronology: what happened, what the team did, and the response milestones, interleaved."
+        })
 </p>
 
+@if (!_msOnly)
+{
 <AuthorizeView Policy="@Policies.EditCases">
     @* Design review P5: the composer folds behind a one-line bar at every width, so the history starts at the
        top of the tab. It opens for a new case with no entries yet, when editing, and when a screenshot is pasted. *@
@@ -269,18 +276,26 @@
         </div>
     </div>
 </AuthorizeView>
+}
 
 @{
     // Only current versions are shown; superseded Investigation edits live in history (below) and the audit trail.
-    var tlAll = Case.TimelineEntries.Where(x => (_tlLens is null || x.Kind == _tlLens) && x.IsCurrent).ToList();
+    var tlAll = _msOnly ? new List<TimelineEntry>()
+        : Case.TimelineEntries.Where(x => (_tlLens is null || x.Kind == _tlLens) && x.IsCurrent).ToList();
     var tlView = FilteredTimeline(tlAll);
+    // INV-01: response milestones, derived from the case record. Shown in All (unless hidden) and their own lens;
+    // an entry filter (type / tactic / source) doesn't apply to them, so they step aside while one is active.
+    var msAll = _msOnly || (_tlLens is null && _showMilestones) ? Milestones() : [];
+    var msView = FiltersActive ? [] : msAll;
+    var rows = MergeRows(tlView, msView);
+    var totalAll = tlAll.Count + msAll.Count;
     // The attack chain is always event-only, regardless of lens (shown under All and Event).
     var tlChain = Case.TimelineEntries.Where(x => x.Kind == TimelineKind.Event && x.IsCurrent)
         .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc).ToList();
 }
 
 @* The attack chain is a first-party kill-chain view; a third-party/vendor case (E-32) has none. *@
-@if (_tlLens != TimelineKind.Investigation && tlChain.Count > 0 && !IsThirdParty)
+@if (_tlLens != TimelineKind.Investigation && !_msOnly && tlChain.Count > 0 && !IsThirdParty)
 {
     <div class="killchain-wrap mb-3">
         <div class="d-flex align-items-center justify-content-between mb-1">
@@ -336,10 +351,14 @@
     </div>
 }
 
-@if (tlAll.Count > 0)
+@if (totalAll > 0)
 {
     <div class="tl-filters d-flex flex-wrap align-items-center gap-2 mb-3">
-        @if (_tlLens == TimelineKind.Event && !IsThirdParty)
+        @if (_msOnly)
+        {
+            @* Milestones carry no type, tactic or source, so only the order applies. *@
+        }
+        else if (_tlLens == TimelineKind.Event && !IsThirdParty)
         {
             <select class="form-select form-select-sm w-auto" @bind="_tlFilterTacticStr" aria-label="Filter by tactic">
                 <option value="">All tactics</option>
@@ -360,24 +379,34 @@
                 }
             </select>
         }
-        <input class="form-control form-control-sm w-auto" style="max-width:14rem" @bind="_tlFilterSource"
-               @bind:event="oninput" placeholder="Filter by source…" aria-label="Filter by source" />
+        @if (!_msOnly)
+        {
+            <input class="form-control form-control-sm w-auto" style="max-width:14rem" @bind="_tlFilterSource"
+                   @bind:event="oninput" placeholder="Filter by source…" aria-label="Filter by source" />
+        }
+        @if (_tlLens is null && !_msOnly)
+        {
+            <div class="form-check form-switch mb-0 small" title="Show classification, phase, gate and other response milestones in the chronology">
+                <input class="form-check-input" type="checkbox" role="switch" id="tl-show-ms" @bind="_showMilestones" />
+                <label class="form-check-label" for="tl-show-ms">Milestones</label>
+            </div>
+        }
         <button type="button" class="btn btn-sm btn-outline-secondary"
                 @onclick="() => _tlOldestFirst = !_tlOldestFirst"
                 title="Toggle chronological order">
             <span class="bi @(_tlOldestFirst ? "bi-sort-down-alt" : "bi-sort-up-alt")" aria-hidden="true"></span>
             @(_tlOldestFirst ? "Oldest first" : "Newest first")
         </button>
-        @if (_tlFilterType is not null || _tlFilterTactic is not null || !string.IsNullOrWhiteSpace(_tlFilterSource))
+        @if (FiltersActive)
         {
             <button type="button" class="btn btn-sm btn-link text-decoration-none px-1"
                     @onclick="ClearTimelineFilters">Clear</button>
-            <span class="text-muted small">@tlView.Count of @tlAll.Count</span>
+            <span class="text-muted small">@tlView.Count of @tlAll.Count@(msAll.Count > 0 ? " · milestones hidden while filtering" : "")</span>
         }
     </div>
 }
 
-@if (tlAll.Count == 0)
+@if (totalAll == 0)
 {
     <div class="empty-state">
         <div class="empty-state-icon"><span class="bi bi-clock-history" aria-hidden="true"></span></div>
@@ -394,7 +423,7 @@
         </div>
     </div>
 }
-else if (tlView.Count == 0)
+else if (rows.Count == 0)
 {
     <div class="empty-state">
         <div class="empty-state-icon"><span class="bi bi-funnel" aria-hidden="true"></span></div>
@@ -408,8 +437,35 @@ else
 {
     <div class="tl-panel">
     <ol class="tl">
-        @foreach (var e in tlView)
+        @foreach (var row in rows)
         {
+            if (row.Milestone is { } m)
+            {
+                @* INV-01: a milestone derived from the case record. Read-only; its source record is the thing to change. *@
+                <li class="tl-item tl-kind-ms @(m.Flagged ? "tl-ms-flagged" : "")" id="tl-@m.Key" @key="m.Key">
+                    <span class="tl-dot" aria-hidden="true"><span class="bi @MilestoneGlyph(m.Kind)"></span></span>
+                    <div class="tl-body">
+                        <div class="tl-head">
+                            <span class="tl-kind-label"><span class="bi bi-flag" aria-hidden="true"></span> Milestone</span>
+                            <span class="tl-ms-title">@m.Title</span>
+                            <time class="tl-time" title="@TimeDisp.Long(m.AtUtc)"><span class="tl-time-abs">@TimeDisp.Short(m.AtUtc)</span><span class="tl-time-rel">@Ui.RelativeTime(m.AtUtc, Clock.UtcNow)</span></time>
+                        </div>
+                        @if (m.Detail is { } detail)
+                        {
+                            <div class="tl-desc tl-ms-detail">@detail</div>
+                        }
+                        <div class="tl-meta">
+                            <span>from @m.Source</span>
+                            @if (m.Actor is { } who)
+                            {
+                                <span>by @Users.DisplayFor(who)</span>
+                            }
+                        </div>
+                    </div>
+                </li>
+                continue;
+            }
+            var e = row.Entry!;
             if (e.Kind == TimelineKind.Event)
             {
                 // FR-24: a third-party case can carry attack (ATT&CK) steps alongside disclosure milestones —
@@ -842,6 +898,7 @@ else
     private async Task SwitchLens(TimelineKind? lens)
     {
         if (_tlEditId is not null) await CancelTimelineEdit();
+        _msOnly = false;
         _tlLens = lens;
         if (lens is { } k) _tlAddKind = k;   // a focused lens drives what the composer adds
         ClearTimelineFilters();
@@ -958,6 +1015,52 @@ else
         }
         return history;
     }
+
+    // --- INV-01: response milestones ---
+    private bool _msOnly;                 // the Milestones lens: milestones alone
+    private bool _showMilestones = true;  // include them in the All chronology
+
+    private sealed record TlRow(DateTimeOffset At, DateTimeOffset Tiebreak, TimelineEntry? Entry, CaseMilestone? Milestone);
+
+    private bool FiltersActive =>
+        _tlFilterType is not null || _tlFilterTactic is not null || !string.IsNullOrWhiteSpace(_tlFilterSource);
+
+    private async Task SwitchToMilestones()
+    {
+        if (_tlEditId is not null) await CancelTimelineEdit();
+        _tlLens = null;
+        _msOnly = true;
+        ClearTimelineFilters();
+    }
+
+    private IReadOnlyList<CaseMilestone> Milestones() => CaseMilestones.Project(Case, new MilestoneLabels(
+        c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m)));
+
+    // Interleave entries and milestones by when they happened; the entry list arrives already ordered.
+    private List<TlRow> MergeRows(IEnumerable<TimelineEntry> entries, IEnumerable<CaseMilestone> milestones)
+    {
+        var rows = entries.Select(e => new TlRow(e.OccurredAtUtc, e.CreatedAtUtc, e, null))
+            .Concat(milestones.Select(m => new TlRow(m.AtUtc, m.AtUtc, null, m)))
+            .OrderBy(r => r.At).ThenBy(r => r.Tiebreak)
+            .ToList();
+        if (!_tlOldestFirst) rows.Reverse();
+        return rows;
+    }
+
+    private static string MilestoneGlyph(MilestoneKind k) => k switch
+    {
+        MilestoneKind.Opened => "bi-folder-plus",
+        MilestoneKind.Classification => "bi-bar-chart-steps",
+        MilestoneKind.Severity => "bi-thermometer-half",
+        MilestoneKind.Phase => "bi-signpost-split",
+        MilestoneKind.Materiality => "bi-bank",
+        MilestoneKind.Gate => "bi-shield-check",
+        MilestoneKind.Reported => "bi-send-check",
+        MilestoneKind.TaskDone => "bi-check2-square",
+        MilestoneKind.EvidenceAdded => "bi-paperclip",
+        MilestoneKind.ReportFinal => "bi-file-earmark-lock",
+        _ => "bi-flag"
+    };
 
     private void ClearTimelineFilters()
     {
