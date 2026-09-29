@@ -611,6 +611,7 @@ else
                                      style="max-height:120px;max-width:100%;border-radius:.375rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
                             </button>
                         }
+                        @CitedEvidence(e)
                         <div class="tl-meta">
                             @if (EntityById(e.ActorEntityId) is { } actor || EntityById(e.TargetEntityId) is not null)
                             {
@@ -645,6 +646,7 @@ else
                                     <span class="bi bi-pencil" aria-hidden="true"></span> Edit
                                 </button>
                             }
+                            @CiteButton(e)
                         </div>
                     </div>
                 </li>
@@ -692,6 +694,7 @@ else
                                      style="max-height:120px;max-width:100%;border-radius:.375rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
                             </button>
                         }
+                        @CitedEvidence(e)
                         <div class="tl-meta">
                             @if (!string.IsNullOrWhiteSpace(e.Source))
                             {
@@ -718,6 +721,7 @@ else
                                     <span class="bi bi-pencil" aria-hidden="true"></span> Edit
                                 </button>
                             }
+                            @CiteButton(e)
                         </div>
                         @if (_tlHistoryOpen.Contains(e.Id))
                         {
@@ -1193,6 +1197,93 @@ else
             cursor = prior.SupersedesEntryId;
         }
         return history;
+    }
+
+    // --- INV-10: evidence an entry cites ---
+    private Guid? _citing;
+    private readonly HashSet<Guid> _citeSel = new();
+    private bool _citeSaving;
+
+    private List<Evidence> CitedBy(TimelineEntry e) => Case.Citations.Where(x => x.TimelineEntryId == e.Id)
+        .Select(x => Case.Evidence.FirstOrDefault(ev => ev.Id == x.EvidenceId)).OfType<Evidence>()
+        .OrderBy(ev => ev.OriginalFileName, StringComparer.OrdinalIgnoreCase).ToList();
+
+    private static bool IsImage(Evidence ev) => ev.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+
+    private RenderFragment CiteButton(TimelineEntry e) => @<text>
+        @if (CanEdit && Case.Evidence.Count > 0)
+        {
+            <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => StartCite(e)">
+                <span class="bi bi-paperclip" aria-hidden="true"></span> Cite evidence
+            </button>
+        }
+    </text>;
+
+    private RenderFragment CitedEvidence(TimelineEntry e) => @<text>
+        @{ var cited = CitedBy(e); }
+        @if (cited.Count > 0)
+        {
+            <div class="tl-cites" aria-label="Evidence cited">
+                @foreach (var ev in cited)
+                {
+                    @if (IsImage(ev))
+                    {
+                        <button type="button" class="tl-cite" @onclick="() => OnPreview.InvokeAsync(ev.Id)" title="Preview @ev.OriginalFileName">
+                            <span class="bi bi-image" aria-hidden="true"></span> @ev.OriginalFileName
+                        </button>
+                    }
+                    else
+                    {
+                        <a class="tl-cite" href="evidence/@ev.Id" target="_blank" title="Download @ev.OriginalFileName">
+                            <span class="bi bi-paperclip" aria-hidden="true"></span> @ev.OriginalFileName
+                        </a>
+                    }
+                }
+            </div>
+        }
+        @if (_citing == e.Id)
+        {
+            <div class="tl-cite-pick border rounded p-2 mt-2 bg-body-tertiary">
+                <div class="small fw-semibold mb-1">Evidence that supports this entry</div>
+                @foreach (var ev in Case.Evidence.OrderByDescending(x => x.CreatedAtUtc))
+                {
+                    <div class="form-check small">
+                        <input class="form-check-input" type="checkbox" id="@($"cite-{e.Id}-{ev.Id}")" checked="@_citeSel.Contains(ev.Id)"
+                               @onchange="x => ToggleCite(ev.Id, (bool)(x.Value ?? false))" />
+                        <label class="form-check-label" for="@($"cite-{e.Id}-{ev.Id}")">
+                            @ev.OriginalFileName <span class="text-muted">· @TimeDisp.Short(ev.CreatedAtUtc)@(string.IsNullOrWhiteSpace(ev.Description) ? "" : $" · {ev.Description}")</span>
+                        </label>
+                    </div>
+                }
+                <div class="d-flex gap-2 justify-content-end mt-1">
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => _citing = null">Cancel</button>
+                    <button class="btn btn-sm btn-primary" disabled="@_citeSaving" @onclick="() => SaveCite(e.Id)">Save</button>
+                </div>
+            </div>
+        }
+    </text>;
+
+    private void StartCite(TimelineEntry e)
+    {
+        _citing = e.Id;
+        _citeSel.Clear();
+        foreach (var ev in CitedBy(e)) _citeSel.Add(ev.Id);
+    }
+
+    private void ToggleCite(Guid id, bool on) { if (on) _citeSel.Add(id); else _citeSel.Remove(id); }
+
+    private async Task SaveCite(Guid entryId)
+    {
+        _citeSaving = true;
+        try
+        {
+            await Cases.CiteEvidenceAsync(CaseId, entryId, _citeSel.ToList());
+            _citing = null;
+            await OnChanged.InvokeAsync();
+            Toasts.Success("Evidence cited");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
+        finally { _citeSaving = false; }
     }
 
     // --- INV-06: decision entries ---

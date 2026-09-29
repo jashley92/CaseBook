@@ -1326,6 +1326,32 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.ToTable("Evidence", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.EvidenceCitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EvidenceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TimelineEntryId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseId");
+
+                    b.HasIndex("EvidenceId");
+
+                    b.HasIndex("TimelineEntryId", "EvidenceId")
+                        .IsUnique();
+
+                    b.ToTable("EvidenceCitations", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.GatePassage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2594,6 +2620,15 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.EvidenceCitation", b =>
+                {
+                    b.HasOne("IncidentManager.Domain.Entities.Case", null)
+                        .WithMany("Citations")
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.GatePassage", b =>
                 {
                     b.HasOne("IncidentManager.Domain.Entities.Case", null)
@@ -2709,6 +2744,8 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Navigation("Assignments");
 
                     b.Navigation("Briefs");
+
+                    b.Navigation("Citations");
 
                     b.Navigation("ClassificationChanges");
 

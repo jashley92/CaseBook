@@ -88,7 +88,7 @@ public sealed class ReportService
             // entry was first recorded when its original version was.
             .Select(x => (At: x.OccurredAtUtc, Order: x.CreatedAtUtc, Item: new ReportTimelineItem(x.OccurredAtUtc,
                 TaxLabel("TimelineEntryType", x.Type.ToString()),
-                d.Text(EntryText(x)) + Late(x.OccurredAtUtc, FirstRecorded(c, x)), x.Source)))
+                d.Text(EntryText(x)) + Cited(c, x) + Late(x.OccurredAtUtc, FirstRecorded(c, x)), x.Source)))
             .ToList();
 
         if (opts.IncludeMilestones)
@@ -119,6 +119,15 @@ public sealed class ReportService
         if (e.OptionsConsidered is { } options) sb.Append(" Options considered: ").Append(options.TrimEnd('.')).Append('.');
         if (e.DecidedBy is { } who) sb.Append(" Decided by: ").Append(who.TrimEnd('.')).Append('.');
         return sb.ToString();
+    }
+
+    // INV-10: the evidence an entry cites, by file name.
+    private static string Cited(Case c, TimelineEntry e)
+    {
+        var files = c.Citations.Where(x => x.TimelineEntryId == e.Id)
+            .Select(x => c.Evidence.FirstOrDefault(ev => ev.Id == x.EvidenceId)?.OriginalFileName)
+            .Where(n => n is not null).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+        return files.Count == 0 ? "" : $" Evidence: {string.Join(", ", files)}.";
     }
 
     // When an investigation entry was first put on the record: its original version's creation time.
@@ -518,6 +527,7 @@ public sealed class ReportService
             .Include(x => x.StatusChanges)        // INV-16: milestones in the investigation timeline
             .Include(x => x.MaterialityChanges)
             .Include(x => x.GatePassages)
+            .Include(x => x.Citations)            // INV-10: evidence an entry cites
             .Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics)
             .Include(x => x.Evidence)
             .Include(x => x.Notes)

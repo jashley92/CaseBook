@@ -1221,6 +1221,17 @@ h1:focus {
 .tl-ms-detail { font-size: 0.875rem; color: var(--bs-secondary-color, #6c757d); }
 .tl-ms-flagged { --kind: var(--im-warn); }
 .tl-ms-flagged .tl-dot { border-style: solid; }
+/* INV-10: evidence an entry cites, as small file chips under the entry. */
+.tl-cites { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
+.tl-cite {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    font-size: 0.78rem; padding: 0.05rem 0.45rem; border-radius: var(--im-radius-sm);
+    border: 1px solid var(--im-border-strong); background: var(--im-surface-2); color: var(--im-text);
+    text-decoration: none; cursor: pointer;
+}
+.tl-cite:hover { border-color: var(--im-accent-strong); }
+.tl-cite .bi { color: var(--im-accent-text); }
+
 /* INV-13: a group header row in the Tasks table (tasks grouped by kind of response work). */
 .im-task-group td { background: var(--im-surface-2); border-bottom-color: var(--im-border-strong); padding-top: 0.55rem; }
 

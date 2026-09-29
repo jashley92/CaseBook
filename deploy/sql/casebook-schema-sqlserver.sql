@@ -2309,3 +2309,55 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929064658_AddEvidenceCitations'
+)
+BEGIN
+    CREATE TABLE [EvidenceCitations] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [TimelineEntryId] uniqueidentifier NOT NULL,
+        [EvidenceId] uniqueidentifier NOT NULL,
+        CONSTRAINT [PK_EvidenceCitations] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_EvidenceCitations_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929064658_AddEvidenceCitations'
+)
+BEGIN
+    CREATE INDEX [IX_EvidenceCitations_CaseId] ON [EvidenceCitations] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929064658_AddEvidenceCitations'
+)
+BEGIN
+    CREATE INDEX [IX_EvidenceCitations_EvidenceId] ON [EvidenceCitations] ([EvidenceId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929064658_AddEvidenceCitations'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_EvidenceCitations_TimelineEntryId_EvidenceId] ON [EvidenceCitations] ([TimelineEntryId], [EvidenceId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929064658_AddEvidenceCitations'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260929064658_AddEvidenceCitations', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

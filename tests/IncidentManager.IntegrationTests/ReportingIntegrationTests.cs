@@ -243,6 +243,43 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task An_entry_lists_the_evidence_it_cites_in_the_report()
+    {
+        // INV-10: a conclusion points at what it rests on, in the app and in the report.
+        _user.RoleSet = [AppRole.IncidentCommander];
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
+                new CaseNumberGenerator(db), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            caseId = (await cases.CreateAsync(new IncidentManager.Application.Cases.CreateCaseRequest
+            {
+                DescriptiveName = "Cite", Title = "Citing case", Classification = Classification.Incident,
+                Severity = Severity.High, Origin = CaseOrigin.InternalDetection
+            })).Id;
+            var evidenceId = Guid.NewGuid();
+            db.Evidence.Add(new IncidentManager.Domain.Entities.Evidence
+            {
+                Id = evidenceId, CaseId = caseId, OriginalFileName = "signin-export.csv", Sha256 = new string('a', 64),
+                StoragePath = "x", CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
+            });
+            await db.SaveChangesAsync();
+            await cases.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Analysis, _clock.UtcNow,
+                "Session from a foreign ASN", null);
+            var entryId = (await cases.GetDetailAsync(caseId))!.TimelineEntries.Single().Id;
+            await cases.CiteEvidenceAsync(caseId, entryId, [evidenceId]);
+            (await cases.GetDetailAsync(caseId))!.Citations.Should().ContainSingle();
+        }
+
+        await using (var db = NewContext())
+        {
+            _reporting.CurrentValue.IncludeMilestones = false;
+            var item = (await NewReportService(db).BuildPreviewModelAsync(caseId, null)).InvestigationTimeline.Single();
+            item.Description.Should().Be("Session from a foreign ASN Evidence: signin-export.csv.");
+        }
+    }
+
+    [Fact]
     public async Task A_decision_prints_with_why_and_who_decided_and_cannot_be_recorded_without_a_reason()
     {
         // INV-06: the report's investigation timeline carries decisions with their rationale.

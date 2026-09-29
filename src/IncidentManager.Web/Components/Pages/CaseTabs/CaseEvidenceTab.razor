@@ -78,7 +78,15 @@
                                              style="max-height:36px;max-width:56px;border-radius:.25rem;border:1px solid var(--bs-border-color);cursor:zoom-in" />
                                     </button>
                                 }
-                                <div>@ev.OriginalFileName<br /><small class="text-muted">@ev.Description</small></div>
+                                <div>
+                                    @ev.OriginalFileName<br /><small class="text-muted">@ev.Description</small>
+                                    @{ var citedBy = Citations.Count(x => x.EvidenceId == ev.Id); }
+                                    @if (citedBy > 0)
+                                    {
+                                        @* INV-10: what relies on this item. *@
+                                        <div class="small"><span class="im-badge im-b-info"><span class="bi bi-link-45deg" aria-hidden="true"></span> Cited by @IncidentManager.Application.Common.Plural.Of(citedBy, "timeline entry", "timeline entries")</span></div>
+                                    }
+                                </div>
                             </div>
                         </td>
                         <td>@FormatSize(ev.SizeBytes)</td>
@@ -184,6 +192,8 @@
 @code {
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<Evidence> EvidenceItems { get; set; } = [];
+    /// <summary>INV-10: timeline entries' citations, to say what relies on each item.</summary>
+    [Parameter] public IReadOnlyList<EvidenceCitation> Citations { get; set; } = [];
     /// <summary>Open the parent-owned screenshot lightbox (shared with the Timeline) for an image evidence id.</summary>
     [Parameter] public EventCallback<Guid> OnPreview { get; set; }
     /// <summary>Reload the case after an upload so the rest of the workspace reflects the new evidence.</summary>

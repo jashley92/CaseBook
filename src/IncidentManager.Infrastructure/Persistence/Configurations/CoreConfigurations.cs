@@ -513,6 +513,19 @@ public sealed class CaseCommentConfiguration : IEntityTypeConfiguration<CaseComm
     }
 }
 
+public sealed class EvidenceCitationConfiguration : IEntityTypeConfiguration<EvidenceCitation>
+{
+    public void Configure(EntityTypeBuilder<EvidenceCitation> b)
+    {
+        // INV-10. Only the case is a foreign key: a second cascade path through timeline entries would be refused
+        // by SQL Server, and evidence is never deleted.
+        b.ToTable("EvidenceCitations");
+        b.HasIndex(x => x.CaseId);
+        b.HasIndex(x => new { x.TimelineEntryId, x.EvidenceId }).IsUnique();
+        b.HasIndex(x => x.EvidenceId);
+    }
+}
+
 public sealed class CaseBriefConfiguration : IEntityTypeConfiguration<CaseBrief>
 {
     public void Configure(EntityTypeBuilder<CaseBrief> b)

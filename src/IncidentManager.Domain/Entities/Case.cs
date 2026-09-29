@@ -133,6 +133,9 @@ public class Case : AuditableEntity, IHashableEntity
     public List<EntityRelationship> EntityRelationships { get; set; } = new();
     public List<CaseTechnique> Techniques { get; set; } = new();
 
+    /// <summary>INV-10: evidence cited by timeline entries.</summary>
+    public List<EvidenceCitation> Citations { get; set; } = new();
+
     /// <summary>INV-09: the case brief, one row per version (the current one has <c>IsCurrent</c>).</summary>
     public List<CaseBrief> Briefs { get; set; } = new();
 
@@ -701,8 +704,29 @@ public class Case : AuditableEntity, IHashableEntity
             CreatedAtUtc = nowUtc
         };
         TimelineEntries.Add(next);
+        // INV-10: the evidence the entry cited still supports the new version.
+        foreach (var cite in Citations.Where(x => x.TimelineEntryId == current.Id))
+            cite.TimelineEntryId = next.Id;
         Touch(actor, nowUtc);
         return next;
+    }
+
+    /// <summary>
+    /// INV-10: sets which evidence a current timeline entry cites (adding and removing only what changed, so the
+    /// audit trail records just the real changes). Both the entry and the evidence must be on this case.
+    /// </summary>
+    public void SetCitations(Guid entryId, IEnumerable<Guid> evidenceIds, string actor, DateTimeOffset nowUtc)
+    {
+        if (TimelineEntries.All(t => t.Id != entryId || !t.IsCurrent))
+            throw new InvalidOperationException("That timeline entry isn't on this case, or it has been superseded.");
+        var desired = evidenceIds.Distinct().ToHashSet();
+        if (desired.Any(id => Evidence.All(e => e.Id != id)))
+            throw new InvalidOperationException("Only evidence on this case can be cited.");
+
+        Citations.RemoveAll(x => x.TimelineEntryId == entryId && !desired.Contains(x.EvidenceId));
+        foreach (var id in desired.Where(id => !Citations.Any(x => x.TimelineEntryId == entryId && x.EvidenceId == id)))
+            Citations.Add(new EvidenceCitation { CaseId = Id, TimelineEntryId = entryId, EvidenceId = id });
+        Touch(actor, nowUtc);
     }
 
     /// <summary>

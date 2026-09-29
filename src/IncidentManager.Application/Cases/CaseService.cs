@@ -429,6 +429,7 @@ public sealed class CaseService
             .Include(x => x.GatePassages)   // INV-01: shown on the timeline as milestones
             .Include(x => x.TimeCorrections)  // INV-05b: the "time corrected" history on those milestones
             .Include(x => x.Briefs)           // INV-09: the case brief and its earlier versions
+            .Include(x => x.Citations)        // INV-10: evidence cited by timeline entries
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         return c;
     }
@@ -590,6 +591,7 @@ public sealed class CaseService
             .Include(x => x.EntityLayouts)
             .Include(x => x.Techniques)
             .Include(x => x.DataElements)
+            .Include(x => x.Citations)   // INV-10: moved with an edited entry; reconciled when citing
             .FirstOrDefaultAsync(x => x.Id == id, ct)
             ?? throw new InvalidOperationException("Case not found or not accessible.");
         return c;
@@ -1590,6 +1592,19 @@ public sealed class CaseService
 
         if (seeded > 0) await db.SaveChangesAsync(ct);
         return seeded;
+    }
+
+    /// <summary>INV-10: sets which evidence a timeline entry cites (replacing its current set).</summary>
+    public async Task CiteEvidenceAsync(Guid caseId, Guid entryId, IReadOnlyCollection<Guid> evidenceIds,
+        CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, caseId, ct);
+        // Evidence isn't in the tracked load; bring in just the ids the domain checks against.
+        await db.Evidence.Where(e => e.CaseId == caseId).ToListAsync(ct);
+        c.SetCitations(entryId, evidenceIds, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>
