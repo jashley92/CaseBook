@@ -2078,6 +2078,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("ActionItemId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("ActorEntityId")
                         .HasColumnType("uniqueidentifier");
 

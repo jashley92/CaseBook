@@ -210,7 +210,7 @@ else
                         @if (CanEdit && isOpen)
                         {
                             <button class="btn btn-sm btn-outline-success me-1" title="Mark done"
-                                    aria-label="@($"Mark done: {t.Title}")" @onclick="() => MarkDone(t.Id)">
+                                    aria-label="@($"Mark done: {t.Title}")" @onclick="() => BeginComplete(t.Id)">
                                 <span class="bi bi-check2" aria-hidden="true"></span>
                             </button>
                         }
@@ -229,6 +229,49 @@ else
                         </button>
                     </td>
                 </tr>
+                @if (_completingId == t.Id)
+                {
+                    @* INV-08: complete the task and, optionally, put its result on the timeline — written once. *@
+                    <tr class="im-task-edit" @key="@($"done-{t.Id}")">
+                        <td colspan="@colCount" class="bg-body-tertiary">
+                            <div class="row g-2">
+                                <div class="col-12">
+                                    <label class="form-label small mb-0" for="task-done-result">What was the result? <span class="text-muted">(optional)</span></label>
+                                    <textarea id="task-done-result" class="form-control form-control-sm" rows="2" maxlength="8000"
+                                              @bind="_doneResult" @bind:event="oninput"
+                                              placeholder="e.g. all 12 domains added to the proxy block list (change CHG-20931); verified from the Finance VLAN"></textarea>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small mb-0" for="task-done-when">Completed at (@TimeDisp.Label)</label>
+                                    <input id="task-done-when" type="datetime-local" class="form-control form-control-sm" @bind="_doneWhen" />
+                                    <div class="tl-nudges" role="group" aria-label="Adjust the time">
+                                        <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = ToWall(Clock.UtcNow)">Now</button>
+                                        <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = _doneWhen.AddHours(-1)" aria-label="One hour earlier">&minus;1 h</button>
+                                        <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = _doneWhen.AddMinutes(-15)" aria-label="15 minutes earlier">&minus;15 min</button>
+                                        <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = _doneWhen.AddMinutes(15)" aria-label="15 minutes later">+15 min</button>
+                                    </div>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="form-check mt-3">
+                                        <input class="form-check-input" type="checkbox" id="task-done-log" @bind="_doneLog" disabled="@string.IsNullOrWhiteSpace(_doneResult)" />
+                                        <label class="form-check-label small" for="task-done-log">Add the result to the timeline as</label>
+                                    </div>
+                                    <select class="form-select form-select-sm mt-1" aria-label="Timeline entry type" @bind="_doneType"
+                                            disabled="@(!_doneLog || string.IsNullOrWhiteSpace(_doneResult))">
+                                        @foreach (var type in LoggableTypes)
+                                        {
+                                            <option value="@type">@Ui.Label(type)</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-3 d-flex align-items-end justify-content-end gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="CancelComplete">Cancel</button>
+                                    <button class="btn btn-sm btn-primary" disabled="@_completing" @onclick="() => CompleteTask(t.Id)">Mark done</button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
                 @if (_editingTaskId == t.Id)
                 {
                     <tr class="im-task-edit" @key="@($"edit-{t.Id}")">
@@ -537,14 +580,59 @@ else
         if (on) foreach (var id in openIds) _selected.Add(id);
     }
 
-    // One task: done in one click, without selecting it first.
-    private async Task MarkDone(Guid id)
+    // --- INV-08: complete one task, optionally recording its result on the timeline ---
+    private Guid? _completingId;
+    private string? _doneResult;
+    private DateTime _doneWhen;
+    private DateTime _doneWhenDefault;
+    private bool _doneLog = true;
+    private TimelineEntryType _doneType = TimelineEntryType.Other;
+    private bool _completing;
+
+    // The investigation types a task result can be logged as: not a Decision (that needs a why) and not the
+    // third-party disclosure milestones.
+    private static IReadOnlyList<TimelineEntryType> LoggableTypes =>
+        Ui.Options<TimelineEntryType>("TimelineEntryType")
+            .Where(t => t is not (TimelineEntryType.Decision or TimelineEntryType.Notified or TimelineEntryType.ScopeConfirmed
+                or TimelineEntryType.DataConfirmed or TimelineEntryType.Remediation or TimelineEntryType.RegulatoryNotification))
+            .ToList();
+
+    private void BeginComplete(Guid id)
     {
-        try { await Cases.SetActionItemStatusAsync(CaseId, id, ActionItemStatus.Done); }
+        _completingId = id;
+        _doneResult = null;
+        _doneWhen = _doneWhenDefault = ToWall(Clock.UtcNow);
+        _doneLog = true;
+    }
+
+    private void CancelComplete() => _completingId = null;
+
+    private async Task CompleteTask(Guid id)
+    {
+        _completing = true;
+        try
+        {
+            var result = string.IsNullOrWhiteSpace(_doneResult) ? null : _doneResult;
+            await Cases.CompleteActionItemAsync(CaseId, id,
+                _doneWhen == _doneWhenDefault ? null : WallToUtc(_doneWhen),
+                result, _doneLog && result is not null ? _doneType : null);
+        }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
+        finally { _completing = false; }
+        _completingId = null;
         _selected.Remove(id);
-        Toasts.Success("Task done");
+        Toasts.Success(_doneLog && !string.IsNullOrWhiteSpace(_doneResult) ? "Task done and result added to the timeline" : "Task done");
         await OnChanged.InvokeAsync();
+    }
+
+    private DateTime ToWall(DateTimeOffset utc)
+        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
+
+    private DateTimeOffset WallToUtc(DateTime wall)
+    {
+        var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
+        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, TimeDisp.Zone), TimeSpan.Zero); }
+        catch { return new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
     }
 
     private async Task MarkSelectedDone()

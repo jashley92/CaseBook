@@ -1591,6 +1591,56 @@ public sealed class CaseService
         return seeded;
     }
 
+    /// <summary>
+    /// INV-08: completes a task, optionally recording its result. The time it was completed may be earlier than
+    /// now (tasks are often ticked off after the fact) but not in the future or before the case was detected.
+    /// A result is kept on the task as a comment and, when <paramref name="logAs"/> is given, also put on the
+    /// investigation timeline as an entry of that type, dated at completion and linked to the task — so the
+    /// work is written once. One save, one audited unit.
+    /// </summary>
+    public async Task CompleteActionItemAsync(Guid caseId, Guid actionItemId, DateTimeOffset? completedAtUtc,
+        string? result, TimelineEntryType? logAs, CancellationToken ct = default)
+    {
+        Require();
+        var text = string.IsNullOrWhiteSpace(result) ? null : result.Trim();
+        if (text is { Length: > 8000 }) throw new ArgumentException("Keep the result to 8,000 characters or fewer.");
+        if (logAs is not null && text is null)
+            throw new ArgumentException("Describe the result to add it to the timeline.");
+        if (logAs == TimelineEntryType.Decision)
+            throw new ArgumentException("Record a decision as a Decision entry on the timeline, with why it was made.");
+
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, caseId, ct);
+        var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
+                   ?? throw new InvalidOperationException("Task not found.");
+        var now = _clock.UtcNow;
+        var at = completedAtUtc ?? now;
+        if (at > now) throw new ArgumentException("A task can't be completed in the future.");
+        if (c.DetectedAtUtc is { } detected && at < detected)
+            throw new ArgumentException("A task can't be completed before the case was detected.");
+
+        item.Status = ActionItemStatus.Done;
+        item.CompletedAtUtc = at;
+        item.ModifiedBy = _user.UserId;
+        item.ModifiedAtUtc = now;
+
+        if (text is not null)
+        {
+            db.ActionItemComments.Add(new ActionItemComment
+            {
+                ActionItemId = item.Id, CaseId = c.Id, Body = $"Result: {text}", CreatedBy = _user.UserId, CreatedAtUtc = now
+            });
+            if (logAs is { } type)
+                c.TimelineEntries.Add(new TimelineEntry
+                {
+                    CaseId = c.Id, Kind = TimelineKind.Investigation, Type = type, OccurredAtUtc = at,
+                    Description = text, Source = $"Task: {item.Title}", ActionItemId = item.Id,
+                    CreatedBy = _user.UserId, CreatedAtUtc = now
+                });
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task SetActionItemStatusAsync(Guid caseId, Guid actionItemId, ActionItemStatus status,
         CancellationToken ct = default)
     {

@@ -110,7 +110,11 @@ public static class CaseMilestones
             list.Add(new CaseMilestone($"reported:{c.Id}", reported, MilestoneKind.Reported,
                 "Reported to regulators", null, null, "reported milestone"));
 
-        foreach (var t in c.ActionItems.Where(t => t.Status == ActionItemStatus.Done && t.CompletedAtUtc is not null))
+        // A task whose result was logged on the timeline (INV-08) is told by that entry; don't say it twice.
+        var loggedTasks = c.TimelineEntries.Where(e => e.IsCurrent && e.ActionItemId is not null)
+            .Select(e => e.ActionItemId!.Value).ToHashSet();
+        foreach (var t in c.ActionItems.Where(t => t.Status == ActionItemStatus.Done && t.CompletedAtUtc is not null
+                                                   && !loggedTasks.Contains(t.Id)))
             list.Add(new CaseMilestone($"task:{t.Id}", t.CompletedAtUtc!.Value, MilestoneKind.TaskDone,
                 $"Task done: {t.Title}", null, t.ModifiedBy ?? t.Owner, "task"));
 

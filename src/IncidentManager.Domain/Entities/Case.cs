@@ -688,6 +688,7 @@ public class Case : AuditableEntity, IHashableEntity
             SupersedesEntryId = current.Id,
             IsCurrent = true,
             EvidenceId = current.EvidenceId, // an attached screenshot (U-40) carries to the new version
+            ActionItemId = current.ActionItemId, // INV-08: still the result of the same task
             // INV-06: only a Decision keeps its decision details.
             Rationale = type == TimelineEntryType.Decision ? Clean(rationale) : null,
             OptionsConsidered = type == TimelineEntryType.Decision ? Clean(optionsConsidered) : null,

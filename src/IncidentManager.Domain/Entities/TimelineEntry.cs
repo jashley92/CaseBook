@@ -72,6 +72,13 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
     /// recorded it is <see cref="AuditableEntity.CreatedBy"/>.</summary>
     public string? DecidedBy { get; set; }
 
+    /// <summary>
+    /// INV-08: the task this entry records the result of, when it was logged as the task was completed. Lets the
+    /// timeline show where it came from and stand in for the task's "Task done" milestone. Folded into the row
+    /// hash only when set.
+    /// </summary>
+    public Guid? ActionItemId { get; set; }
+
     /// <summary>INV-06: a Decision entry must say why.</summary>
     public static void EnsureDecisionHasRationale(TimelineEntryType type, string? rationale)
     {
@@ -102,6 +109,9 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
         // A linked screenshot (U-40) is tamper-evident too, but folded in ONLY when present so existing
         // screenshot-less rows keep their exact canonical (no re-baseline). Appended last, deterministically.
         if (EvidenceId is { } eid) content = string.Join('|', content, "ev", eid);
+
+        // INV-08: the task this entry records the result of, folded in only when present (no re-baseline).
+        if (ActionItemId is { } task) content = string.Join('|', content, "task", task);
 
         // INV-06: a decision's rationale / options / decider, folded in only when present (no re-baseline).
         if (Rationale is not null || OptionsConsidered is not null || DecidedBy is not null)
