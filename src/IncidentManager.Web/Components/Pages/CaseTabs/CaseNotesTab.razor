@@ -63,7 +63,20 @@ else
                     </small>
                     <AuthorizeView Policy="@Policies.EditCases" Context="edit">
                         <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => StartNoteEdit(n)">Edit</button>
+                        @if (!Promoted.Contains($"note:{n.Id}"))
+                        {
+                            <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => _promoting = n.Id">Add to timeline</button>
+                        }
                     </AuthorizeView>
+                    @if (Promoted.Contains($"note:{n.Id}"))
+                    {
+                        <span class="im-badge im-b-info ms-2"><span class="bi bi-clock-history" aria-hidden="true"></span> On the timeline</span>
+                    }
+                    @if (_promoting == n.Id)
+                    {
+                        <PromoteToTimeline CaseId="CaseId" SourceRef="@($"note:{n.Id}")" Text="@n.Body" WrittenAtUtc="n.CreatedAtUtc"
+                                           OnDone="PromotedDone" OnCancel="() => _promoting = null" />
+                    }
                 }
             </div>
         </div>
@@ -79,6 +92,10 @@ else
     /// <summary>The case's entities/IOCs, offered as inline "#" tags in the note editors.</summary>
     [Parameter] public IReadOnlyList<CaseEntity> Entities { get; set; } = [];
     [Parameter] public bool CanEdit { get; set; }
+    /// <summary>INV-07: the sources already promoted to the timeline ("note:&lt;id&gt;" …).</summary>
+    [Parameter] public IReadOnlySet<string> Promoted { get; set; } = new HashSet<string>();
+    private Guid? _promoting;
+    private async Task PromotedDone() { _promoting = null; await OnChanged.InvokeAsync(); }
     /// <summary>Reload the case after a note write so the list (and the rest of the workspace) refreshes.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
     /// <summary>Live-collab flash hooks (parent owns the flash state); render a note's flash class / hue.</summary>

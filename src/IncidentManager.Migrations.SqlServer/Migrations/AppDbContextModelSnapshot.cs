@@ -2126,6 +2126,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("PromotedFrom")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("Rationale")
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");

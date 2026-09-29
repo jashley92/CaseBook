@@ -79,6 +79,13 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
     /// </summary>
     public Guid? ActionItemId { get; set; }
 
+    /// <summary>
+    /// INV-07: where this entry was promoted from — "note:&lt;id&gt;", "comment:&lt;id&gt;" or "taskcomment:&lt;id&gt;" — so the
+    /// source can show it's already on the timeline. Null for an entry written on the timeline. Folded into the row
+    /// hash only when set.
+    /// </summary>
+    public string? PromotedFrom { get; set; }
+
     /// <summary>INV-06: a Decision entry must say why.</summary>
     public static void EnsureDecisionHasRationale(TimelineEntryType type, string? rationale)
     {
@@ -109,6 +116,9 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
         // A linked screenshot (U-40) is tamper-evident too, but folded in ONLY when present so existing
         // screenshot-less rows keep their exact canonical (no re-baseline). Appended last, deterministically.
         if (EvidenceId is { } eid) content = string.Join('|', content, "ev", eid);
+
+        // INV-07: where it was promoted from, folded in only when present (no re-baseline).
+        if (PromotedFrom is { } from) content = string.Join('|', content, "from", from);
 
         // INV-08: the task this entry records the result of, folded in only when present (no re-baseline).
         if (ActionItemId is { } task) content = string.Join('|', content, "task", task);

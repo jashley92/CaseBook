@@ -1592,6 +1592,46 @@ public sealed class CaseService
     }
 
     /// <summary>
+    /// INV-07: puts a note, a discussion comment or a task comment on the investigation timeline, so it isn't
+    /// retyped. <paramref name="sourceRef"/> is "note:&lt;id&gt;", "comment:&lt;id&gt;" or "taskcomment:&lt;id&gt;" and must be
+    /// on this case; the new entry keeps it, and its <c>Source</c> names the kind. The text may be edited on the
+    /// way (the source itself is unchanged). A Decision can't be made this way: it needs its why.
+    /// </summary>
+    public async Task PromoteToTimelineAsync(Guid caseId, string sourceRef, TimelineEntryType type,
+        DateTimeOffset occurredAtUtc, string text, CancellationToken ct = default)
+    {
+        Require();
+        var body = (text ?? "").Trim();
+        if (body.Length == 0) throw new ArgumentException("There's nothing to add to the timeline.");
+        if (body.Length > 8000) throw new ArgumentException("Keep the entry to 8,000 characters or fewer.");
+        if (type == TimelineEntryType.Decision)
+            throw new ArgumentException("Record a decision as a Decision entry on the timeline, with why it was made.");
+        if (occurredAtUtc > _clock.UtcNow) throw new ArgumentException("The entry can't be dated in the future.");
+
+        var parts = (sourceRef ?? "").Split(':', 2);
+        if (parts.Length != 2 || !Guid.TryParse(parts[1], out var sourceId))
+            throw new ArgumentException("That isn't something that can be added to the timeline.");
+
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, caseId, ct);
+        var label = parts[0] switch
+        {
+            "note" when c.Notes.Any(n => n.Id == sourceId) => "Note",
+            "comment" when await db.CaseComments.AnyAsync(x => x.Id == sourceId && x.CaseId == caseId, ct) => "Discussion",
+            "taskcomment" when await db.ActionItemComments.AnyAsync(x => x.Id == sourceId && x.CaseId == caseId, ct) => "Task comment",
+            _ => throw new InvalidOperationException("That note or comment isn't on this case.")
+        };
+
+        c.TimelineEntries.Add(new TimelineEntry
+        {
+            CaseId = c.Id, Kind = TimelineKind.Investigation, Type = type, OccurredAtUtc = occurredAtUtc,
+            Description = body, Source = label, PromotedFrom = $"{parts[0]}:{sourceId}",
+            CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
     /// INV-08: completes a task, optionally recording its result. The time it was completed may be earlier than
     /// now (tasks are often ticked off after the fact) but not in the future or before the case was detected.
     /// A result is kept on the task as a comment and, when <paramref name="logAs"/> is given, also put on the

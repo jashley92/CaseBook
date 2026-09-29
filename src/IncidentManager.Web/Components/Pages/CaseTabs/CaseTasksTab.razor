@@ -347,6 +347,19 @@ else
                                                 · <span title="@TimeDisp.Long(c.CreatedAtUtc)">@TimeDisp.Short(c.CreatedAtUtc)</span>
                                             </div>
                                             <div style="white-space:pre-wrap">@c.Body</div>
+                                            @if (Promoted.Contains($"taskcomment:{c.Id}"))
+                                            {
+                                                <span class="im-badge im-b-info"><span class="bi bi-clock-history" aria-hidden="true"></span> On the timeline</span>
+                                            }
+                                            else if (CanEdit)
+                                            {
+                                                <button class="btn btn-sm btn-link p-0" @onclick="() => _promotingComment = c.Id">Add to timeline</button>
+                                            }
+                                            @if (_promotingComment == c.Id)
+                                            {
+                                                <PromoteToTimeline CaseId="CaseId" SourceRef="@($"taskcomment:{c.Id}")" Text="@c.Body" WrittenAtUtc="c.CreatedAtUtc"
+                                                                   OnDone="CommentPromoted" OnCancel="() => _promotingComment = null" />
+                                            }
                                         </li>
                                     }
                                 </ul>
@@ -579,6 +592,12 @@ else
         _selected.Clear();
         if (on) foreach (var id in openIds) _selected.Add(id);
     }
+
+    // --- INV-07: put a task comment on the timeline ---
+    private Guid? _promotingComment;
+    private IReadOnlySet<string> Promoted => Case.TimelineEntries
+        .Where(e => e.IsCurrent && e.PromotedFrom is not null).Select(e => e.PromotedFrom!).ToHashSet();
+    private async Task CommentPromoted() { _promotingComment = null; await OnChanged.InvokeAsync(); }
 
     // --- INV-08: complete one task, optionally recording its result on the timeline ---
     private Guid? _completingId;

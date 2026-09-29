@@ -57,6 +57,7 @@ public sealed class TimelineEntryConfiguration : IEntityTypeConfiguration<Timeli
         b.Property(x => x.Rationale).HasMaxLength(4000);
         b.Property(x => x.OptionsConsidered).HasMaxLength(2000);
         b.Property(x => x.DecidedBy).HasMaxLength(300);
+        b.Property(x => x.PromotedFrom).HasMaxLength(64);   // INV-07
         b.ToTable("TimelineEntries");
         b.Property(x => x.Description).HasMaxLength(16000).IsRequired();
         b.Property(x => x.Source).HasMaxLength(200);

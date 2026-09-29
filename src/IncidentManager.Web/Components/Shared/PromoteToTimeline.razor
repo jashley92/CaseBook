@@ -1,0 +1,97 @@
+@* INV-07: put a note, a discussion comment or a task comment on the investigation timeline without retyping it.
+   The entry keeps a reference to where it came from, so the source can show it's already on the timeline. The
+   text is prefilled and editable; "Occurred" starts at when the source was written and can be stepped back. *@
+@inject CaseService Cases
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+@inject IClock Clock
+
+<div class="im-promote border rounded p-2 mt-2 bg-body-tertiary">
+    <div class="row g-2">
+        <div class="col-12">
+            <label class="form-label small mb-0" for="@($"promote-text-{_id}")">Add to the timeline</label>
+            <textarea id="@($"promote-text-{_id}")" class="form-control form-control-sm" rows="3" maxlength="8000"
+                      @bind="_text" @bind:event="oninput"></textarea>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label small mb-0" for="@($"promote-type-{_id}")">As</label>
+            <select id="@($"promote-type-{_id}")" class="form-select form-select-sm" @bind="_type">
+                @foreach (var t in PromotableTypes)
+                {
+                    <option value="@t">@Ui.Label(t)</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-5">
+            <label class="form-label small mb-0" for="@($"promote-when-{_id}")">Occurred (@TimeDisp.Label)</label>
+            <input id="@($"promote-when-{_id}")" type="datetime-local" class="form-control form-control-sm" @bind="_when" />
+            <div class="tl-nudges" role="group" aria-label="Adjust the time">
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = ToWall(Clock.UtcNow)">Now</button>
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = _when.AddHours(-1)" aria-label="One hour earlier">&minus;1 h</button>
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = _when.AddMinutes(-15)" aria-label="15 minutes earlier">&minus;15 min</button>
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = _when.AddMinutes(15)" aria-label="15 minutes later">+15 min</button>
+            </div>
+        </div>
+        <div class="col-md-3 d-flex align-items-end justify-content-end gap-2">
+            <button class="btn btn-sm btn-outline-secondary" @onclick="OnCancel">Cancel</button>
+            <button class="btn btn-sm btn-primary" disabled="@(_saving || string.IsNullOrWhiteSpace(_text))" @onclick="Save">Add</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    /// <summary>What's being promoted, e.g. "note:&lt;id&gt;" (see <see cref="CaseService.PromoteToTimelineAsync"/>).</summary>
+    [Parameter, EditorRequired] public string SourceRef { get; set; } = "";
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    /// <summary>When the source was written: the starting "Occurred" time.</summary>
+    [Parameter, EditorRequired] public DateTimeOffset WrittenAtUtc { get; set; }
+    [Parameter] public EventCallback OnDone { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private readonly string _id = Guid.NewGuid().ToString("N")[..8];
+    private string _text = "";
+    private DateTime _when;
+    private TimelineEntryType _type = TimelineEntryType.Analysis;
+    private bool _saving;
+
+    // Investigation types a promoted item can become: not a Decision (that needs a why) and not the third-party
+    // disclosure milestones.
+    private static IReadOnlyList<TimelineEntryType> PromotableTypes =>
+        Ui.Options<TimelineEntryType>("TimelineEntryType")
+            .Where(t => t is not (TimelineEntryType.Decision or TimelineEntryType.Notified or TimelineEntryType.ScopeConfirmed
+                or TimelineEntryType.DataConfirmed or TimelineEntryType.Remediation or TimelineEntryType.RegulatoryNotification))
+            .ToList();
+
+    protected override void OnInitialized()
+    {
+        _text = Text;
+        _when = ToWall(WrittenAtUtc);
+    }
+
+    private async Task Save()
+    {
+        _saving = true;
+        try
+        {
+            await Cases.PromoteToTimelineAsync(CaseId, SourceRef, _type, WallToUtc(_when), _text);
+            Toasts.Success("Added to the timeline");
+            await OnDone.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally { _saving = false; }
+    }
+
+    private DateTime ToWall(DateTimeOffset utc)
+        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
+
+    private DateTimeOffset WallToUtc(DateTime wall)
+    {
+        var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
+        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, TimeDisp.Zone), TimeSpan.Zero); }
+        catch { return new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
+    }
+}

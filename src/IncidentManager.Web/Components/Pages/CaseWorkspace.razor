@@ -469,7 +469,7 @@ else
         @* UX-13: extracted to CaseNotesTab. It owns its EasyMDE editors (so the central reconcile no longer
            carries a Notes branch); the parent keeps the flash + the Ctrl+Enter / 'n' hotkeys (dispatched to
            the child via @ref / AutofocusComposer) and reloads the case after a write. *@
-        <CaseNotesTab @ref="_notesTab" CaseId="_case.Id" Notes="_case.Notes" Entities="_case.Entities" CanEdit="_canEdit"
+        <CaseNotesTab @ref="_notesTab" CaseId="_case.Id" Notes="_case.Notes" Entities="_case.Entities" CanEdit="_canEdit" Promoted="PromotedSources()"
                       OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts"
                       AutofocusComposer="_notesAutofocus" OnAutofocusHandled="() => _notesAutofocus = false" />
     }
@@ -477,7 +477,8 @@ else
     {
         @* PROD-04: durable threaded team discussion with @mention notifications. Self-loads its comments;
            available to any case viewer (cross-role collaboration/handoff), so it isn't gated on EditCases. *@
-        <CaseDiscussionTab CaseId="_case.Id" Entities="_case.Entities" ComposerDrafts="_composerDrafts" />
+        <CaseDiscussionTab CaseId="_case.Id" Entities="_case.Entities" ComposerDrafts="_composerDrafts"
+                           CanEdit="_canEdit" Promoted="PromotedSources()" OnChanged="Reload" />
     }
     else if (_activeTab == "Tasks")
     {
@@ -1703,6 +1704,10 @@ else
     }
 
     private bool _titleExpanded;
+
+    // INV-07: the notes and comments already put on the timeline, so their tabs can say so.
+    private IReadOnlySet<string> PromotedSources() => _case is null ? new HashSet<string>()
+        : _case.TimelineEntries.Where(e => e.IsCurrent && e.PromotedFrom is not null).Select(e => e.PromotedFrom!).ToHashSet();
     private Guid? _watchedHeadFor;
 
     // A stage-gate "Fix" link (from the Overview readiness card or a gate dialog): close any dialog and go to
