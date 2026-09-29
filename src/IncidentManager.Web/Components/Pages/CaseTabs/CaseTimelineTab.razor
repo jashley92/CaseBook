@@ -618,12 +618,12 @@ else
                                 <span class="tl-attrib">
                                     @if (EntityById(e.ActorEntityId) is { } a)
                                     {
-                                        <span class="tl-ent">@Ui.EntityGlyph(a.Type) @EntityShort(a)</span>
+                                        <button type="button" class="tl-ent tl-ent-btn" @onclick="() => OnOpenEntity.InvokeAsync(a.Id)" title="Open @EntityShort(a)">@Ui.EntityGlyph(a.Type) @EntityShort(a)</button>
                                     }
                                     <span class="tl-arrow">&rarr;</span>
                                     @if (EntityById(e.TargetEntityId) is { } tgt)
                                     {
-                                        <span class="tl-ent">@Ui.EntityGlyph(tgt.Type) @EntityShort(tgt)</span>
+                                        <button type="button" class="tl-ent tl-ent-btn" @onclick="() => OnOpenEntity.InvokeAsync(tgt.Id)" title="Open @EntityShort(tgt)">@Ui.EntityGlyph(tgt.Type) @EntityShort(tgt)</button>
                                     }
                                     else
                                     {
@@ -1308,6 +1308,20 @@ else
             <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = _tlWhen.AddMinutes(15)" aria-label="15 minutes later">+15 min</button>
         </div>
     </text>;
+
+    // --- INV-11: open an entity in the panel; filter to one entity when asked from the panel ---
+    [Parameter] public EventCallback<Guid> OnOpenEntity { get; set; }
+    [Parameter] public Guid? PresetEntityFilter { get; set; }
+    private Guid? _appliedPreset;
+
+    protected override void OnParametersSet()
+    {
+        if (PresetEntityFilter != _appliedPreset)
+        {
+            _appliedPreset = PresetEntityFilter;
+            if (PresetEntityFilter is { } en) { _msOnly = false; _tlLens = null; _tlFilterEntity = en; }
+        }
+    }
 
     // --- INV-04: show only what changed since the viewer last had the case open (set by the workspace) ---
     [Parameter] public DateTimeOffset? ChangedSinceUtc { get; set; }

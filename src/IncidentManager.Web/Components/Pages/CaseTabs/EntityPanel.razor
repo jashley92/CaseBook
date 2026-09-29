@@ -1,0 +1,179 @@
+@* INV-11: an entity (indicator, account, host…) in context, in a side panel over whatever tab is open — what it
+   is, where this case refers to it, how it relates to other entities, and which other cases it appears on — so
+   checking an entity doesn't mean leaving the work. Opened from a "#" tag, a timeline actor/target, or an entity
+   row. Read-only; changes are made where they always are (the IOCs & entities tab). *@
+@inject CaseService Cases
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@inject TimeDisplay TimeDisp
+
+@if (Entity is { } en)
+{
+    <div class="im-panel-scrim" @onclick="OnClose"></div>
+    <aside class="im-entity-panel im-trap" role="dialog" aria-modal="true" aria-labelledby="entity-panel-title" tabindex="-1"
+           @onkeydown="OnKey">
+        <div class="im-entity-panel-head">
+            <div class="d-flex align-items-center gap-2">
+                <span class="im-badge im-b-neutral">@Ui.EntityGlyph(en.Type) @Ui.Label(en.Type)</span>
+                <span class="@Ui.DispositionBadge(en.Disposition)">@Ui.Label(en.Disposition)</span>
+                <button type="button" class="btn-close ms-auto" aria-label="Close" @onclick="OnClose"></button>
+            </div>
+            <h2 class="h6 mb-0 mt-2" id="entity-panel-title"><code class="im-entity-panel-value">@en.Value</code></h2>
+            @if (!string.IsNullOrWhiteSpace(en.Label)) { <div class="small">@en.Label</div> }
+            <div class="small text-muted">
+                @(string.IsNullOrWhiteSpace(en.Source) ? "" : $"Source {en.Source} · ")Added @TimeDisp.Short(en.CreatedAtUtc)
+            </div>
+            @if (!string.IsNullOrWhiteSpace(en.Description)) { <div class="small mt-1">@en.Description</div> }
+            <div class="d-flex flex-wrap gap-2 mt-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => OnShowOnTimeline.InvokeAsync(en.Id)">
+                    <span class="bi bi-clock-history" aria-hidden="true"></span> Show on the timeline
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick='() => OnGoToTab.InvokeAsync("Entities")'>
+                    <span class="bi bi-pencil" aria-hidden="true"></span> Edit in IOCs &amp; entities
+                </button>
+            </div>
+        </div>
+
+        <div class="im-entity-panel-body">
+            <section>
+                <h3 class="im-entity-panel-h">On this case · @References.Count</h3>
+                @if (References.Count == 0)
+                {
+                    <p class="small text-muted mb-0">Nothing on the timeline, in the notes or in the brief refers to it yet.</p>
+                }
+                else
+                {
+                    <ul class="list-unstyled mb-0">
+                        @foreach (var r in References)
+                        {
+                            <li class="im-entity-ref">
+                                <button type="button" class="btn btn-link p-0 text-start" @onclick="() => OnGoToTab.InvokeAsync(r.Tab)">
+                                    <span class="im-badge im-b-neutral me-1">@r.Kind</span>@r.Text
+                                </button>
+                                <div class="small text-muted">@r.Why · @TimeDisp.Short(r.At)</div>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+
+            @if (Relationships.Count > 0)
+            {
+                <section>
+                    <h3 class="im-entity-panel-h">Relationships · @Relationships.Count</h3>
+                    <ul class="list-unstyled mb-0 small">
+                        @foreach (var (verb, other) in Relationships)
+                        {
+                            <li><span class="text-muted">@verb</span> <code>@Short(other)</code></li>
+                        }
+                    </ul>
+                </section>
+            }
+
+            <section>
+                <h3 class="im-entity-panel-h">Other cases you can see@(_otherCases is null ? "" : $" · {_otherCases.Count}")</h3>
+                @if (_otherCases is null)
+                {
+                    <p class="small text-muted mb-0">Checking…</p>
+                }
+                else if (_otherCases.Count == 0)
+                {
+                    <p class="small text-muted mb-0">It isn't on any other case you can see.</p>
+                }
+                else
+                {
+                    <ul class="list-unstyled mb-1 small">
+                        @foreach (var o in _otherCases)
+                        {
+                            <li><a href="cases/@o.OtherCaseId" class="im-data">@o.OtherCaseNumber</a></li>
+                        }
+                    </ul>
+                    <a class="small" href="indicators?entity=@en.Id">Compare verdicts across cases</a>
+                }
+            </section>
+        </div>
+    </aside>
+}
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter] public Guid? EntityId { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Filter the timeline to this entity (INV-03).</summary>
+    [Parameter] public EventCallback<Guid> OnShowOnTimeline { get; set; }
+    [Parameter] public EventCallback<string> OnGoToTab { get; set; }
+
+    private sealed record Reference(string Kind, string Text, string Why, DateTimeOffset At, string Tab);
+
+    private CaseEntity? Entity => EntityId is { } id ? Case.Entities.FirstOrDefault(e => e.Id == id) : null;
+
+    private IReadOnlyList<EntityOverlap>? _otherCases;
+    private Guid? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (EntityId == _loadedFor) return;
+        _loadedFor = EntityId;
+        _otherCases = null;
+        if (EntityId is { } id)
+            _otherCases = (await Cases.FindEntityOverlapsAsync(Case.Id)).Where(o => o.EntityId == id)
+                .DistinctBy(o => o.OtherCaseId).ToList();
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await OnClose.InvokeAsync();
+    }
+
+    private string Tag => $"entity:{EntityId}";
+
+    private List<Reference> References
+    {
+        get
+        {
+            if (EntityId is not { } id) return [];
+            var list = new List<Reference>();
+            foreach (var t in Case.TimelineEntries.Where(t => t.IsCurrent))
+            {
+                var why = t.ActorEntityId == id ? "actor" : t.TargetEntityId == id ? "target"
+                    : t.Description.Contains(Tag, StringComparison.OrdinalIgnoreCase) ? "tagged" : null;
+                if (why is null) continue;
+                var kind = t.Kind == TimelineKind.Event ? "Event" : t.Type == TimelineEntryType.Decision ? "Decision" : "Investigation";
+                list.Add(new(kind, Snippet(t.Description), why, t.OccurredAtUtc, "Timeline"));
+            }
+            foreach (var n in Case.Notes.Where(n => n.IsCurrent && n.Body.Contains(Tag, StringComparison.OrdinalIgnoreCase)))
+                list.Add(new("Note", Snippet(n.Body), "tagged", n.CreatedAtUtc, "Notes"));
+            if (Case.Briefs.FirstOrDefault(b => b.IsCurrent) is { } brief &&
+                new[] { brief.Situation, brief.WorkingAssessment, brief.Known, brief.OpenQuestions, brief.NextSteps }
+                    .Any(p => p?.Contains(Tag, StringComparison.OrdinalIgnoreCase) == true))
+                list.Add(new("Brief", "Case brief", "tagged", brief.CreatedAtUtc, "Overview"));
+            return list.OrderByDescending(r => r.At).ToList();
+        }
+    }
+
+    private List<(string Verb, CaseEntity Other)> Relationships
+    {
+        get
+        {
+            if (EntityId is not { } id) return [];
+            var byId = Case.Entities.ToDictionary(e => e.Id);
+            var list = new List<(string, CaseEntity)>();
+            foreach (var r in Case.EntityRelationships)
+            {
+                if (r.SourceEntityId == id && byId.TryGetValue(r.TargetEntityId, out var to))
+                    list.Add((Ui.Label(r.Type), to));
+                else if (r.TargetEntityId == id && byId.TryGetValue(r.SourceEntityId, out var from))
+                    list.Add(($"{Ui.Label(r.Type)} (from)", from));
+            }
+            return list;
+        }
+    }
+
+    private static string Short(CaseEntity e) => string.IsNullOrWhiteSpace(e.Label) ? e.Value : $"{e.Label} ({e.Value})";
+
+    // A one-line, plain-text excerpt (Markdown and entity-tag syntax flattened).
+    private string Snippet(string markdown)
+    {
+        var text = Md.ToPlainText(markdown).Replace('\n', ' ').Trim();
+        return text.Length <= 120 ? text : text[..117] + "…";
+    }
+}

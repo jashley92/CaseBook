@@ -79,7 +79,8 @@ public sealed class MarkdownService : IMarkdownService
                 // app-absolute path (leading "/") so it resolves correctly under <base href="/">.
                 var navigable = caseId is { } && Guid.TryParse(u.Substring(EntityScheme.Length), out _);
                 if (navigable && Guid.TryParse(u.Substring(EntityScheme.Length), out var g))
-                    renderer.Write($"<a class=\"im-entity-tag\" href=\"/cases/{caseId}?tab=Entities&amp;entity={g}\" title=\"View tagged entity / IOC\">");
+                    // INV-11: no tab in the link, so the entity opens in a side panel over whatever tab is open.
+                    renderer.Write($"<a class=\"im-entity-tag\" href=\"/cases/{caseId}?entity={g}\" title=\"View tagged entity / IOC\">");
                 else
                     renderer.Write("<span class=\"im-entity-tag\" title=\"Tagged entity / IOC\">");
                 renderer.Write("<span class=\"bi bi-tag-fill\" aria-hidden=\"true\"></span>");

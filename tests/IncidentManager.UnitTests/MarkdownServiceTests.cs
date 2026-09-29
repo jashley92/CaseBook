@@ -62,7 +62,7 @@ public class MarkdownServiceTests
 
         html.Should().Contain("class=\"im-entity-tag\"");
         html.Should().Contain("FIN-WKS-07");
-        html.Should().Contain("href=\"/cases/11111111-2222-3333-4444-555555555555?tab=Entities&amp;entity=3f2504e0-4f89-41d3-9a0c-0305e82c3301\"");
+        html.Should().Contain("href=\"/cases/11111111-2222-3333-4444-555555555555?entity=3f2504e0-4f89-41d3-9a0c-0305e82c3301\"");
         html.Should().NotContain("entity:");   // the raw scheme never reaches an href
     }
 

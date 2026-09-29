@@ -1221,6 +1221,28 @@ h1:focus {
 .tl-ms-detail { font-size: 0.875rem; color: var(--bs-secondary-color, #6c757d); }
 .tl-ms-flagged { --kind: var(--im-warn); }
 .tl-ms-flagged .tl-dot { border-style: solid; }
+/* INV-11: the entity panel — a side sheet over the current tab. */
+.im-panel-scrim { position: fixed; inset: 0; background: var(--im-scrim); z-index: 1040; }
+.im-entity-panel {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 1045;
+    width: min(26rem, 100vw);
+    display: flex; flex-direction: column;
+    background: var(--im-surface); color: var(--im-text);
+    border-left: 1px solid var(--im-border-strong); box-shadow: var(--im-shadow-lg);
+}
+.im-entity-panel:focus { outline: none; }
+.im-entity-panel-head { padding: var(--im-space-4); border-bottom: 1px solid var(--im-border); }
+.im-entity-panel-value { font-size: 0.95rem; overflow-wrap: anywhere; }
+.im-entity-panel-body { padding: var(--im-space-4); overflow-y: auto; display: flex; flex-direction: column; gap: var(--im-space-4); }
+.im-entity-panel-h { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--im-text-muted); margin-bottom: 0.4rem; }
+.im-entity-ref { padding: 0.3rem 0; border-bottom: 1px solid var(--im-border); }
+.im-entity-ref:last-child { border-bottom: 0; }
+.im-entity-ref .btn-link { font-size: 0.875rem; color: var(--im-text); text-decoration: none; }
+.im-entity-ref .btn-link:hover { color: var(--im-accent-text); }
+/* Timeline actor/target chips open the panel. */
+.tl-ent-btn { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.tl-ent-btn:hover { text-decoration: underline; }
+
 /* INV-10: evidence an entry cites, as small file chips under the entry. */
 .tl-cites { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
 .tl-cite {

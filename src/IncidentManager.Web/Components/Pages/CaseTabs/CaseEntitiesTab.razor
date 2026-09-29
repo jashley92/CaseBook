@@ -360,6 +360,8 @@ else
                                 {
                                     <a class="btn btn-sm btn-outline-secondary py-0 me-1" href="@vtUrl" target="_blank" rel="noopener noreferrer">VirusTotal</a>
                                 }
+                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => OnOpenEntity.InvokeAsync(e.Id)"
+                                        title="Where it appears on this case and on others">Details</button>
                                 <AuthorizeView Policy="@Policies.EditCases" Context="rm">
                                     <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEntityEdit(e)">Edit</button>
                                     <button class="btn btn-sm btn-outline-danger" @onclick='() => Confirm($"Remove entity {e.Value}? Its relationships are removed too.", () => RemoveEntity(e.Id))'>Remove</button>
@@ -453,6 +455,8 @@ else
     [Parameter] public bool CanEdit { get; set; }
     /// <summary>Deep-link focus: when set (from a "#" entity tag chip), scroll to and briefly highlight that row.</summary>
     [Parameter] public Guid? FocusEntityId { get; set; }
+    /// <summary>INV-11: open an entity in the workspace's entity panel.</summary>
+    [Parameter] public EventCallback<Guid> OnOpenEntity { get; set; }
     /// <summary>Reload the case after an entity/relationship write so the rest of the workspace refreshes.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
     /// <summary>Ask the parent's shared confirm dialog to guard a destructive action.</summary>
