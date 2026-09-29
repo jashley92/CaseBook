@@ -1,0 +1,161 @@
+@* INV-09: the case brief — the team's current understanding in five short parts, at the top of the Overview, so
+   anyone picking the case up sees where it stands without reading every note. Each save is a new version; earlier
+   versions stay readable under History. Neutral, factual wording: it's part of the case record. *@
+@inject CaseService Cases
+@inject IClock Clock
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+
+<section class="card im-brief mb-4" aria-labelledby="brief-title">
+    <div class="card-header d-flex align-items-center flex-wrap gap-2">
+        <h2 class="h6 mb-0" id="brief-title">Case brief</h2>
+        @if (Current is { } cur && !_editing)
+        {
+            <span class="im-badge im-b-neutral">v@(cur.Version)</span>
+            <span class="small text-muted" title="@TimeDisp.Long(cur.CreatedAtUtc)">
+                Revised @Ui.RelativeTime(cur.CreatedAtUtc, Clock.UtcNow) by @Users.DisplayFor(cur.CreatedBy)
+            </span>
+            @if (Earlier.Count > 0)
+            {
+                <button type="button" class="btn btn-sm btn-link p-0" aria-expanded="@Ui.Aria(_showHistory)" @onclick="() => _showHistory = !_showHistory">
+                    @(_showHistory ? "Hide" : "Show") @Earlier.Count earlier version@(Earlier.Count == 1 ? "" : "s")
+                </button>
+            }
+        }
+        @if (CanEdit && !_editing)
+        {
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="StartEdit">
+                <span class="bi bi-pencil" aria-hidden="true"></span> @(Current is null ? "Write the brief" : "Revise")
+            </button>
+        }
+    </div>
+    <div class="card-body">
+
+    @if (_editing)
+    {
+        <p class="small text-muted mb-2">Keep it short and factual; this is part of the case record. Saving keeps the earlier version.</p>
+        @foreach (var part in Parts)
+        {
+            <div class="mb-2">
+                <label class="form-label small mb-0 fw-semibold" for="@($"brief-{part.Key}")">@part.Label</label>
+                <span class="small text-muted ms-1">@part.Hint</span>
+                <textarea id="@($"brief-{part.Key}")" class="form-control form-control-sm" rows="@part.Rows" maxlength="@CaseBrief.MaxPartLength"
+                          value="@_draft[part.Key]" @oninput="e => _draft[part.Key] = e.Value?.ToString()"></textarea>
+            </div>
+        }
+        @if (_error is not null)
+        {
+            <p class="text-danger small mb-2" role="alert">@_error</p>
+        }
+        <div class="d-flex gap-2 justify-content-end">
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => _editing = false">Cancel</button>
+            <button class="btn btn-sm btn-primary" disabled="@_saving" @onclick="Save">Save brief</button>
+        </div>
+    }
+    else if (Current is { } brief)
+    {
+        @Render(brief)
+        @if (_showHistory)
+        {
+            <div class="tl-history mt-3">
+                @foreach (var prior in Earlier)
+                {
+                    <div class="tl-history-item">
+                        <div class="small text-muted mb-1">
+                            <span class="im-badge im-b-neutral">v@(prior.Version)</span>
+                            @Users.DisplayFor(prior.CreatedBy) · @TimeDisp.Long(prior.CreatedAtUtc)
+                        </div>
+                        @Render(prior)
+                    </div>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        <p class="small text-muted mb-0">
+            No brief yet. Say where the case stands: the situation, what the team thinks is happening, what's known,
+            what's still open and what's next, so anyone can pick it up.
+        </p>
+    }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private sealed record Part(string Key, string Label, string Hint, int Rows, Func<CaseBrief, string?> Get);
+
+    private static readonly Part[] Parts =
+    [
+        new("situation", "Situation", "What is going on, in a few sentences.", 3, b => b.Situation),
+        new("assessment", "Working assessment", "What the team currently thinks is happening, and how sure it is.", 2, b => b.WorkingAssessment),
+        new("known", "Known", "What is established, and where it comes from.", 3, b => b.Known),
+        new("open", "Open questions", "What the team still needs to find out.", 2, b => b.OpenQuestions),
+        new("next", "Next steps", "What happens next, and who is doing it.", 2, b => b.NextSteps),
+    ];
+
+    private CaseBrief? Current => Case.Briefs.FirstOrDefault(b => b.IsCurrent);
+    private List<CaseBrief> Earlier => Case.Briefs.Where(b => !b.IsCurrent).OrderByDescending(b => b.Version).ToList();
+
+    private bool _editing;
+    private bool _saving;
+    private bool _showHistory;
+    private string? _error;
+    private Guid? _openedFrom;
+    private readonly Dictionary<string, string?> _draft = new();
+
+    private void StartEdit()
+    {
+        var cur = Current;
+        _openedFrom = cur?.Id;
+        foreach (var p in Parts) _draft[p.Key] = cur is null ? null : p.Get(cur);
+        // The first brief starts from the case summary written at intake.
+        if (cur is null) _draft["situation"] = Case.Summary;
+        _error = null;
+        _editing = true;
+    }
+
+    private async Task Save()
+    {
+        _saving = true;
+        _error = null;
+        try
+        {
+            await Cases.ReviseBriefAsync(Case.Id, _openedFrom, _draft["situation"], _draft["assessment"], _draft["known"],
+                _draft["open"], _draft["next"]);
+            _editing = false;
+            Toasts.Success("Brief saved");
+            await OnChanged.InvokeAsync();
+        }
+        catch (StaleEditException ex)
+        {
+            // Keep the author's text; the next save deliberately replaces the newer version.
+            _error = ex.Message;
+            _openedFrom = Guid.TryParse(ex.CurrentStamp, out var g) ? g : null;
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _error = ex.Message;
+        }
+        finally { _saving = false; }
+    }
+
+    private RenderFragment Render(CaseBrief b) => @<text>
+        <dl class="im-brief-parts mb-0">
+            @foreach (var p in Parts)
+            {
+                if (p.Get(b) is { Length: > 0 } text)
+                {
+                    <dt>@p.Label</dt>
+                    <dd class="md-body">@((MarkupString)Md.ToHtml(text, Case.Id))</dd>
+                }
+            }
+        </dl>
+    </text>;
+}

@@ -35,6 +35,9 @@
     <div class="alert alert-danger py-2 small">@RetentionMessage</div>
 }
 
+@* INV-09: the brief leads the Overview — where the case stands, in the team's words. *@
+<CaseBriefCard Case="Case" CanEdit="CanEdit" OnChanged="OnChanged" />
+
 @* Vitals strip — the at-a-glance row (response SLA, lifecycle timestamps, dwell, counts) spanning
    the full width, so the "how's this case doing" scan is the first thing on the pane, not the last. *@
 <div class="im-vitals mb-4">

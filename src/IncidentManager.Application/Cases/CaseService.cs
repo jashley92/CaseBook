@@ -428,6 +428,7 @@ public sealed class CaseService
             .Include(x => x.Reports)
             .Include(x => x.GatePassages)   // INV-01: shown on the timeline as milestones
             .Include(x => x.TimeCorrections)  // INV-05b: the "time corrected" history on those milestones
+            .Include(x => x.Briefs)           // INV-09: the case brief and its earlier versions
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         return c;
     }
@@ -1589,6 +1590,27 @@ public sealed class CaseService
 
         if (seeded > 0) await db.SaveChangesAsync(ct);
         return seeded;
+    }
+
+    /// <summary>
+    /// INV-09: saves a new version of the case brief. <paramref name="expectedCurrentId"/> is the version the
+    /// editor opened from (null for the first brief); if someone saved a newer one meanwhile the save is refused
+    /// (FR-06 style), so neither author's understanding is silently overwritten.
+    /// </summary>
+    public async Task ReviseBriefAsync(Guid caseId, Guid? expectedCurrentId, string? situation, string? workingAssessment,
+        string? known, string? openQuestions, string? nextSteps, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, caseId, ct);
+        // Tracked in this context, so EF attaches it to c.Briefs (only the current version is needed).
+        await db.CaseBriefs.Where(b => b.CaseId == caseId && b.IsCurrent).ToListAsync(ct);
+        var currentId = c.Briefs.FirstOrDefault(b => b.IsCurrent)?.Id;
+        if (currentId != expectedCurrentId)
+            throw new StaleEditException(currentId?.ToString() ?? "",
+                "Someone else saved a newer version of the brief while you were editing. Your text is still here; review theirs, then save again to replace it.");
+        c.ReviseBrief(situation, workingAssessment, known, openQuestions, nextSteps, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>

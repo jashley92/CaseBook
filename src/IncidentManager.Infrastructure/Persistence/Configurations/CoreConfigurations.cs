@@ -513,6 +513,22 @@ public sealed class CaseCommentConfiguration : IEntityTypeConfiguration<CaseComm
     }
 }
 
+public sealed class CaseBriefConfiguration : IEntityTypeConfiguration<CaseBrief>
+{
+    public void Configure(EntityTypeBuilder<CaseBrief> b)
+    {
+        b.ToTable("CaseBriefs");
+        b.Property(x => x.Situation).HasMaxLength(CaseBrief.MaxPartLength);
+        b.Property(x => x.WorkingAssessment).HasMaxLength(CaseBrief.MaxPartLength);
+        b.Property(x => x.Known).HasMaxLength(CaseBrief.MaxPartLength);
+        b.Property(x => x.OpenQuestions).HasMaxLength(CaseBrief.MaxPartLength);
+        b.Property(x => x.NextSteps).HasMaxLength(CaseBrief.MaxPartLength);
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.HasIndex(x => x.CaseId);
+    }
+}
+
 public sealed class TransitionTimeCorrectionConfiguration : IEntityTypeConfiguration<TransitionTimeCorrection>
 {
     public void Configure(EntityTypeBuilder<TransitionTimeCorrection> b)

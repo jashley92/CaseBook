@@ -133,6 +133,9 @@ public class Case : AuditableEntity, IHashableEntity
     public List<EntityRelationship> EntityRelationships { get; set; } = new();
     public List<CaseTechnique> Techniques { get; set; } = new();
 
+    /// <summary>INV-09: the case brief, one row per version (the current one has <c>IsCurrent</c>).</summary>
+    public List<CaseBrief> Briefs { get; set; } = new();
+
     /// <summary>INV-05b: later corrections of when a transition happened (append-only).</summary>
     public List<TransitionTimeCorrection> TimeCorrections { get; set; } = new();
 
@@ -1080,6 +1083,35 @@ public class Case : AuditableEntity, IHashableEntity
     }
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    /// <summary>
+    /// INV-09: saves a new version of the case brief, superseding the current one (the prior version is kept,
+    /// with its time and author). A version must say something, and each part is capped in length.
+    /// </summary>
+    public CaseBrief ReviseBrief(string? situation, string? workingAssessment, string? known, string? openQuestions,
+        string? nextSteps, string actor, DateTimeOffset nowUtc)
+    {
+        var next = new CaseBrief
+        {
+            CaseId = Id, Situation = Clean(situation), WorkingAssessment = Clean(workingAssessment), Known = Clean(known),
+            OpenQuestions = Clean(openQuestions), NextSteps = Clean(nextSteps), CreatedBy = actor, CreatedAtUtc = nowUtc
+        };
+        if (next.IsEmpty)
+            throw new ArgumentException("Write at least one part of the brief.");
+        if (new[] { next.Situation, next.WorkingAssessment, next.Known, next.OpenQuestions, next.NextSteps }
+                .Any(p => p is { Length: > CaseBrief.MaxPartLength }))
+            throw new ArgumentException($"Keep each part of the brief to {CaseBrief.MaxPartLength:N0} characters or fewer.");
+
+        if (Briefs.FirstOrDefault(b => b.IsCurrent) is { } current)
+        {
+            current.IsCurrent = false;
+            next.Version = current.Version + 1;
+            next.SupersedesBriefId = current.Id;
+        }
+        Briefs.Add(next);
+        Touch(actor, nowUtc);
+        return next;
+    }
 
     private void Touch(string actor, DateTimeOffset nowUtc)
     {

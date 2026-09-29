@@ -1221,6 +1221,16 @@ h1:focus {
 .tl-ms-detail { font-size: 0.875rem; color: var(--bs-secondary-color, #6c757d); }
 .tl-ms-flagged { --kind: var(--im-warn); }
 .tl-ms-flagged .tl-dot { border-style: solid; }
+/* INV-09: the case brief — label/answer pairs, the label column sized to its longest label. */
+.im-brief-parts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.35rem 1rem; }
+.im-brief-parts dt { font-weight: 600; font-size: 0.85rem; color: var(--bs-secondary-color, #6c757d); padding-top: 0.1rem; }
+.im-brief-parts dd { margin: 0; }
+.im-brief-parts dd > :last-child { margin-bottom: 0; }
+@media (max-width: 640px) {
+    .im-brief-parts { grid-template-columns: 1fr; gap: 0.1rem; }
+    .im-brief-parts dd { margin-bottom: 0.5rem; }
+}
+
 /* INV-03: day headers break the chronology into days, counted from detection. */
 .tl-day {
     display: flex;

@@ -139,6 +139,42 @@ public sealed class TaskCompletionTests : IDisposable
         await elsewhere.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    // --- INV-09: the case brief ---
+
+    [Fact]
+    public async Task Each_brief_save_is_a_new_version_and_the_earlier_one_is_kept()
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+
+        await svc.ReviseBriefAsync(caseId, null, "Lure reached 12 Finance mailboxes", null, null, "Did the other two users have sessions?", null);
+        var v1 = (await svc.GetDetailAsync(caseId))!.Briefs.Single();
+        _clock.UtcNow = _clock.UtcNow.AddHours(2);
+        await svc.ReviseBriefAsync(caseId, v1.Id, "Lure reached 12 Finance mailboxes; one mailbox accessed", "Opportunistic credential harvesting",
+            "Session from AS9009", null, "Block look-alike domains (Alex)");
+
+        var briefs = (await svc.GetDetailAsync(caseId))!.Briefs;
+        briefs.Should().HaveCount(2);
+        var current = briefs.Single(b => b.IsCurrent);
+        current.Version.Should().Be(2);
+        current.SupersedesBriefId.Should().Be(v1.Id);
+        current.OpenQuestions.Should().BeNull();
+        briefs.Single(b => !b.IsCurrent).OpenQuestions.Should().Be("Did the other two users have sessions?");
+    }
+
+    [Fact]
+    public async Task A_brief_saved_from_an_older_version_is_refused_and_an_empty_one_is_rejected()
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+        await svc.ReviseBriefAsync(caseId, null, "First", null, null, null, null);
+
+        var stale = () => svc.ReviseBriefAsync(caseId, null, "Written without seeing the first", null, null, null, null);
+        var current = (await svc.GetDetailAsync(caseId))!.Briefs.Single().Id;
+        var empty = () => svc.ReviseBriefAsync(caseId, current, " ", null, "", null, null);
+
+        await stale.Should().ThrowAsync<StaleEditException>();
+        await empty.Should().ThrowAsync<ArgumentException>();
+    }
+
     private sealed class NullUserDirectory : IncidentManager.Application.Abstractions.IUserDirectory
     {
         public Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, CancellationToken ct = default) => Task.CompletedTask;

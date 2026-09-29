@@ -93,6 +93,7 @@ public static class CaseActionPermissions
             [nameof(CaseService.SetActionItemStatusAsync)] = Permission.EditCases,
             [nameof(CaseService.CompleteActionItemAsync)] = Permission.EditCases,
             [nameof(CaseService.PromoteToTimelineAsync)] = Permission.EditCases,
+            [nameof(CaseService.ReviseBriefAsync)] = Permission.EditCases,
             [nameof(CaseService.SetActionItemOwnerAsync)] = Permission.EditCases,
             [nameof(CaseService.UpdateActionItemAsync)] = Permission.EditCases,
         };

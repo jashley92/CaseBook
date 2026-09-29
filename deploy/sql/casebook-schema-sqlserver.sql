@@ -2241,3 +2241,50 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929042238_AddCaseBriefs'
+)
+BEGIN
+    CREATE TABLE [CaseBriefs] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [Version] int NOT NULL,
+        [SupersedesBriefId] uniqueidentifier NULL,
+        [IsCurrent] bit NOT NULL,
+        [Situation] nvarchar(max) NULL,
+        [WorkingAssessment] nvarchar(max) NULL,
+        [Known] nvarchar(max) NULL,
+        [OpenQuestions] nvarchar(max) NULL,
+        [NextSteps] nvarchar(max) NULL,
+        [RowHash] nvarchar(64) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(max) NULL,
+        CONSTRAINT [PK_CaseBriefs] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_CaseBriefs_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929042238_AddCaseBriefs'
+)
+BEGIN
+    CREATE INDEX [IX_CaseBriefs_CaseId] ON [CaseBriefs] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929042238_AddCaseBriefs'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260929042238_AddCaseBriefs', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
