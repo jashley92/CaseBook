@@ -638,13 +638,14 @@ public sealed class ReportService
             ContainedAtUtc = c.ContainedAtUtc,
             ResolvedAtUtc = c.ResolvedAtUtc,
             ClosedAtUtc = c.ClosedAtUtc,
+            // INV-05: history reads in the order things happened, dated when they happened.
             ClassificationHistory = c.ClassificationChanges
-                .OrderBy(x => x.ChangedAtUtc)
-                .Select(x => new ReportClassificationItem(x.ChangedAtUtc, x.From is { } fc ? ClassificationLabel(fc) : "—", ClassificationLabel(x.To), x.Reason, _users.DisplayFor(x.ChangedBy)))
+                .OrderBy(x => x.EffectiveAt)
+                .Select(x => new ReportClassificationItem(x.EffectiveAt, x.From is { } fc ? ClassificationLabel(fc) : "—", ClassificationLabel(x.To), x.Reason, _users.DisplayFor(x.ChangedBy)))
                 .ToList(),
             SeverityHistory = c.SeverityChanges
-                .OrderBy(x => x.ChangedAtUtc)
-                .Select(x => new ReportClassificationItem(x.ChangedAtUtc, x.From is { } f ? _severityLabels.For(f) : "—", _severityLabels.For(x.To), x.Reason ?? "", _users.DisplayFor(x.ChangedBy)))
+                .OrderBy(x => x.EffectiveAt)
+                .Select(x => new ReportClassificationItem(x.EffectiveAt, x.From is { } f ? _severityLabels.For(f) : "—", _severityLabels.For(x.To), x.Reason ?? "", _users.DisplayFor(x.ChangedBy)))
                 .ToList(),
             EventTimeline = c.TimelineEntries
                 .Where(x => x.Kind == TimelineKind.Event)

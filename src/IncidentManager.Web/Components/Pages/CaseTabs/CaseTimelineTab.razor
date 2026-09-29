@@ -460,6 +460,11 @@ else
                             {
                                 <span>by @Users.DisplayFor(who)</span>
                             }
+                            @if (m.RecordedAtUtc is { } rec)
+                            {
+                                @* INV-05: dated to when it happened; say openly that it was entered later. *@
+                                <span class="tl-late" title="Entered @TimeDisp.Long(rec)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Short(rec)</span>
+                            }
                         </div>
                     </div>
                 </li>

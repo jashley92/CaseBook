@@ -1221,6 +1221,9 @@ h1:focus {
 .tl-ms-detail { font-size: 0.875rem; color: var(--bs-secondary-color, #6c757d); }
 .tl-ms-flagged { --kind: var(--im-warn); }
 .tl-ms-flagged .tl-dot { border-style: solid; }
+/* INV-05: a change dated earlier than it was entered says so, in a neutral tone. */
+.tl-late { color: var(--im-warn); }
+.tl-late .bi { margin-right: 0.15rem; }
 
 /* Left lane + a very faint wash tie the whole subsection to its kind. */
 /* Design review P5: the kind colour stays on the dot and the label; entries themselves sit on the plain

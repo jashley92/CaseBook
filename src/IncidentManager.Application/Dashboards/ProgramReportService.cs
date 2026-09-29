@@ -122,8 +122,8 @@ public sealed class ProgramReportService
 
         var breachFirstAt = (await db.ClassificationChanges.AsNoTracking()
                 .Where(x => ids.Contains(x.CaseId) && x.To == Classification.Breach)
-                .Select(x => new { x.CaseId, x.ChangedAtUtc }).ToListAsync(ct))
-            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.Min(x => x.ChangedAtUtc));
+                .Select(x => new { x.CaseId, x.ChangedAtUtc, x.EffectiveAtUtc }).ToListAsync(ct))
+            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.Min(x => x.EffectiveAtUtc ?? x.ChangedAtUtc));
         var reviews = await db.PostIncidentReviews.AsNoTracking().Where(r => ids.Contains(r.CaseId))
             .Select(r => r.CreatedAtUtc).ToListAsync(ct);
         var actions = await db.ImprovementActions.AsNoTracking().Where(a => ids.Contains(a.CaseId))

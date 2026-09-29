@@ -14,6 +14,13 @@ public class ClassificationChange : Entity
     public string Reason { get; set; } = string.Empty;
     public string ChangedBy { get; set; } = string.Empty;
     public DateTimeOffset ChangedAtUtc { get; set; }
+
+    /// <summary>INV-05: when the change actually happened, if the analyst recorded it after the fact; null means
+    /// it happened when it was recorded (<see cref="ChangedAtUtc"/>, which never changes).</summary>
+    public DateTimeOffset? EffectiveAtUtc { get; set; }
+
+    /// <summary>When the change happened: the effective time if one was given, else the recorded time.</summary>
+    public DateTimeOffset EffectiveAt => EffectiveAtUtc ?? ChangedAtUtc;
 }
 
 /// <summary>Immutable record of a lifecycle-phase transition.</summary>
@@ -25,6 +32,13 @@ public class StatusChange : Entity
     public string? Reason { get; set; }
     public string ChangedBy { get; set; } = string.Empty;
     public DateTimeOffset ChangedAtUtc { get; set; }
+
+    /// <summary>INV-05: when the change actually happened, if the analyst recorded it after the fact; null means
+    /// it happened when it was recorded (<see cref="ChangedAtUtc"/>, which never changes).</summary>
+    public DateTimeOffset? EffectiveAtUtc { get; set; }
+
+    /// <summary>When the change happened: the effective time if one was given, else the recorded time.</summary>
+    public DateTimeOffset EffectiveAt => EffectiveAtUtc ?? ChangedAtUtc;
 }
 
 /// <summary>Immutable record of a materiality-determination transition (Undetermined → Under review →
@@ -54,4 +68,11 @@ public class SeverityChange : Entity
     public string? Reason { get; set; }
     public string ChangedBy { get; set; } = string.Empty;
     public DateTimeOffset ChangedAtUtc { get; set; }
+
+    /// <summary>INV-05: when the change actually happened, if the analyst recorded it after the fact; null means
+    /// it happened when it was recorded (<see cref="ChangedAtUtc"/>, which never changes).</summary>
+    public DateTimeOffset? EffectiveAtUtc { get; set; }
+
+    /// <summary>When the change happened: the effective time if one was given, else the recorded time.</summary>
+    public DateTimeOffset EffectiveAt => EffectiveAtUtc ?? ChangedAtUtc;
 }

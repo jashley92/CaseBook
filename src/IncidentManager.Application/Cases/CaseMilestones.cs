@@ -26,6 +26,8 @@ public enum MilestoneKind
 /// <param name="Actor">The user id of whoever made the change, or null when the source doesn't record one.</param>
 /// <param name="Source">Where the milestone comes from, in words (e.g. "phase change").</param>
 /// <param name="Flagged">True when the milestone deserves attention, such as a gate that was overridden.</param>
+/// <param name="RecordedAtUtc">INV-05: when the change was recorded, set only when it was dated to an earlier
+/// effective time (<see cref="AtUtc"/>) — so the timeline can say it was recorded later.</param>
 public sealed record CaseMilestone(
     string Key,
     DateTimeOffset AtUtc,
@@ -34,7 +36,8 @@ public sealed record CaseMilestone(
     string? Detail,
     string? Actor,
     string Source,
-    bool Flagged = false);
+    bool Flagged = false,
+    DateTimeOffset? RecordedAtUtc = null);
 
 /// <summary>Display labels the projection needs, supplied by the caller (they're admin-customizable).</summary>
 public sealed record MilestoneLabels(
@@ -65,19 +68,19 @@ public static class CaseMilestones
             null, c.CreatedBy, "case creation"));
 
         foreach (var x in c.ClassificationChanges.Where(x => !IsInitial(c)(x)))
-            list.Add(new CaseMilestone($"cls:{x.Id}", x.ChangedAtUtc, MilestoneKind.Classification,
+            list.Add(new CaseMilestone($"cls:{x.Id}", x.EffectiveAt, MilestoneKind.Classification,
                 $"Classification {labels.Classification(x.From)} → {labels.Classification(x.To)}",
-                Blank(x.Reason), x.ChangedBy, "classification change"));
+                Blank(x.Reason), x.ChangedBy, "classification change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc)));
 
         foreach (var x in c.SeverityChanges.Where(x => x.From is not null))
-            list.Add(new CaseMilestone($"sev:{x.Id}", x.ChangedAtUtc, MilestoneKind.Severity,
+            list.Add(new CaseMilestone($"sev:{x.Id}", x.EffectiveAt, MilestoneKind.Severity,
                 $"Severity {labels.Severity(x.From!.Value)} → {labels.Severity(x.To)}",
-                Blank(x.Reason), x.ChangedBy, "severity change"));
+                Blank(x.Reason), x.ChangedBy, "severity change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc)));
 
         foreach (var x in c.StatusChanges.Where(x => x.From is not null))
-            list.Add(new CaseMilestone($"phase:{x.Id}", x.ChangedAtUtc, MilestoneKind.Phase,
+            list.Add(new CaseMilestone($"phase:{x.Id}", x.EffectiveAt, MilestoneKind.Phase,
                 $"Phase {labels.Phase(x.From!.Value)} → {labels.Phase(x.To)}",
-                Blank(x.Reason), x.ChangedBy, "phase change"));
+                Blank(x.Reason), x.ChangedBy, "phase change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc)));
 
         foreach (var x in c.MaterialityChanges)
         {
@@ -123,6 +126,9 @@ public static class CaseMilestones
     // Complex Event's promotion onto the ladder, which is a milestone in its own right.
     private static Func<ClassificationChange, bool> IsInitial(Case c) =>
         x => x.From is null && x.ChangedAtUtc <= c.CreatedAtUtc;
+
+    private static DateTimeOffset? Recorded(DateTimeOffset? effective, DateTimeOffset recorded) =>
+        effective is not null ? recorded : null;
 
     private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 

@@ -946,15 +946,15 @@
     private IEnumerable<HistoryRow> History()
     {
         foreach (var x in Case.ClassificationChanges)
-            yield return new HistoryRow(x.ChangedAtUtc, "Classification",
+            yield return new HistoryRow(x.EffectiveAt, "Classification",
                 $"{(x.From is { } f ? Ui.Label(f) : "—")} → {Ui.Label(x.To)}", x.Reason, x.ChangedBy);
 
         foreach (var x in Case.SeverityChanges)
-            yield return new HistoryRow(x.ChangedAtUtc, "Severity",
+            yield return new HistoryRow(x.EffectiveAt, "Severity",
                 $"{(x.From is { } sf ? SevLabels.For(sf) : "—")} → {SevLabels.For(x.To)}", x.Reason, x.ChangedBy);
 
         foreach (var x in Case.StatusChanges)
-            yield return new HistoryRow(x.ChangedAtUtc, "Phase",
+            yield return new HistoryRow(x.EffectiveAt, "Phase",
                 $"{(x.From is { } f ? Ui.Label(f) : "—")} → {Ui.Label(x.To)}", x.Reason, x.ChangedBy);
 
         // Materiality is a significant, decision-maker-attributed case-level transition and belongs in the

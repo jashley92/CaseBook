@@ -265,7 +265,7 @@ else
         }
         @if (_canEdit && NextPhase() is { } np)
         {
-            <button class="btn btn-sm btn-primary ms-2" disabled="@_advancing" @onclick="() => AdvanceTo(np)">Advance to @Ui.Label(np) →</button>
+            <button class="btn btn-sm btn-primary ms-2" @onclick="() => AdvanceTo(np)">Advance to @Ui.Label(np) →</button>
         }
         @if (_canEdit && _case.Phase == CasePhase.Closed)
         {
@@ -316,7 +316,7 @@ else
             <span class="ws-slim-title text-muted">@_case.Title</span>
             @if (_canEdit && NextPhase() is { } snp)
             {
-                <button class="btn btn-sm btn-primary ms-auto" tabindex="-1" disabled="@_advancing" @onclick="() => AdvanceTo(snp)">Advance to @Ui.Label(snp) →</button>
+                <button class="btn btn-sm btn-primary ms-auto" tabindex="-1" @onclick="() => AdvanceTo(snp)">Advance to @Ui.Label(snp) →</button>
             }
         </div>
     <ul class="nav nav-tabs im-workspace-tabs">
@@ -539,21 +539,24 @@ else
                             <label class="form-label small" for="ws-reclass-reason">Reason <span class="text-muted">(required)</span></label>
                             <input id="ws-reclass-reason" class="form-control" placeholder="e.g. new evidence confirms data was exfiltrated" @bind="_reclassReason" @bind:event="oninput" />
                             @RationaleHint(_reclassReason)
+                            @WhenItHappened()
                             @GateModalSection()
                         }
                         else if (_activeModal == "severity")
                         {
                             <label class="form-label small" for="ws-severity">New severity</label>
                             <select id="ws-severity" class="form-select mb-2" @bind="_newSeverity">@foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@SevLabels.For(s)</option> }</select>
-                            <input class="form-control" placeholder="Reason (optional)" aria-label="Reason" @bind="_severityReason" />
+                            <input class="form-control" placeholder="@(Backdated ? "Reason (required when recording later)" : "Reason (optional)")" aria-label="Reason" @bind="_severityReason" @bind:event="oninput" />
+                            @WhenItHappened()
                         }
                         else if (_activeModal == "status")
                         {
                             <label class="form-label small" for="ws-status">New status</label>
                             <select id="ws-status" class="form-select mb-2" @bind="_newPhase" @bind:after="OnStatusTargetChanged">@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
-                            <label class="form-label small" for="ws-status-reason">Reason <span class="text-muted">@(_gateEval is { RequiresCommentary: true } ? "(required)" : "(optional)")</span></label>
+                            <label class="form-label small" for="ws-status-reason">@(_case is { } cs && _newPhase > cs.Phase ? "What was achieved" : "Reason") <span class="text-muted">@(_gateEval is { RequiresCommentary: true } || Backdated ? "(required)" : "(optional)")</span></label>
                             <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
                             @RationaleHint(_phaseReason)
+                            @WhenItHappened()
                             @GateModalSection()
                         }
                         else if (_activeModal == "supersede")
@@ -794,6 +797,11 @@ else
     private string _reclassReason = "";
     private CasePhase _newPhase = CasePhase.Triage;
     private string? _phaseReason;
+
+    // INV-05: when a transition actually happened (wall clock, display zone). Defaults to the moment the dialog
+    // opened; left untouched it means "now", so an ordinary change is stored exactly as before.
+    private DateTime? _when;
+    private DateTime? _whenDefault;
     private string? _reopenReason;
     private Severity _newSeverity = Severity.Medium;
     private string? _severityReason;
@@ -1209,6 +1217,7 @@ else
         };
         _newSeverity = _case.Severity;
         _newPhase = _case.Phase;
+        _when = _whenDefault = UtcToWall(Clock.UtcNow);
 
         if (name == "holdrelease") _holdReleaseReason = null;   // don't carry a cancelled attempt's text over
 
@@ -1371,6 +1380,35 @@ else
         }
     </text>;
 
+    // --- INV-05: when a transition happened ---
+    private RenderFragment WhenItHappened() => @<text>
+        <div class="mt-2">
+            <label class="form-label small mb-0" for="ws-when">When it happened (@TimeDisp.Label)</label>
+            <input id="ws-when" type="datetime-local" class="form-control form-control-sm" @bind="_when" @bind:event="oninput" />
+            <div class="form-text @(Backdated ? "text-warning-emphasis" : "")">
+                @(Backdated
+                    ? "More than an hour ago, so give a reason. The record keeps both times: when it happened and when you entered it."
+                    : "Leave as now, or set the time it actually happened if you're recording it later.")
+            </div>
+        </div>
+    </text>;
+
+    /// <summary>The chosen time as UTC, or null when the analyst left it at the default (it happened now).</summary>
+    private DateTimeOffset? EffectiveUtc() =>
+        _when is { } w && w != _whenDefault ? WallToUtc(w) : null;
+
+    private bool Backdated => CaseService.IsBackdated(EffectiveUtc(), Clock.UtcNow);
+
+    private DateTimeOffset WallToUtc(DateTime wall)
+    {
+        var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
+        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, TimeDisp.Zone), TimeSpan.Zero); }
+        catch { return new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
+    }
+
+    private DateTime UtcToWall(DateTimeOffset utc)
+        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
+
     private void CloseModal()
     {
         _activeModal = null;
@@ -1504,11 +1542,13 @@ else
                 || string.IsNullOrWhiteSpace(_materialityRationale)),
         // Reclass always needs a reason; both gated modals need an override justification when a blocking
         // requirement is unmet, and a long-enough rationale when the gate requires commentary.
-        "reclass" => string.IsNullOrWhiteSpace(_reclassReason)
+        "reclass" => string.IsNullOrWhiteSpace(_reclassReason) || _when is null
             || (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
             || GateRationaleError(_reclassReason) is not null,
         "status" => (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
-            || GateRationaleError(_phaseReason) is not null,
+            || GateRationaleError(_phaseReason) is not null
+            || _when is null || (Backdated && string.IsNullOrWhiteSpace(_phaseReason)),
+        "severity" => _when is null || (Backdated && string.IsNullOrWhiteSpace(_severityReason)),
         _ => false
     };
 
@@ -1526,12 +1566,12 @@ else
                     { _modalError = "Enter an override justification for the unmet requirements."; return; }
                     if (GateRationaleError(_reclassReason) is { } m1) { _modalError = m1; return; }
                     await Cases.ReclassifyAsync(Id, _newClass, _reclassReason,
-                        _attested.Count > 0 ? _attested : null, _gateOverride);
+                        _attested.Count > 0 ? _attested : null, _gateOverride, EffectiveUtc());
                     _reclassReason = "";
                     done = $"Reclassified to {Ui.Label(_newClass)}";
                     break;
                 case "severity":
-                    await Cases.ChangeSeverityAsync(Id, _newSeverity, _severityReason);
+                    await Cases.ChangeSeverityAsync(Id, _newSeverity, _severityReason, EffectiveUtc());
                     _severityReason = null;
                     done = $"Severity changed to {SevLabels.For(_newSeverity)}";
                     break;
@@ -1540,7 +1580,7 @@ else
                     { _modalError = "Enter an override justification for the unmet requirements."; return; }
                     if (GateRationaleError(_phaseReason) is { } m2) { _modalError = m2; return; }
                     await Cases.ChangePhaseAsync(Id, _newPhase, _phaseReason,
-                        _attested.Count > 0 ? _attested : null, _gateOverride);
+                        _attested.Count > 0 ? _attested : null, _gateOverride, EffectiveUtc());
                     _phaseReason = null;
                     done = $"Phase changed to {Ui.Label(_newPhase)}";
                     break;
@@ -1655,47 +1695,13 @@ else
 
     private async Task AdvanceTo(CasePhase phase)
     {
-        // FR-01: closing is gated (CloseCase). Route the stepper button through the status modal so the
-        // readiness checklist + override justification are shown — rather than calling the bare API, which
-        // throws GateNotSatisfiedException and (with no try/catch here) hit the generic Blazor error UI.
-        if (phase == CasePhase.Closed)
-        {
-            await OpenModal("status");
-            _newPhase = phase;
-            await OnStatusTargetChanged(); // load the CloseCase gate for the newly-selected target
-            return;
-        }
-
-        // Ungated forward steps: apply directly, but surface any domain error as a toast instead of
-        // letting it reach the unhandled-error bar.
-        // The button re-renders in place as "Advance to <the phase after>", so a double-click would step twice:
-        // ignore clicks while a step runs and for a moment after.
-        if (_advancing) return;
-        _advancing = true;
-        try
-        {
-            await Cases.ChangePhaseAsync(Id, phase, null);
-            await Reload();
-            Toasts.Success($"Phase changed to {Ui.Label(phase)}");
-            StateHasChanged();
-            await Task.Delay(700);
-        }
-        catch (ForbiddenException)
-        {
-            OnForbidden(); // REL-08
-            Toasts.Error(PermissionLostMessage);
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or GateNotSatisfiedException)
-        {
-            Toasts.Error(ex.Message);
-        }
-        finally
-        {
-            _advancing = false;
-        }
+        // Every advance goes through the status dialog (FR-01 for Close's gate; INV-05 for the rest), so the
+        // analyst records what was achieved and, when entering it after the fact, when it actually happened.
+        await OpenModal("status");
+        _newPhase = phase;
+        await OnStatusTargetChanged(); // load the gate (if any) for the selected target
     }
 
-    private bool _advancing;
     private bool _titleExpanded;
     private Guid? _watchedHeadFor;
 

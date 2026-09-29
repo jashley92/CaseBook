@@ -593,9 +593,23 @@ public sealed class CaseService
         return c;
     }
 
+    /// <summary>INV-05: a transition dated more than this far before it is recorded needs a reason, so the record
+    /// says why it was entered late.</summary>
+    public static readonly TimeSpan BackdateReasonThreshold = TimeSpan.FromHours(1);
+
+    /// <summary>INV-05: true when <paramref name="effectiveAtUtc"/> is far enough in the past to need a reason.</summary>
+    public static bool IsBackdated(DateTimeOffset? effectiveAtUtc, DateTimeOffset nowUtc) =>
+        effectiveAtUtc is { } at && nowUtc - at > BackdateReasonThreshold;
+
+    private void RequireReasonIfBackdated(DateTimeOffset? effectiveAtUtc, string? reason)
+    {
+        if (IsBackdated(effectiveAtUtc, _clock.UtcNow) && string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("Give a reason when recording a change more than an hour after it happened.");
+    }
+
     public async Task ReclassifyAsync(Guid id, Classification to, string reason,
         IReadOnlySet<Guid>? attestedRequirementIds = null, string? overrideJustification = null,
-        CancellationToken ct = default)
+        DateTimeOffset? effectiveAtUtc = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
@@ -607,7 +621,7 @@ public sealed class CaseService
             await ApplyGateAsync(db, c, trigger, attestedRequirementIds, overrideJustification, reason, ct);
 
         var now = _clock.UtcNow;
-        c.Reclassify(to, reason, _user.UserId, now);
+        c.Reclassify(to, reason, _user.UserId, now, effectiveAtUtc);
 
         // Promotion off the Complex Event intake ladder → renumber into the IRP scheme (unless the analyst
         // pinned a custom number). Advance past any already-used number for the year (defensive against a
@@ -631,16 +645,17 @@ public sealed class CaseService
 
     public async Task ChangePhaseAsync(Guid id, CasePhase to, string? reason,
         IReadOnlySet<Guid>? attestedRequirementIds = null, string? overrideJustification = null,
-        CancellationToken ct = default)
+        DateTimeOffset? effectiveAtUtc = null, CancellationToken ct = default)
     {
         Require();
+        RequireReasonIfBackdated(effectiveAtUtc, reason);
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
 
         if (to == CasePhase.Closed && c.Phase != CasePhase.Closed)
             await ApplyGateAsync(db, c, StageGateTrigger.CloseCase, attestedRequirementIds, overrideJustification, reason, ct);
 
-        c.ChangePhase(to, reason, _user.UserId, _clock.UtcNow);
+        c.ChangePhase(to, reason, _user.UserId, _clock.UtcNow, effectiveAtUtc);
         await db.SaveChangesAsync(ct);
     }
 
@@ -764,12 +779,13 @@ public sealed class CaseService
     }
 
     public async Task ChangeSeverityAsync(Guid id, Domain.Enums.Severity severity, string? reason = null,
-        CancellationToken ct = default)
+        DateTimeOffset? effectiveAtUtc = null, CancellationToken ct = default)
     {
         Require();
+        RequireReasonIfBackdated(effectiveAtUtc, reason);
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
-        c.ChangeSeverity(severity, reason, _user.UserId, _clock.UtcNow);
+        c.ChangeSeverity(severity, reason, _user.UserId, _clock.UtcNow, effectiveAtUtc);
         await db.SaveChangesAsync(ct);
     }
 

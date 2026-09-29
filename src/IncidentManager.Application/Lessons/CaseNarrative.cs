@@ -83,11 +83,11 @@ public static class CaseNarrative
         // The opening classification (no "from", stamped at creation) is the starting point, not a decision; a
         // later null-"from" entry is a complex event's promotion onto the ladder, which is.
         foreach (var x in c.ClassificationChanges.Where(x => x.From is not null || x.ChangedAtUtc > c.CreatedAtUtc))
-            decisions.Add((x.ChangedAtUtc, $"Classification changed from {ClassificationWord(x.From)} to {ClassificationWord(x.To)}{Because(x.Reason)}"));
+            decisions.Add((x.EffectiveAt, $"Classification changed from {ClassificationWord(x.From)} to {ClassificationWord(x.To)}{Because(x.Reason)}"));
         foreach (var x in c.SeverityChanges.Where(x => x.From is not null))
-            decisions.Add((x.ChangedAtUtc, $"Severity changed from {severityLabel(x.From!.Value)} to {severityLabel(x.To)}{Because(x.Reason)}"));
+            decisions.Add((x.EffectiveAt, $"Severity changed from {severityLabel(x.From!.Value)} to {severityLabel(x.To)}{Because(x.Reason)}"));
         foreach (var x in c.StatusChanges.Where(x => x.From is not null))
-            decisions.Add((x.ChangedAtUtc, $"Moved from {PhaseWord(x.From!.Value)} to {PhaseWord(x.To)}{Because(x.Reason)}"));
+            decisions.Add((x.EffectiveAt, $"Moved from {PhaseWord(x.From!.Value)} to {PhaseWord(x.To)}{Because(x.Reason)}"));
         if (decisions.Count > 0)
         {
             sb.Append("### Decisions and milestones\n");

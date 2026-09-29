@@ -1028,6 +1028,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("EffectiveAtUtc")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("From")
                         .HasColumnType("INTEGER");
 
@@ -1921,6 +1924,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("EffectiveAtUtc")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("From")
                         .HasColumnType("INTEGER");
 
@@ -2041,6 +2047,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
+
+                    b.Property<long?>("EffectiveAtUtc")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int?>("From")
                         .HasColumnType("INTEGER");

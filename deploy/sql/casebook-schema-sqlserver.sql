@@ -2081,3 +2081,40 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929025933_AddTransitionEffectiveTimes'
+)
+BEGIN
+    ALTER TABLE [StatusChanges] ADD [EffectiveAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929025933_AddTransitionEffectiveTimes'
+)
+BEGIN
+    ALTER TABLE [SeverityChanges] ADD [EffectiveAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929025933_AddTransitionEffectiveTimes'
+)
+BEGIN
+    ALTER TABLE [ClassificationChanges] ADD [EffectiveAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260929025933_AddTransitionEffectiveTimes'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260929025933_AddTransitionEffectiveTimes', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

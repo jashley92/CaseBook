@@ -190,17 +190,22 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>Changes classification (e.g. escalates to Breach), recording the reason and history.
     /// When the case is a Complex Event (null classification) this is its <b>promotion</b> onto the
     /// ladder — the recorded transition has a null <c>From</c>. The target is always a real rung.</summary>
-    public void Reclassify(Classification to, string reason, string actor, DateTimeOffset nowUtc)
+    public void Reclassify(Classification to, string reason, string actor, DateTimeOffset nowUtc,
+        DateTimeOffset? effectiveAtUtc = null)
     {
         if (string.IsNullOrWhiteSpace(reason))
             throw new ArgumentException("A reason is required to change classification.");
         if (to == Classification) return;
 
+        var effective = CheckEffective(effectiveAtUtc, nowUtc, "classification",
+            ClassificationChanges.Where(x => x.From is not null || x.ChangedAtUtc > CreatedAtUtc).Select(x => x.EffectiveAt));
+
         var from = Classification;
         Classification = to;
         ClassificationChanges.Add(new ClassificationChange
         {
-            CaseId = Id, From = from, To = to, Reason = reason.Trim(), ChangedBy = actor, ChangedAtUtc = nowUtc
+            CaseId = Id, From = from, To = to, Reason = reason.Trim(), ChangedBy = actor, ChangedAtUtc = nowUtc,
+            EffectiveAtUtc = effective
         });
         Touch(actor, nowUtc);
     }
@@ -260,23 +265,31 @@ public class Case : AuditableEntity, IHashableEntity
         return passage;
     }
 
-    /// <summary>Advances (or moves) the lifecycle phase, capturing containment/resolution/closure timestamps.</summary>
-    public void ChangePhase(CasePhase to, string? reason, string actor, DateTimeOffset nowUtc)
+    /// <summary>Advances (or moves) the lifecycle phase, capturing containment/resolution/closure timestamps.
+    /// <paramref name="effectiveAtUtc"/> (INV-05) is when the move actually happened, for a change recorded after
+    /// the fact; the milestone timestamps take that time, not the moment it was recorded.</summary>
+    public void ChangePhase(CasePhase to, string? reason, string actor, DateTimeOffset nowUtc,
+        DateTimeOffset? effectiveAtUtc = null)
     {
         if (to == Phase) return;
+
+        var effective = CheckEffective(effectiveAtUtc, nowUtc, "phase",
+            StatusChanges.Where(x => x.From is not null).Select(x => x.EffectiveAt));
+        var at = effective ?? nowUtc;
 
         var from = Phase;
         Phase = to;
         StatusChanges.Add(new StatusChange
         {
-            CaseId = Id, From = from, To = to, Reason = reason, ChangedBy = actor, ChangedAtUtc = nowUtc
+            CaseId = Id, From = from, To = to, Reason = reason, ChangedBy = actor, ChangedAtUtc = nowUtc,
+            EffectiveAtUtc = effective
         });
 
         switch (to)
         {
-            case CasePhase.Containment: ContainedAtUtc ??= nowUtc; break;
-            case CasePhase.Recovery: ResolvedAtUtc ??= nowUtc; break;
-            case CasePhase.Closed: ClosedAtUtc ??= nowUtc; break;
+            case CasePhase.Containment: ContainedAtUtc ??= at; break;
+            case CasePhase.Recovery: ResolvedAtUtc ??= at; break;
+            case CasePhase.Closed: ClosedAtUtc ??= at; break;
         }
 
         // Reopening: leaving Closed must clear the closure timestamp, else the case reads as "closed at X"
@@ -391,14 +404,18 @@ public class Case : AuditableEntity, IHashableEntity
     }
 
     /// <summary>Changes the analyst-assessed severity, recording the transition in history.</summary>
-    public void ChangeSeverity(Severity to, string? reason, string actor, DateTimeOffset nowUtc)
+    public void ChangeSeverity(Severity to, string? reason, string actor, DateTimeOffset nowUtc,
+        DateTimeOffset? effectiveAtUtc = null)
     {
         if (to == Severity) return;
+        var effective = CheckEffective(effectiveAtUtc, nowUtc, "severity",
+            SeverityChanges.Where(x => x.From is not null).Select(x => x.EffectiveAt));
         var from = Severity;
         Severity = to;
         SeverityChanges.Add(new SeverityChange
         {
-            CaseId = Id, From = from, To = to, Reason = reason, ChangedBy = actor, ChangedAtUtc = nowUtc
+            CaseId = Id, From = from, To = to, Reason = reason, ChangedBy = actor, ChangedAtUtc = nowUtc,
+            EffectiveAtUtc = effective
         });
         Touch(actor, nowUtc);
     }
@@ -957,6 +974,26 @@ public class Case : AuditableEntity, IHashableEntity
 
         EntityRelationships.Remove(rel);
         Touch(actor, nowUtc);
+    }
+
+    /// <summary>
+    /// INV-05: validates when a transition happened, for one recorded after the fact. Not in the future, not
+    /// before the case was detected, and not before the previous change of the same kind (the opening state
+    /// doesn't count: a case is often filed after the first moves were made). Returns the time to store, or
+    /// null when it is the recorded time, so an ordinary change looks exactly as it always has.
+    /// </summary>
+    private DateTimeOffset? CheckEffective(DateTimeOffset? effectiveAtUtc, DateTimeOffset nowUtc, string what,
+        IEnumerable<DateTimeOffset> earlierChanges)
+    {
+        if (effectiveAtUtc is not { } at || at == nowUtc) return null;
+        if (at > nowUtc)
+            throw new ArgumentException($"The {what} change can't be dated in the future.");
+        if (DetectedAtUtc is { } detected && at < detected)
+            throw new ArgumentException($"The {what} change can't be dated before the case was detected.");
+        if (earlierChanges.Where(x => x > at).OrderByDescending(x => x).FirstOrDefault() is { } later && later != default)
+            throw new ArgumentException(
+                $"The {what} change can't be dated before the previous {what} change ({later.UtcDateTime:yyyy-MM-dd HH:mm} UTC).");
+        return at;
     }
 
     private void Touch(string actor, DateTimeOffset nowUtc)
