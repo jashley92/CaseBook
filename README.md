@@ -19,15 +19,18 @@ export (incl. monthly & quarterly rollups) for board / regulatory packs.
 ![Leadership dashboard](docs/screenshots/dashboard.png)
 
 ### Case workspace
-The analyst's hub: a NIST SP 800-61 lifecycle bar, tabbed **Overview / Timeline / Entities /
-Evidence / Notes / Discussion / Tasks / Lessons learned / Report / Audit**, true **detected / occurred** timestamps (with
-dwell-before-detection and per-severity SLA targets), **links to related cases**, and a structured
-impact assessment (affected individuals, data-element taxonomy, and jurisdictions). The header carries
-at-a-glance status badges — SLA, **materiality** (material / not material, a Legal/committee decision the
-tool records but does not make), and the **regulatory notification** countdown — alongside the classic
-classification/severity/legal chips. A case can be **restricted to need-to-know** (its incident commander,
-its team and cleared roles only), and the Overview says in plain words who can see it; view-only roles get a
-note explaining what they can and can't do.
+The analyst's hub. The Overview opens on the **case brief**: where the case stands, the working
+assessment, what's known, open questions and next steps, versioned so what the team believed at any point
+stays readable. On wide screens a **context panel** sits beside every tab with the clocks, the tasks still
+open before the next phase, the team and the key entities, so checking them doesn't mean switching tabs.
+Tabs: **Overview / Timeline / IOCs & entities / Evidence / Notes / Discussion / Tasks / Lessons learned /
+Report / Audit**. A compact header carries the case number and title, status badges (SLA, **materiality**,
+a Legal/committee decision the tool records but does not make, and the **regulatory notification**
+countdown) and the NIST SP 800-61 phase stepper, with **Advance** and **Hand off** one click away. Opening a
+case you've seen before says **what changed since you last viewed it**. Clicking any entity opens it in a side
+panel: where the case refers to it, its relationships and the other cases it appears on. True **detected /
+occurred** timestamps, links to related cases, a structured impact assessment, and need-to-know
+**restriction** are all on the Overview.
 
 ![Case workspace](docs/screenshots/case-workspace.png)
 
@@ -52,9 +55,16 @@ anything is written to a case. See [docs/API.md](docs/API.md) for the API refere
 
 ![Structured and AI-assisted import](docs/screenshots/case-import.png)
 
-### Event &amp; investigation timelines
-Two separate chronologies per case — the **event** timeline (facts and timing of what happened) and the
-**investigation** timeline (analyst/team actions) — each typed, sourced, and audited.
+### The timeline: the record the report is built from
+One chronology per case, read by day and counted from detection (switch to **T+** time to see it as the
+responders do): the **event** timeline (what the adversary or vendor did, with the attack chain), the
+**investigation** timeline (what the team did), **decisions** recorded with their why, and the **response
+milestones** (classification, severity and phase changes, stage gates, materiality, reporting, completed tasks)
+drawn straight from the case record, so nothing is written twice. Work recorded after the fact is dated when
+it happened: phase and classification changes take a "when it happened" time and can be corrected later, with a
+reason, while the time it was entered is kept and shown. A task's result, a note or a discussion comment goes
+onto the timeline in one step, entries cite the evidence behind them, and the report's investigation timeline
+is this same record.
 
 ![Timeline](docs/screenshots/timeline.png)
 

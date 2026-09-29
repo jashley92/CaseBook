@@ -512,6 +512,37 @@ public static class DevDataSeeder
             "Sign-in to jdoe's mailbox from a foreign ASN using the captured credentials.", "SIEM", actor, now.AddDays(-5).AddHours(-3));
         c1.AddEventStep(now.AddDays(-5).AddHours(-2), [MitreTactic.Collection], "T1114.002", ip.Id, acct.Id,
             "Mailbox searched; messages with NPI attachments opened.", "SIEM", actor, now.AddDays(-5).AddHours(-2));
+
+        // The investigation-workspace features: a decision with its why (INV-06), tasks by kind of response work
+        // (INV-13), and the team's brief (INV-09), so the demo case shows how they read together.
+        c1.TimelineEntries.Add(new TimelineEntry
+        {
+            CaseId = c1.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Decision,
+            OccurredAtUtc = now.AddDays(-5).AddHours(1),
+            Description = "Reset credentials and revoke sessions for all three users who clicked, not only the confirmed one.",
+            Rationale = "Sign-in logs for the other two users are incomplete, and resetting is low cost.",
+            OptionsConsidered = "Reset only jdoe's credentials", DecidedBy = "Incident Commander",
+            Source = "ic1", CreatedBy = "ic1", CreatedAtUtc = now.AddDays(-5).AddHours(1)
+        });
+        c1.ActionItems[0].Kind = TaskKind.Notify;
+        c1.ActionItems.Add(new ActionItem
+        {
+            CaseId = c1.Id, Title = "Block the 12 look-alike domains at the proxy", Owner = "analyst1", Kind = TaskKind.Contain,
+            DueAtUtc = now.AddDays(1), CreatedBy = actor, CreatedAtUtc = now.AddDays(-5)
+        });
+        c1.ActionItems.Add(new ActionItem
+        {
+            CaseId = c1.Id, Title = "Review sign-in logs for the other two users who clicked", Owner = "analyst1",
+            Kind = TaskKind.Investigate, DueAtUtc = now.AddDays(2), CreatedBy = actor, CreatedAtUtc = now.AddDays(-5)
+        });
+        c1.ReviseBrief(
+            "Look-alike O365 lures reached 12 Finance mailboxes and 3 users clicked. " +
+            $"[Jane Doe (Finance)](entity:{acct.Id}) entered credentials; her mailbox was then accessed from a foreign ASN and messages with NPI attachments were opened.",
+            "Opportunistic credential harvesting with manual follow-on access to one mailbox. No sign of lateral movement.",
+            $"- Session from [Foreign ASN egress](entity:{ip.Id}) the day after the click\n- About 1,450 NY and NJ residents in the opened attachments",
+            "- Did the other two users' credentials get used?",
+            "- Block the look-alike domains at the proxy (Alex)\n- Confirm the NY and federal notification drafts (Privacy)",
+            "ic1", now.AddDays(-2));
         await db.SaveChangesAsync(ct);
 
         // Case 2 — third-party/vendor breach we are managing.
