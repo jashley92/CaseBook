@@ -1,0 +1,143 @@
+@* INV-12: the case's context, beside every tab — the clocks, what's left before the next phase, who's on it, the
+   brief's next steps and the key entities — so checking them doesn't mean switching tabs. Read-only; each item
+   links to where it's worked. Shown beside the tab on wide screens (the workspace decides). *@
+@inject IClock Clock
+@inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
+
+<aside class="im-rail" aria-label="Case context">
+    @{
+        var (contain, resolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
+            Case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow, Case.Classification);
+        var next = NextPhase();
+        var behind = OpenBehind(next);
+        var brief = Case.Briefs.FirstOrDefault(b => b.IsCurrent);
+        var key = Case.Entities
+            .Where(e => e.Disposition is EntityDisposition.Malicious or EntityDisposition.Compromised or EntityDisposition.Suspicious)
+            .OrderBy(e => e.Disposition switch { EntityDisposition.Malicious => 0, EntityDisposition.Compromised => 1, _ => 2 })
+            .Take(6).ToList();
+        var openTasks = Case.ActionItems.Count(t => t.IsOpen);
+    }
+
+    <section>
+        <h2 class="im-rail-h">Clocks</h2>
+        @foreach (var st in new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget))
+        {
+            <div class="im-rail-row">
+                <span>@(st.Clock is { } c ? Ui.SlaClockLabel(c) : "SLA")</span>
+                <span class="@Ui.SlaBadge(st.State)" title="@(st.DueAtUtc is { } due ? $"Due {TimeDisp.Long(due)}" : null)">
+                    @(Ui.SlaTiming(st) is { Length: > 0 } t ? t : Ui.SlaLabel(st.State))
+                </span>
+            </div>
+        }
+        @if (Notify?.Headline is { } nh)
+        {
+            <div class="im-rail-row">
+                <span>Notify · @nh.JurisdictionLabel</span>
+                <span class="@Ui.SlaBadge(nh.State)" title="@(nh.DueAtUtc is { } due ? $"Due {TimeDisp.Long(due)}" : null)">@Ui.SlaLabel(nh.State)</span>
+            </div>
+        }
+        @if (contain.State == SlaState.NoTarget && resolve.State == SlaState.NoTarget && Notify?.Headline is null)
+        {
+            <p class="small text-muted mb-0">No clocks running.</p>
+        }
+    </section>
+
+    @if (next is { } np)
+    {
+        <section>
+            <h2 class="im-rail-h">Before @Ui.Label(np)</h2>
+            @if (behind.Count == 0)
+            {
+                <p class="small mb-0"><span class="bi bi-check2 text-success" aria-hidden="true"></span> No open tasks for the phases so far.</p>
+            }
+            else
+            {
+                <ul class="im-rail-list">
+                    @foreach (var t in behind.Take(4))
+                    {
+                        <li>
+                            <button type="button" class="btn btn-link p-0 text-start" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@t.Title</button>
+                            <span class="text-muted">@CaseTasksTab.KindLabel(t.Kind)@(string.IsNullOrWhiteSpace(t.Owner) ? "" : $" · {Users.DisplayFor(t.Owner)}")</span>
+                        </li>
+                    }
+                </ul>
+                @if (behind.Count > 4) { <div class="small text-muted">…and @(behind.Count - 4) more</div> }
+            }
+        </section>
+    }
+
+    <section>
+        <div class="d-flex align-items-baseline justify-content-between">
+            <h2 class="im-rail-h">Next steps</h2>
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@IncidentManager.Application.Common.Plural.Of(openTasks, "open task")</button>
+        </div>
+        @if (brief?.NextSteps is { Length: > 0 } steps)
+        {
+            <div class="md-body small im-rail-clamp">@((MarkupString)Md.ToHtml(steps, Case.Id))</div>
+        }
+        else
+        {
+            <p class="small text-muted mb-0">
+                @(brief is null ? "No brief yet." : "The brief has no next steps.")
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick='() => OnGoToTab.InvokeAsync("Overview")'>@(brief is null ? "Write it" : "Add them")</button>
+            </p>
+        }
+    </section>
+
+    <section>
+        <h2 class="im-rail-h">Team</h2>
+        @if (Case.Assignments.Count == 0)
+        {
+            <p class="small text-muted mb-0">No one is assigned.</p>
+        }
+        else
+        {
+            <ul class="im-rail-list">
+                @foreach (var a in Case.Assignments.OrderBy(a => a.Role))
+                {
+                    <li><span>@Users.DisplayFor(a.UserId)</span> <span class="text-muted">@Ui.Label(a.Role)</span></li>
+                }
+            </ul>
+        }
+    </section>
+
+    @if (key.Count > 0)
+    {
+        <section>
+            <h2 class="im-rail-h">Key entities</h2>
+            <ul class="im-rail-list">
+                @foreach (var e in key)
+                {
+                    <li>
+                        <button type="button" class="btn btn-link p-0 text-start im-rail-entity" @onclick="() => OnOpenEntity.InvokeAsync(e.Id)" title="@e.Value">
+                            @Ui.EntityGlyph(e.Type) @(string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label)
+                        </button>
+                        <span class="@Ui.DispositionBadge(e.Disposition)">@Ui.Label(e.Disposition)</span>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
+    [Parameter] public EventCallback<Guid> OnOpenEntity { get; set; }
+    [Parameter] public EventCallback<string> OnGoToTab { get; set; }
+
+    private CasePhase? NextPhase()
+    {
+        var phases = Enum.GetValues<CasePhase>();
+        var i = Array.IndexOf(phases, Case.Phase);
+        return i >= 0 && i < phases.Length - 1 ? phases[i + 1] : null;
+    }
+
+    // The tasks still open for the phases before the next one (every open task when the next step is closing).
+    private List<ActionItem> OpenBehind(CasePhase? next) => next is not { } np ? []
+        : Case.ActionItems.Where(t => t.IsOpen && (np == CasePhase.Closed || (t.Kind.Phase() is { } p && p < np)))
+            .OrderBy(t => t.Kind).ThenBy(t => t.DueAtUtc).ToList();
+}

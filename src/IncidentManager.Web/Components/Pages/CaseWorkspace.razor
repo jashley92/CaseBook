@@ -356,6 +356,13 @@ else
                 </button>
             </li>
         }
+        <li class="nav-item ms-auto im-rail-toggle">
+            <button type="button" class="nav-link" aria-pressed="@Ui.Aria(_railOpen)" @onclick="() => _railOpen = !_railOpen"
+                    title="@(_railOpen ? "Hide the case context panel" : "Show the case context panel")">
+                <span class="bi @(_railOpen ? "bi-layout-sidebar-inset-reverse" : "bi-layout-sidebar-reverse")" aria-hidden="true"></span>
+                <span class="visually-hidden">@(_railOpen ? "Hide" : "Show") case context</span>
+            </button>
+        </li>
     </ul>
     </div>
 
@@ -438,6 +445,8 @@ else
     @* Keyed by the active tab so the subtree is rebuilt on a tab switch, replaying the .tabbody
        fade-in (U-22 motion). The key doesn't change on case/id navigation, so switching cases
        doesn't force an extra remount. *@
+    @* INV-12: on wide screens the case's context sits beside every tab. *@
+    <div class="ws-body @(_railOpen ? "ws-body-rail" : "")">
     <div class="tabbody" @key="_activeTab">
     @* REL-01: a per-tab error boundary. Because .tabbody is @key'd on the active tab, switching tabs mounts
        a fresh boundary — so a tab that throws shows a contained "this tab couldn't load" fallback (the case
@@ -542,6 +551,11 @@ else
     </ErrorContent>
     </ErrorBoundary>
     </div>@* /.tabbody *@
+    @if (_railOpen)
+    {
+        <CaseContextRail Case="_case" Notify="_notifyDeadlines" OnOpenEntity="OpenEntity" OnGoToTab="SetTab" />
+    }
+    </div>@* /.ws-body *@
 
     @* Action modal — rendered outside the tab blocks so Actions works on every tab, not just Overview. *@
     @if (_activeModal is not null)
@@ -1775,6 +1789,9 @@ else
     }
 
     private bool _titleExpanded;
+
+    // --- INV-12: the context panel beside the tabs (wide screens) ---
+    private bool _railOpen = true;
 
     // --- INV-11: the entity panel ---
     private Guid? _panelEntity;
