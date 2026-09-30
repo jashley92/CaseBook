@@ -213,6 +213,33 @@ public sealed class TaskCompletionTests : IDisposable
         current.NextSteps.Should().Be("- Block look-alike domains");
     }
 
+    // --- INV-28: tasks start where the work is ---
+
+    [Fact]
+    public async Task A_task_records_what_it_is_about_and_an_entry_is_anchored_at_its_first_version()
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+        var entity = await svc.AddEntityAsync(caseId, EntityType.Account, "CONTOSO\\jdoe", "Jane Doe", EntityDisposition.Unknown, null, "SIEM");
+        await svc.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Analysis, _clock.UtcNow.AddHours(-1),
+            "Sign-ins from a foreign ASN", "an1");
+        var entry = (await svc.GetDetailAsync(caseId))!.TimelineEntries.Single();
+        await svc.EditInvestigationEntryAsync(caseId, entry.Id, TimelineEntryType.Analysis, entry.OccurredAtUtc, "Sign-ins from AS9009", "an1");
+        var edited = (await svc.GetDetailAsync(caseId))!.TimelineEntries.Single(e => e.IsCurrent);
+        edited.Id.Should().NotBe(entry.Id, "an edit is a new version");
+
+        await svc.AddActionItemAsync(caseId, "Check her other sessions", null, null, about: $"entity:{entity}");
+        await svc.AddActionItemAsync(caseId, "Pull the ASN's other sign-ins", null, null, about: $"entry:{edited.Id}");
+
+        var tasks = (await svc.GetDetailAsync(caseId))!.ActionItems;
+        tasks.Single(t => t.Title == "Check her other sessions").AboutRef.Should().Be($"entity:{entity}");
+        tasks.Single(t => t.Title == "Pull the ASN's other sign-ins").AboutRef.Should().Be($"entry:{entry.Id}", "the first version, so the link survives edits");
+
+        var elsewhere = () => svc.AddActionItemAsync(caseId, "Not ours", null, null, about: $"entity:{Guid.NewGuid()}");
+        await elsewhere.Should().ThrowAsync<InvalidOperationException>();
+        var nonsense = () => svc.AddActionItemAsync(caseId, "Garbled", null, null, about: "brief:xyz");
+        await nonsense.Should().ThrowAsync<ArgumentException>();
+    }
+
     // --- INV-25: next steps are tasks ---
 
     [Fact]

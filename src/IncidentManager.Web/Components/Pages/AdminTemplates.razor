@@ -90,7 +90,7 @@
             else
             {
                 <table class="table table-sm align-middle">
-                    <thead><tr><th style="width:2rem"></th><th>Title</th><th>Note</th><th style="width:9rem">Owner</th><th style="width:7rem">Due (hrs)</th><th style="width:5rem"></th></tr></thead>
+                    <thead><tr><th style="width:2rem"></th><th>Title</th><th>Note</th><th style="width:9rem">Owner</th><th style="width:9rem">Kind</th><th style="width:7rem">Due (hrs)</th><th style="width:5rem"></th></tr></thead>
                     <tbody>
                         @for (var i = 0; i < _edit.Steps.Count; i++)
                         {
@@ -104,6 +104,15 @@
                                 <td><input class="form-control form-control-sm" aria-label="Step @(idx + 1) title" @bind="step.Title" @bind:event="oninput" placeholder="Step title" /></td>
                                 <td><input class="form-control form-control-sm" aria-label="Step @(idx + 1) note" @bind="step.Description" @bind:event="oninput" /></td>
                                 <td><input class="form-control form-control-sm" aria-label="Step @(idx + 1) owner" @bind="step.OwnerHint" @bind:event="oninput" placeholder="(case owner)" /></td>
+                                <td>
+                                    @* INV-28: the kind of work the step's task is, so a playbook's tasks count toward the right phase. *@
+                                    <select class="form-select form-select-sm" aria-label="Step @(idx + 1) kind" @bind="step.Kind">
+                                        @foreach (var k in Enum.GetValues<TaskKind>())
+                                        {
+                                            <option value="@k">@IncidentManager.Web.Components.Pages.CaseTabs.CaseTasksTab.KindLabel(k)</option>
+                                        }
+                                    </select>
+                                </td>
                                 <td><input type="number" min="0" class="form-control form-control-sm" aria-label="Step @(idx + 1) due (hrs)" @bind="step.DueOffsetHours" /></td>
                                 <td class="text-end"><button class="btn btn-sm btn-outline-danger py-0" @onclick="() => RemoveStep(idx)">Remove</button></td>
                             </tr>
@@ -182,6 +191,7 @@ else
         public string? Description;
         public string? OwnerHint;
         public int? DueOffsetHours;
+        public TaskKind Kind { get; set; } = TaskKind.General;
     }
 
     private sealed class TemplateEdit
@@ -219,7 +229,7 @@ else
         SummaryBoilerplate = t.SummaryBoilerplate,
         Steps = t.Steps.Select(s => new StepEdit
         {
-            Title = s.Title, Description = s.Description, OwnerHint = s.OwnerHint, DueOffsetHours = s.DueOffsetHours
+            Title = s.Title, Description = s.Description, OwnerHint = s.OwnerHint, DueOffsetHours = s.DueOffsetHours, Kind = s.Kind
         }).ToList()
     };
 
@@ -247,7 +257,7 @@ else
             string.IsNullOrEmpty(_edit.DefaultSeverity) ? null : Enum.Parse<Severity>(_edit.DefaultSeverity),
             _edit.DefaultDataTypes,
             _edit.SummaryBoilerplate,
-            _edit.Steps.Select(s => new TemplateStepInput(s.Title, s.Description, s.OwnerHint, s.DueOffsetHours)).ToList());
+            _edit.Steps.Select(s => new TemplateStepInput(s.Title, s.Description, s.OwnerHint, s.DueOffsetHours, s.Kind)).ToList());
 
         try
         {

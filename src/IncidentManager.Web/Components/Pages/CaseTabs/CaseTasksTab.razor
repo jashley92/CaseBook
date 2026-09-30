@@ -214,6 +214,7 @@ else
                     }
                     <td>
                         @t.Title
+                        @AboutChip(t)
                         @if (!string.IsNullOrWhiteSpace(t.Description))
                         {
                             <div class="small text-muted" style="white-space:pre-wrap">@t.Description</div>
@@ -417,6 +418,29 @@ else
 @code {
     private bool _addOpen;
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    /// <summary>INV-28: open the entity a task is about.</summary>
+    [Parameter] public EventCallback<Guid> OnOpenEntity { get; set; }
+    /// <summary>INV-28: switch to the tab holding what a task is about (Timeline, Evidence).</summary>
+    [Parameter] public EventCallback<string> OnGoToTab { get; set; }
+
+    // INV-28: what a task is about, as a chip that opens it.
+    private RenderFragment AboutChip(ActionItem t) => @<text>
+        @if (t.About is { } about)
+        {
+            @switch (about.Kind)
+            {
+                case ActionItem.AboutEntity when Case.Entities.FirstOrDefault(e => e.Id == about.Id) is { } en:
+                    <button type="button" class="im-about-chip" title="About this entity" @onclick="() => OnOpenEntity.InvokeAsync(en.Id)">@Ui.EntityGlyph(en.Type) @(string.IsNullOrWhiteSpace(en.Label) ? en.Value : en.Label)</button>
+                    break;
+                case ActionItem.AboutEvidence when Case.Evidence.FirstOrDefault(e => e.Id == about.Id) is { } ev:
+                    <button type="button" class="im-about-chip" title="About this evidence file" @onclick='() => OnGoToTab.InvokeAsync("Evidence")'><span class="bi bi-paperclip" aria-hidden="true"></span> @ev.OriginalFileName</button>
+                    break;
+                case ActionItem.AboutEntry:
+                    <button type="button" class="im-about-chip" title="About a timeline entry" @onclick='() => OnGoToTab.InvokeAsync("Timeline")'><span class="bi bi-clock-history" aria-hidden="true"></span> Timeline entry</button>
+                    break;
+            }
+        }
+    </text>;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter] public bool CanEdit { get; set; }
     /// <summary>Reload the case after a task/playbook write so the list (and the rest of the workspace) refreshes.</summary>

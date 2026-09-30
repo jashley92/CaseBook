@@ -27,6 +27,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("AboutRef")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<Guid>("CaseId")
                         .HasColumnType("uniqueidentifier");
 
@@ -982,6 +986,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(4000)");
 
                     b.Property<int?>("DueOffsetHours")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Kind")
                         .HasColumnType("int");
 
                     b.Property<int>("Order")

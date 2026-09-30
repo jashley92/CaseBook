@@ -320,7 +320,7 @@ else
     </div>
 
     @* INV-11: an entity in context, over whatever tab is open. *@
-    <EntityPanel Case="_case" EntityId="_panelEntity" OnClose="CloseEntityPanel"
+    <EntityPanel Case="_case" EntityId="_panelEntity" OnClose="CloseEntityPanel" CanEdit="_canEdit" OnChanged="Reload"
                           OnShowOnTimeline="ShowEntityOnTimeline" OnGoToTab="EntityPanelGoTo" />
 
     @if (_confirm is not null)
@@ -455,7 +455,7 @@ else
            in this parent and are threaded in; the paste/drop shim is still registered by this component's
            OnAfterRenderAsync against the element IDs the child keeps (evidence-dropzone / -file-input / -file-drop). *@
         <CaseEvidenceTab CaseId="_case.Id" EvidenceItems="_case.Evidence" Citations="_case.Citations" OnPreview="OpenShot"
-                         OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" />
+                         OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" CanEdit="_canEdit" Tasks="_case.ActionItems" />
     }
     else if (_activeTab == "Notes")
     {
@@ -470,7 +470,7 @@ else
     {
         @* UX-13: extracted to CaseTasksTab. Self-loads its playbooks and builds due-dates; the parent keeps
            the flash and hotkey dispatch (@ref) and reloads the case after a write. *@
-        <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit"
+        <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" OnOpenEntity="OpenEntity" OnGoToTab="SetTab"
                       OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh"
                       AutofocusComposer="_tasksAutofocus" OnAutofocusHandled="() => _tasksAutofocus = false" />
     }

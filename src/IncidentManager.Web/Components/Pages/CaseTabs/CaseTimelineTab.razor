@@ -658,7 +658,9 @@ else
                                 </button>
                             }
                             @CiteButton(e)
+                            @TaskButton(e)
                         </div>
+                        @EntryTasks(e)
                     </div>
                 </li>
             }
@@ -743,7 +745,9 @@ else
                                 </button>
                             }
                             @CiteButton(e)
+                            @TaskButton(e)
                         </div>
+                        @EntryTasks(e)
                         @if (_tlHistoryOpen.Contains(e.Id))
                         {
                             <div class="tl-history mt-2">
@@ -1256,6 +1260,50 @@ else
         .OrderBy(ev => ev.OriginalFileName, StringComparer.OrdinalIgnoreCase).ToList();
 
     private static bool IsImage(Evidence ev) => ev.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+
+    // --- INV-28: tasks started from an entry ---
+    private Guid? _taskFor;
+
+    // An entry's first version: what a task about it records, so the link survives edits.
+    private Guid RootOf(TimelineEntry e)
+    {
+        var first = e;
+        while (first.SupersedesEntryId is { } prior && Case.TimelineEntries.FirstOrDefault(x => x.Id == prior) is { } p) first = p;
+        return first.Id;
+    }
+
+    private RenderFragment TaskButton(TimelineEntry e) => @<text>
+        @if (CanEdit)
+        {
+            <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => _taskFor = _taskFor == e.Id ? null : e.Id">
+                <span class="bi bi-plus-lg" aria-hidden="true"></span> Task
+            </button>
+        }
+    </text>;
+
+    private RenderFragment EntryTasks(TimelineEntry e) => @<text>
+        @{
+            var about = $"{ActionItem.AboutEntry}:{RootOf(e)}";
+            var tasks = Case.ActionItems.Where(t => t.AboutRef == about).OrderByDescending(t => t.IsOpen).ThenBy(t => t.CreatedAtUtc).ToList();
+        }
+        @if (tasks.Count > 0)
+        {
+            <div class="tl-tasks" aria-label="Tasks about this entry">
+                @foreach (var t in tasks)
+                {
+                    <span class="tl-task @(t.IsOpen ? "" : "tl-task-done")" title="@(t.IsOpen ? "Open task" : "Done")">
+                        <span class="bi @(t.IsOpen ? "bi-square" : "bi-check2-square")" aria-hidden="true"></span> @t.Title
+                        @if (!string.IsNullOrWhiteSpace(t.Owner)) { <span class="text-muted">· @Users.DisplayFor(t.Owner)</span> }
+                    </span>
+                }
+            </div>
+        }
+        @if (_taskFor == e.Id)
+        {
+            <QuickTask CaseId="CaseId" About="@about" Placeholder="A task about this entry"
+                       OnDone="async () => { _taskFor = null; await OnChanged.InvokeAsync(); }" OnCancel="() => _taskFor = null" />
+        }
+    </text>;
 
     private RenderFragment CiteButton(TimelineEntry e) => @<text>
         @if (CanEdit && Case.Evidence.Count > 0)

@@ -103,8 +103,36 @@
                                 <span class="bi @(_custodyOpen.Contains(ev.Id) ? "bi-chevron-down" : "bi-clock-history")" aria-hidden="true"></span> Custody
                             </button>
                             <a class="btn btn-sm btn-outline-primary" href="evidence/@ev.Id" target="_blank">Download</a>
+                            @if (CanEdit)
+                            {
+                                <button type="button" class="btn btn-sm btn-link ms-1" @onclick="() => _taskFor = _taskFor == ev.Id ? null : ev.Id"
+                                        title="Start a task about this file"><span class="bi bi-plus-lg" aria-hidden="true"></span> Task</button>
+                            }
                         </td>
                     </tr>
+                    var evTasks = Tasks.Where(t => t.AboutRef == $"{ActionItem.AboutEvidence}:{ev.Id}").ToList();
+                    @if (evTasks.Count > 0 || _taskFor == ev.Id)
+                    {
+                        @* INV-28: the tasks about this file, and a new one. *@
+                        <tr class="im-custody-row">
+                            <td colspan="5">
+                                @if (evTasks.Count > 0)
+                                {
+                                    <div class="tl-tasks">
+                                        @foreach (var t in evTasks)
+                                        {
+                                            <span class="tl-task @(t.IsOpen ? "" : "tl-task-done")"><span class="bi @(t.IsOpen ? "bi-square" : "bi-check2-square")" aria-hidden="true"></span> @t.Title</span>
+                                        }
+                                    </div>
+                                }
+                                @if (_taskFor == ev.Id)
+                                {
+                                    <QuickTask CaseId="CaseId" About="@($"{ActionItem.AboutEvidence}:{ev.Id}")" Placeholder="A task about this file"
+                                               OnDone="async () => { _taskFor = null; await OnChanged.InvokeAsync(); }" OnCancel="() => _taskFor = null" />
+                                }
+                            </td>
+                        </tr>
+                    }
                     @if (_custodyOpen.Contains(ev.Id))
                     {
                         <tr class="im-custody-row">
@@ -201,6 +229,11 @@
     /// <summary>Live-collab flash hooks (parent owns the flash state); render an item's flash class / hue.</summary>
     [Parameter] public Func<Guid, string?>? FlashClass { get; set; }
     [Parameter] public Func<Guid, string?>? FlashStyle { get; set; }
+    /// <summary>INV-28: may start a task about a file.</summary>
+    [Parameter] public bool CanEdit { get; set; }
+    /// <summary>INV-28: the case's tasks, to show the ones about each file.</summary>
+    [Parameter] public IReadOnlyList<ActionItem> Tasks { get; set; } = [];
+    private Guid? _taskFor;
 
     private const long MaxEvidenceBytes = 50 * 1024 * 1024;
 

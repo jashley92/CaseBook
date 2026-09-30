@@ -2453,3 +2453,32 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930045710_TaskAboutAndStepKind'
+)
+BEGIN
+    ALTER TABLE [CaseTemplateSteps] ADD [Kind] int NOT NULL DEFAULT 0;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930045710_TaskAboutAndStepKind'
+)
+BEGIN
+    ALTER TABLE [ActionItems] ADD [AboutRef] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930045710_TaskAboutAndStepKind'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260930045710_TaskAboutAndStepKind', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

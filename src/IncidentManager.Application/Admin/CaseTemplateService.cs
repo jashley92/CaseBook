@@ -7,10 +7,12 @@ using Microsoft.EntityFrameworkCore;
 namespace IncidentManager.Application.Admin;
 
 /// <summary>One playbook step in a template edit/view (E-06).</summary>
-public sealed record TemplateStepInput(string Title, string? Description, string? OwnerHint, int? DueOffsetHours);
+public sealed record TemplateStepInput(string Title, string? Description, string? OwnerHint, int? DueOffsetHours,
+    TaskKind Kind = TaskKind.General);
 
 /// <summary>A step as shown in the apply/preview UIs, carrying its stable id for selection.</summary>
-public sealed record TemplateStepView(Guid Id, int Order, string Title, string? Description, string? OwnerHint, int? DueOffsetHours);
+public sealed record TemplateStepView(Guid Id, int Order, string Title, string? Description, string? OwnerHint, int? DueOffsetHours,
+    TaskKind Kind = TaskKind.General);
 
 /// <summary>A template resolved for the pickers and the New Case / Apply flows.</summary>
 public sealed record TemplateView(
@@ -139,7 +141,8 @@ public sealed class CaseTemplateService
                 Title = title,
                 Description = Trim(s.Description),
                 OwnerHint = Trim(s.OwnerHint),
-                DueOffsetHours = s.DueOffsetHours is { } h && h > 0 ? h : null
+                DueOffsetHours = s.DueOffsetHours is { } h && h > 0 ? h : null,
+                Kind = s.Kind
             });
         }
     }
@@ -156,7 +159,7 @@ public sealed class CaseTemplateService
         t.Id, t.Name, t.Description, t.IsActive, t.SortOrder,
         t.DefaultClassification, t.DefaultSeverity, t.DefaultDataTypes, t.SummaryBoilerplate,
         t.Steps.OrderBy(s => s.Order)
-            .Select(s => new TemplateStepView(s.Id, s.Order, s.Title, s.Description, s.OwnerHint, s.DueOffsetHours))
+            .Select(s => new TemplateStepView(s.Id, s.Order, s.Title, s.Description, s.OwnerHint, s.DueOffsetHours, s.Kind))
             .ToList());
 
     private static string? Trim(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();

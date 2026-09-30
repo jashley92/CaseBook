@@ -1581,18 +1581,50 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Adds a task. INV-28: <paramref name="about"/> optionally says what it's about ("entity:&lt;id&gt;",
+    /// "evidence:&lt;id&gt;" or "entry:&lt;id&gt;"), which must be on this case; an entry is stored as its first version so
+    /// the link survives edits.
+    /// </summary>
     public async Task AddActionItemAsync(Guid id, string title, string? owner, DateTimeOffset? dueAtUtc,
-        TaskKind kind = TaskKind.General, CancellationToken ct = default)
+        TaskKind kind = TaskKind.General, string? about = null, CancellationToken ct = default)
     {
         Require();
+        title = (title ?? "").Trim();
+        if (title.Length == 0) throw new ArgumentException("Say what needs doing.");
+        if (title.Length > ActionItem.MaxTitleLength)
+            throw new ArgumentException($"Keep the task to {ActionItem.MaxTitleLength} characters or fewer.");
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.ActionItems.Add(new ActionItem
         {
             CaseId = c.Id, Title = title, Owner = owner, DueAtUtc = dueAtUtc, Kind = kind,
+            AboutRef = await ResolveAboutAsync(db, c, about, ct),
             CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
         });
         await db.SaveChangesAsync(ct);
+    }
+
+    // INV-28: checks what a task is about is on this case, and anchors a timeline entry at its first version.
+    private static async Task<string?> ResolveAboutAsync(IAppDbContext db, Case c, string? about, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(about)) return null;
+        var parts = about.Split(':', 2);
+        if (parts.Length != 2 || !Guid.TryParse(parts[1], out var target))
+            throw new ArgumentException("That isn't something a task can be about.");
+        switch (parts[0])
+        {
+            case ActionItem.AboutEntity when c.Entities.Any(e => e.Id == target):
+                return $"{ActionItem.AboutEntity}:{target}";
+            case ActionItem.AboutEvidence when await db.Evidence.AnyAsync(e => e.Id == target && e.CaseId == c.Id, ct):
+                return $"{ActionItem.AboutEvidence}:{target}";
+            case ActionItem.AboutEntry when c.TimelineEntries.FirstOrDefault(e => e.Id == target) is { } entry:
+                var first = entry;
+                while (first.SupersedesEntryId is { } prior && c.TimelineEntries.FirstOrDefault(e => e.Id == prior) is { } p) first = p;
+                return $"{ActionItem.AboutEntry}:{first.Id}";
+            default:
+                throw new InvalidOperationException("What the task is about isn't on this case.");
+        }
     }
 
     /// <summary>
@@ -1646,6 +1678,7 @@ public sealed class CaseService
                 Description = s.Description,
                 Owner = owner,
                 DueAtUtc = s.DueOffsetHours is { } h ? now.AddHours(h) : null,
+                Kind = s.Kind,   // INV-28: the step's kind of work
                 CreatedBy = _user.UserId,
                 CreatedAtUtc = now
             });

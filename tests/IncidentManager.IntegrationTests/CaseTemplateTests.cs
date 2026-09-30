@@ -177,6 +177,24 @@ public sealed class CaseTemplateTests : IDisposable
     }
 
     [Fact]
+    public async Task A_step_s_kind_carries_to_the_task_it_seeds(/* INV-28 */)
+    {
+        await using var db = NewContext();
+        var cases = NewCaseService(db);
+        var caseId = (await cases.CreateAsync(Req("Alpha"))).Id;
+        var templateId = await NewTemplateService(db).CreateAsync(new TemplateInput("Containment playbook", null, IsActive: true, 1,
+            null, null, null, null,
+            [new TemplateStepInput("Isolate the host", null, null, null, TaskKind.Contain), new TemplateStepInput("Write it up", null, null, null)]));
+
+        (await NewTemplateService(db).GetAsync(templateId))!.Steps.Select(x => x.Kind).Should().Equal(TaskKind.Contain, TaskKind.General);
+        await cases.ApplyTemplateAsync(caseId, templateId);
+
+        var c = await cases.GetDetailAsync(caseId);
+        c!.ActionItems.Single(a => a.Title == "Isolate the host").Kind.Should().Be(TaskKind.Contain);
+        c.ActionItems.Single(a => a.Title == "Write it up").Kind.Should().Be(TaskKind.General);
+    }
+
+    [Fact]
     public async Task Applying_a_subset_seeds_only_the_selected_steps()
     {
         await using var db = NewContext();

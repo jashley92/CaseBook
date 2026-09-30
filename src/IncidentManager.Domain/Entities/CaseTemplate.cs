@@ -63,9 +63,16 @@ public class CaseTemplateStep : Entity, IHashableEntity
     /// <summary>Hours after the template is applied by which the seeded action item is due; null = no due date.</summary>
     public int? DueOffsetHours { get; set; }
 
+    /// <summary>INV-28: the kind of response work the seeded task is (General when the step isn't tied to a phase).</summary>
+    public TaskKind Kind { get; set; } = TaskKind.General;
+
     public string? RowHash { get; set; }
 
-    public string BuildCanonicalContent() => string.Join('|',
-        TemplateId, Order, Title, Description, OwnerHint,
-        DueOffsetHours is { } h ? h.ToString(CultureInfo.InvariantCulture) : "");
+    // INV-28: the kind is folded in only when it isn't General, so existing steps keep their exact hash.
+    public string BuildCanonicalContent()
+    {
+        var content = string.Join('|', TemplateId, Order, Title, Description, OwnerHint,
+            DueOffsetHours is { } h ? h.ToString(CultureInfo.InvariantCulture) : "");
+        return Kind == TaskKind.General ? content : string.Join('|', content, "kind", (int)Kind);
+    }
 }

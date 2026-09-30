@@ -1,4 +1,5 @@
 using System.Text.Json;
+using IncidentManager.Domain.Enums;
 using System.Text.Json.Serialization;
 
 namespace IncidentManager.Application.Config;
@@ -20,7 +21,8 @@ public sealed record ConfigRole(string Name, string? Description, bool IsSystem,
 public sealed record ConfigRoleMapping(string AdGroup, string RoleName);
 
 /// <summary>One playbook step inside a case template.</summary>
-public sealed record ConfigTemplateStep(int Order, string Title, string? Description, string? OwnerHint, int? DueOffsetHours);
+public sealed record ConfigTemplateStep(int Order, string Title, string? Description, string? OwnerHint, int? DueOffsetHours,
+    TaskKind Kind = TaskKind.General);
 
 /// <summary>A case template (playbook) with its ordered steps and field defaults.</summary>
 public sealed record ConfigCaseTemplate(

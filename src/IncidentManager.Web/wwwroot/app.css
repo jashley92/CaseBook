@@ -2577,3 +2577,13 @@ button.im-phase-seg { cursor: pointer; }
 .im-brief-nudge { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .5rem; margin-bottom: .75rem; padding: .4rem .65rem;
                   border-radius: var(--im-radius); background: var(--im-warn-bg); color: var(--im-text); }
 .im-brief-nudge .bi { color: var(--im-warn); }
+
+/* INV-28: tasks started where the work is — the quick form, the tasks about an entry or file, and what a task is about. */
+.im-quicktask { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; max-width: 36rem; margin-top: 0.4rem; }
+.im-quicktask .form-control { flex: 1 1 14rem; min-width: 0; }
+.tl-tasks { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; margin-top: 0.3rem; font-size: var(--im-text-sm); }
+.tl-task .bi { color: var(--im-text-muted); }
+.tl-task-done { color: var(--im-text-muted); text-decoration: line-through; }
+.im-about-chip { display: inline-flex; align-items: center; gap: 0.25rem; margin-left: 0.4rem; padding: 0 0.4rem; font-size: var(--im-text-xs);
+                 border: 1px solid var(--im-border); border-radius: 999px; background: none; color: var(--im-text-muted); }
+.im-about-chip:hover { color: var(--im-text); border-color: var(--im-border-strong); }

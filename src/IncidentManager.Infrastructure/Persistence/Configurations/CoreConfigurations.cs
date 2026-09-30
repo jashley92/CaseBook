@@ -137,6 +137,7 @@ public sealed class ActionItemConfiguration : IEntityTypeConfiguration<ActionIte
     {
         b.ToTable("ActionItems");
         b.Property(x => x.Title).HasMaxLength(ActionItem.MaxTitleLength).IsRequired();
+        b.Property(x => x.AboutRef).HasMaxLength(64);
         b.Property(x => x.Description).HasMaxLength(4000);
         b.Property(x => x.Owner).HasMaxLength(200);
         b.Property(x => x.CreatedBy).HasMaxLength(200);

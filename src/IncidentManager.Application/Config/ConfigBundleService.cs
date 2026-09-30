@@ -166,7 +166,7 @@ public sealed partial class ConfigBundleService
         t.DefaultClassification?.ToString(), t.DefaultSeverity?.ToString(),
         t.DefaultDataTypes, t.SummaryBoilerplate,
         t.Steps.OrderBy(s => s.Order)
-            .Select(s => new ConfigTemplateStep(s.Order, s.Title, s.Description, s.OwnerHint, s.DueOffsetHours))
+            .Select(s => new ConfigTemplateStep(s.Order, s.Title, s.Description, s.OwnerHint, s.DueOffsetHours, s.Kind))
             .ToList());
 
     internal static ConfigStageGate ToConfig(StageGate g) => new(

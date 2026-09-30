@@ -27,6 +27,18 @@ public class ActionItem : AuditableEntity, IHashableEntity
     /// <summary>INV-25: the brief version whose open question this task follows up, when it was raised from one.</summary>
     public Guid? RaisedFromBriefId { get; set; }
 
+    /// <summary>
+    /// INV-28: what the task is about, when it was started from it: "entity:&lt;id&gt;", "evidence:&lt;id&gt;" or
+    /// "entry:&lt;id&gt;" (a timeline entry's first version, so the link survives edits). Null for a free-standing task.
+    /// </summary>
+    public string? AboutRef { get; set; }
+
+    public const string AboutEntity = "entity", AboutEvidence = "evidence", AboutEntry = "entry";
+
+    /// <summary>The kind and id of <see cref="AboutRef"/>, or null.</summary>
+    public (string Kind, Guid Id)? About =>
+        AboutRef?.Split(':', 2) is [var kind, var id] && Guid.TryParse(id, out var g) ? (kind, g) : null;
+
     public bool IsOverdue(DateTimeOffset nowUtc) =>
         DueAtUtc is { } due && Status is not (ActionItemStatus.Done or ActionItemStatus.Cancelled) && due < nowUtc;
 
@@ -39,6 +51,8 @@ public class ActionItem : AuditableEntity, IHashableEntity
         var content = string.Join('|',
             CaseId, Title, Description, Owner, DueAtUtc?.ToString("o"), (int)Status, CompletedAtUtc?.ToString("o"));
         if (Kind != TaskKind.General) content = string.Join('|', content, "kind", (int)Kind);
-        return RaisedFromBriefId is { } b ? string.Join('|', content, "brief", b) : content;
+        if (RaisedFromBriefId is { } b) content = string.Join('|', content, "brief", b);
+        // INV-28: likewise what it's about, only when set.
+        return AboutRef is { } about ? string.Join('|', content, "about", about) : content;
     }
 }

@@ -1,0 +1,58 @@
+@* INV-28: start a task where the work is (an entity, an evidence file, a timeline entry). Only the title is asked
+   for; the task records what it's about, and the owner, due date and kind are set on the Tasks tab. *@
+@inject CaseService Cases
+@inject ToastService Toasts
+
+<form class="im-quicktask" @onsubmit="Add" @onsubmit:preventDefault>
+    <label class="visually-hidden" for="@_id">New task</label>
+    <input id="@_id" class="form-control form-control-sm" maxlength="@ActionItem.MaxTitleLength" placeholder="@Placeholder"
+           @bind="_title" @bind:event="oninput" @ref="_input" />
+    <button type="submit" class="btn btn-sm btn-primary" disabled="@(_saving || string.IsNullOrWhiteSpace(_title))">Add task</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => OnCancel.InvokeAsync()">Cancel</button>
+    @if (_error is not null)
+    {
+        <div class="text-danger small w-100" role="alert">@_error</div>
+    }
+</form>
+
+@code {
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    /// <summary>What the task is about: "entity:&lt;id&gt;", "evidence:&lt;id&gt;" or "entry:&lt;id&gt;".</summary>
+    [Parameter, EditorRequired] public string About { get; set; } = "";
+    [Parameter] public string Placeholder { get; set; } = "What needs doing?";
+    [Parameter] public EventCallback OnDone { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private readonly string _id = $"quicktask-{Guid.NewGuid():N}";
+    private ElementReference _input;
+    private string? _title;
+    private string? _error;
+    private bool _saving;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { await _input.FocusAsync(); } catch (Exception) { /* not focusable yet; harmless */ }
+        }
+    }
+
+    private async Task Add()
+    {
+        if (string.IsNullOrWhiteSpace(_title)) return;
+        _saving = true;
+        _error = null;
+        try
+        {
+            await Cases.AddActionItemAsync(CaseId, _title, null, null, about: About);
+            Toasts.Success("Task added");
+            _title = null;
+            await OnDone.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _error = ex.Message;
+        }
+        finally { _saving = false; }
+    }
+}

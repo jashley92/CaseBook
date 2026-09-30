@@ -232,7 +232,7 @@ public sealed partial class ConfigBundleService
                     DefaultDataTypes = t.DefaultDataTypes, SummaryBoilerplate = t.SummaryBoilerplate,
                     CreatedBy = actor, CreatedAtUtc = now };
                 created.Steps = t.Steps.Select(s => new CaseTemplateStep { TemplateId = created.Id, Order = s.Order,
-                    Title = s.Title, Description = s.Description, OwnerHint = s.OwnerHint, DueOffsetHours = s.DueOffsetHours }).ToList();
+                    Title = s.Title, Description = s.Description, OwnerHint = s.OwnerHint, DueOffsetHours = s.DueOffsetHours, Kind = s.Kind }).ToList();
                 db.CaseTemplates.Add(created);
                 Tally(true, true);
             }
@@ -247,7 +247,7 @@ public sealed partial class ConfigBundleService
                 existing.Steps.Clear();
                 foreach (var s in t.Steps)
                     existing.Steps.Add(new CaseTemplateStep { TemplateId = existing.Id, Order = s.Order, Title = s.Title,
-                        Description = s.Description, OwnerHint = s.OwnerHint, DueOffsetHours = s.DueOffsetHours });
+                        Description = s.Description, OwnerHint = s.OwnerHint, DueOffsetHours = s.DueOffsetHours, Kind = s.Kind });
                 Tally(false, true);
             }
         }

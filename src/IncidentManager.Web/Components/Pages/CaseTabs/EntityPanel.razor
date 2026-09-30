@@ -1,7 +1,9 @@
 @* INV-11: an entity (indicator, account, host…) in context, in a side panel over whatever tab is open — what it
    is, where this case refers to it, how it relates to other entities, and which other cases it appears on — so
    checking an entity doesn't mean leaving the work. Opened from a "#" tag, a timeline actor/target, or an entity
-   row. Read-only; changes are made where they always are (the IOCs & entities tab). *@
+   row. Read-only; changes are made where they always are (the IOCs & entities tab).
+   INV-28: lists the tasks about the entity, and a task can be started from here. *@
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject CaseService Cases
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject TimeDisplay TimeDisp
@@ -56,6 +58,39 @@
                 }
             </section>
 
+            <section>
+                <div class="d-flex align-items-baseline justify-content-between">
+                    <h3 class="im-entity-panel-h">Tasks · @Tasks.Count</h3>
+                    @if (CanEdit && !_addingTask)
+                    {
+                        <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _addingTask = true">
+                            <span class="bi bi-plus-lg" aria-hidden="true"></span> Task
+                        </button>
+                    }
+                </div>
+                @if (Tasks.Count == 0 && !_addingTask)
+                {
+                    <p class="small text-muted mb-0">No tasks are about it.</p>
+                }
+                else
+                {
+                    <ul class="list-unstyled mb-1 small">
+                        @foreach (var t in Tasks)
+                        {
+                            <li class="im-entity-ref">
+                                <button type="button" class="btn btn-link p-0 text-start @(t.IsOpen ? "" : "text-muted text-decoration-line-through")" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@t.Title</button>
+                                <div class="text-muted">@(t.IsOpen ? "Open" : "Done")@(string.IsNullOrWhiteSpace(t.Owner) ? "" : $" · {Users.DisplayFor(t.Owner)}")</div>
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (_addingTask)
+                {
+                    <QuickTask CaseId="Case.Id" About="@($"{ActionItem.AboutEntity}:{en.Id}")" Placeholder="@($"A task about {(string.IsNullOrWhiteSpace(en.Label) ? en.Value : en.Label)}")"
+                               OnDone="async () => { _addingTask = false; await OnChanged.InvokeAsync(); }" OnCancel="() => _addingTask = false" />
+                }
+            </section>
+
             @if (Relationships.Count > 0)
             {
                 <section>
@@ -101,6 +136,15 @@
     /// <summary>Filter the timeline to this entity (INV-03).</summary>
     [Parameter] public EventCallback<Guid> OnShowOnTimeline { get; set; }
     [Parameter] public EventCallback<string> OnGoToTab { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    /// <summary>Reload the case after a task is added.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool _addingTask;
+    private List<ActionItem> Tasks => EntityId is { } id
+        ? Case.ActionItems.Where(t => t.AboutRef == $"{ActionItem.AboutEntity}:{id}")
+            .OrderByDescending(t => t.IsOpen).ThenBy(t => t.CreatedAtUtc).ToList()
+        : [];
 
     private sealed record Reference(string Kind, string Text, string Why, DateTimeOffset At, string Tab);
 
@@ -113,6 +157,7 @@
     {
         if (EntityId == _loadedFor) return;
         _loadedFor = EntityId;
+        _addingTask = false;
         _otherCases = null;
         if (EntityId is { } id)
             _otherCases = (await Cases.FindEntityOverlapsAsync(Case.Id)).Where(o => o.EntityId == id)
