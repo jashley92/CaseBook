@@ -57,6 +57,23 @@ public class MaterialityChange : Entity
     public DateTimeOffset ChangedAtUtc { get; set; }
 }
 
+/// <summary>
+/// INV-31: immutable record of a change to who is on a case — someone assigned, their role changed (including taking
+/// or handing over command), or removed — so "who was in charge at T+26h" is answered by the timeline, not the audit.
+/// </summary>
+public class AssignmentChange : Entity
+{
+    public Guid CaseId { get; set; }
+    public string UserId { get; set; } = string.Empty;
+    public string UserDisplayName { get; set; } = string.Empty;
+    /// <summary>The role before the change; null when the person was newly assigned.</summary>
+    public CaseAssignmentRole? From { get; set; }
+    /// <summary>The role after the change; null when the person was removed from the case.</summary>
+    public CaseAssignmentRole? To { get; set; }
+    public string ChangedBy { get; set; } = string.Empty;
+    public DateTimeOffset ChangedAtUtc { get; set; }
+}
+
 /// <summary>Immutable record of a severity change.</summary>
 public class SeverityChange : Entity
 {

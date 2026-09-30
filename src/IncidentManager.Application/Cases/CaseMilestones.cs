@@ -15,7 +15,9 @@ public enum MilestoneKind
     Reported,
     TaskDone,
     EvidenceAdded,
-    ReportFinal
+    ReportFinal,
+    /// <summary>INV-31: someone joined, changed role (including command) or left the case.</summary>
+    Command
 }
 
 /// <summary>
@@ -47,7 +49,15 @@ public sealed record MilestoneLabels(
     Func<Classification?, string> Classification,
     Func<Severity, string> Severity,
     Func<CasePhase, string> Phase,
-    Func<MaterialityStatus, string> Materiality);
+    Func<MaterialityStatus, string> Materiality)
+{
+    /// <summary>INV-31: a case role as it's written in a sentence ("incident commander", "analyst").</summary>
+    public static string Role(CaseAssignmentRole role) => role switch
+    {
+        CaseAssignmentRole.IncidentCommander => "incident commander",
+        _ => System.Text.RegularExpressions.Regex.Replace(role.ToString(), "(?<!^)([A-Z])", " $1").ToLowerInvariant()
+    };
+}
 
 /// <summary>
 /// INV-01: projects a case's existing change records onto its timeline as milestones — case opened,
@@ -87,6 +97,28 @@ public static class CaseMilestones
                 $"Phase {labels.Phase(x.From!.Value)} → {labels.Phase(x.To)}",
                 Blank(x.Reason), x.ChangedBy, "phase change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc),
                 Transition: (TransitionKind.Phase, x.Id)));
+
+        // INV-31: who took command, joined, changed role or left. A commander handing over as someone else takes
+        // command (both at the same moment) reads as one milestone.
+        foreach (var x in c.AssignmentChanges)
+        {
+            var handedOver = x.From == CaseAssignmentRole.IncidentCommander && x.To is not null
+                && c.AssignmentChanges.Any(y => y.ChangedAtUtc == x.ChangedAtUtc && y.To == CaseAssignmentRole.IncidentCommander && y.UserId != x.UserId);
+            if (handedOver) continue;
+            var previousIc = x.To == CaseAssignmentRole.IncidentCommander
+                ? c.AssignmentChanges.FirstOrDefault(y => y.ChangedAtUtc == x.ChangedAtUtc && y.From == CaseAssignmentRole.IncidentCommander && y.UserId != x.UserId)
+                : null;
+            var title = (x.From, x.To) switch
+            {
+                (_, CaseAssignmentRole.IncidentCommander) => $"{x.UserDisplayName} is incident commander" +
+                    (previousIc is null ? "" : $", taking over from {previousIc.UserDisplayName}"),
+                (null, { } to) => $"{x.UserDisplayName} joined as {MilestoneLabels.Role(to)}",
+                ({ } from, null) => $"{x.UserDisplayName} is no longer on the case (was {MilestoneLabels.Role(from)})",
+                (_, { } to) => $"{x.UserDisplayName} is now {MilestoneLabels.Role(to)}",
+                _ => $"{x.UserDisplayName}'s role changed"
+            };
+            list.Add(new CaseMilestone($"command:{x.Id}", x.ChangedAtUtc, MilestoneKind.Command, title, null, x.ChangedBy, "assignment"));
+        }
 
         foreach (var x in c.MaterialityChanges)
         {

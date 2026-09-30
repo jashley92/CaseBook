@@ -146,6 +146,18 @@ public sealed class ActionItemConfiguration : IEntityTypeConfiguration<ActionIte
     }
 }
 
+public sealed class AssignmentChangeConfiguration : IEntityTypeConfiguration<AssignmentChange>
+{
+    public void Configure(EntityTypeBuilder<AssignmentChange> b)
+    {
+        b.ToTable("AssignmentChanges");
+        b.Property(x => x.UserId).HasMaxLength(200).IsRequired();
+        b.Property(x => x.UserDisplayName).HasMaxLength(200);
+        b.Property(x => x.ChangedBy).HasMaxLength(200);
+        b.HasIndex(x => x.CaseId);
+    }
+}
+
 public sealed class CaseAssignmentConfiguration : IEntityTypeConfiguration<CaseAssignment>
 {
     public void Configure(EntityTypeBuilder<CaseAssignment> b)

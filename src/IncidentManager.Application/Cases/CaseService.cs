@@ -420,6 +420,7 @@ public sealed class CaseService
             .Include(x => x.ClassificationChanges)
             .Include(x => x.MaterialityChanges)
             .Include(x => x.StatusChanges)
+            .Include(x => x.AssignmentChanges)   // INV-31
             .Include(x => x.SeverityChanges)
             .Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics)
             .Include(x => x.Notes)
@@ -587,6 +588,7 @@ public sealed class CaseService
             .Include(x => x.ClassificationChanges)
             .Include(x => x.MaterialityChanges)
             .Include(x => x.StatusChanges)
+            .Include(x => x.AssignmentChanges)   // INV-31
             .Include(x => x.SeverityChanges)
             .Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics)
             .Include(x => x.Notes)

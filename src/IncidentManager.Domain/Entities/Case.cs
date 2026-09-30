@@ -128,6 +128,8 @@ public class Case : AuditableEntity, IHashableEntity
     public List<Evidence> Evidence { get; set; } = new();
     public List<ActionItem> ActionItems { get; set; } = new();
     public List<CaseAssignment> Assignments { get; set; } = new();
+    /// <summary>INV-31: who joined, changed role or left, and when.</summary>
+    public List<AssignmentChange> AssignmentChanges { get; set; } = new();
     public List<Report> Reports { get; set; } = new();
     public List<CaseEntity> Entities { get; set; } = new();
     public List<EntityRelationship> EntityRelationships { get; set; } = new();
@@ -446,6 +448,7 @@ public class Case : AuditableEntity, IHashableEntity
             throw new ArgumentException("A user is required to assign.");
 
         var existing = Assignments.FirstOrDefault(a => a.UserId == userId);
+        CaseAssignmentRole? before = existing?.Role;
         if (existing is null)
         {
             Assignments.Add(new CaseAssignment
@@ -461,11 +464,16 @@ public class Case : AuditableEntity, IHashableEntity
             existing.AssignedAtUtc = nowUtc;
             existing.AssignedBy = assignedBy;
         }
+        if (before != role) RecordAssignmentChange(userId, displayName, before, role, assignedBy, nowUtc);
 
         if (role == CaseAssignmentRole.IncidentCommander)
         {
             foreach (var other in Assignments.Where(a => a.UserId != userId && a.Role == CaseAssignmentRole.IncidentCommander))
+            {
                 other.Role = CaseAssignmentRole.Analyst;
+                RecordAssignmentChange(other.UserId, other.UserDisplayName, CaseAssignmentRole.IncidentCommander,
+                    CaseAssignmentRole.Analyst, assignedBy, nowUtc);
+            }
             IncidentCommander = userId;
         }
         else if (IncidentCommander == userId)
@@ -481,9 +489,18 @@ public class Case : AuditableEntity, IHashableEntity
         if (existing is null) return;
 
         Assignments.Remove(existing);
+        RecordAssignmentChange(existing.UserId, existing.UserDisplayName, existing.Role, null, actor, nowUtc);
         if (IncidentCommander == userId) IncidentCommander = null;
         Touch(actor, nowUtc);
     }
+
+    private void RecordAssignmentChange(string userId, string displayName, CaseAssignmentRole? from,
+        CaseAssignmentRole? to, string actor, DateTimeOffset nowUtc) =>
+        AssignmentChanges.Add(new AssignmentChange
+        {
+            CaseId = Id, UserId = userId, UserDisplayName = displayName, From = from, To = to,
+            ChangedBy = actor, ChangedAtUtc = nowUtc
+        });
 
     /// <summary>Records a Legal/Privacy referral (capture only &mdash; deadlines are Legal's responsibility).</summary>
     public void ReferToLegal(string referredBy, string? contact, string? relevanceNote, DateTimeOffset nowUtc)

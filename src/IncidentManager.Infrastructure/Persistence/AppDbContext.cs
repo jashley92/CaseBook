@@ -17,6 +17,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<ClassificationChange> ClassificationChanges => Set<ClassificationChange>();
     public DbSet<MaterialityChange> MaterialityChanges => Set<MaterialityChange>();
     public DbSet<StatusChange> StatusChanges => Set<StatusChange>();
+    public DbSet<AssignmentChange> AssignmentChanges => Set<AssignmentChange>();
     public DbSet<SeverityChange> SeverityChanges => Set<SeverityChange>();
     public DbSet<TimelineEntry> TimelineEntries => Set<TimelineEntry>();
     public DbSet<AnalystNote> Notes => Set<AnalystNote>();

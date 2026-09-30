@@ -365,6 +365,45 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("Users", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.AssignmentChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ChangedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("From")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("To")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseId");
+
+                    b.ToTable("AssignmentChanges", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.AuditLogEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2371,6 +2410,15 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.AssignmentChange", b =>
+                {
+                    b.HasOne("IncidentManager.Domain.Entities.Case", null)
+                        .WithMany("AssignmentChanges")
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.Case", b =>
                 {
                     b.OwnsOne("IncidentManager.Domain.ValueObjects.LegalReferral", "LegalReferral", b1 =>
@@ -2715,6 +2763,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.Case", b =>
                 {
                     b.Navigation("ActionItems");
+
+                    b.Navigation("AssignmentChanges");
 
                     b.Navigation("Assignments");
 

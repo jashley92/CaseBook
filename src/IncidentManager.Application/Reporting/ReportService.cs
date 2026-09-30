@@ -96,8 +96,10 @@ public sealed class ReportService
         if (opts.IncludeMilestones)
         {
             var labels = new Cases.MilestoneLabels(ClassificationLabel, _severityLabels.For, PhaseLabel, MaterialityLabel);
-            // A report listing its own earlier versions reads oddly, so final-report milestones stay out.
-            foreach (var m in Cases.CaseMilestones.Project(c, labels).Where(m => m.Kind != Cases.MilestoneKind.ReportFinal))
+            // A report listing its own earlier versions reads oddly, so final-report milestones stay out; so do
+            // staffing changes (INV-31), which are the team's working record rather than findings.
+            foreach (var m in Cases.CaseMilestones.Project(c, labels)
+                         .Where(m => m.Kind is not (Cases.MilestoneKind.ReportFinal or Cases.MilestoneKind.Command)))
             {
                 var text = m.Detail is { } detail ? $"{m.Title}. {detail}" : m.Title;
                 if (m.RecordedAtUtc is { } rec) text += Late(m.AtUtc, rec);

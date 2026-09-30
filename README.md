@@ -66,7 +66,8 @@ anything is written to a case. See [docs/API.md](docs/API.md) for the API refere
 One chronology per case, read by day and counted from detection (switch to **T+** time to see it as the
 responders do): the **event** timeline (what the adversary or vendor did, with the attack chain), the
 **investigation** timeline (what the team did), **decisions** recorded with their why, and the **response
-milestones** (classification, severity and phase changes, stage gates, materiality, reporting, completed tasks)
+milestones** (classification, severity and phase changes, stage gates, materiality, reporting, completed tasks,
+and who took command, joined or left)
 drawn straight from the case record, so nothing is written twice. Work recorded after the fact is dated when
 it happened: phase and classification changes take a "when it happened" time and can be corrected later, with a
 reason, while the time it was entered is kept and shown. A task's result, a note or a task comment goes

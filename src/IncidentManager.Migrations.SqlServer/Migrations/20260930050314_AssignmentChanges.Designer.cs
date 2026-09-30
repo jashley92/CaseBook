@@ -3,77 +3,85 @@ using System;
 using IncidentManager.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace IncidentManager.Infrastructure.Persistence.Migrations
+namespace IncidentManager.Migrations.SqlServer.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260930050314_AssignmentChanges")]
+    partial class AssignmentChanges
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
+            modelBuilder
+                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
             modelBuilder.Entity("IncidentManager.Domain.Entities.ActionItem", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("AboutRef")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long?>("CompletedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Description")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
-                    b.Property<long?>("DueAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("DueAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Owner")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<Guid?>("RaisedFromBriefId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(400)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(400)");
 
                     b.HasKey("Id");
 
@@ -85,36 +93,36 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.ActionItemComment", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("ActionItemId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Body")
                         .IsRequired()
                         .HasMaxLength(8000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.HasKey("Id");
 
@@ -128,29 +136,29 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.AdGroupRoleMapping", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("AdGroup")
                         .IsRequired()
                         .HasMaxLength(400)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(400)");
 
                     b.Property<string>("RoleName")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
-                    b.Property<long>("UpdatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("UpdatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
@@ -165,47 +173,47 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.AnalystNote", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Body")
                         .IsRequired()
                         .HasMaxLength(16000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("IsCurrent")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<string>("MentionsCsv")
                         .IsRequired()
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<Guid?>("SupersedesNoteId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Version")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -217,61 +225,61 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.ApiToken", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long>("ExpiresAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
-                    b.Property<long?>("LastUsedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("LastUsedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("OwnerDisplayName")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("OwnerUserId")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Prefix")
                         .IsRequired()
                         .HasMaxLength(20)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(20)");
 
-                    b.Property<long?>("RevokedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("RevokedBy")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RolesCsv")
                         .IsRequired()
                         .HasMaxLength(400)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(400)");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.HasKey("Id");
 
@@ -286,28 +294,28 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.AppSetting", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Key")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
-                    b.Property<long>("UpdatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("UpdatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Value")
                         .HasMaxLength(8000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
@@ -320,37 +328,37 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.AppUser", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Email")
                         .HasMaxLength(300)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(300)");
 
-                    b.Property<long?>("FeedLinkIssuedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("FeedLinkIssuedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
-                    b.Property<long>("LastSeenUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("LastSeenUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("RolesCsv")
                         .IsRequired()
                         .HasMaxLength(400)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(400)");
 
                     b.Property<string>("Sid")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("UserPrincipalName")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
@@ -363,34 +371,34 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.AssignmentChange", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("ChangedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ChangedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<int?>("From")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<int?>("To")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("UserDisplayName")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
@@ -402,62 +410,62 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.AuditLogEntry", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Action")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("Actor")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("AfterJson")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
-                    b.Property<long>("AtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("AtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("BeforeJson")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("CaseNumber")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("EntityId")
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("EntityLabel")
                         .HasMaxLength(300)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<string>("EntityType")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("EntryHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("PrevHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Reason")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<long>("Sequence")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bigint");
 
                     b.Property<string>("Summary")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.HasKey("Id");
 
@@ -474,132 +482,132 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.Case", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int?>("AffectedIndividualsCount")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("AffectedStates")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("CaseNumber")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<int?>("Classification")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
-                    b.Property<long?>("ClosedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
-                    b.Property<long?>("ContainedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ContainedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("DataTypesInvolved")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("DescriptiveName")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long?>("DetectedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("DetectedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("DetectionCaseId")
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<bool>("HasCustomNumber")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<string>("ImpactedAssets")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("IncidentCommander")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("IsArchived")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsExercise")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsRestricted")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("LegalHold")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<string>("LegalHoldReleaseReason")
                         .HasMaxLength(1000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(1000)");
 
-                    b.Property<long?>("LegalHoldReleaseRequestedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("LegalHoldReleaseRequestedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("LegalHoldReleaseRequestedBy")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long?>("OccurredAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<int>("Origin")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<int>("Phase")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<Guid?>("ReportProfileId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long?>("ReportedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ReportedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
-                    b.Property<long?>("ResolvedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ResolvedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("Sequence")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<int>("Severity")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("Summary")
                         .HasMaxLength(8000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(300)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<int>("Year")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -623,41 +631,41 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseAccessEvent", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("AccessType")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("ActorUserId")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<Guid?>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("CaseNumber")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<int>("Count")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
-                    b.Property<long>("FirstSeenUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("FirstSeenUtc")
+                        .HasColumnType("datetimeoffset");
 
-                    b.Property<long>("LastSeenUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("LastSeenUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<Guid?>("TargetId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("TargetLabel")
                         .HasMaxLength(500)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<bool>("WasRestricted")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.HasKey("Id");
 
@@ -673,31 +681,31 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseAssignment", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("AssignedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("AssignedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("AssignedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Role")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("UserDisplayName")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
@@ -712,57 +720,57 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseBrief", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("IsCurrent")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<string>("Known")
                         .HasMaxLength(8000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("NextSteps")
                         .HasMaxLength(8000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("OpenQuestions")
                         .HasMaxLength(8000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Summary")
                         .HasMaxLength(8000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid?>("SupersedesBriefId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Version")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("WorkingAssessment")
                         .HasMaxLength(8000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
@@ -774,15 +782,15 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseDataElement", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ElementKey")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(100)");
 
                     b.HasKey("Id");
 
@@ -795,54 +803,54 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseEntity", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Description")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<int>("Disposition")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("Label")
                         .HasMaxLength(400)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(400)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Source")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<int?>("Tlp")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<int>("Type")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("Value")
                         .IsRequired()
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.HasKey("Id");
 
@@ -856,38 +864,38 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseLink", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Description")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid>("RelatedCaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("Type")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -904,41 +912,41 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseTechnique", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(400)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(400)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("Tactic")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("TechniqueId")
                         .IsRequired()
                         .HasMaxLength(20)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(20)");
 
                     b.HasKey("Id");
 
@@ -953,54 +961,54 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseTemplate", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<int?>("DefaultClassification")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("DefaultDataTypes")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<int?>("DefaultSeverity")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("Description")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("SummaryBoilerplate")
                         .HasMaxLength(8000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
@@ -1013,36 +1021,36 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseTemplateStep", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Description")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<int?>("DueOffsetHours")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<int>("Order")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("OwnerHint")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<Guid>("TemplateId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(400)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(400)");
 
                     b.HasKey("Id");
 
@@ -1054,27 +1062,27 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.ChainOfCustodyEvent", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Action")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Actor")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long>("AtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("AtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("Details")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<Guid>("EvidenceId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
@@ -1086,32 +1094,32 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.ClassificationChange", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("ChangedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ChangedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long?>("EffectiveAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("EffectiveAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<int?>("From")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<int>("To")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -1123,49 +1131,49 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.DataElement", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsSystem")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<string>("Key")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Label")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("NotificationJurisdictions")
                         .HasMaxLength(400)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(400)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -1178,19 +1186,19 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.EntityLayout", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("EntityId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<double>("X")
-                        .HasColumnType("REAL");
+                        .HasColumnType("float");
 
                     b.Property<double>("Y")
-                        .HasColumnType("REAL");
+                        .HasColumnType("float");
 
                     b.HasKey("Id");
 
@@ -1205,41 +1213,41 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.EntityRelationship", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Description")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<Guid>("SourceEntityId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("TargetEntityId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Type")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -1255,13 +1263,13 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.EventStepTactic", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Tactic")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<Guid>("TimelineEntryId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
@@ -1273,55 +1281,55 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.Evidence", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Description")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("OriginalFileName")
                         .IsRequired()
                         .HasMaxLength(500)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Sha256")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<long>("SizeBytes")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bigint");
 
                     b.Property<string>("StoragePath")
                         .IsRequired()
                         .HasMaxLength(500)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(500)");
 
                     b.HasKey("Id");
 
@@ -1335,16 +1343,16 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.EvidenceCitation", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("EvidenceId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("TimelineEntryId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
@@ -1361,41 +1369,41 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.GatePassage", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Commentary")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("Detail")
                         .IsRequired()
                         .HasMaxLength(8000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("OverrideJustification")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
-                    b.Property<long>("PassedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("PassedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("PassedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("Trigger")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<bool>("WasOverridden")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.HasKey("Id");
 
@@ -1407,59 +1415,59 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.ImprovementAction", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long?>("ClosedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Details")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("OutcomeNote")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("Owner")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RelatedArea")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
-                    b.Property<long?>("TargetDateUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("TargetDateUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(400)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(400)");
 
                     b.HasKey("Id");
 
@@ -1473,38 +1481,38 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.IntegritySeal", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Algorithm")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("ChainHeadHash")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("KeyId")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(100)");
 
-                    b.Property<long>("SealedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("SealedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("SealedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Signature")
                         .IsRequired()
                         .HasMaxLength(1024)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(1024)");
 
                     b.Property<long>("UpToSequence")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bigint");
 
                     b.HasKey("Id");
 
@@ -1516,35 +1524,35 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.MaterialityChange", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("ChangedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ChangedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long?>("DecidedOnUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("DecidedOnUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("DecisionMaker")
                         .HasMaxLength(300)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<int>("From")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("Rationale")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<int>("To")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -1556,45 +1564,45 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.NotificationRule", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(16)");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsSystem")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<string>("Label")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("WindowHours")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -1607,52 +1615,52 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.PendingImport", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long?>("DecidedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("DecidedBy")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("DecisionNote")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("Origin")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RawJson")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid?>("ResolvedCaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ResolvedCaseNumber")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
-                    b.Property<long>("SubmittedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("SubmittedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("SubmittedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Summary")
                         .IsRequired()
                         .HasMaxLength(300)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<Guid?>("TargetCaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
@@ -1664,18 +1672,18 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.PinnedCase", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("PinnedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("PinnedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
@@ -1690,48 +1698,48 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.PostIncidentReview", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ContributingFactors")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("NoActionsIdentified")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<string>("OpportunitiesToImprove")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("WhatHappened")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("WhatWorkedWell")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
                     b.HasKey("Id");
 
@@ -1744,69 +1752,69 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.Report", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long?>("ApprovedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ApprovedBy")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ContentSha256")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("FileName")
                         .IsRequired()
                         .HasMaxLength(400)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(400)");
 
                     b.Property<int>("Format")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<bool>("IsFinal")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("StoragePath")
                         .IsRequired()
                         .HasMaxLength(500)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<string>("TemplateName")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("TemplateSha256")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int?>("Tlp")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<int>("Version")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -1818,47 +1826,47 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.ReportProfile", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Description")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("SectionLayout")
                         .HasMaxLength(1000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<int>("SortOrder")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<Guid?>("TemplateId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
@@ -1873,49 +1881,49 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.ReportTemplate", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("FileName")
                         .IsRequired()
                         .HasMaxLength(260)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(260)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsLessonsDefault")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Sha256")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<long>("SizeBytes")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bigint");
 
                     b.HasKey("Id");
 
@@ -1925,36 +1933,36 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.Role", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Description")
                         .HasMaxLength(400)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(400)");
 
                     b.Property<bool>("IsSystem")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("PermissionsCsv")
                         .IsRequired()
                         .HasMaxLength(1000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
-                    b.Property<long>("UpdatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("UpdatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
@@ -1967,31 +1975,31 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.SavedView", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<bool>("IsDefault")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsShared")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(120)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(120)");
 
                     b.Property<string>("OwnerUserId")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Query")
                         .IsRequired()
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.HasKey("Id");
 
@@ -2008,31 +2016,31 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.SeverityChange", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("ChangedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ChangedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long?>("EffectiveAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("EffectiveAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<int?>("From")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("Reason")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<int>("To")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -2044,43 +2052,43 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.StageGate", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("CommentaryMinLength")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Description")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("Trigger")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -2092,35 +2100,35 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.StageGateRequirement", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("CheckKey")
                         .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<int?>("CheckParam")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<Guid>("GateId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsBlocking")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("Label")
                         .IsRequired()
                         .HasMaxLength(400)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(400)");
 
                     b.Property<int>("Order")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.HasKey("Id");
 
@@ -2132,31 +2140,31 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.StatusChange", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("ChangedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ChangedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long?>("EffectiveAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("EffectiveAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<int?>("From")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<string>("Reason")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<int>("To")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -2168,87 +2176,87 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.TimelineEntry", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("ActionItemId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("ActorEntityId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("DecidedBy")
                         .HasMaxLength(300)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(16000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid?>("EvidenceId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsCurrent")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
-                    b.Property<long>("OccurredAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("OptionsConsidered")
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("PromotedFrom")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Rationale")
                         .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Source")
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<Guid?>("SupersedesEntryId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("TargetEntityId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("TechniqueId")
                         .HasMaxLength(20)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<int>("Type")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<int>("Version")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -2268,45 +2276,45 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.TransitionTimeCorrection", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CaseId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("ChangeId")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<long>("CreatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
-                    b.Property<long>("FromEffectiveUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("FromEffectiveUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
-                    b.Property<long?>("ModifiedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("ModifiedBy")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(64)");
 
-                    b.Property<long>("ToEffectiveUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("ToEffectiveUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
 
@@ -2318,33 +2326,33 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.UserDisplayPreference", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("AttackChainOpen")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("CompactRows")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("DarkTheme")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("LocalTime")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("NavCollapsed")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("TwelveHourClock")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
-                    b.Property<long>("UpdatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
@@ -2357,27 +2365,27 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("IncidentManager.Domain.Entities.UserNotificationPreference", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("DigestCadence")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("int");
 
                     b.Property<bool>("SuppressAssignment")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("SuppressDueSoon")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
                     b.Property<bool>("SuppressOverdue")
-                        .HasColumnType("INTEGER");
+                        .HasColumnType("bit");
 
-                    b.Property<long>("UpdatedAtUtc")
-                        .HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("TEXT");
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
@@ -2419,29 +2427,29 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.OwnsOne("IncidentManager.Domain.ValueObjects.LegalReferral", "LegalReferral", b1 =>
                         {
                             b1.Property<Guid>("CaseId")
-                                .HasColumnType("TEXT");
+                                .HasColumnType("uniqueidentifier");
 
                             b1.Property<bool>("IsReferred")
-                                .HasColumnType("INTEGER")
+                                .HasColumnType("bit")
                                 .HasColumnName("Legal_IsReferred");
 
-                            b1.Property<long?>("ReferredAtUtc")
-                                .HasColumnType("INTEGER")
+                            b1.Property<DateTimeOffset?>("ReferredAtUtc")
+                                .HasColumnType("datetimeoffset")
                                 .HasColumnName("Legal_ReferredAtUtc");
 
                             b1.Property<string>("ReferredBy")
                                 .HasMaxLength(200)
-                                .HasColumnType("TEXT")
+                                .HasColumnType("nvarchar(200)")
                                 .HasColumnName("Legal_ReferredBy");
 
                             b1.Property<string>("ReferredToContact")
                                 .HasMaxLength(300)
-                                .HasColumnType("TEXT")
+                                .HasColumnType("nvarchar(300)")
                                 .HasColumnName("Legal_ReferredToContact");
 
                             b1.Property<string>("RegulatoryRelevanceNote")
                                 .HasMaxLength(4000)
-                                .HasColumnType("TEXT")
+                                .HasColumnType("nvarchar(4000)")
                                 .HasColumnName("Legal_RelevanceNote");
 
                             b1.HasKey("CaseId");
@@ -2455,33 +2463,33 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.OwnsOne("IncidentManager.Domain.ValueObjects.MaterialityDetermination", "Materiality", b1 =>
                         {
                             b1.Property<Guid>("CaseId")
-                                .HasColumnType("TEXT");
+                                .HasColumnType("uniqueidentifier");
 
-                            b1.Property<long?>("DecidedOnUtc")
-                                .HasColumnType("INTEGER")
+                            b1.Property<DateTimeOffset?>("DecidedOnUtc")
+                                .HasColumnType("datetimeoffset")
                                 .HasColumnName("Materiality_DecidedOnUtc");
 
                             b1.Property<string>("DecisionMaker")
                                 .HasMaxLength(300)
-                                .HasColumnType("TEXT")
+                                .HasColumnType("nvarchar(300)")
                                 .HasColumnName("Materiality_DecisionMaker");
 
                             b1.Property<string>("Rationale")
                                 .HasMaxLength(4000)
-                                .HasColumnType("TEXT")
+                                .HasColumnType("nvarchar(4000)")
                                 .HasColumnName("Materiality_Rationale");
 
-                            b1.Property<long?>("RecordedAtUtc")
-                                .HasColumnType("INTEGER")
+                            b1.Property<DateTimeOffset?>("RecordedAtUtc")
+                                .HasColumnType("datetimeoffset")
                                 .HasColumnName("Materiality_RecordedAtUtc");
 
                             b1.Property<string>("RecordedBy")
                                 .HasMaxLength(200)
-                                .HasColumnType("TEXT")
+                                .HasColumnType("nvarchar(200)")
                                 .HasColumnName("Materiality_RecordedBy");
 
                             b1.Property<int>("Status")
-                                .HasColumnType("INTEGER")
+                                .HasColumnType("int")
                                 .HasColumnName("Materiality_Status");
 
                             b1.HasKey("CaseId");
@@ -2495,22 +2503,22 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.OwnsOne("IncidentManager.Domain.ValueObjects.ThirdPartyDetails", "ThirdParty", b1 =>
                         {
                             b1.Property<Guid>("CaseId")
-                                .HasColumnType("TEXT");
+                                .HasColumnType("uniqueidentifier");
 
                             b1.Property<string>("VendorContact")
                                 .HasMaxLength(300)
-                                .HasColumnType("TEXT")
+                                .HasColumnType("nvarchar(300)")
                                 .HasColumnName("ThirdParty_VendorContact");
 
                             b1.Property<string>("VendorName")
                                 .IsRequired()
                                 .HasMaxLength(300)
-                                .HasColumnType("TEXT")
+                                .HasColumnType("nvarchar(300)")
                                 .HasColumnName("ThirdParty_VendorName");
 
                             b1.Property<string>("VendorReference")
                                 .HasMaxLength(200)
-                                .HasColumnType("TEXT")
+                                .HasColumnType("nvarchar(200)")
                                 .HasColumnName("ThirdParty_VendorReference");
 
                             b1.HasKey("CaseId");

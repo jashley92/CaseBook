@@ -2482,3 +2482,43 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930050314_AssignmentChanges'
+)
+BEGIN
+    CREATE TABLE [AssignmentChanges] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [UserId] nvarchar(200) NOT NULL,
+        [UserDisplayName] nvarchar(200) NOT NULL,
+        [From] int NULL,
+        [To] int NULL,
+        [ChangedBy] nvarchar(200) NOT NULL,
+        [ChangedAtUtc] datetimeoffset NOT NULL,
+        CONSTRAINT [PK_AssignmentChanges] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_AssignmentChanges_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930050314_AssignmentChanges'
+)
+BEGIN
+    CREATE INDEX [IX_AssignmentChanges_CaseId] ON [AssignmentChanges] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930050314_AssignmentChanges'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260930050314_AssignmentChanges', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
