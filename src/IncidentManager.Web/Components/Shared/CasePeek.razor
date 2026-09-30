@@ -51,7 +51,7 @@
                 <div class="d-flex flex-wrap align-items-center gap-2">
                     <span class="@Ui.SlaBadge(sla.State)">
                         <span class="bi @Ui.SlaGlyph(sla.State)" aria-hidden="true"></span>
-                        @(sla.Clock is { } clk ? Ui.SlaClockLabel(clk) : "SLA"): @(Ui.SlaTiming(sla) is { Length: > 0 } t ? t : Ui.SlaLabel(sla.State))
+                        @(sla.Clock is { } clk ? Ui.SlaClockLabel(clk) : "SLA"): @Ui.SlaShort(sla)
                     </span>
                     @if (sla.IsActive && sla.DueAtUtc is { } due) { <span class="small text-muted im-data">due @TimeDisp.Short(due)</span> }
                 </div>

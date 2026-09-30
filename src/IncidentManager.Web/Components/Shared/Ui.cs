@@ -439,9 +439,22 @@ public static class Ui
     {
         SlaState.OnTrack or SlaState.AtRisk when st.Remaining is { } r => $"{HoursText(r.TotalHours)} left",
         SlaState.Breached when st.Remaining is { } r => $"{HoursText(-r.TotalHours)} over",
-        SlaState.Met or SlaState.Missed when st.ElapsedHours is { } h => $"in {HoursText(h)}",
+        // "took", not "in": "in 24h" beside a closed clock reads as "due in 24 hours" (INV-22).
+        SlaState.Met or SlaState.Missed when st.ElapsedHours is { } h => $"took {HoursText(h)}",
         _ => ""
     };
+
+    /// <summary>
+    /// INV-22: an SLA clock in one short phrase for tight spaces (the context panel, case peek). A running clock
+    /// is its timing ("5h left", "2d over"); a stopped one keeps its state too ("Missed · took 24h"), since the
+    /// timing alone doesn't say whether the target was met.
+    /// </summary>
+    public static string SlaShort(SlaStatus st)
+    {
+        var timing = SlaTiming(st);
+        if (timing.Length == 0) return SlaLabel(st.State);
+        return st.State is SlaState.Met or SlaState.Missed ? $"{SlaLabel(st.State)} · {timing}" : timing;
+    }
 
     // Compact hours/days phrasing for SLA deltas (e.g. 30 → "1d 6h", 5 → "5h", 0.5 → "<1h").
     private static string HoursText(double hours)

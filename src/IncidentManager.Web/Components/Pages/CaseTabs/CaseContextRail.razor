@@ -28,7 +28,7 @@
             <div class="im-rail-row">
                 <span>@(st.Clock is { } c ? Ui.SlaClockLabel(c) : "SLA")</span>
                 <span class="@Ui.SlaBadge(st.State)" title="@(st.DueAtUtc is { } due ? $"Due {TimeDisp.Long(due)}" : null)">
-                    @(Ui.SlaTiming(st) is { Length: > 0 } t ? t : Ui.SlaLabel(st.State))
+                    @Ui.SlaShort(st)
                 </span>
             </div>
         }
