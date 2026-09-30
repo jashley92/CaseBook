@@ -238,49 +238,10 @@ else
         </div>
     </div>
 
-    <div class="im-casehead-state">
-        <span class="@Ui.ClassificationBadge(_case.Classification)">@Ui.Label(_case.Classification)</span>
-        <span class="@Ui.SeverityBadge(_case.Severity)">@SevLabels.For(_case.Severity)</span>
-        @{
-            var slaHead = SlaPolicy.Evaluate(_case.Severity, _case.Phase, _case.DetectedAtUtc,
-                _case.ContainedAtUtc, _case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow, _case.Classification);
-            var slaHeadClock = slaHead.Clock is { } hc ? Ui.SlaClockLabel(hc) : "SLA";
-            var slaHeadTiming = Ui.SlaTiming(slaHead);
-            var slaHeadTitle = slaHeadTiming.Length > 0 ? $"{slaHeadClock} · {slaHeadTiming}" : slaHeadClock;
-        }
-        @if (slaHead.State != SlaState.NoTarget)
-        {
-            <span class="@Ui.SlaBadge(slaHead.State)" title="@slaHeadTitle">
-                <span class="bi @Ui.SlaGlyph(slaHead.State)" aria-hidden="true"></span> SLA: @Ui.SlaLabel(slaHead.State)
-            </span>
-        }
-        @if (_notifyDeadlines?.Headline is { } nh)
-        {
-            <span class="@Ui.SlaBadge(nh.State)" title="@($"Notify {nh.JurisdictionLabel}{(nh.DueAtUtc is { } due ? " · due " + TimeDisp.Short(due) : "")}")">
-                <span class="bi bi-megaphone" aria-hidden="true"></span> Notify: @Ui.SlaLabel(nh.State)
-            </span>
-        }
-        @if (_case.LegalReferral.IsReferred) { <span class="im-badge im-b-neutral">Legal referred</span> }
-        @if (_case.Materiality.Status != MaterialityStatus.Undetermined)
-        {
-            <span class="@Ui.MaterialityBadge(_case.Materiality.Status)" title="Materiality determination">@Ui.Label(_case.Materiality.Status)</span>
-        }
-        @if (_case.IsRestricted) { <span class="im-badge im-b-warn">Restricted</span> }
-        @if (_case.LegalHold) { <span class="im-badge im-b-danger">Legal hold</span> }
-        @if (_case.IsArchived) { <span class="im-badge im-b-neutral">Archived</span> }
-        @if (_case.IsExercise) { <span class="im-badge im-b-info" title="Tabletop exercise or drill">Exercise</span> }
-        <span class="im-phase-rail" role="list" aria-label="Case phase">
-            @{ var _phases = Enum.GetValues<CasePhase>(); var _curIdx = Array.IndexOf(_phases, _case.Phase); }
-            @for (var i = 0; i < _phases.Length; i++)
-            {
-                var isDone = i < _curIdx;
-                var isCur = i == _curIdx;
-                <span role="listitem" aria-current="@(isCur ? "step" : null)"
-                      class="im-badge rounded-pill @(isCur ? "im-b-info im-phase-cur" : isDone ? "im-b-ok im-phase-other" : "im-b-neutral im-phase-other")">@Ui.Label(_phases[i])</span>
-                @if (i < _phases.Length - 1) { <span class="text-muted small im-phase-other" aria-hidden="true">›</span> }
-            }
-        </span>
-    </div>
+    @* INV-38: the case's state as one line that reads as a sentence (classification · severity, the phase, quiet
+       flags). The clocks live in the context panel; an alert chip stands in for them only where the panel isn't
+       beside the tab. *@
+    <div class="im-casehead-state">@StateLine(slim: false)</div>
 
     @* INV-04: what other people changed since this viewer last had the case open, with a one-click view of it. *@
     @if (_sinceCount > 0 && !_sinceDismissed && _lastViewed is { } lastViewed)
@@ -324,16 +285,7 @@ else
     <div id="ws-sticky" class="ws-sticky mb-3">
         <div class="ws-slim" aria-hidden="true">
             <code class="im-casehead-num">@_case.CaseNumber</code>
-            <span class="@Ui.ClassificationBadge(_case.Classification)">@Ui.Label(_case.Classification)</span>
-            <span class="@Ui.SeverityBadge(_case.Severity)">@SevLabels.For(_case.Severity)</span>
-            <span class="@Ui.PhaseBadge(_case.Phase)">@Ui.Label(_case.Phase)</span>
-            @if (slaHead.State != SlaState.NoTarget)
-            {
-                <span class="@Ui.SlaBadge(slaHead.State)" title="@slaHeadTitle">
-                    <span class="bi @Ui.SlaGlyph(slaHead.State)" aria-hidden="true"></span>
-                    @(slaHead.State is SlaState.Breached or SlaState.AtRisk && slaHeadTiming.Length > 0 ? slaHeadTiming : Ui.SlaLabel(slaHead.State))
-                </span>
-            }
+            @StateLine(slim: true)
             <span class="ws-slim-title text-muted">@_case.Title</span>
             @if (_canEdit && NextPhase() is { } snp)
             {
@@ -351,9 +303,9 @@ else
                 <li class="im-tab-sep" aria-hidden="true"></li>
             }
             <li class="nav-item">
-                <button class="nav-link @(_activeTab == tab ? "active" : "")" @onclick="() => SetTab(tab)"
+                <button class="nav-link @(_activeTab == tab ? "active" : "") @(TabQuiet(tab) ? "im-tab-quiet" : "")" @onclick="() => SetTab(tab)"
                         title="@($"Shortcut: {_tabNo}")">
-                    @TabLabel(tab)@{ var _tc = TabCount(tab); }@if (_tc is { } cnt) { <span class="im-badge im-b-neutral ms-1 im-bump" @key="@($"{tab}:{cnt}")">@cnt</span> }@if (TabHasNew(tab)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }
+                    @TabLabel(tab)@{ var _tc = TabCount(tab); }@if (_tc is { } cnt) { <span class="im-badge im-b-neutral ms-1 im-bump" @key="@($"{tab}:{cnt}")">@cnt</span> }@if (TabHasNew(tab)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }@if (TabWhy(tab) is { } why) { <span class="im-tab-why">@why</span> }
                 </button>
             </li>
         }
@@ -1847,6 +1799,126 @@ else
     }
 
     private bool _titleExpanded;
+
+    // --- INV-38: the state line ---
+
+    private RenderFragment StateLine(bool slim) => @<text>
+        @{
+            var c = _case!;
+            var phases = Enum.GetValues<CasePhase>();
+            var cur = Array.IndexOf(phases, c.Phase);
+        }
+        <span class="im-state-words">
+            <span class="@Ui.ClassificationBadge(c.Classification) im-word">@Ui.Label(c.Classification)</span><span class="im-state-dot" aria-hidden="true">·</span><span class="@Ui.SeverityBadge(c.Severity) im-word">@SevLabels.For(c.Severity)</span>
+        </span>
+        <span class="im-phasebar">
+            @if (_canEdit && !slim)
+            {
+                @* The phase dialog, for any phase (on a phone, where the bar folds away, this is the way in). *@
+                <button type="button" class="im-phasebar-name" title="Change the phase" @onclick="() => AdvanceTo(c.Phase)">@Ui.Label(c.Phase)</button>
+            }
+            else
+            {
+                <strong>@Ui.Label(c.Phase)</strong>
+            }
+            @if (!slim)
+            {
+                <span class="im-phasebar-segs" role="list" aria-label="Phases">
+                    @for (var i = 0; i < phases.Length; i++)
+                    {
+                        var ph = phases[i];
+                        var state = i < cur ? "done" : i == cur ? "cur" : "";
+                        var tip = PhaseTip(ph, i, cur);
+                        @if (_canEdit && i != cur)
+                        {
+                            <button type="button" role="listitem" class="im-phase-seg @state" title="@tip" aria-label="@tip" @onclick="() => AdvanceTo(ph)">@Ui.Label(ph)</button>
+                        }
+                        else
+                        {
+                            <span tabindex="0" role="listitem" class="im-phase-seg @state" title="@tip" aria-label="@tip">@Ui.Label(ph)</span>
+                        }
+                    }
+                </span>
+                <span class="im-phasebar-step">step @(cur + 1) of @phases.Length</span>
+            }
+        </span>
+        @* On the Overview the context strip above the brief already shows the clocks, so only the scrolled bar needs it. *@
+        @if ((slim || _activeTab != "Overview") && HeadAlert() is { } alert)
+        {
+            <span class="im-head-alert @(alert.Danger ? "" : "im-head-alert-warn") @(_railOpen ? "" : "im-head-alert-always")" title="@alert.Title">
+                <span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span> @alert.Text
+            </span>
+        }
+        @if (!slim)
+        {
+            <span class="im-flags">
+                @if (c.Materiality.Status != MaterialityStatus.Undetermined)
+                {
+                    <span class="@(c.Materiality.Status == MaterialityStatus.Material ? "im-flag-hot" : "")" title="Materiality determination">@Ui.Label(c.Materiality.Status)</span>
+                }
+                @if (c.LegalReferral.IsReferred) { <span>Legal referred</span> }
+                @if (c.LegalHold) { <span class="im-flag-hot">Legal hold</span> }
+                @if (c.IsRestricted) { <span>Restricted</span> }
+                @if (c.IsExercise) { <span title="Tabletop exercise or drill">Exercise</span> }
+                @if (c.IsArchived) { <span>Archived</span> }
+            </span>
+        }
+    </text>;
+
+    // A phase's tooltip: when it was reached (the effective time of the latest change into it), or that it's ahead.
+    private string PhaseTip(CasePhase ph, int index, int current)
+    {
+        var name = Ui.Label(ph);
+        if (index > current) return _canEdit ? $"{name}: not reached. Click to move the case here." : $"{name}: not reached";
+        DateTimeOffset? at = index == 0 ? _case!.CreatedAtUtc
+            : _case!.StatusChanges.Where(x => x.To == ph).OrderByDescending(x => x.EffectiveAt).Select(x => (DateTimeOffset?)x.EffectiveAt).FirstOrDefault();
+        var when = at is { } t ? $", reached {TimeDisp.Short(t)}" : "";
+        return index == current ? $"{name}: current phase{when}"
+            : _canEdit ? $"{name}{when}. Click to move the case back here." : $"{name}{when}";
+    }
+
+    private sealed record HeadAlertInfo(string Text, string Title, bool Danger);
+
+    // Something that needs action now: an overdue response clock, or a notification deadline at risk or overdue.
+    // Shown in the header only where the context panel isn't beside the tab (CSS hides it otherwise).
+    private HeadAlertInfo? HeadAlert()
+    {
+        if (_case is null) return null;
+        if (_notifyDeadlines?.Headline is { IsActive: true, State: SlaState.Breached or SlaState.AtRisk } nh)
+            return new($"Notify {nh.JurisdictionCode}: {Ui.SlaLabel(nh.State).ToLowerInvariant()}",
+                $"Notification to {nh.JurisdictionLabel}" + (nh.DueAtUtc is { } due ? $", due {TimeDisp.Short(due)}" : ""),
+                nh.State == SlaState.Breached);
+        var sla = SlaPolicy.Evaluate(_case.Severity, _case.Phase, _case.DetectedAtUtc, _case.ContainedAtUtc,
+            _case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow, _case.Classification);
+        if (sla.State == SlaState.Breached)
+        {
+            var clock = sla.Clock is { } k ? Ui.SlaClockLabel(k) : "SLA";
+            return new($"{clock}: {Ui.SlaShort(sla)}", $"{clock} is overdue" + (sla.DueAtUtc is { } d ? $" (was due {TimeDisp.Short(d)})" : ""), true);
+        }
+        return null;
+    }
+
+    // INV-38: tabs keep their places; the ones built at the end (lessons, report) stay quiet until they matter, and
+    // the audit trail always does. Report matters on a breach, while a notification deadline runs, or from Recovery;
+    // Lessons learned from Post-Incident.
+    private bool ReportMatters => _case is { } c
+        && (c.Classification == Classification.Breach || _notifyDeadlines?.Headline is { IsActive: true } || c.Phase >= CasePhase.Recovery);
+    private bool LessonsMatter => _case is { Phase: >= CasePhase.PostIncident };
+
+    private bool TabQuiet(string tab) => _activeTab != tab && tab switch
+    {
+        "Report" => !ReportMatters,
+        "Review" => !LessonsMatter,
+        "Audit" => true,
+        _ => false
+    };
+
+    private string? TabWhy(string tab) => tab switch
+    {
+        "Report" when _notifyDeadlines?.Headline is { IsActive: true } nh => $"{nh.JurisdictionCode} {nh.WindowHours} h",
+        "Review" when _case is { Phase: CasePhase.PostIncident } => "Next gate",
+        _ => null
+    };
 
     // --- INV-15: structured handoff ---
     private string? _hoTo;

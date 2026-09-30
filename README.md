@@ -29,9 +29,13 @@ brief is a new version, the summary included, so what the team believed and repo
 readable (each version records the open tasks as they stood). A **context panel** beside every tab carries
 the clocks with their dates, the same **Next** list of open tasks (with what's left before the next phase), the team and the key entities; on narrower screens it folds into a strip at the top
 of the Overview. Tabs: **Overview / Timeline / IOCs & entities / Evidence / Notes / Tasks /
-Lessons learned / Report / Audit**. A compact header carries the case number and title, status badges (SLA,
-**materiality**, a Legal/committee decision the tool records but does not make, and the notification
-countdown) and the NIST SP 800-61 phase stepper, with **Advance** and **Hand off** one click away. Opening a
+Lessons learned / Report / Audit**. A compact header carries the case number and title, then one state line that reads as a sentence:
+classification and severity, the NIST SP 800-61 phase as a slim bar (hover a segment for its name and when it was
+reached; click to move there), and quiet flags such as **materiality**, a Legal/committee decision the tool records
+but does not make. The clocks live in the context panel; an alert chip stands in for an overdue one where the
+panel isn't showing. **Advance** and **Hand off** are one click away. Report and Lessons learned keep their places
+in the tabs but stay quiet until they matter (Report on a breach or a running notification deadline, or from
+Recovery; Lessons learned at Post-Incident). Opening a
 case you've seen before says **what changed since you last viewed it**. Clicking any entity opens it in a side
 panel: where the case refers to it, its relationships and the other cases it appears on.
 

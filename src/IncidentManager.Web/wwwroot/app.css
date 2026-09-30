@@ -2441,9 +2441,7 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 .im-casehead-line h1 { font-size: 1.55rem; }
 .im-casehead-line .im-casehead-title { flex: 1 1 16rem; min-width: 0; cursor: pointer; color: var(--im-text-muted); }
 .im-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-.im-casehead-state { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; margin: 0.35rem 0 0.5rem; }
-.im-casehead-state .im-phase-rail { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.2rem; margin-left: 0.5rem; }
-.im-casehead-state .im-phase-rail .im-badge { font-size: 0.7rem; padding: 0.1rem 0.45rem; }
+.im-casehead-state { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem 1rem; margin: 0.35rem 0 0.6rem; font-size: 0.95rem; }
 @media (max-width: 640px) {
     h1 .im-casehead-num { font-size: 1.3rem; }
 }
@@ -2451,13 +2449,6 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
     .im-phone-collapsed { display: none !important; }
 }
 
-/* Phones: the phase rail shows only the current phase next to the Advance button,
-   instead of seven chips wrapping over two rows. */
-@media (max-width: 640px) {
-    .im-phase-rail .im-phase-other { display: none; }
-    .im-phase-rail .im-phase-cur::before { content: "Phase: "; font-weight: 400; opacity: .8; }
-    .im-casehead-state .im-phase-rail { margin-left: 0; }
-}
 
 /* Dark theme: Bootstrap's .text-danger / .text-success keep their light-theme hues (#dc3545 / #198754), which
    fall to about 3.4:1 on the dark surfaces. Inline errors and required-field markers use them, so swap in
@@ -2537,3 +2528,46 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 
 /* INV-37: the note a mention email links to, marked when the case opens on it. */
 .im-note-focus { border-color: var(--im-accent); box-shadow: 0 0 0 .15rem var(--im-focus); }
+
+/* INV-38: the case's state as one line. Classification and severity keep their colour as words; the phase is a
+   seven-segment bar where only the segment under the pointer (or with focus) opens into its named pill. */
+.im-state-words { display: inline-flex; align-items: baseline; gap: 0.35rem; }
+.im-badge.im-word { background: none; border: 0; padding: 0; font-size: inherit; font-weight: 650; }
+.im-state-dot { color: var(--im-border-strong); }
+.im-phasebar { display: inline-flex; align-items: center; gap: 0.55rem; }
+.im-phasebar-segs { display: inline-flex; align-items: center; gap: 3px; }
+.im-phase-seg { display: inline-block; width: 1.35rem; height: 6px; padding: 0; border: 0; border-radius: 3px; background: var(--im-border-strong);
+          font-size: 0; line-height: 1; color: transparent; overflow: hidden; white-space: nowrap; cursor: default; outline: none;
+          transition: width .16s ease, height .16s ease, padding .16s ease; }
+button.im-phase-seg { cursor: pointer; }
+.im-phase-seg.done { background: var(--im-phase-closed-fg); opacity: .7; }
+.im-phase-seg.cur { background: var(--im-phase-open-fg); }
+.im-phase-seg:hover, .im-phase-seg:focus-visible { width: auto; height: auto; padding: .14rem .5rem; font-size: .74rem; font-weight: 600; border-radius: 999px;
+          opacity: 1; background: var(--im-phase-active-bg); color: var(--im-phase-active-fg); }
+.im-phase-seg.done:hover, .im-phase-seg.done:focus-visible { background: var(--im-phase-closed-bg); color: var(--im-phase-closed-fg); }
+.im-phase-seg.cur:hover, .im-phase-seg.cur:focus-visible { background: var(--im-phase-open-bg); color: var(--im-phase-open-fg); }
+.im-phase-seg:focus-visible { box-shadow: 0 0 0 .2rem var(--im-focus); }
+@media (prefers-reduced-motion: reduce) { .im-phase-seg { transition: none; } }
+.im-phasebar-name { border: 0; background: none; padding: 0; color: var(--im-text); font-weight: 700; }
+.im-phasebar-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+.im-phasebar-step { font-size: var(--im-text-xs); color: var(--im-text-muted); }
+.im-flags { display: inline-flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; font-size: var(--im-text-sm); color: var(--im-text-muted); }
+.im-flags > span::before { content: ""; display: inline-block; width: .4rem; height: .4rem; border-radius: 50%; background: var(--im-text-muted); margin-right: .35rem; vertical-align: .1rem; }
+.im-flags > .im-flag-hot::before { background: var(--im-danger); }
+.im-head-alert { display: inline-flex; align-items: center; gap: .35rem; font-size: var(--im-text-xs); font-weight: 600; color: var(--im-danger);
+                 background: var(--im-danger-bg); border-radius: 999px; padding: .15rem .6rem; white-space: nowrap; }
+.im-head-alert-warn { color: var(--im-warn); background: var(--im-warn-bg); }
+/* Beside the context panel (which carries the clocks) the chip would repeat it. */
+@media (min-width: 1400px) { .im-head-alert:not(.im-head-alert-always) { display: none; } }
+.ws-slim .im-phasebar strong { font-weight: 600; font-size: var(--im-text-sm); }
+.ws-slim .im-state-words { font-size: var(--im-text-sm); }
+
+/* INV-38: tabs keep their places; later-phase and record tabs are quiet until they matter. */
+.nav-tabs.im-workspace-tabs .nav-link.im-tab-quiet { font-size: var(--im-text-sm); color: var(--im-text-muted); padding-inline: .6rem; }
+.nav-tabs.im-workspace-tabs .nav-link.im-tab-quiet:hover { color: var(--im-text); }
+/* Without the side panel the tabs share the width with nothing else, but laptops still need a little less padding. */
+@media (max-width: 1399.98px) { .nav-tabs.im-workspace-tabs .nav-link { padding-inline: .68rem; } }
+.im-tab-why { font-size: .7rem; font-weight: 600; color: var(--im-accent-text); background: var(--im-accent-bg); border-radius: 4px; padding: 0 .3rem; margin-left: .35rem; }
+@media (max-width: 640px) {
+    .im-phasebar-segs, .im-phasebar-step { display: none; }
+}
