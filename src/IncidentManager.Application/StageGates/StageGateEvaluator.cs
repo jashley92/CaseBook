@@ -13,6 +13,12 @@ public interface IStageGateEvaluator
 
 public sealed class StageGateEvaluator : IStageGateEvaluator
 {
+    // INV-43: the live notification-deadline settings, for the NotificationsRecorded fact. Optional so a gate
+    // evaluated without them (tests, the feature off) treats no clock as running.
+    private readonly Compliance.INotificationDeadlineSettingsProvider? _deadlines;
+
+    public StageGateEvaluator(Compliance.INotificationDeadlineSettingsProvider? deadlines = null) => _deadlines = deadlines;
+
     public async Task<GateEvaluation> EvaluateAsync(IAppDbContext db, Guid caseId, StageGateTrigger trigger,
         CancellationToken ct = default)
     {
@@ -39,7 +45,7 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
         return new GateEvaluation(true, trigger, gate.Name, results, gate.CommentaryMinLength);
     }
 
-    private static async Task<GateCaseFacts> BuildFactsAsync(IAppDbContext db, Guid caseId, CancellationToken ct)
+    private async Task<GateCaseFacts> BuildFactsAsync(IAppDbContext db, Guid caseId, CancellationToken ct)
     {
         // Scalar facts straight off the case row; collection facts as counts. AsNoTracking so a
         // concurrently-tracked, not-yet-saved mutation on the same context isn't reflected — the gate
@@ -57,7 +63,12 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
                 HasIncidentCommander = x.IncidentCommander != null && x.IncidentCommander != "",
                 x.Classification,
                 MaterialityDetermined = x.Materiality.Status == MaterialityStatus.Material
-                                        || x.Materiality.Status == MaterialityStatus.NotMaterial
+                                        || x.Materiality.Status == MaterialityStatus.NotMaterial,
+                x.DetectedAtUtc,
+                x.ReportedAtUtc,
+                MatStatus = x.Materiality.Status,
+                MatDecidedOn = x.Materiality.DecidedOnUtc,
+                MatRecordedAt = x.Materiality.RecordedAtUtc
             })
             .FirstOrDefaultAsync(ct);
 
@@ -83,9 +94,23 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
         var openTasks = await db.ActionItems.CountAsync(a => a.CaseId == caseId
             && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled, ct);
 
+        // INV-43: a notification clock is running and no report time is recorded — the same trigger and
+        // jurisdiction test as the on-case countdown (NotificationDeadlineService), without the windows.
+        var notificationPending = false;
+        if (_deadlines?.Current is { Enabled: true } nd && c.ReportedAtUtc is null
+            && Compliance.NotificationDeadlineService.ResolveStart(nd.StartBasis, c.Classification, c.DetectedAtUtc,
+                c.MatStatus, c.MatDecidedOn, c.MatRecordedAt) is not null)
+        {
+            notificationPending = await db.CaseDataElements
+                .Where(d => d.CaseId == caseId)
+                .Join(db.DataElements, d => d.ElementKey, e => e.Key, (d, e) => e.NotificationJurisdictions)
+                .AnyAsync(j => j != null && j != "", ct);
+        }
+
         return new GateCaseFacts(
             c.HasSummary, c.HasAffectedCount, c.HasDataElements, c.HasAffectedStates, c.HasDetectionCaseId,
             entityCount, maliciousCount, evidenceCount, reportCount, c.HasIncidentCommander,
-            c.AffectedIndividualsCount, c.Classification, c.MaterialityDetermined, lessonsCaptured, openTasks);
+            c.AffectedIndividualsCount, c.Classification, c.MaterialityDetermined, lessonsCaptured, openTasks,
+            notificationPending);
     }
 }

@@ -3,6 +3,7 @@ using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Admin;
 using IncidentManager.Application.Compliance;
 using IncidentManager.Application.Notifications;
+using IncidentManager.Application.StageGates;
 using IncidentManager.Application.Sla;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -189,6 +190,71 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         var notifications = new CapturingNotifications();
 
         (await NewScanner(notifications, new DeadlineReminderTracker()).ScanAndNotifyAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_closed_case_with_an_unrecorded_notification_is_still_reminded()
+    {
+        // INV-43: closing doesn't answer the notification, so the watch continues.
+        var id = await SeedMaterialBreachAsync(hoursAgo: 80);
+        await SaveNyRuleAsync();
+        EnableClock();
+        await using (var db = NewContext())
+        {
+            var c = await db.Cases.FirstAsync(x => x.Id == id);
+            c.ChangePhase(CasePhase.Closed, "Done", "alice", _clock.UtcNow);
+            await db.SaveChangesAsync();
+        }
+        var notifications = new CapturingNotifications();
+
+        (await NewScanner(notifications, new DeadlineReminderTracker()).ScanAndNotifyAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task The_close_gate_check_fails_while_the_notification_is_unrecorded()
+    {
+        // INV-43: the NotificationsRecorded fact mirrors the countdown: a running clock with no report time.
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        await using (var db = NewContext())
+        {
+            db.StageGates.Add(new StageGate
+            {
+                Trigger = StageGateTrigger.CloseCase, Name = "Closure", IsActive = true,
+                CreatedBy = "system", CreatedAtUtc = _clock.UtcNow,
+                Requirements =
+                {
+                    new StageGateRequirement
+                    {
+                        Kind = GateRequirementKind.MachineCheck, CheckKey = GateCheckKeys.NotificationsRecorded,
+                        Label = "Required regulatory notifications recorded", IsBlocking = true, Order = 1
+                    }
+                }
+            });
+            await db.SaveChangesAsync();
+        }
+        EnableClock();
+        var evaluator = new StageGateEvaluator(_settings);
+
+        async Task<bool> Passes()
+        {
+            await using var db = NewContext();
+            var eval = await evaluator.EvaluateAsync(db, id, StageGateTrigger.CloseCase);
+            return eval.Requirements.Single().MachineSatisfied;
+        }
+
+        (await Passes()).Should().BeFalse();
+
+        await using (var db = NewContext())
+        {
+            var c = await db.Cases.FirstAsync(x => x.Id == id);
+            c.MarkReported(_clock.UtcNow, "alice", _clock.UtcNow);
+            await db.SaveChangesAsync();
+        }
+        (await Passes()).Should().BeTrue();
+
+        _settings.Current = NotificationDeadlineSettings.Off;   // feature off: no clock, nothing pending
+        (await new StageGateEvaluator().EvaluateAsync(NewContext(), id, StageGateTrigger.CloseCase))
+            .Requirements.Single().MachineSatisfied.Should().BeTrue();
     }
 
     private sealed class StubSettings : INotificationDeadlineSettingsProvider

@@ -35,7 +35,7 @@ public sealed record DashboardMetrics(
     double? MeanHoursToContain,
     double? MeanHoursToResolve,
     // PROD-07: regulatory notification-deadline aggregates (zero/null when the feature is off). Awaiting =
-    // open cases with a running notification clock (obligation triggered, not yet reported); of those, how
+    // cases with a running notification clock (closed ones included, INV-43) (obligation triggered, not yet reported); of those, how
     // many are at-risk / breached. MeanHoursToReport is the detected→reported compliance MTTR.
     bool NotifyDeadlinesEnabled,
     int NotifyAwaitingReport,
@@ -148,15 +148,16 @@ public sealed class DashboardService
             => meanTicks is { } t ? Math.Round(t / TimeSpan.TicksPerHour, 1) : null;
 
         // PROD-07: regulatory notification-deadline aggregates, only when the feature is administered on. One
-        // pass over open, not-yet-reported cases whose obligation is triggered (per the configured start
-        // basis) and whose data elements trigger a jurisdiction; count the headline at-risk/breached.
+        // pass over not-yet-reported cases whose obligation is triggered (per the configured start basis) and
+        // whose data elements trigger a jurisdiction; count the headline at-risk/breached. INV-43: closed cases
+        // count too — closing a case doesn't answer its notification, so the watch continues until one is recorded.
         var ndSettings = _notify.Current;
         int notifyAwaiting = 0, notifyAtRisk = 0, notifyBreached = 0;
         double? meanHoursToReport = null;
         if (ndSettings.Enabled)
         {
             var ruleSet = await _rules.LoadRuleSetAsync(ndSettings.DefaultWindowHours, ct);
-            var heads = await Compliance.NotificationDeadlineService.OpenHeadlinesAsync(db, open, ndSettings, ruleSet, now, ct);
+            var heads = await Compliance.NotificationDeadlineService.OpenHeadlinesAsync(db, cases.Where(c => !c.IsArchived), ndSettings, ruleSet, now, ct);
             notifyAwaiting = heads.Count;
             notifyBreached = heads.Values.Count(h => h.State == Sla.SlaState.Breached);
             notifyAtRisk = heads.Values.Count(h => h.State == Sla.SlaState.AtRisk);

@@ -583,6 +583,7 @@ else
                             <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
                             @RationaleHint(_phaseReason)
                             @WhenItHappened()
+                            @NotificationWarning()
                             @OpenTasksWarning()
                             @GateModalSection()
                         }
@@ -1447,6 +1448,20 @@ else
                     : "Leave as now, or set the time it actually happened if you're recording it later.")
             </div>
         </div>
+    </text>;
+
+    // INV-43: closing with a notification clock still running. Stated whatever the close gate requires: closing
+    // doesn't answer the notification (the dashboard and reminders keep watching), but it should never be a surprise.
+    private RenderFragment NotificationWarning() => @<text>
+        @if (_newPhase == CasePhase.Closed && _case?.Phase != CasePhase.Closed
+             && _notifyDeadlines?.Headline is { IsActive: true } nh)
+        {
+            <div class="alert alert-danger py-2 px-3 small mt-2 mb-0" role="status">
+                <div class="fw-semibold">No notification recorded for @nh.JurisdictionLabel</div>
+                <div>It's due @(nh.DueAtUtc is { } due ? TimeDisp.Short(due) : "now"). Closing the case doesn't stop the clock:
+                    the dashboard and the reminders keep tracking it until the reported time is recorded.</div>
+            </div>
+        }
     </text>;
 
     // INV-13: moving forward, list the tasks still open for the phases being left behind (or every open task when

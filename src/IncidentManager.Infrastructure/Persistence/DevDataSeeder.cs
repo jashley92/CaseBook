@@ -479,6 +479,7 @@ public static class DevDataSeeder
                 "A defensible, complete record before the case is closed.",
                 Check(GateCheckKeys.SummaryPresent),
                 Check(GateCheckKeys.AtLeastOneReport, blocking: false),
+                Check(GateCheckKeys.NotificationsRecorded), // INV-43
                 Attest("Post-incident review complete"),
                 Attest("Evidence preserved and chain of custody complete")));
 

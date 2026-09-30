@@ -34,13 +34,14 @@ public sealed class NotificationDeadlineScanner(
 
         using var db = factory.CreateDbContext();
 
-        // Candidate set = cases that could have a running clock: open, not archived, not yet reported, and
+        // Candidate set = cases that could have a running clock: not archived, not yet reported, and
         // on the IRP ladder (a Complex Event can't have started a clock under either basis). The precise
         // start/trigger test is left to NotificationDeadlineService, the single source of truth — this is
         // just a cheap pre-filter. Elevated-events-only intake keeps this set small.
         var candidates = await db.Cases.AsNoTracking().ExcludingExercises() // PROD-43: no real-clock reminders for drills
-            .Where(c => !c.IsArchived && c.Phase != CasePhase.Closed
-                        && c.ReportedAtUtc == null && c.Classification != null)
+            // INV-43: closed cases stay in — closing doesn't answer a notification, so reminders continue until
+            // the reported time is recorded.
+            .Where(c => !c.IsArchived && c.ReportedAtUtc == null && c.Classification != null)
             .Select(c => new Candidate(
                 c.Id, c.CaseNumber, c.Title, c.Severity, c.IncidentCommander,
                 c.Assignments.Select(a => a.UserId).ToList()))

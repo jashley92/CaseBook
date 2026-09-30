@@ -105,7 +105,7 @@ public sealed class NotificationDeadlineService
     /// The headline deadline for each unreported case in <paramref name="cases"/> whose obligation is triggered
     /// and whose data elements put at least one jurisdiction in play. Shared by the dashboard counts and the case
     /// list's notification-deadline filter so the two always agree. The caller scopes <paramref name="cases"/>
-    /// (open, visible to the user) and checks that the feature is enabled.
+    /// (not archived, visible to the user; closed cases included — INV-43) and checks that the feature is enabled.
     /// </summary>
     public static async Task<Dictionary<Guid, NotificationDeadlineStatus>> OpenHeadlinesAsync(
         IAppDbContext db, IQueryable<Case> cases, NotificationDeadlineSettings settings,

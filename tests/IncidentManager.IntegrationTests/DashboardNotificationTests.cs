@@ -119,6 +119,22 @@ public sealed class DashboardNotificationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_closed_case_with_an_unrecorded_notification_stays_counted()
+    {
+        // INV-43: closing a case doesn't answer its notification; the dashboard keeps counting it until reported.
+        var closed = NewMaterialBreach(MaterialityStatus.Material, _clock.UtcNow.AddHours(-80));
+        closed.ChangePhase(CasePhase.Closed, "Done", "mgr", _clock.UtcNow);
+        var closedReported = NewMaterialBreach(MaterialityStatus.Material, _clock.UtcNow.AddHours(-80), reportedAt: _clock.UtcNow.AddHours(-10));
+        closedReported.ChangePhase(CasePhase.Closed, "Done", "mgr", _clock.UtcNow);
+        await SeedAsync(closed, closedReported);
+        _settings.Current = new NotificationDeadlineSettings(true, NotificationStartBasis.Determination, 72, 80);
+
+        var m = await NewDashboard().GetAsync();
+        m.NotifyAwaitingReport.Should().Be(1);
+        m.NotifyBreached.Should().Be(1);
+    }
+
+    [Fact]
     public async Task The_case_list_notification_filter_lists_the_cases_the_dashboard_counts()
     {
         var onTrack = NewMaterialBreach(MaterialityStatus.Material, _clock.UtcNow.AddHours(-1));

@@ -206,13 +206,14 @@ public sealed class CaseService
 
         if (filter.NotifyDeadlineOnly)
         {
-            // Same evaluation as the dashboard's notification figures, so a click-through lists exactly those cases.
+            // Same evaluation as the dashboard's notification figures, so a click-through lists exactly those cases
+            // (closed ones included — INV-43).
             var ids = new List<Guid>();
             if (_notifySettings?.Current is { Enabled: true } nd && _notifyRules is not null)
             {
                 var ruleSet = await _notifyRules.LoadRuleSetAsync(nd.DefaultWindowHours, ct);
                 var heads = await Compliance.NotificationDeadlineService.OpenHeadlinesAsync(
-                    db, q.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived), nd, ruleSet, _clock.UtcNow, ct);
+                    db, q.Where(c => !c.IsArchived), nd, ruleSet, _clock.UtcNow, ct);
                 ids = heads.Where(h => h.Value.State is Sla.SlaState.Breached or Sla.SlaState.AtRisk)
                     .Select(h => h.Key).ToList();
             }

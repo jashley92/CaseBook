@@ -22,7 +22,8 @@ public sealed record GateCaseFacts(
     Classification? Classification = null,
     bool MaterialityDetermined = false,
     bool LessonsCaptured = false,
-    int OpenTaskCount = 0);
+    int OpenTaskCount = 0,
+    bool NotificationPending = false);
 
 /// <summary>The outcome of one requirement against a specific case.</summary>
 public sealed record GateRequirementResult(

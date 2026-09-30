@@ -39,4 +39,14 @@ public class TaskKindTests
         GateCheckRegistry.IsSatisfied(GateCheckKeys.NoOpenTasks, facts with { OpenTaskCount = 0 }, null).Should().BeTrue();
         GateCheckRegistry.IsSatisfied(GateCheckKeys.NoOpenTasks, facts with { OpenTaskCount = 2 }, null).Should().BeFalse();
     }
+
+    [Fact]
+    public void NotificationsRecorded_fails_only_while_a_notification_clock_runs_unreported()
+    {
+        var facts = new GateCaseFacts(true, true, true, true, true, 1, 1, 1, 1, true);
+
+        GateCheckRegistry.IsSatisfied(GateCheckKeys.NotificationsRecorded, facts, null).Should().BeTrue();
+        GateCheckRegistry.IsSatisfied(GateCheckKeys.NotificationsRecorded, facts with { NotificationPending = true }, null)
+            .Should().BeFalse();
+    }
 }

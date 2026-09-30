@@ -31,7 +31,7 @@ public class StageGateTests
     [Fact]
     public void The_registry_exposes_every_built_in_check_and_ignores_unknown_keys()
     {
-        GateCheckRegistry.All.Should().HaveCount(14);   // INV-13 added NoOpenTasks
+        GateCheckRegistry.All.Should().HaveCount(15);   // INV-13 added NoOpenTasks; INV-43 NotificationsRecorded
         GateCheckRegistry.IsKnown(GateCheckKeys.SummaryPresent).Should().BeTrue();
         GateCheckRegistry.IsKnown("NotARealCheck").Should().BeFalse();
         // An unknown key never passes a gate and is labelled for review, rather than throwing.

@@ -66,6 +66,10 @@ public static class GateCheckKeys
     public const string LessonsCaptured = nameof(LessonsCaptured);
     /// <summary>INV-13: no task on the case is still open (done or cancelled). Typically on the close gate.</summary>
     public const string NoOpenTasks = nameof(NoOpenTasks);
+    /// <summary>INV-43: no regulatory notification is left unrecorded — either no clock is running (the obligation
+    /// isn't triggered, or no jurisdiction is in play) or the reported time has been recorded. Self-scoping, so it
+    /// only bites on a case with a running clock. Belongs on the close gate: closing must not silently end the watch.</summary>
+    public const string NotificationsRecorded = nameof(NotificationsRecorded);
 }
 
 /// <summary>
@@ -120,6 +124,9 @@ public static class GateCheckRegistry
             (f, _) => f.Classification is not (Classification.Incident or Classification.Breach) || f.LessonsCaptured),
         // INV-13: every task done or cancelled — a deliberate "nothing left hanging" check, usually on close.
         new(GateCheckKeys.NoOpenTasks, _ => "No tasks left open", (f, _) => f.OpenTaskCount == 0),
+        // INV-43: a running notification clock must be answered by a recorded report time before close.
+        new(GateCheckKeys.NotificationsRecorded, _ => "Required regulatory notifications recorded",
+            (f, _) => !f.NotificationPending),
     ];
 
     private static readonly IReadOnlyDictionary<string, GateCheckDescriptor> _byKey =
