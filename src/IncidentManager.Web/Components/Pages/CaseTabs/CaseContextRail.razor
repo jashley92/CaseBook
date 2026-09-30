@@ -80,6 +80,9 @@ else
     /// <summary>Show the strip at every width (the panel is hidden), not only below 1,400 px.</summary>
     [Parameter] public bool AlwaysStrip { get; set; }
     [Parameter] public bool CanEdit { get; set; }
+    /// <summary>INV-40: the brief beside the panel already lists the open tasks (the Overview), so Next shows only
+    /// its count and the before-next-phase line, not the list a second time.</summary>
+    [Parameter] public bool NextAsSummary { get; set; }
     /// <summary>Open the workspace's assign dialog.</summary>
     [Parameter] public EventCallback OnAssign { get; set; }
     /// <summary>Remove someone from the case (the workspace confirms first).</summary>
@@ -148,6 +151,10 @@ else
         @if (open.Count == 0)
         {
             <p class="small text-muted mb-0">No open tasks.</p>
+        }
+        else if (NextAsSummary)
+        {
+            <p class="small text-muted mb-0">Listed under Next steps in the brief.</p>
         }
         else
         {

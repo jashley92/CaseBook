@@ -506,7 +506,7 @@ else
     @if (_railOpen)
     {
         <CaseContextRail Case="_case" Notify="_notifyDeadlines" CanEdit="_canEdit" OnOpenEntity="OpenEntity" OnGoToTab="SetTab"
-                         OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
+                         OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" NextAsSummary='_activeTab == "Overview"' />
     }
     </div>@* /.ws-body *@
 
