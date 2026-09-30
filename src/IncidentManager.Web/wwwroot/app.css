@@ -831,7 +831,7 @@ h1:focus {
     padding: 0.1rem 0.5rem;
     border-radius: 999px;
     background: color-mix(in srgb, var(--im-accent) 14%, transparent);
-    color: var(--im-accent);
+    color: var(--im-accent-text);
     border: 1px solid color-mix(in srgb, var(--im-accent) 30%, transparent);
 }
 /* The "+N" overflow pill: muted/neutral so the primary role chip stays the focal point. */
@@ -1468,7 +1468,8 @@ h1:focus {
     border-left: 3px solid var(--bs-border-color);
     color: var(--bs-secondary-color);
 }
-.md-body a { color: var(--im-accent); }
+/* INV-44: links use the AA-legible gold (the brand fill is ~1.4:1 on white); entity and evidence chips keep their own colours. */
+.md-body a:not(.im-entity-tag):not(.im-evidence-tag) { color: var(--im-accent-text); }
 .md-body table { border-collapse: collapse; margin-bottom: 0.5rem; }
 .md-body th, .md-body td { border: 1px solid var(--bs-border-color); padding: 0.2rem 0.45rem; }
 
