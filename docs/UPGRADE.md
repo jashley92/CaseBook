@@ -155,6 +155,10 @@ you need it.
 
 ## Notes
 
+- **v1.2.0 removes case Discussion.** The upgrade drops the `CaseComments` table, so discussion posts are
+  deleted. Export any you need to keep before upgrading (for example with a `SELECT` against `CaseComments`).
+  Their entries in the audit trail remain and the chain still verifies. @mentions now live on notes.
+
 - The script never rewrites `appsettings.Production.json`, the data root (evidence / seals / reports /
   keys), or your IIS configuration. Manual config (e.g. the CyberArk `Secrets` block) is preserved.
 - If your DB is in `DbaApplies` mode (the app account is **not** `db_owner`), the app cannot apply
