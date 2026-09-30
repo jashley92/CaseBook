@@ -5,6 +5,7 @@
    INV-28: lists the tasks about the entity, and a task can be started from here. *@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject CaseService Cases
+@inject ActionItemCommentService TaskComments
 @inject ToastService Toasts
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject TimeDisplay TimeDisp
@@ -57,7 +58,7 @@
                 <h3 class="im-entity-panel-h">On this case · @References.Count</h3>
                 @if (References.Count == 0)
                 {
-                    <p class="small text-muted mb-0">Nothing on the timeline, in the notes or in the brief refers to it yet.</p>
+                    <p class="small text-muted mb-0">Nothing on the timeline, in the notes, in task comments or in the brief refers to it yet.</p>
                 }
                 else
                 {
@@ -178,6 +179,7 @@
     private CaseEntity? Entity => EntityId is { } id ? Case.Entities.FirstOrDefault(e => e.Id == id) : null;
 
     private IReadOnlyList<EntityOverlap>? _otherCases;
+    private IReadOnlyList<ActionItemCommentView> _taskComments = [];
     private Guid? _loadedFor;
 
     protected override async Task OnParametersSetAsync()
@@ -187,8 +189,11 @@
         _addingTask = false;
         _otherCases = null;
         if (EntityId is { } id)
+        {
             _otherCases = (await Cases.FindEntityOverlapsAsync(Case.Id)).Where(o => o.EntityId == id)
                 .DistinctBy(o => o.OtherCaseId).ToList();
+            _taskComments = await TaskComments.ListForCaseAsync(Case.Id);   // INV-34
+        }
     }
 
     private async Task OnKey(KeyboardEventArgs e)
@@ -198,6 +203,14 @@
 
     private string Tag => $"entity:{EntityId}";
 
+    // INV-34: "tagged" for an entity chip; "mentioned" when the entity's value (an IP, host, account…) is typed out.
+    // Short values are skipped so they don't match everywhere.
+    private string? Why(string text)
+    {
+        if (text.Contains(Tag, StringComparison.OrdinalIgnoreCase)) return "tagged";
+        return Entity is { Value.Length: >= 4 } en && text.Contains(en.Value, StringComparison.OrdinalIgnoreCase) ? "mentioned" : null;
+    }
+
     private List<Reference> References
     {
         get
@@ -206,14 +219,20 @@
             var list = new List<Reference>();
             foreach (var t in Case.TimelineEntries.Where(t => t.IsCurrent))
             {
-                var why = t.ActorEntityId == id ? "actor" : t.TargetEntityId == id ? "target"
-                    : t.Description.Contains(Tag, StringComparison.OrdinalIgnoreCase) ? "tagged" : null;
+                var why = t.ActorEntityId == id ? "actor" : t.TargetEntityId == id ? "target" : Why(t.Description);
                 if (why is null) continue;
                 var kind = t.Kind == TimelineKind.Event ? "Event" : t.Type == TimelineEntryType.Decision ? "Decision" : "Investigation";
                 list.Add(new(kind, Snippet(t.Description), why, t.OccurredAtUtc, "Timeline"));
             }
-            foreach (var n in Case.Notes.Where(n => n.IsCurrent && n.Body.Contains(Tag, StringComparison.OrdinalIgnoreCase)))
-                list.Add(new("Note", Snippet(n.Body), "tagged", n.CreatedAtUtc, "Notes"));
+            foreach (var n in Case.Notes.Where(n => n.IsCurrent))
+                if (Why(n.Body) is { } nw) list.Add(new("Note", Snippet(n.Body), nw, n.CreatedAtUtc, "Notes"));
+            // INV-34: task comments (plain text, so usually the value typed out rather than a tag).
+            foreach (var tc in _taskComments)
+                if (Why(tc.Body) is { } cw)
+                {
+                    var task = Case.ActionItems.FirstOrDefault(t => t.Id == tc.ActionItemId);
+                    list.Add(new("Task comment", Snippet(tc.Body), task is null ? cw : $"{cw} on \"{task.Title}\"", tc.CreatedAtUtc, "Tasks"));
+                }
             // INV-36: the summary is the brief's first part (and may exist before any other part is written).
             var brief = Case.Briefs.FirstOrDefault(b => b.IsCurrent);
             if (new[] { Case.Summary, brief?.WorkingAssessment, brief?.Known, brief?.OpenQuestions, brief?.NextSteps }
