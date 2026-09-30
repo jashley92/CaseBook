@@ -21,136 +21,53 @@
 @inject IncidentManager.Application.Compliance.NotificationDeadlineService Deadlines
 @using IncidentManager.Application.Compliance
 
-@{
-    var (slaContain, slaResolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase,
-        Case.DetectedAtUtc, Case.ContainedAtUtc, Case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow, Case.Classification);
-    // PROD-08: the detection SLA (occurred → detected), shown in place of the plain dwell figure when a target applies.
-    var slaDetect = SlaPolicy.EvaluateDetection(Case.Severity, Case.OccurredAtUtc, Case.DetectedAtUtc, SlaProvider.Current);
-    var hasSla = slaContain.State != SlaState.NoTarget || slaResolve.State != SlaState.NoTarget;
-    var openTasks = Case.ActionItems.Count(a => a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled);
-}
-
 @if (RetentionMessage is not null)
 {
     <div class="alert alert-danger py-2 small">@RetentionMessage</div>
 }
 
-@* INV-09: the brief leads the Overview — where the case stands, in the team's words. *@
+@* INV-29: one reading column, in the order someone opening the case asks: where it stands (the summary and the
+   brief), what just happened, how bad it is and who must be told, whether it can move on, then the reference facts.
+   The clocks, dates, next steps and team live in the case context panel (or its strip), not here. *@
+@* INV-09 / INV-36: the brief leads, with the case summary as its first part. *@
 <CaseBriefCard @ref="_brief" Case="Case" CanEdit="CanEdit" OnChanged="OnChanged" />
 
-@* Vitals strip — the at-a-glance row (response SLA, lifecycle timestamps, dwell, counts) spanning
-   the full width, so the "how's this case doing" scan is the first thing on the pane, not the last. *@
-<div class="im-vitals mb-4">
-    @if (hasSla)
-    {
-        @SlaVital(slaContain)
-        @SlaVital(slaResolve)
-    }
-    <div class="im-vital"><div class="small text-muted">Detected</div><div class="fw-semibold">@TimeDisp.Long(Case.DetectedAtUtc)</div></div>
-    <div class="im-vital"><div class="small text-muted">Contained</div><div class="fw-semibold">@TimeDisp.Long(Case.ContainedAtUtc)</div></div>
-    <div class="im-vital"><div class="small text-muted">Resolved</div><div class="fw-semibold">@TimeDisp.Long(Case.ResolvedAtUtc)</div></div>
-    @if (slaDetect.State != SlaState.NoTarget)
-    {
-        @SlaVital(slaDetect)
-    }
-    else if (Case.OccurredAtUtc is { } occ && Case.DetectedAtUtc is { } det)
-    {
-        <div class="im-vital"><div class="small text-muted">Dwell</div><div class="fw-semibold">@DwellLabel(det - occ)</div><div class="small text-muted">before detection</div></div>
-    }
-    <div class="im-vital"><div class="small text-muted">Evidence · open tasks</div><div class="fw-semibold">@Case.Evidence.Count · @openTasks</div></div>
-</div>
-
-<div class="row g-4">
-    <div class="col-lg-7">
-        @* Case narrative — details and impact assessment folded into one card. *@
-        <div class="card" id="ov-details">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span>Details</span>
-                <AuthorizeView Policy="@Policies.EditCases" Context="ed">
-                    @if (!_editingDetails)
-                    {
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="BeginEditDetails">Edit</button>
-                    }
-                </AuthorizeView>
-            </div>
-            <div class="card-body">
-                @if (_editingDetails)
+<div class="im-ov">
+    @{ var recent = RecentOnTimeline(); }
+    <section class="im-ov-sec" id="ov-recent" aria-labelledby="ov-recent-h">
+        <div class="im-ov-head">
+            <h2 class="im-ov-h" id="ov-recent-h">Recent on the timeline</h2>
+            <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick='() => OnGoToTab.InvokeAsync("Timeline")'>Open the timeline <span aria-hidden="true">→</span></button>
+        </div>
+        @if (recent.Count == 0)
+        {
+            <p class="text-muted small mb-0">No decisions, handoffs or response milestones yet. Phase and classification changes, decisions and completed tasks show here as they're recorded.</p>
+        }
+        else
+        {
+            <ul class="im-ov-recent">
+                @foreach (var r in recent)
                 {
-                    <div class="mb-2">
-                        <label class="form-label small mb-0" for="ov-title">Title</label>
-                        <input id="ov-title" class="form-control form-control-sm" @bind="_edTitle" @bind:event="oninput" />
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small mb-0" for="ov-detection">@DetectionLabel case ID</label>
-                        <input id="ov-detection" class="form-control form-control-sm" @bind="_edDetection" />
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small mb-0" for="ov-data-context">Data context <span class="text-muted">(notes)</span></label>
-                        <input id="ov-data-context" class="form-control form-control-sm" @bind="_edDataTypes" />
-                        <div class="form-text mt-0">Free-text notes. The impact assessment's data elements are the official list.</div>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small mb-0" for="ov-impacted">Impacted assets</label>
-                        <input id="ov-impacted" class="form-control form-control-sm" @bind="_edImpacted" />
-                    </div>
-                    <div class="row g-2 mb-2">
-                        <div class="col-sm-6">
-                            <label class="form-label small mb-0" for="ov-detected">Detected (@TimeDisp.Label)</label>
-                            <input id="ov-detected" type="datetime-local" class="form-control form-control-sm" @bind="_edDetected"
-                                   title="When this was first detected or reported, not when the case was opened. Starts the response SLA clock." />
-                        </div>
-                        <div class="col-sm-6">
-                            <label class="form-label small mb-0" for="ov-occurred">Initial activity <span class="text-muted">(optional)</span></label>
-                            <input id="ov-occurred" type="datetime-local" class="form-control form-control-sm" @bind="_edOccurred"
-                                   title="When adversary activity began (initial access), if known. Used to calculate dwell time." />
-                        </div>
-                    </div>
-                    @* INV-36: the summary is edited in the brief ("Where it stands"), where each version is kept. *@
-                    @if (_detailsError is { } derr)
-                    {
-                        <div class="alert alert-warning py-1 px-2 small mb-2" role="alert">@derr</div>
-                    }
-                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveDetails" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => _editingDetails = false)">Cancel</button>
+                    <li>
+                        <span class="im-ov-recent-at" title="@TimeDisp.Long(r.At)">@TimeDisp.DateOnly(r.At)<br /> @TimeDisp.TimeOnly(r.At)</span>
+                        <span class="bi @r.Icon" aria-hidden="true"></span>
+                        <span><span class="im-ov-recent-kind">@r.Kind</span> @r.Text</span>
+                    </li>
                 }
-                else
+            </ul>
+        }
+    </section>
+
+    <section class="im-ov-sec" id="ov-impact" aria-labelledby="ov-impact-h">
+        <div class="im-ov-head">
+            <h2 class="im-ov-h" id="ov-impact-h">Scope and impact</h2>
+            <AuthorizeView Policy="@Policies.EditCases" Context="ie">
+                @if (!_editingImpact)
                 {
-                    <dl class="row mb-0">
-                        <dt class="col-sm-4">Origin</dt>
-                        <dd class="col-sm-8">@(Case.Origin == CaseOrigin.ThirdParty ? "Third-party / vendor" : "Internal detection")</dd>
-                        @if (Case.ThirdParty is not null)
-                        {
-                            <dt class="col-sm-4">Vendor</dt>
-                            <dd class="col-sm-8">@Case.ThirdParty.VendorName@(string.IsNullOrWhiteSpace(Case.ThirdParty.VendorContact) ? "" : $" ({Case.ThirdParty.VendorContact})")</dd>
-                        }
-                        <dt class="col-sm-4">@DetectionLabel case</dt>
-                        <dd class="col-sm-8">@(Case.DetectionCaseId ?? "—")
-                            @{ var detectionUrl = DetectionCaseUrl(); }
-                            @if (detectionUrl is not null)
-                            {
-                                <a class="btn btn-sm btn-outline-secondary py-0 ms-2" href="@detectionUrl" target="_blank" rel="noopener noreferrer">Open in @DetectionLabel</a>
-                            }
-                        </dd>
-                        <dt class="col-sm-4">Data context</dt>
-                        <dd class="col-sm-8">@(Case.DataTypesInvolved ?? "—")</dd>
-                        <dt class="col-sm-4">Impacted assets</dt>
-                        <dd class="col-sm-8">@(Case.ImpactedAssets ?? "—")</dd>
-                        <dt class="col-sm-4">Opened</dt>
-                        <dd class="col-sm-8">@TimeDisp.Long(Case.CreatedAtUtc) by @Users.DisplayFor(Case.CreatedBy)</dd>
-                    </dl>
+                    <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="BeginEditImpact">Edit</button>
                 }
-
-                <hr class="my-3" />
-
-                <div class="d-flex justify-content-between align-items-center mb-2" id="ov-impact">
-                    <h3 class="h6 mb-0">Impact assessment</h3>
-                    <AuthorizeView Policy="@Policies.EditCases" Context="ie">
-                        @if (!_editingImpact)
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" @onclick="BeginEditImpact">Edit</button>
-                        }
-                    </AuthorizeView>
-                </div>
+            </AuthorizeView>
+        </div>
                 @if (_editingImpact)
                 {
                     <div class="mb-2">
@@ -188,35 +105,33 @@
                 }
                 else
                 {
-                    <dl class="row mb-0">
-                        <dt class="col-sm-4">Affected individuals</dt>
-                        <dd class="col-sm-8">@(Case.AffectedIndividualsCount?.ToString("N0") ?? "—")</dd>
-                        <dt class="col-sm-4">Data elements</dt>
-                        <dd class="col-sm-8">
-                            @if (Case.DataElements.Count == 0)
-                            {
-                                <text>—</text>
-                            }
-                            else
-                            {
-                                @foreach (var key in SelectedElementKeysOrdered())
+                    <dl class="im-ov-facts mb-0">
+                        <div><dt>Affected individuals</dt><dd class="im-ov-big">@(Case.AffectedIndividualsCount?.ToString("N0") ?? "—")</dd></div>
+                        <div><dt>Jurisdictions</dt><dd>@(Case.AffectedStates ?? "—")</dd></div>
+                        <div><dt>Data elements</dt>
+                            <dd>
+                                @if (Case.DataElements.Count == 0)
                                 {
-                                    <span class="im-badge im-b-neutral me-1 mb-1">@DataElementLabel(key)</span>
+                                    <text>—</text>
                                 }
-                            }
-                        </dd>
-                        <dt class="col-sm-4">Jurisdictions</dt>
-                        <dd class="col-sm-8">@(Case.AffectedStates ?? "—")</dd>
+                                else
+                                {
+                                    @foreach (var key in SelectedElementKeysOrdered())
+                                    {
+                                        <span class="im-badge im-b-neutral me-1 mb-1">@DataElementLabel(key)</span>
+                                    }
+                                }
+                            </dd>
+                        </div>
                     </dl>
                 }
-            </div>
-        </div>
+    </section>
 
         @if (_deadlines is { Enabled: true })
         {
-            <div class="im-sec mt-3">
-                <div class="im-sec-head">
-                    <h3>Regulatory notification</h3>
+            <section class="im-ov-sec" id="ov-notify" aria-labelledby="ov-notify-h">
+                <div class="im-ov-head">
+                    <h2 class="im-ov-h" id="ov-notify-h">Notification</h2>
                     @if (_deadlines.Headline is { } hl)
                     {
                         <span class="@Ui.SlaBadge(hl.State)" title="Most urgent jurisdiction">
@@ -259,7 +174,7 @@
                                         <td>@s.JurisdictionLabel <code class="small text-muted">@s.JurisdictionCode</code></td>
                                         <td class="small text-muted">@s.WindowHours h</td>
                                         <td class="small">@(s.DueAtUtc is { } d ? TimeDisp.Short(d) : "—")
-                                            @if (s is { IsActive: true, Remaining: { } rem }) { <span class="text-muted">(@RemainingLabel(rem))</span> }
+                                            @if (s is { IsActive: true, Remaining: { } rem }) { <span class="text-muted"> (@RemainingLabel(rem))</span> }
                                         </td>
                                         <td><span class="@Ui.SlaBadge(s.State)">@Ui.SlaLabel(s.State)</span></td>
                                     </tr>
@@ -298,15 +213,16 @@
                         }
                     }
                 </div>
-            </div>
+            </section>
         }
+
 
         @if (ReadinessEval is { } rg)
         {
-            <div class="im-sec mt-3">
-                <div class="im-sec-head">
-                    <h3>Stage readiness</h3>
-                    <div class="d-flex align-items-center gap-2">
+            <section class="im-ov-sec" id="ov-gate" aria-labelledby="ov-gate-h">
+                <div class="im-ov-head">
+                    <h2 class="im-ov-h" id="ov-gate-h">Next gate: @StageGateTriggers.Label(rg.Trigger)</h2>
+                    <div class="d-flex align-items-center gap-2 ms-auto">
                         @if (ReadinessMachineOutstanding == 0)
                         {
                             <span class="im-badge im-b-ok">Data complete</span>
@@ -315,7 +231,7 @@
                         {
                             <span class="im-badge im-b-warn">@ReadinessMachineOutstanding outstanding</span>
                         }
-                        <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => _showReadiness = !_showReadiness" aria-label="Toggle stage readiness">
+                        <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => _showReadiness = !_showReadiness" aria-expanded="@Ui.Aria(_showReadiness)" aria-label="Show what the next gate checks">
                             <span class="bi @(_showReadiness ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>
                         </button>
                     </div>
@@ -325,34 +241,97 @@
                     <p class="text-muted small mb-2">What's needed to <strong>@StageGateTriggers.Label(rg.Trigger).ToLowerInvariant()</strong>. Checked when you make the change. You can override it with a recorded justification.</p>
                     <GateChecklist Eval="rg" Attested="_readinessAttested" Interactive="false" OnFix="@(CanEdit ? EventCallback.Factory.Create<string>(this, FixReadiness) : default)" />
                 }
-            </div>
+            </section>
         }
 
-        <div class="im-sec mt-3">
-            <div class="im-sec-head"><h3>Assignments</h3></div>
-            <div class="im-chips">
-                @if (Case.Assignments.Count == 0)
+
+    <section class="im-ov-sec" id="ov-details" aria-labelledby="ov-details-h">
+        <div class="im-ov-head">
+            <h2 class="im-ov-h" id="ov-details-h">Case record</h2>
+            <AuthorizeView Policy="@Policies.EditCases" Context="ed">
+                @if (!_editingDetails)
                 {
-                    <span class="text-muted small">No one assigned yet.</span>
+                    <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="BeginEditDetails">Edit details</button>
                 }
-                @foreach (var a in Case.Assignments.OrderBy(x => x.Role))
+            </AuthorizeView>
+        </div>
+                @if (_editingDetails)
                 {
-                    <span class="im-chip" title="@a.UserDisplayName · @Ui.Label(a.Role)">
-                        <span class="bi bi-person" aria-hidden="true"></span>
-                        <span class="im-chip-name">@a.UserDisplayName</span>
-                        <span class="im-chip-role">@Ui.Label(a.Role)</span>
-                        <AuthorizeView Policy="@Policies.EditCases" Context="rm">
-                            <button type="button" class="im-chip-x" aria-label="Remove @a.UserDisplayName"
-                                    @onclick='() => Confirm(UnassignPrompt(a.UserDisplayName), () => DoUnassign(a.UserId))'>×</button>
-                        </AuthorizeView>
-                    </span>
+                    <div class="mb-2">
+                        <label class="form-label small mb-0" for="ov-title">Title</label>
+                        <input id="ov-title" class="form-control form-control-sm" @bind="_edTitle" @bind:event="oninput" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-0" for="ov-detection">@DetectionLabel case ID</label>
+                        <input id="ov-detection" class="form-control form-control-sm" @bind="_edDetection" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-0" for="ov-data-context">Data context <span class="text-muted">(notes)</span></label>
+                        <input id="ov-data-context" class="form-control form-control-sm" @bind="_edDataTypes" />
+                        <div class="form-text mt-0">Free-text notes. The impact assessment's data elements are the official list.</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-0" for="ov-impacted">Impacted assets</label>
+                        <input id="ov-impacted" class="form-control form-control-sm" @bind="_edImpacted" />
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-sm-6">
+                            <label class="form-label small mb-0" for="ov-detected">Detected (@TimeDisp.Label)</label>
+                            <input id="ov-detected" type="datetime-local" class="form-control form-control-sm" @bind="_edDetected"
+                                   title="When this was first detected or reported, not when the case was opened. Starts the response SLA clock." />
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="form-label small mb-0" for="ov-occurred">Initial activity <span class="text-muted">(optional)</span></label>
+                            <input id="ov-occurred" type="datetime-local" class="form-control form-control-sm" @bind="_edOccurred"
+                                   title="When adversary activity began (initial access), if known. Used to calculate dwell time." />
+                        </div>
+                    </div>
+                    @* INV-36: the summary is edited in the brief ("Where it stands"), where each version is kept. *@
+                    @if (_detailsError is { } derr)
+                    {
+                        <div class="alert alert-warning py-1 px-2 small mb-2" role="alert">@derr</div>
+                    }
+                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="SaveDetails" disabled="@(string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null)">Save</button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => _editingDetails = false)">Cancel</button>
                 }
-                <AuthorizeView Policy="@Policies.EditCases" Context="asg">
-                    <button type="button" class="im-chip-add" @onclick='() => OnOpenModal.InvokeAsync("assign")'>
-                        <span class="bi bi-plus-lg" aria-hidden="true"></span> Assign
-                    </button>
-                </AuthorizeView>
-            </div>
+                else
+                {
+                    <dl class="row mb-0 im-ov-dl">
+                        <dt class="col-sm-3">Origin</dt>
+                        <dd class="col-sm-9">@(Case.Origin == CaseOrigin.ThirdParty ? "Third-party / vendor" : "Internal detection")</dd>
+                        @if (Case.ThirdParty is not null)
+                        {
+                            <dt class="col-sm-3">Vendor</dt>
+                            <dd class="col-sm-9">@Case.ThirdParty.VendorName@(string.IsNullOrWhiteSpace(Case.ThirdParty.VendorContact) ? "" : $" ({Case.ThirdParty.VendorContact})")</dd>
+                        }
+                        <dt class="col-sm-3">@DetectionLabel case</dt>
+                        <dd class="col-sm-9">@(Case.DetectionCaseId ?? "—")
+                            @{ var detectionUrl = DetectionCaseUrl(); }
+                            @if (detectionUrl is not null)
+                            {
+                                <a class="btn btn-sm btn-outline-secondary py-0 ms-2" href="@detectionUrl" target="_blank" rel="noopener noreferrer">Open in @DetectionLabel</a>
+                            }
+                        </dd>
+                        <dt class="col-sm-3">Data context</dt>
+                        <dd class="col-sm-9">@(Case.DataTypesInvolved ?? "—")</dd>
+                        <dt class="col-sm-3">Impacted assets</dt>
+                        <dd class="col-sm-9">@(Case.ImpactedAssets ?? "—")</dd>
+                        <dt class="col-sm-3">Detected</dt>
+                        <dd class="col-sm-9">@TimeDisp.Long(Case.DetectedAtUtc)</dd>
+                        @if (Case.OccurredAtUtc is { } began)
+                        {
+                            <dt class="col-sm-3">Initial activity</dt>
+                            <dd class="col-sm-9">@TimeDisp.Long(began)</dd>
+                        }
+                        <dt class="col-sm-3">Opened</dt>
+                        <dd class="col-sm-9">@TimeDisp.Long(Case.CreatedAtUtc) by @Users.DisplayFor(Case.CreatedBy)</dd>
+                    </dl>
+                }
+
+
+        <div class="im-ov-record">
+            <div class="im-sec">
+                <div class="im-sec-head"><h3>Access</h3></div>
             @* S-08: who can see this case, in plain words, with the control to change it beside the explanation. *@
             <div class="im-visibility small mt-2 @(Case.IsRestricted ? "is-restricted" : "")">
                 @if (Case.IsRestricted)
@@ -382,9 +361,8 @@
                     </span>
                 }
             </div>
-        </div>
-
-        <div class="im-sec mt-3">
+            </div>
+            <div class="im-sec">
             <div class="im-sec-head"><h3>MITRE ATT&CK</h3></div>
             <div class="im-chips">
                 @if (Case.Techniques.Count == 0)
@@ -409,10 +387,7 @@
                 </AuthorizeView>
             </div>
         </div>
-    </div>
-    <div class="col-lg-5">
-        @* Context rail — related cases and the change log. *@
-        <div class="im-sec">
+            <div class="im-sec">
             <div class="im-sec-head">
                 <h3>Related cases</h3>
                 <div class="d-flex align-items-center gap-2">
@@ -507,6 +482,9 @@
             }
         </div>
 
+        </div>
+    </section>
+
         <div class="im-sec">
             <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => _showHistory = !_showHistory">
                 <span class="bi @(_showHistory ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>
@@ -537,7 +515,6 @@
                 }
             }
         </div>
-    </div>
 </div>
 
 @* MITRE ATT&CK matrix picker (self-contained overlay) — tag techniques from the tactic grid. *@
@@ -565,6 +542,8 @@
 
     /// <summary>A readiness "Fix" this tab can't satisfy in place (a tab or a dialog); the workspace routes it.</summary>
     [Parameter] public EventCallback<string> OnFix { get; set; }
+    /// <summary>INV-29: switch the workspace to another tab (e.g. "Open the timeline").</summary>
+    [Parameter] public EventCallback<string> OnGoToTab { get; set; }
     /// <summary>Bumped by the parent on a collaborator change, to re-pull related cases.</summary>
     [Parameter] public int RefreshToken { get; set; }
 
@@ -614,7 +593,7 @@
     // Techniques matrix + change-history toggle
     private bool _techMatrixOpen;
     private bool _showHistory;
-    private bool _showReadiness = true;
+    private bool _showReadiness;   // INV-29: one collapsed row until asked for
 
     private string DetectionLabel
     {
@@ -646,11 +625,6 @@
     }
 
     private IReadOnlyList<string> _clearanceRoles = [];
-
-    // S-08: say what removal means on a restricted case — the person loses access unless their role is cleared.
-    private string UnassignPrompt(string name) => Case.IsRestricted
-        ? $"Remove {name} from this case? It's restricted, so they lose access to it unless their role is cleared for restricted cases."
-        : $"Remove {name} from this case?";
 
     private string RestrictedAudience
     {
@@ -796,30 +770,35 @@
 
     private Task Confirm(string message, Func<Task> action, string verb = "Remove") => RequestConfirm.InvokeAsync((message, verb, action));
 
-    // One response-SLA vital for the vitals strip (E-16): containment or resolution, badge + timing.
-    private RenderFragment SlaVital(SlaStatus st) =>
-        @<div class="im-vital">
-            <div class="small text-muted">@(st.Clock is { } c ? Ui.SlaClockLabel(c) : "SLA")</div>
-            @if (st.State == SlaState.NoTarget)
-            {
-                <div class="fw-semibold text-muted">No target</div>
-            }
-            else
-            {
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <span class="@Ui.SlaBadge(st.State)"><span class="bi @Ui.SlaGlyph(st.State)" aria-hidden="true"></span> @Ui.SlaLabel(st.State)</span>
-                    @if (Ui.SlaTiming(st) is { Length: > 0 } t) { <span class="small fw-semibold">@t</span> }
-                </div>
-                <div class="small text-muted mt-1">
-                    Target @st.TargetHours h@(st.IsActive && st.DueAtUtc is { } due ? $" · due {TimeDisp.Short(due)}" : "")
-                </div>
-            }
-        </div>;
+    // INV-29: the last few decisions, handoffs and response milestones, newest first — a read-time view of the
+    // timeline, so "what just happened" is answered without switching tabs.
+    private sealed record RecentItem(DateTimeOffset At, string Icon, string Kind, string Text);
 
-    private static string DwellLabel(TimeSpan span)
+    private static readonly HashSet<MilestoneKind> RecentMilestones =
+    [
+        MilestoneKind.Classification, MilestoneKind.Severity, MilestoneKind.Phase, MilestoneKind.Materiality,
+        MilestoneKind.Gate, MilestoneKind.Reported, MilestoneKind.TaskDone
+    ];
+
+    private List<RecentItem> RecentOnTimeline()
     {
-        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
-        return span.TotalDays >= 1 ? $"{span.TotalDays:0.#}d" : $"{span.TotalHours:0.#}h";
+        var labels = new MilestoneLabels(c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m));
+        var milestones = CaseMilestones.Project(Case, labels)
+            .Where(m => RecentMilestones.Contains(m.Kind))
+            .Select(m => new RecentItem(m.AtUtc, m.Flagged ? "bi-flag-fill im-ov-flag" : "bi-flag", "Milestone",
+                m.Detail is { } detail ? $"{m.Title}: {OneLine(detail)}" : m.Title));
+        var entries = Case.TimelineEntries
+            .Where(e => e.IsCurrent && e.Type is TimelineEntryType.Decision or TimelineEntryType.Handoff)
+            .Select(e => e.Type == TimelineEntryType.Decision
+                ? new RecentItem(e.OccurredAtUtc, "bi-diamond-fill im-ov-dec", "Decision", OneLine(e.Description))
+                : new RecentItem(e.OccurredAtUtc, "bi-arrow-left-right", "Handoff", OneLine(e.Description)));
+        return milestones.Concat(entries).OrderByDescending(r => r.At).Take(5).ToList();
+    }
+
+    private string OneLine(string markdown)
+    {
+        var text = Md.ToPlainText(markdown).Replace('\n', ' ').Trim();
+        return text.Length <= 160 ? text : text[..157] + "…";
     }
 
     // --- Details ---
@@ -959,13 +938,6 @@
     }
 
     // --- Assignments / techniques ---
-    private async Task DoUnassign(string userId)
-    {
-        await Cases.UnassignAsync(CaseId, userId);
-        await OnChanged.InvokeAsync();
-        Toasts.Success("Assignment removed");
-    }
-
     private async Task RemoveTechnique(Guid techniqueId)
     {
         await Cases.RemoveTechniqueAsync(CaseId, techniqueId);

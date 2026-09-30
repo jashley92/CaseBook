@@ -378,17 +378,7 @@ h1:focus {
 }
 .im-chip-tac .im-chip-role { color: color-mix(in srgb, var(--tac, var(--bs-secondary-color)) 75%, var(--bs-secondary-color)); }
 
-/* Overview restructure: a full-width "vitals" strip carries the at-a-glance scan (response SLA,
-   lifecycle timestamps, dwell, counts) at the top of the pane; cells flex to fill and wrap. Below it,
-   the right rail uses low-chrome sections (heading + content, no card border) so context reads lighter
-   than the primary Details card. Token-driven, theme-aware. */
-.im-vitals { display: flex; flex-wrap: wrap; gap: .5rem; }
-.im-vital {
-    flex: 1 1 150px; min-width: 140px;
-    padding: .5rem .65rem;
-    border-radius: var(--bs-border-radius);
-    background: var(--bs-secondary-bg);
-}
+/* Low-chrome sections (heading + content, no card border) for secondary content. Token-driven, theme-aware. */
 .im-sec { margin-bottom: 1.25rem; }
 .im-sec-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .45rem; }
 .im-sec-head h3 {
@@ -2495,3 +2485,39 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 .im-docx-preview .docx-wrapper > section.docx { color: #000; margin-bottom: 1rem; }
 /* A template that states no page size (Word assumes Letter, 1" margins) would otherwise render edge to edge. */
 .im-docx-preview .docx-wrapper > section.docx:not([style*="width"]) { width: 8.5in; min-height: 11in; padding: 1in; }
+
+/* INV-29: the Overview as one reading column. Sections share one heading style (a title over a hairline) instead
+   of mixing cards and tiles; the brief card above them is the only card. */
+.im-ov { display: flex; flex-direction: column; gap: 1.75rem; max-width: 62rem; }
+.im-ov-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding-bottom: 0.35rem; margin-bottom: 0.65rem; border-bottom: 1px solid var(--im-border); }
+.im-ov-h { font-size: 0.95rem; font-weight: 600; margin: 0; }
+.im-ov-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.75rem 1.5rem; }
+.im-ov-facts dt { font-size: var(--im-text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--im-text-muted); margin-bottom: 0.15rem; }
+.im-ov-facts dd { margin: 0; }
+.im-ov-big { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.im-ov-recent { list-style: none; margin: 0; padding: 0; }
+.im-ov-recent li { display: grid; grid-template-columns: 6.5rem 1.1rem minmax(0, 1fr); gap: 0.5rem; align-items: baseline; padding: 0.35rem 0; border-bottom: 1px solid var(--im-border); font-size: 0.9rem; }
+.im-ov-recent li:last-child { border-bottom: 0; }
+.im-ov-recent-at { font-size: var(--im-text-xs); color: var(--im-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.3; }
+.im-ov-recent-kind { font-size: var(--im-text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--im-text-muted); margin-right: 0.25rem; }
+.im-ov-dec { color: var(--im-accent-strong); }
+.im-ov-flag { color: var(--im-warn); }
+.im-ov-record { margin-top: 1rem; display: grid; gap: 0.25rem; }
+.im-ov-dl dt { font-weight: 500; font-size: 0.875rem; color: var(--im-text-muted); }
+.im-ov-dl dd { margin-bottom: 0.3rem; }
+@media (max-width: 640px) {
+    .im-ov-recent li { grid-template-columns: 1.1rem minmax(0, 1fr); }
+    .im-ov-recent-at { grid-column: 1 / -1; }
+    .im-ov-recent-at br { display: none; }
+}
+
+/* INV-29: the context panel as a strip above the Overview wherever the panel isn't beside it. */
+.im-rail-strip { border: 1px solid var(--im-border); border-radius: var(--im-radius-lg); background: var(--im-surface); padding: 0.5rem 0.85rem; margin-bottom: 1rem; font-size: 0.875rem; }
+@media (min-width: 1400px) { .im-rail-strip:not(.im-rail-strip-always) { display: none; } }
+.im-strip-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 1.5rem; }
+.im-strip-item { display: inline-flex; align-items: center; gap: 0.35rem; min-width: 0; }
+.im-strip-next .btn-link { color: var(--im-text); text-decoration: none; max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.im-strip-more { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem 1.5rem; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--im-border); }
+.im-rail-sub { font-size: var(--im-text-xs); color: var(--im-text-muted); margin: -0.05rem 0 0.3rem; }
+.im-rail-x { border: 0; background: none; color: var(--im-text-muted); padding: 0 0.15rem; line-height: 1; }
+.im-rail-x:hover, .im-rail-x:focus-visible { color: var(--im-danger); }

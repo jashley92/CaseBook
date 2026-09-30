@@ -1,75 +1,174 @@
 @* INV-12: the case's context, beside every tab — the clocks, what's left before the next phase, who's on it, the
-   brief's next steps and the key entities — so checking them doesn't mean switching tabs. Read-only; each item
-   links to where it's worked. Shown beside the tab on wide screens (the workspace decides). *@
+   brief's next steps and the key entities — so checking them doesn't mean switching tabs. Each item links to where
+   it's worked. Shown beside the tab on wide screens (the workspace decides).
+   INV-29: the only home for this context — the Overview no longer repeats the clocks, dates or team. With Strip set,
+   it renders as one compact row (clocks, the first open task, the team) that expands to the same sections; the
+   Overview shows that strip wherever the panel isn't beside it (below 1,400 px, or when it's hidden). *@
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
 
-<aside class="im-rail" aria-label="Case context">
-    @{
-        var (contain, resolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
-            Case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow, Case.Classification);
-        var next = NextPhase();
-        var behind = OpenBehind(next);
-        var brief = Case.Briefs.FirstOrDefault(b => b.IsCurrent);
-        var key = Case.Entities
-            .Where(e => e.Disposition is EntityDisposition.Malicious or EntityDisposition.Compromised or EntityDisposition.Suspicious)
-            .OrderBy(e => e.Disposition switch { EntityDisposition.Malicious => 0, EntityDisposition.Compromised => 1, _ => 2 })
-            .Take(6).ToList();
-        var openTasks = Case.ActionItems.Count(t => t.IsOpen);
-    }
+@{
+    var (contain, resolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
+        Case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow, Case.Classification);
+    var detect = SlaPolicy.EvaluateDetection(Case.Severity, Case.OccurredAtUtc, Case.DetectedAtUtc, SlaProvider.Current);
+    var next = NextPhase();
+    var behind = OpenBehind(next);
+}
 
-    <section>
-        <h2 class="im-rail-h">Clocks</h2>
-        @foreach (var st in new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget))
-        {
-            <div class="im-rail-row">
-                <span>@(st.Clock is { } c ? Ui.SlaClockLabel(c) : "SLA")</span>
-                <span class="@Ui.SlaBadge(st.State)" title="@(st.DueAtUtc is { } due ? $"Due {TimeDisp.Long(due)}" : null)">
-                    @Ui.SlaShort(st)
+@if (Strip)
+{
+    <section class="im-rail-strip @(AlwaysStrip ? "im-rail-strip-always" : "")" aria-label="Case context">
+        <div class="im-strip-row">
+            @foreach (var st in new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget))
+            {
+                <span class="im-strip-item">@(st.Clock is { } c ? Ui.SlaClockLabel(c) : "SLA")
+                    <span class="@Ui.SlaBadge(st.State)">@Ui.SlaShort(st)</span></span>
+            }
+            @if (Notify?.Headline is { } nh)
+            {
+                <span class="im-strip-item">Notify · @nh.JurisdictionLabel <span class="@Ui.SlaBadge(nh.State)">@Ui.SlaLabel(nh.State)</span></span>
+            }
+            @{ var firstOpen = behind.FirstOrDefault() ?? Case.ActionItems.Where(t => t.IsOpen).OrderBy(t => t.DueAtUtc).FirstOrDefault(); }
+            @if (firstOpen is not null)
+            {
+                <span class="im-strip-item im-strip-next">Next:
+                    <button type="button" class="btn btn-link p-0 align-baseline" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@firstOpen.Title</button>
                 </span>
+            }
+            @if (Case.Assignments.Count > 0)
+            {
+                <span class="im-strip-item" title="@string.Join(", ", Case.Assignments.OrderBy(a => a.Role).Select(a => $"{Users.DisplayFor(a.UserId)} ({Ui.Label(a.Role)})"))">
+                    @string.Join(", ", Case.Assignments.OrderBy(a => a.Role).Select(a => Users.DisplayFor(a.UserId)))
+                </span>
+            }
+            <button type="button" class="btn btn-link btn-sm p-0 ms-auto" aria-expanded="@Ui.Aria(_expanded)" @onclick="() => _expanded = !_expanded">
+                @(_expanded ? "Less" : "More") <span class="bi @(_expanded ? "bi-chevron-up" : "bi-chevron-down")" aria-hidden="true"></span>
+            </button>
+        </div>
+        @if (_expanded)
+        {
+            <div class="im-strip-more">
+                @Clocks(contain, resolve, detect)
+                @Before(next, behind)
+                @NextSteps()
+                @Team()
+                @KeyEntities()
             </div>
         }
+    </section>
+}
+else
+{
+    <aside class="im-rail" aria-label="Case context">
+        @Clocks(contain, resolve, detect)
+        @Before(next, behind)
+        @NextSteps()
+        @Team()
+        @KeyEntities()
+    </aside>
+}
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
+    [Parameter] public EventCallback<Guid> OnOpenEntity { get; set; }
+    [Parameter] public EventCallback<string> OnGoToTab { get; set; }
+    /// <summary>INV-29: render as the compact strip (the Overview, where the panel isn't beside it).</summary>
+    [Parameter] public bool Strip { get; set; }
+    /// <summary>Show the strip at every width (the panel is hidden), not only below 1,400 px.</summary>
+    [Parameter] public bool AlwaysStrip { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    /// <summary>Open the workspace's assign dialog.</summary>
+    [Parameter] public EventCallback OnAssign { get; set; }
+    /// <summary>Remove someone from the case (the workspace confirms first).</summary>
+    [Parameter] public EventCallback<CaseAssignment> OnUnassign { get; set; }
+
+    private bool _expanded;
+
+    // Each clock with the dates behind it, so the Overview needs no separate date tiles.
+    private RenderFragment Clocks(SlaStatus contain, SlaStatus resolve, SlaStatus detect) => @<section>
+        <h2 class="im-rail-h">Clocks</h2>
+        @ClockRow(contain, Case.ContainedAtUtc, "Contained")
+        @ClockRow(resolve, Case.ResolvedAtUtc, "Resolved")
         @if (Notify?.Headline is { } nh)
         {
             <div class="im-rail-row">
                 <span>Notify · @nh.JurisdictionLabel</span>
-                <span class="@Ui.SlaBadge(nh.State)" title="@(nh.DueAtUtc is { } due ? $"Due {TimeDisp.Long(due)}" : null)">@Ui.SlaLabel(nh.State)</span>
+                <span class="@Ui.SlaBadge(nh.State)">@Ui.SlaLabel(nh.State)</span>
+            </div>
+            @if (Notify.ReportedAtUtc is { } rep)
+            {
+                <div class="im-rail-sub">Reported @TimeDisp.Short(rep)</div>
+            }
+            else if (nh.DueAtUtc is { } due)
+            {
+                <div class="im-rail-sub">Due @TimeDisp.Short(due)</div>
+            }
+        }
+        @if (detect.State != SlaState.NoTarget)
+        {
+            <div class="im-rail-row">
+                <span>@(detect.Clock is { } dc ? Ui.SlaClockLabel(dc) : "Time to detect")</span>
+                <span class="@Ui.SlaBadge(detect.State)">@Ui.SlaShort(detect)</span>
             </div>
         }
-        @if (contain.State == SlaState.NoTarget && resolve.State == SlaState.NoTarget && Notify?.Headline is null)
+        else if (Case.OccurredAtUtc is { } occ && Case.DetectedAtUtc is { } det)
         {
-            <p class="small text-muted mb-0">No clocks running.</p>
+            <div class="im-rail-row"><span>Dwell before detection</span><span class="fw-semibold">@DwellLabel(det - occ)</span></div>
         }
-    </section>
+        @if (Case.DetectedAtUtc is { } detected)
+        {
+            <div class="im-rail-sub">Detected @TimeDisp.Short(detected)@(Case.OccurredAtUtc is { } o ? $" · activity began {TimeDisp.Short(o)}" : "")</div>
+        }
+    </section>;
 
-    @if (next is { } np)
-    {
-        <section>
-            <h2 class="im-rail-h">Before @Ui.Label(np)</h2>
-            @if (behind.Count == 0)
-            {
-                <p class="small mb-0"><span class="bi bi-check2 text-success" aria-hidden="true"></span> No open tasks for the phases so far.</p>
-            }
-            else
-            {
-                <ul class="im-rail-list">
-                    @foreach (var t in behind.Take(4))
-                    {
-                        <li>
-                            <button type="button" class="btn btn-link p-0 text-start" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@t.Title</button>
-                            <span class="text-muted">@CaseTasksTab.KindLabel(t.Kind)@(string.IsNullOrWhiteSpace(t.Owner) ? "" : $" · {Users.DisplayFor(t.Owner)}")</span>
-                        </li>
-                    }
-                </ul>
-                @if (behind.Count > 4) { <div class="small text-muted">…and @(behind.Count - 4) more</div> }
-            }
-        </section>
-    }
+    private RenderFragment ClockRow(SlaStatus st, DateTimeOffset? reachedAt, string reached) => @<text>
+        @if (st.State != SlaState.NoTarget)
+        {
+            <div class="im-rail-row">
+                <span>@(st.Clock is { } c ? Ui.SlaClockLabel(c) : "SLA")</span>
+                <span class="@Ui.SlaBadge(st.State)">@Ui.SlaShort(st)</span>
+            </div>
+            <div class="im-rail-sub">
+                @(reachedAt is { } at ? $"{reached} {TimeDisp.Short(at)}" : st.DueAtUtc is { } due ? $"Due {TimeDisp.Short(due)}" : "")@(st.TargetHours is { } h ? $" · target {h} h" : "")
+            </div>
+        }
+    </text>;
 
-    <section>
+    private RenderFragment Before(CasePhase? next, List<ActionItem> behind) => @<text>
+        @if (next is { } np)
+        {
+            <section>
+                <h2 class="im-rail-h">Before @Ui.Label(np)</h2>
+                @if (behind.Count == 0)
+                {
+                    <p class="small mb-0"><span class="bi bi-check2 text-success" aria-hidden="true"></span> No open tasks for the phases so far.</p>
+                }
+                else
+                {
+                    <ul class="im-rail-list">
+                        @foreach (var t in behind.Take(4))
+                        {
+                            <li>
+                                <button type="button" class="btn btn-link p-0 text-start" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@t.Title</button>
+                                <span class="text-muted">@CaseTasksTab.KindLabel(t.Kind)@(string.IsNullOrWhiteSpace(t.Owner) ? "" : $" · {Users.DisplayFor(t.Owner)}")</span>
+                            </li>
+                        }
+                    </ul>
+                    @if (behind.Count > 4) { <div class="small text-muted">…and @(behind.Count - 4) more</div> }
+                }
+            </section>
+        }
+    </text>;
+
+    private RenderFragment NextSteps() => @<section>
+        @{
+            var brief = Case.Briefs.FirstOrDefault(b => b.IsCurrent);
+            var openTasks = Case.ActionItems.Count(t => t.IsOpen);
+        }
         <div class="d-flex align-items-baseline justify-content-between">
             <h2 class="im-rail-h">Next steps</h2>
             <button type="button" class="btn btn-link btn-sm p-0" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@IncidentManager.Application.Common.Plural.Of(openTasks, "open task")</button>
@@ -85,10 +184,18 @@
                 <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick='() => OnGoToTab.InvokeAsync("Overview")'>@(brief is null ? "Write it" : "Add them")</button>
             </p>
         }
-    </section>
+    </section>;
 
-    <section>
-        <h2 class="im-rail-h">Team</h2>
+    private RenderFragment Team() => @<section>
+        <div class="d-flex align-items-baseline justify-content-between">
+            <h2 class="im-rail-h">Team</h2>
+            @if (CanEdit)
+            {
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => OnAssign.InvokeAsync()">
+                    <span class="bi bi-plus-lg" aria-hidden="true"></span> Assign
+                </button>
+            }
+        </div>
         @if (Case.Assignments.Count == 0)
         {
             <p class="small text-muted mb-0">No one is assigned.</p>
@@ -98,36 +205,46 @@
             <ul class="im-rail-list">
                 @foreach (var a in Case.Assignments.OrderBy(a => a.Role))
                 {
-                    <li><span>@Users.DisplayFor(a.UserId)</span> <span class="text-muted">@Ui.Label(a.Role)</span></li>
-                }
-            </ul>
-        }
-    </section>
-
-    @if (key.Count > 0)
-    {
-        <section>
-            <h2 class="im-rail-h">Key entities</h2>
-            <ul class="im-rail-list">
-                @foreach (var e in key)
-                {
-                    <li>
-                        <button type="button" class="btn btn-link p-0 text-start im-rail-entity" @onclick="() => OnOpenEntity.InvokeAsync(e.Id)" title="@e.Value">
-                            @Ui.EntityGlyph(e.Type) @(string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label)
-                        </button>
-                        <span class="@Ui.DispositionBadge(e.Disposition)">@Ui.Label(e.Disposition)</span>
+                    <li class="im-rail-person">
+                        <span>@Users.DisplayFor(a.UserId)</span>
+                        <span class="text-muted">@Ui.Label(a.Role)
+                            @if (CanEdit)
+                            {
+                                <button type="button" class="im-rail-x" aria-label="Remove @Users.DisplayFor(a.UserId)" title="Remove from the case"
+                                        @onclick="() => OnUnassign.InvokeAsync(a)">×</button>
+                            }
+                        </span>
                     </li>
                 }
             </ul>
-        </section>
-    }
-</aside>
+        }
+    </section>;
 
-@code {
-    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
-    [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
-    [Parameter] public EventCallback<Guid> OnOpenEntity { get; set; }
-    [Parameter] public EventCallback<string> OnGoToTab { get; set; }
+    private RenderFragment KeyEntities() => @<text>
+        @{
+            var key = Case.Entities
+                .Where(e => e.Disposition is EntityDisposition.Malicious or EntityDisposition.Compromised or EntityDisposition.Suspicious)
+                .OrderBy(e => e.Disposition switch { EntityDisposition.Malicious => 0, EntityDisposition.Compromised => 1, _ => 2 })
+                .Take(6).ToList();
+        }
+        @if (key.Count > 0)
+        {
+            <section>
+                <h2 class="im-rail-h">Key entities</h2>
+                <ul class="im-rail-list">
+                    @foreach (var e in key)
+                    {
+                        <li>
+                            <button type="button" class="btn btn-link p-0 text-start im-rail-entity" @onclick="() => OnOpenEntity.InvokeAsync(e.Id)" title="@e.Value">
+                                @Ui.EntityGlyph(e.Type) @(string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label)
+                            </button>
+                            <span class="@Ui.DispositionBadge(e.Disposition)">@Ui.Label(e.Disposition)</span>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+    </text>;
 
     private CasePhase? NextPhase()
     {
@@ -140,4 +257,10 @@
     private List<ActionItem> OpenBehind(CasePhase? next) => next is not { } np ? []
         : Case.ActionItems.Where(t => t.IsOpen && (np == CasePhase.Closed || (t.Kind.Phase() is { } p && p < np)))
             .OrderBy(t => t.Kind).ThenBy(t => t.DueAtUtc).ToList();
+
+    private static string DwellLabel(TimeSpan span)
+    {
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+        return span.TotalDays >= 1 ? $"{span.TotalDays:0.#}d" : $"{span.TotalHours:0.#}h";
+    }
 }

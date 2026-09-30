@@ -461,10 +461,13 @@ else
         @* UX-13: extracted to CaseOverviewTab. It owns the Summary EasyMDE editor (so the central reconcile
            retires) + details/impact/techniques/links/history; the parent threads the retention alert, the
            readiness gate, the shared confirm dialog, the assign modal (OnOpenModal), and hotkey dispatch. *@
+        @* INV-29: where the panel isn't beside the tab (narrow screens, or hidden), its content is a strip here. *@
+        <CaseContextRail Strip="true" AlwaysStrip="!_railOpen" Case="_case" Notify="_notifyDeadlines" CanEdit="_canEdit"
+                         OnOpenEntity="OpenEntity" OnGoToTab="SetTab" OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
         <CaseOverviewTab @ref="_overviewTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" CanLiftRestriction="@(_canEdit && CanLiftRestriction)"
                          RetentionMessage="@_retentionMsg" ReadinessEval="_readinessEval"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" OnOpenModal="OpenModal"
-                         OnFix="FixGateItem" RefreshToken="_liveRefresh" />
+                         OnFix="FixGateItem" OnGoToTab="SetTab" RefreshToken="_liveRefresh" />
     }
     else if (_activeTab == "Timeline")
     {
@@ -557,7 +560,8 @@ else
     </div>@* /.tabbody *@
     @if (_railOpen)
     {
-        <CaseContextRail Case="_case" Notify="_notifyDeadlines" OnOpenEntity="OpenEntity" OnGoToTab="SetTab" />
+        <CaseContextRail Case="_case" Notify="_notifyDeadlines" CanEdit="_canEdit" OnOpenEntity="OpenEntity" OnGoToTab="SetTab"
+                         OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
     }
     </div>@* /.ws-body *@
 
@@ -1901,6 +1905,23 @@ else
 
     // --- INV-12: the context panel beside the tabs (wide screens) ---
     private bool _railOpen = true;
+
+    // INV-29: the team lives in the context panel, so removing someone is confirmed from there. S-08: on a
+    // restricted case, say that removal takes their access away unless their role is cleared.
+    private void UnassignFromPanel(CaseAssignment a)
+    {
+        if (_case is null) return;
+        var name = Users.DisplayFor(a.UserId);
+        var prompt = _case.IsRestricted
+            ? $"Remove {name} from this case? It's restricted, so they lose access to it unless their role is cleared for restricted cases."
+            : $"Remove {name} from this case?";
+        AskConfirm(prompt, async () =>
+        {
+            await Cases.UnassignAsync(_case.Id, a.UserId);
+            await Reload();
+            Toasts.Success("Assignment removed");
+        });
+    }
 
     // --- INV-11: the entity panel ---
     private Guid? _panelEntity;

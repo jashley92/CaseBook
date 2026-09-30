@@ -19,18 +19,20 @@ export (incl. monthly & quarterly rollups) for board / regulatory packs.
 ![Leadership dashboard](docs/screenshots/dashboard.png)
 
 ### Case workspace
-The analyst's hub. The Overview opens on **where the case stands**: the case summary the report prints,
-then the team's working assessment, what's known, open questions and next steps. Every revision is a new
-version, the summary included, so what the team believed and reported at any point stays readable. On wide screens a **context panel** sits beside every tab with the clocks, the tasks still
-open before the next phase, the team and the key entities, so checking them doesn't mean switching tabs.
-Tabs: **Overview / Timeline / IOCs & entities / Evidence / Notes / Discussion / Tasks / Lessons learned /
-Report / Audit**. A compact header carries the case number and title, status badges (SLA, **materiality**,
-a Legal/committee decision the tool records but does not make, and the **regulatory notification**
+The analyst's hub. The Overview reads top to bottom as one column: **where the case stands** (the case
+summary the report prints, then the team's working assessment, what's known, open questions and next steps),
+the latest decisions and milestones from the timeline, scope and impact, the **regulatory notification**
+deadlines, readiness for the next stage gate, and the case record (origin, detection reference, true
+**detected / occurred** times, ATT&CK, related cases and need-to-know **restriction**). Every revision of the
+brief is a new version, the summary included, so what the team believed and reported at any point stays
+readable. A **context panel** beside every tab carries the clocks with their dates, the tasks still open
+before the next phase, the team and the key entities; on narrower screens it folds into a strip at the top
+of the Overview. Tabs: **Overview / Timeline / IOCs & entities / Evidence / Notes / Discussion / Tasks /
+Lessons learned / Report / Audit**. A compact header carries the case number and title, status badges (SLA,
+**materiality**, a Legal/committee decision the tool records but does not make, and the notification
 countdown) and the NIST SP 800-61 phase stepper, with **Advance** and **Hand off** one click away. Opening a
 case you've seen before says **what changed since you last viewed it**. Clicking any entity opens it in a side
-panel: where the case refers to it, its relationships and the other cases it appears on. True **detected /
-occurred** timestamps, links to related cases, a structured impact assessment, and need-to-know
-**restriction** are all on the Overview.
+panel: where the case refers to it, its relationships and the other cases it appears on.
 
 ![Case workspace](docs/screenshots/case-workspace.png)
 
