@@ -337,6 +337,7 @@ public sealed class CaseImportTests : IDisposable
 
             var timeline = await verify.Set<TimelineEntry>().Where(t => t.CaseId == caseId).ToListAsync();
             timeline.Should().ContainSingle().Which.Source.Should().Be("manual");
+            timeline.Single().IsImported.Should().BeTrue("INV-23: marked as imported, not as recorded later");
 
             var chain = await verify.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
             _hasher.VerifyChain(chain).IsValid.Should().BeTrue();

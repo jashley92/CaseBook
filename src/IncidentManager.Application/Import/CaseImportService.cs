@@ -183,7 +183,7 @@ public sealed class CaseImportService
                     t.Description, t.Source ?? origin, null,
                     decision: t.Type == TimelineEntryType.Decision
                         ? new CaseService.DecisionDetails(t.Rationale ?? "", t.OptionsConsidered, t.DecidedBy) : null,
-                    ct: ct);
+                    imported: true, ct: ct);
                 t.Applied = true;
             }
             timeline++;

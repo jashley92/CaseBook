@@ -81,10 +81,19 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
 
     /// <summary>
     /// INV-07: where this entry was promoted from — "note:&lt;id&gt;", "comment:&lt;id&gt;" or "taskcomment:&lt;id&gt;" — so the
-    /// source can show it's already on the timeline. Null for an entry written on the timeline. Folded into the row
-    /// hash only when set.
+    /// source can show it's already on the timeline; INV-23: <see cref="Imported"/> for an entry brought in by a
+    /// structured import. Null for an entry written on the timeline. Folded into the row hash only when set.
     /// </summary>
     public string? PromotedFrom { get; set; }
+
+    /// <summary>INV-23: the <see cref="PromotedFrom"/> of an entry brought in by a structured import.</summary>
+    public const string Imported = "import";
+
+    /// <summary>
+    /// INV-23: brought in by a structured import. Its occurred time comes from the imported document and its
+    /// recorded time is the import, so it isn't marked as recorded later; it's marked as imported instead.
+    /// </summary>
+    public bool IsImported => PromotedFrom == Imported;
 
     /// <summary>INV-06: a Decision entry must say why.</summary>
     public static void EnsureDecisionHasRationale(TimelineEntryType type, string? rationale)

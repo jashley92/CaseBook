@@ -219,6 +219,9 @@ public sealed class ReportingIntegrationTests : IDisposable
             _clock.UtcNow = detected.AddHours(6);
             await cases.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Containment,
                 detected.AddHours(1), "RevokedSessionsEntry", null);
+            // INV-23: an imported entry is always recorded after it happened; it isn't marked per entry.
+            await cases.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Communication,
+                detected.AddHours(1), "ImportedEntry", "summary", imported: true);
             await cases.ChangePhaseAsync(caseId, CasePhase.Containment, "Isolated on the call", effectiveAtUtc: detected.AddHours(2));
         }
 
@@ -232,13 +235,18 @@ public sealed class ReportingIntegrationTests : IDisposable
             phase.OccurredAtUtc.Should().Be(detected.AddHours(2));
             phase.Description.Should().Contain("Isolated on the call").And.Contain("(Recorded ");
             entry.Description.Should().Contain("(Recorded ");
+            var imported = timeline.Single(x => x.Description.StartsWith("ImportedEntry", StringComparison.Ordinal));
+            imported.Description.Should().Be("ImportedEntry");
+            imported.Imported.Should().BeTrue();
+            ReportTimelineItem.InvestigationSubtitle(timeline).Should().EndWith(
+                "One entry was imported from a structured summary and is dated as the summary gave it.");
             timeline.Should().Contain(x => x.Type == "Milestone" && x.Description.StartsWith("Case opened", StringComparison.Ordinal));
 
             _reporting.CurrentValue.IncludeMilestones = false;
             _reporting.CurrentValue.MarkLateEntries = false;
             var plain = (await NewReportService(db).BuildPreviewModelAsync(caseId, null)).InvestigationTimeline;
             plain.Should().NotContain(x => x.Type == "Milestone");
-            plain.Should().ContainSingle().Which.Description.Should().Be("RevokedSessionsEntry");
+            plain.Select(x => x.Description).Should().BeEquivalentTo("RevokedSessionsEntry", "ImportedEntry");
         }
     }
 

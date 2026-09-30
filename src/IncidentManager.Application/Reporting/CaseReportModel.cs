@@ -4,14 +4,30 @@ using IncidentManager.Domain.Enums;
 namespace IncidentManager.Application.Reporting;
 
 public sealed record ReportClassificationItem(DateTimeOffset AtUtc, string From, string To, string Reason, string By);
-public sealed record ReportTimelineItem(DateTimeOffset OccurredAtUtc, string Type, string Description, string? Source)
+/// <param name="Imported">INV-23: brought in by a structured import, dated as the imported document gave it.</param>
+public sealed record ReportTimelineItem(DateTimeOffset OccurredAtUtc, string Type, string Description, string? Source,
+    bool Imported = false)
 {
     /// <summary>INV-16: the <see cref="Type"/> of a response milestone in the investigation timeline.</summary>
     public const string Milestone = "Milestone";
 
-    /// <summary>The subtitle of the investigation-timeline section, naming the milestones when it carries them.</summary>
-    public static string InvestigationSubtitle(IEnumerable<ReportTimelineItem> items) =>
-        items.Any(x => x.Type == Milestone) ? "Analyst and team actions, with the response milestones." : "Analyst and team actions.";
+    /// <summary>
+    /// The subtitle of the investigation-timeline section, naming the milestones when it carries them, and
+    /// (INV-23) saying once how many entries came from an import, instead of marking each as recorded later.
+    /// </summary>
+    public static string InvestigationSubtitle(IEnumerable<ReportTimelineItem> items)
+    {
+        var list = items as IReadOnlyCollection<ReportTimelineItem> ?? items.ToList();
+        var text = list.Any(x => x.Type == Milestone)
+            ? "Analyst and team actions, with the response milestones."
+            : "Analyst and team actions.";
+        var imported = list.Count(x => x.Imported);
+        if (imported > 0)
+            text += imported == 1
+                ? " One entry was imported from a structured summary and is dated as the summary gave it."
+                : $" {imported} entries were imported from a structured summary and are dated as the summary gave them.";
+        return text;
+    }
 }
 /// <summary>INV-19: the case brief as plain text (Markdown flattened, indicators defanged), with its version.</summary>
 public sealed record ReportBrief(int Version, DateTimeOffset RevisedAtUtc, string RevisedBy,

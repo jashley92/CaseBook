@@ -86,9 +86,11 @@ public sealed class ReportService
             .Where(x => x.Kind == TimelineKind.Investigation && x.IsCurrent)
             // Investigation descriptions are Markdown; flatten to readable plain text for the report. An edited
             // entry was first recorded when its original version was.
+            // INV-23: an imported entry was always recorded after it happened; the subtitle says so once.
             .Select(x => (At: x.OccurredAtUtc, Order: x.CreatedAtUtc, Item: new ReportTimelineItem(x.OccurredAtUtc,
                 TaxLabel("TimelineEntryType", x.Type.ToString()),
-                d.Text(EntryText(x)) + Cited(c, x) + Late(x.OccurredAtUtc, FirstRecorded(c, x)), x.Source)))
+                d.Text(EntryText(x)) + Cited(c, x) + (x.IsImported ? "" : Late(x.OccurredAtUtc, FirstRecorded(c, x))),
+                x.Source, x.IsImported)))
             .ToList();
 
         if (opts.IncludeMilestones)

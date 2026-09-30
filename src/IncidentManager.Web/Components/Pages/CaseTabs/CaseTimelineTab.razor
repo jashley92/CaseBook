@@ -708,7 +708,12 @@ else
                             <span>logged by @Users.DisplayFor(e.CreatedBy)</span>
                             @{ var history = InvestigationHistory(e); }
                             @{ var firstRecorded = history.Count > 0 ? history[^1].CreatedAtUtc : e.CreatedAtUtc; }
-                            @if (firstRecorded - e.OccurredAtUtc > CaseService.BackdateReasonThreshold)
+                            @if (e.IsImported)
+                            {
+                                @* INV-23: dated as the imported summary gave it; the import time is on hover. *@
+                                <span class="tl-late" title="Imported @TimeDisp.Long(firstRecorded) from a structured summary"><span class="bi bi-box-arrow-in-down" aria-hidden="true"></span> imported @TimeDisp.Short(firstRecorded)</span>
+                            }
+                            else if (firstRecorded - e.OccurredAtUtc > CaseService.BackdateReasonThreshold)
                             {
                                 @* INV-03: entered well after it happened — said openly, as on milestones and in the report. *@
                                 <span class="tl-late" title="Entered @TimeDisp.Long(firstRecorded)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Short(firstRecorded)</span>

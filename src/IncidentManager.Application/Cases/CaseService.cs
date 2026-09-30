@@ -873,7 +873,7 @@ public sealed class CaseService
 
     public async Task AddTimelineEntryAsync(Guid id, TimelineKind kind, TimelineEntryType type,
         DateTimeOffset occurredAtUtc, string description, string? source, Guid? evidenceId = null,
-        DecisionDetails? decision = null, CancellationToken ct = default)
+        DecisionDetails? decision = null, bool imported = false, CancellationToken ct = default)
     {
         Require();
         TimelineEntry.EnsureDecisionHasRationale(type, decision?.Rationale);
@@ -886,7 +886,8 @@ public sealed class CaseService
             Source = source, EvidenceId = evidenceId, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow,
             Rationale = isDecision ? decision?.Rationale.Trim() : null,
             OptionsConsidered = isDecision && !string.IsNullOrWhiteSpace(decision?.OptionsConsidered) ? decision.OptionsConsidered.Trim() : null,
-            DecidedBy = isDecision && !string.IsNullOrWhiteSpace(decision?.DecidedBy) ? decision.DecidedBy.Trim() : null
+            DecidedBy = isDecision && !string.IsNullOrWhiteSpace(decision?.DecidedBy) ? decision.DecidedBy.Trim() : null,
+            PromotedFrom = imported ? TimelineEntry.Imported : null   // INV-23
         });
         await db.SaveChangesAsync(ct);
     }
