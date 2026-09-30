@@ -633,6 +633,18 @@ public class Case : AuditableEntity, IHashableEntity
         return entity;
     }
 
+    /// <summary>INV-32: pins an entity to (or unpins it from) the case context panel's key entities.</summary>
+    public void SetEntityPinned(Guid entityId, bool pinned, string actor, DateTimeOffset nowUtc)
+    {
+        var entity = Entities.FirstOrDefault(e => e.Id == entityId)
+            ?? throw new InvalidOperationException("Entity not found on this case.");
+        if (entity.IsPinned == pinned) return;
+        entity.IsPinned = pinned;
+        entity.ModifiedBy = actor;
+        entity.ModifiedAtUtc = nowUtc;
+        Touch(actor, nowUtc);
+    }
+
     /// <summary>PROD-45: sets (or clears, with null) an indicator's TLP sharing marking.</summary>
     public void SetEntityTlp(Guid entityId, TlpLevel? tlp, string actor, DateTimeOffset nowUtc)
     {

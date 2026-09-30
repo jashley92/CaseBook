@@ -213,14 +213,18 @@ else
         }
     </section>;
 
+    // INV-32: pinned entities first (the most important one may still be Unknown), then by disposition; and the
+    // Unknown entities the case keeps referring to, as a nudge to review their disposition.
     private RenderFragment KeyEntities() => @<text>
         @{
             var key = Case.Entities
-                .Where(e => e.Disposition is EntityDisposition.Malicious or EntityDisposition.Compromised or EntityDisposition.Suspicious)
-                .OrderBy(e => e.Disposition switch { EntityDisposition.Malicious => 0, EntityDisposition.Compromised => 1, _ => 2 })
+                .Where(e => e.IsPinned || e.Disposition is EntityDisposition.Malicious or EntityDisposition.Compromised or EntityDisposition.Suspicious)
+                .OrderByDescending(e => e.IsPinned)
+                .ThenBy(e => e.Disposition switch { EntityDisposition.Malicious => 0, EntityDisposition.Compromised => 1, EntityDisposition.Suspicious => 2, _ => 3 })
                 .Take(6).ToList();
+            var review = EntityMentions.NeedingReview(Case).Take(2).ToList();
         }
-        @if (key.Count > 0)
+        @if (key.Count > 0 || review.Count > 0)
         {
             <section>
                 <h2 class="im-rail-h">Key entities</h2>
@@ -229,12 +233,20 @@ else
                     {
                         <li>
                             <button type="button" class="btn btn-link p-0 text-start im-rail-entity" @onclick="() => OnOpenEntity.InvokeAsync(e.Id)" title="@e.Value">
-                                @Ui.EntityGlyph(e.Type) @(string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label)
+                                @if (e.IsPinned) { <span class="bi bi-pin-fill text-muted me-1" title="Pinned" aria-label="Pinned"></span> }@Ui.EntityGlyph(e.Type) @(string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label)
                             </button>
                             <span class="@Ui.DispositionBadge(e.Disposition)">@Ui.Label(e.Disposition)</span>
                         </li>
                     }
                 </ul>
+                @foreach (var (e, refs) in review)
+                {
+                    <div class="im-rail-sub mt-1">
+                        <span class="bi bi-question-diamond" aria-hidden="true"></span>
+                        <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => OnOpenEntity.InvokeAsync(e.Id)">@(string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label)</button>
+                        is referred to @refs times and still Unknown.
+                    </div>
+                }
             </section>
         }
     </text>;

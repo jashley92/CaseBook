@@ -27,7 +27,7 @@ deadlines, readiness for the next stage gate, and the case record (origin, detec
 **detected / occurred** times, ATT&CK, related cases and need-to-know **restriction**). Every revision of the
 brief is a new version, the summary included, so what the team believed and reported at any point stays
 readable (each version records the open tasks as they stood), and the brief says when the record has moved on since it was written. A **context panel** beside every tab carries
-the clocks with their dates, the same **Next** list of open tasks (with what's left before the next phase), the team and the key entities; on narrower screens it folds into a strip at the top
+the clocks with their dates, the same **Next** list of open tasks (with what's left before the next phase), the team and the key entities (pin the ones that matter; an Unknown entity the case keeps referring to is flagged for a disposition review); on narrower screens it folds into a strip at the top
 of the Overview. Tabs: **Overview / Timeline / IOCs & entities / Evidence / Notes / Tasks /
 Lessons learned / Report / Audit**. A compact header carries the case number and title, then one state line that reads as a sentence:
 classification and severity, the NIST SP 800-61 phase as a slim bar (hover a segment for its name and when it was

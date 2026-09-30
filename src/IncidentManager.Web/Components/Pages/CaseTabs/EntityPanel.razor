@@ -5,6 +5,7 @@
    INV-28: lists the tasks about the entity, and a task can be started from here. *@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject CaseService Cases
+@inject ToastService Toasts
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject TimeDisplay TimeDisp
 
@@ -32,7 +33,23 @@
                 <button type="button" class="btn btn-sm btn-outline-secondary" @onclick='() => OnGoToTab.InvokeAsync("Entities")'>
                     <span class="bi bi-pencil" aria-hidden="true"></span> Edit in IOCs &amp; entities
                 </button>
+                @if (CanEdit)
+                {
+                    @* INV-32: key to the case whatever its disposition. *@
+                    <button type="button" class="btn btn-sm @(en.IsPinned ? "btn-secondary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(en.IsPinned)"
+                            title="@(en.IsPinned ? "Remove it from the case panel's key entities" : "Show it in the case panel's key entities")" @onclick="() => TogglePin(en)">
+                        <span class="bi @(en.IsPinned ? "bi-pin-fill" : "bi-pin")" aria-hidden="true"></span> @(en.IsPinned ? "Pinned" : "Pin")
+                    </button>
+                }
             </div>
+            @if (en.Disposition == EntityDisposition.Unknown && EntityMentions.Count(Case, en.Id) is var refs && refs >= EntityMentions.ReviewThreshold)
+            {
+                <div class="im-review-hint small mt-2" role="status">
+                    <span class="bi bi-question-diamond" aria-hidden="true"></span>
+                    Referred to @refs times and still Unknown.
+                    <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick='() => OnGoToTab.InvokeAsync("Entities")'>Review its disposition</button>
+                </div>
+            }
         </div>
 
         <div class="im-entity-panel-body">
@@ -141,6 +158,16 @@
     [Parameter] public EventCallback OnChanged { get; set; }
 
     private bool _addingTask;
+
+    private async Task TogglePin(CaseEntity en)
+    {
+        try
+        {
+            await Cases.SetEntityPinnedAsync(Case.Id, en.Id, !en.IsPinned);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
+    }
     private List<ActionItem> Tasks => EntityId is { } id
         ? Case.ActionItems.Where(t => t.AboutRef == $"{ActionItem.AboutEntity}:{id}")
             .OrderByDescending(t => t.IsOpen).ThenBy(t => t.CreatedAtUtc).ToList()

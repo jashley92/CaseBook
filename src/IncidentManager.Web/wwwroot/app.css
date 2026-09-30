@@ -2587,3 +2587,7 @@ button.im-phase-seg { cursor: pointer; }
 .im-about-chip { display: inline-flex; align-items: center; gap: 0.25rem; margin-left: 0.4rem; padding: 0 0.4rem; font-size: var(--im-text-xs);
                  border: 1px solid var(--im-border); border-radius: 999px; background: none; color: var(--im-text-muted); }
 .im-about-chip:hover { color: var(--im-text); border-color: var(--im-border-strong); }
+
+/* INV-32: an Unknown entity the case keeps referring to. */
+.im-review-hint { padding: .35rem .6rem; border-radius: var(--im-radius); background: var(--im-warn-bg); }
+.im-review-hint .bi { color: var(--im-warn); }

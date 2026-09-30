@@ -1113,6 +1113,16 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>INV-32: pins an entity to (or unpins it from) the case context panel.</summary>
+    public async Task SetEntityPinnedAsync(Guid id, Guid entityId, bool pinned, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.SetEntityPinned(entityId, pinned, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task RemoveEntityAsync(Guid id, Guid entityId, CancellationToken ct = default)
     {
         Require();

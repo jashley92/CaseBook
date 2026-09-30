@@ -2522,3 +2522,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930050612_EntityPinned'
+)
+BEGIN
+    ALTER TABLE [CaseEntities] ADD [IsPinned] bit NOT NULL DEFAULT CAST(0 AS bit);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930050612_EntityPinned'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260930050612_EntityPinned', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

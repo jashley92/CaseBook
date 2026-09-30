@@ -31,6 +31,12 @@ public class CaseEntity : AuditableEntity, IHashableEntity
     /// </summary>
     public TlpLevel? Tlp { get; set; }
 
+    /// <summary>
+    /// INV-32: pinned to the case context panel's key entities, whatever its disposition (the most important entity
+    /// may still be Unknown). Kept out of the row hash, like <see cref="Tlp"/>; changes are in the audit trail.
+    /// </summary>
+    public bool IsPinned { get; set; }
+
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',

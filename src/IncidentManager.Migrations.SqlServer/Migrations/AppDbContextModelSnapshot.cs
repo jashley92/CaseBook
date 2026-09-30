@@ -820,6 +820,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<int>("Disposition")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsPinned")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Label")
                         .HasMaxLength(400)
                         .HasColumnType("nvarchar(400)");
