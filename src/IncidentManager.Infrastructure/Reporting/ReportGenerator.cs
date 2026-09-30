@@ -121,8 +121,8 @@ public sealed partial class ReportGenerator : IReportGenerator
                 body.AppendChild(Heading("Investigation Timeline"));
                 body.AppendChild(P(ReportTimelineItem.InvestigationSubtitle(m.InvestigationTimeline), italic: true, size: 18));
                 body.AppendChild(WordTable(
-                    ["When (UTC)", "Type", "Description", "Source"],
-                    m.InvestigationTimeline.Select(x => new[] { x.OccurredAtUtc.ToString("u"), x.Type, x.Description, x.Source ?? "" })));
+                    ["When (UTC)", "Type", "Description", "By"],   // INV-46: who recorded it; an entry's source follows its text
+                    m.InvestigationTimeline.Select(x => new[] { x.OccurredAtUtc.ToString("u"), x.Type, x.DescriptionWithSource, x.By ?? "" })));
                 break;
 
             case ReportSection.SystemsReviewed:

@@ -109,7 +109,7 @@ else
                         <p class="small fst-italic text-muted mb-1">@ReportTimelineItem.InvestigationSubtitle(Model.InvestigationTimeline)</p>
                         <div class="table-responsive">
                             <table class="table table-sm table-bordered small mb-0">
-                                <thead><tr><th>When (UTC)</th><th>Type</th><th>Description</th><th>Source</th></tr></thead>
+                                <thead><tr><th>When (UTC)</th><th>Type</th><th>Description</th><th>By</th></tr></thead>
                                 <tbody>
                                     @if (Model.InvestigationTimeline.Count == 0)
                                     {
@@ -117,7 +117,7 @@ else
                                     }
                                     @foreach (var x in Model.InvestigationTimeline)
                                     {
-                                        <tr><td class="text-nowrap">@x.OccurredAtUtc.ToString("u")</td><td>@x.Type</td><td>@x.Description</td><td>@x.Source</td></tr>
+                                        <tr><td class="text-nowrap">@x.OccurredAtUtc.ToString("u")</td><td>@x.Type</td><td>@x.DescriptionWithSource</td><td>@x.By</td></tr>
                                     }
                                 </tbody>
                             </table>

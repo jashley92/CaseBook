@@ -334,6 +334,7 @@ public sealed class ReportingIntegrationTests : IDisposable
             _reporting.CurrentValue.IncludeMilestones = false;
             var item = (await NewReportService(db).BuildPreviewModelAsync(caseId, null)).InvestigationTimeline.Single();
             item.Description.Should().Be("Session from a foreign ASN Evidence: signin-export.csv.");
+            item.By.Should().Contain(_user.UserId);   // INV-46: who recorded it (resolved through the directory)
         }
     }
 

@@ -105,7 +105,8 @@ public static partial class ReportTemplateFields
             ("when", "When (UTC)", x => D(x.OccurredAtUtc)),
             ("type", "Entry type", x => x.Type),
             ("description", "Description", x => x.Description),
-            ("source", "Source", x => x.Source ?? "")),
+            ("source", "Source", x => x.Source ?? ""),
+            ("by", "Recorded by", x => x.By ?? "")),   // INV-46
         Coll("ioc", "Indicators of compromise (malicious/suspicious)", m => m.Iocs,
             ("type", "Type", x => x.Type),
             ("value", "Indicator (defanged when reports defang)", x => x.Value),

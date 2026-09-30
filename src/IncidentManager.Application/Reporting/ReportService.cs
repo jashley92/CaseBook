@@ -90,7 +90,7 @@ public sealed class ReportService
             .Select(x => (At: x.OccurredAtUtc, Order: x.CreatedAtUtc, Item: new ReportTimelineItem(x.OccurredAtUtc,
                 TaxLabel("TimelineEntryType", x.Type.ToString()),
                 d.Text(EntryText(x)) + Cited(c, x) + (x.IsImported ? "" : Late(x.OccurredAtUtc, FirstRecorded(c, x))),
-                x.Source, x.IsImported)))
+                x.Source, x.IsImported, _users.DisplayFor(x.CreatedBy))))
             .ToList();
 
         if (opts.IncludeMilestones)
@@ -103,8 +103,9 @@ public sealed class ReportService
             {
                 var text = m.Detail is { } detail ? $"{m.Title}. {detail}" : m.Title;
                 if (m.RecordedAtUtc is { } rec) text += Late(m.AtUtc, rec);
+                var by = m.Actor is { } who ? _users.DisplayFor(who) : null;
                 rows.Add((m.AtUtc, m.AtUtc, new ReportTimelineItem(m.AtUtc, ReportTimelineItem.Milestone, d.Text(text),
-                    m.Actor is { } who ? _users.DisplayFor(who) : null)));
+                    by, By: by)));
             }
         }
 

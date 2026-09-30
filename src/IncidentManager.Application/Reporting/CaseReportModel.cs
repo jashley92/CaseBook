@@ -5,11 +5,22 @@ namespace IncidentManager.Application.Reporting;
 
 public sealed record ReportClassificationItem(DateTimeOffset AtUtc, string From, string To, string Reason, string By);
 /// <param name="Imported">INV-23: brought in by a structured import, dated as the imported document gave it.</param>
+/// <param name="By">INV-46: who recorded the entry (as the timeline says "logged by"), or who made the milestone's change.</param>
 public sealed record ReportTimelineItem(DateTimeOffset OccurredAtUtc, string Type, string Description, string? Source,
-    bool Imported = false)
+    bool Imported = false, string? By = null)
 {
     /// <summary>INV-16: the <see cref="Type"/> of a response milestone in the investigation timeline.</summary>
     public const string Milestone = "Milestone";
+
+    /// <summary>
+    /// INV-46: the description as the built-in report prints it, beside a "By" column: an entry's optional source
+    /// (the tool it came from) follows the text, unless it only repeats the entry type (a handoff's "Handoff").
+    /// A milestone's source is its actor, already in "By".
+    /// </summary>
+    public string DescriptionWithSource =>
+        Type != Milestone && Source is { Length: > 0 } s && !string.Equals(s, Type, StringComparison.OrdinalIgnoreCase)
+            ? $"{Description} (Source: {s})"
+            : Description;
 
     /// <summary>
     /// The subtitle of the investigation-timeline section, naming the milestones when it carries them, and
