@@ -774,7 +774,8 @@ else
                         <dt class="col-4 fw-normal text-muted">Currently dated</dt><dd class="col-8 mb-0 im-data">@TimeDisp.Long(cm.AtUtc)</dd>
                     </dl>
                     <label class="form-label small mb-0" for="tl-corr-when">When it happened (@TimeDisp.Label)</label>
-                    <input id="tl-corr-when" type="datetime-local" class="form-control form-control-sm mb-2" @bind="_corrWhen" @bind:event="oninput" />
+                    <input id="tl-corr-when" type="datetime-local" class="form-control form-control-sm" @bind="_corrWhen" @bind:event="oninput" />
+                    <div class="mb-2"><TimeNudges @bind-Value="_corrWhen" Now="@UtcToWall(DateTimeOffset.UtcNow)" /></div>
                     <label class="form-label small mb-0" for="tl-corr-reason">Reason for the correction <span class="text-muted">(required)</span></label>
                     <textarea id="tl-corr-reason" class="form-control form-control-sm" rows="2" maxlength="2000"
                               placeholder="e.g. escalated on the containment call at 14:20; entered after sessions were revoked"

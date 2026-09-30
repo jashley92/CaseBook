@@ -1,0 +1,20 @@
+@* INV-24: catch-up aids for a "when it happened" field. After containment, work is recorded in a burst, so these
+   step the time back or forward from what's in the field (or from now when it's empty). Wall-clock values in the
+   viewer's display zone, the same as the datetime-local input beside them. *@
+<div class="tl-nudges" role="group" aria-label="Adjust the time">
+    <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => Set(Now)">Now</button>
+    <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => Shift(TimeSpan.FromHours(-1))" aria-label="One hour earlier">&minus;1 h</button>
+    <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => Shift(TimeSpan.FromMinutes(-15))" aria-label="15 minutes earlier">&minus;15 min</button>
+    <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => Shift(TimeSpan.FromMinutes(15))" aria-label="15 minutes later">+15 min</button>
+</div>
+
+@code {
+    [Parameter] public DateTime? Value { get; set; }
+    [Parameter] public EventCallback<DateTime?> ValueChanged { get; set; }
+
+    /// <summary>Now, as a wall-clock time in the display zone.</summary>
+    [Parameter, EditorRequired] public DateTime Now { get; set; }
+
+    private Task Set(DateTime value) => ValueChanged.InvokeAsync(value);
+    private Task Shift(TimeSpan by) => Set((Value ?? Now) + by);
+}

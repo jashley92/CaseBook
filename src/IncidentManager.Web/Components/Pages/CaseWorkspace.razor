@@ -1478,6 +1478,12 @@ else
         <div class="mt-2">
             <label class="form-label small mb-0" for="ws-when">When it happened (@TimeDisp.Label)</label>
             <input id="ws-when" type="datetime-local" class="form-control form-control-sm" @bind="_when" @bind:event="oninput" />
+            <TimeNudges @bind-Value="_when" Now="@UtcToWall(Clock.UtcNow)" />
+            @if (_when is { } w && Math.Abs((w - UtcToWall(Clock.UtcNow)).TotalMinutes) >= 1)
+            {
+                @* INV-24: both times, side by side, before saving. *@
+                <div class="small text-muted">Recorded: now, @TimeDisp.Short(Clock.UtcNow)</div>
+            }
             <div class="form-text @(Backdated ? "text-warning-emphasis" : "")">
                 @(Backdated
                     ? "More than an hour ago, so give a reason. The record keeps both times: when it happened and when you entered it."
