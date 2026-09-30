@@ -265,8 +265,9 @@ public sealed class ReportingIntegrationTests : IDisposable
                 DescriptiveName = "Brief", Title = "Brief case", Classification = Classification.Incident,
                 Severity = Severity.High, Origin = CaseOrigin.InternalDetection
             })).Id;
+            await cases.AddActionItemAsync(caseId, "Restore test", "robin", null);
             await cases.ReviseBriefAsync(caseId, null, "Ransomware staging on **two** finance hosts", "Commodity loader",
-                null, null, "- Restore test (Robin)");
+                null, null);
         }
 
         async Task<string> WordXml()
@@ -289,6 +290,7 @@ public sealed class ReportingIntegrationTests : IDisposable
             // INV-36: the brief's first part is the case summary, printed once, as the summary.
             model.Summary.TrimEnd().Should().Be("Ransomware staging on two finance hosts");   // Markdown flattened
             model.Brief!.WorkingAssessment.Should().Be("Commodity loader");
+            model.Brief.NextSteps.Should().Be("Restore test (robin)", "INV-25: the version records the open tasks");
             model.Brief.Version.Should().Be(1);
         }
         (await WordXml()).Should().NotContain("Case Brief");

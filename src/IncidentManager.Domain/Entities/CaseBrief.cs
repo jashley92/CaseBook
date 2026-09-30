@@ -31,7 +31,8 @@ public class CaseBrief : AuditableEntity, IHashableEntity
     public string? Known { get; set; }
     /// <summary>What the team still needs to find out.</summary>
     public string? OpenQuestions { get; set; }
-    /// <summary>What happens next, and who is doing it.</summary>
+    /// <summary>What happens next, and who is doing it. INV-25: the case's open tasks are its next steps; each
+    /// version records them as they stood when it was saved (a snapshot, not edited as text).</summary>
     public string? NextSteps { get; set; }
 
     public bool IsEmpty =>

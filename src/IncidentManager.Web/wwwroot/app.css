@@ -2521,3 +2521,15 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 .im-rail-sub { font-size: var(--im-text-xs); color: var(--im-text-muted); margin: -0.05rem 0 0.3rem; }
 .im-rail-x { border: 0; background: none; color: var(--im-text-muted); padding: 0 0.15rem; line-height: 1; }
 .im-rail-x:hover, .im-rail-x:focus-visible { color: var(--im-danger); }
+
+/* INV-25: the brief's next steps (the open tasks) and its open questions, each with the task following it up. */
+.im-brief-next, .im-brief-q { list-style: none; margin: 0 0 0.35rem; padding: 0; display: grid; gap: 0.25rem; }
+.im-brief-next li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.6rem; }
+.im-brief-next .btn-link { color: var(--im-text); text-decoration: none; font-size: inherit; }
+.im-brief-next .btn-link:hover { color: var(--im-accent-text); text-decoration: underline; }
+.im-brief-next-meta { font-size: var(--im-text-xs); color: var(--im-text-muted); }
+.im-brief-q li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.6rem; }
+.im-brief-q li::before { content: "?"; font-weight: 700; color: var(--im-text-muted); width: 0.6rem; }
+.im-brief-q-text > p { display: inline; margin: 0; }
+.im-brief-q-task { font-size: var(--im-text-xs); cursor: pointer; }
+.im-brief-add { display: flex; gap: 0.35rem; align-items: center; max-width: 32rem; margin-top: 0.25rem; }

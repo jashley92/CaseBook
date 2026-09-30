@@ -1138,6 +1138,31 @@ public class Case : AuditableEntity, IHashableEntity
         AddBriefVersion(summary, null, null, null, null, actor, nowUtc, requireContent: true);
     }
 
+    /// <summary>
+    /// INV-25: follows up one of the brief's open questions as a task, so the question and the work on it are
+    /// linked. The question stays in the brief until someone revises it; the task says where it came from.
+    /// Refused when an open task already follows up the same question.
+    /// </summary>
+    public ActionItem RaiseTaskFromQuestion(string question, string actor, DateTimeOffset nowUtc)
+    {
+        var title = Clean(question) ?? throw new ArgumentException("Say what the question is.");
+        if (title.Length > ActionItem.MaxTitleLength) title = title[..(ActionItem.MaxTitleLength - 1)] + "…";
+        var brief = Briefs.FirstOrDefault(b => b.IsCurrent)
+                    ?? throw new InvalidOperationException("The case has no brief to raise a question from.");
+        if (ActionItems.Any(t => t.IsOpen && t.RaisedFromBriefId is not null
+                                 && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("An open task already follows up that question.");
+
+        var task = new ActionItem
+        {
+            CaseId = Id, Title = title, Description = $"Raised from an open question in the brief (v{brief.Version}).",
+            RaisedFromBriefId = brief.Id, CreatedBy = actor, CreatedAtUtc = nowUtc
+        };
+        ActionItems.Add(task);
+        Touch(actor, nowUtc);
+        return task;
+    }
+
     // A new brief version (superseding the current one) that also sets the case summary. A summary edit made
     // outside the brief can clear the summary, so it may record a version with nothing in it.
     private CaseBrief AddBriefVersion(string? summary, string? workingAssessment, string? known,
@@ -1148,7 +1173,8 @@ public class Case : AuditableEntity, IHashableEntity
             CaseId = Id, Summary = Clean(summary), WorkingAssessment = Clean(workingAssessment), Known = Clean(known),
             OpenQuestions = Clean(openQuestions), NextSteps = Clean(nextSteps), CreatedBy = actor, CreatedAtUtc = nowUtc
         };
-        if (requireContent && next.IsEmpty)
+        // INV-25: the next steps are recorded, not written, so they don't count as saying something.
+        if (requireContent && new[] { next.Summary, next.WorkingAssessment, next.Known, next.OpenQuestions }.All(p => p is null))
             throw new ArgumentException("Write at least one part of the brief.");
         if (new[] { next.Summary, next.WorkingAssessment, next.Known, next.OpenQuestions, next.NextSteps }
                 .Any(p => p is { Length: > CaseBrief.MaxPartLength }))

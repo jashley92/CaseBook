@@ -2,7 +2,9 @@
    picking the case up sees it without reading every note. Each save is a new version; earlier versions stay
    readable under History. Neutral, factual wording: it's part of the case record.
    INV-36: the first part is the case summary, the one the case report prints. The current summary is read from the
-   case (the field the report, the close gate and import use); each version keeps the summary as it stood. *@
+   case (the field the report, the close gate and import use); each version keeps the summary as it stood.
+   INV-25: the next steps are the case's open tasks, not text: the current brief lists them live, each saved version
+   records them as they stood, and an open question can be followed up as a task from here. *@
 @inject CaseService Cases
 @inject IClock Clock
 @inject IncidentManager.Application.Content.IMarkdownService Md
@@ -38,7 +40,7 @@
     @if (_editing)
     {
         <p class="small text-muted mb-2">Keep it short and factual; this is part of the case record. Saving keeps the earlier version.</p>
-        @foreach (var part in Parts)
+        @foreach (var part in Parts.Where(p => p.Editable))
         {
             <div class="mb-2">
                 <label class="form-label small mb-0 fw-semibold" for="@($"brief-{part.Key}")">@part.Label</label>
@@ -48,6 +50,11 @@
                           value="@_draft[part.Key]" @oninput="e => _draft[part.Key] = e.Value?.ToString()"></textarea>
             </div>
         }
+        <div class="mb-2">
+            <span class="form-label small mb-0 fw-semibold">Next steps</span>
+            <span class="small text-muted ms-1">The case's open tasks. Saving records them with this version; change them on the Tasks tab.</span>
+            @NextList(editing: true)
+        </div>
         @if (_error is not null)
         {
             <p class="text-danger small mb-2" role="alert">@_error</p>
@@ -90,8 +97,10 @@
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter] public bool CanEdit { get; set; }
     [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>Switch the workspace to another tab (a task opens the Tasks tab).</summary>
+    [Parameter] public EventCallback<string> OnGoToTab { get; set; }
 
-    private sealed record Part(string Key, string Label, string Hint, int Rows, Func<CaseBrief, string?> Get);
+    private sealed record Part(string Key, string Label, string Hint, int Rows, Func<CaseBrief, string?> Get, bool Editable = true);
 
     private static readonly Part[] Parts =
     [
@@ -99,10 +108,13 @@
         new("assessment", "Working assessment", "What the team currently thinks is happening, and how sure it is.", 2, b => b.WorkingAssessment),
         new("known", "Known", "What is established, and where it comes from.", 3, b => b.Known),
         new("open", "Open questions", "What the team still needs to find out.", 2, b => b.OpenQuestions),
-        new("next", "Next steps", "What happens next, and who is doing it.", 2, b => b.NextSteps),
+        new(NextKey, "Next steps", "", 0, b => b.NextSteps, Editable: false),
     ];
 
     private const string SummaryKey = "summary";
+    private const string OpenKey = "open";
+    private const string NextKey = "next";
+    private const int NextShown = 5;
 
     private CaseBrief? Current => Case.Briefs.FirstOrDefault(b => b.IsCurrent);
     private bool HasSummary => !string.IsNullOrWhiteSpace(Case.Summary);
@@ -112,6 +124,9 @@
     private bool _saving;
     private bool _showHistory;
     private string? _error;
+    private string? _taskError;
+    private string? _newTask;
+    private bool _adding;
     private Guid? _openedFrom;
     private readonly Dictionary<string, string?> _draft = new();
 
@@ -121,7 +136,7 @@
         if (!CanEdit || _editing) return;
         var cur = Current;
         _openedFrom = cur?.Id;
-        foreach (var p in Parts) _draft[p.Key] = cur is null ? null : p.Get(cur);
+        foreach (var p in Parts.Where(p => p.Editable)) _draft[p.Key] = cur is null ? null : p.Get(cur);
         // The case's own summary is the current one (a version recorded before INV-36 may hold other text).
         _draft[SummaryKey] = Case.Summary;
         _error = null;
@@ -136,7 +151,7 @@
         try
         {
             await Cases.ReviseBriefAsync(Case.Id, _openedFrom, _draft[SummaryKey], _draft["assessment"], _draft["known"],
-                _draft["open"], _draft["next"]);
+                _draft["open"]);
             _editing = false;
             Toasts.Success("Brief saved");
             await OnChanged.InvokeAsync();
@@ -168,20 +183,160 @@
                 <p class="small text-muted mb-0">@(current ? "No summary yet. The case report and the close checks need one." : "No summary.")</p>
             }
         </div>
-        @if (b is not null)
-        {
-            <dl class="im-brief-parts mb-0">
-                @foreach (var p in Parts.Where(p => p.Key != SummaryKey))
+        <dl class="im-brief-parts mb-0">
+            @if (b is not null)
+            {
+                @foreach (var p in Parts.Where(p => p.Key != SummaryKey && !(current && p.Key == NextKey)))
                 {
                     if (p.Get(b) is { Length: > 0 } text)
                     {
                         <dt>@p.Label</dt>
-                        <dd class="md-body">@((MarkupString)Md.ToHtml(text, Case.Id))</dd>
+                        @if (current && p.Key == OpenKey && CaseNext.Questions(text) is { } questions)
+                        {
+                            <dd>@Questions(questions)</dd>
+                        }
+                        else
+                        {
+                            <dd class="md-body">@((MarkupString)Md.ToHtml(text, Case.Id))</dd>
+                        }
                     }
                 }
-            </dl>
+            }
+            @if (current)
+            {
+                <dt>Next steps</dt>
+                <dd>
+                    @NextList(editing: false)
+                    @if (CanEdit)
+                    {
+                        @if (_adding)
+                        {
+                            <form class="im-brief-add" @onsubmit="AddTask" @onsubmit:preventDefault>
+                                <label class="visually-hidden" for="brief-new-task">New task</label>
+                                <input id="brief-new-task" class="form-control form-control-sm" maxlength="@ActionItem.MaxTitleLength"
+                                       placeholder="What needs doing?" @bind="_newTask" @bind:event="oninput" />
+                                <button type="submit" class="btn btn-sm btn-primary" disabled="@string.IsNullOrWhiteSpace(_newTask)">Add</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => { _adding = false; _newTask = null; }">Cancel</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => { _adding = true; _taskError = null; }">
+                                <span class="bi bi-plus-lg" aria-hidden="true"></span> Add a task
+                            </button>
+                        }
+                    }
+                    @if (_taskError is not null)
+                    {
+                        <p class="text-danger small mb-0" role="alert">@_taskError</p>
+                    }
+                </dd>
+            }
+        </dl>
+    </text>;
+
+    // INV-25: the case's open tasks, in the order to do them (the same list the context panel and handoff read).
+    private RenderFragment NextList(bool editing) => @<text>
+        @{
+            var now = Clock.UtcNow;
+            var open = CaseNext.Open(Case, now);
+        }
+        @if (open.Count == 0)
+        {
+            <p class="small text-muted mb-1">No open tasks.</p>
+        }
+        else
+        {
+            <ul class="im-brief-next">
+                @foreach (var t in open.Take(NextShown))
+                {
+                    <li>
+                        @if (editing)
+                        {
+                            <span>@t.Title</span>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-link p-0 text-start" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@t.Title</button>
+                        }
+                        <span class="im-brief-next-meta">
+                            @(string.IsNullOrWhiteSpace(t.Owner) ? "Unassigned" : Users.DisplayFor(t.Owner))
+                            @if (t.DueAtUtc is { } due)
+                            {
+                                <span class="@(t.IsOverdue(now) ? "text-danger" : "")" title="@TimeDisp.Long(due)"> · @(t.IsOverdue(now) ? "overdue, was due" : "due") @TimeDisp.DateOnly(due)</span>
+                            }
+                        </span>
+                    </li>
+                }
+            </ul>
+            @if (open.Count > NextShown)
+            {
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@(open.Count - NextShown) more on the Tasks tab</button>
+            }
         }
     </text>;
+
+    // INV-25: open questions written as a list, each with the task following it up (or a button to raise one).
+    private RenderFragment Questions(List<string> questions) => @<ul class="im-brief-q">
+        @foreach (var q in questions)
+        {
+            var title = QuestionTitle(q);
+            var task = Case.ActionItems.Where(t => t.RaisedFromBriefId is not null && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(t => t.IsOpen).ThenByDescending(t => t.CreatedAtUtc).FirstOrDefault();
+            <li>
+                <span class="md-body im-brief-q-text">@((MarkupString)Md.ToHtml(q, Case.Id))</span>
+                @if (task is not null)
+                {
+                    <button type="button" class="im-badge @(task.IsOpen ? "im-b-info" : "im-b-neutral") im-brief-q-task" title="Followed up as a task"
+                            @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>
+                        <span class="bi @(task.IsOpen ? "bi-list-check" : "bi-check2")" aria-hidden="true"></span>
+                        Task · @(task.IsOpen ? (string.IsNullOrWhiteSpace(task.Owner) ? "open" : Users.DisplayFor(task.Owner)) : (task.Status == ActionItemStatus.Done ? "done" : "canceled"))
+                    </button>
+                }
+                else if (CanEdit)
+                {
+                    <button type="button" class="btn btn-link btn-sm p-0 im-brief-q-task" @onclick="() => RaiseTask(title)">
+                        <span class="bi bi-plus-lg" aria-hidden="true"></span> Follow up as a task
+                    </button>
+                }
+            </li>
+        }
+    </ul>;
+
+    private string QuestionTitle(string markdown) => Md.ToPlainText(markdown).Replace('\n', ' ').Trim();
+
+    private async Task RaiseTask(string question)
+    {
+        _taskError = null;
+        try
+        {
+            await Cases.RaiseTaskFromQuestionAsync(Case.Id, question);
+            Toasts.Success("Task added");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _taskError = ex.Message;
+        }
+    }
+
+    private async Task AddTask()
+    {
+        if (string.IsNullOrWhiteSpace(_newTask)) return;
+        _taskError = null;
+        try
+        {
+            await Cases.AddActionItemAsync(Case.Id, _newTask.Trim(), null, null);
+            _newTask = null;
+            _adding = false;
+            Toasts.Success("Task added");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _taskError = ex.Message;
+        }
+    }
 
     private static RenderFragment ReportNote() => @<span class="im-brief-report" title="Printed as the summary in the case report. The other parts are the team's working understanding and stay out of the report unless its layout includes the brief.">
         <span class="bi bi-file-earmark-text" aria-hidden="true"></span> Case report

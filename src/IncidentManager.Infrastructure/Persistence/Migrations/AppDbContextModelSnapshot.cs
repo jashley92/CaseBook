@@ -56,6 +56,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("RaisedFromBriefId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("RowHash")
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");

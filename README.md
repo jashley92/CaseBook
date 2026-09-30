@@ -20,13 +20,14 @@ export (incl. monthly & quarterly rollups) for board / regulatory packs.
 
 ### Case workspace
 The analyst's hub. The Overview reads top to bottom as one column: **where the case stands** (the case
-summary the report prints, then the team's working assessment, what's known, open questions and next steps),
+summary the report prints, then the team's working assessment, what's known, open questions and next steps;
+the next steps are the case's open tasks, and an open question can be followed up as a task in one click),
 the latest decisions and milestones from the timeline, scope and impact, the **regulatory notification**
 deadlines, readiness for the next stage gate, and the case record (origin, detection reference, true
 **detected / occurred** times, ATT&CK, related cases and need-to-know **restriction**). Every revision of the
 brief is a new version, the summary included, so what the team believed and reported at any point stays
-readable. A **context panel** beside every tab carries the clocks with their dates, the tasks still open
-before the next phase, the team and the key entities; on narrower screens it folds into a strip at the top
+readable (each version records the open tasks as they stood). A **context panel** beside every tab carries
+the clocks with their dates, the same **Next** list of open tasks (with what's left before the next phase), the team and the key entities; on narrower screens it folds into a strip at the top
 of the Overview. Tabs: **Overview / Timeline / IOCs & entities / Evidence / Notes / Discussion / Tasks /
 Lessons learned / Report / Audit**. A compact header carries the case number and title, status badges (SLA,
 **materiality**, a Legal/committee decision the tool records but does not make, and the notification

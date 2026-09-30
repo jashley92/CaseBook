@@ -1874,7 +1874,8 @@ else
         // INV-21: the team's work and response milestones, not the adversary's steps.
         _hoDone = HandoffDraft.DoneSince(_case, new MilestoneLabels(
             c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m)), OneLine);
-        var open = _case.ActionItems.Where(t => t.IsOpen).OrderBy(t => t.DueAtUtc)
+        // INV-25: the same "next" list the brief and the context panel show.
+        var open = CaseNext.Open(_case, Clock.UtcNow)
             .Select(t => $"- {t.Title}" + (string.IsNullOrWhiteSpace(t.Owner) ? "" : $" ({Users.DisplayFor(t.Owner)})"))
             .ToList();
         _hoOpen = open.Count > 0 ? string.Join("\n", open) : null;

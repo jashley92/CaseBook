@@ -3,7 +3,9 @@
    it's worked. Shown beside the tab on wide screens (the workspace decides).
    INV-29: the only home for this context — the Overview no longer repeats the clocks, dates or team. With Strip set,
    it renders as one compact row (clocks, the first open task, the team) that expands to the same sections; the
-   Overview shows that strip wherever the panel isn't beside it (below 1,400 px, or when it's hidden). *@
+   Overview shows that strip wherever the panel isn't beside it (below 1,400 px, or when it's hidden).
+   INV-25: one "Next" list — the open tasks, in the order the brief and the handoff read them — instead of the
+   brief's written next steps beside a separate "Before <phase>" list. *@
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
@@ -14,8 +16,8 @@
     var (contain, resolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
         Case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow, Case.Classification);
     var detect = SlaPolicy.EvaluateDetection(Case.Severity, Case.OccurredAtUtc, Case.DetectedAtUtc, SlaProvider.Current);
-    var next = NextPhase();
-    var behind = OpenBehind(next);
+    var next = CaseNext.NextPhase(Case);
+    var open = CaseNext.Open(Case, Clock.UtcNow);
 }
 
 @if (Strip)
@@ -31,8 +33,7 @@
             {
                 <span class="im-strip-item">Notify · @nh.JurisdictionLabel <span class="@Ui.SlaBadge(nh.State)">@Ui.SlaLabel(nh.State)</span></span>
             }
-            @{ var firstOpen = behind.FirstOrDefault() ?? Case.ActionItems.Where(t => t.IsOpen).OrderBy(t => t.DueAtUtc).FirstOrDefault(); }
-            @if (firstOpen is not null)
+            @if (open.FirstOrDefault() is { } firstOpen)
             {
                 <span class="im-strip-item im-strip-next">Next:
                     <button type="button" class="btn btn-link p-0 align-baseline" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@firstOpen.Title</button>
@@ -52,8 +53,7 @@
         {
             <div class="im-strip-more">
                 @Clocks(contain, resolve, detect)
-                @Before(next, behind)
-                @NextSteps()
+                @Next(next, open)
                 @Team()
                 @KeyEntities()
             </div>
@@ -64,8 +64,7 @@ else
 {
     <aside class="im-rail" aria-label="Case context">
         @Clocks(contain, resolve, detect)
-        @Before(next, behind)
-        @NextSteps()
+        @Next(next, open)
         @Team()
         @KeyEntities()
     </aside>
@@ -138,51 +137,45 @@ else
         }
     </text>;
 
-    private RenderFragment Before(CasePhase? next, List<ActionItem> behind) => @<text>
-        @if (next is { } np)
-        {
-            <section>
-                <h2 class="im-rail-h">Before @Ui.Label(np)</h2>
-                @if (behind.Count == 0)
-                {
-                    <p class="small mb-0"><span class="bi bi-check2 text-success" aria-hidden="true"></span> No open tasks for the phases so far.</p>
-                }
-                else
-                {
-                    <ul class="im-rail-list">
-                        @foreach (var t in behind.Take(4))
-                        {
-                            <li>
-                                <button type="button" class="btn btn-link p-0 text-start" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@t.Title</button>
-                                <span class="text-muted">@CaseTasksTab.KindLabel(t.Kind)@(string.IsNullOrWhiteSpace(t.Owner) ? "" : $" · {Users.DisplayFor(t.Owner)}")</span>
-                            </li>
-                        }
-                    </ul>
-                    @if (behind.Count > 4) { <div class="small text-muted">…and @(behind.Count - 4) more</div> }
-                }
-            </section>
-        }
-    </text>;
-
-    private RenderFragment NextSteps() => @<section>
-        @{
-            var brief = Case.Briefs.FirstOrDefault(b => b.IsCurrent);
-            var openTasks = Case.ActionItems.Count(t => t.IsOpen);
-        }
+    // INV-25: what's next is the open tasks, in order. Work for the phases before the next one is marked, so
+    // "what's left before Eradication" is still answered here.
+    private RenderFragment Next(CasePhase? next, List<ActionItem> open) => @<section>
+        @{ var now = Clock.UtcNow; var before = open.Count(t => CaseNext.IsBeforeNextPhase(t, next)); }
         <div class="d-flex align-items-baseline justify-content-between">
-            <h2 class="im-rail-h">Next steps</h2>
-            <button type="button" class="btn btn-link btn-sm p-0" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@IncidentManager.Application.Common.Plural.Of(openTasks, "open task")</button>
+            <h2 class="im-rail-h">Next</h2>
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@IncidentManager.Application.Common.Plural.Of(open.Count, "open task")</button>
         </div>
-        @if (brief?.NextSteps is { Length: > 0 } steps)
+        @if (open.Count == 0)
         {
-            <div class="md-body small im-rail-clamp">@((MarkupString)Md.ToHtml(steps, Case.Id))</div>
+            <p class="small text-muted mb-0">No open tasks.</p>
         }
         else
         {
-            <p class="small text-muted mb-0">
-                @(brief is null ? "No brief yet." : "The brief has no next steps.")
-                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick='() => OnGoToTab.InvokeAsync("Overview")'>@(brief is null ? "Write it" : "Add them")</button>
-            </p>
+            <ul class="im-rail-list">
+                @foreach (var t in open.Take(5))
+                {
+                    <li>
+                        <button type="button" class="btn btn-link p-0 text-start" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@t.Title</button>
+                        <span class="text-muted">
+                            @(string.IsNullOrWhiteSpace(t.Owner) ? "Unassigned" : Users.DisplayFor(t.Owner))@if (t.IsOverdue(now)) {<span class="text-danger"> · overdue</span>} else if (t.DueAtUtc is { } due) {<text> · due @TimeDisp.DateOnly(due)</text>}
+                        </span>
+                    </li>
+                }
+            </ul>
+            @if (open.Count > 5) { <div class="small text-muted">…and @(open.Count - 5) more</div> }
+        }
+        @if (next is { } np)
+        {
+            <div class="im-rail-sub mt-1">
+                @if (before == 0)
+                {
+                    <span class="bi bi-check2 text-success" aria-hidden="true"></span> <text>Nothing open for the phases before @Ui.Label(np).</text>
+                }
+                else
+                {
+                    <text>Before @Ui.Label(np): @IncidentManager.Application.Common.Plural.Of(before, "open task")</text>
+                }
+            </div>
         }
     </section>;
 
@@ -245,18 +238,6 @@ else
             </section>
         }
     </text>;
-
-    private CasePhase? NextPhase()
-    {
-        var phases = Enum.GetValues<CasePhase>();
-        var i = Array.IndexOf(phases, Case.Phase);
-        return i >= 0 && i < phases.Length - 1 ? phases[i + 1] : null;
-    }
-
-    // The tasks still open for the phases before the next one (every open task when the next step is closing).
-    private List<ActionItem> OpenBehind(CasePhase? next) => next is not { } np ? []
-        : Case.ActionItems.Where(t => t.IsOpen && (np == CasePhase.Closed || (t.Kind.Phase() is { } p && p < np)))
-            .OrderBy(t => t.Kind).ThenBy(t => t.DueAtUtc).ToList();
 
     private static string DwellLabel(TimeSpan span)
     {

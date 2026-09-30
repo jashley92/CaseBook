@@ -196,11 +196,11 @@ public sealed class TaskCompletionTests : IDisposable
     {
         var (svc, caseId, _) = await CaseWithTask();
 
-        await svc.ReviseBriefAsync(caseId, null, "Lure reached 12 Finance mailboxes", null, null, "Did the other two users have sessions?", null);
+        await svc.ReviseBriefAsync(caseId, null, "Lure reached 12 Finance mailboxes", null, null, "Did the other two users have sessions?");
         var v1 = (await svc.GetDetailAsync(caseId))!.Briefs.Single();
         _clock.UtcNow = _clock.UtcNow.AddHours(2);
         await svc.ReviseBriefAsync(caseId, v1.Id, "Lure reached 12 Finance mailboxes; one mailbox accessed", "Opportunistic credential harvesting",
-            "Session from AS9009", null, "Block look-alike domains (Alex)");
+            "Session from AS9009", null);
 
         var briefs = (await svc.GetDetailAsync(caseId))!.Briefs;
         briefs.Should().HaveCount(2);
@@ -209,17 +209,37 @@ public sealed class TaskCompletionTests : IDisposable
         current.SupersedesBriefId.Should().Be(v1.Id);
         current.OpenQuestions.Should().BeNull();
         briefs.Single(b => !b.IsCurrent).OpenQuestions.Should().Be("Did the other two users have sessions?");
+        // INV-25: each version records the open tasks as its next steps.
+        current.NextSteps.Should().Be("- Block look-alike domains");
+    }
+
+    // --- INV-25: next steps are tasks ---
+
+    [Fact]
+    public async Task An_open_question_is_followed_up_as_a_task_linked_to_the_brief()
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+        await svc.ReviseBriefAsync(caseId, null, "Lure reached Finance", null, null, "- Did the other two users have sessions?");
+        var brief = (await svc.GetDetailAsync(caseId))!.Briefs.Single();
+
+        await svc.RaiseTaskFromQuestionAsync(caseId, "Did the other two users have sessions?");
+
+        var task = (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.RaisedFromBriefId is not null);
+        task.Should().Match<IncidentManager.Domain.Entities.ActionItem>(t => t.Title == "Did the other two users have sessions?" && t.RaisedFromBriefId == brief.Id
+                                             && t.Description == "Raised from an open question in the brief (v1)." && t.IsOpen);
+        var again = () => svc.RaiseTaskFromQuestionAsync(caseId, "did the other two users have sessions?");
+        await again.Should().ThrowAsync<InvalidOperationException>("an open task already follows it up");
     }
 
     [Fact]
     public async Task A_brief_saved_from_an_older_version_is_refused_and_an_empty_one_is_rejected()
     {
         var (svc, caseId, _) = await CaseWithTask();
-        await svc.ReviseBriefAsync(caseId, null, "First", null, null, null, null);
+        await svc.ReviseBriefAsync(caseId, null, "First", null, null, null);
 
-        var stale = () => svc.ReviseBriefAsync(caseId, null, "Written without seeing the first", null, null, null, null);
+        var stale = () => svc.ReviseBriefAsync(caseId, null, "Written without seeing the first", null, null, null);
         var current = (await svc.GetDetailAsync(caseId))!.Briefs.Single().Id;
-        var empty = () => svc.ReviseBriefAsync(caseId, current, " ", null, "", null, null);
+        var empty = () => svc.ReviseBriefAsync(caseId, current, " ", null, "", null);
 
         await stale.Should().ThrowAsync<StaleEditException>();
         await empty.Should().ThrowAsync<ArgumentException>();
@@ -239,7 +259,7 @@ public sealed class TaskCompletionTests : IDisposable
         var v1 = (await svc.GetDetailAsync(created.Id))!.Briefs.Single();
         v1.Summary.Should().Be("Lure reached Finance.", "the summary written at intake is version 1");
 
-        await svc.ReviseBriefAsync(created.Id, v1.Id, "Lure reached 12 Finance mailboxes; one accessed.", "Opportunistic", null, null, null);
+        await svc.ReviseBriefAsync(created.Id, v1.Id, "Lure reached 12 Finance mailboxes; one accessed.", "Opportunistic", null, null);
         var afterRevise = await svc.GetDetailAsync(created.Id);
         afterRevise!.Summary.Should().Be("Lure reached 12 Finance mailboxes; one accessed.", "the report reads the case's summary");
 

@@ -66,6 +66,7 @@ public sealed class CaseService
     private readonly Admin.NotificationRuleService? _notifyRules;
 
     private readonly Microsoft.Extensions.Options.IOptionsMonitor<LegalHoldOptions>? _legalHold;
+    private readonly IUserDirectory? _users;
 
     /// <summary>F-12: whether releasing a legal hold needs a second approver (admin setting, off by default).</summary>
     public bool LegalHoldReleaseNeedsSecondApprover => _legalHold?.CurrentValue.RequireSecondApprover ?? false;
@@ -77,9 +78,11 @@ public sealed class CaseService
         Microsoft.Extensions.Options.IOptionsMonitor<LegalHoldOptions>? legalHold = null,
         Compliance.INotificationDeadlineSettingsProvider? notifySettings = null,
         Admin.NotificationRuleService? notifyRules = null,
-        IOrganizationTimeZone? zone = null)
+        IOrganizationTimeZone? zone = null,
+        IUserDirectory? users = null)
     {
         _zone = zone;
+        _users = users;
         _legalHold = legalHold;
         _notifySettings = notifySettings;
         _notifyRules = notifyRules;
@@ -1651,10 +1654,11 @@ public sealed class CaseService
     /// <summary>
     /// INV-09: saves a new version of the case brief. <paramref name="expectedCurrentId"/> is the version the
     /// editor opened from (null for the first brief); if someone saved a newer one meanwhile the save is refused
-    /// (FR-06 style), so neither author's understanding is silently overwritten.
+    /// (FR-06 style), so neither author's understanding is silently overwritten. INV-25: the next steps are the
+    /// case's open tasks, recorded with the version as they stand, not written as text.
     /// </summary>
     public async Task ReviseBriefAsync(Guid caseId, Guid? expectedCurrentId, string? summary, string? workingAssessment,
-        string? known, string? openQuestions, string? nextSteps, CancellationToken ct = default)
+        string? known, string? openQuestions, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
@@ -1665,7 +1669,20 @@ public sealed class CaseService
         if (currentId != expectedCurrentId)
             throw new StaleEditException(currentId?.ToString() ?? "",
                 "Someone else saved a newer version of the brief while you were editing. Your text is still here; review theirs, then save again to replace it.");
+        var nextSteps = CaseNext.Snapshot(c, _clock.UtcNow, u => _users?.DisplayFor(u) ?? u);
         c.ReviseBrief(summary, workingAssessment, known, openQuestions, nextSteps, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>INV-25: follows up one of the brief's open questions as a task (unowned, general; the analyst
+    /// fills in the rest on the Tasks tab).</summary>
+    public async Task RaiseTaskFromQuestionAsync(Guid caseId, string question, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, caseId, ct);
+        await db.CaseBriefs.Where(b => b.CaseId == caseId && b.IsCurrent).ToListAsync(ct);
+        c.RaiseTaskFromQuestion(question, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
 

@@ -1,5 +1,6 @@
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Admin;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.StageGates;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
@@ -535,13 +536,20 @@ public static class DevDataSeeder
             CaseId = c1.Id, Title = "Review sign-in logs for the other two users who clicked", Owner = "analyst1",
             Kind = TaskKind.Investigate, DueAtUtc = now.AddDays(2), CreatedBy = actor, CreatedAtUtc = now.AddDays(-5)
         });
+        c1.ActionItems.Add(new ActionItem
+        {
+            CaseId = c1.Id, Title = "Confirm the NY and federal notification drafts", Owner = "legal1",
+            Kind = TaskKind.Notify, DueAtUtc = now.AddDays(3), CreatedBy = actor, CreatedAtUtc = now.AddDays(-2)
+        });
+        // INV-25: the brief's next steps are the open tasks, recorded with the version as they stood.
+        var names = new Dictionary<string, string> { ["ic1"] = "Ivy Commander", ["analyst1"] = "Alex Analyst", ["legal1"] = "Lee Privacy" };
         c1.ReviseBrief(
             "Look-alike O365 lures reached 12 Finance mailboxes and 3 users clicked. " +
             $"[Jane Doe (Finance)](entity:{acct.Id}) entered credentials; her mailbox was then accessed from a foreign ASN and messages with NPI attachments were opened.",
             "Opportunistic credential harvesting with manual follow-on access to one mailbox. No sign of lateral movement.",
             $"- Session from [Foreign ASN egress](entity:{ip.Id}) the day after the click\n- About 1,450 NY and NJ residents in the opened attachments",
             "- Did the other two users' credentials get used?",
-            "- Block the look-alike domains at the proxy (Alex)\n- Confirm the NY and federal notification drafts (Privacy)",
+            CaseNext.Snapshot(c1, now.AddDays(-2), u => names.GetValueOrDefault(u, u)),
             "ic1", now.AddDays(-2));
         await db.SaveChangesAsync(ct);
 
