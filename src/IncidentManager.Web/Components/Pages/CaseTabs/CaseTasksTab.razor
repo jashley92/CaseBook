@@ -424,6 +424,21 @@ else
     [Parameter] public EventCallback<string> OnGoToTab { get; set; }
 
     // INV-28: what a task is about, as a chip that opens it.
+    // INV-41: the entry a task is about, followed forward through edits to its current version.
+    private TimelineEntry? CurrentEntry(Guid id)
+    {
+        var e = Case.TimelineEntries.FirstOrDefault(x => x.Id == id);
+        for (var guard = 0; e is not null && !e.IsCurrent && guard < 100; guard++)
+            e = Case.TimelineEntries.FirstOrDefault(x => x.SupersedesEntryId == e.Id);
+        return e is { IsCurrent: true } ? e : null;
+    }
+
+    private static string EntryExcerpt(TimelineEntry e)
+    {
+        var text = IncidentManager.Application.Content.RichText.ToText(e.Description).ReplaceLineEndings(" ").Trim();
+        return text.Length <= 60 ? text : text[..57].TrimEnd() + "…";
+    }
+
     private RenderFragment AboutChip(ActionItem t) => @<text>
         @if (t.About is { } about)
         {
@@ -433,15 +448,21 @@ else
                     <button type="button" class="im-about-chip" title="About this entity" @onclick="() => OnOpenEntity.InvokeAsync(en.Id)">@Ui.EntityGlyph(en.Type) @(string.IsNullOrWhiteSpace(en.Label) ? en.Value : en.Label)</button>
                     break;
                 case ActionItem.AboutEvidence when Case.Evidence.FirstOrDefault(e => e.Id == about.Id) is { } ev:
-                    <button type="button" class="im-about-chip" title="About this evidence file" @onclick='() => OnGoToTab.InvokeAsync("Evidence")'><span class="bi bi-paperclip" aria-hidden="true"></span> @ev.OriginalFileName</button>
+                    <button type="button" class="im-about-chip" title="Show this evidence file" @onclick='() => OnFocusItem.InvokeAsync(("Evidence", ev.Id))'><span class="bi bi-paperclip" aria-hidden="true"></span> @ev.OriginalFileName</button>
+                    break;
+                case ActionItem.AboutEntry when CurrentEntry(about.Id) is { } entry:
+                    @* INV-41: say which entry, and go to it (its current version, if it was edited since). *@
+                    <button type="button" class="im-about-chip" title="Show this entry on the timeline" @onclick='() => OnFocusItem.InvokeAsync(("Timeline", entry.Id))'><span class="bi bi-clock-history" aria-hidden="true"></span> @EntryExcerpt(entry)</button>
                     break;
                 case ActionItem.AboutEntry:
-                    <button type="button" class="im-about-chip" title="About a timeline entry" @onclick='() => OnGoToTab.InvokeAsync("Timeline")'><span class="bi bi-clock-history" aria-hidden="true"></span> Timeline entry</button>
+                    <span class="im-about-chip" title="The timeline entry this task was raised from is no longer on the timeline"><span class="bi bi-clock-history" aria-hidden="true"></span> Timeline entry (removed)</span>
                     break;
             }
         }
     </text>;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    /// <summary>INV-41: switch to a tab and bring one item on it into view (an "about" chip's target).</summary>
+    [Parameter] public EventCallback<(string Tab, Guid Id)> OnFocusItem { get; set; }
     [Parameter] public bool CanEdit { get; set; }
     /// <summary>Reload the case after a task/playbook write so the list (and the rest of the workspace) refreshes.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }

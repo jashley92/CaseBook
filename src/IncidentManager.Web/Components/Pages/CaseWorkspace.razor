@@ -471,7 +471,7 @@ else
     {
         @* UX-13: extracted to CaseTasksTab. Self-loads its playbooks and builds due-dates; the parent keeps
            the flash and hotkey dispatch (@ref) and reloads the case after a write. *@
-        <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" OnOpenEntity="OpenEntity" OnGoToTab="SetTab"
+        <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" OnOpenEntity="OpenEntity" OnGoToTab="SetTab" OnFocusItem="FocusItem"
                       OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh"
                       AutofocusComposer="_tasksAutofocus" OnAutofocusHandled="() => _tasksAutofocus = false" />
     }
@@ -1213,6 +1213,16 @@ else
             Classification.Breach => StageGateTrigger.CloseCase,
             _ => null
         };
+    }
+
+    // INV-41: bring one item into view on its tab (a task's "about" chip): switch to the tab, flash the item the way a
+    // new arrival flashes, and scroll to it once it's rendered.
+    private string? _scrollToId;
+    private async Task FocusItem((string Tab, Guid Id) target)
+    {
+        _flash[target.Id] = (Ui.AvatarHue(_myId ?? ""), target.Tab);
+        _scrollToId = (target.Tab == "Timeline" ? "tl-" : "ev-") + target.Id;
+        await SetTab(target.Tab);   // clears the flash a moment after it's seen
     }
 
     private async Task SetTab(string tab)
@@ -2397,6 +2407,12 @@ else
         {
             _watchedHeadFor = _case.Id;
             try { await JS.InvokeVoidAsync("imMotion.watchHead", "ws-head", "ws-sticky"); }
+            catch (JSException) { } catch (JSDisconnectedException) { }
+        }
+        if (_scrollToId is { } scrollTo)
+        {
+            _scrollToId = null;
+            try { await JS.InvokeVoidAsync("imMotion.scrollToId", scrollTo); }
             catch (JSException) { } catch (JSDisconnectedException) { }
         }
         if (_pendingOverviewFix is { } fix && _overviewTab is not null)

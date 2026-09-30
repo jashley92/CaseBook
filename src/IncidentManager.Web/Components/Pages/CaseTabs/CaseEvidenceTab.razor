@@ -67,7 +67,7 @@
             <tbody>
                 @foreach (var ev in EvidenceItems.OrderByDescending(x => x.CreatedAtUtc))
                 {
-                    <tr class="im-enter @FlashClass?.Invoke(ev.Id)" style="@FlashStyle?.Invoke(ev.Id)" @key="ev.Id">
+                    <tr class="im-enter @FlashClass?.Invoke(ev.Id)" style="@FlashStyle?.Invoke(ev.Id)" @key="ev.Id" id="ev-@ev.Id">
                         <td>
                             <div class="d-flex align-items-center gap-2">
                                 @if (IsImageEvidence(ev))
