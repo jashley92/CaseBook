@@ -86,9 +86,16 @@ public static class DevDataSeeder
         {
             CaseId = c.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Analysis,
             OccurredAtUtc = now.AddDays(-5).AddHours(4),
-            Description = "Blocked the 12 look-alike sender domains at the mail gateway; no further deliveries after this.",
-            Source = "analyst1", CreatedBy = "analyst1", CreatedAtUtc = now.AddDays(-4).AddHours(3)
+            Description = "Blocked the 12 look-alike sender domains at the mail gateway, so no further lures were delivered. " +
+                "Users who already have the link still reach the page until the proxy blocks it.",
+            CreatedBy = "analyst1", CreatedAtUtc = now.AddDays(-4).AddHours(3)
         });
+
+        // INV-42: the proxy task was raised from that entry, so its "about" chip leads back to it.
+        await db.SaveChangesAsync(ct);
+        var gateway = c.TimelineEntries.First(x => x.Description.StartsWith("Blocked the 12 look-alike sender domains"));
+        if (c.ActionItems.FirstOrDefault(x => x.Title.StartsWith("Block the 12 look-alike domains")) is { } proxy)
+            proxy.AboutRef = $"{ActionItem.AboutEntry}:{gateway.Id}";
 
         if (store is not null)
         {
@@ -516,11 +523,13 @@ public static class DevDataSeeder
             NewUser("admin1", "Sam Admin", "sam.admin@contoso-insurance.example", "SysAdmin", now));
         await db.SaveChangesAsync(ct);
 
-        // Case 1 — internal phishing, escalated to Breach with a Legal referral.
+        // Case 1 — internal phishing, escalated to Breach with a Legal referral. INV-42: every act on it is a named
+        // person's (the product's human-gated stance): Alex works it, Ivy commands it, Morgan staffs it.
+        const string ivy = "ic1", alex = "analyst1", morgan = "mgr1";
         var c1 = Case.Open(2026, 1, "Phishing Wave", "Credential-phishing wave targeting Finance",
-            Classification.AdverseEvent, Severity.Medium, CaseOrigin.InternalDetection, actor, now.AddDays(-6));
+            Classification.AdverseEvent, Severity.Medium, CaseOrigin.InternalDetection, alex, now.AddDays(-6));
         c1.DetectionCaseId = "SIEM-40122";
-        c1.SetInitialSummary("Multiple finance users received look-alike O365 login prompts.", actor, now.AddDays(-6));   // brief v1
+        c1.SetInitialSummary("Multiple finance users received look-alike O365 login prompts.", alex, now.AddDays(-6));   // brief v1
         c1.DataTypesInvolved = "Credentials; potential NPI";
         db.Cases.Add(c1);
         await db.SaveChangesAsync(ct);
@@ -530,62 +539,62 @@ public static class DevDataSeeder
             CaseId = c1.Id, Kind = TimelineKind.Investigation, OccurredAtUtc = now.AddDays(-5).AddHours(2),
             Type = TimelineEntryType.Analysis,
             Description = "Reviewed mailbox audit logs; confirmed one session established from a foreign ASN.",
-            Source = "analyst1", CreatedBy = actor, CreatedAtUtc = now.AddDays(-5).AddHours(2)
+            CreatedBy = alex, CreatedAtUtc = now.AddDays(-5).AddHours(2)
         });
         c1.Notes.Add(new AnalystNote
         {
             CaseId = c1.Id, Body = "Reset credentials for affected users; pulled mailbox audit logs.",
-            CreatedBy = actor, CreatedAtUtc = now.AddDays(-6)
+            CreatedBy = alex, CreatedAtUtc = now.AddDays(-6)
         });
-        c1.Assign("ic1", "Ivy Commander", CaseAssignmentRole.IncidentCommander, actor, now.AddDays(-6));
-        c1.Assign("analyst1", "Alex Analyst", CaseAssignmentRole.Analyst, actor, now.AddDays(-6));
-        c1.ChangePhase(CasePhase.Containment, "Isolated affected mailboxes", actor, now.AddDays(-5));
+        c1.Assign("ic1", "Ivy Commander", CaseAssignmentRole.IncidentCommander, morgan, now.AddDays(-6));
+        c1.Assign("analyst1", "Alex Analyst", CaseAssignmentRole.Analyst, morgan, now.AddDays(-6));
+        c1.ChangePhase(CasePhase.Containment, "Isolated affected mailboxes", ivy, now.AddDays(-5));
         await db.SaveChangesAsync(ct);
 
-        c1.Reclassify(Classification.Incident, "Confirmed successful credential capture", actor, now.AddDays(-5));
-        c1.ChangeSeverity(Severity.High, "Confirmed unauthorized mailbox access", actor, now.AddDays(-5));
-        c1.Reclassify(Classification.Breach, "Evidence of mailbox access to files containing NY resident NPI", actor, now.AddDays(-4));
-        c1.ChangeSeverity(Severity.Critical, "NY resident NPI confirmed exposed", actor, now.AddDays(-4));
-        c1.ReferToLegal(actor, "privacy@contoso-insurance.example", "NY resident NPI potentially accessed. Possible NYDFS Part 500 relevance.", now.AddDays(-4));
+        c1.Reclassify(Classification.Incident, "Confirmed successful credential capture", ivy, now.AddDays(-5));
+        c1.ChangeSeverity(Severity.High, "Confirmed unauthorized mailbox access", ivy, now.AddDays(-5));
+        c1.Reclassify(Classification.Breach, "Evidence of mailbox access to files containing NY resident NPI", ivy, now.AddDays(-4));
+        c1.ChangeSeverity(Severity.Critical, "NY resident NPI confirmed exposed", ivy, now.AddDays(-4));
+        c1.ReferToLegal(ivy, "privacy@contoso-insurance.example", "NY resident NPI potentially accessed. Possible NYDFS Part 500 relevance.", now.AddDays(-4));
         c1.ActionItems.Add(new ActionItem
         {
             CaseId = c1.Id, Title = "Provide affected-user list to Legal", Owner = "ic1",
             DueAtUtc = now.AddDays(-2), Status = ActionItemStatus.Done, CompletedAtUtc = now.AddDays(-3),
-            CreatedBy = actor, CreatedAtUtc = now.AddDays(-4)
+            CreatedBy = ivy, CreatedAtUtc = now.AddDays(-4)
         });
 
         // Entities / IOCs and the relationships between them (the investigation graph).
         var acct = c1.AddEntity(EntityType.Account, "CONTOSO\\jdoe", "Jane Doe (Finance)",
-            EntityDisposition.Unknown, "Mailbox accessed by the attacker.", "SIEM", actor, now.AddDays(-5));
+            EntityDisposition.Unknown, "Mailbox accessed by the attacker.", "SIEM", alex, now.AddDays(-5));
         var host = c1.AddEntity(EntityType.Host, "FIN-WKS-07", "Finance workstation",
-            EntityDisposition.Benign, "Endpoint the affected user logged in from.", "SIEM", actor, now.AddDays(-5));
+            EntityDisposition.Benign, "Endpoint the affected user logged in from.", "SIEM", alex, now.AddDays(-5));
         var ip = c1.AddEntity(EntityType.IpAddress, "203.0.113.66", "Foreign ASN egress",
-            EntityDisposition.Malicious, "Source of the unauthorized mailbox session.", "SIEM", actor, now.AddDays(-5));
+            EntityDisposition.Malicious, "Source of the unauthorized mailbox session.", "SIEM", alex, now.AddDays(-5));
         var url = c1.AddEntity(EntityType.Url, "https://o365-secure-login.contoso-insurance.example.attacker.test",
             "Phishing lure", EntityDisposition.Malicious, "Credential-harvesting page from the lure emails.",
-            "analyst1", actor, now.AddDays(-6));
+            "Email gateway", alex, now.AddDays(-6));
         c1.AddEntity(EntityType.FileHash, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            "Lure attachment (SHA-256)", EntityDisposition.Suspicious, null, "VirusTotal", actor, now.AddDays(-6));
+            "Lure attachment (SHA-256)", EntityDisposition.Suspicious, null, "VirusTotal", alex, now.AddDays(-6));
 
-        c1.AddTechnique("T1566", "Phishing", MitreTactic.InitialAccess, actor, now.AddDays(-6));
-        c1.AddTechnique("T1078", "Valid Accounts", MitreTactic.InitialAccess, actor, now.AddDays(-5));
-        c1.AddTechnique("T1114", "Email Collection", MitreTactic.Collection, actor, now.AddDays(-5));
-        c1.LinkEntities(acct.Id, url.Id, EntityRelationshipType.Accessed, "User submitted credentials to the lure.", actor, now.AddDays(-6));
-        c1.LinkEntities(acct.Id, host.Id, EntityRelationshipType.LoggedInTo, null, actor, now.AddDays(-5));
-        c1.LinkEntities(url.Id, ip.Id, EntityRelationshipType.ResolvedTo, null, actor, now.AddDays(-5));
-        c1.LinkEntities(host.Id, ip.Id, EntityRelationshipType.CommunicatedWith, "Outbound session to the attacker IP.", actor, now.AddDays(-5));
+        c1.AddTechnique("T1566", "Phishing", MitreTactic.InitialAccess, alex, now.AddDays(-6));
+        c1.AddTechnique("T1078", "Valid Accounts", MitreTactic.InitialAccess, alex, now.AddDays(-5));
+        c1.AddTechnique("T1114", "Email Collection", MitreTactic.Collection, alex, now.AddDays(-5));
+        c1.LinkEntities(acct.Id, url.Id, EntityRelationshipType.Accessed, "User submitted credentials to the lure.", alex, now.AddDays(-6));
+        c1.LinkEntities(acct.Id, host.Id, EntityRelationshipType.LoggedInTo, null, alex, now.AddDays(-5));
+        c1.LinkEntities(url.Id, ip.Id, EntityRelationshipType.ResolvedTo, null, alex, now.AddDays(-5));
+        c1.LinkEntities(host.Id, ip.Id, EntityRelationshipType.CommunicatedWith, "Outbound session to the attacker IP.", alex, now.AddDays(-5));
 
         // The attack chain (Event timeline): each step mapped to ATT&CK with actor → target, so the report's
         // attack-chain picture (PROD-46) has a realistic example.
         c1.AddEventStep(now.AddDays(-6), [MitreTactic.InitialAccess], "T1566.002", url.Id, acct.Id,
             "12 inbound look-alike domains delivered O365 phishing lures; 3 finance users clicked.", "SIEM",
-            actor, now.AddDays(-6), type: TimelineEntryType.Detection);
+            alex, now.AddDays(-6), type: TimelineEntryType.Detection);
         c1.AddEventStep(now.AddDays(-6).AddMinutes(20), [MitreTactic.CredentialAccess], "T1056.003", url.Id, acct.Id,
-            "jdoe entered credentials on the look-alike O365 sign-in page.", "SIEM", actor, now.AddDays(-6).AddMinutes(20));
+            "jdoe entered credentials on the look-alike O365 sign-in page.", "SIEM", alex, now.AddDays(-6).AddMinutes(20));
         c1.AddEventStep(now.AddDays(-5).AddHours(-3), [MitreTactic.InitialAccess], "T1078.004", ip.Id, acct.Id,
-            "Sign-in to jdoe's mailbox from a foreign ASN using the captured credentials.", "SIEM", actor, now.AddDays(-5).AddHours(-3));
+            "Sign-in to jdoe's mailbox from a foreign ASN using the captured credentials.", "SIEM", alex, now.AddDays(-5).AddHours(-3));
         c1.AddEventStep(now.AddDays(-5).AddHours(-2), [MitreTactic.Collection], "T1114.002", ip.Id, acct.Id,
-            "Mailbox searched; messages with NPI attachments opened.", "SIEM", actor, now.AddDays(-5).AddHours(-2));
+            "Mailbox searched; messages with NPI attachments opened.", "SIEM", alex, now.AddDays(-5).AddHours(-2));
 
         // The investigation-workspace features: a decision with its why (INV-06), tasks by kind of response work
         // (INV-13), and the team's brief (INV-09), so the demo case shows how they read together.
@@ -596,23 +605,24 @@ public static class DevDataSeeder
             Description = "Reset credentials and revoke sessions for all three users who clicked, not only the confirmed one.",
             Rationale = "Sign-in logs for the other two users are incomplete, and resetting is low cost.",
             OptionsConsidered = "Reset only jdoe's credentials", DecidedBy = "Incident Commander",
-            Source = "ic1", CreatedBy = "ic1", CreatedAtUtc = now.AddDays(-5).AddHours(1)
+            CreatedBy = ivy, CreatedAtUtc = now.AddDays(-5).AddHours(1)
         });
         c1.ActionItems[0].Kind = TaskKind.Notify;
         c1.ActionItems.Add(new ActionItem
         {
             CaseId = c1.Id, Title = "Block the 12 look-alike domains at the proxy", Owner = "analyst1", Kind = TaskKind.Contain,
-            DueAtUtc = now.AddDays(1), CreatedBy = actor, CreatedAtUtc = now.AddDays(-5)
+            DueAtUtc = now.AddDays(1), CreatedBy = ivy, CreatedAtUtc = now.AddDays(-5)
         });
         c1.ActionItems.Add(new ActionItem
         {
             CaseId = c1.Id, Title = "Review sign-in logs for the other two users who clicked", Owner = "analyst1",
-            Kind = TaskKind.Investigate, DueAtUtc = now.AddDays(2), CreatedBy = actor, CreatedAtUtc = now.AddDays(-5)
+            Kind = TaskKind.Investigate, DueAtUtc = now.AddDays(2), CreatedBy = alex, CreatedAtUtc = now.AddDays(-5),
+            AboutRef = $"{ActionItem.AboutEntity}:{acct.Id}"   // INV-42: started from Jane Doe's entity panel
         });
         c1.ActionItems.Add(new ActionItem
         {
             CaseId = c1.Id, Title = "Confirm the NY and federal notification drafts", Owner = "legal1",
-            Kind = TaskKind.Notify, DueAtUtc = now.AddDays(3), CreatedBy = actor, CreatedAtUtc = now.AddDays(-2)
+            Kind = TaskKind.Notify, DueAtUtc = now.AddDays(3), CreatedBy = ivy, CreatedAtUtc = now.AddDays(-2)
         });
         // INV-25: the brief's next steps are the open tasks, recorded with the version as they stood.
         var names = new Dictionary<string, string> { ["ic1"] = "Ivy Commander", ["analyst1"] = "Alex Analyst", ["legal1"] = "Lee Privacy" };
