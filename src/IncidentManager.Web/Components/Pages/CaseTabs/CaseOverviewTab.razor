@@ -30,7 +30,7 @@
    brief), what just happened, how bad it is and who must be told, whether it can move on, then the reference facts.
    The clocks, dates, next steps and team live in the case context panel (or its strip), not here. *@
 @* INV-09 / INV-36: the brief leads, with the case summary as its first part. *@
-<CaseBriefCard @ref="_brief" Case="Case" CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" />
+<CaseBriefCard @ref="_brief" Case="Case" CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
 
 <div class="im-ov">
     @{ var recent = RecentOnTimeline(); }
@@ -544,6 +544,8 @@
     [Parameter] public EventCallback<string> OnFix { get; set; }
     /// <summary>INV-29: switch the workspace to another tab (e.g. "Open the timeline").</summary>
     [Parameter] public EventCallback<string> OnGoToTab { get; set; }
+    /// <summary>INV-27: show the timeline's changes since a time.</summary>
+    [Parameter] public EventCallback<DateTimeOffset> OnShowSince { get; set; }
     /// <summary>Bumped by the parent on a collaborator change, to re-pull related cases.</summary>
     [Parameter] public int RefreshToken { get; set; }
 

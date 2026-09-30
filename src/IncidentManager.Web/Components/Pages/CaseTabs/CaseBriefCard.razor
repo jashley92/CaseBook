@@ -4,13 +4,16 @@
    INV-36: the first part is the case summary, the one the case report prints. The current summary is read from the
    case (the field the report, the close gate and import use); each version keeps the summary as it stood.
    INV-25: the next steps are the case's open tasks, not text: the current brief lists them live, each saved version
-   records them as they stood, and an open question can be followed up as a task from here. *@
+   records them as they stood, and an open question can be followed up as a task from here.
+   INV-27: says how far the record has moved on since the current version, and suggests an update after a decision,
+   handoff, phase, classification or materiality change. Never forced. *@
 @inject CaseService Cases
 @inject IClock Clock
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
+@inject ISeverityLabels SevLabels
 
 <section class="card im-brief mb-4" id="ov-brief" aria-labelledby="brief-title">
     <div class="card-header d-flex align-items-center flex-wrap gap-2">
@@ -25,6 +28,13 @@
             {
                 <button type="button" class="btn btn-sm btn-link p-0" aria-expanded="@Ui.Aria(_showHistory)" @onclick="() => _showHistory = !_showHistory">
                     @(_showHistory ? "Hide" : "Show") @Earlier.Count earlier version@(Earlier.Count == 1 ? "" : "s")
+                </button>
+            }
+            @if (Freshness is { Count: > 0 } fresh)
+            {
+                <button type="button" class="im-badge im-b-warn im-brief-fresh" @onclick="() => OnShowSince.InvokeAsync(cur.CreatedAtUtc)"
+                        title="@($"Recorded since this version: {string.Join(", ", fresh.Breakdown.Select(b => $"{b.Count} {b.What}"))}. Click to see them on the timeline.")">
+                    @IncidentManager.Application.Common.Plural.Of(fresh.Count, "change") since
                 </button>
             }
         }
@@ -66,6 +76,17 @@
     }
     else if (Current is not null || HasSummary)
     {
+        @if (Freshness?.Prompt is { } prompt)
+        {
+            <div class="im-brief-nudge small" role="status">
+                <span class="bi bi-arrow-repeat" aria-hidden="true"></span>
+                <span>@prompt</span>
+                @if (CanEdit)
+                {
+                    <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="BeginEdit">Update the brief</button>
+                }
+            </div>
+        }
         @Render(Current, Case.Summary, current: true)
         @if (_showHistory)
         {
@@ -99,6 +120,13 @@
     [Parameter] public EventCallback OnChanged { get; set; }
     /// <summary>Switch the workspace to another tab (a task opens the Tasks tab).</summary>
     [Parameter] public EventCallback<string> OnGoToTab { get; set; }
+    /// <summary>INV-27: show the timeline's changes since a time (the current version's).</summary>
+    [Parameter] public EventCallback<DateTimeOffset> OnShowSince { get; set; }
+
+    // INV-27: how far the record has moved on since the current version (null without one).
+    private BriefFreshness.Result? Freshness => Current is { } cur
+        ? BriefFreshness.Since(Case, cur, new MilestoneLabels(c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m)))
+        : null;
 
     private sealed record Part(string Key, string Label, string Hint, int Rows, Func<CaseBrief, string?> Get, bool Editable = true);
 

@@ -418,7 +418,7 @@ else
         <CaseOverviewTab @ref="_overviewTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" CanLiftRestriction="@(_canEdit && CanLiftRestriction)"
                          RetentionMessage="@_retentionMsg" ReadinessEval="_readinessEval"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" OnOpenModal="OpenModal"
-                         OnFix="FixGateItem" OnGoToTab="SetTab" RefreshToken="_liveRefresh" />
+                         OnFix="FixGateItem" OnGoToTab="SetTab" OnShowSince="ShowSinceAt" RefreshToken="_liveRefresh" />
     }
     else if (_activeTab == "Timeline")
     {
@@ -2034,6 +2034,13 @@ else
     private async Task ShowSinceOnTimeline()
     {
         _timelineSince = _lastViewed;
+        await SetTab("Timeline");
+    }
+
+    // INV-27: the timeline's changes since a given time (the brief's "N changes since").
+    private async Task ShowSinceAt(DateTimeOffset since)
+    {
+        _timelineSince = since;
         await SetTab("Timeline");
     }
 

@@ -2571,3 +2571,9 @@ button.im-phase-seg { cursor: pointer; }
 @media (max-width: 640px) {
     .im-phasebar-segs, .im-phasebar-step { display: none; }
 }
+
+/* INV-27: the brief's freshness: how much was recorded since this version, and a suggestion to update it. */
+.im-brief-fresh { cursor: pointer; }
+.im-brief-nudge { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .5rem; margin-bottom: .75rem; padding: .4rem .65rem;
+                  border-radius: var(--im-radius); background: var(--im-warn-bg); color: var(--im-text); }
+.im-brief-nudge .bi { color: var(--im-warn); }
