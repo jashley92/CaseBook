@@ -222,21 +222,41 @@ public static class EmailTemplateCatalog
 
         new EmailTemplateDefinition(
             "mention",
-            "Comment mention",
-            "Sent to a person @mentioned in a case discussion comment.",
+            "Note mention",
+            "Sent to a person @mentioned in a case note (only when a note or its new version first mentions them).",
             "{{MentionedBy}} mentioned you on {{CaseNumber}}",
             """
-            <h1>You were mentioned in a case discussion</h1>
+            <h1>You were mentioned in a case note</h1>
             <p>Hi {{Mentioned}},</p>
-            <p><strong>{{MentionedBy}}</strong> mentioned you in a comment on <strong>{{CaseNumber}} — {{CaseTitle}}</strong>:</p>
-            <p class="meta">{{Comment}}</p>
-            <p>Open the case to read the full discussion and reply.</p>
+            <p><strong>{{MentionedBy}}</strong> mentioned you in a note on <strong>{{CaseNumber}} — {{CaseTitle}}</strong>:</p>
+            <p class="meta">{{Note}}</p>
             """,
             new[]
             {
                 new EmailToken("Mentioned", "Display name of the person mentioned."),
-                new EmailToken("MentionedBy", "Who wrote the comment."),
-                new EmailToken("Comment", "A short excerpt of the comment."),
+                new EmailToken("MentionedBy", "Who wrote the note."),
+                new EmailToken("Note", "A short excerpt of the note."),
+                CaseNumber, CaseTitle,
+            },
+            CtaLabel: "Open the note",
+            CtaUrlToken: "NoteUrl"),
+
+        new EmailTemplateDefinition(
+            "handoff",
+            "Case handoff",
+            "Sent to the person a case is handed to, when whoever hands it off chooses to notify them.",
+            "{{HandedOffBy}} handed {{CaseNumber}} to you",
+            """
+            <h1>A case was handed to you</h1>
+            <p>Hi {{Recipient}},</p>
+            <p><strong>{{HandedOffBy}}</strong> handed <strong>{{CaseNumber}} — {{CaseTitle}}</strong> to you:</p>
+            <p class="meta" style="white-space:pre-wrap">{{Handoff}}</p>
+            """,
+            new[]
+            {
+                new EmailToken("Recipient", "Display name of the person taking the case on."),
+                new EmailToken("HandedOffBy", "Who handed the case off."),
+                new EmailToken("Handoff", "The handoff: where the case stands, what's done, what's open."),
                 CaseNumber, CaseTitle,
             },
             CtaLabel: "Open the case",

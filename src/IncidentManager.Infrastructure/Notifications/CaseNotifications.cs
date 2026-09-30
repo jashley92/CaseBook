@@ -99,8 +99,11 @@ public sealed class CaseNotifications : ICaseNotifications
         await _email.SendAsync(message, ct);
     }
 
+    // INV-37: a link straight to one note (the workspace opens the Notes tab and brings it into view).
+    private string? NoteUrl(Guid caseId, Guid noteId) => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases/{caseId}?tab=Notes&note={noteId}";
+
     public async Task OnMentionedAsync(Case c, string byUserId, IReadOnlyCollection<string> mentionedUserIds,
-        string commentExcerpt, CancellationToken ct = default)
+        string noteExcerpt, Guid noteId, CancellationToken ct = default)
     {
         // Distinct recipients, never the author.
         var recipients = mentionedUserIds
@@ -109,17 +112,18 @@ public sealed class CaseNotifications : ICaseNotifications
             .ToList();
         if (recipients.Count == 0) return;
 
-        var excerpt = commentExcerpt.Length > 280 ? commentExcerpt[..280] + "…" : commentExcerpt;
+        var excerpt = noteExcerpt.Length > 280 ? noteExcerpt[..280] + "…" : noteExcerpt;
         var byName = _users.DisplayFor(byUserId);
+        var url = NoteUrl(c.Id, noteId);
 
-        // Chat broadcast (PROD-02/04): one summary to the shared channel when enabled.
+        // Chat broadcast (PROD-02): one summary to the shared channel when enabled.
         if (ChatOn("Mentions"))
         {
             var who = string.Join(", ", recipients.Select(_users.DisplayFor));
             // S-13: the shared channel isn't a restricted case's audience — say who, not what or where.
             await _chat.SendAsync(c.IsRestricted
-                ? new ChatNotification("Mention (restricted case)", $"{byName} mentioned {who} on a restricted case.", CaseUrl(c.Id))
-                : new ChatNotification($"Mention: {c.CaseNumber}", $"{byName} mentioned {who}: {excerpt}", CaseUrl(c.Id)), ct);
+                ? new ChatNotification("Mention (restricted case)", $"{byName} mentioned {who} on a restricted case.", url)
+                : new ChatNotification($"Mention: {c.CaseNumber}", $"{byName} mentioned {who} in a note: {excerpt}", url), ct);
         }
 
         foreach (var id in recipients)
@@ -133,13 +137,32 @@ public sealed class CaseNotifications : ICaseNotifications
                 ["Mentioned"] = _users.DisplayFor(id),
                 ["CaseNumber"] = c.CaseNumber,
                 ["CaseTitle"] = c.Title,
-                ["Comment"] = excerpt,
-                ["CaseUrl"] = CaseUrl(c.Id) ?? "",
+                ["Note"] = excerpt,
+                ["NoteUrl"] = url ?? "",
             };
 
-            var message = await _composer.ComposeAsync("mention", [to], tokens, CaseUrl(c.Id), null, ct);
+            var message = await _composer.ComposeAsync("mention", [to], tokens, url, null, ct);
             await _email.SendAsync(message, ct);
         }
+    }
+
+    public async Task OnHandedOffAsync(Case c, string byUserId, string toUserId, string handoff, CancellationToken ct = default)
+    {
+        if (string.Equals(toUserId, byUserId, StringComparison.OrdinalIgnoreCase)) return;
+        var to = _users.EmailFor(toUserId);
+        if (string.IsNullOrWhiteSpace(to)) return;
+
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["HandedOffBy"] = _users.DisplayFor(byUserId),
+            ["Recipient"] = _users.DisplayFor(toUserId),
+            ["CaseNumber"] = c.CaseNumber,
+            ["CaseTitle"] = c.Title,
+            ["Handoff"] = handoff,
+            ["CaseUrl"] = CaseUrl(c.Id) ?? "",
+        };
+        var message = await _composer.ComposeAsync("handoff", [to], tokens, CaseUrl(c.Id), null, ct);
+        await _email.SendAsync(message, ct);
     }
 
     public async Task OnAssignedAsync(Case c, string assigneeUserId, string assigneeDisplayName,

@@ -5,7 +5,7 @@ namespace IncidentManager.Domain.Entities;
 /// <summary>
 /// A durable, append-only commentary note on a single <see cref="ActionItem"/> — progress updates,
 /// blockers, and hand-off context an analyst records as the follow-up is worked. It carries the owning
-/// <see cref="CaseId"/> directly (like <see cref="CaseComment"/>) so the save interceptor audits and
+/// <see cref="CaseId"/> directly (like <see cref="AnalystNote"/>) so the save interceptor audits and
 /// hash-chains it, and so a change broadcasts to collaborators on that case. Never edited or deleted, so
 /// the running commentary can't be silently rewritten.
 /// </summary>

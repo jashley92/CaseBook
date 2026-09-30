@@ -169,7 +169,7 @@ public sealed class CaseImportService
         var notes = 0;
         if (p.IncludeSummary && !p.SummaryApplied && !string.IsNullOrWhiteSpace(p.Summary))
         {
-            await _cases.AddNoteAsync(caseId, p.Summary!, ct);
+            await _cases.AddNoteAsync(caseId, p.Summary!, ct: ct);
             p.SummaryApplied = true;
         }
         if (p.SummaryApplied) notes = 1;

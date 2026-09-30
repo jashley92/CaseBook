@@ -80,7 +80,7 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
     public Guid? ActionItemId { get; set; }
 
     /// <summary>
-    /// INV-07: where this entry was promoted from — "note:&lt;id&gt;", "comment:&lt;id&gt;" or "taskcomment:&lt;id&gt;" — so the
+    /// INV-07: where this entry was promoted from — "note:&lt;id&gt;" or "taskcomment:&lt;id&gt;" — so the
     /// source can show it's already on the timeline; INV-23: <see cref="Imported"/> for an entry brought in by a
     /// structured import. Null for an entry written on the timeline. Folded into the row hash only when set.
     /// </summary>

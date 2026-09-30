@@ -45,7 +45,6 @@ const SHOTS = [
   { name: 'case-import',        path: '/cases/import',                  settle: 900,
     before: `(() => { const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Show'); if (b) b.click(); })()` },
   { name: 'timeline',           path: '/cases/{caseId}?tab=Timeline',   settle: 1200 },
-  { name: 'discussion',         path: '/cases/{caseId}?tab=Discussion', settle: 1000 },
   { name: 'relationship-graph', path: '/cases/{caseId}?tab=Entities',   ready: '.tabbody .vis-network canvas', settle: 2000 },
   { name: 'campaign-rollup',    path: '/campaigns/{campaignId}',        settle: 1200 },
   { name: 'report',             path: '/cases/{caseId}?tab=Report',     settle: 1500,

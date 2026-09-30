@@ -3,7 +3,6 @@
 @implements IAsyncDisposable
 @inject CaseService Cases
 @inject IncidentManager.Application.Activity.ActivityFeedService Feed
-@inject IncidentManager.Application.Cases.CaseCommentService Comments
 @inject IClock Clock
 @inject IJSRuntime JS
 @inject IncidentManager.Web.Services.CaseListMemory ListMemory
@@ -345,10 +344,10 @@ else
         @foreach (var tab in _tabs)
         {
             var _tabNo = (Array.IndexOf(_tabs, tab) + 1) % 10;   // U-14: the digit shortcut for this tab (the 10th is 0)
-            @if (tab is "Discussion" or "Review" or "Audit")
+            @if (tab is "Tasks" or "Review" or "Audit")
             {
-                @* INV-02: the record tabs, then working together (discussion, tasks), then what's built from them
-                   (lessons, report), then the audit trail. *@
+                @* INV-02: the record tabs, then the work (tasks), then what's built from them (lessons, report),
+                   then the audit trail. *@
                 <li class="im-tab-sep" aria-hidden="true"></li>
             }
             <li class="nav-item">
@@ -513,14 +512,7 @@ else
            the child via @ref / AutofocusComposer) and reloads the case after a write. *@
         <CaseNotesTab @ref="_notesTab" CaseId="_case.Id" Notes="_case.Notes" Entities="_case.Entities" CanEdit="_canEdit" Promoted="PromotedSources()"
                       OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts"
-                      AutofocusComposer="_notesAutofocus" OnAutofocusHandled="() => _notesAutofocus = false" />
-    }
-    else if (_activeTab == "Discussion")
-    {
-        @* PROD-04: durable threaded team discussion with @mention notifications. Self-loads its comments;
-           available to any case viewer (cross-role collaboration/handoff), so it isn't gated on EditCases. *@
-        <CaseDiscussionTab CaseId="_case.Id" Entities="_case.Entities" ComposerDrafts="_composerDrafts"
-                           CanEdit="_canEdit" Promoted="PromotedSources()" OnChanged="Reload" />
+                      AutofocusComposer="_notesAutofocus" OnAutofocusHandled="() => _notesAutofocus = false" FocusNoteId="QNote" />
     }
     else if (_activeTab == "Tasks")
     {
@@ -598,7 +590,8 @@ else
                             <label class="form-label small mb-0" for="ws-ho-to">Hand the case to</label>
                             <select id="ws-ho-to" class="form-select form-select-sm mb-2" @bind="_hoTo">
                                 <option value="">Choose a person…</option>
-                                @foreach (var u in Users.All().Where(u => !string.Equals(u.UserId, _myId, StringComparison.OrdinalIgnoreCase)).OrderBy(u => u.DisplayName))
+                                @* INV-37: only people who can see the case (on a restricted one: its IC, team and cleared roles). *@
+                                @foreach (var u in _hoPeople.OrderBy(u => u.DisplayName))
                                 {
                                     <option value="@u.UserId">@u.DisplayName</option>
                                 }
@@ -614,7 +607,7 @@ else
                                       placeholder="e.g. if the other two users' sign-ins show new locations, re-open the scope with Privacy"></textarea>
                             <div class="form-check small">
                                 <input class="form-check-input" type="checkbox" id="ws-ho-post" @bind="_hoPost" />
-                                <label class="form-check-label" for="ws-ho-post">Post it to Discussion and notify them</label>
+                                <label class="form-check-label" for="ws-ho-post">Email it to them</label>
                             </div>
                             <div class="form-check small">
                                 <input class="form-check-input" type="checkbox" id="ws-ho-tasks" @bind="_hoTasks" />
@@ -814,7 +807,10 @@ else
     /// entity panel (INV-11) over the current tab, and focuses its row when the Entities tab is open.</summary>
     [SupplyParameterFromQuery(Name = "entity")] public Guid? QEntity { get; set; }
 
-    private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Discussion", "Tasks", "Review", "Report", "Audit"];
+    /// <summary>INV-37: deep-link one note (a mention email's link): <c>?tab=Notes&amp;note={guid}</c> brings it into view.</summary>
+    [SupplyParameterFromQuery(Name = "note")] public Guid? QNote { get; set; }
+
+    private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Tasks", "Review", "Report", "Audit"];
     private string _activeTab = "Overview";
 
     // UX-19: each tab string is the stable routing key (?tab=, inline "#"-chip deep-links, TabCount /
@@ -899,7 +895,7 @@ else
             var roles = Ui.OrderRoles(CurrentUser.RoleNames).Select(Ui.RoleLabel).ToList();
             var who = roles.Count switch { 0 => "Your access", 1 => $"Your role ({roles[0]})", _ => $"Your roles ({string.Join(", ", roles)})" };
             var legal = _canManageLegal ? " Legal actions (referral, legal hold) are in the Actions menu." : "";
-            return $"{who} can read this case and post in Discussion, but can't edit it.{legal} " +
+            return $"{who} can read this case and comment on its tasks, but can't edit it.{legal} " +
                    "Ask the incident commander or an administrator if you need edit access.";
         }
     }
@@ -1316,7 +1312,11 @@ else
         _when = _whenDefault = UtcToWall(Clock.UtcNow);
 
         if (name == "holdrelease") _holdReleaseReason = null;   // don't carry a cancelled attempt's text over
-        if (name == "handoff") PrefillHandoff();
+        if (name == "handoff")
+        {
+            _hoPeople = await Cases.MentionableAsync(Id);
+            PrefillHandoff();
+        }
 
         if (name is "restrict" or "unrestrict")
         {
@@ -1709,8 +1709,7 @@ else
                 case "handoff":
                 {
                     var body = HandoffBody();
-                    var moved = await Cases.HandOffAsync(Id, _hoTo!, body, _hoTasks);
-                    if (_hoPost) await Comments.AddAsync(Id, body, null, [_hoTo!]);
+                    var moved = await Cases.HandOffAsync(Id, _hoTo!, body, _hoTasks, notify: _hoPost);
                     var toName = Users.DisplayFor(_hoTo);
                     done = $"Handed off to {toName}" + (moved > 0 ? $" · {IncidentManager.Application.Common.Plural.Of(moved, "task")} reassigned" : "");
                     break;
@@ -1856,6 +1855,7 @@ else
     private string? _hoOpen;
     private string? _hoWatch;
     private bool _hoPost = true;
+    private IReadOnlyList<IncidentManager.Application.Abstractions.UserSummary> _hoPeople = [];
     private bool _hoTasks = true;
 
     private int MyOpenTaskCount => _case?.ActionItems.Count(t => t.IsOpen
@@ -1887,7 +1887,7 @@ else
         return text.Length <= 140 ? text : text[..137] + "…";
     }
 
-    // The handoff as Markdown: the same text goes on the timeline and, if chosen, into Discussion.
+    // The handoff as Markdown: the same text goes on the timeline and, if chosen, in the email to the recipient.
     private string HandoffBody()
     {
         var sb = new System.Text.StringBuilder();

@@ -28,7 +28,7 @@ deadlines, readiness for the next stage gate, and the case record (origin, detec
 brief is a new version, the summary included, so what the team believed and reported at any point stays
 readable (each version records the open tasks as they stood). A **context panel** beside every tab carries
 the clocks with their dates, the same **Next** list of open tasks (with what's left before the next phase), the team and the key entities; on narrower screens it folds into a strip at the top
-of the Overview. Tabs: **Overview / Timeline / IOCs & entities / Evidence / Notes / Discussion / Tasks /
+of the Overview. Tabs: **Overview / Timeline / IOCs & entities / Evidence / Notes / Tasks /
 Lessons learned / Report / Audit**. A compact header carries the case number and title, status badges (SLA,
 **materiality**, a Legal/committee decision the tool records but does not make, and the notification
 countdown) and the NIST SP 800-61 phase stepper, with **Advance** and **Hand off** one click away. Opening a
@@ -65,7 +65,7 @@ responders do): the **event** timeline (what the adversary or vendor did, with t
 milestones** (classification, severity and phase changes, stage gates, materiality, reporting, completed tasks)
 drawn straight from the case record, so nothing is written twice. Work recorded after the fact is dated when
 it happened: phase and classification changes take a "when it happened" time and can be corrected later, with a
-reason, while the time it was entered is kept and shown. A task's result, a note or a discussion comment goes
+reason, while the time it was entered is kept and shown. A task's result, a note or a task comment goes
 onto the timeline in one step, entries cite the evidence behind them, and the report's investigation timeline
 is this same record. One toolbar row holds the lens, the reading controls and **Add**; filters open on
 demand, and the attack chain folds to a one-line strip of its tactics (it stays open for anyone who opens it),
@@ -73,13 +73,12 @@ so the history starts near the top of the tab.
 
 ![Timeline](docs/screenshots/timeline.png)
 
-### Team discussion &amp; @mentions
-A durable, **hash-chained** discussion thread per case (part of the audited record, unlike ephemeral
-presence) for cross-role handoffs — Markdown, one-level replies, and **@mentions** that notify the
-mentioned teammates through the notification pipeline (email and/or chat). Open to everyone who can see
-the case, so an analyst, IC, and Legal work from one shared trail.
-
-![Team discussion](docs/screenshots/discussion.png)
+### Notes &amp; @mentions
+Working notes per case, in Markdown and versioned on every edit, that can be put on the timeline once they
+become a finding. A note can **@mention** teammates to point them at it: they're emailed a link straight to
+the note, and an edit only notifies people it newly mentions. Only people who can see the case can be
+mentioned. There's no chat thread in the record: the team talks in its own chat, and the case keeps the
+conclusions (decisions with their why, the brief, handoffs). A **handoff** can email the person taking over.
 
 ### Entities &amp; relationship graph
 Every case's indicators and entities — accounts, hosts, IPs, domains, URLs, file hashes — captured with

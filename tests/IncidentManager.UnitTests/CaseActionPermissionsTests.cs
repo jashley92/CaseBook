@@ -38,6 +38,7 @@ public sealed class CaseActionPermissionsTests
         nameof(CaseService.GetCaseLinksAsync),
         nameof(CaseService.SearchLinkableCasesAsync),
         nameof(CaseService.GetEntityLabelsAsync),
+        nameof(CaseService.MentionableAsync),       // INV-37: who a note can mention (scoped read)
     };
 
     private static IEnumerable<string> PublicUseCaseMethods() =>

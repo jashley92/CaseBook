@@ -440,7 +440,7 @@ public class CaseNotificationsTests
         c.IsRestricted = true;
 
         await n.OnReclassifiedAsync(c, Classification.Incident, Classification.Breach);
-        await n.OnMentionedAsync(c, "author", ["alice"], "the insider is J. Smith");
+        await n.OnMentionedAsync(c, "author", ["alice"], "the insider is J. Smith", Guid.NewGuid());
         await n.OnAssignedAsync(c, "bob", "Bob", CaseAssignmentRole.Analyst, "author");
 
         chat.Sent.Should().HaveCount(3);
@@ -526,7 +526,7 @@ public class CaseNotificationsTests
             .Add("author", "Author", "author@insurer.example");
         var n = Build(sender, new EmailOptions(), users);
 
-        await n.OnMentionedAsync(NewCase(), "author", ["alice", "bob", "author"], "please take a look");
+        await n.OnMentionedAsync(NewCase(), "author", ["alice", "bob", "author"], "please take a look", Guid.NewGuid());
 
         sender.Sent.Should().HaveCount(2);
         sender.Sent.Should().Contain(s => s.To.Contains("alice@insurer.example"));
@@ -536,13 +536,44 @@ public class CaseNotificationsTests
     }
 
     [Fact]
+    public async Task A_mention_email_links_to_the_note()
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory().Add("alice", "Alice", "alice@insurer.example");
+        var n = Build(sender, new EmailOptions(), users, config: TestEmail.Config(("App:BaseUrl", "https://casebook.example")));
+        var c = NewCase();
+        var noteId = Guid.NewGuid();
+
+        await n.OnMentionedAsync(c, "author", ["alice"], "the export is in Evidence", noteId);
+
+        sender.Sent.Single().HtmlBody.Should().Contain($"https://casebook.example/cases/{c.Id}?tab=Notes&amp;note={noteId}")
+            .And.Contain("the export is in Evidence").And.Contain("in a note");
+    }
+
+    [Fact]
+    public async Task A_handoff_emails_the_recipient_but_not_a_self_handoff()
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory().Add("bob", "Bob", "bob@insurer.example").Add("author", "Author", "author@insurer.example");
+        var n = Build(sender, new EmailOptions(), users);
+
+        await n.OnHandedOffAsync(NewCase(), "author", "bob", "Where it stands: contained.\nStill open: block domains.");
+        await n.OnHandedOffAsync(NewCase(), "author", "author", "to myself");
+
+        sender.Sent.Should().ContainSingle();
+        sender.Sent[0].To.Should().Contain("bob@insurer.example");
+        sender.Sent[0].Subject.Should().Contain("handed");
+        sender.Sent[0].HtmlBody.Should().Contain("Still open: block domains.");
+    }
+
+    [Fact]
     public async Task Mention_skips_a_user_with_no_email()
     {
         var sender = new CapturingEmailSender();
         var users = new FakeUserDirectory().Add("alice", "Alice", null);
         var n = Build(sender, new EmailOptions(), users);
 
-        await n.OnMentionedAsync(NewCase(), "author", ["alice"], "hi");
+        await n.OnMentionedAsync(NewCase(), "author", ["alice"], "hi", Guid.NewGuid());
 
         sender.Sent.Should().BeEmpty();
     }
@@ -554,7 +585,7 @@ public class CaseNotificationsTests
         var users = new FakeUserDirectory().Add("alice", "Alice", "alice@insurer.example");
         var n = Build(new CapturingEmailSender(), new EmailOptions(), users, chat, ChatConfig("Mentions"));
 
-        await n.OnMentionedAsync(NewCase(), "author", ["alice"], "ping");
+        await n.OnMentionedAsync(NewCase(), "author", ["alice"], "ping", Guid.NewGuid());
 
         chat.Sent.Should().ContainSingle();
         chat.Sent[0].Title.Should().Contain("Mention");

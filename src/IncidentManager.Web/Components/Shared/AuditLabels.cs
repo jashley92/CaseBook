@@ -37,7 +37,6 @@ public static class AuditLabels
         "AnalystNote" => "Note",
         "AppSetting" => "Setting",
         "CaseAssignment" => "Assignment",
-        "CaseComment" => "Discussion post",
         "CaseDataElement" => "Case data element",
         "CaseEntity" => "Entity",
         "CaseLink" => "Related case link",

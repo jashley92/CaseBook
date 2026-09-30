@@ -109,13 +109,19 @@ public interface ICaseNotifications
     Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default);
 
     /// <summary>
-    /// Called after a comment @mentioning teammates is posted (PROD-04). Emails each mentioned user (resolved
-    /// via the user directory), skipping the comment's author. Best-effort and gated like the other triggers.
-    /// A default no-op is provided so existing implementers (and test doubles) need not change; the real
-    /// <c>CaseNotifications</c> overrides it.
+    /// INV-37: called after a note @mentioning teammates is saved (only the people newly mentioned in that version).
+    /// Emails each of them (resolved via the user directory) with a link to the note, skipping the author.
+    /// Best-effort and gated like the other triggers. A default no-op is provided so test doubles need not change.
     /// </summary>
     Task OnMentionedAsync(Case c, string byUserId, IReadOnlyCollection<string> mentionedUserIds,
-        string commentExcerpt, CancellationToken ct = default) => Task.CompletedTask;
+        string noteExcerpt, Guid noteId, CancellationToken ct = default) => Task.CompletedTask;
+
+    /// <summary>
+    /// INV-37: called after a handoff is recorded, when the person handing off chose to notify the recipient.
+    /// Emails them that the case is theirs to pick up, with the handoff text. Default no-op for test doubles.
+    /// </summary>
+    Task OnHandedOffAsync(Case c, string byUserId, string toUserId, string handoff, CancellationToken ct = default)
+        => Task.CompletedTask;
 
     /// <summary>
     /// Called after someone is assigned to a case (E-03b). Emails the assignee (resolved via the user

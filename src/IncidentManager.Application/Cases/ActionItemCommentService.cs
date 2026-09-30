@@ -15,7 +15,7 @@ public sealed record ActionItemCommentView(
 /// Append-only commentary on a case's follow-up tasks (<see cref="ActionItem"/>). A comment is a
 /// timestamped, attributed progress/blocker/hand-off note; it is part of the case's tamper-evident record
 /// (the save interceptor audits + hash-chains it, since <see cref="ActionItemComment"/> carries a CaseId).
-/// Visibility is gated by the case workspace that hosts the Tasks tab, mirroring <see cref="CaseCommentService"/>.
+/// Visibility is gated by the case workspace that hosts the Tasks tab, like the notes on the Notes tab.
 /// </summary>
 public sealed class ActionItemCommentService
 {
@@ -70,7 +70,7 @@ public sealed class ActionItemCommentService
         using var db = _factory.CreateDbContext();
 
         // Track the case row (no includes) so the save interceptor stamps the audit line with its case
-        // number — mirrors CaseCommentService. Cheap: no aggregate load.
+        // number. Cheap: no aggregate load.
         // S-09: scoped, so a comment can't land on a case the caller can't see.
         var caseRow = await db.Cases.ForUser(_user).FirstOrDefaultAsync(c => c.Id == caseId, ct)
                       ?? throw new InvalidOperationException("Case not found or not accessible.");

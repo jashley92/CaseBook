@@ -67,6 +67,7 @@ public sealed class CaseService
 
     private readonly Microsoft.Extensions.Options.IOptionsMonitor<LegalHoldOptions>? _legalHold;
     private readonly IUserDirectory? _users;
+    private readonly IRoleDirectory? _roles;
 
     /// <summary>F-12: whether releasing a legal hold needs a second approver (admin setting, off by default).</summary>
     public bool LegalHoldReleaseNeedsSecondApprover => _legalHold?.CurrentValue.RequireSecondApprover ?? false;
@@ -79,10 +80,12 @@ public sealed class CaseService
         Compliance.INotificationDeadlineSettingsProvider? notifySettings = null,
         Admin.NotificationRuleService? notifyRules = null,
         IOrganizationTimeZone? zone = null,
-        IUserDirectory? users = null)
+        IUserDirectory? users = null,
+        IRoleDirectory? roles = null)
     {
         _zone = zone;
         _users = users;
+        _roles = roles;
         _legalHold = legalHold;
         _notifySettings = notifySettings;
         _notifyRules = notifyRules;
@@ -1364,26 +1367,79 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task AddNoteAsync(Guid id, string body, CancellationToken ct = default)
+    /// <summary>
+    /// S-13 / INV-37: the people who may be @mentioned in this case's notes — everyone who can see it except the caller.
+    /// On a restricted case that's its incident commander, team and cleared roles, so a mention never reaches someone
+    /// outside it. Also the people a handoff can go to.
+    /// </summary>
+    public async Task<IReadOnlyList<UserSummary>> MentionableAsync(Guid caseId, CancellationToken ct = default)
     {
-        Require();
+        if (_users is null) return [];
         using var db = _factory.CreateDbContext();
-        var c = await LoadTrackedAsync(db, id, ct);
-        c.Notes.Add(new AnalystNote
-        {
-            CaseId = c.Id, Body = body, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
-        });
-        await db.SaveChangesAsync(ct);
+        var c = await Scoped(db.Cases.AsNoTracking()).Where(x => x.Id == caseId)
+            .Select(x => new { x.IsRestricted, x.IncidentCommander, Team = x.Assignments.Select(a => a.UserId).ToList() })
+            .FirstOrDefaultAsync(ct);
+        if (c is null) return [];
+        return _users.All()
+            .Where(u => !string.Equals(u.UserId, _user.UserId, StringComparison.OrdinalIgnoreCase))
+            .Where(u => _roles is null || CaseAudience.CanSee(c.IsRestricted, c.IncidentCommander, c.Team, u, _roles))
+            .ToList();
     }
 
-    /// <summary>Edits a note, superseding the current version with a new one (no destructive overwrite).</summary>
-    public async Task EditNoteAsync(Guid id, Guid noteId, string newBody, CancellationToken ct = default)
+    // De-dupes the picked mentions, drops the author, and (S-13 backstop) anyone who can't see the case, so a note
+    // excerpt never reaches someone outside a restricted case's audience.
+    private List<string> CleanMentions(Case c, IReadOnlyCollection<string>? mentionUserIds)
+    {
+        var mentions = (mentionUserIds ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id) && !string.Equals(id, _user.UserId, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (_roles is not null && _users is not null && mentions.Count > 0)
+        {
+            var team = c.Assignments.Select(a => a.UserId).ToList();
+            mentions = mentions.Where(id => CaseAudience.CanSee(c.IsRestricted, c.IncidentCommander, team, _users.Resolve(id), _roles)).ToList();
+        }
+        return mentions;
+    }
+
+    /// <summary>Adds a note. INV-37: the people it @mentions are notified, with a link to it.</summary>
+    public async Task AddNoteAsync(Guid id, string body, IReadOnlyCollection<string>? mentionUserIds = null,
+        CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
-        c.EditNote(noteId, newBody, _user.UserId, _clock.UtcNow);
+        var mentions = CleanMentions(c, mentionUserIds);
+        var note = new AnalystNote
+        {
+            CaseId = c.Id, Body = body, MentionsCsv = string.Join(',', mentions),
+            CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
+        };
+        c.Notes.Add(note);
         await db.SaveChangesAsync(ct);
+        if (mentions.Count > 0)
+            await _notifications.OnMentionedAsync(c, _user.UserId, mentions, note.Body, note.Id, ct);
+    }
+
+    /// <summary>
+    /// Edits a note, superseding the current version with a new one (no destructive overwrite). INV-37: the new version
+    /// records its mentions; only people it mentions that the previous version didn't are notified, so fixing a typo
+    /// doesn't email everyone again.
+    /// </summary>
+    public async Task EditNoteAsync(Guid id, Guid noteId, string newBody, IReadOnlyCollection<string>? mentionUserIds = null,
+        CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        var before = c.Notes.FirstOrDefault(n => n.Id == noteId)?.Mentions ?? [];
+        var mentions = CleanMentions(c, mentionUserIds);
+        var next = c.EditNote(noteId, newBody, _user.UserId, _clock.UtcNow);
+        next.MentionsCsv = string.Join(',', mentions);
+        await db.SaveChangesAsync(ct);
+        var added = mentions.Where(m => !before.Contains(m, StringComparer.OrdinalIgnoreCase)).ToList();
+        if (added.Count > 0)
+            await _notifications.OnMentionedAsync(c, _user.UserId, added, next.Body, next.Id, ct);
     }
 
     /// <summary>
@@ -1602,12 +1658,12 @@ public sealed class CaseService
 
     /// <summary>
     /// INV-15: records a handoff on the investigation timeline — where the case stands, what's done and what's open —
-    /// to the person taking it on, and optionally hands them the caller's open tasks on this case. Posting it to
-    /// Discussion (so the recipient is notified) is the caller's choice, done through the comment service.
+    /// to the person taking it on, and optionally hands them the caller's open tasks on this case. INV-37: with
+    /// <paramref name="notify"/>, the recipient is emailed the handoff (only if they can see the case, S-13).
     /// Returns the number of tasks reassigned.
     /// </summary>
     public async Task<int> HandOffAsync(Guid caseId, string toUserId, string body, bool reassignMyOpenTasks,
-        CancellationToken ct = default)
+        bool notify = false, CancellationToken ct = default)
     {
         Require();
         var text = (body ?? "").Trim();
@@ -1635,6 +1691,8 @@ public sealed class CaseService
                 moved++;
             }
         await db.SaveChangesAsync(ct);
+        if (notify && CleanMentions(c, [toUserId]).Count > 0)
+            await _notifications.OnHandedOffAsync(c, _user.UserId, toUserId, text, ct);
         return moved;
     }
 
@@ -1687,8 +1745,8 @@ public sealed class CaseService
     }
 
     /// <summary>
-    /// INV-07: puts a note, a discussion comment or a task comment on the investigation timeline, so it isn't
-    /// retyped. <paramref name="sourceRef"/> is "note:&lt;id&gt;", "comment:&lt;id&gt;" or "taskcomment:&lt;id&gt;" and must be
+    /// INV-07: puts a note or a task comment on the investigation timeline, so it isn't
+    /// retyped. <paramref name="sourceRef"/> is "note:&lt;id&gt;" or "taskcomment:&lt;id&gt;" and must be
     /// on this case; the new entry keeps it, and its <c>Source</c> names the kind. The text may be edited on the
     /// way (the source itself is unchanged). A Decision can't be made this way: it needs its why.
     /// </summary>
@@ -1712,7 +1770,6 @@ public sealed class CaseService
         var label = parts[0] switch
         {
             "note" when c.Notes.Any(n => n.Id == sourceId) => "Note",
-            "comment" when await db.CaseComments.AnyAsync(x => x.Id == sourceId && x.CaseId == caseId, ct) => "Discussion",
             "taskcomment" when await db.ActionItemComments.AnyAsync(x => x.Id == sourceId && x.CaseId == caseId, ct) => "Task comment",
             _ => throw new InvalidOperationException("That note or comment isn't on this case.")
         };

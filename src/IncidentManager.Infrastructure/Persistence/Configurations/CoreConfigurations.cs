@@ -94,6 +94,7 @@ public sealed class AnalystNoteConfiguration : IEntityTypeConfiguration<AnalystN
     {
         b.ToTable("AnalystNotes");
         b.Property(x => x.Body).HasMaxLength(16000).IsRequired();
+        b.Property(x => x.MentionsCsv).HasMaxLength(2000).IsRequired();
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.RowHash).HasMaxLength(64);
         b.HasIndex(x => new { x.CaseId, x.IsCurrent });
@@ -496,20 +497,6 @@ public sealed class AdGroupRoleMappingConfiguration : IEntityTypeConfiguration<A
         b.Property(x => x.RowHash).HasMaxLength(64);
         b.HasIndex(x => new { x.AdGroup, x.RoleName }).IsUnique();
         b.HasIndex(x => x.RoleName);
-    }
-}
-
-public sealed class CaseCommentConfiguration : IEntityTypeConfiguration<CaseComment>
-{
-    public void Configure(EntityTypeBuilder<CaseComment> b)
-    {
-        b.ToTable("CaseComments");
-        b.Property(x => x.Body).HasMaxLength(8000).IsRequired();
-        b.Property(x => x.MentionsCsv).HasMaxLength(2000);
-        b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
-        b.HasIndex(x => x.CaseId);
-        b.HasIndex(x => x.ParentId);
     }
 }
 

@@ -2424,3 +2424,32 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930041809_NoteMentionsDropDiscussion'
+)
+BEGIN
+    DROP TABLE [CaseComments];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930041809_NoteMentionsDropDiscussion'
+)
+BEGIN
+    ALTER TABLE [AnalystNotes] ADD [MentionsCsv] nvarchar(2000) NOT NULL DEFAULT N'';
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930041809_NoteMentionsDropDiscussion'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260930041809_NoteMentionsDropDiscussion', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

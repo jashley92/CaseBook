@@ -3,7 +3,9 @@
    own OnAfterRenderAsync via the shared markdownEditor JS API and tears them down on dispose, so the parent's
    central editor reconcile no longer carries a Notes branch. Cross-tab concerns stay in the parent and are
    threaded in: live-collab flash (delegates), a Reload after a write (OnChanged), and the case hotkeys —
-   the parent calls SubmitAsync() via @ref for Ctrl/⌘+Enter, and sets AutofocusComposer for the 'n' shortcut. *@
+   the parent calls SubmitAsync() via @ref for Ctrl/⌘+Enter, and sets AutofocusComposer for the 'n' shortcut.
+   INV-37: a note can @mention teammates (people who can see the case) to point them at it; they're emailed a link to
+   the note. There are no replies: the conversation happens in the team's chat. *@
 @implements IAsyncDisposable
 @inject CaseService Cases
 @inject IncidentManager.Application.Content.IMarkdownService Md
@@ -21,9 +23,9 @@
     </button>
     <div id="note-add-form" class="card mb-3 @(ComposerShown ? "" : "im-phone-collapsed")">
         <div class="card-body">
-            <label class="form-label small mb-1" for="@NoteAddEditorId">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links · <code>#</code> to tag an entity</span></label>
+            <label class="form-label small mb-1" for="@NoteAddEditorId">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links · <code>@@</code> to mention a teammate · <code>#</code> to tag an entity</span></label>
             @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add. *@
-            <ComposerHint>Your working notes: findings and reasoning as you go. Not in the case report unless its report profile includes Analyst Notes. Doesn't notify anyone. To hand off or ask a teammate, use <strong>Discussion</strong>.</ComposerHint>
+            <ComposerHint>Working notes: findings and reasoning as you go. Not in the case report unless its report profile includes Analyst Notes. <code>@@</code>mentioned teammates are emailed a link to the note.</ComposerHint>
             <textarea id="@NoteAddEditorId" class="form-control mb-2"></textarea>
             <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="AddNote">Add note</button>
         </div>
@@ -42,7 +44,7 @@ else
 {
     @foreach (var n in Notes.Where(x => x.IsCurrent).OrderByDescending(x => x.CreatedAtUtc))
     {
-        <div class="card mb-2 im-enter @FlashClass?.Invoke(n.Id)" style="@FlashStyle?.Invoke(n.Id)" @key="n.Id">
+        <div class="card mb-2 im-enter @FlashClass?.Invoke(n.Id) @(IsFocused(n) ? "im-note-focus" : "")" style="@FlashStyle?.Invoke(n.Id)" @key="n.Id" id="@($"note-{n.Id}")">
             <div class="card-body py-2">
                 @if (_editNoteId == n.Id)
                 {
@@ -54,6 +56,15 @@ else
                 else
                 {
                     <div class="md-body">@((MarkupString)Md.ToHtml(n.Body, CaseId))</div>
+                    @if (n.Mentions.Count > 0)
+                    {
+                        <div class="mb-1">
+                            @foreach (var m in n.Mentions)
+                            {
+                                <span class="im-badge im-b-info me-1" title="Mentioned: emailed a link to this note"><span class="bi bi-at" aria-hidden="true"></span> @Users.DisplayFor(m)</span>
+                            }
+                        </div>
+                    }
                     <small class="text-muted">
                         @Users.DisplayFor(n.CreatedBy) · @TimeDisp.Long(n.CreatedAtUtc)
                         @if (n.Version > 1)
@@ -115,6 +126,32 @@ else
     /// <summary>FR-02: parent-owned draft store (survives tab switches). The add composer stashes its
     /// unsubmitted text here on teardown and re-seeds from it on remount, so hopping tabs doesn't lose a note.</summary>
     [Parameter] public Dictionary<string, string>? ComposerDrafts { get; set; }
+    /// <summary>INV-37: a note to bring into view (a mention email links to it). Any version of it may be named.</summary>
+    [Parameter] public Guid? FocusNoteId { get; set; }
+
+    // S-13: people who can see this case, except the current user, as inline-@mention candidates ({id, name} for JS).
+    private IReadOnlyList<IncidentManager.Application.Abstractions.UserSummary> _mentionable = [];
+    private Guid _mentionsFor;
+    private bool _focusDone;
+    private object[] MentionCandidates => _mentionable.Select(u => (object)new { id = u.UserId, name = u.DisplayName }).ToArray();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (CanEdit && _mentionsFor != CaseId)
+        {
+            _mentionsFor = CaseId;
+            _mentionable = await Cases.MentionableAsync(CaseId);
+        }
+    }
+
+    // The focused note, or the current version of an earlier one that was named (the link may predate an edit).
+    private bool IsFocused(AnalystNote n)
+    {
+        if (FocusNoteId is not { } f) return false;
+        for (AnalystNote? v = n; v is not null; v = v.SupersedesNoteId is { } prior ? Notes.FirstOrDefault(x => x.Id == prior) : null)
+            if (v.Id == f) return true;
+        return false;
+    }
 
     private string NoteAddEditorId => $"note-md-{CaseId}";
     private static string NoteEditEditorId(Guid noteId) => $"noteedit-md-{noteId}";
@@ -127,6 +164,14 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await ReconcileEditors();
+
+        // INV-37: bring the linked note into view once.
+        if (!_focusDone && Notes.FirstOrDefault(n => n.IsCurrent && IsFocused(n)) is { } focus)
+        {
+            _focusDone = true;
+            try { await JS.InvokeVoidAsync("imMotion.scrollToId", $"note-{focus.Id}"); }
+            catch (JSException) { /* best effort */ }
+        }
 
         // U-14: place the caret in the composer when reached via the 'n' shortcut (once it's mounted).
         if (AutofocusComposer && _mdEditors.Contains(NoteAddEditorId))
@@ -157,7 +202,7 @@ else
         foreach (var (id, seed) in desired)
         {
             if (_mdEditors.Contains(id)) continue;
-            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed, new { entities = EntityCandidates }); _mdEditors.Add(id); }
+            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed, new { mentions = MentionCandidates, entities = EntityCandidates }); _mdEditors.Add(id); }
             catch (JSException) { /* editor is a progressive enhancement */ }
         }
     }
@@ -185,7 +230,8 @@ else
         try { _noteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteAddEditorId); }
         catch (JSException) { /* editor not mounted; fall back to bound value */ }
         if (string.IsNullOrWhiteSpace(_noteBody)) return;
-        try { await Cases.AddNoteAsync(CaseId, _noteBody); }
+        var mentions = await MentionsIn(NoteAddEditorId);
+        try { await Cases.AddNoteAsync(CaseId, _noteBody, mentions); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't add the note. {ex.Message}"); return; }
         _noteBody = "";
         ComposerDrafts?.Remove(NoteAddEditorId); // FR-02: the draft is now saved
@@ -193,6 +239,13 @@ else
         Toasts.Success("Note added");
         try { await JS.InvokeVoidAsync("markdownEditor.setValue", NoteAddEditorId, ""); }
         catch (JSException) { /* best effort */ }
+    }
+
+    // The teammates whose "@Name" appears in the editor's text (an edit keeps its earlier mentions; only new ones notify).
+    private async Task<string[]> MentionsIn(string editorId)
+    {
+        try { return await JS.InvokeAsync<string[]>("markdownEditor.getMentions", editorId); }
+        catch (JSException) { return []; }
     }
 
     private async Task StartNoteEdit(AnalystNote note)
@@ -215,7 +268,8 @@ else
         try { _editNoteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteEditEditorId(noteId)); }
         catch (JSException) { /* fall back to bound value */ }
         if (string.IsNullOrWhiteSpace(_editNoteBody)) return;
-        try { await Cases.EditNoteAsync(CaseId, noteId, _editNoteBody); }
+        var mentions = await MentionsIn(NoteEditEditorId(noteId));
+        try { await Cases.EditNoteAsync(CaseId, noteId, _editNoteBody, mentions); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't save the note. {ex.Message}"); return; }
         CancelNoteEdit();
         await OnChanged.InvokeAsync();

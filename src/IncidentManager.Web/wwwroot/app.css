@@ -2534,3 +2534,6 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 .killchain-strip-toggle { color: var(--im-accent-text); }
 .killchain-strip:hover .killchain-strip-toggle { text-decoration: underline; }
 .killchain-strip:focus-visible { outline: none; box-shadow: 0 0 0 .2rem var(--im-focus); border-radius: var(--bs-border-radius); }
+
+/* INV-37: the note a mention email links to, marked when the case opens on it. */
+.im-note-focus { border-color: var(--im-accent); box-shadow: 0 0 0 .15rem var(--im-focus); }

@@ -110,7 +110,6 @@ public sealed class ActivityFeedService
                 "SeverityChange" => "Changed the severity",
                 "MaterialityChange" => "Recorded a materiality determination",
                 "CaseDataElement" => "Updated the impact assessment",
-                "CaseComment" => "Posted in the discussion",
                 "CaseLink" => "Linked a related case",
                 "PostIncidentReview" => "Started the post-incident review",
                 "ImprovementAction" => "Added an improvement action",

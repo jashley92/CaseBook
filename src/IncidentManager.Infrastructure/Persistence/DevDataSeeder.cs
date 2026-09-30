@@ -56,8 +56,8 @@ public static class DevDataSeeder
     /// Demo-only showcase (not seeded in production or in the test base set): turns on the notification-deadline
     /// clock, tags the notification jurisdictions the demo data elements trigger, records a materiality
     /// determination on the two breaches (one with a running per-jurisdiction deadline, one already reported),
-    /// and adds a short discussion thread — so the materiality badge, the regulatory-notification countdown,
-    /// the dashboard compliance block, and the Discussion tab all have real content to show.
+    /// and adds a note that @mentions a teammate — so the materiality badge, the regulatory-notification countdown,
+    /// the dashboard compliance block, and a mention on the Notes tab all have real content to show.
     /// </summary>
     public static async Task SeedComplianceShowcaseAsync(AppDbContext db, IClock clock, CancellationToken ct = default)
     {
@@ -102,17 +102,13 @@ public static class DevDataSeeder
                 "NY resident NPI (SSNs) confirmed exposed, with a reasonable likelihood of harm. NYDFS Part 500 applies.",
                 "legal1", now.AddDays(-1));
 
-            db.CaseComments.Add(new CaseComment
+            // INV-37: a note pointing a teammate at the work (no thread; the conversation happens in chat).
+            phishing.Notes.Add(new AnalystNote
             {
-                CaseId = phishing.Id, Body = "Handing off to day shift. Mailbox rules cleared, creds reset. "
-                    + "Legal has the affected-user list; awaiting the materiality call.",
-                CreatedBy = "ic1", CreatedAtUtc = now.AddDays(-2)
-            });
-            db.CaseComments.Add(new CaseComment
-            {
-                CaseId = phishing.Id, Body = "Disclosure committee determined this **material**. NYDFS 72h clock is running. "
-                    + "Please confirm the NY + federal notification drafts.",
-                CreatedBy = "legal1", CreatedAtUtc = now.AddDays(-1)
+                CaseId = phishing.Id, MentionsCsv = "analyst1",
+                Body = "The Disclosure Committee found this **material**, so the NYDFS 72-hour clock is running. "
+                    + "@Alex Analyst the NY and federal notification drafts need the final affected count from the sign-in review.",
+                CreatedBy = "ic1", CreatedAtUtc = now.AddDays(-1)
             });
             await db.SaveChangesAsync(ct);
         }
