@@ -112,7 +112,10 @@ public sealed class CaseNotifications : ICaseNotifications
             .ToList();
         if (recipients.Count == 0) return;
 
-        var excerpt = noteExcerpt.Length > 280 ? noteExcerpt[..280] + "…" : noteExcerpt;
+        // INV-39: notes are Markdown; email and chat get plain text (links and tags print their labels, never
+        // an entity: / evidence: id). Flatten first, then excerpt.
+        var plain = Application.Content.RichText.ToText(noteExcerpt).Trim();
+        var excerpt = plain.Length > 280 ? plain[..280] + "…" : plain;
         var byName = _users.DisplayFor(byUserId);
         var url = NoteUrl(c.Id, noteId);
 
@@ -158,7 +161,7 @@ public sealed class CaseNotifications : ICaseNotifications
             ["Recipient"] = _users.DisplayFor(toUserId),
             ["CaseNumber"] = c.CaseNumber,
             ["CaseTitle"] = c.Title,
-            ["Handoff"] = handoff,
+            ["Handoff"] = Application.Content.RichText.ToText(handoff).Trim(),   // INV-39: Markdown → plain text
             ["CaseUrl"] = CaseUrl(c.Id) ?? "",
         };
         var message = await _composer.ComposeAsync("handoff", [to], tokens, CaseUrl(c.Id), null, ct);

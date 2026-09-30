@@ -590,4 +590,27 @@ public class CaseNotificationsTests
         chat.Sent.Should().ContainSingle();
         chat.Sent[0].Title.Should().Contain("Mention");
     }
+
+    // INV-39: Markdown in a note or handoff reaches email and chat as plain text — labels, not entity:/evidence: ids.
+    [Fact]
+    public async Task Mention_and_handoff_emails_and_chat_carry_plain_text_not_markdown_links()
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new CapturingChatNotifier();
+        var users = new FakeUserDirectory().Add("alice", "Alice", "alice@insurer.example").Add("bob", "Bob", "bob@insurer.example");
+        var n = Build(sender, new EmailOptions(), users, chat, ChatConfig("Mentions"));
+        var entity = Guid.NewGuid();
+        var evidence = Guid.NewGuid();
+        var md = $"**Session** from [Jane Doe (Finance)](entity:{entity}), see [signin.csv](evidence:{evidence}).";
+
+        await n.OnMentionedAsync(NewCase(), "author", ["alice"], md, Guid.NewGuid());
+        await n.OnHandedOffAsync(NewCase(), "author", "bob", "Where it stands: " + md);
+
+        foreach (var body in sender.Sent.Select(m => m.HtmlBody).Append(chat.Sent.Single().Text))
+        {
+            body.Should().Contain("Jane Doe (Finance)").And.Contain("signin.csv");
+            body.Should().NotContain("entity:").And.NotContain("evidence:").And.NotContain("**").And.NotContain("](");
+        }
+        sender.Sent.Should().HaveCount(2);
+    }
 }
