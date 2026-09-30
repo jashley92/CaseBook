@@ -30,5 +30,8 @@ public class UserDisplayPreference : Entity
     /// <summary>Compact list rows rather than comfortable.</summary>
     public bool CompactRows { get; set; }
 
+    /// <summary>INV-26: the timeline's attack chain is shown opened rather than as its one-line strip.</summary>
+    public bool AttackChainOpen { get; set; }
+
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }

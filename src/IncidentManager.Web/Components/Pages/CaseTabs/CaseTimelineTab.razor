@@ -17,54 +17,154 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @inject ISeverityLabels SevLabels
+@inject IncidentManager.Application.Preferences.UserDisplayPreferenceService DisplayPrefs
 
-<div class="im-seg mb-2" role="group" aria-label="Timeline lens">
-    <button class="btn btn-sm @(_tlLens is null && !_msOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens is null && !_msOnly)"
-            @onclick="() => SwitchLens(null)">All <span class="tl-count">@(CurrentEntries.Count() + Milestones().Count)</span></button>
-    <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Event)"
-            @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Disclosure" : "Event") <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Event)</span></button>
-    <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Investigation)"
-            @onclick="() => SwitchLens(TimelineKind.Investigation)">Investigation <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Investigation)</span></button>
-    <button class="btn btn-sm @(_msOnly ? "active" : "")" aria-pressed="@Ui.Aria(_msOnly)"
-            @onclick="SwitchToMilestones">Milestones <span class="tl-count">@Milestones().Count</span></button>
-</div>
-<p class="text-muted small">
-    @(_msOnly
-        ? "Response milestones from the case record: classification, severity and phase changes, stage gates, materiality, reporting, completed tasks and evidence."
-        : _tlLens switch
+@* INV-26: one toolbar row — the lens, the reading controls and "Add" — so the history starts near the top of the
+   tab. Filters open in a second row only when asked for (or while one is set); each lens explains itself on hover. *@
+@{
+    // Only current versions are shown; superseded Investigation edits live in history (below) and the audit trail.
+    var tlAll = _msOnly ? new List<TimelineEntry>()
+        : Case.TimelineEntries.Where(x => (_tlLens is null || x.Kind == _tlLens) && x.IsCurrent).ToList();
+    var tlView = FilteredTimeline(tlAll)
+        .Where(e => ChangedSinceUtc is not { } since || (e.ModifiedAtUtc ?? e.CreatedAtUtc) > since).ToList();
+    // INV-01: response milestones, derived from the case record. Shown in All (unless hidden) and their own lens;
+    // an entry filter (type / tactic / source) doesn't apply to them, so they step aside while one is active.
+    var msAll = _msOnly || (_tlLens is null && _showMilestones) ? Milestones() : [];
+    var msView = FiltersActive ? []
+        : ChangedSinceUtc is { } msSince ? msAll.Where(m => (m.RecordedAtUtc ?? m.AtUtc) > msSince).ToList() : msAll;
+    var rows = MergeRows(tlView, msView);
+    var totalAll = tlAll.Count + msAll.Count;
+    // The attack chain is always event-only, regardless of lens (shown under All and Event).
+    var tlChain = Case.TimelineEntries.Where(x => x.Kind == TimelineKind.Event && x.IsCurrent)
+        .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc).ToList();
+}
+
+<div class="tl-toolbar">
+    <div class="im-seg" role="group" aria-label="Timeline lens">
+        <button class="btn btn-sm @(_tlLens is null && !_msOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens is null && !_msOnly)"
+                title="The full chronology: what happened, what the team did, and the response milestones, interleaved."
+                @onclick="() => SwitchLens(null)">All <span class="tl-count">@(CurrentEntries.Count() + Milestones().Count)</span></button>
+        <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Event)"
+                title="@(IsThirdParty ? "The vendor-disclosure narrative: what the vendor reported and what we confirmed about our data." : "The attack narrative: facts and timing of what happened.")"
+                @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Disclosure" : "Event") <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Event)</span></button>
+        <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Investigation)"
+                title="Analyst and team actions during the investigation."
+                @onclick="() => SwitchLens(TimelineKind.Investigation)">Investigation <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Investigation)</span></button>
+        <button class="btn btn-sm @(_msOnly ? "active" : "")" aria-pressed="@Ui.Aria(_msOnly)"
+                title="Response milestones from the case record: classification, severity and phase changes, stage gates, materiality, reporting, completed tasks and evidence."
+                @onclick="SwitchToMilestones">Milestones <span class="tl-count">@Milestones().Count</span></button>
+    </div>
+    @if (totalAll > 0)
+    {
+        @if (!_msOnly)
         {
-            TimelineKind.Event => IsThirdParty
-                ? "The vendor-disclosure narrative: what the vendor reported and what we confirmed about our data."
-                : "The attack narrative: facts and timing of what happened.",
-            TimelineKind.Investigation => "Analyst and team actions during the investigation.",
-            _ => "The full chronology: what happened, what the team did, and the response milestones, interleaved."
-        })
-</p>
+            <button type="button" class="btn btn-sm @(FiltersActive ? "btn-secondary" : "btn-outline-secondary")" aria-expanded="@Ui.Aria(FiltersShown)"
+                    aria-controls="tl-filter-row" @onclick="() => _showFilters = !_showFilters">
+                <span class="bi bi-funnel" aria-hidden="true"></span> Filter@(FilterCount > 0 ? $" ({FilterCount})" : "")
+            </button>
+        }
+        @if (Case.DetectedAtUtc is not null)
+        {
+            @* INV-03: responders talk in time since detection ("T+26h we had the session"). *@
+            <div class="im-seg" role="group" aria-label="How times are shown">
+                <button type="button" class="btn btn-sm @(_tPlus ? "" : "active")" aria-pressed="@Ui.Aria(!_tPlus)" @onclick="() => _tPlus = false">Clock</button>
+                <button type="button" class="btn btn-sm @(_tPlus ? "active" : "")" aria-pressed="@Ui.Aria(_tPlus)" @onclick="() => _tPlus = true"
+                        title="Time since the case was detected (T+ detection)">T+</button>
+            </div>
+        }
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                @onclick="() => _tlOldestFirst = !_tlOldestFirst"
+                title="@(_tlOldestFirst ? "Oldest first. Click for newest first." : "Newest first. Click for oldest first.")">
+            <span class="bi @(_tlOldestFirst ? "bi-sort-down-alt" : "bi-sort-up-alt")" aria-hidden="true"></span>
+            @(_tlOldestFirst ? "Oldest" : "Newest")
+        </button>
+        @if (ChangedSinceUtc is { } sinceChip)
+        {
+            @* INV-04: only what was added or changed since the viewer last had the case open. *@
+            <span class="im-badge im-b-info">
+                Changed since @TimeDisp.Short(sinceChip)
+                <button type="button" class="btn-close btn-close-sm ms-1 align-middle" style="font-size:.55rem" aria-label="Show everything"
+                        @onclick="OnClearSince"></button>
+            </span>
+        }
+    }
+    @if (!_msOnly && _tlEditId is null)
+    {
+        <AuthorizeView Policy="@Policies.EditCases">
+            @if (!ComposerVisible)
+            {
+                <button type="button" class="btn btn-sm btn-primary ms-auto" aria-expanded="false" aria-controls="timeline-dropzone"
+                        title="Add @(IsThirdParty ? "a disclosure" : "an event") step or an investigation entry. You can also paste a screenshot."
+                        @onclick="() => _composerOpen = true">
+                    <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
+                </button>
+            }
+            else if (Case.TimelineEntries.Any(x => x.IsCurrent))
+            {
+                <button type="button" class="btn btn-sm btn-link ms-auto" aria-expanded="true" aria-controls="timeline-dropzone"
+                        @onclick="() => _composerOpen = false">Hide form</button>
+            }
+        </AuthorizeView>
+    }
+</div>
+@if (totalAll > 0 && !_msOnly && FiltersShown)
+{
+    <div class="tl-filters" id="tl-filter-row">
+        @if (_tlLens is null)
+        {
+            <div class="form-check form-switch mb-0 small" title="Show classification, phase, gate and other response milestones in the chronology">
+                <input class="form-check-input" type="checkbox" role="switch" id="tl-show-ms" @bind="_showMilestones" />
+                <label class="form-check-label" for="tl-show-ms">Milestones</label>
+            </div>
+        }
+        @if (_tlLens == TimelineKind.Event && !IsThirdParty)
+        {
+                <select class="form-select form-select-sm w-auto" @bind="_tlFilterTacticStr" aria-label="Filter by tactic">
+                    <option value="">All tactics</option>
+                    @foreach (var t in Enum.GetValues<MitreTactic>().Where(x => x != MitreTactic.Unspecified))
+                    {
+                        <option value="@t">@Ui.Label(t)</option>
+                    }
+                </select>
+        }
+        else if (_tlLens == TimelineKind.Investigation || (_tlLens == TimelineKind.Event && IsThirdParty))
+        {
+                <select class="form-select form-select-sm w-auto" @bind="_tlFilterTypeStr" aria-label="Filter by type">
+                    <option value="">All types</option>
+                    @* FR-23: the Disclosure lens filters by its milestone set; Investigation by the IR-type set. *@
+                    @foreach (var t in (_tlLens == TimelineKind.Event ? (IReadOnlyList<TimelineEntryType>)DisclosureOrder : InvestigationTypeOptions()))
+                    {
+                        <option value="@t">@Ui.Label(t)</option>
+                    }
+                </select>
+        }
+        <input class="form-control form-control-sm w-auto" style="max-width:14rem" @bind="_tlFilterSource"
+               @bind:event="oninput" placeholder="Filter by source…" aria-label="Filter by source" />
+        @if (Case.Entities.Count > 0)
+        {
+            @* INV-03: everything that touches one entity — as actor or target, or tagged inline with # in the text. *@
+                <select class="form-select form-select-sm w-auto" style="max-width:16rem" @bind="_tlFilterEntityStr" aria-label="Filter by entity">
+                    <option value="">Any entity</option>
+                    @foreach (var en in Case.Entities.OrderBy(x => x.Type).ThenBy(EntityShort))
+                    {
+                        <option value="@en.Id">@Ui.Label(en.Type): @EntityShort(en)</option>
+                    }
+                </select>
+        }
+        @if (FiltersActive)
+        {
+            <button type="button" class="btn btn-sm btn-link text-decoration-none px-1"
+                    @onclick="ClearTimelineFilters">Clear</button>
+            <span class="text-muted small">@tlView.Count of @tlAll.Count@(msAll.Count > 0 ? " · milestones hidden while filtering" : "")</span>
+        }
+    </div>
+}
 
 @if (!_msOnly)
 {
 <AuthorizeView Policy="@Policies.EditCases">
-    @* Design review P5: the composer folds behind a one-line bar at every width, so the history starts at the
-       top of the tab. It opens for a new case with no entries yet, when editing, and when a screenshot is pasted. *@
-    @if (_tlEditId is null)
-    {
-        @if (!ComposerVisible)
-        {
-            <button type="button" class="tl-add-bar" aria-expanded="false" aria-controls="timeline-dropzone"
-                    @onclick="() => _composerOpen = true">
-                <span class="bi bi-plus-lg" aria-hidden="true"></span>
-                <span>Add a step: @(IsThirdParty ? "disclosure" : "event") or investigation entry</span>
-                <span class="ms-auto small">or paste a screenshot</span>
-            </button>
-        }
-        else
-        {
-            <div class="d-flex justify-content-end mb-1">
-                <button type="button" class="btn btn-sm btn-link p-0" aria-expanded="true" aria-controls="timeline-dropzone"
-                        @onclick="() => _composerOpen = false">Hide form</button>
-            </div>
-        }
-    }
+    @* Design review P5 / INV-26: the composer stays folded (opened from the toolbar's Add) so the history starts at
+       the top of the tab. It opens for a new case with no entries yet, when editing, and when a screenshot is pasted. *@
     <div id="timeline-dropzone" class="card mb-3 @(_tlEditId is not null ? "border-primary" : "") @(ComposerVisible ? "" : "d-none")">
         <div class="card-body">
             @* U-40: hidden sink the paste shim feeds a pasted screenshot into; staged then attached on Add. *@
@@ -302,33 +402,28 @@
 </AuthorizeView>
 }
 
-@{
-    // Only current versions are shown; superseded Investigation edits live in history (below) and the audit trail.
-    var tlAll = _msOnly ? new List<TimelineEntry>()
-        : Case.TimelineEntries.Where(x => (_tlLens is null || x.Kind == _tlLens) && x.IsCurrent).ToList();
-    var tlView = FilteredTimeline(tlAll)
-        .Where(e => ChangedSinceUtc is not { } since || (e.ModifiedAtUtc ?? e.CreatedAtUtc) > since).ToList();
-    // INV-01: response milestones, derived from the case record. Shown in All (unless hidden) and their own lens;
-    // an entry filter (type / tactic / source) doesn't apply to them, so they step aside while one is active.
-    var msAll = _msOnly || (_tlLens is null && _showMilestones) ? Milestones() : [];
-    var msView = FiltersActive ? []
-        : ChangedSinceUtc is { } msSince ? msAll.Where(m => (m.RecordedAtUtc ?? m.AtUtc) > msSince).ToList() : msAll;
-    var rows = MergeRows(tlView, msView);
-    var totalAll = tlAll.Count + msAll.Count;
-    // The attack chain is always event-only, regardless of lens (shown under All and Event).
-    var tlChain = Case.TimelineEntries.Where(x => x.Kind == TimelineKind.Event && x.IsCurrent)
-        .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc).ToList();
-}
 
 @* The attack chain is a first-party kill-chain view; a third-party/vendor case (E-32) has none. *@
 @if (_tlLens != TimelineKind.Investigation && !_msOnly && tlChain.Count > 0 && !IsThirdParty)
 {
-    <div class="killchain-wrap mb-3">
-        <div class="d-flex align-items-center justify-content-between mb-1">
-            <span class="fw-semibold small"><span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>Attack chain</span>
-            <button type="button" class="btn btn-sm btn-link text-decoration-none py-0"
-                    @onclick="() => _showKillChain = !_showKillChain">@(_showKillChain ? "Hide" : "Show")</button>
-        </div>
+    <div class="killchain-wrap mb-3 @(_showKillChain ? "" : "killchain-collapsed")">
+        @* INV-26: folded, it's one line — the tactics in order — so the history below stays in view. *@
+        <button type="button" class="killchain-strip" aria-expanded="@Ui.Aria(_showKillChain)" @onclick="ToggleKillChain">
+            <span class="fw-semibold small text-nowrap"><span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>Attack chain</span>
+            <span class="text-muted small text-nowrap">@IncidentManager.Application.Common.Plural.Of(tlChain.Count, "step")</span>
+            @if (!_showKillChain)
+            {
+                <span class="killchain-strip-tactics small">
+                    @for (var i = 0; i < tlChain.Count; i++)
+                    {
+                        var tac = PrimaryTactic(tlChain[i]);
+                        @if (i > 0) { <span class="text-muted" aria-hidden="true"> → </span> }
+                        <span style="color:@Ui.TacticColor(tac)">@Ui.Label(tac)</span>
+                    }
+                </span>
+            }
+            <span class="small ms-auto text-nowrap killchain-strip-toggle">@(_showKillChain ? "Hide" : "Show") <span class="bi @(_showKillChain ? "bi-chevron-up" : "bi-chevron-down")" aria-hidden="true"></span></span>
+        </button>
         @if (_showKillChain)
         {
             <div class="killchain">
@@ -373,90 +468,6 @@
                     </div>
                 }
             </div>
-        }
-    </div>
-}
-
-@if (totalAll > 0)
-{
-    <div class="tl-filters d-flex flex-wrap align-items-center gap-2 mb-3">
-        @if (_msOnly)
-        {
-            @* Milestones carry no type, tactic or source, so only the order applies. *@
-        }
-        else if (_tlLens == TimelineKind.Event && !IsThirdParty)
-        {
-            <select class="form-select form-select-sm w-auto" @bind="_tlFilterTacticStr" aria-label="Filter by tactic">
-                <option value="">All tactics</option>
-                @foreach (var t in Enum.GetValues<MitreTactic>().Where(x => x != MitreTactic.Unspecified))
-                {
-                    <option value="@t">@Ui.Label(t)</option>
-                }
-            </select>
-        }
-        else if (_tlLens == TimelineKind.Investigation || (_tlLens == TimelineKind.Event && IsThirdParty))
-        {
-            <select class="form-select form-select-sm w-auto" @bind="_tlFilterTypeStr" aria-label="Filter by type">
-                <option value="">All types</option>
-                @* FR-23: the Disclosure lens filters by its milestone set; Investigation by the IR-type set. *@
-                @foreach (var t in (_tlLens == TimelineKind.Event ? (IReadOnlyList<TimelineEntryType>)DisclosureOrder : InvestigationTypeOptions()))
-                {
-                    <option value="@t">@Ui.Label(t)</option>
-                }
-            </select>
-        }
-        @if (!_msOnly)
-        {
-            <input class="form-control form-control-sm w-auto" style="max-width:14rem" @bind="_tlFilterSource"
-                   @bind:event="oninput" placeholder="Filter by source…" aria-label="Filter by source" />
-        }
-        @if (!_msOnly && Case.Entities.Count > 0)
-        {
-            @* INV-03: everything that touches one entity — as actor or target, or tagged inline with # in the text. *@
-            <select class="form-select form-select-sm w-auto" style="max-width:16rem" @bind="_tlFilterEntityStr" aria-label="Filter by entity">
-                <option value="">Any entity</option>
-                @foreach (var en in Case.Entities.OrderBy(x => x.Type).ThenBy(EntityShort))
-                {
-                    <option value="@en.Id">@Ui.Label(en.Type): @EntityShort(en)</option>
-                }
-            </select>
-        }
-        @if (_tlLens is null && !_msOnly)
-        {
-            <div class="form-check form-switch mb-0 small" title="Show classification, phase, gate and other response milestones in the chronology">
-                <input class="form-check-input" type="checkbox" role="switch" id="tl-show-ms" @bind="_showMilestones" />
-                <label class="form-check-label" for="tl-show-ms">Milestones</label>
-            </div>
-        }
-        @if (Case.DetectedAtUtc is not null)
-        {
-            @* INV-03: responders talk in time since detection ("T+26h we had the session"). *@
-            <div class="im-seg" role="group" aria-label="How times are shown">
-                <button type="button" class="btn btn-sm @(_tPlus ? "" : "active")" aria-pressed="@Ui.Aria(!_tPlus)" @onclick="() => _tPlus = false">Clock</button>
-                <button type="button" class="btn btn-sm @(_tPlus ? "active" : "")" aria-pressed="@Ui.Aria(_tPlus)" @onclick="() => _tPlus = true"
-                        title="Time since the case was detected">T+ detection</button>
-            </div>
-        }
-        <button type="button" class="btn btn-sm btn-outline-secondary"
-                @onclick="() => _tlOldestFirst = !_tlOldestFirst"
-                title="Toggle chronological order">
-            <span class="bi @(_tlOldestFirst ? "bi-sort-down-alt" : "bi-sort-up-alt")" aria-hidden="true"></span>
-            @(_tlOldestFirst ? "Oldest first" : "Newest first")
-        </button>
-        @if (ChangedSinceUtc is { } sinceChip)
-        {
-            @* INV-04: only what was added or changed since the viewer last had the case open. *@
-            <span class="im-badge im-b-info">
-                Changed since @TimeDisp.Short(sinceChip)
-                <button type="button" class="btn-close btn-close-sm ms-1 align-middle" style="font-size:.55rem" aria-label="Show everything"
-                        @onclick="OnClearSince"></button>
-            </span>
-        }
-        @if (FiltersActive)
-        {
-            <button type="button" class="btn btn-sm btn-link text-decoration-none px-1"
-                    @onclick="ClearTimelineFilters">Clear</button>
-            <span class="text-muted small">@tlView.Count of @tlAll.Count@(msAll.Count > 0 ? " · milestones hidden while filtering" : "")</span>
         }
     </div>
 }
@@ -847,7 +858,25 @@ else
     private MitreTactic? _tlFilterTactic;
     private string _tlFilterSource = "";
     private bool _tlOldestFirst;   // default newest-first (most recent activity at top)
-    private bool _showKillChain = true;
+    private bool _showKillChain;    // INV-26: folded by default; the user's choice is remembered (display preferences)
+    private bool _showFilters;
+    // Open while a filter is set, or while milestones are hidden from the chronology, so neither is invisible.
+    private bool FiltersShown => _showFilters || FiltersActive || (_tlLens is null && !_showMilestones);
+    private int FilterCount => (_tlFilterType is not null ? 1 : 0) + (_tlFilterTactic is not null ? 1 : 0)
+                               + (string.IsNullOrWhiteSpace(_tlFilterSource) ? 0 : 1) + (_tlFilterEntity is not null ? 1 : 0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _showKillChain = await DisplayPrefs.GetAttackChainOpenAsync(); }
+        catch (Exception) { /* a preference is a convenience; the folded default stands */ }
+    }
+
+    private async Task ToggleKillChain()
+    {
+        _showKillChain = !_showKillChain;
+        try { await DisplayPrefs.SetAttackChainOpenAsync(_showKillChain); }
+        catch (Exception) { /* not saved; the choice still holds for this view */ }
+    }
 
     private string InvEditorId => $"inv-md-{CaseId}";
     private readonly HashSet<string> _mdEditors = new();

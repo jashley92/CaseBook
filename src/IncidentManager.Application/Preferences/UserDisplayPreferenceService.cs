@@ -36,6 +36,33 @@ public sealed class UserDisplayPreferenceService
             .FirstOrDefaultAsync(ct);
     }
 
+    /// <summary>INV-26: whether the user keeps the timeline's attack chain open (folded unless they've opened it).</summary>
+    public async Task<bool> GetAttackChainOpenAsync(CancellationToken ct = default)
+    {
+        if (!_user.IsAuthenticated) return false;
+        using var db = _factory.CreateDbContext();
+        return await db.UserDisplayPreferences.AsNoTracking()
+            .Where(p => p.UserId == _user.UserId).Select(p => p.AttackChainOpen).FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>INV-26: remembers whether the user keeps the timeline's attack chain open. Kept apart from
+    /// <see cref="SaveMineAsync"/>, which the browser calls with the settings it holds.</summary>
+    public async Task SetAttackChainOpenAsync(bool open, CancellationToken ct = default)
+    {
+        if (!_user.IsAuthenticated) return;
+        using var db = _factory.CreateDbContext();
+        var row = await db.UserDisplayPreferences.FirstOrDefaultAsync(p => p.UserId == _user.UserId, ct);
+        if (row is null)
+        {
+            row = new UserDisplayPreference { UserId = _user.UserId };
+            db.UserDisplayPreferences.Add(row);
+        }
+        else if (row.AttackChainOpen == open) return;
+        row.AttackChainOpen = open;
+        row.UpdatedAtUtc = _clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+    }
+
     /// <summary>Saves the current user's preferences, upserting their single row. A no-op when nothing changed.</summary>
     public async Task SaveMineAsync(DisplayPrefs prefs, CancellationToken ct = default)
     {

@@ -66,5 +66,20 @@ public sealed class UserDisplayPreferenceTests : IDisposable
         (await db.UserDisplayPreferences.CountAsync()).Should().Be(0);
     }
 
+    [Fact]
+    public async Task The_attack_chain_stays_folded_until_the_user_opens_it_and_the_browser_sync_keeps_their_choice()
+    {
+        var svc = NewService(_user);
+        (await svc.GetAttackChainOpenAsync()).Should().BeFalse("it's a one-line strip by default");
+
+        await svc.SetAttackChainOpenAsync(true);
+        (await svc.GetAttackChainOpenAsync()).Should().BeTrue();
+
+        // INV-26: the browser's display-settings sync doesn't know about it, so it mustn't reset it.
+        await svc.SaveMineAsync(new DisplayPrefs(true, false, false, false, false));
+        (await svc.GetAttackChainOpenAsync()).Should().BeTrue();
+        (await NewService(new TestCurrentUser { UserId = "analyst2" }).GetAttackChainOpenAsync()).Should().BeFalse();
+    }
+
     public void Dispose() => _connection.Dispose();
 }

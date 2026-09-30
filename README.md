@@ -67,7 +67,9 @@ drawn straight from the case record, so nothing is written twice. Work recorded 
 it happened: phase and classification changes take a "when it happened" time and can be corrected later, with a
 reason, while the time it was entered is kept and shown. A task's result, a note or a discussion comment goes
 onto the timeline in one step, entries cite the evidence behind them, and the report's investigation timeline
-is this same record.
+is this same record. One toolbar row holds the lens, the reading controls and **Add**; filters open on
+demand, and the attack chain folds to a one-line strip of its tactics (it stays open for anyone who opens it),
+so the history starts near the top of the tab.
 
 ![Timeline](docs/screenshots/timeline.png)
 

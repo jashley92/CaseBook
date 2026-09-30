@@ -2322,6 +2322,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("AttackChainOpen")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("CompactRows")
                         .HasColumnType("bit");
 
