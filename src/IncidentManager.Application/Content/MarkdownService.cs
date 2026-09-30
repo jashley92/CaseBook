@@ -40,6 +40,10 @@ public sealed class MarkdownService : IMarkdownService
     /// rendered as an inline chip rather than a navigable link.</summary>
     private const string EntityScheme = "entity:";
 
+    /// <summary>INV-33: the link scheme an evidence citation uses (e.g. <c>[mailbox-audit.csv](evidence:&lt;guid&gt;)</c>),
+    /// rendered as a file chip that opens the case's Evidence tab.</summary>
+    public const string EvidenceScheme = "evidence:";
+
     public string ToHtml(string? markdown, Guid? caseId = null)
     {
         if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
@@ -49,7 +53,8 @@ public sealed class MarkdownService : IMarkdownService
         {
             // Entity-tag links are rendered as chips (see EntityTagLinkRenderer), so they skip the
             // safe-scheme neutralisation; every other unsafe scheme is defused to an inert anchor.
-            if (link.Url is not null && link.Url.StartsWith(EntityScheme, StringComparison.OrdinalIgnoreCase))
+            if (link.Url is not null && (link.Url.StartsWith(EntityScheme, StringComparison.OrdinalIgnoreCase)
+                                         || link.Url.StartsWith(EvidenceScheme, StringComparison.OrdinalIgnoreCase)))
                 continue;
             if (!IsSafeUrl(link.Url))
                 link.Url = "#";
@@ -86,6 +91,17 @@ public sealed class MarkdownService : IMarkdownService
                 renderer.Write("<span class=\"bi bi-tag-fill\" aria-hidden=\"true\"></span>");
                 renderer.WriteChildren(link);
                 renderer.Write(navigable ? "</a>" : "</span>");
+                return;
+            }
+            // INV-33: an evidence citation — a file chip that opens the Evidence tab (the guid is validated first).
+            if (link.Url is { } ev && ev.StartsWith(EvidenceScheme, StringComparison.OrdinalIgnoreCase))
+            {
+                var ok = caseId is { } && Guid.TryParse(ev.Substring(EvidenceScheme.Length), out _);
+                renderer.Write(ok ? $"<a class=\"im-evidence-tag\" href=\"/cases/{caseId}?tab=Evidence\" title=\"Cited evidence\">"
+                                  : "<span class=\"im-evidence-tag\" title=\"Cited evidence\">");
+                renderer.Write("<span class=\"bi bi-paperclip\" aria-hidden=\"true\"></span>");
+                renderer.WriteChildren(link);
+                renderer.Write(ok ? "</a>" : "</span>");
                 return;
             }
             base.Write(renderer, link);

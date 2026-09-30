@@ -56,6 +56,18 @@
                 <label class="form-label small mb-0 fw-semibold" for="@($"brief-{part.Key}")">@part.Label</label>
                 @if (part.Key == SummaryKey) { @ReportNote() }
                 <span class="small text-muted ms-1">@part.Hint</span>
+                @if (part.Key == KnownKey && Case.Evidence.Count > 0)
+                {
+                    @* INV-33: what's known, with the evidence it rests on. Inserts a file chip at the end of the part. *@
+                    <select class="form-select form-select-sm d-inline-block w-auto ms-2 im-brief-cite" aria-label="Cite evidence in Known"
+                            value="" @onchange="e => CiteInKnown(e.Value?.ToString())">
+                        <option value="">Cite evidence…</option>
+                        @foreach (var ev in Case.Evidence.OrderByDescending(x => x.CreatedAtUtc))
+                        {
+                            <option value="@ev.Id">@ev.OriginalFileName</option>
+                        }
+                    </select>
+                }
                 <textarea id="@($"brief-{part.Key}")" class="form-control form-control-sm" rows="@part.Rows" maxlength="@CaseBrief.MaxPartLength"
                           value="@_draft[part.Key]" @oninput="e => _draft[part.Key] = e.Value?.ToString()"></textarea>
             </div>
@@ -141,6 +153,16 @@
 
     private const string SummaryKey = "summary";
     private const string OpenKey = "open";
+    private const string KnownKey = "known";
+
+    // INV-33: appends "[file](evidence:<id>)" to Known, on the current line.
+    private void CiteInKnown(string? evidenceId)
+    {
+        if (!Guid.TryParse(evidenceId, out var id) || Case.Evidence.FirstOrDefault(e => e.Id == id) is not { } ev) return;
+        var name = ev.OriginalFileName.Replace("[", "(").Replace("]", ")");
+        var current = (_draft.GetValueOrDefault(KnownKey) ?? "").TrimEnd();
+        _draft[KnownKey] = (current.Length == 0 ? "- " : current + " ") + $"[{name}](evidence:{id})";
+    }
     private const string NextKey = "next";
     private const int NextShown = 5;
 

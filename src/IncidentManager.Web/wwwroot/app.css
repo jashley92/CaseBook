@@ -2591,3 +2591,10 @@ button.im-phase-seg { cursor: pointer; }
 /* INV-32: an Unknown entity the case keeps referring to. */
 .im-review-hint { padding: .35rem .6rem; border-radius: var(--im-radius); background: var(--im-warn-bg); }
 .im-review-hint .bi { color: var(--im-warn); }
+
+/* INV-33: evidence cited in the brief (or any Markdown): a file chip that opens the Evidence tab. */
+.im-evidence-tag { display: inline-flex; align-items: baseline; gap: .28em; padding: 0 .4em; border-radius: .35em; font-size: .88em;
+                   font-weight: 600; line-height: 1.4; white-space: nowrap; text-decoration: none;
+                   background: var(--im-sev-info-bg); color: var(--im-sev-info-fg); border: 1px solid var(--im-sev-info-bd); }
+a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im-text); }
+.im-brief-cite { font-size: var(--im-text-xs); padding-block: .1rem; }

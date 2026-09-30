@@ -80,11 +80,17 @@
                                 }
                                 <div>
                                     @ev.OriginalFileName<br /><small class="text-muted">@ev.Description</small>
-                                    @{ var citedBy = Citations.Count(x => x.EvidenceId == ev.Id); }
-                                    @if (citedBy > 0)
+                                    @{
+                                        var citedBy = Citations.Count(x => x.EvidenceId == ev.Id);
+                                        var inBrief = BriefText?.Contains($"evidence:{ev.Id}", StringComparison.OrdinalIgnoreCase) == true;   // INV-33
+                                        var cites = new List<string>();
+                                        if (citedBy > 0) cites.Add(IncidentManager.Application.Common.Plural.Of(citedBy, "timeline entry", "timeline entries"));
+                                        if (inBrief) cites.Add("the brief");
+                                    }
+                                    @if (cites.Count > 0)
                                     {
                                         @* INV-10: what relies on this item. *@
-                                        <div class="small"><span class="im-badge im-b-info"><span class="bi bi-link-45deg" aria-hidden="true"></span> Cited by @IncidentManager.Application.Common.Plural.Of(citedBy, "timeline entry", "timeline entries")</span></div>
+                                        <div class="small"><span class="im-badge im-b-info"><span class="bi bi-link-45deg" aria-hidden="true"></span> Cited by @string.Join(" and ", cites)</span></div>
                                     }
                                 </div>
                             </div>
@@ -233,6 +239,8 @@
     [Parameter] public bool CanEdit { get; set; }
     /// <summary>INV-28: the case's tasks, to show the ones about each file.</summary>
     [Parameter] public IReadOnlyList<ActionItem> Tasks { get; set; } = [];
+    /// <summary>INV-33: the current brief's text (all parts), to say when it cites a file.</summary>
+    [Parameter] public string? BriefText { get; set; }
     private Guid? _taskFor;
 
     private const long MaxEvidenceBytes = 50 * 1024 * 1024;

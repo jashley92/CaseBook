@@ -146,7 +146,8 @@ public static class RichText
                     // Print a real link's URL after its text so the document stays useful on paper; entity tags
                     // (entity:<guid>) and bare links (text == URL) print just the label.
                     if (link.Url is { Length: > 0 } url && !link.IsImage
-                        && !url.StartsWith("entity:", StringComparison.OrdinalIgnoreCase) && url != label)
+                        && !url.StartsWith("entity:", StringComparison.OrdinalIgnoreCase)
+                        && !url.StartsWith("evidence:", StringComparison.OrdinalIgnoreCase) && url != label)
                         runs.Add(new RichRun($" ({url})", bold, italic));
                     break;
                 case HtmlEntityInline entity:

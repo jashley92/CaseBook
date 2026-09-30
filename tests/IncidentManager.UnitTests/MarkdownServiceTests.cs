@@ -92,6 +92,20 @@ public class MarkdownServiceTests
     }
 
     [Fact]
+    public void Evidence_citations_render_as_a_file_chip_that_opens_the_evidence_tab(/* INV-33 */)
+    {
+        var caseId = Guid.NewGuid();
+        var evidenceId = Guid.NewGuid();
+
+        var html = _md.ToHtml($"- Session from AS9009 [signin-export.csv](evidence:{evidenceId})", caseId);
+
+        html.Should().Contain("class=\"im-evidence-tag\"").And.Contain($"href=\"/cases/{caseId}?tab=Evidence\"")
+            .And.Contain("signin-export.csv").And.Contain("bi-paperclip");
+        _md.ToHtml("[x](evidence:not-a-guid)", caseId).Should().Contain("<span class=\"im-evidence-tag\"").And.NotContain("href");
+        _md.ToPlainText($"[signin-export.csv](evidence:{evidenceId})").Should().Contain("signin-export.csv").And.NotContain("evidence:");
+    }
+
+    [Fact]
     public void PlainText_strips_formatting_for_reports()
     {
         var text = _md.ToPlainText("# Title\n\n- alpha\n- beta\n\n**strong**");

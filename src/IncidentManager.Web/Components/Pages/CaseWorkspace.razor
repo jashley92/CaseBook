@@ -455,7 +455,8 @@ else
            in this parent and are threaded in; the paste/drop shim is still registered by this component's
            OnAfterRenderAsync against the element IDs the child keeps (evidence-dropzone / -file-input / -file-drop). *@
         <CaseEvidenceTab CaseId="_case.Id" EvidenceItems="_case.Evidence" Citations="_case.Citations" OnPreview="OpenShot"
-                         OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" CanEdit="_canEdit" Tasks="_case.ActionItems" />
+                         OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" CanEdit="_canEdit" Tasks="_case.ActionItems"
+                         BriefText="@CurrentBriefText()" />
     }
     else if (_activeTab == "Notes")
     {
@@ -2036,6 +2037,10 @@ else
         _timelineSince = _lastViewed;
         await SetTab("Timeline");
     }
+
+    // INV-33: the current brief's parts as one text, so the Evidence tab can say when the brief cites a file.
+    private string? CurrentBriefText() => _case?.Briefs.FirstOrDefault(b => b.IsCurrent) is { } b
+        ? string.Join('\n', b.Summary, b.WorkingAssessment, b.Known, b.OpenQuestions) : null;
 
     // INV-27: the timeline's changes since a given time (the brief's "N changes since").
     private async Task ShowSinceAt(DateTimeOffset since)
