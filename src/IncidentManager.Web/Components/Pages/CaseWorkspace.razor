@@ -1861,16 +1861,9 @@ else
         _hoPost = true;
         _hoTasks = true;
         _hoState = _case.Briefs.FirstOrDefault(b => b.IsCurrent)?.Situation ?? _case.Summary;
-        var since = _case.TimelineEntries.Where(e => e.IsCurrent && e.Type == TimelineEntryType.Handoff)
-            .Select(e => (DateTimeOffset?)e.CreatedAtUtc).Max() ?? _case.CreatedAtUtc;
-        var done = _case.TimelineEntries
-            .Where(e => e.IsCurrent && e.CreatedAtUtc > since && e.Type != TimelineEntryType.Handoff)
-            .OrderBy(e => e.OccurredAtUtc)
-            .Select(e => "- " + OneLine(e.Description))
-            .Concat(_case.ActionItems.Where(t => t.Status == ActionItemStatus.Done && t.CompletedAtUtc > since)
-                .Select(t => $"- Done: {t.Title}"))
-            .ToList();
-        _hoDone = done.Count > 0 ? string.Join("\n", done) : null;
+        // INV-21: the team's work and response milestones, not the adversary's steps.
+        _hoDone = HandoffDraft.DoneSince(_case, new MilestoneLabels(
+            c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m)), OneLine);
         var open = _case.ActionItems.Where(t => t.IsOpen).OrderBy(t => t.DueAtUtc)
             .Select(t => $"- {t.Title}" + (string.IsNullOrWhiteSpace(t.Owner) ? "" : $" ({Users.DisplayFor(t.Owner)})"))
             .ToList();
