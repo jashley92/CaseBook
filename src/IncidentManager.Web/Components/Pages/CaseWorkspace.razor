@@ -1866,7 +1866,7 @@ else
         _hoWatch = null;
         _hoPost = true;
         _hoTasks = true;
-        _hoState = _case.Briefs.FirstOrDefault(b => b.IsCurrent)?.Situation ?? _case.Summary;
+        _hoState = _case.Summary;   // INV-36: the summary is the brief's first part
         // INV-21: the team's work and response milestones, not the adversary's steps.
         _hoDone = HandoffDraft.DoneSince(_case, new MilestoneLabels(
             c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m)), OneLine);

@@ -446,7 +446,7 @@ public static class DevDataSeeder
         var c1 = Case.Open(2026, 1, "Phishing Wave", "Credential-phishing wave targeting Finance",
             Classification.AdverseEvent, Severity.Medium, CaseOrigin.InternalDetection, actor, now.AddDays(-6));
         c1.DetectionCaseId = "SIEM-40122";
-        c1.Summary = "Multiple finance users received look-alike O365 login prompts.";
+        c1.SetInitialSummary("Multiple finance users received look-alike O365 login prompts.", actor, now.AddDays(-6));   // brief v1
         c1.DataTypesInvolved = "Credentials; potential NPI";
         db.Cases.Add(c1);
         await db.SaveChangesAsync(ct);
@@ -552,7 +552,7 @@ public static class DevDataSeeder
         {
             VendorName = "ClaimStream SaaS", VendorContact = "security@claimstream.example", VendorReference = "CS-IR-9931"
         };
-        c2.Summary = "Vendor notified us of unauthorized access to a claims dataset that may include our policyholders.";
+        c2.SetInitialSummary("Vendor notified us of unauthorized access to a claims dataset that may include our policyholders.", actor, now.AddDays(-3));
         c2.DataTypesInvolved = "Policyholder PII; claims history";
         c2.ChangePhase(CasePhase.Triage, "Awaiting vendor scope confirmation", actor, now.AddDays(-3));
         db.Cases.Add(c2);
@@ -562,7 +562,7 @@ public static class DevDataSeeder
         var c3 = Case.Open(2026, 3, "Anomalous VPN Logins", "Impossible-travel VPN logins for one account",
             Classification.AdverseEvent, Severity.Low, CaseOrigin.InternalDetection, actor, now.AddDays(-1));
         c3.DetectionCaseId = "SIEM-40190";
-        c3.Summary = "Single account showed impossible-travel; likely benign VPN egress change, under review.";
+        c3.SetInitialSummary("Single account showed impossible-travel; likely benign VPN egress change, under review.", actor, now.AddDays(-1));
         db.Cases.Add(c3);
         await db.SaveChangesAsync(ct);
     }
@@ -618,7 +618,7 @@ public static class DevDataSeeder
             var year = created.Year;
             var c = Case.Open(year, NextSeq(year), s.Name, s.Title, s.Cls, s.Sev, s.Origin, actor, created);
             c.DetectionCaseId = $"SIEM-{40000 + rnd.Next(1000, 9999)}";
-            c.Summary = summary;
+            c.SetInitialSummary(summary, actor, created);
             c.DataTypesInvolved = s.Data;
             // PROD-42 showcase: the ATT&CK techniques each scenario typically involves, so the program-wide
             // heatmap and the quarterly program report have realistic data on a fresh demo database.

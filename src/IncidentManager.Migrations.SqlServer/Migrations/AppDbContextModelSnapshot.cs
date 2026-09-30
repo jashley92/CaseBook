@@ -704,7 +704,7 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
-                    b.Property<string>("Situation")
+                    b.Property<string>("Summary")
                         .HasMaxLength(8000)
                         .HasColumnType("nvarchar(max)");
 

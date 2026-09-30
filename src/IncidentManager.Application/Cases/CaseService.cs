@@ -495,7 +495,7 @@ public sealed class CaseService
             if (custom is not null) c.AssignCustomNumber(custom, _user.UserId, now);
             else if (isComplexEvent && attempt > 0) c.SetComplexEventNumber(now, attempt + 1);
 
-            c.Summary = request.Summary;
+            c.SetInitialSummary(request.Summary, _user.UserId, now);   // INV-36: brief v1 holds it
             c.DetectionCaseId = request.DetectionCaseId;
             c.DataTypesInvolved = request.DataTypesInvolved;
             c.ImpactedAssets = request.ImpactedAssets;
@@ -827,6 +827,8 @@ public sealed class CaseService
         if (expectedStamp is not null && c.DetailsConcurrencyStamp() != expectedStamp)
             throw new StaleEditException(c.DetailsConcurrencyStamp(),
                 "Someone else changed these details while you were editing. Reload and try again.");
+        // INV-36: a summary change is a new brief version, so the current one must be tracked here.
+        await db.CaseBriefs.Where(b => b.CaseId == id && b.IsCurrent).ToListAsync(ct);
         c.UpdateDetails(title, summary, detectionCaseId, dataTypesInvolved, impactedAssets,
             detectedAtUtc, occurredAtUtc, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
@@ -1651,7 +1653,7 @@ public sealed class CaseService
     /// editor opened from (null for the first brief); if someone saved a newer one meanwhile the save is refused
     /// (FR-06 style), so neither author's understanding is silently overwritten.
     /// </summary>
-    public async Task ReviseBriefAsync(Guid caseId, Guid? expectedCurrentId, string? situation, string? workingAssessment,
+    public async Task ReviseBriefAsync(Guid caseId, Guid? expectedCurrentId, string? summary, string? workingAssessment,
         string? known, string? openQuestions, string? nextSteps, CancellationToken ct = default)
     {
         Require();
@@ -1663,7 +1665,7 @@ public sealed class CaseService
         if (currentId != expectedCurrentId)
             throw new StaleEditException(currentId?.ToString() ?? "",
                 "Someone else saved a newer version of the brief while you were editing. Your text is still here; review theirs, then save again to replace it.");
-        c.ReviseBrief(situation, workingAssessment, known, openQuestions, nextSteps, _user.UserId, _clock.UtcNow);
+        c.ReviseBrief(summary, workingAssessment, known, openQuestions, nextSteps, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
 

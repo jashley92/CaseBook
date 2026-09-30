@@ -225,6 +225,38 @@ public sealed class TaskCompletionTests : IDisposable
         await empty.Should().ThrowAsync<ArgumentException>();
     }
 
+    // --- INV-36: the summary is the brief's first part, versioned with it ---
+
+    [Fact]
+    public async Task The_summary_is_versioned_with_the_brief_whichever_way_it_changes()
+    {
+        var created = await NewService().CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "Summ", Title = "Summary history", Classification = Classification.Incident,
+            Severity = Severity.High, Summary = "Lure reached Finance."
+        });
+        var svc = NewService();
+        var v1 = (await svc.GetDetailAsync(created.Id))!.Briefs.Single();
+        v1.Summary.Should().Be("Lure reached Finance.", "the summary written at intake is version 1");
+
+        await svc.ReviseBriefAsync(created.Id, v1.Id, "Lure reached 12 Finance mailboxes; one accessed.", "Opportunistic", null, null, null);
+        var afterRevise = await svc.GetDetailAsync(created.Id);
+        afterRevise!.Summary.Should().Be("Lure reached 12 Finance mailboxes; one accessed.", "the report reads the case's summary");
+
+        // A summary edit made through the details editor (or any other path) is a version too, carrying the rest.
+        await svc.UpdateDetailsAsync(created.Id, "Summary history", "Breach confirmed: NPI of 1,450 residents.", null, null, null,
+            afterRevise.DetectedAtUtc!.Value, null);
+        var briefs = (await svc.GetDetailAsync(created.Id))!.Briefs.OrderBy(b => b.Version).ToList();
+        briefs.Select(b => b.Summary).Should().Equal(
+            "Lure reached Finance.", "Lure reached 12 Finance mailboxes; one accessed.", "Breach confirmed: NPI of 1,450 residents.");
+        briefs.Should().ContainSingle(b => b.IsCurrent).Which.WorkingAssessment.Should().Be("Opportunistic");
+
+        // Saving details without touching the summary adds no version.
+        await svc.UpdateDetailsAsync(created.Id, "Retitled", "Breach confirmed: NPI of 1,450 residents.", null, null, null,
+            afterRevise.DetectedAtUtc!.Value, null);
+        (await svc.GetDetailAsync(created.Id))!.Briefs.Should().HaveCount(3);
+    }
+
     private sealed class NullUserDirectory : IncidentManager.Application.Abstractions.IUserDirectory
     {
         public Task TouchAsync(string userId, string displayName, string? upn, string? email, string rolesCsv, CancellationToken ct = default) => Task.CompletedTask;

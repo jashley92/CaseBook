@@ -285,9 +285,11 @@ public sealed class ReportingIntegrationTests : IDisposable
 
         await using (var db = NewContext())
         {
-            var brief = (await NewReportService(db).BuildPreviewModelAsync(caseId, null)).Brief!;
-            brief.Situation.Should().Be("Ransomware staging on two finance hosts");   // Markdown flattened
-            brief.Version.Should().Be(1);
+            var model = await NewReportService(db).BuildPreviewModelAsync(caseId, null);
+            // INV-36: the brief's first part is the case summary, printed once, as the summary.
+            model.Summary.TrimEnd().Should().Be("Ransomware staging on two finance hosts");   // Markdown flattened
+            model.Brief!.WorkingAssessment.Should().Be("Commodity loader");
+            model.Brief.Version.Should().Be(1);
         }
         (await WordXml()).Should().NotContain("Case Brief");
 

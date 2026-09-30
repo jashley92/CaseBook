@@ -29,9 +29,10 @@ public sealed record ReportTimelineItem(DateTimeOffset OccurredAtUtc, string Typ
         return text;
     }
 }
-/// <summary>INV-19: the case brief as plain text (Markdown flattened, indicators defanged), with its version.</summary>
+/// <summary>INV-19: the case brief as plain text (Markdown flattened, indicators defanged), with its version. INV-36:
+/// its first part is the case summary, which the report already prints as the summary, so it isn't repeated here.</summary>
 public sealed record ReportBrief(int Version, DateTimeOffset RevisedAtUtc, string RevisedBy,
-    string? Situation, string? WorkingAssessment, string? Known, string? OpenQuestions, string? NextSteps);
+    string? WorkingAssessment, string? Known, string? OpenQuestions, string? NextSteps);
 
 public sealed record ReportEvidenceItem(string FileName, long SizeBytes, string Sha256, DateTimeOffset UploadedAtUtc, string UploadedBy);
 /// <summary>An analyst note: <see cref="Body"/> is plain text; <see cref="Blocks"/> keeps its Markdown formatting for print.</summary>

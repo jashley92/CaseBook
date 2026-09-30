@@ -376,7 +376,13 @@ public class Case : AuditableEntity, IHashableEntity
         }
 
         Title = title.Trim();
-        Summary = summary;
+        // INV-36: a changed summary is a new brief version, so every summary the case has had stays readable.
+        if (Clean(summary) != Clean(Summary))
+        {
+            var cur = Briefs.FirstOrDefault(b => b.IsCurrent);
+            AddBriefVersion(summary, cur?.WorkingAssessment, cur?.Known, cur?.OpenQuestions, cur?.NextSteps,
+                actor, nowUtc, requireContent: false);
+        }
         DetectionCaseId = detectionCaseId;
         DataTypesInvolved = dataTypesInvolved;
         ImpactedAssets = impactedAssets;
@@ -1110,19 +1116,41 @@ public class Case : AuditableEntity, IHashableEntity
 
     /// <summary>
     /// INV-09: saves a new version of the case brief, superseding the current one (the prior version is kept,
-    /// with its time and author). A version must say something, and each part is capped in length.
+    /// with its time and author). A version must say something, and each part is capped in length. INV-36: the
+    /// first part is the case summary, so this also sets <see cref="Summary"/>.
     /// </summary>
-    public CaseBrief ReviseBrief(string? situation, string? workingAssessment, string? known, string? openQuestions,
+    public CaseBrief ReviseBrief(string? summary, string? workingAssessment, string? known, string? openQuestions,
         string? nextSteps, string actor, DateTimeOffset nowUtc)
+    {
+        var next = AddBriefVersion(summary, workingAssessment, known, openQuestions, nextSteps, actor, nowUtc,
+            requireContent: true);
+        Touch(actor, nowUtc);
+        return next;
+    }
+
+    /// <summary>
+    /// INV-36: the summary written when the case is opened, recorded as brief version 1 so the summary's history
+    /// starts there. Does nothing when there's no summary.
+    /// </summary>
+    public void SetInitialSummary(string? summary, string actor, DateTimeOffset nowUtc)
+    {
+        if (Clean(summary) is null) return;
+        AddBriefVersion(summary, null, null, null, null, actor, nowUtc, requireContent: true);
+    }
+
+    // A new brief version (superseding the current one) that also sets the case summary. A summary edit made
+    // outside the brief can clear the summary, so it may record a version with nothing in it.
+    private CaseBrief AddBriefVersion(string? summary, string? workingAssessment, string? known,
+        string? openQuestions, string? nextSteps, string actor, DateTimeOffset nowUtc, bool requireContent)
     {
         var next = new CaseBrief
         {
-            CaseId = Id, Situation = Clean(situation), WorkingAssessment = Clean(workingAssessment), Known = Clean(known),
+            CaseId = Id, Summary = Clean(summary), WorkingAssessment = Clean(workingAssessment), Known = Clean(known),
             OpenQuestions = Clean(openQuestions), NextSteps = Clean(nextSteps), CreatedBy = actor, CreatedAtUtc = nowUtc
         };
-        if (next.IsEmpty)
+        if (requireContent && next.IsEmpty)
             throw new ArgumentException("Write at least one part of the brief.");
-        if (new[] { next.Situation, next.WorkingAssessment, next.Known, next.OpenQuestions, next.NextSteps }
+        if (new[] { next.Summary, next.WorkingAssessment, next.Known, next.OpenQuestions, next.NextSteps }
                 .Any(p => p is { Length: > CaseBrief.MaxPartLength }))
             throw new ArgumentException($"Keep each part of the brief to {CaseBrief.MaxPartLength:N0} characters or fewer.");
 
@@ -1133,7 +1161,7 @@ public class Case : AuditableEntity, IHashableEntity
             next.SupersedesBriefId = current.Id;
         }
         Briefs.Add(next);
-        Touch(actor, nowUtc);
+        Summary = next.Summary;
         return next;
     }
 

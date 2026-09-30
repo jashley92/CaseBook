@@ -1300,6 +1300,17 @@ h1:focus {
 .im-brief-parts dt { font-weight: 600; font-size: 0.85rem; color: var(--bs-secondary-color, #6c757d); padding-top: 0.1rem; }
 .im-brief-parts dd { margin: 0; }
 .im-brief-parts dd > :last-child { margin-bottom: 0; }
+/* INV-36: the summary leads the brief, set apart because it's the part the case report prints. */
+.im-brief-summary {
+    border: 1px solid var(--im-border);
+    border-left: 3px solid var(--im-accent-strong);
+    border-radius: 0 var(--im-radius) var(--im-radius) 0;
+    padding: 0.6rem 0.85rem;
+    margin-bottom: 0.85rem;
+}
+.im-brief-summary-h { display: flex; align-items: center; gap: 0.5rem; font-size: var(--im-text-sm); margin-bottom: 0.25rem; }
+.im-brief-summary .md-body > :last-child { margin-bottom: 0; }
+.im-brief-report { font-size: var(--im-text-xs); color: var(--im-text-muted); white-space: nowrap; cursor: help; }
 @media (max-width: 640px) {
     .im-brief-parts { grid-template-columns: 1fr; gap: 0.1rem; }
     .im-brief-parts dd { margin-bottom: 0.5rem; }

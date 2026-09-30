@@ -2361,3 +2361,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930020835_RenameBriefSituationToSummary'
+)
+BEGIN
+    EXEC sp_rename N'[CaseBriefs].[Situation]', N'Summary', 'COLUMN';
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260930020835_RenameBriefSituationToSummary'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260930020835_RenameBriefSituationToSummary', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

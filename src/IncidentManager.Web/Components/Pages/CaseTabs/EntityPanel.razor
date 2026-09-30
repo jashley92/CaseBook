@@ -142,10 +142,11 @@
             }
             foreach (var n in Case.Notes.Where(n => n.IsCurrent && n.Body.Contains(Tag, StringComparison.OrdinalIgnoreCase)))
                 list.Add(new("Note", Snippet(n.Body), "tagged", n.CreatedAtUtc, "Notes"));
-            if (Case.Briefs.FirstOrDefault(b => b.IsCurrent) is { } brief &&
-                new[] { brief.Situation, brief.WorkingAssessment, brief.Known, brief.OpenQuestions, brief.NextSteps }
+            // INV-36: the summary is the brief's first part (and may exist before any other part is written).
+            var brief = Case.Briefs.FirstOrDefault(b => b.IsCurrent);
+            if (new[] { Case.Summary, brief?.WorkingAssessment, brief?.Known, brief?.OpenQuestions, brief?.NextSteps }
                     .Any(p => p?.Contains(Tag, StringComparison.OrdinalIgnoreCase) == true))
-                list.Add(new("Brief", "Case brief", "tagged", brief.CreatedAtUtc, "Overview"));
+                list.Add(new("Brief", "Case brief", "tagged", brief?.CreatedAtUtc ?? Case.CreatedAtUtc, "Overview"));
             return list.OrderByDescending(r => r.At).ToList();
         }
     }

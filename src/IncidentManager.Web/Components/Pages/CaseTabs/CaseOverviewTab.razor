@@ -1,5 +1,5 @@
 @* Case workspace — Overview tab (UX-13, the last tab). The workspace "hub": the vitals/SLA strip, case
-   details (with the Summary Markdown editor), the structured impact assessment (E-12), stage-readiness,
+   details, the structured impact assessment (E-12), stage-readiness,
    assignments, MITRE ATT&CK techniques (with the matrix picker), related cases (E-14), and the change log.
    It owns its Summary EasyMDE editor (own reconcile + teardown) — the last such editor, so the parent's
    central reconcile retires. Parent-owned chrome is threaded in: the retention alert (RetentionMessage, set
@@ -36,7 +36,7 @@
 }
 
 @* INV-09: the brief leads the Overview — where the case stands, in the team's words. *@
-<CaseBriefCard Case="Case" CanEdit="CanEdit" OnChanged="OnChanged" />
+<CaseBriefCard @ref="_brief" Case="Case" CanEdit="CanEdit" OnChanged="OnChanged" />
 
 @* Vitals strip — the at-a-glance row (response SLA, lifecycle timestamps, dwell, counts) spanning
    the full width, so the "how's this case doing" scan is the first thing on the pane, not the last. *@
@@ -105,13 +105,7 @@
                                    title="When adversary activity began (initial access), if known. Used to calculate dwell time." />
                         </div>
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label small mb-0" for="@SummaryEditorId">Summary <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links</span></label>
-                        @* EasyMDE enhances this textarea (managed in this tab's OnAfterRenderAsync); value pulled on Save. *@
-                        <textarea id="@SummaryEditorId" class="form-control"></textarea>
-                    </div>
-                    @* Beside Save, where the eye is when it's pressed: the Summary editor above is tall enough to push a
-                       message at the date fields off-screen. *@
+                    @* INV-36: the summary is edited in the brief ("Where it stands"), where each version is kept. *@
                     @if (_detailsError is { } derr)
                     {
                         <div class="alert alert-warning py-1 px-2 small mb-2" role="alert">@derr</div>
@@ -143,17 +137,6 @@
                         <dd class="col-sm-8">@(Case.ImpactedAssets ?? "—")</dd>
                         <dt class="col-sm-4">Opened</dt>
                         <dd class="col-sm-8">@TimeDisp.Long(Case.CreatedAtUtc) by @Users.DisplayFor(Case.CreatedBy)</dd>
-                        <dt class="col-sm-4">Summary</dt>
-                        <dd class="col-sm-8">
-                            @if (string.IsNullOrWhiteSpace(Case.Summary))
-                            {
-                                <text>—</text>
-                            }
-                            else
-                            {
-                                <div class="md-body">@((MarkupString)Md.ToHtml(Case.Summary))</div>
-                            }
-                        </dd>
                     </dl>
                 }
 
@@ -585,7 +568,7 @@
     /// <summary>Bumped by the parent on a collaborator change, to re-pull related cases.</summary>
     [Parameter] public int RefreshToken { get; set; }
 
-    private string SummaryEditorId => $"sum-md-{CaseId}";
+    private CaseBriefCard? _brief;
     private readonly HashSet<string> _mdEditors = new();
     private readonly HashSet<Guid> _readinessAttested = new(); // always empty — the card is read-only
     private int _loadedToken = int.MinValue;
@@ -765,7 +748,12 @@
     {
         switch (checkKey)
         {
-            case GateCheckKeys.SummaryPresent or GateCheckKeys.DetectionCaseIdSet:
+            case GateCheckKeys.SummaryPresent:
+                // INV-36: the summary is the brief's first part.
+                _brief?.BeginEdit();
+                _scrollTo = "ov-brief";
+                break;
+            case GateCheckKeys.DetectionCaseIdSet:
                 if (!_editingDetails) BeginEditDetails();
                 _scrollTo = "ov-details";
                 break;
@@ -781,12 +769,11 @@
         StateHasChanged();
     }
 
-    // This tab owns a single EasyMDE editor — the Summary composer, shown only while editing details.
+    // INV-36: the Summary composer moved to the brief, so no EasyMDE editor is wanted here any more; this still
+    // tears down one left mounted.
     private async Task ReconcileEditor()
     {
         var desired = new Dictionary<string, string>();
-        if (CanEdit && _editingDetails)
-            desired[SummaryEditorId] = _edSummary ?? "";
 
         foreach (var id in _mdEditors.Where(id => !desired.ContainsKey(id)).ToList())
         {
@@ -853,8 +840,9 @@
     private async Task SaveDetails()
     {
         if (string.IsNullOrWhiteSpace(_edTitle) || _edDetected is null) return;
-        try { _edSummary = await JS.InvokeAsync<string>("markdownEditor.getValue", SummaryEditorId); }
-        catch (JSException) { /* editor not mounted; keep the seeded value */ }
+        // INV-36: the summary isn't edited here; send the one on record so this save never changes it. If it
+        // changed since the editor opened, the concurrency stamp refuses the save instead of reverting it.
+        _edSummary = Case.Summary;
         try
         {
             await Cases.UpdateDetailsAsync(CaseId, _edTitle, _edSummary, _edDetection, _edDataTypes, _edImpacted,

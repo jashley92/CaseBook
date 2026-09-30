@@ -262,7 +262,6 @@ public sealed partial class ReportGenerator : IReportGenerator
     // INV-19: the brief's written parts, in their fixed order.
     internal static IEnumerable<(string Label, string Text)> BriefParts(ReportBrief b)
     {
-        if (b.Situation is { } s1) yield return ("Situation", s1);
         if (b.WorkingAssessment is { } s2) yield return ("Working assessment", s2);
         if (b.Known is { } s3) yield return ("Known", s3);
         if (b.OpenQuestions is { } s4) yield return ("Open questions", s4);

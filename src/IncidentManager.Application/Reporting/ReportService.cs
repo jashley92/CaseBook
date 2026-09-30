@@ -750,7 +750,7 @@ public sealed class ReportService
             InvestigationTimeline = InvestigationTimeline(c, d, opts),
             Brief = c.Briefs.FirstOrDefault(b => b.IsCurrent) is { } brief
                 ? new ReportBrief(brief.Version, brief.CreatedAtUtc, _users.DisplayFor(brief.CreatedBy),
-                    BriefText(brief.Situation, d), BriefText(brief.WorkingAssessment, d), BriefText(brief.Known, d),
+                    BriefText(brief.WorkingAssessment, d), BriefText(brief.Known, d),
                     BriefText(brief.OpenQuestions, d), BriefText(brief.NextSteps, d))
                 : null,
             Evidence = c.Evidence

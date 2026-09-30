@@ -19,9 +19,9 @@ export (incl. monthly & quarterly rollups) for board / regulatory packs.
 ![Leadership dashboard](docs/screenshots/dashboard.png)
 
 ### Case workspace
-The analyst's hub. The Overview opens on the **case brief**: where the case stands, the working
-assessment, what's known, open questions and next steps, versioned so what the team believed at any point
-stays readable. On wide screens a **context panel** sits beside every tab with the clocks, the tasks still
+The analyst's hub. The Overview opens on **where the case stands**: the case summary the report prints,
+then the team's working assessment, what's known, open questions and next steps. Every revision is a new
+version, the summary included, so what the team believed and reported at any point stays readable. On wide screens a **context panel** sits beside every tab with the clocks, the tasks still
 open before the next phase, the team and the key entities, so checking them doesn't mean switching tabs.
 Tabs: **Overview / Timeline / IOCs & entities / Evidence / Notes / Discussion / Tasks / Lessons learned /
 Report / Audit**. A compact header carries the case number and title, status badges (SLA, **materiality**,

@@ -531,7 +531,7 @@ public sealed class CaseBriefConfiguration : IEntityTypeConfiguration<CaseBrief>
     public void Configure(EntityTypeBuilder<CaseBrief> b)
     {
         b.ToTable("CaseBriefs");
-        b.Property(x => x.Situation).HasMaxLength(CaseBrief.MaxPartLength);
+        b.Property(x => x.Summary).HasMaxLength(CaseBrief.MaxPartLength);   // INV-36: was Situation
         b.Property(x => x.WorkingAssessment).HasMaxLength(CaseBrief.MaxPartLength);
         b.Property(x => x.Known).HasMaxLength(CaseBrief.MaxPartLength);
         b.Property(x => x.OpenQuestions).HasMaxLength(CaseBrief.MaxPartLength);
