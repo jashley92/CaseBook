@@ -15,7 +15,9 @@ namespace IncidentManager.Infrastructure.Persistence;
 /// </summary>
 public static class DevDataSeeder
 {
-    public static async Task InitializeAsync(AppDbContext db, IClock clock, bool seedDemoData, CancellationToken ct = default)
+    /// <param name="evidence">INV-35: where the demo's evidence file is stored; without one the demo has no evidence.</param>
+    public static async Task InitializeAsync(AppDbContext db, IClock clock, bool seedDemoData, CancellationToken ct = default,
+        IEvidenceStore? evidence = null)
     {
         await db.Database.MigrateAsync(ct);
 
@@ -50,6 +52,80 @@ public static class DevDataSeeder
         // discussion on the demo cases so they are visible in the app and README screenshots. Demo-only (not
         // in SeedAsync), so tests that seed the base cases are unaffected.
         await SeedComplianceShowcaseAsync(db, clock, ct);
+        // INV-35: the rest of the investigation model on the phishing case (a cited evidence file, a pinned
+        // compromised account, an entry recorded after the fact), so a first look shows how they fit together.
+        await SeedModelShowcaseAsync(db, clock, evidence, ct);
+    }
+
+    /// <summary>
+    /// INV-35 (demo only): on the phishing case, a sign-in export stored as evidence (with its custody record), cited
+    /// by the entry it supports and by the brief's "Known"; Jane Doe's account marked Compromised and pinned; and an
+    /// investigation entry recorded well after it happened, so the timeline shows its "recorded later" marker.
+    /// </summary>
+    public static async Task SeedModelShowcaseAsync(AppDbContext db, IClock clock, IEvidenceStore? store, CancellationToken ct = default)
+    {
+        var now = clock.UtcNow;
+        var c = await db.Cases
+            .Include(x => x.Entities).Include(x => x.TimelineEntries).Include(x => x.Briefs)
+            .Include(x => x.Evidence).Include(x => x.Citations).Include(x => x.ActionItems)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(x => x.CaseNumber == "2026-01_Phishing_Wave", ct);
+        if (c is null) return;
+
+        var jane = c.Entities.FirstOrDefault(e => e.Value == "CONTOSO\\jdoe");
+        var asn = c.Entities.FirstOrDefault(e => e.Value == "203.0.113.66");
+        if (jane is not null)
+        {
+            c.EditEntity(jane.Id, jane.Type, jane.Value, jane.Label, EntityDisposition.Compromised, jane.Description, jane.Source,
+                "analyst1", now.AddDays(-4).AddHours(-3));
+            c.SetEntityPinned(jane.Id, true, "analyst1", now.AddDays(-4).AddHours(-3));
+        }
+
+        // Entered the morning after it happened (containment work written up later), so it's marked as recorded later.
+        c.TimelineEntries.Add(new TimelineEntry
+        {
+            CaseId = c.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Analysis,
+            OccurredAtUtc = now.AddDays(-5).AddHours(4),
+            Description = "Blocked the 12 look-alike sender domains at the mail gateway; no further deliveries after this.",
+            Source = "analyst1", CreatedBy = "analyst1", CreatedAtUtc = now.AddDays(-4).AddHours(3)
+        });
+
+        if (store is not null)
+        {
+            var csv = "timestamp_utc,user,source_ip,asn,result\n"
+                + $"{now.AddDays(-5).AddHours(-3):yyyy-MM-ddTHH:mm:ssZ},jdoe@contoso-insurance.example,203.0.113.66,AS64500,Success\n"
+                + $"{now.AddDays(-5).AddHours(-2):yyyy-MM-ddTHH:mm:ssZ},jdoe@contoso-insurance.example,203.0.113.66,AS64500,Success\n"
+                + $"{now.AddDays(-5).AddHours(-1):yyyy-MM-ddTHH:mm:ssZ},mgarcia@contoso-insurance.example,198.51.100.23,AS64511,Failure\n";
+            await using var content = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
+            var stored = await store.SaveAsync(c.Id, content, ct);
+            var ev = new Evidence
+            {
+                CaseId = c.Id, OriginalFileName = "signin-export-jdoe.csv", ContentType = "text/csv",
+                SizeBytes = stored.SizeBytes, Sha256 = stored.Sha256, StoragePath = stored.StoragePath,
+                Description = "Entra ID sign-in export for the affected users (demo data).",
+                CreatedBy = "analyst1", CreatedAtUtc = now.AddDays(-5).AddHours(1)
+            };
+            ev.CustodyEvents.Add(new ChainOfCustodyEvent
+            {
+                EvidenceId = ev.Id, AtUtc = ev.CreatedAtUtc, Actor = "analyst1",
+                Action = "Uploaded", Details = $"{stored.SizeBytes} bytes; sha256={stored.Sha256}"
+            });
+            c.Evidence.Add(ev);
+
+            var review = c.TimelineEntries.FirstOrDefault(t => t.IsCurrent && t.Description.StartsWith("Reviewed mailbox audit logs"));
+            if (review is not null) c.SetCitations(review.Id, [ev.Id], "analyst1", now.AddDays(-5).AddHours(2));
+
+            // The brief's "Known" cites it (a new version, still before the materiality decision, so the brief shows
+            // that the record has moved on since).
+            if (c.Briefs.FirstOrDefault(b => b.IsCurrent) is { } brief && asn is not null)
+            {
+                var known = $"- Session from [Foreign ASN egress](entity:{asn.Id}) the day after the click [signin-export-jdoe.csv](evidence:{ev.Id})\n"
+                    + "- About 1,450 NY and NJ residents in the opened attachments";
+                c.ReviseBrief(brief.Summary, brief.WorkingAssessment, known, brief.OpenQuestions, brief.NextSteps,
+                    "analyst1", now.AddDays(-1).AddHours(-6));
+            }
+        }
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>

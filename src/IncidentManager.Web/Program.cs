@@ -272,7 +272,8 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var clock = scope.ServiceProvider.GetRequiredService<IClock>();
-    await DevDataSeeder.InitializeAsync(db, clock, seedDemoData: app.Environment.IsDevelopment());
+    await DevDataSeeder.InitializeAsync(db, clock, seedDemoData: app.Environment.IsDevelopment(),
+        evidence: scope.ServiceProvider.GetService<IEvidenceStore>());
 
     // Seed system roles (from code) and migrate the file-based AD mapping into the DB on first run,
     // then prime the in-memory role directory so authentication resolves permissions immediately.
