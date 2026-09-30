@@ -15,7 +15,7 @@ namespace IncidentManager.Infrastructure.Reporting;
 /// Produces the case report as a Word document (DocumentFormat.OpenXml). Reports are Word only: PDF was
 /// dropped because a PDF couldn't match customer Word templates. Renders from <see cref="CaseReportModel"/>, so
 /// the two formats stay in lock-step. The layout follows the house event-report template — a narrative
-/// body (Summary, Business Impact, Event/Investigation Timeline, Systems Reviewed, Recommendations,
+/// body (Summary, Business Impact, Event/Investigation Timeline, Systems Reviewed, Response Tasks,
 /// Outcome) with the full structured record in an Appendix — with a branded header/footer. Which body
 /// sections appear, and their order, are administered via <see cref="ReportLayout"/>. All libraries are
 /// MIT-licensed — no per-seat cost.
@@ -147,8 +147,9 @@ public sealed partial class ReportGenerator : IReportGenerator
                 break;
 
             case ReportSection.Recommendations:
-                body.AppendChild(Heading("Recommendations"));
-                body.AppendChild(P("Follow-up tasks from the case.", italic: true, size: 18));
+                // INV-45: the case's working tasks, not recommendations (those are the lessons report's improvement actions).
+                body.AppendChild(Heading("Response Tasks"));
+                body.AppendChild(P("Tasks recorded on the case, with their status.", italic: true, size: 18));
                 body.AppendChild(WordTable(
                     ["Task", "Owner", "Due (UTC)", "Status"],
                     m.ActionItems.Select(x => new[] { x.Title, x.Owner ?? "", x.DueAtUtc?.ToString("u") ?? "", x.Status })));

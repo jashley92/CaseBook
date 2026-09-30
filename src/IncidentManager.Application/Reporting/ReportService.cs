@@ -766,6 +766,7 @@ public sealed class ReportService
                 .ToList(),
             ActionItems = c.ActionItems
                 .OrderBy(x => x.Status)
+                .ThenBy(x => x.DueAtUtc ?? DateTimeOffset.MaxValue)   // INV-45: soonest due first within a status
                 // Owner may be a user id (playbook tasks default to the case owner) or free text; resolve
                 // ids to display names, pass free text through, so the examiner report never shows a raw id.
                 .Select(x => new ReportActionItemRow(x.Title, _users.DisplayFor(x.Owner), x.DueAtUtc, TaskStatusLabel(x.Status)))

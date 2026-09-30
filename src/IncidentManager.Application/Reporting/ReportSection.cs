@@ -18,6 +18,9 @@ public enum ReportSection
     SystemsReviewed,
     /// <summary>PROD-45: malicious / suspicious indicators, apart from the full Systems Reviewed record.</summary>
     Indicators,
+    /// <summary>The case's tasks and their status, printed as "Response Tasks" (INV-45). The key keeps its original
+    /// name so saved layouts and config bundles still resolve; improvement recommendations live in the separate
+    /// lessons-learned report.</summary>
     Recommendations,
     Outcome,
     /// <summary>The analysts' working notes, verbatim. Off unless a layout turns it on: notes are working

@@ -274,7 +274,7 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         body.AppendChild(ReportGenerator.WordTable(["From", "Relationship", "To", "Notes"],
             [["{{relationship.source}}", "{{relationship.relationship}}", "{{relationship.target}}", "{{relationship.notes}}"]]));
 
-        body.AppendChild(ReportGenerator.Heading("Recommendations"));
+        body.AppendChild(ReportGenerator.Heading("Response Tasks"));
         body.AppendChild(ReportGenerator.WordTable(["Task", "Owner", "Due", "Status"],
             [["{{action.task}}", "{{action.owner}}", "{{action.due}}", "{{action.status}}"]]));
 

@@ -602,6 +602,10 @@ public sealed class ReportingIntegrationTests : IDisposable
             model.Tlp.Should().Be(TlpLevel.Amber, "AMBER is the default marking");
             model.Iocs.Should().Contain(i => i.Value == "evil-cdn[.]test" && i.Tlp == "TLP:RED");
             model.Iocs.Should().NotContain(i => i.Value == "FIN-WKS-99", "a compromised host is a victim, not an indicator");
+            // INV-45: the case's tasks, open ones first, soonest due first.
+            var openTasks = model.ActionItems.TakeWhile(a => a.Status == "Open").ToList();
+            openTasks.Should().HaveCountGreaterThan(1);
+            openTasks.Select(a => a.DueAtUtc).Should().BeInAscendingOrder();
 
             var report = await svc.GenerateAsync(caseId, TlpLevel.Green);
             report.Tlp.Should().Be(TlpLevel.Green);
@@ -619,6 +623,7 @@ public sealed class ReportingIntegrationTests : IDisposable
             }
 
             documentXml.Should().Contain("Indicators of Compromise").And.Contain("evil-cdn[.]test").And.Contain("Sharing: TLP:GREEN");
+            documentXml.Should().Contain("Response Tasks").And.NotContain("Recommendations");   // INV-45
             headerXml.Should().Contain("TLP:GREEN");
             footerXml.Should().Contain("TLP:GREEN");
 

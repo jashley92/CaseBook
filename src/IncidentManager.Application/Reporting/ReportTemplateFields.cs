@@ -129,7 +129,7 @@ public static partial class ReportTemplateFields
             ("id", "Technique id", x => x.TechniqueId),
             ("name", "Name", x => x.Name),
             ("tactic", "Tactic", x => x.Tactic)),
-        Coll("action", "Recommendations / follow-up tasks", m => m.ActionItems,
+        Coll("action", "Response tasks", m => m.ActionItems,
             ("task", "Task", x => x.Title),
             ("owner", "Owner", x => x.Owner ?? ""),
             ("due", "Due date", x => Day(x.DueAtUtc)),
