@@ -23,13 +23,17 @@
    tab. Filters open in a second row only when asked for (or while one is set); each lens explains itself on hover. *@
 @{
     // Only current versions are shown; superseded Investigation edits live in history (below) and the audit trail.
+    // INV-30: the Decisions lens is Investigation narrowed to decisions; "key entries" keeps the turning points.
     var tlAll = _msOnly ? new List<TimelineEntry>()
-        : Case.TimelineEntries.Where(x => (_tlLens is null || x.Kind == _tlLens) && x.IsCurrent).ToList();
+        : Case.TimelineEntries.Where(x => (_tlLens is null || x.Kind == _tlLens) && x.IsCurrent
+                                          && (!_decOnly || x.Type == TimelineEntryType.Decision)
+                                          && (!KeyOnlyApplies || IsKeyEntry(x))).ToList();
     var tlView = FilteredTimeline(tlAll)
         .Where(e => ChangedSinceUtc is not { } since || (e.ModifiedAtUtc ?? e.CreatedAtUtc) > since).ToList();
     // INV-01: response milestones, derived from the case record. Shown in All (unless hidden) and their own lens;
     // an entry filter (type / tactic / source) doesn't apply to them, so they step aside while one is active.
-    var msAll = _msOnly || (_tlLens is null && _showMilestones) ? Milestones() : [];
+    var msAll = _msOnly || (_tlLens is null && _showMilestones)
+        ? Milestones().Where(m => !KeyOnlyApplies || IsKeyMilestone(m)).ToList() : [];
     var msView = FiltersActive ? []
         : ChangedSinceUtc is { } msSince ? msAll.Where(m => (m.RecordedAtUtc ?? m.AtUtc) > msSince).ToList() : msAll;
     var rows = MergeRows(tlView, msView);
@@ -47,12 +51,16 @@
         <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Event)"
                 title="@(IsThirdParty ? "The vendor-disclosure narrative: what the vendor reported and what we confirmed about our data." : "The attack narrative: facts and timing of what happened.")"
                 @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Disclosure" : "Event") <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Event)</span></button>
-        <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Investigation)"
+        <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation && !_decOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Investigation && !_decOnly)"
                 title="Analyst and team actions during the investigation."
                 @onclick="() => SwitchLens(TimelineKind.Investigation)">Investigation <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Investigation)</span></button>
         <button class="btn btn-sm @(_msOnly ? "active" : "")" aria-pressed="@Ui.Aria(_msOnly)"
                 title="Response milestones from the case record: classification, severity and phase changes, stage gates, materiality, reporting, completed tasks and evidence."
                 @onclick="SwitchToMilestones">Milestones <span class="tl-count">@Milestones().Count</span></button>
+        @* INV-30: "what did we decide, and why?" — the examiner's first question, one click away. *@
+        <button class="btn btn-sm @(_decOnly ? "active" : "")" aria-pressed="@Ui.Aria(_decOnly)"
+                title="Decisions, each with why it was made, what else was considered and who decided."
+                @onclick="SwitchToDecisions">Decisions <span class="tl-count">@CurrentEntries.Count(x => x.Type == TimelineEntryType.Decision)</span></button>
     </div>
     @if (totalAll > 0)
     {
@@ -112,6 +120,10 @@
     <div class="tl-filters" id="tl-filter-row">
         @if (_tlLens is null)
         {
+            <div class="form-check form-switch mb-0 small" title="Only the turning points: event steps, decisions, handoffs, and phase, classification, severity, materiality, gate and reporting milestones">
+                <input class="form-check-input" type="checkbox" role="switch" id="tl-key-only" @bind="_keyOnly" />
+                <label class="form-check-label" for="tl-key-only">Key entries only</label>
+            </div>
             <div class="form-check form-switch mb-0 small" title="Show classification, phase, gate and other response milestones in the chronology">
                 <input class="form-check-input" type="checkbox" role="switch" id="tl-show-ms" @bind="_showMilestones" />
                 <label class="form-check-label" for="tl-show-ms">Milestones</label>
@@ -127,7 +139,7 @@
                     }
                 </select>
         }
-        else if (_tlLens == TimelineKind.Investigation || (_tlLens == TimelineKind.Event && IsThirdParty))
+        else if ((_tlLens == TimelineKind.Investigation && !_decOnly) || (_tlLens == TimelineKind.Event && IsThirdParty))
         {
                 <select class="form-select form-select-sm w-auto" @bind="_tlFilterTypeStr" aria-label="Filter by type">
                     <option value="">All types</option>
@@ -478,7 +490,7 @@
         <div class="empty-state-icon"><span class="bi bi-clock-history" aria-hidden="true"></span></div>
         <div class="empty-state-title">No entries in this timeline yet</div>
         <div class="empty-state-msg">
-            @(_tlLens switch
+            @(_decOnly ? "No decisions yet. Record one as a Decision entry, with why it was made, so the record answers \"what did we decide, and why?\"" : _tlLens switch
             {
                 TimelineKind.Event => IsThirdParty
                     ? "Record the vendor-disclosure milestones: what the vendor reported and what we confirmed."
@@ -864,10 +876,11 @@ else
     private bool _tlOldestFirst;   // default newest-first (most recent activity at top)
     private bool _showKillChain;    // INV-26: folded by default; the user's choice is remembered (display preferences)
     private bool _showFilters;
-    // Open while a filter is set, or while milestones are hidden from the chronology, so neither is invisible.
-    private bool FiltersShown => _showFilters || FiltersActive || (_tlLens is null && !_showMilestones);
+    // Open while a filter is set, or while milestones are hidden or only key entries show, so none is invisible.
+    private bool FiltersShown => _showFilters || FiltersActive || (_tlLens is null && (!_showMilestones || _keyOnly));
     private int FilterCount => (_tlFilterType is not null ? 1 : 0) + (_tlFilterTactic is not null ? 1 : 0)
-                               + (string.IsNullOrWhiteSpace(_tlFilterSource) ? 0 : 1) + (_tlFilterEntity is not null ? 1 : 0);
+                               + (string.IsNullOrWhiteSpace(_tlFilterSource) ? 0 : 1) + (_tlFilterEntity is not null ? 1 : 0)
+                               + (KeyOnlyApplies ? 1 : 0);
 
     protected override async Task OnInitializedAsync()
     {
@@ -1131,6 +1144,8 @@ else
     {
         if (_tlEditId is not null) await CancelTimelineEdit();
         _msOnly = false;
+        _decOnly = false;
+        _keyOnly = false;
         _tlLens = lens;
         if (lens is { } k) _tlAddKind = k;   // a focused lens drives what the composer adds
         ClearTimelineFilters();
@@ -1420,6 +1435,7 @@ else
         {
             _autofocusPending = true;
             _msOnly = false;
+            _decOnly = false;
             if (_tlLens == TimelineKind.Event) _tlLens = null;
             _tlAddKind = TimelineKind.Investigation;
             _composerOpen = true;
@@ -1427,7 +1443,7 @@ else
         if (PresetEntityFilter != _appliedPreset)
         {
             _appliedPreset = PresetEntityFilter;
-            if (PresetEntityFilter is { } en) { _msOnly = false; _tlLens = null; _tlFilterEntity = en; }
+            if (PresetEntityFilter is { } en) { _msOnly = false; _decOnly = false; _keyOnly = false; _tlLens = null; _tlFilterEntity = en; }
         }
     }
 
@@ -1519,6 +1535,23 @@ else
 
     // --- INV-01: response milestones ---
     private bool _msOnly;                 // the Milestones lens: milestones alone
+    private bool _decOnly;                // INV-30: the Decisions lens (Investigation, decisions only)
+    private bool _keyOnly;                // INV-30: All lens, key entries only
+    private bool KeyOnlyApplies => _keyOnly && _tlLens is null && !_msOnly;
+
+    // INV-30: the turning points — what happened (event steps), what was decided and handed over, and the response
+    // milestones that change the case's standing (not routine work such as completed tasks or evidence uploads).
+    private static bool IsKeyEntry(TimelineEntry e) =>
+        e.Kind == TimelineKind.Event || e.Type is TimelineEntryType.Decision or TimelineEntryType.Handoff;
+    private static bool IsKeyMilestone(CaseMilestone m) =>
+        m.Kind is not (MilestoneKind.TaskDone or MilestoneKind.EvidenceAdded);
+
+    private async Task SwitchToDecisions()
+    {
+        await SwitchLens(TimelineKind.Investigation);
+        _decOnly = true;
+        _tlType = TimelineEntryType.Decision;   // the composer, if opened here, records a decision
+    }
     private bool _showMilestones = true;  // include them in the All chronology
 
     private sealed record TlRow(DateTimeOffset At, DateTimeOffset Tiebreak, TimelineEntry? Entry, CaseMilestone? Milestone);
@@ -1578,6 +1611,8 @@ else
     {
         if (_tlEditId is not null) await CancelTimelineEdit();
         _tlLens = null;
+        _decOnly = false;
+        _keyOnly = false;
         _msOnly = true;
         ClearTimelineFilters();
     }
