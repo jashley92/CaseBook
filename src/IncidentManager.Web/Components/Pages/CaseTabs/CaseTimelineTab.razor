@@ -237,8 +237,9 @@
                 }
                 @if (!IsThirdParty || _evtAttackMode)
                 {
-                    @* First-party (or a third-party attack step): the attack narrative — ATT&CK tactic(s) + actor→target attribution to IOCs. *@
-                    <div class="row g-2 align-items-end">
+                    @* First-party (or a third-party attack step): the attack narrative — ATT&CK tactic(s) + actor→target attribution to IOCs.
+                       INV-47: rows with the time buttons align to the top, so the buttons hang under the date only. *@
+                    <div class="row g-2 align-items-start">
                         <div class="col-md-4">
                             <label class="form-label small mb-0" for="tl-atk-when">Occurred (@TimeDisp.Label)</label>
                             <input id="tl-atk-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
@@ -280,7 +281,7 @@
                     @* E-32: third-party/vendor case — a vendor-disclosure narrative, not an attack kill-chain.
                        No ATT&CK / actor→target; the milestone (disclosure received, vendor detection, scope
                        confirmed, remediation) is the response type carried on the step. *@
-                    <div class="row g-2 align-items-end">
+                    <div class="row g-2 align-items-start">
                         <div class="col-md-4">
                             <label class="form-label small mb-0" for="tl-disc-when">Occurred (@TimeDisp.Label)</label>
                             <input id="tl-disc-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
@@ -334,7 +335,7 @@
             else
             {
                 @* Investigation = the analyst's working log: response type + Markdown notes. *@
-                <div class="row g-2 align-items-end">
+                <div class="row g-2 align-items-start">
                     <div class="col-md-3">
                         <label class="form-label small mb-0" for="tl-inv-type">Type</label>
                         <select id="tl-inv-type" class="form-select form-select-sm" @bind="_tlType">
@@ -347,7 +348,7 @@
                     <div class="col-md-3">
                         <label class="form-label small mb-0" for="tl-inv-when">Occurred (@TimeDisp.Label)</label>
                         <input id="tl-inv-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
-                            @TimeNudges()
+                        @TimeNudges()
                     </div>
                     <div class="col-md-3">
                         <label class="form-label small mb-0" for="tl-inv-source">Source</label>
