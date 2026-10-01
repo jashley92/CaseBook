@@ -1143,6 +1143,17 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>INV-49: change a relationship's type, description or direction as one audited update.</summary>
+    public async Task EditRelationshipAsync(Guid id, Guid relationshipId, Guid sourceEntityId, Guid targetEntityId,
+        EntityRelationshipType type, string? description, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.EditRelationship(relationshipId, sourceEntityId, targetEntityId, type, description, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task UnlinkAsync(Guid id, Guid relationshipId, CancellationToken ct = default)
     {
         Require();

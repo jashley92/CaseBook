@@ -66,6 +66,7 @@ public static class CaseActionPermissions
             [nameof(CaseService.SetEntityPinnedAsync)] = Permission.EditCases,
             [nameof(CaseService.LinkEntitiesAsync)] = Permission.EditCases,
             [nameof(CaseService.UnlinkAsync)] = Permission.EditCases,
+            [nameof(CaseService.EditRelationshipAsync)] = Permission.EditCases,   // INV-49
             [nameof(CaseService.SaveGraphLayoutAsync)] = Permission.EditCases,
 
             // Case linking (E-14)

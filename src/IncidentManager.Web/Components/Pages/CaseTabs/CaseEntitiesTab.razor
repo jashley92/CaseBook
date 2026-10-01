@@ -428,6 +428,60 @@ else
                     <tbody>
                         @foreach (var r in Case.EntityRelationships.OrderBy(x => x.CreatedAtUtc))
                         {
+                            @if (_relEditId == r.Id)
+                            {
+                                @* INV-49: correct the type, description or direction in place — one audited change. *@
+                                <tr>
+                                    <td colspan="2">
+                                        <div class="row g-2 align-items-end">
+                                            <div class="col-md-4">
+                                                <label class="form-label small mb-0" for="rel-edit-source">Source</label>
+                                                <select id="rel-edit-source" class="form-select form-select-sm" @bind="_relEditSource">
+                                                    @foreach (var e in Case.Entities.OrderBy(x => x.Type))
+                                                    {
+                                                        <option value="@e.Id">@Ui.Label(e.Type): @(e.Label ?? e.Value)</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label small mb-0" for="rel-edit-type">Relationship</label>
+                                                <select id="rel-edit-type" class="form-select form-select-sm" @bind="_relEditType">
+                                                    @foreach (var t in Ui.Options<EntityRelationshipType>("EntityRelationshipType"))
+                                                    {
+                                                        <option value="@t">@Ui.Label(t)</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label small mb-0" for="rel-edit-target">Target</label>
+                                                <select id="rel-edit-target" class="form-select form-select-sm" @bind="_relEditTarget">
+                                                    @foreach (var e in Case.Entities.OrderBy(x => x.Type))
+                                                    {
+                                                        <option value="@e.Id">@Ui.Label(e.Type): @(e.Label ?? e.Value)</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                            <div class="col-md-1">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary w-100" title="Swap source and target"
+                                                        aria-label="Swap source and target" @onclick="SwapRelationship">
+                                                    <span class="bi bi-arrow-left-right" aria-hidden="true"></span>
+                                                </button>
+                                            </div>
+                                            <div class="col-md-9">
+                                                <label class="visually-hidden" for="rel-edit-desc">Description</label>
+                                                <input id="rel-edit-desc" class="form-control form-control-sm" maxlength="1000" @bind="_relEditDescription"
+                                                       placeholder="Description / context (optional)" />
+                                            </div>
+                                            <div class="col-md-3 d-flex gap-2 justify-content-end">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _relEditId = null">Cancel</button>
+                                                <button type="button" class="btn btn-sm btn-primary" @onclick="SaveRelationship">Save</button>
+                                            </div>
+                                            @if (_relEditError is not null) { <div class="col-12"><div class="text-danger small" role="alert">@_relEditError</div></div> }
+                                        </div>
+                                    </td>
+                                </tr>
+                                continue;
+                            }
                             <tr>
                                 <td>
                                     <span class="fw-semibold">@EntityName(r.SourceEntityId)</span>
@@ -437,6 +491,8 @@ else
                                 </td>
                                 <td class="text-end">
                                     <AuthorizeView Policy="@Policies.EditCases" Context="rm">
+                                        <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => BeginEditRelationship(r)"
+                                                aria-label="Edit this relationship">Edit</button>
                                         <button class="btn btn-sm btn-outline-danger" @onclick='() => Confirm("Remove this relationship?", () => RemoveRelationship(r.Id))'>Remove</button>
                                     </AuthorizeView>
                                 </td>
@@ -749,6 +805,37 @@ else
             Toasts.Success("Relationship added");
         }
         catch (Exception ex) { _relError = ex.Message; }
+    }
+
+    // INV-49: in-place relationship edit.
+    private Guid? _relEditId;
+    private string? _relEditSource, _relEditTarget, _relEditDescription, _relEditError;
+    private EntityRelationshipType _relEditType;
+
+    private void BeginEditRelationship(EntityRelationship r)
+    {
+        _relEditId = r.Id;
+        _relEditSource = r.SourceEntityId.ToString();
+        _relEditTarget = r.TargetEntityId.ToString();
+        _relEditType = r.Type;
+        _relEditDescription = r.Description;
+        _relEditError = null;
+    }
+
+    private void SwapRelationship() => (_relEditSource, _relEditTarget) = (_relEditTarget, _relEditSource);
+
+    private async Task SaveRelationship()
+    {
+        if (_relEditId is not { } id || !Guid.TryParse(_relEditSource, out var src) || !Guid.TryParse(_relEditTarget, out var tgt)) return;
+        _relEditError = null;
+        try
+        {
+            await Cases.EditRelationshipAsync(CaseId, id, src, tgt, _relEditType, _relEditDescription);
+            _relEditId = null;
+            await OnChanged.InvokeAsync();
+            Toasts.Success("Relationship updated");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { _relEditError = ex.Message; }
     }
 
     private async Task RemoveRelationship(Guid relationshipId)

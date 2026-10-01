@@ -1039,6 +1039,37 @@ public class Case : AuditableEntity, IHashableEntity
         return rel;
     }
 
+    /// <summary>
+    /// INV-49: corrects a relationship in place — its type, its description, or its direction (pass the two entities
+    /// swapped). One audited update rather than a remove and a re-add. Both ends must still be this case's entities,
+    /// and it can't become a duplicate of another relationship.
+    /// </summary>
+    public void EditRelationship(Guid relationshipId, Guid sourceEntityId, Guid targetEntityId, EntityRelationshipType type,
+        string? description, string actor, DateTimeOffset nowUtc)
+    {
+        var rel = EntityRelationships.FirstOrDefault(r => r.Id == relationshipId)
+                  ?? throw new ArgumentException("That relationship is no longer on this case.");
+        if (sourceEntityId == targetEntityId)
+            throw new ArgumentException("An entity can't be related to itself.");
+        if (Entities.All(e => e.Id != sourceEntityId) || Entities.All(e => e.Id != targetEntityId))
+            throw new ArgumentException("Both entities must belong to this case.");
+        if (EntityRelationships.Any(r => r.Id != relationshipId && r.SourceEntityId == sourceEntityId
+                                         && r.TargetEntityId == targetEntityId && r.Type == type))
+            throw new ArgumentException("That relationship already exists.");
+
+        description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        if (rel.SourceEntityId == sourceEntityId && rel.TargetEntityId == targetEntityId && rel.Type == type
+            && rel.Description == description) return;
+
+        rel.SourceEntityId = sourceEntityId;
+        rel.TargetEntityId = targetEntityId;
+        rel.Type = type;
+        rel.Description = description;
+        rel.ModifiedBy = actor;
+        rel.ModifiedAtUtc = nowUtc;
+        Touch(actor, nowUtc);
+    }
+
     /// <summary>Removes a relationship between entities (leaves the entities themselves intact).</summary>
     public void Unlink(Guid relationshipId, string actor, DateTimeOffset nowUtc)
     {
