@@ -146,7 +146,10 @@ function Invoke-SqlColumn([string]$query) {
         $c.Open(); $cmd = $c.CreateCommand(); $cmd.CommandText = $query
         $r = $cmd.ExecuteReader(); $out = New-Object System.Collections.Generic.List[string]
         while ($r.Read()) { $out.Add([string]$r.GetValue(0)) }
-        return ,$out.ToArray()
+        # Return the items themselves (no leading comma): the caller collects them with @(), which yields an empty,
+        # one- or many-element array. A ',' here wrapped the list in a second array, so every applied migration
+        # read as unknown and the preflight reported a false MIGRATION MISMATCH.
+        return $out.ToArray()
     } finally { $c.Dispose() }
 }
 function Invoke-SqlNonQuery([string]$query, [int]$timeoutSec = 0) {
