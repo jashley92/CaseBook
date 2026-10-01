@@ -247,22 +247,24 @@
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small mb-0" for="tl-atk-actor">Actor <span class="text-muted">(from IOCs)</span></label>
-                            <select id="tl-atk-actor" class="form-select form-select-sm" @bind="_evtActorId">
+                            <select id="tl-atk-actor" class="form-select form-select-sm" @bind="_evtActorId" @bind:after="AfterPartyPicked">
                                 <option value="">None</option>
                                 @foreach (var en in Case.Entities)
                                 {
                                     <option value="@en.Id">@EntityOptionLabel(en)</option>
                                 }
+                                <option value="@NewIoc">+ New IOC…</option>
                             </select>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small mb-0" for="tl-atk-target">Target <span class="text-muted">(from IOCs)</span></label>
-                            <select id="tl-atk-target" class="form-select form-select-sm" @bind="_evtTargetId">
+                            <select id="tl-atk-target" class="form-select form-select-sm" @bind="_evtTargetId" @bind:after="AfterPartyPicked">
                                 <option value="">None</option>
                                 @foreach (var en in Case.Entities)
                                 {
                                     <option value="@en.Id">@EntityOptionLabel(en)</option>
                                 }
+                                <option value="@NewIoc">+ New IOC…</option>
                             </select>
                         </div>
                     </div>
@@ -784,6 +786,61 @@ else
     </div>
 }
 
+@if (_newIocFor is not null)
+{
+    @* INV-48: add an entity / IOC without leaving the half-written event step; it's selected where it was asked for. *@
+    <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="tl-newioc-title"
+         style="background:var(--im-scrim)" @onclick="CancelNewIoc">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <form class="modal-content" @onsubmit="SaveNewIoc" @onsubmit:preventDefault>
+                <div class="modal-header">
+                    <h5 class="modal-title" id="tl-newioc-title">New IOC as the @(_newIocFor == "actor" ? "actor" : "target")</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CancelNewIoc"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-sm-4">
+                            <label class="form-label small mb-0" for="tl-newioc-type">Type</label>
+                            <select id="tl-newioc-type" class="form-select form-select-sm" @bind="_newIocType">
+                                @foreach (var t in Ui.Options<EntityType>("EntityType"))
+                                {
+                                    <option value="@t">@Ui.Label(t)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-sm-8">
+                            <label class="form-label small mb-0" for="tl-newioc-value">Value</label>
+                            <input id="tl-newioc-value" class="form-control form-control-sm" @bind="_newIocValue" @bind:event="oninput" placeholder="e.g. 203.0.113.66" autofocus />
+                        </div>
+                        <div class="col-sm-8">
+                            <label class="form-label small mb-0" for="tl-newioc-label">Label <span class="text-muted">(optional)</span></label>
+                            <input id="tl-newioc-label" class="form-control form-control-sm" @bind="_newIocLabel" placeholder="e.g. Foreign ASN egress" />
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label small mb-0" for="tl-newioc-disp">Disposition</label>
+                            <select id="tl-newioc-disp" class="form-select form-select-sm" @bind="_newIocDisposition">
+                                @foreach (var d in Ui.Options<EntityDisposition>("EntityDisposition"))
+                                {
+                                    <option value="@d">@Ui.Label(d)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    @if (_newIocError is not null)
+                    {
+                        <p class="text-danger small mt-2 mb-0" role="alert">@_newIocError</p>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <span class="small text-muted me-auto">Added to the case's IOCs &amp; entities. An existing one with the same value is reused.</span>
+                    <button type="button" class="btn btn-outline-secondary" @onclick="CancelNewIoc">Cancel</button>
+                    <button type="submit" class="btn btn-primary" disabled="@(string.IsNullOrWhiteSpace(_newIocValue) || _newIocSaving)">Add and select</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
 @if (_corr is { Transition: { } ct } cm)
 {
     @* INV-05b: correct when an already-recorded transition happened. Append-only; the recorded time stays. *@
@@ -902,6 +959,47 @@ else
     // Event-step (attack narrative) add-form state
     private string _evtActorId = "";
     private string _evtTargetId = "";
+
+    // INV-48: "+ New IOC…" in the actor / target lists opens a dialog; the selection made before it is restored on cancel.
+    private const string NewIoc = "new-ioc";
+    private string _actorPrev = "", _targetPrev = "";
+    private string? _newIocFor;   // "actor" or "target" while the dialog is open
+    private EntityType _newIocType = EntityType.IpAddress;
+    private string _newIocValue = "";
+    private string? _newIocLabel;
+    private EntityDisposition _newIocDisposition = EntityDisposition.Unknown;
+    private string? _newIocError;
+    private bool _newIocSaving;
+
+    private void AfterPartyPicked()
+    {
+        if (_evtActorId == NewIoc) { _newIocFor = "actor"; ResetNewIoc(); } else _actorPrev = _evtActorId;
+        if (_evtTargetId == NewIoc) { _newIocFor = "target"; ResetNewIoc(); } else _targetPrev = _evtTargetId;
+    }
+
+    private void ResetNewIoc() { _newIocValue = ""; _newIocLabel = null; _newIocError = null; _newIocSaving = false; }
+
+    private void CancelNewIoc()
+    {
+        if (_newIocFor == "actor") _evtActorId = _actorPrev; else _evtTargetId = _targetPrev;
+        _newIocFor = null;
+    }
+
+    private async Task SaveNewIoc()
+    {
+        if (_newIocFor is null || string.IsNullOrWhiteSpace(_newIocValue) || _newIocSaving) return;
+        _newIocSaving = true; _newIocError = null;
+        try
+        {
+            var id = (await Cases.AddEntityAsync(CaseId, _newIocType, _newIocValue.Trim(), _newIocLabel, _newIocDisposition, null, null)).ToString();
+            await OnChanged.InvokeAsync();   // reload so the new entity is in the lists before it's selected
+            if (_newIocFor == "actor") _evtActorId = _actorPrev = id; else _evtTargetId = _targetPrev = id;
+            Toasts.Success($"Added {_newIocValue.Trim()}");
+            _newIocFor = null;
+        }
+        catch (Exception ex) { _newIocError = ex.Message; }
+        finally { _newIocSaving = false; }
+    }
     private string _evtTechnique = "";
     private MitreTactic _evtTactic = MitreTactic.Unspecified;
     // E-32: a third-party/vendor case has no ATT&CK kill-chain — its Event steps are vendor-disclosure milestones.
@@ -1131,7 +1229,7 @@ else
             Toasts.Error(ex.Message);
             return;
         }
-        _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = "";
+        _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
         _evtTactic = MitreTactic.Unspecified;
         ClearTimelineShot();
         await OnChanged.InvokeAsync();
@@ -1165,6 +1263,7 @@ else
         _tlWhen = UtcToWall(e.OccurredAtUtc);
         _evtActorId = e.ActorEntityId?.ToString() ?? "";
         _evtTargetId = e.TargetEntityId?.ToString() ?? "";
+        _actorPrev = _evtActorId; _targetPrev = _evtTargetId;
         _evtTechnique = e.TechniqueId ?? "";
         _evtTactic = e.Tactics.Select(t => t.Tactic).FirstOrDefault();
         _evtStage = e.Type;   // E-32: vendor-disclosure stage for a third-party case
@@ -1238,7 +1337,7 @@ else
     {
         var wasInvestigationEdit = _tlAddKind == TimelineKind.Investigation && _tlEditId is not null;
         _tlEditId = null; _tlReason = null; ClearDecision();
-        _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = "";
+        _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
         _evtTactic = MitreTactic.Unspecified; _evtAttackMode = false; // FR-24: back to the default disclosure composer
         if (wasInvestigationEdit)
         {
