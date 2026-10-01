@@ -6,9 +6,11 @@
 
 .DESCRIPTION
     Safe, repeatable upgrade of a site that Install-CaseBook.ps1 (or an older version) stood up.
-    Unlike re-running the installer, this NEVER rewrites appsettings.Production.json, touches the
-    data root, or reconfigures IIS -- it only swaps the app binaries and lets EF Core apply the
-    pending migrations. It also snapshots the current binaries so a failed upgrade rolls back.
+    Unlike re-running the installer, this never reconfigures IIS or changes an existing setting -- it
+    swaps the app binaries and lets EF Core apply the pending migrations. The one exception: when a newer
+    release added a data-folder setting (e.g. ReportTemplates:RootPath) that the deployed
+    appsettings.Production.json lacks, it adds that setting under the data root (after backing the config
+    up) and creates the folder, so the store doesn't fall back to App_Data in the read-only web root. It also snapshots the current binaries so a failed upgrade rolls back.
 
     Stages:
       1. Resolve the live deployment from IIS + the deployed appsettings.Production.json
@@ -49,6 +51,11 @@
     <SitePath>\..\casebook-upgrade-backups\<timestamp>). The DB backup is written server-side to
     the SQL instance's default backup directory.
 
+.PARAMETER DataRoot
+    The deployment's data root (evidence, reports, branding, keys ... outside the web root). Only needed when
+    the preflight can't work it out from paths already in appsettings.Production.json and the config is
+    missing a data-folder setting a newer release added.
+
 .PARAMETER SkipDbBackup
     Skip the automatic DB backup (only if your backup is handled externally and is current).
 
@@ -75,6 +82,7 @@ param(
     [string] $HealthUrl,
 
     [string] $BackupRoot,
+    [string] $DataRoot,
     [switch] $SkipDbBackup,
     [int]    $WarmupTimeoutSec = 180,
     [switch] $Force
@@ -274,6 +282,67 @@ if ($manifest -and (Test-Path $manifest)) {
     Write-Warn2 "No migration manifest available -- skipping the compatibility preflight (cannot pre-detect a lineage mismatch)."
 }
 
+# 3e. DATA-FOLDER SETTINGS -- every store the release keeps under the data root must be configured. A setting
+# added in a later release is missing from an older install's appsettings.Production.json, and its store then
+# falls back to App_Data under the read-only web root and fails on first use (Access denied).
+$template = $null
+if ($appSrc) { $template = Get-ChildItem -Path (Split-Path -Parent $appSrc) -Recurse -Filter 'appsettings.Production.template.json' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
+if (-not $template) { $t2 = Join-Path $deployDir 'appsettings.Production.template.json'; if (Test-Path $t2) { $template = $t2 } }
+$missingData = @()
+if ($template) {
+    # Every string the template sets to "__DATA_ROOT__\..." -> (path in the JSON, suffix under the data root).
+    function Get-DataRootSettings($node, [string]$prefix) {
+        foreach ($prop in $node.PSObject.Properties) {
+            if ($prop.Name -eq '//') { continue }
+            $path = if ($prefix) { "${prefix}:$($prop.Name)" } else { $prop.Name }
+            if ($prop.Value -is [string] -and $prop.Value -like '__DATA_ROOT__*') {
+                [pscustomobject]@{ Path = $path; Suffix = $prop.Value.Substring('__DATA_ROOT__'.Length).TrimStart('\') }
+            } elseif ($prop.Value -is [System.Management.Automation.PSCustomObject]) { Get-DataRootSettings $prop.Value $path }
+        }
+    }
+    function Get-JsonValue($node, [string]$path) {
+        foreach ($part in $path.Split(':')) { if ($null -eq $node -or -not $node.PSObject.Properties[$part]) { return $null }; $node = $node.$part }
+        return $node
+    }
+    $wanted  = @(Get-DataRootSettings (Get-Content $template -Raw | ConvertFrom-Json) '')
+    $liveCfg = Get-Content $prodSettings -Raw | ConvertFrom-Json
+    # The data root, from a setting the install already has (value = <data root>\<suffix>), unless given.
+    if (-not $DataRoot) {
+        foreach ($w in $wanted) {
+            $v = Get-JsonValue $liveCfg $w.Path
+            if ($v -is [string] -and $v.EndsWith('\' + $w.Suffix, [StringComparison]::OrdinalIgnoreCase)) {
+                $DataRoot = $v.Substring(0, $v.Length - $w.Suffix.Length - 1); break
+            }
+        }
+    }
+    $missingAll = @($wanted | Where-Object { -not (Get-JsonValue $liveCfg $_.Path) })
+    # Only plain storage folders are filled in automatically. The seal signing key is never moved for you: a new
+    # location would orphan the existing key, so a missing path stops the upgrade. Anything else (the session key
+    # ring, the backup-status file an external job writes) is reported for the admin to set.
+    $missingData  = @($missingAll | Where-Object { $_.Path -like '*:RootPath' -or $_.Path -eq 'Integrity:ExportPath' })
+    $missingKey   = @($missingAll | Where-Object { $_.Path -eq 'Integrity:SigningKeyPath' })
+    $missingOther = @($missingAll | Where-Object { $missingData -notcontains $_ -and $missingKey -notcontains $_ })
+    if ($missingKey.Count -gt 0) {
+        throw ("appsettings.Production.json has no Integrity:SigningKeyPath. It isn't added automatically because a new " +
+               "location would orphan the existing seal signing key. Find where the key lives today, set the path to it " +
+               "(see deploy/appsettings.Production.template.json and OPERATIONS.md section 2), then re-run.")
+    }
+    foreach ($o in $missingOther) {
+        Write-Warn2 "Not set: $($o.Path) (the template uses <data root>\$($o.Suffix)). Not changed by the upgrade; set it when convenient."
+    }
+    if ($missingData.Count -eq 0) { Write-Info "Data-folder settings: all present." }
+    elseif (-not $DataRoot) {
+        throw ("appsettings.Production.json is missing data-folder setting(s) this release uses (" +
+               (($missingData | ForEach-Object { $_.Path }) -join ', ') + ") and the data root can't be worked out " +
+               "from the others. Re-run with -DataRoot <your data root, e.g. E:\CaseBookData> so they can be added.")
+    } else {
+        Write-Warn2 ("Data-folder settings missing -- will be added under $DataRoot after the backup: " +
+                     (($missingData | ForEach-Object { "$($_.Path) = $(Join-Path $DataRoot $_.Suffix)" }) -join '; '))
+    }
+} else {
+    Write-Warn2 "No appsettings.Production.template.json found -- skipping the data-folder settings check."
+}
+
 # --- 4. Confirm ---------------------------------------------------------------
 $currentVerFile = Join-Path $SitePath 'VERSION.txt'
 $currentVersion = if (Test-Path $currentVerFile) { ((Get-Content $currentVerFile | Where-Object { $_ -match 'Version:' }) -replace 'Version:\s*','').Trim() } else { '(unknown)' }
@@ -316,6 +385,31 @@ $rollbackDir = Join-Path $BackupRoot 'site-rollback'
 & robocopy $SitePath $rollbackDir /E /XD logs /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "Failed to snapshot the current site for rollback (robocopy exit $LASTEXITCODE)." }
 Write-Info "Rollback snapshot: $rollbackDir"
+
+# --- 5b. Add any missing data-folder settings (the config is backed up above) ---------
+if ($missingData.Count -gt 0) {
+    Write-Step "Adding missing data-folder settings to appsettings.Production.json"
+    $liveCfg = Get-Content $prodSettings -Raw | ConvertFrom-Json
+    $rootAcl = if (Test-Path $DataRoot) { Get-Acl $DataRoot } else { $null }
+    foreach ($m in $missingData) {
+        $value = Join-Path $DataRoot $m.Suffix
+        $node = $liveCfg; $parts = $m.Path.Split(':')
+        for ($i = 0; $i -lt $parts.Length - 1; $i++) {
+            if (-not $node.PSObject.Properties[$parts[$i]]) { $node | Add-Member -NotePropertyName $parts[$i] -NotePropertyValue ([pscustomobject]@{}) }
+            $node = $node.($parts[$i])
+        }
+        if ($node.PSObject.Properties[$parts[-1]]) { $node.($parts[-1]) = $value } else { $node | Add-Member -NotePropertyName $parts[-1] -NotePropertyValue $value }
+        # A folder setting gets its folder; a file setting (e.g. a key path) gets its parent folder. New folders
+        # take the data root's ACL, which the installer restricted to the app pool identity and admins.
+        $dir = if ([IO.Path]::GetExtension($value)) { Split-Path -Parent $value } else { $value }
+        if (-not (Test-Path $dir)) {
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            if ($rootAcl) { Set-Acl -Path $dir -AclObject $rootAcl }
+        }
+        Write-Info "$($m.Path) = $value"
+    }
+    $liveCfg | ConvertTo-Json -Depth 32 | Set-Content -Path $prodSettings -Encoding UTF8
+}
 
 # --- 6. Deploy ---------------------------------------------------------------
 Write-Step "Stopping app pool '$AppPoolName'"

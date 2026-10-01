@@ -166,8 +166,14 @@ you need it.
   deleted. Export any you need to keep before upgrading (for example with a `SELECT` against `CaseComments`).
   Their entries in the audit trail remain and the chain still verifies. @mentions now live on notes.
 
-- The script never rewrites `appsettings.Production.json`, the data root (evidence / seals / reports /
-  keys), or your IIS configuration. Manual config (e.g. the CyberArk `Secrets` block) is preserved.
+- The script never changes an existing setting in `appsettings.Production.json`, existing data under the data
+  root (evidence / seals / reports / keys), or your IIS configuration. Manual config (e.g. the CyberArk `Secrets`
+  block) is preserved. **One addition it does make:** a storage-folder setting a newer release introduced (e.g.
+  `ReportTemplates:RootPath`) that your config lacks is added under your data root, with its folder created and
+  the data root's permissions, after the config is backed up. Without it, that store falls back to `App_Data` in
+  the read-only web root and fails with "Access to the path ... is denied". The data root is worked out from your
+  existing paths (or pass `-DataRoot`). A missing `Integrity:SigningKeyPath` stops the upgrade instead, since a new
+  location would orphan the seal signing key; other unset settings are listed as warnings.
 - If your DB is in `DbaApplies` mode (the app account is **not** `db_owner`), the app cannot apply
   migrations itself — have a DBA apply `deploy/sql/casebook-schema-sqlserver.sql` (idempotent) before
   the first request, then run the upgrade with the app already schema-current.
