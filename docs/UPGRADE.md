@@ -155,6 +155,13 @@ you need it.
 
 ## Notes
 
+- **v1.2.1 adds a close-gate check.** The upgrade adds "Required regulatory notifications recorded" to every
+  close-case stage gate that doesn't already have it, as a blocking check (overridable with a justification, like
+  any gate). Closing a case whose notification clock is running with no report time recorded then needs an
+  override. Remove or make it non-blocking in Administration → Stage gates if your process differs. The
+  dashboard and deadline reminders now also keep watching closed cases until their notification is recorded,
+  so older closed cases with an unrecorded notification may appear under "Awaiting report" after the upgrade.
+
 - **v1.2.0 removes case Discussion.** The upgrade drops the `CaseComments` table, so discussion posts are
   deleted. Export any you need to keep before upgrading (for example with a `SELECT` against `CaseComments`).
   Their entries in the audit trail remain and the chain still verifies. @mentions now live on notes.

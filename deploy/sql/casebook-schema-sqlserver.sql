@@ -2543,3 +2543,31 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261001005319_ClosureGateNotificationsRecorded'
+)
+BEGIN
+
+    INSERT INTO [StageGateRequirements] ([Id], [GateId], [Order], [Kind], [CheckKey], [CheckParam], [Label], [IsBlocking], [RowHash])
+    SELECT NEWID(), g.[Id],
+           COALESCE((SELECT MAX(r.[Order]) FROM [StageGateRequirements] r WHERE r.[GateId] = g.[Id]), 0) + 1,
+           0, N'NotificationsRecorded', NULL, N'Required regulatory notifications recorded', CAST(1 AS bit), NULL
+    FROM [StageGates] g
+    WHERE g.[Trigger] = 3
+      AND NOT EXISTS (SELECT 1 FROM [StageGateRequirements] r WHERE r.[GateId] = g.[Id] AND r.[CheckKey] = N'NotificationsRecorded');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261001005319_ClosureGateNotificationsRecorded'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261001005319_ClosureGateNotificationsRecorded', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
