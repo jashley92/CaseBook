@@ -154,7 +154,7 @@
                @bind:event="oninput" placeholder="Filter by source…" aria-label="Filter by source" />
         @if (Case.Entities.Count > 0)
         {
-            @* INV-03: everything that touches one entity — as actor or target, or tagged inline with # in the text. *@
+            @* INV-03: everything that touches one entity — as actor or target, or tagged inline with [[ in the text. *@
                 <select class="form-select form-select-sm w-auto" style="max-width:16rem" @bind="_tlFilterEntityStr" aria-label="Filter by entity">
                     <option value="">Any entity</option>
                     @foreach (var en in Case.Entities.OrderBy(x => x.Type).ThenBy(EntityShort))
@@ -359,7 +359,7 @@
                 </div>
                 <div class="mt-3">
                     <label class="form-label small mb-1" for="@InvEditorId">
-                        @(IsDecision ? "The decision" : "Notes") <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, bullet/numbered lists, links</span>
+                        @(IsDecision ? "The decision" : "Notes") <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, bullet/numbered lists, links · <code>[[</code> to tag an entity</span>
                     </label>
                     @if (_tlEditId is null)
                     {
@@ -1112,7 +1112,7 @@ else
         }
     }
 
-    // The case's entities as inline "#" tag candidates ({id, value, hint}) for the Investigation editor.
+    // The case's entities as inline "[[" tag candidates ({id, value, hint}) for the Investigation editor.
     private object[] EntityCandidates =>
         Case.Entities
             .Select(e => (object)new

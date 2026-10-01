@@ -509,7 +509,7 @@ else
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter] public bool CanEdit { get; set; }
-    /// <summary>Deep-link focus: when set (from a "#" entity tag chip), scroll to and briefly highlight that row.</summary>
+    /// <summary>Deep-link focus: when set (from an entity tag chip), scroll to and briefly highlight that row.</summary>
     [Parameter] public Guid? FocusEntityId { get; set; }
     /// <summary>INV-11: open an entity in the workspace's entity panel.</summary>
     [Parameter] public EventCallback<Guid> OnOpenEntity { get; set; }
@@ -923,7 +923,7 @@ else
             .Select(e => $"{e.Id:N}:{e.ActorEntityId:N}>{e.TargetEntityId:N}")));
 
     private Guid? _focusHandled;
-    /// <summary>Stable DOM id for an entity row, so a "#" tag chip can deep-link straight to it.</summary>
+    /// <summary>Stable DOM id for an entity row, so an entity tag chip can deep-link straight to it.</summary>
     private static string RowId(Guid id) => $"ent-{id:N}";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

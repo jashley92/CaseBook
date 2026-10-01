@@ -757,7 +757,7 @@ else
     /// <summary>Deep-link a specific tab, e.g. <c>?tab=Report</c>, so a link can point straight at it.</summary>
     [SupplyParameterFromQuery(Name = "tab")] public string? QTab { get; set; }
 
-    /// <summary>Deep-link a specific entity (from an inline "#" tag chip): <c>?entity={guid}</c> opens it in the
+    /// <summary>Deep-link a specific entity (from an inline entity tag chip): <c>?entity={guid}</c> opens it in the
     /// entity panel (INV-11) over the current tab, and focuses its row when the Entities tab is open.</summary>
     [SupplyParameterFromQuery(Name = "entity")] public Guid? QEntity { get; set; }
 
@@ -767,7 +767,7 @@ else
     private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Tasks", "Review", "Report", "Audit"];
     private string _activeTab = "Overview";
 
-    // UX-19: each tab string is the stable routing key (?tab=, inline "#"-chip deep-links, TabCount /
+    // UX-19: each tab string is the stable routing key (?tab=, inline entity-chip deep-links, TabCount /
     // SubmitAsync / feed keys), so it stays "Entities"; this maps a key to its display label so the bar can
     // read in SOC vocabulary without touching any of that wiring.
     private static string TabLabel(string tab) => tab switch
@@ -1144,7 +1144,7 @@ else
     protected override async Task OnParametersSetAsync()
     {
         await Reload();
-        _panelEntity = QEntity;   // INV-11: a "#" tag link opens the entity panel
+        _panelEntity = QEntity;   // INV-11: an entity tag link opens the entity panel
         // Honor an explicit ?tab=, otherwise refresh whatever tab is already active. The Id can change
         // under a reused component (e.g. following an "also in" cross-case link) while the active tab
         // stays the same, so always reload the active tab's data rather than only on a tab-name change.

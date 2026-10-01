@@ -23,7 +23,7 @@
     </button>
     <div id="note-add-form" class="card mb-3 @(ComposerShown ? "" : "im-phone-collapsed")">
         <div class="card-body">
-            <label class="form-label small mb-1" for="@NoteAddEditorId">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links · <code>@@</code> to mention a teammate · <code>#</code> to tag an entity</span></label>
+            <label class="form-label small mb-1" for="@NoteAddEditorId">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links · <code>@@</code> to mention a teammate · <code>[[</code> to tag an entity</span></label>
             @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add. *@
             <ComposerHint>Working notes: findings and reasoning as you go. Not in the case report unless its report profile includes Analyst Notes. <code>@@</code>mentioned teammates are emailed a link to the note.</ComposerHint>
             <textarea id="@NoteAddEditorId" class="form-control mb-2"></textarea>
@@ -100,7 +100,7 @@ else
     private bool ComposerShown => _composerOpen || AutofocusComposer;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<AnalystNote> Notes { get; set; } = [];
-    /// <summary>The case's entities/IOCs, offered as inline "#" tags in the note editors.</summary>
+    /// <summary>The case's entities/IOCs, offered as inline "[[" tags in the note editors.</summary>
     [Parameter] public IReadOnlyList<CaseEntity> Entities { get; set; } = [];
     [Parameter] public bool CanEdit { get; set; }
     /// <summary>INV-07: the sources already promoted to the timeline ("note:&lt;id&gt;" …).</summary>
@@ -207,7 +207,7 @@ else
         }
     }
 
-    // The case's entities as inline "#" tag candidates ({id, value, hint} for the editor JS).
+    // The case's entities as inline "[[" tag candidates ({id, value, hint} for the editor JS).
     private object[] EntityCandidates =>
         (Entities ?? Array.Empty<CaseEntity>())
             .Select(e => (object)new

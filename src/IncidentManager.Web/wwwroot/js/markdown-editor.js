@@ -5,7 +5,7 @@
 (function () {
     const instances = {};
 
-    function toolbar() {
+    function toolbar(opts) {
         // Each button binds an EasyMDE static action and a `bi bi-*` glyph (Bootstrap Icons, already vendored).
         return [
             { name: 'bold', action: EasyMDE.toggleBold, className: 'bi bi-type-bold', title: 'Bold' },
@@ -18,13 +18,19 @@
             { name: 'code', action: EasyMDE.toggleCodeBlock, className: 'bi bi-code-slash', title: 'Code' },
             '|',
             { name: 'link', action: EasyMDE.drawLink, className: 'bi bi-link-45deg', title: 'Insert link' },
+            // INV-50: tagging without remembering the "[[" shortcut (only where the editor offers entities).
+            ...(opts && !Array.isArray(opts) && Array.isArray(opts.entities) && opts.entities.length ? [{
+                name: 'tag-entity', className: 'bi bi-tag', title: 'Tag an entity / IOC ([[)',
+                action: editor => { const cm = editor.codemirror; cm.replaceSelection('[['); cm.focus(); if (editor._openTagMenu) editor._openTagMenu(); }
+            }] : []),
             { name: 'preview', action: EasyMDE.togglePreview, className: 'bi bi-eye', title: 'Toggle preview', noDisable: true }
         ];
     }
 
     // Caret-anchored autocomplete for a CodeMirror instance (EasyMDE), driven by trigger characters:
     //   @  → teammate mentions  → inserts "@Display Name " (notifies; derived on submit via getMentions)
-    //   #  → case entities/IOCs → inserts "[value](entity:<id>) " (rendered as a chip by the Markdown service)
+    //   [[ → case entities/IOCs → inserts "[value](entity:<id>) " (rendered as a chip by the Markdown service).
+    //        INV-50: was "#", which is Markdown's heading marker and common in ordinary text ("ticket #4521").
     // Type the trigger then a partial to open a dropdown; Up/Down to move, Enter/Tab/click to insert, Esc to
     // dismiss. Pure DOM, CSP-safe (no eval/fetch). `triggers` is built from init's opts.
     function buildTriggers(opts) {
@@ -32,6 +38,7 @@
         if (opts && Array.isArray(opts.mentions) && opts.mentions.length) {
             triggers.push({
                 re: /(?:^|[\s(\[])@([\p{L}\p{N}._-]{0,30})$/u,
+                lead: 1,
                 list: opts.mentions,                                  // {id, name}
                 label: c => c.name,
                 match: (c, q) => { const n = c.name.toLowerCase(); return q === '' || n.includes(q) || n.split(/\s+/).some(w => w.startsWith(q)); },
@@ -40,7 +47,10 @@
         }
         if (opts && Array.isArray(opts.entities) && opts.entities.length) {
             triggers.push({
-                re: /(?:^|[\s(\[])#([\p{L}\p{N}._\\/:-]{0,40})$/u,
+                // Spaces are allowed after "[[" (entity labels have them); the opener is deliberate, so it opens at once.
+                re: /(?:^|[\s(])\[\[([\p{L}\p{N}._\\/: -]{0,40})$/u,
+                lead: 2,
+                closer: ']]',
                 list: opts.entities,                                  // {id, value, hint}
                 label: c => c.hint ? (c.value + '  ·  ' + c.hint) : c.value,
                 match: (c, q) => q === '' || c.value.toLowerCase().includes(q) || (c.hint || '').toLowerCase().includes(q),
@@ -63,7 +73,7 @@
             const upto = cm.getLine(cur.line).slice(0, cur.ch);
             for (const t of triggers) {
                 const m = upto.match(t.re);
-                if (m) return { t, partial: m[1], from: { line: cur.line, ch: cur.ch - m[1].length - 1 }, to: cur };
+                if (m) return { t, partial: m[1], from: { line: cur.line, ch: cur.ch - m[1].length - t.lead }, to: cur };
             }
             return null;
         }
@@ -71,7 +81,13 @@
         function highlight() { if (menu) [...menu.children].forEach((el, i) => el.classList.toggle('active', i === active)); }
 
         function choose(i) {
-            if (range && current && items[i]) cm.replaceRange(current.insert(items[i]), range.from, range.to);
+            if (range && current && items[i]) {
+                // A closer typed (or auto-inserted) after the caret, e.g. "]]", is consumed with the tag.
+                let to = range.to;
+                if (current.closer && cm.getLine(to.line).slice(to.ch, to.ch + current.closer.length) === current.closer)
+                    to = { line: to.line, ch: to.ch + current.closer.length };
+                cm.replaceRange(current.insert(items[i]), range.from, to);
+            }
             close();
             cm.focus();
         }
@@ -99,6 +115,7 @@
         }
 
         cm.on('inputRead', update);
+        mde._openTagMenu = update;   // INV-50: the toolbar's "Tag entity" button inserts "[[" and opens the list
         cm.on('cursorActivity', () => { if (menu) update(); });
         cm.on('blur', () => setTimeout(close, 150));
         // Capture phase so we intercept navigation keys before CodeMirror moves the caret.
@@ -128,7 +145,7 @@
                 status: false,
                 minHeight: '150px',
                 autoRefresh: { delay: 100 },    // render correctly even if created while hidden
-                toolbar: toolbar(),
+                toolbar: toolbar(opts),
                 shortcuts: { toggleSideBySide: null, toggleFullScreen: null }
             });
             instances[id] = mde;

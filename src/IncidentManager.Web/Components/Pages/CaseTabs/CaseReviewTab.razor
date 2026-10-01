@@ -61,7 +61,7 @@
     <div class="card-body">
         @if (_editingReview)
         {
-            <p class="small text-muted mb-2">Markdown: headings, <strong>**bold**</strong>, lists, links · <code>#</code> to tag an entity</p>
+            <p class="small text-muted mb-2">Markdown: headings, <strong>**bold**</strong>, lists, links · <code>[[</code> to tag an entity</p>
             @foreach (var f in Fields)
             {
                 <div class="mb-3">
@@ -313,7 +313,7 @@ else
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter] public Classification? Classification { get; set; }
     [Parameter] public bool CanEdit { get; set; }
-    /// <summary>The case's entities, offered as inline "#" tag candidates in the editors (like Notes).</summary>
+    /// <summary>The case's entities, offered as inline "[[" tag candidates in the editors (like Notes).</summary>
     [Parameter] public IReadOnlyList<CaseEntity>? Entities { get; set; }
     /// <summary>Reload the workspace after a write (audit trail, live-collab, tab badge).</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
@@ -415,7 +415,7 @@ else
         }
     }
 
-    // The case's entities as inline "#" tag candidates ({id, value, hint} for the editor JS), as in Notes.
+    // The case's entities as inline "[[" tag candidates ({id, value, hint} for the editor JS), as in Notes.
     private object[] EntityCandidates =>
         (Entities ?? Array.Empty<CaseEntity>())
             .Select(e => (object)new
