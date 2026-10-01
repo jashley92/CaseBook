@@ -214,7 +214,7 @@ else
             {
                 id = e.Id.ToString(),
                 value = string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!,
-                hint = e.Type.ToString()
+                hint = Ui.Label(e.Type)   // the display name ("IP address"), not the enum identifier
             })
             .ToArray();
 
