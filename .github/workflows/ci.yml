@@ -127,13 +127,15 @@ jobs:
           CASEBOOK_TEST_SQL: Server=localhost,1433;User Id=sa;Password=${{ env.SA_PASSWORD }};TrustServerCertificate=True;Encrypt=False
         run: dotnet test tests/IncidentManager.IntegrationTests -c Release --filter "FullyQualifiedName~SqlServerTests" --verbosity minimal
 
-      - name: Upgrade from recent releases
+      - name: Upgrade from recent releases and the first release
         env:
           CASEBOOK_TEST_SQL: Server=localhost,1433;User Id=sa;Password=${{ env.SA_PASSWORD }};TrustServerCertificate=True;Encrypt=False
           SQLCMD: docker exec ${{ job.services.mssql.id }} /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P ${{ env.SA_PASSWORD }}
         run: |
-          # The three newest releases reachable from this commit (every supported "upgrade from" point).
-          tags="$(git tag --list 'v[0-9]*' --merged HEAD --sort=-v:refname | head -3)"
+          # The three newest releases reachable from this commit, plus the first release: installs upgrade
+          # straight from whatever they run (a v1.0.0 site went to v1.2.3 in one step), so the oldest jump is tested too.
+          tags="$( { git tag --list 'v[0-9]*' --merged HEAD --sort=-v:refname | head -3
+                     git tag --list 'v[0-9]*' --merged HEAD --sort=v:refname | head -1; } | sort -u -V -r)"
           if [ -z "$tags" ]; then echo "No release tags yet; nothing to upgrade from."; exit 0; fi
           for tag in $tags; do
             [ "$(git rev-parse "$tag^{commit}")" = "$(git rev-parse HEAD)" ] && continue
