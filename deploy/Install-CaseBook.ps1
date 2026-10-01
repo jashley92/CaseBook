@@ -191,8 +191,24 @@ try {
 # Preflight: the ASP.NET Core Module must be registered or IIS can't run the app - it fails with HTTP
 # 500.19 (0x8007000d) because the web.config's <aspNetCore> section is unknown. The module ships with the
 # .NET Hosting Bundle, NOT the SDK, so a publish-capable box can still be missing it.
-$ancm = Join-Path $env:WINDIR 'System32\inetsrv\aspnetcorev2.dll'
-if (-not (Test-Path $ancm)) {
+# The ASP.NET Core Module, wherever this PowerShell can see it. A 32-bit PowerShell (Windows PowerShell (x86))
+# has System32 redirected to SysWOW64 and $env:ProgramFiles pointed at "Program Files (x86)", so check the real
+# 64-bit locations (Sysnative, ProgramW6432) and the module's registry key in both views as well.
+function Test-AspNetCoreModule {
+    foreach ($p in @((Join-Path $env:WINDIR 'System32\inetsrv\aspnetcorev2.dll'),
+                     (Join-Path $env:WINDIR 'Sysnative\inetsrv\aspnetcorev2.dll'))) {
+        if (Test-Path $p) { return $true }
+    }
+    foreach ($view in 'Registry64', 'Registry32') {
+        try {
+            $k = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', $view).OpenSubKey('SOFTWARE\Microsoft\IIS Extensions\IIS AspNetCore Module V2')
+            if ($k) { $k.Dispose(); return $true }
+        } catch { }
+    }
+    $pf64 = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+    return (Test-Path (Join-Path $pf64 'IIS\Asp.Net Core Module\V2'))
+}
+if (-not (Test-AspNetCoreModule)) {
     throw ("The ASP.NET Core Module (aspnetcorev2.dll) is not installed, so IIS cannot host the app " +
            "(it would fail with HTTP 500.19). Install the .NET 10 Hosting Bundle from " +
            "https://dotnet.microsoft.com/download/dotnet/10.0 (ASP.NET Core Runtime -> Hosting Bundle), " +

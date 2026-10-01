@@ -201,14 +201,33 @@ if (-not (Test-Path (Join-Path $appSrc 'IncidentManager.Web.dll'))) { throw "Sta
 # --- 3. Preflight -------------------------------------------------------------
 Write-Step "Preflight checks"
 
+# The ASP.NET Core Module, wherever this PowerShell can see it. A 32-bit PowerShell (Windows PowerShell (x86))
+# has System32 redirected to SysWOW64 and $env:ProgramFiles pointed at "Program Files (x86)", so check the real
+# 64-bit locations (Sysnative, ProgramW6432) and the module's registry key in both views as well.
+function Test-AspNetCoreModule {
+    foreach ($p in @((Join-Path $env:WINDIR 'System32\inetsrv\aspnetcorev2.dll'),
+                     (Join-Path $env:WINDIR 'Sysnative\inetsrv\aspnetcorev2.dll'))) {
+        if (Test-Path $p) { return $true }
+    }
+    foreach ($view in 'Registry64', 'Registry32') {
+        try {
+            $k = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', $view).OpenSubKey('SOFTWARE\Microsoft\IIS Extensions\IIS AspNetCore Module V2')
+            if ($k) { $k.Dispose(); return $true }
+        } catch { }
+    }
+    $pf64 = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+    return (Test-Path (Join-Path $pf64 'IIS\Asp.Net Core Module\V2'))
+}
+
 # 3a. ASP.NET Core Module (IIS can't host the app without it -> HTTP 500.19).
-if (-not (Test-Path (Join-Path $env:WINDIR 'System32\inetsrv\aspnetcorev2.dll'))) {
+if (-not (Test-AspNetCoreModule)) {
     throw "ASP.NET Core Module not installed. Install the .NET 10 Hosting Bundle, run 'iisreset', then retry."
 }
 
 # 3b. The ASP.NET Core shared framework the app targets (.NET 10) must be present, or the app
 # fails to start with 500.30/500.31. This is the classic trap when the runtime lags the app.
-$aspNetRoot = Join-Path $env:ProgramFiles 'dotnet\shared\Microsoft.AspNetCore.App'
+# The 64-bit runtime's folder, even from a 32-bit shell (where $env:ProgramFiles is "Program Files (x86)").
+$aspNetRoot = Join-Path $(if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }) 'dotnet\shared\Microsoft.AspNetCore.App'
 $hasNet10 = (Test-Path $aspNetRoot) -and (Get-ChildItem $aspNetRoot -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '10.*' })
 if (-not $hasNet10) {
     throw ("The .NET 10 ASP.NET Core runtime was not found under $aspNetRoot. Install the .NET 10 Hosting " +

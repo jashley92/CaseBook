@@ -56,6 +56,24 @@ $ErrorActionPreference = 'Stop'
 $script:fail = 0
 $script:warn = 0
 $cfg = $null
+# The ASP.NET Core Module, wherever this PowerShell can see it. A 32-bit PowerShell (Windows PowerShell (x86))
+# has System32 redirected to SysWOW64 and $env:ProgramFiles pointed at "Program Files (x86)", so check the real
+# 64-bit locations (Sysnative, ProgramW6432) and the module's registry key in both views as well.
+function Test-AspNetCoreModule {
+    foreach ($p in @((Join-Path $env:WINDIR 'System32\inetsrv\aspnetcorev2.dll'),
+                     (Join-Path $env:WINDIR 'Sysnative\inetsrv\aspnetcorev2.dll'))) {
+        if (Test-Path $p) { return $true }
+    }
+    foreach ($view in 'Registry64', 'Registry32') {
+        try {
+            $k = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', $view).OpenSubKey('SOFTWARE\Microsoft\IIS Extensions\IIS AspNetCore Module V2')
+            if ($k) { $k.Dispose(); return $true }
+        } catch { }
+    }
+    $pf64 = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+    return (Test-Path (Join-Path $pf64 'IIS\Asp.Net Core Module\V2'))
+}
+
 function Ok($m)   { Write-Host "  [ OK ] $m" -ForegroundColor Green }
 function Bad($m)  { Write-Host "  [FAIL] $m" -ForegroundColor Red;    $script:fail++ }
 function Warn($m) { Write-Host "  [WARN] $m" -ForegroundColor Yellow; $script:warn++ }
@@ -162,8 +180,7 @@ if ($ConfigFile) {
         }
 
         # --- web-host capability (only meaningful on the web host) ---
-        $ancm = Join-Path $env:WINDIR 'System32\inetsrv\aspnetcorev2.dll'
-        if (Test-Path $ancm) { Ok "ASP.NET Core Module present (this host can host the app)" }
+        if (Test-AspNetCoreModule) { Ok "ASP.NET Core Module present (this host can host the app)" }
         else { Warn ".NET 10 Hosting Bundle / ASP.NET Core Module not found (install it on the WEB host before Install-CaseBook)" }
     }
 }
