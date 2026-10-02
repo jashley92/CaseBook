@@ -10,7 +10,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 
 | Sev | Current behavior | Why it matters | Possible fix |
 |---|---|---|---|
-| High | **`/integrity` shows the last 100 audit entries across all cases** to anyone with `ViewCases`, including restricted case numbers, actors and entity labels (`IntegrityService.RecentAsync` isn't need-to-know scoped). | Reveals that restricted cases exist and who is working them. | Scope to `ForUser`, or require `ViewAllCases`/`Administer` for the cross-case trail. |
 | Medium | **Non-Production environments use development sign-in** unless `Auth:Mode=Windows`. The startup fail-safe checks only the `Production` name. | A `Staging` or `QA` server would sign everyone in with all roles. | Fail unless `Development`, or require an explicit opt-in to Dev mode. |
 | Medium | **The app generates a seal-signing key if the file is missing**, in any environment, and the integrity job runs at startup. | A production instance started before the key is provisioned signs with a key that lives on the server. | Refuse to generate outside Development. |
 | Medium | **The pending-import queue isn't need-to-know scoped**: anyone with `EditCases` sees submitter, origin, summary and target case number. | Can reveal a restricted case's number. | Filter by target-case visibility. |

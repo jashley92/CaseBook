@@ -1,6 +1,8 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
+using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace IncidentManager.Application.Integrity;
@@ -123,10 +125,14 @@ public sealed class IntegrityService
         return await db.AuditLog.CountAsync(ct);
     }
 
+    /// <summary>
+    /// The newest audit entries, need-to-know scoped (<see cref="ScopedAuditLog"/>): the cross-case trail on
+    /// <c>/integrity</c> must not reveal a restricted case's number or who is working it.
+    /// </summary>
     public async Task<List<AuditLogEntry>> RecentAsync(string? caseNumber, int take = 100, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var q = db.AuditLog.AsNoTracking().AsQueryable();
+        var q = ScopedAuditLog(db);
         if (!string.IsNullOrWhiteSpace(caseNumber))
             q = q.Where(a => a.CaseNumber == caseNumber);
         return await q.OrderByDescending(a => a.Sequence).Take(take).ToListAsync(ct);
@@ -140,7 +146,7 @@ public sealed class IntegrityService
     public async Task<List<AuditLogEntry>> QueryAsync(AuditQueryFilter filter, int take = 500, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var q = db.AuditLog.AsNoTracking().AsQueryable();
+        var q = ScopedAuditLog(db);
 
         if (!string.IsNullOrWhiteSpace(filter.CaseNumber))
             q = q.Where(a => a.CaseNumber == filter.CaseNumber);
@@ -165,12 +171,27 @@ public sealed class IntegrityService
     public async Task<(List<string> Actors, List<string> EntityTypes)> AuditFacetsAsync(string? caseNumber, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var q = db.AuditLog.AsNoTracking().AsQueryable();
+        var q = ScopedAuditLog(db);
         if (!string.IsNullOrWhiteSpace(caseNumber))
             q = q.Where(a => a.CaseNumber == caseNumber);
         var actors = await q.Select(a => a.Actor).Distinct().OrderBy(x => x).ToListAsync(ct);
         var types = await q.Select(a => a.EntityType).Distinct().OrderBy(x => x).ToListAsync(ct);
         return (actors, types);
+    }
+
+    /// <summary>
+    /// The audit entries the caller may read. Oversight (<c>ViewAllCases</c>) and administrators see the whole
+    /// trail, including entries with no case (configuration, roles). Everyone else sees only entries for cases
+    /// <see cref="CaseQueryExtensions.ForUser"/> lets them see, so a restricted case's number, actors and entity
+    /// labels never reach an unassigned, uncleared user. Fails closed: an entry under a case's former number
+    /// (before a renumber) no longer matches a visible case and is left out.
+    /// </summary>
+    private IQueryable<AuditLogEntry> ScopedAuditLog(IAppDbContext db)
+    {
+        var all = db.AuditLog.AsNoTracking();
+        if (_user.Has(Permission.ViewAllCases) || _user.Has(Permission.Administer)) return all;
+        var visible = db.Cases.AsNoTracking().ForUser(_user).Select(c => c.CaseNumber);
+        return all.Where(a => a.CaseNumber != null && visible.Contains(a.CaseNumber));
     }
 
     /// <summary>

@@ -142,6 +142,10 @@ return query.Where(c => !c.IsRestricted
 
 - Applied to lists, search, the workspace, every write (a case is loaded through it before changing), downloads,
   exports, dashboards, indicators, campaigns (a restricted case can't bridge two campaigns), pins and recents.
+- Audit-trail reads (`IntegrityService.RecentAsync`, `QueryAsync`, `AuditFacetsAsync`: `/integrity`, a case's
+  Audit tab, the audit CSV) show `ViewAllCases` and `Administer` the whole trail. Everyone else sees only entries
+  for cases they can see; case-less entries (configuration, roles) and entries under a case's former number are
+  left out.
 - **No existence leak:** a hidden case and a missing case give the same "not found".
 - Restricting is open to anyone with `EditCases` (they're kept on the case). Lifting needs the IC, or
   `ViewAllCases` or `ViewRestricted`.
@@ -152,8 +156,6 @@ return query.Where(c => !c.IsRestricted
 
 Listed in [reference/known-issues.md](../reference/known-issues.md#security). In short:
 
-- `/integrity` (any `ViewCases` user) lists the last 100 audit entries across **all** cases, including the
-  numbers of restricted cases and who worked on them.
 - The pending-import queue isn't filtered by need-to-know.
 - The compliance bundle, access-log query and "list all API tokens" have no service-level check (their pages
   and endpoints require `Administer`).

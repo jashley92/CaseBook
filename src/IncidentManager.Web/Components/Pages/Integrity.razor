@@ -4,6 +4,7 @@
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Abstractions.ILedgerStatus Ledger
+@inject ICurrentUser CurrentUser
 
 <PageTitle>Integrity &amp; audit</PageTitle>
 
@@ -149,6 +150,10 @@ else
 }
 
 <h4>Recent audit trail</h4>
+@if (!CurrentUser.Has(Permission.ViewAllCases) && !CurrentUser.Has(Permission.Administer))
+{
+    <p class="text-muted small">Showing entries for the cases you can see.</p>
+}
 @if (_recent is null)
 {
     <LoadingBlock />
