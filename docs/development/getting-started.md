@@ -58,8 +58,8 @@ Spend the rest of the half hour in the app with the phishing case open next to t
 | Test with fewer permissions | Edit `DevAuth:Roles` in `src/IncidentManager.Web/appsettings.json` locally (don't commit it), e.g. `["Analyst"]`, and restart. An override in `appsettings.Development.json` or an environment variable can't shorten the list, because configuration lists merge by index. Permissions refresh in open tabs within two minutes. |
 | See the demo team's view | The seeded people are `ic1` (Ivy Commander), `analyst1` (Alex Analyst), `analyst2` (Robin Reyes), `mgr1` (Morgan Manager), `legal1` (Lee Privacy), `admin1` (Sam Admin). `?as=` creates `dev:<name>` ids, which are different users from these. |
 
-Never deploy with `Auth:Mode=Dev`. Production refuses to start that way, but other environment names don't
-([known issues](../reference/known-issues.md)).
+Never deploy with `Auth:Mode=Dev`. Only the `Development` environment starts that way; any other environment
+refuses unless it sets `Auth:AllowDevSignInOutsideDevelopment=true` (never honored in `Production`).
 
 ## Local data
 

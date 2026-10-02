@@ -184,17 +184,9 @@ builder.Services.Configure<IncidentManager.Application.Reporting.ReportingOption
     builder.Configuration.GetSection("Reporting"));
 
 // --- Authentication: Windows integrated in production, dev fallback locally ---
-var authMode = builder.Configuration["Auth:Mode"] ?? "Dev";
-var useWindows = string.Equals(authMode, "Windows", StringComparison.OrdinalIgnoreCase);
-
-// Fail safe: never let the passwordless dev handler run in Production. A missing or mistyped
-// Auth:Mode must stop startup, not silently authenticate everyone as an admin.
-if (builder.Environment.IsProduction() && !useWindows)
-{
-    throw new InvalidOperationException(
-        $"Auth:Mode is '{authMode}' in Production. Production requires Auth:Mode=Windows; " +
-        "the development authentication handler must never be used outside Development.");
-}
+// Fail safe: the passwordless dev handler runs only in Development (or a non-Production environment that opts
+// in); anywhere else a missing or mistyped Auth:Mode stops startup.
+var useWindows = AuthModeGuard.UseWindows(builder.Environment, builder.Configuration);
 
 if (useWindows)
 {

@@ -146,7 +146,7 @@ migration that shipped in a release tag.
 
 | Question | Answer |
 |---|---|
-| Where is authentication handled? | `Web/Program.cs` (mode selection and fail-safe), `Web/Security/DevAuthenticationHandler.cs`, `RoleClaimsTransformer.cs`, `ApiKeyAuthenticationHandler.cs` |
+| Where is authentication handled? | `Web/Program.cs` (mode selection), `Web/Security/AuthModeGuard.cs` (fail-safe), `Web/Security/DevAuthenticationHandler.cs`, `RoleClaimsTransformer.cs`, `ApiKeyAuthenticationHandler.cs` |
 | Where are permissions checked? | Pages: `@attribute [Authorize(Policy = …)]`. Actions: `CaseService.Require()` with `CaseActionPermissions`; `AdminActionPermissions.Require<T>()`; direct `_user.Has(...)` in other services. Visibility: `CaseQueryExtensions.ForUser`. See [security.md](security.md) |
 | Where are roles defined? | `Application/Security/RoleDefinitions.cs` (system roles); custom roles in the `Roles` table via `Admin/RoleService.cs` |
 | Where is the incident model defined? | `Domain/Entities/Case.cs` and `Domain/Enums/CaseEnums.cs` |

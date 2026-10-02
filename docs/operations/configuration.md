@@ -70,15 +70,16 @@ inserted while the app is running is ignored silently until the next restart.
 | Immediately | Anything read per request: SLA targets, deadline settings, labels, access-log scope, time zone, base URL, branding colors, external links, email, chat, SIEM transports, reporting options, legal-hold option |
 | Within about 5–10 minutes | Background-job options (jobs re-read them every 5 minutes; the integrity monitor every 10; the executive report hourly) |
 | New sessions only | `Security:IdleTimeoutMinutes` |
-| **Restart required** | `Auth:Mode`, `Database:*`, `ConnectionStrings:*`, `DataProtection:KeyPath`, `RateLimiting:*`, `Siem:QueueCapacity`, every `Secrets:CyberArk:*` key, all storage paths, `Integrity:SigningKeyPath`/`ExportPath`, `DevAuth:*`, `RoleMapping:*` (first run only, see §3.16) |
+| **Restart required** | `Auth:Mode`, `Auth:AllowDevSignInOutsideDevelopment`, `Database:*`, `ConnectionStrings:*`, `DataProtection:KeyPath`, `RateLimiting:*`, `Siem:QueueCapacity`, every `Secrets:CyberArk:*` key, all storage paths, `Integrity:SigningKeyPath`/`ExportPath`, `DevAuth:*`, `RoleMapping:*` (first run only, see §3.16) |
 
 ## 2. Startup checks
 
-The app refuses to start in exactly three cases:
+The app refuses to start in exactly these cases:
 
 | Condition | Message |
 |---|---|
 | Environment is Production and `Auth:Mode` isn't `Windows` (missing means `Dev`) | `Auth:Mode is '…' in Production. Production requires Auth:Mode=Windows…` |
+| Environment is neither Development nor Production, `Auth:Mode` isn't `Windows`, and `Auth:AllowDevSignInOutsideDevelopment` isn't `true` | `Auth:Mode is '…' in the '<environment>' environment. Set Auth:Mode=Windows, or…` |
 | `DataProtection:KeyPath` is set but not an absolute path | `DataProtection:KeyPath must be an absolute path…` |
 | `Database:Provider` is `SqlServer` and there's no `ConnectionStrings:Default` | `A SqlServer connection string is required.` |
 
@@ -105,7 +106,8 @@ Columns:
 
 | Key | Purpose | Default | Edit | Sens |
 |---|---|---|---|---|
-| `Auth:Mode` | `Windows` = Negotiate (Kerberos/NTLM) with AD group → role mapping. Any other value = the passwordless development handler. **Must be `Windows` in Production.** | `Dev` (json: `Dev`; prod template: `Windows`) | Server | ⚠ |
+| `Auth:Mode` | `Windows` = Negotiate (Kerberos/NTLM) with AD group → role mapping. Any other value = the passwordless development handler, which starts only in the Development environment. **Must be `Windows` in Production.** | `Dev` (json: `Dev`; prod template: `Windows`) | Server | ⚠ |
+| `Auth:AllowDevSignInOutsideDevelopment` | `true` lets a non-Production environment other than Development (a demo or QA server) use the development handler. Ignored in Production. | `false` | Server | ⚠ |
 | `DevAuth:UserId`, `DisplayName`, `Upn`, `Email` | Identity of the development user | `S-1-5-21-DEV-1001`, `Dev Analyst`, … | Server | |
 | `DevAuth:Roles` | Roles granted to the development user | none in code; json: all five | Server | |
 | `AllowedHosts` | Host header allow-list | `*`; prod template: the site hostname | Server | ⚠ |

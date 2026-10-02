@@ -177,7 +177,8 @@ re-sign forged seals — unacceptable in prod. Install the production key **befo
 - **IIS / app-pool hardening**: least-privilege app-pool identity; HTTPS/TLS only (HSTS enabled in
   non-dev); security headers via `SecurityHeadersMiddleware`; server header suppressed.
 - **Authentication**: production requires `Auth:Mode=Windows`; the app refuses to start in Production
-  otherwise (see F-02), so the dev auth handler can never run in prod.
+  otherwise (see F-02), and in any other non-Development environment unless it sets
+  `Auth:AllowDevSignInOutsideDevelopment=true`, so the dev auth handler can never run in prod.
 - **SQL access**: use integrated auth to SQL (no SQL credentials in config).
 - **Download rate limiting (F-13)**: the evidence/report/export endpoints are throttled per user by a
   token bucket, so a compromised account can't bulk-scrape artifacts. Tune under `RateLimiting:Downloads`

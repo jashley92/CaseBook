@@ -14,7 +14,7 @@ flowchart TB
     Req["Request"] --> Mode{"Auth:Mode"}
     Mode -- "Windows (production)" --> Neg["Negotiate: Kerberos / NTLM via IIS"]
     Neg --> RCT["RoleClaimsTransformer<br/>group SIDs → group names → CaseBook roles<br/>→ role + perm claims"]
-    Mode -- "anything else (development)" --> Dev["DevAuthenticationHandler<br/>configured user and roles<br/>?as=Name for a second identity"]
+    Mode -- "anything else (Development only)" --> Dev["DevAuthenticationHandler<br/>configured user and roles<br/>?as=Name for a second identity"]
     Api["Authorization: Bearer cbk_…<br/>(only on POST /api/import/cases)"] --> Key["ApiKeyAuthenticationHandler<br/>hash lookup · not revoked or expired ·<br/>personal tokens trimmed to the owner's current roles"]
     RCT --> P[/"ClaimsPrincipal with perm claims"/]
     Dev --> P
@@ -43,9 +43,9 @@ flowchart TB
   for testing presence, assignment and need-to-know. **It keeps the same roles.** To test a lower-privilege
   user, change `DevAuth:Roles` (for example `DevAuth__Roles__0=Manager` as an environment variable).
 
-**Fail-safe:** startup throws if the environment is `Production` and `Auth:Mode` isn't `Windows`. It doesn't
-protect other environment names: a `Staging` or `QA` environment without `Auth:Mode=Windows` signs everyone in
-as an all-roles administrator ([known issues](../reference/known-issues.md)).
+**Fail-safe** (`Web/Security/AuthModeGuard.cs`): when `Auth:Mode` isn't `Windows`, startup throws unless the
+environment is `Development`. A demo or QA server (any environment except `Production`) can opt in with
+`Auth:AllowDevSignInOutsideDevelopment=true`; `Production` refuses dev sign-in even with the opt-in.
 
 ### API tokens
 

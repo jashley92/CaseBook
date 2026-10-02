@@ -51,7 +51,7 @@ How to diagnose problems in a running CaseBook, from startup failures to integri
 - **Causes, most likely first:**
   1. A migration failed at startup (see [Migration failures](#migration-failures)).
   2. The database is unreachable or the app identity can't log in.
-  3. `Auth:Mode` isn't `Windows` in Production (the message says so).
+  3. `Auth:Mode` isn't `Windows` outside Development (the message says so).
   4. `DataProtection:KeyPath` is relative.
   5. The .NET 10 runtime is missing.
 - **Look:** Application event log (*IIS AspNetCore Module V2* and *.NET Runtime* entries), then stdout logs.
@@ -74,7 +74,9 @@ How to diagnose problems in a running CaseBook, from startup failures to integri
 ### Startup throws "Auth:Mode is 'Dev' in Production"
 
 A fail-safe, not a bug. `appsettings.Production.json` is missing, or doesn't set `Auth:Mode` to `Windows`. Never
-set it to `Dev` on a server.
+set it to `Dev` on a server. The same check stops any other non-Development environment (`Staging`, `QA`) with
+"Auth:Mode is '…' in the '<environment>' environment"; set `Auth:Mode=Windows`, or, on a demo box only,
+`Auth:AllowDevSignInOutsideDevelopment=true`.
 
 ### `401` for everyone
 
