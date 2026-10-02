@@ -437,12 +437,16 @@ public sealed class ReportingIntegrationTests : IDisposable
         _user.UserId = "outsider";
         _user.RoleSet = [AppRole.Analyst];
         await Assert.ThrowsAsync<InvalidOperationException>(() => svc.OpenAsync(report.Id));
+        // Nor learn, through hash verification, that it exists: the same "not found" as a missing report.
+        (await Assert.ThrowsAsync<InvalidOperationException>(() => svc.VerifyFileAsync(report.Id)))
+            .Message.Should().Be((await Assert.ThrowsAsync<InvalidOperationException>(() => svc.VerifyFileAsync(Guid.NewGuid()))).Message);
 
-        // A manager has need-to-know across all cases and can still open it.
+        // A manager has need-to-know across all cases and can still open and verify it.
         _user.RoleSet = [AppRole.Manager];
         var (opened, stream) = await svc.OpenAsync(report.Id);
         await stream.DisposeAsync();
         opened.Id.Should().Be(report.Id);
+        (await svc.VerifyFileAsync(report.Id)).Should().BeTrue();
     }
 
     [Fact]

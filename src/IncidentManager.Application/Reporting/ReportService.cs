@@ -399,12 +399,18 @@ public sealed class ReportService
         return (report, stream);
     }
 
-    /// <summary>Recomputes the stored file's hash and compares it to the recorded hash.</summary>
+    /// <summary>
+    /// Recomputes the stored file's hash and compares it to the recorded hash. Need-to-know scoped like
+    /// <see cref="OpenAsync"/>: a report on a case the caller can't see is "not found", so the answer can't
+    /// confirm that it exists.
+    /// </summary>
     public async Task<bool> VerifyFileAsync(Guid reportId, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var report = await db.Reports.AsNoTracking().FirstOrDefaultAsync(r => r.Id == reportId, ct)
                      ?? throw new InvalidOperationException("Report not found.");
+        var canAccess = await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == report.CaseId, ct);
+        if (!canAccess) throw new InvalidOperationException("Report not found.");
         await using var stream = await _store.OpenReadAsync(report.StoragePath, ct);
         using var ms = new MemoryStream();
         await stream.CopyToAsync(ms, ct);
