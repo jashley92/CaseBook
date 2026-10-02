@@ -524,5 +524,63 @@ public sealed class CaseImportTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task The_pending_queue_hides_submissions_into_a_case_the_reviewer_cannot_see()
+    {
+        // A restricted case the reviewer neither commands nor is assigned to.
+        Guid restrictedId;
+        string restrictedNumber;
+        await using (var db = NewContext())
+        {
+            var c = Case.Open(2026, 77, "Secret", "Restricted matter", Classification.Breach, Severity.High,
+                CaseOrigin.InternalDetection, "analyst1", _clock.UtcNow);
+            c.IsRestricted = true;
+            c.IncidentCommander = "commander1";
+            db.Cases.Add(c);
+            await db.SaveChangesAsync();
+            (restrictedId, restrictedNumber) = (c.Id, c.CaseNumber);
+        }
+
+        // Submitted by someone who can see it (so its summary names the case), plus one with no target and one
+        // whose target doesn't exist (it previews as a new case).
+        Guid intoRestricted, untargeted, missingTarget;
+        await using (var db = NewContext())
+        {
+            var svc = NewImportService(db);
+            async Task<Guid> Submit(Guid? target)
+            {
+                var doc = FullDoc();
+                doc.Target = new CaseImportTarget { CaseId = target, NewCase = doc.Target?.NewCase };
+                var json = JsonSerializer.Serialize(doc, CaseImportJson.Options);
+                return (await svc.SubmitAsync(json, CaseImportService.Parse(json).Document!)).Id;
+            }
+            intoRestricted = await Submit(restrictedId);
+            untargeted = await Submit(null);
+            missingTarget = await Submit(Guid.NewGuid());
+            (await svc.ListPendingAsync()).Should().Contain(x => x.Id == intoRestricted && x.Summary.Contains(restrictedNumber));
+        }
+
+        var reviewer = new TestCurrentUser { UserId = "analyst-unrelated", RoleSet = [AppRole.Analyst] };
+        await using (var db = NewContext())
+        {
+            var svc = new CaseImportService(NewFactory(), reviewer, _clock, NewCaseService(db));
+            var queue = await svc.ListPendingAsync();
+            queue.Select(x => x.Id).Should().BeEquivalentTo([untargeted, missingTarget]);
+            queue.Should().NotContain(x => x.Summary.Contains(restrictedNumber));
+            (await svc.CountPendingAsync()).Should().Be(2);
+            (await svc.BuildPreviewForPendingAsync(intoRestricted)).Should().BeNull();
+            await svc.RejectPendingAsync(intoRestricted, "not mine");
+        }
+
+        await using (var verify = NewContext())
+            (await verify.Set<PendingImport>().FirstAsync(p => p.Id == intoRestricted)).Status
+                .Should().Be(PendingImportStatus.Pending, "a reviewer can't decide a submission they can't see");
+
+        var commander = new TestCurrentUser { UserId = "commander1", RoleSet = [AppRole.Analyst] };
+        await using (var db = NewContext())
+            (await new CaseImportService(NewFactory(), commander, _clock, NewCaseService(db)).ListPendingAsync())
+                .Should().Contain(x => x.Id == intoRestricted);
+    }
+
     public void Dispose() => _connection.Dispose();
 }

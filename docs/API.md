@@ -37,7 +37,8 @@ Submit a structured case-import document. **Auth:** bearer token with **EditCase
 `casebook-case-import` JSON document (see the schema below).
 
 The submission is **staged for review** — it is not written to a case until a person opens the
-*Import → Pending imports* queue in CaseBook and confirms it (or rejects it). Nothing is retried on the server;
+*Import → Pending imports* queue in CaseBook and confirms it (or rejects it). A submission into an existing
+restricted case appears only to reviewers who can see that case. Nothing is retried on the server;
 resubmitting creates a second pending import.
 
 **Responses**

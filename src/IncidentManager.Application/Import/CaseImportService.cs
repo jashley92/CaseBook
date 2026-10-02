@@ -244,11 +244,25 @@ public sealed class CaseImportService
         return (row.Id, preview);
     }
 
-    /// <summary>The queue of imports awaiting review, newest first.</summary>
+    /// <summary>
+    /// The queued submissions the caller may see: need-to-know scoped on the target case, because the queue shows
+    /// the submitter, origin and a summary naming the target's case number. A submission into an existing case the
+    /// caller can't see (<see cref="CaseQueryExtensions.ForUser"/>) is left out; one with no target, or whose
+    /// target no longer exists (it previews as a new case), is visible to every reviewer.
+    /// </summary>
+    private IQueryable<PendingImport> VisiblePending(IAppDbContext db)
+    {
+        var visible = db.Cases.ForUser(_user).Select(c => c.Id);
+        return db.PendingImports.Where(p => p.TargetCaseId == null
+            || visible.Contains(p.TargetCaseId.Value)
+            || !db.Cases.Any(c => c.Id == p.TargetCaseId));
+    }
+
+    /// <summary>The queue of imports awaiting review, newest first (need-to-know scoped, <see cref="VisiblePending"/>).</summary>
     public async Task<IReadOnlyList<PendingImportSummary>> ListPendingAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        return await db.PendingImports.AsNoTracking()
+        return await VisiblePending(db).AsNoTracking()
             .Where(p => p.Status == PendingImportStatus.Pending)
             .OrderByDescending(p => p.SubmittedAtUtc)
             .Select(p => new PendingImportSummary(p.Id, p.SubmittedBy, p.SubmittedAtUtc, p.Origin, p.Summary))
@@ -259,14 +273,14 @@ public sealed class CaseImportService
     public async Task<int> CountPendingAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        return await db.PendingImports.CountAsync(p => p.Status == PendingImportStatus.Pending, ct);
+        return await VisiblePending(db).CountAsync(p => p.Status == PendingImportStatus.Pending, ct);
     }
 
     /// <summary>Re-parses and previews a queued submission for the reviewer; null if it is gone or not pending.</summary>
     public async Task<CaseImportPreview?> BuildPreviewForPendingAsync(Guid pendingId, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var row = await db.PendingImports.AsNoTracking()
+        var row = await VisiblePending(db).AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == pendingId && p.Status == PendingImportStatus.Pending, ct);
         if (row is null) return null;
 
@@ -280,7 +294,7 @@ public sealed class CaseImportService
     {
         RequireEdit();
         using var db = _factory.CreateDbContext();
-        var row = await db.PendingImports.FirstOrDefaultAsync(p => p.Id == pendingId, ct);
+        var row = await VisiblePending(db).FirstOrDefaultAsync(p => p.Id == pendingId, ct);
         if (row is null || row.Status != PendingImportStatus.Pending) return;
         row.Status = PendingImportStatus.Applied;
         row.DecidedBy = _user.UserId;
@@ -295,7 +309,7 @@ public sealed class CaseImportService
     {
         RequireEdit();
         using var db = _factory.CreateDbContext();
-        var row = await db.PendingImports.FirstOrDefaultAsync(p => p.Id == pendingId, ct);
+        var row = await VisiblePending(db).FirstOrDefaultAsync(p => p.Id == pendingId, ct);
         if (row is null || row.Status != PendingImportStatus.Pending) return;
         row.Status = PendingImportStatus.Rejected;
         row.DecidedBy = _user.UserId;

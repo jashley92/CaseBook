@@ -146,6 +146,9 @@ return query.Where(c => !c.IsRestricted
   Audit tab, the audit CSV) show `ViewAllCases` and `Administer` the whole trail. Everyone else sees only entries
   for cases they can see; case-less entries (configuration, roles) and entries under a case's former number are
   left out.
+- The pending-import queue (`CaseImportService`) leaves out a submission into an existing case the reviewer
+  can't see, for listing, counting, previewing, applying and rejecting. One with no target, or a target that no
+  longer exists, is visible to every reviewer.
 - **No existence leak:** a hidden case and a missing case give the same "not found".
 - Restricting is open to anyone with `EditCases` (they're kept on the case). Lifting needs the IC, or
   `ViewAllCases` or `ViewRestricted`.
@@ -156,7 +159,6 @@ return query.Where(c => !c.IsRestricted
 
 Listed in [reference/known-issues.md](../reference/known-issues.md#security). In short:
 
-- The pending-import queue isn't filtered by need-to-know.
 - The compliance bundle, access-log query and "list all API tokens" have no service-level check (their pages
   and endpoints require `Administer`).
 - Report hash verification doesn't apply need-to-know.
