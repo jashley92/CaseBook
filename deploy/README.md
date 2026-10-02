@@ -1,15 +1,18 @@
 # CaseBook — deploy/
 
-First-install tooling for an on-prem **Windows Server 2022 + IIS + SQL Server 2022** host.
-Follow the full runbook in **[../docs/INSTALL.md](../docs/INSTALL.md)** (which includes the
-**server sizing specs**); this folder is the toolbox it uses.
+Install, upgrade and SQL Server ledger tooling for an on-prem **Windows Server 2022 + IIS + SQL Server 2022**
+host. Follow the runbooks in **[../docs/INSTALL.md](../docs/INSTALL.md)** (including the **server sizing specs**)
+and **[../docs/UPGRADE.md](../docs/UPGRADE.md)**; this folder is the toolbox they use. It ships inside every
+release bundle (`casebook-<version>.zip` → `deploy\`), next to the published app (`app\`).
+
+All scripts need Windows PowerShell 5.1 and run with Windows integrated authentication; none writes a secret.
 
 | File | Purpose |
 |---|---|
 | `New-CaseBookConfig.ps1` | **Start here.** Interactive generator — prompts for every value and writes `casebook.config.psd1`. |
 | `casebook.config.template.psd1` | Answers-file template to copy/fill by hand instead of running the generator. |
 | `Install-Database.ps1` | Provision the SQL DB + app-pool login (Windows auth). Run first, as SQL sysadmin. |
-| `Install-CaseBook.ps1` | Publish the app, create the IIS site/app-pool, write prod config, ACL the data dirs. Run as local admin. |
+| `Install-CaseBook.ps1` | Publish the app (from a repo clone) **or**, with `-SkipPublish`, use an app already copied into the site folder (from the release bundle); create the IIS site and app pool, write prod config, ACL the data dirs, carve `/api` out as anonymous. Run as local admin. Re-running rewrites `appsettings.Production.json` and leaves existing bindings alone. |
 | `Upgrade-CaseBook.ps1` | **Upgrade an existing site** to a newer build (from a release bundle, an app folder, or `-Build`). Backs up DB + config + binaries, runs a migration-compatibility preflight, swaps binaries without touching config/data, and rolls back on failure. See **[../docs/UPGRADE.md](../docs/UPGRADE.md)**. |
 | `Verify-Install.ps1` | Readiness + smoke test: `-ConfigFile` validates the answers file resolves (account/groups/cert/paths/SQL) **before** installing; `-Url` is the post-install smoke test. |
 | `appsettings.Production.template.json` | Production config template; the installer substitutes `__PLACEHOLDERS__`. |
@@ -35,7 +38,7 @@ answers file (a parameter you also pass wins). Generate the file once, copy it t
 ```
 
 The answers file holds **no passwords** (a gMSA is passwordless; a normal service account's password is
-prompted for at install time). It names AD groups/hosts/account, so treat it as sensitive and don't commit it.
+passed with `-AppPoolCredential (Get-Credential)`; without it the installer sets a blank password and the pool won't start). It names AD groups/hosts/account, so treat it as sensitive and don't commit it.
 
 ## Two ways the schema gets created
 

@@ -93,6 +93,54 @@ const SHOTS = [
   { name: 'program-report',     path: '/program-report',                settle: 1200 },
   // S-24: what the signed-in user's roles let them do.
   { name: 'my-access',          path: '/account/access',                settle: 900 },
+
+  // --- Annotated shots for docs/ (numbered callouts; each doc carries the legend) -------------------
+  // Selector-driven, so a UI change that moves or renames an element shows up as an "annotation target
+  // not found" warning here rather than as a silently wrong picture.
+  { name: 'doc-navigation', path: '/', settle: 1400,
+    annotate: [['.nav-group-label', 1, 0], ['.nav-group-label', 2, 1], ['.nav-group-label', 3, 2], ['.nav-group-label', 4, 3],
+               ['.palette-trigger', 5], ['.top-row button', 6, 1], ['.top-row button', 7, 2]] },
+  { name: 'doc-workspace', path: '/cases/{caseId}', settle: 1600,
+    annotate: [['#ws-head .im-casehead-line', 1], ['.im-casehead-state', 2], ['#ws-head .ms-auto', 3],
+               ['.im-workspace-tabs', 4], ['#ov-brief', 5], ['.im-rail', 6]] },
+  { name: 'doc-workspace-actions', path: '/cases/{caseId}', settle: 1600, crop: '.dropdown-menu.show',
+    before: `(() => { [...document.querySelectorAll('#ws-head button')].find(b => b.textContent.trim().startsWith('Actions'))?.click(); })()` },
+  { name: 'doc-timeline', path: '/cases/{caseId}?tab=Timeline', settle: 1800, viewport: { width: 1440, height: 1300 },
+    annotate: [['.tl-toolbar .im-seg', 1, 0], ['.tl-toolbar .btn-outline-secondary', 2, 0], ['.tl-toolbar .im-seg', 3, 1],
+               ['.tl-toolbar .btn-primary', 4], ['.killchain-strip', 5], ['.tl-day', 6], ['li.tl-kind-ms', 7],
+               ['li.tl-kind-inv', 8], ['.tl-edit', 9], ['li.tl-kind-dec', 10]] },
+  { name: 'doc-timeline-add', path: '/cases/{caseId}?tab=Timeline', settle: 1800, crop: '#timeline-dropzone',
+    before: `(() => { document.querySelector('.tl-toolbar .btn-primary')?.click(); })()`,
+    annotate: [['#timeline-dropzone .im-seg', 1], ['#tl-atk-when', 2], ['#tl-atk-actor', 3], ['.atk-field', 4]] },
+  { name: 'doc-tasks', path: '/cases/{caseId}?tab=Tasks', settle: 1800,
+    annotate: [['.tabbody .btn-outline-primary', 1], ['#task-add-form', 2], ['tr.im-task-group', 3], ['.im-about-chip', 4],
+               ['.tabbody tbody td.text-end', 5]] },
+  { name: 'doc-evidence', path: '/cases/{caseId}?tab=Evidence', settle: 1800,
+    annotate: [['#evidence-dropzone .card', 1], ['#evidence-dropzone tbody tr', 2]] },
+  { name: 'doc-notes', path: '/cases/{caseId}?tab=Notes', settle: 1800,
+    annotate: [['.EasyMDEContainer .editor-toolbar', 1], ['.tabbody .card.im-enter .im-badge', 2], ['.tabbody .card.im-enter .btn-link', 3, 1]] },
+  { name: 'doc-entities', path: '/cases/{caseId}?tab=Entities', settle: 2400, viewport: { width: 1440, height: 2000 },
+    annotate: [['.tabbody > .card.border-info', 1], ['.tabbody > .card', 2, 1], ['.tabbody > .card', 3, 2],
+               ['.tabbody .vis-network', 4], ['.tabbody > .card', 5, 4]] },
+  { name: 'doc-phase-dialog', path: '/cases/{caseId}', settle: 1600, viewport: { width: 1440, height: 1100 }, crop: '.modal-content',
+    before: `(async () => {
+      document.querySelector('#ws-head .btn-primary')?.click();
+      await new Promise(r => setTimeout(r, 900));
+      const s = document.getElementById('ws-status');
+      if (s) { s.value = 'Closed'; s.dispatchEvent(new Event('change', { bubbles: true })); }
+    })()`,
+    annotate: [['#ws-status', 1], ['#ws-when', 2], ['.modal-body .alert-danger', 3], ['.modal-body .alert-warning', 4], ['.gate-panel', 5]] },
+  { name: 'doc-handoff', path: '/cases/{caseId}', settle: 1600, crop: '.modal-content',
+    before: `(async () => {
+      [...document.querySelectorAll('#ws-head button')].find(b => b.textContent.trim().startsWith('Actions'))?.click();
+      await new Promise(r => setTimeout(r, 500));
+      [...document.querySelectorAll('.dropdown-menu.show button')].find(b => b.textContent.includes('Hand off'))?.click();
+    })()` },
+  { name: 'doc-create-case', path: '/cases/new', settle: 1200, fullPage: true,
+    annotate: [['#nc-template', 1], ['#cc-classification', 2], ['#isRestricted', 3], ['#nc-detected', 4], ['#nc-indicators', 5]] },
+  { name: 'doc-cases-list', path: '/cases', settle: 1400,
+    annotate: [['.im-page-actions .im-seg', 1], ['.im-counts', 2], ['.im-filter-row', 3], ['.im-case-list tbody tr', 4]] },
+  { name: 'doc-mobile-workspace', path: '/cases/{caseId}', settle: 1800, viewport: { width: 390, height: 844, mobile: true } },
 ];
 
 // Resolve {caseId} to the rich hand-authored demo case (the phishing wave) and {campaignId} to the first
@@ -111,6 +159,36 @@ const RESOLVERS = {
     eval: `(() => { const a=document.querySelector('a[href^="campaigns/"]'); return a ? a.getAttribute('href').split('/')[1].split('?')[0] : null; })()`,
   },
 };
+
+// --- Annotations (numbered callouts for the docs) ----------------------------------------------------
+// A shot's `annotate` is a list of [selector, number] (or [selector, number, nth] to pick the nth match).
+// Each target gets an outline and a numbered badge at its top-left corner; the doc that embeds the image
+// carries the legend for the numbers. Drawn in document coordinates, so it works for full-page shots too.
+function annotateJs(items) {
+  return `(() => {
+    const items = ${JSON.stringify(items)}, missed = [];
+    document.getElementById('docs-annot')?.remove();
+    const layer = document.createElement('div');
+    layer.id = 'docs-annot';
+    layer.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none';
+    for (const [sel, n, nth] of items) {
+      const el = [...document.querySelectorAll(sel)][nth ?? 0];
+      if (!el) { missed.push(sel); continue; }
+      const r = el.getBoundingClientRect(), x = r.left + scrollX, y = r.top + scrollY;
+      const box = document.createElement('div');
+      box.style.cssText = 'position:absolute;border:2px solid #ff3d8b;border-radius:6px;box-shadow:0 0 0 2px rgba(0,0,0,.35)';
+      Object.assign(box.style, { left: (x - 3) + 'px', top: (y - 3) + 'px', width: (r.width + 6) + 'px', height: (r.height + 6) + 'px' });
+      const tag = document.createElement('div');
+      tag.textContent = n;
+      tag.style.cssText = 'position:absolute;min-width:24px;height:24px;padding:0 6px;border-radius:12px;background:#ff3d8b;color:#fff;'
+        + 'font:700 13px/24px Segoe UI,Arial,sans-serif;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.5)';
+      Object.assign(tag.style, { left: Math.max(2, x - 14) + 'px', top: Math.max(2, y - 14) + 'px' });
+      layer.append(box, tag);
+    }
+    document.body.append(layer);
+    return missed;
+  })()`;
+}
 
 // --- Minimal CDP client over the raw WebSocket -------------------------------------------------------
 function findChrome() {
@@ -218,6 +296,9 @@ async function main() {
       const missing = [...shot.path.matchAll(/\{(\w+)\}/g)].some(m => !ctx[m[1]]);
       if (missing) { console.warn(`  - skip ${shot.name} (unresolved id)`); skipped++; continue; }
       const path = shot.path.replace(/\{(\w+)\}/g, (_, k) => ctx[k]);
+      const vp = shot.viewport || VIEWPORT;
+      if (shot.viewport) await browser.send('Emulation.setDeviceMetricsOverride',
+        { width: vp.width, height: vp.height, deviceScaleFactor: 1, mobile: !!vp.mobile }, S);
       await goto(BASE_URL + path);
       if (shot.ready) {
         let seen = false;
@@ -226,18 +307,33 @@ async function main() {
       }
       await sleep(shot.settle ?? 800);
       if (shot.before) { try { await evalJs(shot.before); } catch {} await sleep(700); }
+      if (shot.annotate) {
+        const missed = await evalJs(annotateJs(shot.annotate));
+        if (missed?.length) console.warn(`  ! ${shot.name}: annotation target(s) not found: ${missed.join(', ')}`);
+        await sleep(150);
+      }
 
       let clip;
       if (shot.fullPage) {
         const m = await browser.send('Page.getLayoutMetrics', {}, S);
         const h = Math.ceil(m.cssContentSize?.height || m.contentSize?.height || VIEWPORT.height);
-        clip = { x: 0, y: 0, width: VIEWPORT.width, height: h, scale: 1 };
+        clip = { x: 0, y: 0, width: vp.width, height: h, scale: 1 };
+      } else if (shot.crop) {
+        // Crop to one element (a dialog, a panel) plus a margin, in viewport coordinates.
+        const r = await evalJs(`(() => { const e=document.querySelector(${JSON.stringify(shot.crop)}); if (!e) return null;
+          const b=e.getBoundingClientRect(); return { x:b.x, y:b.y, w:b.width, h:b.height }; })()`);
+        if (r) {
+          const pad = 16, x = Math.max(0, r.x - pad), y = Math.max(0, r.y - pad);
+          clip = { x, y, width: Math.min(vp.width - x, r.w + pad * 2), height: Math.min(vp.height - y, r.h + pad * 2), scale: 1 };
+        } else console.warn(`  ! ${shot.name}: crop target not found (${shot.crop})`);
       }
       const { data } = await browser.send('Page.captureScreenshot',
         { format: 'png', captureBeyondViewport: !!shot.fullPage, ...(clip ? { clip } : {}) }, S);
       const file = join(OUT_DIR, `${shot.name}.png`);
       writeFileSync(file, Buffer.from(data, 'base64'));
       console.log(`  ✓ ${shot.name}.png`);
+      if (shot.viewport) await browser.send('Emulation.setDeviceMetricsOverride',
+        { width: VIEWPORT.width, height: VIEWPORT.height, deviceScaleFactor: 1, mobile: false }, S);
       ok++;
     }
     console.log(`\nDone — ${ok} captured${skipped ? `, ${skipped} skipped` : ''} → ${OUT_DIR}`);

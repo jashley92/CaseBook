@@ -59,24 +59,30 @@ Virtual hardware is fine. RCSI is enabled on the database (read-heavy dashboards
 
 ### 1.3 Web host (Windows Server 2022)
 
-- [ ] IIS with the features below, then the **.NET 10 Hosting Bundle** (installs the ASP.NET Core Module).
-      Install the Hosting Bundle **after** IIS, then `iisreset`.
+- [ ] IIS with Windows Authentication, then the **.NET 10 Hosting Bundle** (installs the ASP.NET Core Module).
+      Install the Hosting Bundle **after** IIS, then `iisreset`. CaseBook runs in a "No Managed Code" app pool,
+      so the ASP.NET 4.x and ISAPI features aren't needed.
 
 ```powershell
-Install-WindowsFeature Web-Server, Web-Windows-Auth, Web-Asp-Net45, Web-Net-Ext45, `
-                       Web-ISAPI-Ext, Web-ISAPI-Filter, Web-Mgmt-Console -IncludeManagementTools
+Install-WindowsFeature Web-Server, Web-Windows-Auth, Web-Mgmt-Console -IncludeManagementTools
 # Then install the .NET 10 Hosting Bundle from https://dotnet.microsoft.com/download/dotnet/10.0
 ```
 
-- [ ] To publish **on** the server, the **.NET 10 SDK** as well. Alternatively publish on a build box and
-      copy the output — then run `Install-CaseBook.ps1` with the folder already populated.
-- [ ] The `SqlServer` PowerShell module **or** `sqlcmd.exe` for the database step
-      (`Install-Module SqlServer -Scope AllUsers`).
+- [ ] **Where the app comes from** (pick one):
+  - **Recommended: the release bundle.** Download `casebook-<version>.zip` (and its `.sha256`) from the
+    [GitHub releases](https://github.com/jashley92/CaseBook/releases). It contains the published app (`app\`)
+    and these scripts (`deploy\`), so the server needs no SDK and no NuGet access. See §3.
+  - Build on the server: the **.NET 10 SDK** and a clone of the repository (`Install-CaseBook.ps1` publishes
+    `src\IncidentManager.Web`).
+  - Build elsewhere (`dotnet publish src/IncidentManager.Web -c Release -o <folder>`) and copy the output.
 
 ### 1.4 Database host (SQL Server 2022)
 
 - [ ] SQL Server 2022, mixed or Windows auth (the app uses **Windows** auth).
 - [ ] You have a login that is **sysadmin** on the instance to run the provisioning script once.
+- [ ] Where you run `Install-Database.ps1` (on or near the SQL host): the `SqlServer` PowerShell module
+      **version 22 or later** (`Install-Module SqlServer -Scope AllUsers`) **or** `sqlcmd.exe`. The ledger
+      scripts need neither.
 - [ ] Decide the data root and backup targets (OPERATIONS.md §1).
 
 ### 1.5 Prepare the answers file (recommended)
@@ -108,8 +114,10 @@ Fix any **[FAIL]** before installing; **[WARN]** items are usually just "can't c
 this host" (e.g. the web-host cert when run on the SQL box).
 
 > The answers file names AD groups, hosts, and the service account — treat it as sensitive and
-> don't commit it. It holds **no passwords**: a gMSA is passwordless, and a normal service
-> account's password is prompted for securely at install time (never written to the file).
+> don't commit it. It holds **no passwords**: a gMSA is passwordless, and for a normal service
+> account you pass `-AppPoolCredential (Get-Credential)` to the installer, which prompts securely.
+> **Without that parameter the installer doesn't prompt**: it sets a blank password and the app pool won't
+> start.
 
 ---
 
@@ -140,8 +148,24 @@ Or pass the values directly instead of a config file:
 
 ## 3. Install the application
 
-Run **on the web host, elevated** (Run as Administrator). Publishes the app, creates the data root,
-writes `appsettings.Production.json`, creates the IIS app pool + site, enables Windows Auth, and sets ACLs.
+Run **on the web host, elevated** (Run as Administrator). Publishes the app (unless `-SkipPublish`), creates
+the data root and its folders (`evidence-store`, `report-output`, `branding`, `report-templates`, `keys`,
+`seals`, `ops`, `dp-keys`), writes `appsettings.Production.json`, creates the IIS app pool and site, enables
+Windows Authentication (anonymous only under `/api`, for the token-authenticated import API), and grants the app
+pool Modify on the data folders and Read & Execute on the site.
+
+**From the release bundle** (no SDK needed):
+
+```powershell
+Expand-Archive .\casebook-<version>.zip -DestinationPath C:\CaseBook
+New-Item -ItemType Directory -Force D:\inetpub\casebook | Out-Null
+Copy-Item C:\CaseBook\casebook-<version>\app\* D:\inetpub\casebook -Recurse
+Copy-Item C:\CaseBook\casebook-<version>\VERSION.txt D:\inetpub\casebook
+cd C:\CaseBook\casebook-<version>\deploy
+.\Install-CaseBook.ps1 -ConfigFile .\casebook.config.psd1 -SkipPublish
+```
+
+**From a repository clone** (publishes for you):
 
 Copy the same **`casebook.config.psd1`** you used for the database step onto this host, then:
 
@@ -172,10 +196,19 @@ Or pass every value directly instead of a config file:
 - **gMSA**: omit `-AppPoolCredential`. **Domain service account**: add
   `-AppPoolCredential (Get-Credential)` and you'll be prompted securely (no password on the command line
   or in the answers file). `-SkipPublish` / `-AddNuGetOrgSource` are runtime switches too (below).
-- **No cert yet**: omit `-CertificateThumbprint` to get an HTTP binding for a first smoke test, then
-  re-run with the thumbprint (or terminate TLS at a proxy). Do not serve real data over plain HTTP.
-- `-SitePath` (web root) and `-DataRoot` (evidence/seals/reports/keys/ops) are **deliberately separate**;
-  keep the data root off the web root and in the backup + EDR scope.
+- **No cert yet**: omit `-CertificateThumbprint` to get an HTTP binding for a first smoke test. Re-running the
+  installer later **doesn't change an existing site's bindings**, so add the HTTPS binding in IIS Manager (or
+  terminate TLS at a proxy). Do not serve real data over plain HTTP.
+- **Re-running the installer rewrites `appsettings.Production.json`** from the template, discarding manual
+  additions (SIEM, CyberArk, `App:BaseUrl`, `Agenda:FeedKey`). Back it up first, or make later changes by hand.
+- `-SitePath` (web root) and `-DataRoot` are **deliberately separate**; keep the data root off the web root and
+  in the backup and EDR scope.
+- The template doesn't set `App:BaseUrl` (email links and logo; set it in Administration → Notifications),
+  `Agenda:FeedKey` (calendar subscriptions), or any SIEM, chat or CyberArk endpoint. See
+  [operations/configuration.md](operations/configuration.md).
+- **Anonymous endpoints:** IIS answers 401 for `/health`, `/health/live`, `/branding/logo` and
+  `/agenda/feed.ics` because only `/api` is anonymous. If a load balancer, mail clients or calendar apps need
+  them, add anonymous `<location>` entries for those paths the same way the installer does for `/api`.
 
 ### Publishing / NuGet restore
 
@@ -198,8 +231,10 @@ The install step runs `dotnet publish`, which restores NuGet packages. Two commo
 
 ## 4. Provision the integrity signing key (out of band)
 
-Production must **not** let the app generate its own seal-signing key (OPERATIONS.md §2). Generate it on a
-trusted admin workstation / HSM and install it to the path the config points at:
+Production must **not** let the app generate its own seal-signing key (OPERATIONS.md §2). **If the app starts
+before the key file exists, it generates one itself** (and the integrity job seals immediately), so do this
+step before the first browse to the site, or stop the app pool until it's done. Generate the key on a trusted
+admin workstation / HSM and install it to the path the config points at:
 
 ```
 E:\CaseBookData\keys\seal-signing.pem
@@ -288,13 +323,19 @@ shows *Healthy* (or at least *No activity*, not *Last attempt failed*) once a re
 
 ## Troubleshooting
 
+The full guide is [operations/troubleshooting.md](operations/troubleshooting.md). The usual install problems:
+
 | Symptom | Likely cause / fix |
 |---|---|
-| App fails to start; log says *Auth:Mode is 'Dev' in Production* | `appsettings.Production.json` not deployed or environment isn't Production. The installer writes it and IIS defaults the environment to Production; confirm the file exists in the site root. |
-| `500.19` (0x8007000d), Module *IIS Web Core*, and **no app log at all** | The **ASP.NET Core Module isn't registered** — IIS can't parse the `<aspNetCore>` section in `web.config`. It ships with the **.NET 10 Hosting Bundle**, *not* the SDK. Install the Hosting Bundle, `iisreset`, retry. Confirm with `Test-Path C:\Windows\System32\inetsrv\aspnetcorev2.dll`. (The installer now preflights this.) |
-| `500.30` / `500.31` on first hit | ASP.NET Core Module can't start the app — usually a bad connection string, or the app can't write its `App_Data` folder under the web root (the installer now pre-creates it with Modify). Check the Windows **Application** event log and `logs\stdout`. |
-| `401 Unauthorized` for everyone | Windows Auth not negotiating — missing **SPN** for the hostname, or Anonymous still enabled. Verify Kerberos SPNs and that the installer disabled Anonymous. |
-| `401` calling **`POST /api/import/cases`** (PROD-34) | The API authenticates with an **API token**, not Windows — send `Authorization: Bearer <token>`. If even a valid token 401s, the `/api` path isn't carved out as Anonymous: the installer sets `<location path="<site>/api">` with `anonymousAuthentication=true` + `windowsAuthentication=false` via `appcmd`. Re-run the installer, or apply it manually elevated. A token missing the `EditCases` permission gets **403**, not 401. Create tokens in-app: **Administration → API tokens** (system) or the account menu → **API tokens** (personal). |
-| Login OK but *access denied* everywhere | The signed-in user isn't in any mapped AD group, or `RoleMapping:Groups` names don't match real groups. Fix the group names (config seeds roles on first run; thereafter manage in-app). |
-| DB error at startup: *CREATE TABLE permission denied* | App account lacks DDL under `-SchemaMode AppMigrates`. Re-run the DB step, or switch to `DbaApplies` and apply `sql/casebook-schema-sqlserver.sql`. |
-| Login failed for the app account | The SQL login/user wasn't created on this instance/db, or the app pool isn't actually running as that account. Re-run `Install-Database.ps1`; confirm the app-pool identity. |
+| App fails to start; log says *Auth:Mode is 'Dev' in Production* | `appsettings.Production.json` is missing or doesn't set `Auth:Mode=Windows`. Confirm the file exists in the site folder. |
+| `500.19` (0x8007000d), Module *IIS Web Core*, and **no app log at all** | The **ASP.NET Core Module isn't registered**. Install the **.NET 10 Hosting Bundle** (not just the SDK), `iisreset`, retry. The installer preflights this. |
+| `500.30` / `500.31` on first hit | The app couldn't start: usually the connection string or SQL login, a store path the app pool can't write (the data folders, not the web root), or a migration failure. Check the Application event log and `logs\stdout`. |
+| The app pool stops immediately | A non-gMSA account installed without `-AppPoolCredential`: the password is blank. Set it in IIS Manager. |
+| `401 Unauthorized` for everyone | Windows Auth isn't negotiating: missing **SPN** for the hostname, or the site isn't in the browser's intranet zone. |
+| `401` on `/health` or the email logo | Only `/api` is anonymous on an installed site. Carve the paths out or let the probe authenticate. |
+| `401` calling **`POST /api/import/cases`** | Send `Authorization: Bearer <token>`. If a valid token still gets 401, the `/api` anonymous carve-out is missing (re-run the installer or apply it with `appcmd`). A token without `EditCases` gets **403**. |
+| `400 Bad Request` | The hostname used isn't in `AllowedHosts`. |
+| Login OK but *access denied* everywhere | The user isn't in any mapped AD group, or the group names in the answers file don't match AD. After first start, manage mappings in Administration → Roles & access. |
+| DB error at startup: *CREATE TABLE permission denied* | The app account lacks DDL under `-SchemaMode AppMigrates`. Re-run the DB step, or switch to `DbaApplies` and apply `sql/casebook-schema-sqlserver.sql`. |
+| `Invoke-Sqlcmd: A parameter cannot be found that matches parameter name 'TrustServerCertificate'` | The `SqlServer` module is older than v22. Update it, or install `sqlcmd.exe`. |
+| Login failed for the app account | The SQL login or user wasn't created on this instance/database, or the app pool runs as another account. Re-run `Install-Database.ps1`; check the app pool identity. |

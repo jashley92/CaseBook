@@ -1,6 +1,8 @@
 # CaseBook — Operations & Deployment Guide
 
-Operational runbook for the on-prem production deployment (Windows Server + IIS, SQL Server 2022).
+Operational runbook for the on-prem production deployment (Windows Server + IIS, SQL Server 2022). Related:
+[configuration reference](operations/configuration.md), [troubleshooting](operations/troubleshooting.md),
+[integrations](operations/integrations.md), [install](INSTALL.md), [upgrade](UPGRADE.md).
 Covers backup/DR (backlog **H-03**), integrity signing-key management (**F-05b**), and related
 host controls. Dev uses SQLite and needs none of this.
 
@@ -140,9 +142,10 @@ and any NYDFS Part 500 expectations (Legal owns the regulatory interpretation).
 
 ## 2. Integrity Signing-Key Management (F-05b)
 
-Integrity seals are signed with an RSA key (RSASSA-PKCS1-v1_5-SHA256). **In development** the app
-generates the key to `Integrity:SigningKeyPath` (`App_Data/keys/seal-signing.pem`) on first use.
-This is convenient but means a host compromise could re-sign forged seals — unacceptable in prod.
+Integrity seals are signed with an RSA key (RSA-3072, RSASSA-PKCS1-v1_5-SHA256). **If the key file at
+`Integrity:SigningKeyPath` doesn't exist, the app generates one there on first use, in any environment**
+(in development, `App_Data/keys/seal-signing.pem`). This is convenient but means a host compromise could
+re-sign forged seals — unacceptable in prod. Install the production key **before the app first starts**.
 
 ### Production hardening
 
@@ -182,9 +185,11 @@ This is convenient but means a host compromise could re-sign forged seals — un
   Over budget returns **429** with a `Retry-After` header and emits SIEM **`EventId 5306`** — a spike of
   these from one account is a bulk-exfiltration signal worth a detection rule. The inline timeline
   thumbnail endpoint is intentionally exempt (many load at once; it is image-only and need-to-know scoped).
-- **Health probes (H-09)**: three **anonymous** endpoints for IIS / a load balancer / uptime monitoring —
-  they return the status word only (no case data, no paths, no exception text), so they are safe to expose
-  to an internal monitor:
+- **Health probes (H-09)**: three endpoints the app serves **anonymously** for IIS / a load balancer / uptime
+  monitoring — they return the status word only (no case data, no paths, no exception text), so they are safe
+  to expose to an internal monitor. **On an `Install-CaseBook.ps1` site, IIS itself requires Windows
+  authentication everywhere except `/api`**, so either let the probe authenticate or add anonymous
+  `<location>` entries for these paths (see [operations/troubleshooting.md](operations/troubleshooting.md#health-probe-returns-401)):
   - `GET /health/live` — **liveness**: the process is up and the pipeline responds. Runs no dependency
     checks. `200 Healthy`. Use this for the app-pool / container "is it running" probe.
   - `GET /health` (alias `GET /health/ready`) — **readiness**: additionally verifies **database
@@ -207,7 +212,8 @@ This is convenient but means a host compromise could re-sign forged seals — un
 - [ ] Web root is **read/execute-only** — on SQL Server the app writes no `App_Data` under the content
       root (H-07); every store lives under `DataRoot`. No Modify carve-out on the site folder is required.
 - [ ] Load balancer / uptime monitor points at **`/health`** (readiness) and the app-pool/container probe
-      at **`/health/live`** (liveness) — H-09. Both are anonymous and status-only; no auth exception needed.
+      at **`/health/live`** (liveness) — H-09. Both are status-only; under IIS they need an anonymous carve-out
+      (or an authenticating probe).
 - [ ] Signing key provisioned out of band and protected (DPAPI/cert store/HSM); public key + `KeyId`
       archived separately.
 - [ ] `DataProtection:KeyPath` set to an ACL-restricted folder (installer creates `DataRoot\dp-keys`) so
@@ -273,7 +279,7 @@ remains the system of record; a dropped event is not a data-integrity concern. E
 
 These carry an endpoint (and, for the webhook, a secret), so they live in `appsettings.json` /
 environment — **not** the in-app editable settings. Admin → Server configuration shows each transport's
-status (enabled / endpoint / token present) but never the token value. Both transports are **disabled by
+status (enabled / endpoint / token present) but never the token value. All three transports are **disabled by
 default**.
 
 **Queue:** `Siem:QueueCapacity` (default `2048`) — bounded in-memory depth shared by both transports;
@@ -346,12 +352,12 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5002 | Integrity | Non-whitelisted AppSettings override rejected on load (S-02 tamper signal) |
 | 5003 | Integrity | Evidence at rest drifted from its recorded SHA-256 (F-17 critical log/email alarm) |
 | 5101 | Authentication | Authentication failure |
-| 5201 | Authorization | Access denied (403) |
+| 5201 | Authorization | Access denied (403) on a page or download **GET** (other 403s aren't streamed) |
 | 5202 | Authorization | In-app action refused for lack of a permission |
 | 5301 | DataAccess | Case opened |
 | 5302 | DataAccess | Evidence downloaded |
 | 5303 | DataAccess | Report downloaded |
-| 5304 | DataAccess | Data exported (metrics / IOC feed / bundle / audit CSV) |
+| 5304 | DataAccess | Data exported: metrics, legal register, program report, improvement actions, IOC feed, case audit CSV, compliance bundle, STIX graph, campaign rollup, Word template preview (the access-log CSV and the configuration bundle don't emit it) |
 | 5305 | DataAccess | **Restricted** case accessed (elevated severity) |
 | 5306 | DataAccess | Download/export refused by the per-user rate limit (F-13; possible bulk-scrape) |
 | 5401 | Admin | Role created / updated / deleted |
@@ -371,13 +377,16 @@ signal; the development auth handler never fails) and, with action `ApiTokenReje
 revoked **API token** (the detail carries the token's display prefix and source address, never the token).
 **5202** fires when an in-app action is refused at the service layer for lack of a permission: the UI normally
 hides what a user can't do, so this marks a stale session (access removed while signed in) or a UI defect.
+Today it's emitted by case actions and by the role, settings and configuration-bundle services; refusals in other
+services (evidence, reports, lessons, imports, tokens) aren't streamed.
 
 ---
 
 ## 6. Secret Management (F-19)
 
-App secrets read from configuration (today just the SIEM webhook `Token`; more may follow — e.g. an
-authenticated SMTP relay credential) can be **kept out of config entirely** and fetched at runtime from
+App secrets read from configuration (today the SIEM webhook `Token` and the chat `Chat:Webhook:WebhookUrl`;
+nothing else is resolved through CyberArk — connection strings, `Agenda:FeedKey` and SMTP settings must be
+literals or environment variables) can be **kept out of config entirely** and fetched at runtime from
 **CyberArk Central Credential Provider (CCP / AIMWebService)**. It is **opt-in and per-secret**: a value
 is used literally unless it is written as a reference, so nothing changes until you choose to move a
 specific secret to CyberArk.
@@ -460,7 +469,7 @@ Two read-only views help operators confirm it is wired up and working:
   success/failure counts. It is in-memory and resets on restart. A persistent *Last attempt failed* here is
   the first place to look if an integration that depends on a CyberArk-backed secret stops authenticating.
 
-**Candidates.** First applied to `Siem:Webhook:Token`. Any future config-borne credential (e.g. E-03 SMTP)
+**Candidates.** Applied to `Siem:Webhook:Token` and `Chat:Webhook:WebhookUrl`. Any future config-borne credential (e.g. E-03 SMTP)
 should resolve through the same seam. The **seal signing key** (F-05b) and **Always-Encrypted column keys**
 (F-14) are noted as candidates but generally prefer the Windows certificate store / HSM over CCP.
 

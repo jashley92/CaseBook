@@ -7,6 +7,9 @@ A secure, on-prem web utility for the SOC to inventory and manage escalated secu
 timelines, evidence, analyst notes, after-action follow-ups, leadership dashboards, and
 auto-generated Word reports, on a **tamper-evident, hash-chained audit trail**.
 
+**Documentation:** start at **[docs/README.md](docs/README.md)**: product overview, a guided tour of the
+screens, architecture, data model, workflows, developer guide, configuration, operations and troubleshooting.
+
 ## Screenshots
 
 ### Leadership dashboard
@@ -41,8 +44,8 @@ panel: where the case refers to it, its relationships and the other cases it app
 
 ![Case workspace](docs/screenshots/case-workspace.png)
 
-### Guided case creation
-A wizard captures origin (internal vs. third-party/vendor), classification, severity, an optional
+### Case creation
+A single form captures origin (internal vs. third-party/vendor), classification, severity, an optional
 detection-source case reference (the source label is a configurable operational setting — defaults to
 **SIEM**), and any known **indicators / IOCs** — with inline validation, so every case starts
 consistent and auto-numbered (`YYYY-NN_DescriptiveName`). As indicators are entered they're checked
@@ -279,10 +282,11 @@ Dependencies point inward. The **audit-chain interceptor** (`AuditChainIntercept
 append-only, SHA-256 hash-chained `AuditLog` entry for every change on `SaveChanges`, and refreshes
 per-row hashes on hashable entities — the spine of the integrity guarantees.
 
-A full design reference — layered architecture, the integrity spine, access-control model, data model,
-and diagrams — is in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**; a runtime support/troubleshooting
-runbook is in **[docs/SUPPORT.md](docs/SUPPORT.md)**. The complete documentation index is
-**[docs/README.md](docs/README.md)**.
+The architecture is described in **[docs/architecture/overview.md](docs/architecture/overview.md)** (with the
+[integrity spine](docs/architecture/integrity.md), [security model](docs/architecture/security.md) and
+[data model](docs/architecture/data-model.md)); troubleshooting is in
+**[docs/operations/troubleshooting.md](docs/operations/troubleshooting.md)**. The complete documentation index
+is **[docs/README.md](docs/README.md)**.
 
 ## Run locally
 
@@ -292,7 +296,8 @@ dotnet run --project src/IncidentManager.Web --launch-profile http
 
 Then browse to <http://localhost:5103>. On first run the SQLite database is created, migrated, and
 seeded with demo cases. Local dev uses a **dev auth** user granted all roles (see `DevAuth` in
-`appsettings.json`) so every screen is reachable.
+`appsettings.json`) so every screen is reachable. See
+[docs/development/getting-started.md](docs/development/getting-started.md).
 
 ## Test
 
@@ -309,6 +314,8 @@ dotnet test
 | `ConnectionStrings:Default` | DB connection string |
 | `RoleMapping:Groups` | AD security groups → application roles |
 | `EvidenceStore:RootPath` / `ReportOutput:RootPath` | File stores (kept **outside** the web root) |
+
+Every setting is listed in [docs/operations/configuration.md](docs/operations/configuration.md).
 
 ### Going to production
 
@@ -332,8 +339,9 @@ this end to end.
 
 ## Roles
 
-`Analyst`, `IncidentCommander`, `Manager` (leadership, read + reporting), `LegalPrivacy`, `SysAdmin` —
-enforced via policies in `Application/Security/Policies.cs` and need-to-know case scoping.
+`Analyst`, `IncidentCommander`, `Manager` (leadership, read + reporting), `LegalPrivacy`, `SysAdmin`, plus any
+custom roles, built from eight code-defined permissions and enforced at the page, the service layer and the
+need-to-know query filter. The permission matrix is in [docs/architecture/security.md](docs/architecture/security.md).
 
 ## License
 

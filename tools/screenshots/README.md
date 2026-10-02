@@ -47,4 +47,19 @@ The PNGs are written straight into `docs/screenshots/`. Review the diff before c
 - Each shot is a manifest entry in `capture.mjs` (`SHOTS`): `path` (may contain `{caseId}` /
   `{campaignId}`), an optional `ready` CSS selector to wait for, an optional `before` snippet to run just
   before capture (e.g. opening the report preview), a `settle` delay, and `fullPage`.
-- If you add a screenshot to the README, add a matching entry here and rerun.
+- If you add a screenshot to the README or the docs, add a matching entry here and rerun.
+
+## Annotated shots for the docs
+
+Entries named `doc-*` are used by the documentation (`docs/product/screens.md` and others). Three extra
+options:
+
+| Option | Effect |
+|---|---|
+| `annotate: [[selector, n], [selector, n, nth]]` | Outlines each matching element and draws a numbered badge at its top-left corner. `nth` picks the nth match (0-based). The doc that embeds the image holds the legend for the numbers. |
+| `crop: selector` | Captures just that element (a dialog, a card) plus a 16 px margin. |
+| `viewport: { width, height, mobile }` | Uses a different viewport for this shot (taller pages, phone width), then restores the default. |
+
+If a selector stops matching after a UI change, the run prints `annotation target(s) not found` (or `crop target
+not found`). Fix the selector rather than committing a picture with a missing callout, and check the legend in the
+doc still matches.

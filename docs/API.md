@@ -17,12 +17,15 @@ Tokens are minted **in-app**, never by the API itself:
 
 - **System token** (for a machine producer — an XSIAM/SOAR playbook, a script): *Administration → API tokens →
   New system token*. Give it a name and grant it the roles it needs (the import API requires a role that
-  grants **EditCases**). Actions attribute to the token's name in the audit trail.
+  grants **EditCases**). In the audit trail its actions are attributed to `apitoken:<name-as-slug>` (shown with
+  the token's name). Maximum lifetime 365 days.
 - **Personal token** (for a user calling the API as themselves): the account menu → *API tokens*. Its
-  permissions are a subset of your own; actions attribute to you.
+  permissions are a subset of your own, re-checked against the roles you still hold on every call; actions
+  attribute to you. Maximum lifetime 90 days.
 
-Tokens are shown **once** at creation (CaseBook stores only a hash), carry a **required expiry**, and can be
-**revoked** anytime. On-prem/IIS deployments carve the `/api` path out as anonymous at the web server so the
+Tokens look like `cbk_` followed by 43 characters. They are shown **once** at creation (CaseBook stores only a
+SHA-256 hash), carry a **required expiry**, and can be **revoked** anytime by their creator or an administrator.
+A rejected token is reported to the SIEM stream (event 5101, with only the token's first 12 characters). On-prem/IIS deployments carve the `/api` path out as anonymous at the web server so the
 token scheme applies there while the rest of the site stays Windows-authenticated (the installer does this);
 always call the API over **HTTPS**.
 
@@ -34,7 +37,8 @@ Submit a structured case-import document. **Auth:** bearer token with **EditCase
 `casebook-case-import` JSON document (see the schema below).
 
 The submission is **staged for review** — it is not written to a case until a person opens the
-*Import → Pending imports* queue in CaseBook and confirms it.
+*Import → Pending imports* queue in CaseBook and confirms it (or rejects it). Nothing is retried on the server;
+resubmitting creates a second pending import.
 
 **Responses**
 
@@ -44,7 +48,9 @@ The submission is **staged for review** — it is not written to a case until a 
 | `400 Bad Request` | The document isn't valid / not a `casebook-case-import` / a newer schema version than the server supports. Body: `{ error }`. |
 | `401 Unauthorized` | Missing, invalid, expired, or revoked token. |
 | `403 Forbidden` | The token authenticated but lacks the **EditCases** permission. |
-| `429 Too Many Requests` | Per-caller rate limit exceeded. |
+| `413 Payload Too Large` | The body is over 5 MiB. |
+| `429 Too Many Requests` | Per-caller rate limit exceeded (default 40 requests burst, 40 per minute; `Retry-After` is set). |
+| `302` to `/Error?ref=…` | An unexpected server error. The response is an HTML redirect, not JSON; quote the `ref` value when reporting it. |
 
 **Example**
 
@@ -99,6 +105,9 @@ Notes:
   `Handoff` isn't an importable type (a handoff is made in CaseBook, to a person).
 - Enum fields (classification, severity, kind, type, disposition, …) and their allowed values are defined in
   the schema; unknown values fall back to a safe default and are flagged in the review preview.
+
+**What happens on review** is described in [workflows/case-lifecycle.md](workflows/case-lifecycle.md#2-importing-a-case)
+(the preview's rules for untrusted input, provenance, and how imported entries are marked).
 
 **XSIAM hand-off.** A ready-to-adapt XSIAM automation script and set-up guide for elevating an incident into
 CaseBook live in [`integrations/xsiam/`](../integrations/xsiam/README.md).

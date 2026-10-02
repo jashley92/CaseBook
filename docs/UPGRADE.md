@@ -13,7 +13,8 @@ Each version tag (`vX.Y.Z`) builds a **release bundle** attached to the matching
 [GitHub Release](https://github.com/jashley92/CaseBook/releases): `casebook-<version>.zip` plus a
 `.sha256`. The bundle contains the published app (`app/`), the deploy scripts (`deploy/`), a
 migration manifest, and a `VERSION.txt`. Deploying from the bundle means **the server needs no .NET
-SDK and no NuGet access** — the exact tested binaries are already built.
+SDK and no NuGet access**. The release workflow rebuilds the app from the tagged commit; it doesn't rerun the
+tests, so releases are only tagged on commits that passed CI on `main`.
 
 You can still build from source on a box that has the .NET 10 SDK (`-Build`), but the bundle is the
 recommended path.
@@ -38,9 +39,14 @@ On the web host, **elevated**:
 .\Upgrade-CaseBook.ps1 -BundleZip .\casebook-<version>.zip
 ```
 
-It auto-detects the site (default name `CaseBook`), database, and health URL. Override any of them
-with `-SiteName`, `-SitePath`, `-SqlInstance`, `-DbName`, `-HealthUrl` if your names differ. Add
-`-Force` to skip the confirmation prompt for an unattended run.
+It auto-detects the site (default name `CaseBook`), database, and health URL (the site root at its first
+HTTPS binding's host name). Override any of them with `-SiteName`, `-SitePath`, `-SqlInstance`, `-DbName`,
+`-HealthUrl` if your names differ. Add `-Force` to skip the confirmation prompt for an unattended run.
+
+The script connects to SQL Server **as you** (Windows authentication), so your account needs to read the
+CaseBook database and run `BACKUP DATABASE` on the instance. Warm-up counts any 2xx, 401 or 403 from the health
+URL as "started"; if the health URL's host name isn't in `AllowedHosts` the site answers 400 and the upgrade
+times out and rolls back.
 
 Alternatives to `-BundleZip`:
 - `-AppSource <folder>` — a folder that already holds the published app.
@@ -117,7 +123,7 @@ lineage stays stable, so these checks enforce it on every push and before every 
 |---|---|---|
 | **Released migrations are immutable** (`tools/ci/check-migrations-immutable.sh`) | CI + Release | A migration that shipped in any `v*` tag was edited, deleted, renamed, regenerated, or squashed, which would strand every database installed from that release. |
 | **No un-migrated model changes** (`dotnet ef migrations has-pending-model-changes`, both providers) | CI | Someone changed the model without adding a migration. EF refuses to `Migrate()` in that state, so the upgraded app would fail to start. |
-| **Upgrade path on real SQL Server** (`tools/upgrade-test/upgrade-path.sh`) | CI (`upgrade-path` job) | Installs each of the 3 newest releases into a fresh SQL Server 2022 database (migrated + seeded with demo cases and an audit chain), then starts the new build against the same database. It must come up healthy with every migration applied and every case/audit row intact. |
+| **Upgrade path on real SQL Server** (`tools/upgrade-test/upgrade-path.sh`) | CI (`upgrade-path` job) | Installs each of the 3 newest releases **and the first release (v1.0.0)** into a fresh SQL Server 2022 database (migrated + seeded with demo cases and an audit chain), then starts the new build against the same database. It must come up healthy with every migration applied and every case/audit row intact. |
 
 **Rule for schema changes:** only ever *add* migrations. Never edit, delete, or regenerate one that has
 shipped in a tag. To undo or reshape something an old migration created, add a new migration that alters it.
@@ -146,14 +152,18 @@ The script snapshots the current binaries to `…\casebook-upgrade-backups\<time
 and takes a full DB backup to the SQL instance's default backup directory **before** it deploys. If
 the new build fails to start, it restores the previous binaries and restarts the pool automatically.
 
-If a failed upgrade had already begun applying migrations, restore that DB backup before retrying so
-the schema and binaries match again. A 500.30 on startup means migrations almost certainly did **not**
-run (the app never reached that point), so the DB is usually untouched — but the backup is there if
-you need it.
+The database is **not** restored automatically. The app applies pending migrations at startup, before it
+serves any request, and each migration commits on its own, so a startup failure (500.30) can leave the schema
+partly upgraded. Compare `__EFMigrationsHistory` with the release's `migrations-sqlserver.txt`: if new
+migrations were recorded, restore the pre-upgrade backup before retrying so schema and binaries match again.
 
 ---
 
 ## Notes
+
+- **Use the upgrade script from the bundle you're installing.** v1.2.1's script reported a false *MIGRATION
+  MISMATCH* on every database (fixed in v1.2.2); before v1.2.3 the ASP.NET Core Module check could fail from a
+  32-bit PowerShell even when the module was installed. v1.2.4's script adds missing storage settings (below).
 
 - **v1.2.1 adds a close-gate check.** The upgrade adds "Required regulatory notifications recorded" to every
   close-case stage gate that doesn't already have it, as a blocking check (overridable with a justification, like
@@ -167,7 +177,10 @@ you need it.
   Their entries in the audit trail remain and the chain still verifies. @mentions now live on notes.
 
 - The script never changes an existing setting in `appsettings.Production.json`, existing data under the data
-  root (evidence / seals / reports / keys), or your IIS configuration. Manual config (e.g. the CyberArk `Secrets`
+  root (evidence / seals / reports / keys), or your IIS site and app pool settings. It does mirror the new
+  binaries into the site folder, which **replaces `web.config`** (re-apply any hand edits such as stdout
+  logging) and removes other files there that aren't part of the release; they're kept in the rollback
+  snapshot. Manual config (e.g. the CyberArk `Secrets`
   block) is preserved. **One addition it does make:** a storage-folder setting a newer release introduced (e.g.
   `ReportTemplates:RootPath`) that your config lacks is added under your data root, with its folder created and
   the data root's permissions, after the config is backed up. Without it, that store falls back to `App_Data` in

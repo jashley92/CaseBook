@@ -14,6 +14,10 @@ stay visually consistent without re-inventing styles per page. If you are adding
 page, a panel, a table or a status chip, use the primitives below rather than
 hand-rolling markup or reaching for raw Bootstrap utilities.
 
+This guide covers styling and copy. For how the UI is built (routing, layouts, state, the
+shared component catalog, JavaScript modules), see
+[architecture/frontend.md](architecture/frontend.md).
+
 Where to look in the code:
 
 - Tokens and component CSS: `src/IncidentManager.Web/wwwroot/app.css`
@@ -25,9 +29,12 @@ Where to look in the code:
 
 ## 2. Theming
 
-CaseBook themes switch on the `data-bs-theme` attribute (Bootstrap's mechanism),
-light by default and `data-bs-theme="dark"` for dark. Theme is a deliberate user
-choice, not `prefers-color-scheme`; do not gate colors on the OS media query.
+CaseBook themes switch on the `data-bs-theme` attribute (Bootstrap's mechanism):
+`light` or `dark`. The theme is the user's choice, saved to their account and written
+onto `<html>` by the server, so it applies before first paint (`js/theme-init.js`).
+Only a first visit with nothing saved falls back to the OS `prefers-color-scheme`.
+Never gate colors on the OS media query in CSS: style through the tokens, which switch
+on `data-bs-theme`.
 
 Rules:
 
@@ -110,8 +117,9 @@ convention rather than tokens. The canonical set:
 | `641px` | Sidebar collapses to the mobile top bar (the load-bearing one — keep it) |
 | `720px` | Stat-tile grid drops from 4 to 2 columns |
 | `980px` | Wide two-column splits stack |
+| `1400px` | The case workspace's context rail moves beside the tabs |
 
-Prefer these three when adding a media query; avoid inventing new near-neighbors
+Prefer these when adding a media query; avoid inventing new near-neighbors
 (the old 520/640/820 spread is what this convention replaces).
 
 ---
@@ -197,6 +205,7 @@ Every top-level page follows the same skeleton.
    | `Title` | `string` | Required. Becomes the page `<h1>`. |
    | `Subtitle` | `string?` | Optional. Rendered only when non-blank. |
    | `Actions` | `RenderFragment?` | Optional right-side slot for buttons/labels. |
+   | `Crumbs` | `IReadOnlyList<Crumb>?` | Optional breadcrumb trail above the title. |
 
 2. Summary rows use an `im-tiles` grid of `<StatTile>` (4 across, 2 across on narrow).
 
@@ -352,3 +361,5 @@ Run this against any new or changed page before review:
 - [ ] Content uses `im-card` + `im-section-head`; summary rows use `im-tiles` + `<StatTile>`; tables carry `im-table`.
 - [ ] Record lists carry `im-list` (one-line rows, sticky header, severity edge); technical values use the data face; loading uses `<LoadingBlock />`; bool ARIA states use `Ui.Aria`.
 - [ ] Verified in both light and dark (`data-bs-theme` toggle), no drift or unreadable contrast.
+- [ ] Changed `app.css` or a script? Its `?v=` in `Components/App.razor` is bumped in the same commit.
+- [ ] Enum values are shown through `Ui.Label(...)` (it applies the admin's taxonomy labels), never `.ToString()`.
