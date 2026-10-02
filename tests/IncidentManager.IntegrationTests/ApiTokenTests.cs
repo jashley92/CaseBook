@@ -245,6 +245,18 @@ public sealed class ApiTokenTests : IDisposable
     }
 
     [Fact]
+    public async Task Only_an_admin_can_list_every_token()
+    {
+        // Administration → API tokens requires Administer; the service asserts it too, for any other caller.
+        await using var db = NewContext();
+        await NewService(db, Admin()).CreateSystemAsync("Integration", ["Analyst"], _clock.UtcNow.AddDays(30));
+
+        var manager = new TestCurrentUser { UserId = "mgr1", RoleSet = [AppRole.Manager] };
+        await NewService(db, manager).Invoking(s => s.ListAllAsync()).Should().ThrowAsync<ForbiddenException>();
+        (await NewService(db, Admin()).ListAllAsync()).Should().ContainSingle(t => t.Name == "Integration");
+    }
+
+    [Fact]
     public async Task Expiry_must_be_in_the_future()
     {
         await using var db = NewContext();

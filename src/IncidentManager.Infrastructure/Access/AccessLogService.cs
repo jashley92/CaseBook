@@ -123,6 +123,7 @@ public sealed class AccessLogService : IAccessLogService
 
     public async Task<IReadOnlyList<CaseAccessEvent>> QueryAsync(AccessLogFilter filter, int take = 500, CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<IAccessLogService>(_user, _siem);   // who read what: administrators only
         using var db = _factory.CreateDbContext();
         var q = db.CaseAccessEvents.AsNoTracking().AsQueryable();
 
@@ -182,6 +183,7 @@ public sealed class AccessLogService : IAccessLogService
 
     public async Task<IReadOnlyList<string>> ActorsAsync(CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<IAccessLogService>(_user, _siem);
         using var db = _factory.CreateDbContext();
         return await db.CaseAccessEvents.AsNoTracking()
             .Select(e => e.ActorUserId).Distinct().OrderBy(a => a).ToListAsync(ct);

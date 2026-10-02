@@ -1,6 +1,8 @@
 using System.Reflection;
 using FluentAssertions;
+using IncidentManager.Application.Access;
 using IncidentManager.Application.Admin;
+using IncidentManager.Application.ApiTokens;
 using IncidentManager.Application.Integrity;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Enums;
@@ -59,6 +61,17 @@ public sealed class AdminActionPermissionsTests
         // S-18: building/previewing a bundle reads configuration only; the page itself is Administer-gated.
         K<IncidentManager.Application.Config.ConfigBundleService>(nameof(IncidentManager.Application.Config.ConfigBundleService.BuildBundleAsync)),
         K<IncidentManager.Application.Config.ConfigBundleService>(nameof(IncidentManager.Application.Config.ConfigBundleService.PreviewAsync)),
+        // Access log: recording is every request's side effect; a case's "Viewed by" and your own last view are
+        // need-to-know scoped by the case page, not admin oversight.
+        K<IAccessLogService>(nameof(IAccessLogService.RecordCaseOpenAsync)),
+        K<IAccessLogService>(nameof(IAccessLogService.RecordArtifactAsync)),
+        K<IAccessLogService>(nameof(IAccessLogService.ForCaseAsync)),
+        K<IAccessLogService>(nameof(IAccessLogService.LastViewedAsync)),
+        // API tokens: validation is the auth handler's; personal tokens are the caller's own; revoke checks owner-or-admin.
+        K<ApiTokenService>(nameof(ApiTokenService.AuthenticateAsync)),
+        K<ApiTokenService>(nameof(ApiTokenService.CreatePersonalAsync)),
+        K<ApiTokenService>(nameof(ApiTokenService.ListMineAsync)),
+        K<ApiTokenService>(nameof(ApiTokenService.RevokeAsync)),
     };
 
     private static string K<T>(string method) => AdminActionPermissions.Key<T>(method);

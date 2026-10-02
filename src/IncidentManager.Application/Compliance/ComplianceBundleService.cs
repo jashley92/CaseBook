@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -36,6 +37,7 @@ public sealed class ComplianceBundleService
     public async Task<ComplianceBundle> BuildAsync(DateTimeOffset fromUtc, DateTimeOffset toUtc,
         CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<ComplianceBundleService>(_user);   // the endpoint is Administer-gated too
         using var db = _factory.CreateDbContext();
         if (toUtc < fromUtc) (fromUtc, toUtc) = (toUtc, fromUtc);
 

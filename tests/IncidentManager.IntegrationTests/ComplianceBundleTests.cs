@@ -116,6 +116,20 @@ public sealed class ComplianceBundleTests : IDisposable
         Unzip(bundle.Content)["manifest.txt"].Should().Contain("Sequence span      : (no entries in this range)");
     }
 
+    [Fact]
+    public async Task Only_an_administrator_can_build_the_bundle()
+    {
+        // The download endpoint requires Administer; the service asserts it too, for any other caller.
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);
+        var auditBefore = await db.AuditLog.CountAsync();
+
+        _user.RoleSet = [AppRole.Manager];   // sees every case, but isn't an administrator
+        await NewBundleService(db).Invoking(s => s.BuildAsync(_clock.UtcNow.AddYears(-1), _clock.UtcNow))
+            .Should().ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
+        (await db.AuditLog.CountAsync()).Should().Be(auditBefore, "a refused build records no export");
+    }
+
     /// <summary>Identity directory stub: resolves ids to themselves — enough for the manifest header.</summary>
     private sealed class StubUserDirectory : IUserDirectory
     {

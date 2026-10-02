@@ -11,8 +11,7 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 | Sev | Current behavior | Why it matters | Possible fix |
 |---|---|---|---|
 | Medium | **Configuration-bundle signatures are checked against the key inside the file.** It proves integrity, not origin. (`ImportAsync` does refuse a bundle whose signature doesn't verify.) | A self-signed bundle from anywhere imports if an admin accepts it. | Pin trusted key ids. |
-| Low | `ComplianceBundleService`, `AccessLogService.QueryAsync` and `ApiTokenService.ListAllAsync` have no service-level permission check (pages and endpoints require `Administer`). | Defense in depth for future callers. | Add `AdminActionPermissions` entries. |
-| Low | Only `CaseService` and three admin services emit SIEM 5202 on refusal; other services refuse silently. | Gaps in detection of stale sessions or UI defects. | Emit from the shared `ForbiddenException` path. |
+| Low | Only `CaseService`, three admin services, the access log and API tokens emit SIEM 5202 on refusal; other services (including the compliance bundle) refuse silently. | Gaps in detection of stale sessions or UI defects. | Emit from the shared `ForbiddenException` path. |
 | Low | The audit chain is unkeyed; seals are the anchor (S-05 partial). | See [integrity.md](../architecture/integrity.md#known-limitation). | HMAC key; off-box seal anchoring (WORM, RFC 3161). |
 | Low | PII at rest relies on SQL Server TDE; Always Encrypted isn't used. | Column-level protection for the most sensitive fields. | Always Encrypted on selected columns. |
 

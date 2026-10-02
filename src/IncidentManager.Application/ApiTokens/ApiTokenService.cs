@@ -96,8 +96,7 @@ public sealed class ApiTokenService
     public async Task<ApiTokenCreated> CreateSystemAsync(string name, IEnumerable<string> roleNames,
         DateTimeOffset expiresAtUtc, CancellationToken ct = default)
     {
-        if (!_user.Has(Permission.Administer))
-            throw new ForbiddenException(Permission.Administer, nameof(CreateSystemAsync));
+        AdminActionPermissions.Require<ApiTokenService>(_user, _siem);
         var n = Clean(name);
         var roles = CleanRoles(roleNames);
         ValidateExpiry(expiresAtUtc, MaxSystemLifetime);
@@ -166,6 +165,7 @@ public sealed class ApiTokenService
     /// <summary>Every token (admin oversight).</summary>
     public async Task<IReadOnlyList<ApiTokenView>> ListAllAsync(CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<ApiTokenService>(_user, _siem);
         using var db = _factory.CreateDbContext();
         var rows = await db.ApiTokens.AsNoTracking()
             .OrderByDescending(t => t.CreatedAtUtc).ToListAsync(ct);

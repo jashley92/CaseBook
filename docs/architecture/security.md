@@ -123,7 +123,7 @@ Consequences worth knowing:
 | Pages | `@attribute [Authorize(Policy = "<Permission>")]` | each `Components/Pages/*.razor` |
 | HTTP endpoints | `.RequireAuthorization("<Permission>")` | `Web/Program.cs` |
 | Case actions | `CaseService.Require()` looks up the calling method in `CaseActionPermissions`; **a method with no entry fails closed**; a unit test checks every mutating method is listed; a refusal emits SIEM 5202 | `Application/Cases/CaseService.cs`, `CaseActionPermissions.cs` |
-| Admin actions | `AdminActionPermissions.Require<TService>()`, all `Administer`, fails closed | `Application/Security/AdminActionPermissions.cs` |
+| Admin actions | `AdminActionPermissions.Require<TService>()`, all `Administer`, fails closed; also the administrator-only reads (compliance bundle, access-log query and actors, every API token) | `Application/Security/AdminActionPermissions.cs` |
 | Other services | Direct checks: evidence upload and transfer (`EditCases`), report generate (`EditCases`) and approve (`ApproveReports`), lessons, import decisions, API tokens | each service |
 | Data visibility | `ForUser()` on every case query (below) | `Application/Cases/CaseQueryExtensions.cs` |
 | UI | `AuthorizeView` and `CanEdit` flags hide controls | components (cosmetic) |
@@ -159,8 +159,6 @@ return query.Where(c => !c.IsRestricted
 
 Listed in [reference/known-issues.md](../reference/known-issues.md#security). In short:
 
-- The compliance bundle, access-log query and "list all API tokens" have no service-level check (their pages
-  and endpoints require `Administer`).
 - A configuration bundle's signature is checked against the key inside the file, so it proves integrity, not
   origin. (`ImportAsync` itself refuses a bundle whose signature doesn't verify.)
 

@@ -184,11 +184,32 @@ public sealed class AccessLogPersistenceTests : IDisposable
         _user.UserId = "analyst2";
         await svc.RecordCaseOpenAsync(caseId, "2026-01_Alpha", wasRestricted: false);
 
+        _user.RoleSet = [AppRole.SysAdmin];   // reading the access log is an administrator's
         var mine = await svc.QueryAsync(new AccessLogFilter { Actor = "analyst1" });
         mine.Should().ContainSingle().Which.ActorUserId.Should().Be("analyst1");
 
         var opens = await svc.QueryAsync(new AccessLogFilter { AccessType = AccessType.CaseOpen });
         opens.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Only_an_administrator_can_query_the_access_log_or_list_its_actors()
+    {
+        // The page and the CSV export require Administer; the service asserts it too, for any other caller.
+        NewContext();
+        var caseId = SeedCase();
+        var svc = NewService();
+        await svc.RecordCaseOpenAsync(caseId, "2026-01_Alpha", wasRestricted: false);
+
+        _user.RoleSet = [AppRole.Manager];   // ViewAllCases, but not Administer
+        await svc.Invoking(s => s.QueryAsync(new AccessLogFilter())).Should().ThrowAsync<ForbiddenException>();
+        await svc.Invoking(s => s.ActorsAsync()).Should().ThrowAsync<ForbiddenException>();
+        _siem.Events.Should().Contain(e => e.EventId == SecurityEventIds.ActionRefused
+                                           && e.Detail!.Contains("IAccessLogService.QueryAsync"));
+
+        _user.RoleSet = [AppRole.SysAdmin];
+        (await svc.QueryAsync(new AccessLogFilter())).Should().ContainSingle();
+        (await svc.ActorsAsync()).Should().Equal("analyst1");
     }
 
     [Fact]

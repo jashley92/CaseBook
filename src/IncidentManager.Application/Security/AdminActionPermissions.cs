@@ -1,6 +1,9 @@
 using System.Runtime.CompilerServices;
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Access;
 using IncidentManager.Application.Admin;
+using IncidentManager.Application.ApiTokens;
+using IncidentManager.Application.Compliance;
 using IncidentManager.Application.Integrity;
 using IncidentManager.Domain.Enums;
 
@@ -13,10 +16,12 @@ namespace IncidentManager.Application.Security;
 /// policy, and the guarantee any future non-UI caller (a management API, bulk-config import, scripted
 /// seeding) inherits for free.
 /// <para>
-/// Keys are <c>Service.Method</c>. Reads are deliberately absent: several (active templates, data elements,
-/// report profiles, the effective taxonomy) feed ordinary case pages, so they are never gated here. A write
-/// with no entry fails closed, and a unit test asserts every public method on the <see cref="GuardedServices"/>
-/// is either mapped or explicitly read-only, so a newly added write can't ship unguarded.
+/// Keys are <c>Service.Method</c>. Reads are mostly absent: several (active templates, data elements,
+/// report profiles, the effective taxonomy) feed ordinary case pages, so they are never gated here. The exception
+/// is the administrator-only oversight reads (the compliance bundle, the access log, every API token), mapped so
+/// a future non-UI caller can't reach them without <c>Administer</c>. A write with no entry fails closed, and a
+/// unit test asserts every public method on the <see cref="GuardedServices"/> is either mapped or explicitly
+/// read-only, so a newly added write can't ship unguarded.
 /// </para>
 /// </summary>
 public static class AdminActionPermissions
@@ -27,7 +32,8 @@ public static class AdminActionPermissions
         typeof(AdminSettingsService), typeof(CaseTemplateService), typeof(DataElementService),
         typeof(EmailTemplateAdminService), typeof(NotificationRuleService), typeof(ReportProfileService), typeof(ReportTemplateService),
         typeof(RoleService), typeof(StageGateService), typeof(TaxonomyAdminService), typeof(IntegrityService),
-        typeof(Config.ConfigBundleService),
+        typeof(Config.ConfigBundleService), typeof(ComplianceBundleService), typeof(IAccessLogService),
+        typeof(ApiTokenService),
     ];
 
     public static readonly IReadOnlyDictionary<string, Permission> Required =
@@ -80,6 +86,13 @@ public static class AdminActionPermissions
             // Configuration bundle (S-18): import can grant roles and AD mappings; export carries the whole config.
             [Key<Config.ConfigBundleService>(nameof(Config.ConfigBundleService.ImportAsync))] = Permission.Administer,
             [Key<Config.ConfigBundleService>(nameof(Config.ConfigBundleService.ExportAsync))] = Permission.Administer,
+
+            // Administrator-only oversight reads: behind Administer pages and endpoints, asserted here as well.
+            [Key<ComplianceBundleService>(nameof(ComplianceBundleService.BuildAsync))] = Permission.Administer,
+            [Key<IAccessLogService>(nameof(IAccessLogService.QueryAsync))] = Permission.Administer,
+            [Key<IAccessLogService>(nameof(IAccessLogService.ActorsAsync))] = Permission.Administer,
+            [Key<ApiTokenService>(nameof(ApiTokenService.ListAllAsync))] = Permission.Administer,
+            [Key<ApiTokenService>(nameof(ApiTokenService.CreateSystemAsync))] = Permission.Administer,
         };
 
     /// <summary>
