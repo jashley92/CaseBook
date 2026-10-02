@@ -216,7 +216,8 @@ Plus the SIEM stream, for real-time detection over all of the above
 - SQL Server is reached with Windows authentication. The app account is `db_owner` only if it applies its own
   migrations (otherwise datareader, datawriter and execute).
 - The seal-signing key is provisioned out of band and its public key archived separately
-  ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)).
+  ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)). Outside Development the app
+  refuses to start without it rather than generate one.
 - One app instance (see [overview.md](overview.md#runtime-topology-production)).
 - Database administrators are trusted not to edit data, and the chain, seals and optional ledger make it
   detectable if they do.

@@ -33,7 +33,7 @@ public sealed class IntegritySealIntegrationTests : IDisposable
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
-        _signer = new RsaSealSigner(Options.Create(new SealSigningOptions { SigningKeyPath = Path.Combine(_workDir, "k.pem") }));
+        _signer = new RsaSealSigner(Options.Create(new SealSigningOptions { SigningKeyPath = Path.Combine(_workDir, "k.pem"), AllowKeyGeneration = true }));
         _store = new FileSealStore(Options.Create(new SealSigningOptions { ExportPath = Path.Combine(_workDir, "seals") }));
     }
 

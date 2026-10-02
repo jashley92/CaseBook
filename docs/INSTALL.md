@@ -231,9 +231,9 @@ The install step runs `dotnet publish`, which restores NuGet packages. Two commo
 
 ## 4. Provision the integrity signing key (out of band)
 
-Production must **not** let the app generate its own seal-signing key (OPERATIONS.md §2). **If the app starts
-before the key file exists, it generates one itself** (and the integrity job seals immediately), so do this
-step before the first browse to the site, or stop the app pool until it's done. Generate the key on a trusted
+Production must **not** let the app generate its own seal-signing key (OPERATIONS.md §2), and it won't: **if the
+key file doesn't exist, the app refuses to start** ("The seal-signing key … doesn't exist"). Do this step before
+the first browse to the site. Generate the key on a trusted
 admin workstation / HSM and install it to the path the config points at:
 
 ```

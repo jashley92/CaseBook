@@ -165,6 +165,10 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   MISMATCH* on every database (fixed in v1.2.2); before v1.2.3 the ASP.NET Core Module check could fail from a
   32-bit PowerShell even when the module was installed. v1.2.4's script adds missing storage settings (below).
 
+- **After v1.2.4, a missing seal-signing key stops startup.** Outside Development the app no longer generates a
+  key when `Integrity:SigningKeyPath` points at a missing file; it refuses to start. An existing install already
+  has its key file there, so nothing changes unless the file was moved or deleted.
+
 - **v1.2.1 adds a close-gate check.** The upgrade adds "Required regulatory notifications recorded" to every
   close-case stage gate that doesn't already have it, as a blocking check (overridable with a justification, like
   any gate). Closing a case whose notification clock is running with no report time recorded then needs an

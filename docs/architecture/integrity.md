@@ -102,8 +102,8 @@ flowchart TB
 - The alarm fires once per broken episode (`IntegrityMonitor` is shared by the job and every session's banner)
   and goes out of band, so deleting rows can't also suppress it.
 - *Verify now* on the Integrity page runs the same check (at most once a minute, shared between users).
-- **If the signing key file is missing, the app generates one.** In production, provision it first
-  ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)).
+- **The signing key is generated only in Development.** Elsewhere a missing key file stops startup; provision it
+  first ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)).
 - Seal-export failures are swallowed without being logged ([known issues](../reference/known-issues.md)).
 
 ### Known limitation

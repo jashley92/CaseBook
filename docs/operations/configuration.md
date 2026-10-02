@@ -82,15 +82,17 @@ The app refuses to start in exactly these cases:
 | Environment is neither Development nor Production, `Auth:Mode` isn't `Windows`, and `Auth:AllowDevSignInOutsideDevelopment` isn't `true` | `Auth:Mode is '…' in the '<environment>' environment. Set Auth:Mode=Windows, or…` |
 | `DataProtection:KeyPath` is set but not an absolute path | `DataProtection:KeyPath must be an absolute path…` |
 | `Database:Provider` is `SqlServer` and there's no `ConnectionStrings:Default` | `A SqlServer connection string is required.` |
+| Environment isn't Development and the seal-signing key file (`Integrity:SigningKeyPath`) doesn't exist | `The seal-signing key '…' (Integrity:SigningKeyPath) doesn't exist. Outside Development the app won't generate one…` |
 
 Everything else is checked lazily or not at all:
 
 - A `Database:Provider` other than `SqlServer` (including a typo) means **SQLite**.
 - A file store whose folder can't be created fails when it's first used, typically on the first request
   that touches evidence or reports.
-- **If the seal-signing key file is missing, the app generates a new RSA-3072 key there.** That's
-  convenient in development. In production, provision the key out of band ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)),
-  because a generated key on the server can't vouch for anything.
+- **The seal-signing key is generated only in Development.** If the key file is missing there, the app creates a
+  new RSA-3072 key at startup. In any other environment it refuses to start until the key is provisioned out
+  of band ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)), because a generated
+  key on the server can't vouch for anything. No setting turns generation on outside Development.
 - Not validated at all: whether storage paths are outside the web root, `AllowedHosts`, email settings, the
   format of `App:BaseUrl`. SIEM URLs are validated each time an event is sent.
 

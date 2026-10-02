@@ -7,10 +7,9 @@ namespace IncidentManager.Infrastructure.Security;
 
 /// <summary>
 /// Signs integrity seals with RSA (RSASSA-PKCS1-v1_5 over SHA-256). The private key is loaded from
-/// the configured PEM file, or generated and persisted there on first use so seals remain verifiable
-/// across restarts. This is a genuine asymmetric signature — a substantial step up from a keyed hash
-/// — but the key still lives on disk; production should provision it via DPAPI / the Windows cert
-/// store / an HSM rather than let the app generate it.
+/// the configured PEM file. Only in Development (<see cref="SealSigningOptions.AllowKeyGeneration"/>) is a
+/// missing key generated and persisted there; anywhere else a missing key is refused, because a key the app
+/// made for itself on the server can't vouch for anything — it must be provisioned out of band.
 /// </summary>
 public sealed class RsaSealSigner : ISealSigner, IDisposable
 {
@@ -27,19 +26,27 @@ public sealed class RsaSealSigner : ISealSigner, IDisposable
     {
         var path = options.Value.SigningKeyPath;
         _rsa = RSA.Create(KeySizeBits);
-        LoadOrCreateKey(path);
+        LoadOrCreateKey(path, options.Value.AllowKeyGeneration);
 
         // Thumbprint the public key so a seal can record which key signed it.
         var spki = _rsa.ExportSubjectPublicKeyInfo();
         KeyId = Convert.ToHexString(SHA256.HashData(spki))[..16].ToLowerInvariant();
     }
 
-    private void LoadOrCreateKey(string path)
+    private void LoadOrCreateKey(string path, bool allowGeneration)
     {
         if (File.Exists(path))
         {
             _rsa.ImportFromPem(File.ReadAllText(path));
             return;
+        }
+
+        if (!allowGeneration)
+        {
+            _rsa.Dispose();
+            throw new InvalidOperationException(
+                $"The seal-signing key '{Path.GetFullPath(path)}' (Integrity:SigningKeyPath) doesn't exist. " +
+                "Outside Development the app won't generate one: provision the key out of band (see OPERATIONS.md §2), then restart.");
         }
 
         var dir = Path.GetDirectoryName(path);

@@ -10,7 +10,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 
 | Sev | Current behavior | Why it matters | Possible fix |
 |---|---|---|---|
-| Medium | **The app generates a seal-signing key if the file is missing**, in any environment, and the integrity job runs at startup. | A production instance started before the key is provisioned signs with a key that lives on the server. | Refuse to generate outside Development. |
 | Medium | **The pending-import queue isn't need-to-know scoped**: anyone with `EditCases` sees submitter, origin, summary and target case number. | Can reveal a restricted case's number. | Filter by target-case visibility. |
 | Medium | **Configuration-bundle signatures are checked against the key inside the file.** It proves integrity, not origin; and "signature valid" is enforced only by the page, not `ImportAsync`. | A self-signed bundle from anywhere imports if an admin accepts it. | Pin trusted key ids; enforce in the service. |
 | Low | `ReportService.VerifyFileAsync` doesn't apply need-to-know (returns only a boolean). | Minor information leak. | Load the report through the scoped query. |

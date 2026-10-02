@@ -52,8 +52,10 @@ How to diagnose problems in a running CaseBook, from startup failures to integri
   1. A migration failed at startup (see [Migration failures](#migration-failures)).
   2. The database is unreachable or the app identity can't log in.
   3. `Auth:Mode` isn't `Windows` outside Development (the message says so).
-  4. `DataProtection:KeyPath` is relative.
-  5. The .NET 10 runtime is missing.
+  4. The seal-signing key file isn't there yet ("The seal-signing key … doesn't exist"); provision it
+     ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)).
+  5. `DataProtection:KeyPath` is relative.
+  6. The .NET 10 runtime is missing.
 - **Look:** Application event log (*IIS AspNetCore Module V2* and *.NET Runtime* entries), then stdout logs.
 - **Steps:** read the first exception. For SQL errors, test the login with the app pool's identity.
 - **Fix:** correct the configuration in `appsettings.Production.json` and recycle. A 500.30 during an upgrade can

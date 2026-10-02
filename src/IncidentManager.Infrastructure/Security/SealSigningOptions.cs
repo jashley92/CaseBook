@@ -4,11 +4,17 @@ namespace IncidentManager.Infrastructure.Security;
 public sealed class SealSigningOptions
 {
     /// <summary>
-    /// Path to the PEM-encoded RSA private key used to sign seals. If absent, a key is generated on
-    /// first use and written here. In production this should point at a key protected by DPAPI/HSM
-    /// and provisioned out of band, not generated on the app server.
+    /// Path to the PEM-encoded RSA private key used to sign seals. In production this points at a key
+    /// provisioned out of band (DPAPI/HSM-protected), never generated on the app server. If the file is
+    /// missing, a key is generated here only when <see cref="AllowKeyGeneration"/> is set; otherwise startup fails.
     /// </summary>
     public string SigningKeyPath { get; set; } = "App_Data/keys/seal-signing.pem";
+
+    /// <summary>
+    /// Whether a missing key may be generated. Not read from configuration: <c>Program.cs</c> sets it from the
+    /// environment (Development only), so no setting can turn on key generation on a server.
+    /// </summary>
+    public bool AllowKeyGeneration { get; set; }
 
     /// <summary>Directory to export each seal to, separate from the database (ideally restricted/WORM/offsite).</summary>
     public string ExportPath { get; set; } = "seals";

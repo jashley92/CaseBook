@@ -32,7 +32,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
-        _signer = new RsaSealSigner(Options.Create(new SealSigningOptions { SigningKeyPath = Path.Combine(_workDir, "k.pem") }));
+        _signer = new RsaSealSigner(Options.Create(new SealSigningOptions { SigningKeyPath = Path.Combine(_workDir, "k.pem"), AllowKeyGeneration = true }));
         using var db = NewContext();
     }
 

@@ -306,7 +306,7 @@ foreach ($d in $dataDirs) { Grant-Ntfs $d 'Modify' }        # stores the app rea
 # no per-folder Modify carve-out is needed.
 # Tighten the private signing key to the app identity (read) - provision the key out of band (OPERATIONS section 2).
 $keysDir = Join-Path $DataRoot 'keys'
-Write-Host "    (Provision $keysDir\seal-signing.pem out of band; do NOT let the app generate it in prod.)" -ForegroundColor Yellow
+Write-Host "    (Provision $keysDir\seal-signing.pem out of band; the app will not start until it exists.)" -ForegroundColor Yellow
 
 # --- 5. IIS: app pool + site + Windows Auth -----------------------------------
 Write-Step "Configuring IIS (pool '$AppPoolName', site '$SiteName')"

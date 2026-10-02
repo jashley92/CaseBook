@@ -10,7 +10,7 @@ public class SealSigningTests : IDisposable
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "im-seal-key-tests", Guid.NewGuid().ToString("N"));
 
     private RsaSealSigner NewSigner() =>
-        new(Options.Create(new SealSigningOptions { SigningKeyPath = Path.Combine(_dir, "k.pem") }));
+        new(Options.Create(new SealSigningOptions { SigningKeyPath = Path.Combine(_dir, "k.pem"), AllowKeyGeneration = true }));
 
     [Fact]
     public void Sign_then_verify_roundtrips()

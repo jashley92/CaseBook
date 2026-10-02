@@ -59,6 +59,10 @@ if (!string.IsNullOrWhiteSpace(dpKeyPath))
 
 // --- Application + Infrastructure ---
 builder.Services.AddInfrastructure(builder.Configuration);
+// The app may generate a missing seal-signing key only in Development. Set from the environment, after binding,
+// so no configuration value can turn generation on for a server.
+builder.Services.PostConfigure<IncidentManager.Infrastructure.Security.SealSigningOptions>(
+    o => o.AllowKeyGeneration = builder.Environment.IsDevelopment());
 builder.Services.AddApplication();
 
 // --- Scheduled audit-chain verify/seal job ---
@@ -244,6 +248,10 @@ builder.Services.AddHealthChecks()
     .AddCheck<IncidentManager.Web.HealthChecks.EvidenceStoreHealthCheck>("evidence-store", tags: ["ready"]);
 
 var app = builder.Build();
+
+// Load the seal-signing key now, so a missing key outside Development stops startup with a clear message
+// instead of failing later in the integrity job (and never makes the app sign with a key it made itself).
+app.Services.GetRequiredService<ISealSigner>();
 
 // X-02: wire the (global) taxonomy display-label provider into the static Ui helpers, so every
 // Ui.Label(...) call site reflects an admin rename with no per-site change.
