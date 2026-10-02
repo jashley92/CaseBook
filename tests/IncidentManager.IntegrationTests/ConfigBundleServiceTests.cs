@@ -70,6 +70,11 @@ public sealed class ConfigBundleServiceTests : IDisposable
         await db.SaveChangesAsync();
     }
 
+    /// <summary>Wraps a bundle in an envelope signed by this test's key, as an export would.</summary>
+    private ConfigBundleEnvelope Signed(ConfigBundle bundle) => new(
+        ConfigBundleJson.FormatTag, ConfigBundleJson.CurrentSchemaVersion, "test", _clock.UtcNow, _user.UserId, "test-host",
+        _signer.Algorithm, _signer.KeyId, _signer.PublicKeyPem, _signer.Sign(ConfigBundleJson.Canonicalize(bundle)), bundle);
+
     [Fact]
     public async Task Export_captures_every_editable_section()
     {
@@ -171,7 +176,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         (await preview.Should().ThrowAsync<ArgumentException>())
             .Which.Message.Should().Contain("Containment: High (hours)").And.Contain("At-risk threshold (%)");
 
-        var import = () => svc.ImportAsync(bad);
+        var import = () => svc.ImportAsync(Signed(bad));
         await import.Should().ThrowAsync<ArgumentException>();
         (await db.AppSettings.AsNoTracking().AnyAsync(s => s.Value == "Renamed by the bundle"))
             .Should().BeFalse("nothing from a rejected bundle is written");
@@ -192,7 +197,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         diff.Updated.Should().Be(0);
 
         // And applying it is a no-op.
-        var result = await svc.ImportAsync(bundle);
+        var result = await svc.ImportAsync(Signed(bundle));
         result.Changed.Should().Be(0);
     }
 
@@ -214,7 +219,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
             ReportProfiles = profiles
         };
 
-        var result = await svc.ImportAsync(incoming);
+        var result = await svc.ImportAsync(Signed(incoming));
 
         result.Added.Should().BeGreaterThanOrEqualTo(1);
         result.Updated.Should().BeGreaterThanOrEqualTo(1);
@@ -250,7 +255,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
             StageGates = live.StageGates.Select(g => g == incidentGate ? tightened : g).ToList()
         };
 
-        await svc.ImportAsync(incoming);
+        await svc.ImportAsync(Signed(incoming));
 
         // The exported form carries the threshold...
         var after = await svc.BuildBundleAsync();
@@ -285,7 +290,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
                 .ToList()
         };
 
-        var result = await svc.ImportAsync(incoming);
+        var result = await svc.ImportAsync(Signed(incoming));
         result.Added.Should().BeGreaterThanOrEqualTo(1);
         result.Updated.Should().BeGreaterThanOrEqualTo(1);
 
@@ -304,7 +309,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
 
         // Simulate a v1 bundle: the field is absent (null) rather than an empty list.
         var v1 = live with { NotificationRules = null! };
-        var act = async () => await svc.ImportAsync(v1);
+        var act = async () => await svc.ImportAsync(Signed(v1));
         await act.Should().NotThrowAsync();
     }
 
@@ -323,7 +328,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
                 .Append(new ConfigSetting("Reporting:TeamName", "Cyber Defense")).ToList()
         };
 
-        await svc.ImportAsync(incoming);
+        await svc.ImportAsync(Signed(incoming));
 
         var settings = await db.AppSettings.AsNoTracking().ToDictionaryAsync(s => s.Key, s => s.Value);
         settings.Should().ContainKey("Reporting:TeamName");
@@ -340,7 +345,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
 
         // A bundle that omits every report profile must not delete the live ones.
         var incoming = live with { ReportProfiles = Array.Empty<ConfigReportProfile>() };
-        await svc.ImportAsync(incoming);
+        await svc.ImportAsync(Signed(incoming));
 
         (await db.ReportProfiles.CountAsync()).Should().BeGreaterThan(0, "import never deletes");
     }
@@ -369,6 +374,28 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Import_itself_refuses_a_bundle_whose_signature_does_not_verify()
+    {
+        // The page disables Apply for a bad signature; the service must refuse too, for any other caller.
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var signed = Signed(live);
+        var tampered = signed with
+        {
+            Bundle = live with { Roles = live.Roles.Append(new ConfigRole("Shadow Admin", null, false, "ViewCases,Administer")).ToList() }
+        };
+        var unsigned = signed with { Signature = "" };
+
+        await svc.Invoking(s => s.ImportAsync(tampered)).Should()
+            .ThrowAsync<InvalidOperationException>().WithMessage("*signature doesn't verify*");
+        await svc.Invoking(s => s.ImportAsync(unsigned)).Should()
+            .ThrowAsync<InvalidOperationException>().WithMessage("*signature doesn't verify*");
+        (await db.Roles.AsNoTracking().AnyAsync(r => r.Name == "Shadow Admin")).Should().BeFalse("nothing is imported");
+    }
+
+    [Fact]
     public async Task A_foreign_file_is_rejected_with_a_clear_message()
     {
         await using var db = NewContext();
@@ -389,7 +416,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
             {
                 DataElements = live.DataElements.Append(new ConfigDataElement("GeneticData", "Genetic data", 21, true, false, null)).ToList()
             };
-            await svc.ImportAsync(incoming);
+            await svc.ImportAsync(Signed(incoming));
         }
 
         await using var verify = NewContext();
@@ -423,7 +450,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         var bundle = await svc.BuildBundleAsync();
         _user.RoleSet = [AppRole.IncidentCommander];
 
-        await svc.Invoking(s => s.ImportAsync(bundle)).Should()
+        await svc.Invoking(s => s.ImportAsync(Signed(bundle))).Should()
             .ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
         await svc.Invoking(s => s.ExportAsync()).Should()
             .ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
@@ -446,7 +473,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
             Settings = live.Settings.Append(new ConfigSetting("Security:IdleTimeoutMinutes", "0")).ToList(),
         };
 
-        await svc.ImportAsync(incoming);
+        await svc.ImportAsync(Signed(incoming));
 
         sink.Events.Select(e => e.Action).Should().Contain(["RoleImported", "AdGroupMappingImported", "SettingChanged"]);
         sink.Events.Should().Contain(e => e.Detail == "Some-Group → Shadow Admin");
@@ -465,7 +492,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
             Settings = live.Settings.Append(new ConfigSetting("Security:IdleTimeoutMinutes", "not a number")).ToList()
         };
 
-        await svc.Invoking(s => s.ImportAsync(incoming)).Should().ThrowAsync<Exception>();
+        await svc.Invoking(s => s.ImportAsync(Signed(incoming))).Should().ThrowAsync<Exception>();
         (await db.AppSettings.AsNoTracking().AnyAsync(x => x.Key == "Security:IdleTimeoutMinutes")).Should().BeFalse();
     }
 
@@ -527,7 +554,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         (await target.Config.PreviewAsync(parsed.Bundle)).Items
             .Should().Contain(i => i.Section == "Word template" && i.Name == "Examiner pack" && i.Change == ConfigChange.Add);
 
-        await target.Config.ImportAsync(parsed.Bundle);
+        await target.Config.ImportAsync(parsed);
 
         using (var db = target.Factory.CreateDbContext())
         {
@@ -540,7 +567,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         }
 
         // Re-importing the same bundle changes nothing.
-        var again = await target.Config.ImportAsync(parsed.Bundle);
+        var again = await target.Config.ImportAsync(parsed);
         again.Added.Should().Be(0);
         again.Updated.Should().Be(0);
 
@@ -561,7 +588,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         await target.Config.Invoking(c => c.PreviewAsync(twice)).Should()
             .ThrowAsync<InvalidOperationException>().WithMessage("*More than one*lessons-learned default*");
 
-        await target.Config.ImportAsync(bundle);
+        await target.Config.ImportAsync(Signed(bundle));
         using var db = target.Factory.CreateDbContext();
         (await db.ReportTemplates.SingleAsync()).IsLessonsDefault.Should().BeTrue();
     }
@@ -578,7 +605,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         var canonical = ConfigBundleJson.Canonicalize(v2);
         canonical.Should().NotContain("reportTemplates").And.NotContain("\"template\"");
 
-        await instance.Config.ImportAsync(v2);
+        await instance.Config.ImportAsync(Signed(v2));
 
         using var db = instance.Factory.CreateDbContext();
         (await db.ReportProfiles.SingleAsync(p => p.Name == profileName)).TemplateId.Should().Be(templateId,
@@ -604,16 +631,16 @@ public sealed class ConfigBundleServiceTests : IDisposable
         var tampered = bundle with { ReportTemplates = [template with { ContentBase64 = Convert.ToBase64String(altered) }] };
         await target.Config.Invoking(c => c.PreviewAsync(tampered)).Should()
             .ThrowAsync<InvalidOperationException>().WithMessage("*doesn't match its recorded SHA-256*");
-        await target.Config.Invoking(c => c.ImportAsync(tampered)).Should().ThrowAsync<InvalidOperationException>();
+        await target.Config.Invoking(c => c.ImportAsync(Signed(tampered))).Should().ThrowAsync<InvalidOperationException>();
 
         // A profile default that would end up archived.
         var archived = bundle with { ReportTemplates = [template with { IsActive = false }] };
-        await target.Config.Invoking(c => c.ImportAsync(archived)).Should()
+        await target.Config.Invoking(c => c.ImportAsync(Signed(archived))).Should()
             .ThrowAsync<InvalidOperationException>().WithMessage("*would be archived*");
 
         // A macro-enabled file isn't a template, whatever the bundle calls it.
         var macro = bundle with { ReportTemplates = [template with { FileName = "examiner.docm" }] };
-        await target.Config.Invoking(c => c.ImportAsync(macro)).Should()
+        await target.Config.Invoking(c => c.ImportAsync(Signed(macro))).Should()
             .ThrowAsync<InvalidOperationException>().WithMessage("*only .docx*");
 
         using var check = target.Factory.CreateDbContext();

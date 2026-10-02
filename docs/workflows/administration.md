@@ -100,7 +100,8 @@ snapshots it for comparison with a revised incident response plan.
   templates, stage gates, report profiles with their Word templates, data elements and notification rules,
   signed with the instance's seal key. Email-template wording isn't included. Recorded in the audit chain.
 - **Import** (up to 64 MB): the signature is checked against the public key **inside the file**, and the page
-  says whether that key is this instance's. The page requires a valid signature before importing; then a diff
+  says whether that key is this instance's. A valid signature is required: the page won't offer Apply without
+  one, and `ConfigBundleService.ImportAsync` itself refuses a bundle whose signature doesn't verify. A diff
   shows what would change. Import adds and updates; it never deletes, and never changes system roles'
   permissions. Every change is audited (SIEM 5401–5403).
 - Never included: cases, evidence, the audit trail, server-side configuration.

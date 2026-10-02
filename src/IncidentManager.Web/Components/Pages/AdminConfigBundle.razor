@@ -135,7 +135,7 @@
 
 @code {
     private ConfigBundle? _bundle;
-    private ConfigBundle? _incoming;
+    private ConfigBundleEnvelope? _incoming;   // signed: ImportAsync re-verifies it
     private ConfigVerification? _verification;
     private ConfigDiff? _diff;
     private bool _applying;
@@ -155,7 +155,7 @@
             // 64 MB: the bundle carries the Word template library.
             await e.File.OpenReadStream(maxAllowedSize: 64 * 1024 * 1024).CopyToAsync(ms);
             var (envelope, verification) = Config.ParseAndVerify(ms.ToArray());
-            _incoming = envelope.Bundle;
+            _incoming = envelope;
             _verification = verification;
             _diff = await Config.PreviewAsync(envelope.Bundle);
         }

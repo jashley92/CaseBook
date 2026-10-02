@@ -162,7 +162,8 @@ Listed in [reference/known-issues.md](../reference/known-issues.md#security). In
 - The compliance bundle, access-log query and "list all API tokens" have no service-level check (their pages
   and endpoints require `Administer`).
 - Report hash verification doesn't apply need-to-know.
-- A configuration bundle's "signature valid" requirement is enforced in the page, not in the import method.
+- A configuration bundle's signature is checked against the key inside the file, so it proves integrity, not
+  origin. (`ImportAsync` itself refuses a bundle whose signature doesn't verify.)
 
 ## HTTP protections
 

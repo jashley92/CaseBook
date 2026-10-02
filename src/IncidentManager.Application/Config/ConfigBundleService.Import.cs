@@ -40,11 +40,8 @@ public sealed partial class ConfigBundleService
             throw new InvalidOperationException(
                 $"This bundle is schema v{env.SchemaVersion}, newer than this app supports (v{ConfigBundleJson.CurrentSchemaVersion}). Upgrade CaseBook first.");
 
-        var signatureValid = VerifyWithEmbeddedKey(
-            ConfigBundleJson.Canonicalize(env.Bundle), env.Signature, env.PublicKeyPem);
-
         var verification = new ConfigVerification(
-            SignatureValid: signatureValid,
+            SignatureValid: SignatureValid(env),
             SignedByThisInstance: string.Equals(env.KeyId, _signer.KeyId, StringComparison.Ordinal),
             KeyId: env.KeyId,
             ExportedBy: env.ExportedBy,
@@ -55,6 +52,9 @@ public sealed partial class ConfigBundleService
 
         return (env, verification);
     }
+
+    private static bool SignatureValid(ConfigBundleEnvelope env) =>
+        VerifyWithEmbeddedKey(ConfigBundleJson.Canonicalize(env.Bundle), env.Signature, env.PublicKeyPem);
 
     // Verifies an RSASSA-PKCS1-v1_5-SHA256 signature against a caller-supplied SubjectPublicKeyInfo PEM.
     private static bool VerifyWithEmbeddedKey(string content, string signatureBase64, string publicKeyPem)
@@ -141,14 +141,26 @@ public sealed partial class ConfigBundleService
     }
 
     /// <summary>
-    /// Applies a bundle as a non-destructive upsert (nothing is deleted). Existing items are matched by natural
-    /// key and updated only when they differ; missing items are created. System roles' code-owned permissions
-    /// are never overwritten; new custom data elements get the next unused local code. Every write is audited.
+    /// Applies a signed bundle (the envelope <see cref="ParseAndVerify"/> returned) as a non-destructive upsert
+    /// (nothing is deleted). The signature must verify against the key carried in the file, here and not only on
+    /// the page, so no caller can apply a bundle whose content was altered after export. Existing items are matched
+    /// by natural key and updated only when they differ; missing items are created. System roles' code-owned
+    /// permissions are never overwritten; new custom data elements get the next unused local code. Every write is
+    /// audited.
     /// </summary>
-    public async Task<ConfigImportResult> ImportAsync(ConfigBundle bundle, CancellationToken ct = default)
+    /// <exception cref="InvalidOperationException">Not a bundle this app reads, or the signature doesn't verify.</exception>
+    public async Task<ConfigImportResult> ImportAsync(ConfigBundleEnvelope envelope, CancellationToken ct = default)
     {
         // S-18: an import can grant roles and AD mappings, so it's asserted here, not just by the Administer page.
         AdminActionPermissions.Require<ConfigBundleService>(_user, _siem);
+        if (envelope is not { Format: ConfigBundleJson.FormatTag, Bundle: not null }
+            || envelope.SchemaVersion > ConfigBundleJson.CurrentSchemaVersion)
+            throw new InvalidOperationException("This file is not a CaseBook configuration bundle this version can import.");
+        if (!SignatureValid(envelope))
+            throw new InvalidOperationException(
+                "This bundle's signature doesn't verify, so it was altered after export. Nothing was imported.");
+
+        var bundle = envelope.Bundle;
         var changedSettings = new List<string>();
         var changedRoles = new List<string>();
         var addedMappings = new List<string>();
