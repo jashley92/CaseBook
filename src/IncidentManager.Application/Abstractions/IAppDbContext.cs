@@ -16,6 +16,7 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     DbSet<MaterialityChange> MaterialityChanges { get; }
     DbSet<StatusChange> StatusChanges { get; }
     DbSet<AssignmentChange> AssignmentChanges { get; }
+    DbSet<EntityVerdictChange> EntityVerdictChanges { get; }   // HR-05
     DbSet<SeverityChange> SeverityChanges { get; }
     DbSet<TimelineEntry> TimelineEntries { get; }
     DbSet<AnalystNote> Notes { get; }

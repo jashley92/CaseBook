@@ -77,6 +77,24 @@ public class AssignmentChange : Entity
     public DateTimeOffset ChangedAtUtc { get; set; }
 }
 
+/// <summary>
+/// HR-05: immutable record of a change to an entity's verdict on a case (e.g. Unknown → Compromised), with why. The
+/// findings history: when the team reached each conclusion about an account, host or indicator, who, and on what basis.
+/// Written when an existing entity is re-assessed, not when one is first added with a verdict.
+/// </summary>
+public class EntityVerdictChange : Entity
+{
+    public Guid CaseId { get; set; }
+    public Guid EntityId { get; set; }
+    /// <summary>How the entity read at the time (its label, else its value), so the history reads the same if it's later removed.</summary>
+    public string EntityLabel { get; set; } = string.Empty;
+    public EntityDisposition From { get; set; }
+    public EntityDisposition To { get; set; }
+    public string? Reason { get; set; }
+    public string ChangedBy { get; set; } = string.Empty;
+    public DateTimeOffset ChangedAtUtc { get; set; }
+}
+
 /// <summary>Immutable record of a severity change.</summary>
 public class SeverityChange : Entity
 {

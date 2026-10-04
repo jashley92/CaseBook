@@ -69,6 +69,7 @@ public sealed class CaseConfiguration : IEntityTypeConfiguration<Case>
         b.HasMany(c => c.MaterialityChanges).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(c => c.StatusChanges).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(c => c.SeverityChanges).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+        b.HasMany(c => c.VerdictChanges).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);   // HR-05
         b.HasMany(c => c.TimelineEntries).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(c => c.Notes).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(c => c.Evidence).WithOne().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);

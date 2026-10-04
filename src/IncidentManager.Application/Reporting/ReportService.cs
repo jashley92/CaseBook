@@ -97,7 +97,8 @@ public sealed class ReportService
         if (opts.IncludeMilestones)
         {
             var labels = new Cases.MilestoneLabels(ClassificationLabel, _severityLabels.For, PhaseLabel, MaterialityLabel,
-                k => outcomeLabels?.GetValueOrDefault(k) ?? Admin.CaseOutcomeCatalog.Label(k));
+                k => outcomeLabels?.GetValueOrDefault(k) ?? Admin.CaseOutcomeCatalog.Label(k),
+                d => TaxLabel("EntityDisposition", d.ToString()));
             // A report listing its own earlier versions reads oddly, so final-report milestones stay out; so do
             // staffing changes (INV-31), which are the team's working record rather than findings.
             foreach (var m in Cases.CaseMilestones.Project(c, labels)
@@ -551,6 +552,7 @@ public sealed class ReportService
             .Include(x => x.SeverityChanges)
             .Include(x => x.StatusChanges)        // INV-16: milestones in the investigation timeline
             .Include(x => x.MaterialityChanges)
+            .Include(x => x.VerdictChanges)      // HR-05: verdict milestones in the investigation timeline
             .Include(x => x.GatePassages)
             .Include(x => x.Citations)            // INV-10: evidence an entry cites
             .Include(x => x.Briefs)               // INV-19: the case brief, for an opt-in section

@@ -784,13 +784,14 @@
     private static readonly HashSet<MilestoneKind> RecentMilestones =
     [
         MilestoneKind.Classification, MilestoneKind.Severity, MilestoneKind.Phase, MilestoneKind.Materiality,
-        MilestoneKind.Gate, MilestoneKind.Reported, MilestoneKind.TaskDone, MilestoneKind.Command
+        MilestoneKind.Gate, MilestoneKind.Reported, MilestoneKind.TaskDone, MilestoneKind.Command, MilestoneKind.Verdict
     ];
 
     private List<RecentItem> RecentOnTimeline()
     {
         var labels = new MilestoneLabels(c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m),
-            k => OutcomeLabels.GetValueOrDefault(k) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(k));
+            k => OutcomeLabels.GetValueOrDefault(k) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(k),
+            d => Ui.Label(d));
         var milestones = CaseMilestones.Project(Case, labels)
             .Where(m => RecentMilestones.Contains(m.Kind))
             .Select(m => new RecentItem(m.AtUtc, m.Flagged ? "bi-flag-fill im-ov-flag" : "bi-flag", "Milestone",

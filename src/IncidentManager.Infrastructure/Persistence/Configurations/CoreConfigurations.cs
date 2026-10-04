@@ -160,6 +160,20 @@ public sealed class AssignmentChangeConfiguration : IEntityTypeConfiguration<Ass
     }
 }
 
+/// <summary>HR-05: entity verdict changes (the findings history). No foreign key to the entity: the row outlives it.</summary>
+public sealed class EntityVerdictChangeConfiguration : IEntityTypeConfiguration<EntityVerdictChange>
+{
+    public void Configure(EntityTypeBuilder<EntityVerdictChange> b)
+    {
+        b.ToTable("EntityVerdictChanges");
+        b.Property(x => x.EntityLabel).HasMaxLength(400).IsRequired();
+        b.Property(x => x.Reason).HasMaxLength(2000);
+        b.Property(x => x.ChangedBy).HasMaxLength(200);
+        b.HasIndex(x => x.CaseId);
+        b.HasIndex(x => x.EntityId);
+    }
+}
+
 public sealed class CaseAssignmentConfiguration : IEntityTypeConfiguration<CaseAssignment>
 {
     public void Configure(EntityTypeBuilder<CaseAssignment> b)

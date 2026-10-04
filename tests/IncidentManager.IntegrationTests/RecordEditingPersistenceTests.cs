@@ -91,6 +91,30 @@ public sealed class RecordEditingPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Marking_an_entity_malicious_or_compromised_needs_a_reason_that_stays_with_the_verdict()
+    {
+        // HR-05: the finding and its basis are kept together, not only in the audit trail.
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+        var acct = await svc.AddEntityAsync(id, EntityType.Account, "j.morales", null, EntityDisposition.Unknown, null, null);
+
+        var noWhy = () => svc.EditEntityAsync(id, acct, EntityType.Account, "j.morales", null, EntityDisposition.Compromised, null, null);
+        await noWhy.Should().ThrowAsync<ArgumentException>().WithMessage("Say why it's compromised*");
+
+        await svc.EditEntityAsync(id, acct, EntityType.Account, "j.morales", null, EntityDisposition.Benign, null, null);   // no why needed
+        await svc.EditEntityAsync(id, acct, EntityType.Account, "j.morales", null, EntityDisposition.Compromised, null, null,
+            reason: "Unauthorized Tor sign-in");
+
+        var loaded = (await svc.GetDetailAsync(id))!;
+        loaded.VerdictChanges.Select(v => (v.From, v.To, v.Reason)).Should().Equal(
+            (EntityDisposition.Unknown, EntityDisposition.Benign, (string?)null),
+            (EntityDisposition.Benign, EntityDisposition.Compromised, "Unauthorized Tor sign-in"));
+        var chain = await db.AuditLog.OrderBy(a => a.Sequence).ToListAsync();
+        _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Editing_an_entity_in_place_reassesses_it_and_records_the_reason_with_a_valid_chain()
     {
         Guid id, entityId;

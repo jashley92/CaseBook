@@ -1735,7 +1735,8 @@ else
 
     private IReadOnlyList<CaseMilestone> Milestones() => CaseMilestones.Project(Case, new MilestoneLabels(
         c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m),
-        k => OutcomeLabels.GetValueOrDefault(k) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(k)));
+        k => OutcomeLabels.GetValueOrDefault(k) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(k),
+        d => Ui.Label(d)));
 
     // Interleave entries and milestones by when they happened; the entry list arrives already ordered.
     private List<TlRow> MergeRows(IEnumerable<TimelineEntry> entries, IEnumerable<CaseMilestone> milestones)
@@ -1761,6 +1762,7 @@ else
         MilestoneKind.EvidenceAdded => "bi-paperclip",
         MilestoneKind.ReportFinal => "bi-file-earmark-lock",
         MilestoneKind.Command => "bi-person-badge",
+        MilestoneKind.Verdict => "bi-bullseye",   // HR-05
         _ => "bi-flag"
     };
 

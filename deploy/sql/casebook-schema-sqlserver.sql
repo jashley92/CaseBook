@@ -2659,3 +2659,52 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004094442_AddEntityVerdictChanges'
+)
+BEGIN
+    CREATE TABLE [EntityVerdictChanges] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [EntityId] uniqueidentifier NOT NULL,
+        [EntityLabel] nvarchar(400) NOT NULL,
+        [From] int NOT NULL,
+        [To] int NOT NULL,
+        [Reason] nvarchar(2000) NULL,
+        [ChangedBy] nvarchar(200) NOT NULL,
+        [ChangedAtUtc] datetimeoffset NOT NULL,
+        CONSTRAINT [PK_EntityVerdictChanges] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_EntityVerdictChanges_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004094442_AddEntityVerdictChanges'
+)
+BEGIN
+    CREATE INDEX [IX_EntityVerdictChanges_CaseId] ON [EntityVerdictChanges] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004094442_AddEntityVerdictChanges'
+)
+BEGIN
+    CREATE INDEX [IX_EntityVerdictChanges_EntityId] ON [EntityVerdictChanges] ([EntityId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004094442_AddEntityVerdictChanges'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261004094442_AddEntityVerdictChanges', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

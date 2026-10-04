@@ -17,7 +17,9 @@ public enum MilestoneKind
     EvidenceAdded,
     ReportFinal,
     /// <summary>INV-31: someone joined, changed role (including command) or left the case.</summary>
-    Command
+    Command,
+    /// <summary>HR-05: an entity's verdict changed (a finding), with why.</summary>
+    Verdict
 }
 
 /// <summary>
@@ -50,8 +52,12 @@ public sealed record MilestoneLabels(
     Func<Severity, string> Severity,
     Func<CasePhase, string> Phase,
     Func<MaterialityStatus, string> Materiality,
-    Func<string, string>? Outcome = null)
+    Func<string, string>? Outcome = null,
+    Func<EntityDisposition, string>? Disposition = null)
 {
+    /// <summary>HR-05: a verdict's label (admin-customizable when supplied, else the member name).</summary>
+    public string DispositionLabel(EntityDisposition d) => Disposition?.Invoke(d) ?? d.ToString();
+
     /// <summary>HR-01: an outcome's label (admin-managed when supplied, else the built-in default).</summary>
     public string OutcomeLabel(string key) => Outcome?.Invoke(key) ?? Admin.CaseOutcomeCatalog.Label(key);
 
@@ -102,6 +108,13 @@ public static class CaseMilestones
                     + (x.OutcomeKey is { } outcome ? $" · {labels.OutcomeLabel(outcome)}" : ""),   // HR-01
                 Blank(x.Reason), x.ChangedBy, "phase change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc),
                 Transition: (TransitionKind.Phase, x.Id)));
+
+        // HR-05: findings: an entity re-assessed (e.g. Unknown → Compromised), with the reason given.
+        foreach (var x in c.VerdictChanges)
+            list.Add(new CaseMilestone($"verdict:{x.Id}", x.ChangedAtUtc, MilestoneKind.Verdict,
+                $"{x.EntityLabel} assessed {labels.DispositionLabel(x.To)}"
+                    + (x.From == EntityDisposition.Unknown ? "" : $" (was {labels.DispositionLabel(x.From)})"),
+                Blank(x.Reason), x.ChangedBy, "verdict change"));
 
         // INV-31: who took command, joined, changed role or left. A commander handing over as someone else takes
         // command (both at the same moment) reads as one milestone.

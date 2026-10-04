@@ -55,6 +55,23 @@
         </div>
 
         <div class="im-entity-panel-body">
+            @* HR-05: how the verdict on this case was reached, newest first. *@
+            @if (Case.VerdictChanges.Where(v => v.EntityId == en.Id).OrderByDescending(v => v.ChangedAtUtc).ToList() is { Count: > 0 } verdicts)
+            {
+                <section>
+                    <h3 class="im-entity-panel-h">Verdict history · @verdicts.Count</h3>
+                    <ul class="list-unstyled mb-0 small">
+                        @foreach (var v in verdicts)
+                        {
+                            <li class="im-entity-ref">
+                                <span class="fw-semibold">@Ui.Label(v.From) → @Ui.Label(v.To)</span>
+                                @if (v.Reason is { } why) { <div>@why</div> }
+                                <div class="text-muted">@Users.DisplayFor(v.ChangedBy) · @TimeDisp.Short(v.ChangedAtUtc)</div>
+                            </li>
+                        }
+                    </ul>
+                </section>
+            }
             <section>
                 <h3 class="im-entity-panel-h">On this case · @References.Count</h3>
                 @if (References.Count == 0)

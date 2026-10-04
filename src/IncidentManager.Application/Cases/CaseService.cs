@@ -455,6 +455,7 @@ public sealed class CaseService
             .Include(x => x.MaterialityChanges)
             .Include(x => x.StatusChanges)
             .Include(x => x.AssignmentChanges)   // INV-31
+            .Include(x => x.VerdictChanges)      // HR-05
             .Include(x => x.SeverityChanges)
             .Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics)
             .Include(x => x.Notes)
@@ -623,6 +624,7 @@ public sealed class CaseService
             .Include(x => x.MaterialityChanges)
             .Include(x => x.StatusChanges)
             .Include(x => x.AssignmentChanges)   // INV-31
+            .Include(x => x.VerdictChanges)      // HR-05
             .Include(x => x.SeverityChanges)
             .Include(x => x.TimelineEntries).ThenInclude(t => t.Tactics)
             .Include(x => x.Notes)
@@ -1279,7 +1281,12 @@ public sealed class CaseService
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
-        c.EditEntity(entityId, type, value, label, disposition, description, source, _user.UserId, _clock.UtcNow);
+        // HR-05: marking something Malicious or Compromised is a finding; say why, in a line.
+        if (c.Entities.FirstOrDefault(e => e.Id == entityId) is { } before && before.Disposition != disposition
+            && disposition is EntityDisposition.Malicious or EntityDisposition.Compromised && string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException($"Say why it's {(disposition == EntityDisposition.Malicious ? "malicious" : "compromised")}: the reason is kept with the verdict.");
+        if (reason is { Length: > 2000 }) throw new ArgumentException("Keep the reason to 2,000 characters or fewer.");
+        c.EditEntity(entityId, type, value, label, disposition, description, source, _user.UserId, _clock.UtcNow, reason);
         db.PendingChangeReason = reason;
         await db.SaveChangesAsync(ct);
     }

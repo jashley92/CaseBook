@@ -68,6 +68,7 @@ public static class BriefFreshness
         (MilestoneKind.TaskDone, false) => "tasks completed",
         (MilestoneKind.EvidenceAdded, _) => n == 1 ? "evidence file" : "evidence files",
         (MilestoneKind.Command, _) => n == 1 ? "team change" : "team changes",
+        (MilestoneKind.Verdict, _) => n == 1 ? "verdict change" : "verdict changes",
         _ => n == 1 ? "other milestone" : "other milestones"
     };
 }

@@ -1325,6 +1325,49 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("EntityRelationships", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.EntityVerdictChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ChangedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EntityLabel")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<int>("From")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("To")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseId");
+
+                    b.HasIndex("EntityId");
+
+                    b.ToTable("EntityVerdictChanges", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.EventStepTactic", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2697,6 +2740,15 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.EntityVerdictChange", b =>
+                {
+                    b.HasOne("IncidentManager.Domain.Entities.Case", null)
+                        .WithMany("VerdictChanges")
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.EventStepTactic", b =>
                 {
                     b.HasOne("IncidentManager.Domain.Entities.TimelineEntry", null)
@@ -2873,6 +2925,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Navigation("TimeCorrections");
 
                     b.Navigation("TimelineEntries");
+
+                    b.Navigation("VerdictChanges");
                 });
 
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseTemplate", b =>

@@ -80,9 +80,10 @@ From `Application/Cases/CaseMilestones.cs`:
 | Task done: *title* (unless a stored entry already logs that task's result) | `ActionItem` with status Done | completion time | |
 | Evidence added: *file* (unless it's a screenshot already shown on an entry) | `Evidence` | upload time | uploader |
 | Case / lessons-learned report *vN* approved as final | `Report` | approval time | approver |
+| *Entity* assessed *verdict* (was *previous*), with the reason | `EntityVerdictChange` (an existing entity re-assessed; adding one with a verdict isn't recorded) | when recorded | who changed it |
 
 Not on the timeline (they're in their own tabs and in the Audit tab): notes themselves, task comments, case
-links, entity and IOC changes, ATT&CK tags, legal referral and hold, restriction, archive, brief versions.
+links, entity and IOC changes other than verdicts, ATT&CK tags, legal referral and hold, restriction, archive, brief versions.
 
 ## What an entry contains
 

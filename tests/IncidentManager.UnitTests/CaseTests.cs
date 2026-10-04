@@ -473,6 +473,37 @@ public class CaseTests
     }
 
     [Fact]
+    public void A_reassessed_verdict_is_recorded_with_why_and_projected_as_a_finding()
+    {
+        // HR-05: the findings history. Adding an entity with a verdict isn't a re-assessment; changing one is.
+        var c = NewCase();
+        var acct = c.AddEntity(EntityType.Account, "j.morales", "Jordan Morales", EntityDisposition.Unknown, null, null, "an1", Now);
+        c.AddEntity(EntityType.IpAddress, "185.220.101.47", null, EntityDisposition.Malicious, null, null, "an1", Now);
+        c.VerdictChanges.Should().BeEmpty();
+
+        c.EditEntity(acct.Id, EntityType.Account, "j.morales", "Jordan Morales (Finance AP)", EntityDisposition.Compromised,
+            null, null, "an1", Now.AddHours(1), reason: "Unauthorized Tor sign-in after MFA fatigue");
+        c.EditEntity(acct.Id, EntityType.Account, "j.morales", "Renamed", EntityDisposition.Compromised,
+            "detail only", null, "an1", Now.AddHours(2));   // no verdict change: nothing recorded
+        c.AddEntity(EntityType.Host, "FIN-LT-0442", null, EntityDisposition.Unknown, null, null, "an1", Now.AddHours(3));
+        c.AddEntity(EntityType.Host, "FIN-LT-0442", null, EntityDisposition.Benign, null, null, "an2", Now.AddHours(4));
+
+        c.VerdictChanges.Should().HaveCount(2);
+        var first = c.VerdictChanges[0];
+        first.EntityLabel.Should().Be("Jordan Morales", "it reads as the entity did when assessed");
+        (first.From, first.To, first.Reason).Should().Be((EntityDisposition.Unknown, EntityDisposition.Compromised,
+            "Unauthorized Tor sign-in after MFA fatigue"));
+        c.VerdictChanges[1].Should().Match<EntityVerdictChange>(v => v.EntityLabel == "FIN-LT-0442" && v.To == EntityDisposition.Benign
+            && v.Reason == null && v.ChangedBy == "an2");
+
+        var milestones = IncidentManager.Application.Cases.CaseMilestones.Project(c,
+                new IncidentManager.Application.Cases.MilestoneLabels(x => "", s => "", p => "", m => ""))
+            .Where(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Verdict).ToList();
+        milestones.Select(m => m.Title).Should().Equal("Jordan Morales assessed Compromised", "FIN-LT-0442 assessed Benign");
+        milestones[0].Detail.Should().Be("Unauthorized Tor sign-in after MFA fatigue");
+    }
+
+    [Fact]
     public void AddEntity_again_does_not_downgrade_benign_either()
     {
         var c = NewCase();

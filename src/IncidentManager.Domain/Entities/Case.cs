@@ -137,6 +137,8 @@ public class Case : AuditableEntity, IHashableEntity
     public List<CaseAssignment> Assignments { get; set; } = new();
     /// <summary>INV-31: who joined, changed role or left, and when.</summary>
     public List<AssignmentChange> AssignmentChanges { get; set; } = new();
+    /// <summary>HR-05: how entities' verdicts changed over the investigation.</summary>
+    public List<EntityVerdictChange> VerdictChanges { get; set; } = new();
     public List<Report> Reports { get; set; } = new();
     public List<CaseEntity> Entities { get; set; } = new();
     public List<EntityRelationship> EntityRelationships { get; set; } = new();
@@ -604,6 +606,7 @@ public class Case : AuditableEntity, IHashableEntity
             var changed = false;
             if (existing.Disposition == EntityDisposition.Unknown && disposition != EntityDisposition.Unknown)
             {
+                RecordVerdictChange(existing, disposition, null, actor, nowUtc);
                 existing.Disposition = disposition;
                 changed = true;
             }
@@ -635,7 +638,8 @@ public class Case : AuditableEntity, IHashableEntity
     /// the before→after — but <see cref="AuditableEntity.ModifiedBy"/>/<c>ModifiedAtUtc</c> mark it edited.
     /// </summary>
     public CaseEntity EditEntity(Guid entityId, EntityType type, string value, string? label,
-        EntityDisposition disposition, string? description, string? source, string actor, DateTimeOffset nowUtc)
+        EntityDisposition disposition, string? description, string? source, string actor, DateTimeOffset nowUtc,
+        string? reason = null)
     {
         if (string.IsNullOrWhiteSpace(value))
             throw new ArgumentException("An entity value is required.");
@@ -649,6 +653,8 @@ public class Case : AuditableEntity, IHashableEntity
                 string.Equals(e.Value, v, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException("Another entity with the same type and value already exists on this case.");
 
+        if (entity.Disposition != disposition)
+            RecordVerdictChange(entity, disposition, reason, actor, nowUtc);   // HR-05: before the label changes
         entity.Type = type;
         entity.Value = v;
         entity.Label = label;
@@ -659,6 +665,18 @@ public class Case : AuditableEntity, IHashableEntity
         entity.ModifiedAtUtc = nowUtc;
         Touch(actor, nowUtc);
         return entity;
+    }
+
+    // HR-05: the findings history. Reads the entity as it is before the change.
+    private void RecordVerdictChange(CaseEntity entity, EntityDisposition to, string? reason, string actor, DateTimeOffset nowUtc)
+    {
+        var name = string.IsNullOrWhiteSpace(entity.Label) ? entity.Value : entity.Label!;
+        VerdictChanges.Add(new EntityVerdictChange
+        {
+            CaseId = Id, EntityId = entity.Id, EntityLabel = name.Length > 400 ? name[..400] : name,
+            From = entity.Disposition, To = to, Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(),
+            ChangedBy = actor, ChangedAtUtc = nowUtc
+        });
     }
 
     /// <summary>INV-32: pins an entity to (or unpins it from) the case context panel's key entities.</summary>
