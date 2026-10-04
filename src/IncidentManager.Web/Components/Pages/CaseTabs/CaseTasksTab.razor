@@ -232,6 +232,11 @@ else
                         {
                             <div class="small text-muted" style="white-space:pre-wrap">@t.Description</div>
                         }
+                        @if (t.Status == ActionItemStatus.Cancelled && comments.LastOrDefault(x => x.Body.StartsWith(CaseService.CancelledPrefix, StringComparison.Ordinal)) is { } why)
+                        {
+                            @* HR-17: why it was dropped. *@
+                            <div class="small text-muted">@why.Body <span class="im-meta">@why.AuthorName · @TimeDisp.Short(why.CreatedAtUtc)</span></div>
+                        }
                         @* HR-02: what a done task found or did, and who did it, without opening its comments. *@
                         @if (t.Status == ActionItemStatus.Done)
                         {
@@ -400,6 +405,15 @@ else
                                     <input id="task-edit-due-time" type="time" class="form-control form-control-sm" @bind="_editDueTime"
                                            title="In @TimeDisp.Label. Leave blank for end of day." />
                                 </div>
+                                @if (_editStatus == ActionItemStatus.Cancelled && t.Status != ActionItemStatus.Cancelled)
+                                {
+                                    @* HR-17: a dropped task says why, so it doesn't read as forgotten. *@
+                                    <div class="col-12">
+                                        <label class="form-label small mb-0" for="task-edit-cancel">Why cancel it? <span class="text-muted">(optional; kept as a comment on the task)</span></label>
+                                        <input id="task-edit-cancel" class="form-control form-control-sm" maxlength="2000" @bind="_editCancelReason" @bind:event="oninput"
+                                               placeholder="e.g. covered by the tenant-wide session revoke" />
+                                    </div>
+                                }
                                 <div class="col-12">
                                     <label class="form-label small mb-0" for="task-edit-desc">Description <span class="text-muted">(optional)</span></label>
                                     <textarea id="task-edit-desc" class="form-control form-control-sm" rows="2" @bind="_editDescription" @bind:event="oninput"></textarea>
@@ -488,6 +502,21 @@ else
         return e is { IsCurrent: true } ? e : null;
     }
 
+    // HR-17: a note a task is about, followed forward through edits to its current version.
+    private AnalystNote? CurrentNote(Guid id)
+    {
+        var n = Case.Notes.FirstOrDefault(x => x.Id == id);
+        for (var guard = 0; n is not null && !n.IsCurrent && guard < 100; guard++)
+            n = Case.Notes.FirstOrDefault(x => x.SupersedesNoteId == n.Id);
+        return n is { IsCurrent: true } ? n : null;
+    }
+
+    private static string NoteExcerpt(AnalystNote n)
+    {
+        var text = IncidentManager.Application.Content.RichText.ToText(n.Body).ReplaceLineEndings(" ").Trim();
+        return text.Length <= 60 ? text : text[..57].TrimEnd() + "…";
+    }
+
     private static string EntryExcerpt(TimelineEntry e)
     {
         var text = IncidentManager.Application.Content.RichText.ToText(e.Description).ReplaceLineEndings(" ").Trim();
@@ -508,6 +537,10 @@ else
                 case ActionItem.AboutEntry when CurrentEntry(about.Id) is { } entry:
                     @* INV-41: say which entry, and go to it (its current version, if it was edited since). *@
                     <button type="button" class="im-about-chip" title="Show this entry on the timeline" @onclick='() => OnFocusItem.InvokeAsync(("Timeline", entry.Id))'><span class="bi bi-clock-history" aria-hidden="true"></span> @EntryExcerpt(entry)</button>
+                    break;
+                case ActionItem.AboutNote when CurrentNote(about.Id) is { } note:
+                    @* HR-17: the note it's about (its current version). *@
+                    <button type="button" class="im-about-chip" title="Show this note" @onclick='() => OnFocusItem.InvokeAsync(("Notes", note.Id))'><span class="bi bi-journal-text" aria-hidden="true"></span> @NoteExcerpt(note)</button>
                     break;
                 case ActionItem.AboutEntry:
                     <span class="im-about-chip" title="The timeline entry this task was raised from is no longer on the timeline"><span class="bi bi-clock-history" aria-hidden="true"></span> Timeline entry (removed)</span>
@@ -611,6 +644,7 @@ else
     private string? _editOwner;
     private string? _editOwnerExternal;
     private ActionItemStatus _editStatus;
+    private string? _editCancelReason;   // HR-17
     private DateTime? _editDueDate;
     private TimeOnly? _editDueTime;
     private string? _editDescription;
@@ -658,6 +692,7 @@ else
         _editingTaskId = t.Id;
         _editTitle = t.Title;
         _editStatus = t.Status;
+        _editCancelReason = null;
         _editKind = t.Kind;
         _editDescription = t.Description;
         // Seed the owner picker: a directory user shows as itself, a free-text/external owner via the sentinel.
@@ -689,7 +724,7 @@ else
         try
         {
             await Cases.UpdateActionItemAsync(CaseId, id, _editTitle, owner,
-                ToDueUtc(_editDueDate, _editDueTime), _editStatus, _editDescription, _editKind);
+                ToDueUtc(_editDueDate, _editDueTime), _editStatus, _editDescription, _editKind, cancelReason: _editCancelReason);
             _editingTaskId = null;
             await OnChanged.InvokeAsync();
             Toasts.Success("Task updated");

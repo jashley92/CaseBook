@@ -78,7 +78,28 @@ else
                         {
                             <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => _promoting = n.Id">Add to timeline</button>
                         }
+                        @* HR-17: a note's follow-up becomes a task that remembers the note. *@
+                        <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => _taskFor = _taskFor == n.Id ? null : n.Id">
+                            <span class="bi bi-plus-lg" aria-hidden="true"></span> Task
+                        </button>
                     </AuthorizeView>
+                    var noteTasks = TasksAbout(n);
+                    @if (noteTasks.Count > 0)
+                    {
+                        <div class="tl-tasks" aria-label="Tasks about this note">
+                            @foreach (var t in noteTasks)
+                            {
+                                <span class="tl-task @(t.IsOpen ? "" : "tl-task-done")" title="@(t.IsOpen ? "Open task" : "Done")">
+                                    <span class="bi @(t.IsOpen ? "bi-square" : "bi-check2-square")" aria-hidden="true"></span> @t.Title
+                                </span>
+                            }
+                        </div>
+                    }
+                    @if (_taskFor == n.Id)
+                    {
+                        <QuickTask CaseId="CaseId" About="@($"{ActionItem.AboutNote}:{NoteRoot(n)}")" Placeholder="A task about this note"
+                                   OnDone="async () => { _taskFor = null; await OnChanged.InvokeAsync(); }" OnCancel="() => _taskFor = null" />
+                    }
                     @if (IsPromoted(n))
                     {
                         <span class="im-badge im-b-info ms-2"><span class="bi bi-clock-history" aria-hidden="true"></span> On the timeline</span>
@@ -106,6 +127,24 @@ else
     /// <summary>INV-07: the sources already promoted to the timeline ("note:&lt;id&gt;" …).</summary>
     [Parameter] public IReadOnlySet<string> Promoted { get; set; } = new HashSet<string>();
     private Guid? _promoting;
+    /// <summary>HR-17: the case's tasks, to show the ones about each note.</summary>
+    [Parameter] public IReadOnlyList<ActionItem> Tasks { get; set; } = [];
+    private Guid? _taskFor;
+
+    // A task about a note points at its first version, so it follows the note through edits.
+    private Guid NoteRoot(AnalystNote n)
+    {
+        var root = n;
+        for (var guard = 0; root.SupersedesNoteId is { } prior && Notes.FirstOrDefault(x => x.Id == prior) is { } p && guard < 100; guard++)
+            root = p;
+        return root.Id;
+    }
+
+    private List<ActionItem> TasksAbout(AnalystNote n)
+    {
+        var about = $"{ActionItem.AboutNote}:{NoteRoot(n)}";
+        return Tasks.Where(t => t.AboutRef == about).OrderByDescending(t => t.IsOpen).ThenBy(t => t.CreatedAtUtc).ToList();
+    }
 
     // INV-20: a note stays "on the timeline" after it's edited — any version of it may have been promoted.
     private bool IsPromoted(AnalystNote n)

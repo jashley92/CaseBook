@@ -20,6 +20,8 @@
     /// <summary>What the task is about: "entity:&lt;id&gt;", "evidence:&lt;id&gt;" or "entry:&lt;id&gt;".</summary>
     [Parameter, EditorRequired] public string About { get; set; } = "";
     [Parameter] public string Placeholder { get; set; } = "What needs doing?";
+    /// <summary>HR-17: a title to start from (a decision's text), edited before adding.</summary>
+    [Parameter] public string? InitialTitle { get; set; }
     [Parameter] public EventCallback OnDone { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
 
@@ -28,6 +30,8 @@
     private string? _title;
     private string? _error;
     private bool _saving;
+
+    protected override void OnInitialized() => _title = InitialTitle;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

@@ -240,6 +240,41 @@ public sealed class TaskCompletionTests : IDisposable
         await nonsense.Should().ThrowAsync<ArgumentException>();
     }
 
+    // --- HR-17: small decay points ---
+
+    [Fact]
+    public async Task A_task_can_be_about_a_note_anchored_at_its_first_version()
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+        await svc.AddNoteAsync(caseId, "Vendor says they'll confirm by Friday.");
+        var note = (await svc.GetDetailAsync(caseId))!.Notes.Single();
+        await svc.EditNoteAsync(caseId, note.Id, "Vendor says they'll confirm by Friday 5pm.");
+        var edited = (await svc.GetDetailAsync(caseId))!.Notes.Single(n => n.IsCurrent);
+
+        await svc.AddActionItemAsync(caseId, "Chase the vendor on Friday", null, null, about: $"note:{edited.Id}");
+
+        (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Title == "Chase the vendor on Friday")
+            .AboutRef.Should().Be($"note:{note.Id}", "the first version, so the link survives edits");
+        var elsewhere = () => svc.AddActionItemAsync(caseId, "Not ours", null, null, about: $"note:{Guid.NewGuid()}");
+        await elsewhere.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task Cancelling_a_task_keeps_the_reason_given()
+    {
+        var (svc, caseId, taskId) = await CaseWithTask();
+        var t = (await svc.GetDetailAsync(caseId))!.ActionItems.Single(x => x.Id == taskId);
+
+        await svc.UpdateActionItemAsync(caseId, taskId, t.Title, t.Owner, t.DueAtUtc, ActionItemStatus.Cancelled, t.Description,
+            cancelReason: "Covered by the tenant-wide session revoke");
+        await svc.UpdateActionItemAsync(caseId, taskId, t.Title + " (renamed)", t.Owner, t.DueAtUtc, ActionItemStatus.Cancelled, t.Description,
+            cancelReason: "ignored: it was already cancelled");
+
+        await using var db = new AppDbContext(Options());
+        (await db.ActionItemComments.SingleAsync(x => x.ActionItemId == taskId)).Body
+            .Should().Be("Cancelled: Covered by the tenant-wide session revoke");
+    }
+
     // --- INV-25: next steps are tasks ---
 
     [Fact]

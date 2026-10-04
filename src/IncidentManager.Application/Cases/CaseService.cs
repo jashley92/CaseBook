@@ -1919,6 +1919,12 @@ public sealed class CaseService
                 var first = entry;
                 while (first.SupersedesEntryId is { } prior && c.TimelineEntries.FirstOrDefault(e => e.Id == prior) is { } p) first = p;
                 return $"{ActionItem.AboutEntry}:{first.Id}";
+            // HR-17: a note, anchored at its first version like an entry, so the link survives edits.
+            case ActionItem.AboutNote when await db.Notes.AsNoTracking().AnyAsync(n => n.Id == target && n.CaseId == c.Id, ct):
+                var root = target;
+                for (var guard = 0; guard < 100 && await db.Notes.AsNoTracking().Where(n => n.Id == root).Select(n => n.SupersedesNoteId).FirstOrDefaultAsync(ct) is { } prior; guard++)
+                    root = prior;
+                return $"{ActionItem.AboutNote}:{root}";
             default:
                 throw new InvalidOperationException("What the task is about isn't on this case.");
         }
@@ -2229,9 +2235,11 @@ public sealed class CaseService
     /// name, or null/blank for Unassigned; a status away from Done clears the completion timestamp. Captured
     /// by the audit trail (before → after) like any structured-record edit.
     /// </summary>
+    /// <param name="cancelReason">HR-17: when this edit cancels the task, why (optional); kept as a "Cancelled: …" comment
+    /// on the task, so a later reader knows it was dropped on purpose.</param>
     public async Task UpdateActionItemAsync(Guid caseId, Guid actionItemId, string title, string? owner,
         DateTimeOffset? dueAtUtc, ActionItemStatus status, string? description, TaskKind? kind = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default, string? cancelReason = null)
     {
         Require();
         var cleanTitle = (title ?? "").Trim();
@@ -2242,6 +2250,7 @@ public sealed class CaseService
         var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
                    ?? throw new InvalidOperationException("Task not found.");
 
+        var wasStatus = item.Status;
         item.Title = cleanTitle;
         item.Owner = string.IsNullOrWhiteSpace(owner) ? null : owner.Trim();
         item.DueAtUtc = dueAtUtc;
@@ -2254,8 +2263,20 @@ public sealed class CaseService
         if (kind is { } k) item.Kind = k;
         item.ModifiedBy = _user.UserId;
         item.ModifiedAtUtc = _clock.UtcNow;
+        if (status == ActionItemStatus.Cancelled && wasStatus != ActionItemStatus.Cancelled && !string.IsNullOrWhiteSpace(cancelReason))
+        {
+            var why = cancelReason.Trim();
+            if (why.Length > 2000) throw new ArgumentException("Keep the reason to 2,000 characters or fewer.");
+            db.ActionItemComments.Add(new ActionItemComment
+            {
+                ActionItemId = item.Id, CaseId = c.Id, Body = CancelledPrefix + why, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
+            });
+        }
         await db.SaveChangesAsync(ct);
     }
+
+    /// <summary>HR-17: how a cancelled task's reason is kept (a task comment).</summary>
+    public const string CancelledPrefix = "Cancelled: ";
 
     /// <summary>Reassigns a task's owner. A directory user id or free-text external name, or null/blank
     /// to leave it Unassigned. Change is audited/hash-chained like any other edit.</summary>

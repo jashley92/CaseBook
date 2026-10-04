@@ -387,7 +387,14 @@
                             </div>
                             <div class="col-md-5">
                                 <label class="form-label small mb-0" for="tl-dec-by">Decided by <span class="text-muted">(optional)</span></label>
-                                <input id="tl-dec-by" class="form-control form-control-sm" maxlength="300" @bind="_decBy" placeholder="e.g. Incident Commander with Legal" />
+                                @* HR-17: the case's people first, then everyone; free text still works ("IC with Legal"). *@
+                                <input id="tl-dec-by" class="form-control form-control-sm" maxlength="300" @bind="_decBy" placeholder="e.g. Incident Commander with Legal" list="tl-dec-by-people" autocomplete="off" />
+                                <datalist id="tl-dec-by-people">
+                                    @foreach (var name in DeciderNames())
+                                    {
+                                        <option value="@name"></option>
+                                    }
+                                </datalist>
                             </div>
                         </div>
                     }
@@ -1443,6 +1450,15 @@ else
         try { await JS.InvokeVoidAsync("imMotion.scrollToId", $"tl-{id}"); } catch (JSException) { /* motion is optional */ }
     }
 
+    // HR-17: a task started from a decision begins as the decision itself ("Disable j.morales, revoke …"), to be
+    // trimmed into the action; anything else starts blank.
+    private static string? DecisionTaskTitle(TimelineEntry e)
+    {
+        if (e.Type != TimelineEntryType.Decision) return null;
+        var text = IncidentManager.Application.Content.RichText.ToText(e.Description).ReplaceLineEndings(" ").Trim();
+        return text.Length <= ActionItem.MaxTitleLength ? text : text[..(ActionItem.MaxTitleLength - 1)].TrimEnd() + "…";
+    }
+
     private RenderFragment TaskButton(TimelineEntry e) => @<text>
         @if (CanEdit)
         {
@@ -1480,7 +1496,7 @@ else
         }
         @if (_taskFor == e.Id)
         {
-            <QuickTask CaseId="CaseId" About="@about" Placeholder="A task about this entry"
+            <QuickTask CaseId="CaseId" About="@about" Placeholder="A task about this entry" InitialTitle="@DecisionTaskTitle(e)"
                        OnDone="async () => { _taskFor = null; await OnChanged.InvokeAsync(); }" OnCancel="() => _taskFor = null" />
         }
     </text>;
@@ -1565,6 +1581,13 @@ else
     private string? _decWhy;
     private string? _decOptions;
     private string? _decBy;
+
+    // HR-17: who can be named as having decided: the case team (by role) first, then the rest of the directory.
+    private IEnumerable<string> DeciderNames()
+    {
+        var team = Case.Assignments.Select(a => Users.DisplayFor(a.UserId)).Distinct().ToList();
+        return team.Concat(Users.All().Select(u => u.DisplayName).Where(n => !team.Contains(n)).OrderBy(n => n)).Distinct();
+    }
 
     private bool IsDecision => _tlAddKind == TimelineKind.Investigation && _tlType == TimelineEntryType.Decision;
 

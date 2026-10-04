@@ -42,7 +42,7 @@ public class ActionItem : AuditableEntity, IHashableEntity
     /// </summary>
     public string? AboutRef { get; set; }
 
-    public const string AboutEntity = "entity", AboutEvidence = "evidence", AboutEntry = "entry";
+    public const string AboutEntity = "entity", AboutEvidence = "evidence", AboutEntry = "entry", AboutNote = "note";   // HR-17: note
 
     /// <summary>The kind and id of <see cref="AboutRef"/>, or null.</summary>
     public (string Kind, Guid Id)? About =>

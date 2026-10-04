@@ -464,7 +464,7 @@ else
         @* UX-13: extracted to CaseNotesTab. It owns its EasyMDE editors (so the central reconcile no longer
            carries a Notes branch); the parent keeps the flash + the Ctrl+Enter / 'n' hotkeys (dispatched to
            the child via @ref / AutofocusComposer) and reloads the case after a write. *@
-        <CaseNotesTab @ref="_notesTab" CaseId="_case.Id" Notes="_case.Notes" Entities="_case.Entities" CanEdit="_canEdit" Promoted="PromotedSources()"
+        <CaseNotesTab @ref="_notesTab" CaseId="_case.Id" Notes="_case.Notes" Entities="_case.Entities" Tasks="_case.ActionItems" CanEdit="_canEdit" Promoted="PromotedSources()"
                       OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts"
                       AutofocusComposer="_notesAutofocus" OnAutofocusHandled="() => _notesAutofocus = false" FocusNoteId="QNote" />
     }
@@ -1239,7 +1239,7 @@ else
     private async Task FocusItem((string Tab, Guid Id) target)
     {
         _flash[target.Id] = (Ui.AvatarHue(_myId ?? ""), target.Tab);
-        _scrollToId = (target.Tab == "Timeline" ? "tl-" : "ev-") + target.Id;
+        _scrollToId = (target.Tab switch { "Timeline" => "tl-", "Notes" => "note-", _ => "ev-" }) + target.Id;   // HR-17: notes
         await SetTab(target.Tab);   // clears the flash a moment after it's seen
     }
 
