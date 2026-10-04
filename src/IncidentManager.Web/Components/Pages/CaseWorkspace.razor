@@ -573,7 +573,8 @@ else
                         {
                             <label class="form-label small" for="ws-severity">New severity</label>
                             <select id="ws-severity" class="form-select mb-2" @bind="_newSeverity">@foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@SevLabels.For(s)</option> }</select>
-                            <input class="form-control" placeholder="@(Backdated ? "Reason (required when recording later)" : "Reason (optional)")" aria-label="Reason" @bind="_severityReason" @bind:event="oninput" />
+                            var raising = _case is { } sc && _newSeverity > sc.Severity;
+                            <input class="form-control" maxlength="500" placeholder="@(raising ? "Why is it going up? (required)" : Backdated ? "Reason (required when recording later)" : "Reason (optional)")" aria-label="Reason" @bind="_severityReason" @bind:event="oninput" />
                             @WhenItHappened()
                         }
                         else if (_activeModal == "status")
@@ -1759,7 +1760,7 @@ else
             || _when is null || (Backdated && !Closing && string.IsNullOrWhiteSpace(_phaseReason))
             || (Closing && (string.IsNullOrWhiteSpace(_closeOutcome) || string.IsNullOrWhiteSpace(_closeSummary)
                             || string.IsNullOrWhiteSpace(_closeConclusion))),
-        "severity" => _when is null || (Backdated && string.IsNullOrWhiteSpace(_severityReason)),
+        "severity" => _when is null || ((Backdated || (_case is { } sv && _newSeverity > sv.Severity)) && string.IsNullOrWhiteSpace(_severityReason)),   // HR-11
         "handoff" => string.IsNullOrWhiteSpace(_hoTo) || string.IsNullOrWhiteSpace(_hoState),
         _ => false
     };

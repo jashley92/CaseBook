@@ -78,7 +78,7 @@ De-escalation (down the ladder) isn't gated. There's no way back to Complex Even
 
 ## 4. Changing severity
 
-Actions → *Change severity…*: new severity, a reason (required if backdated by more than an hour), *when it
+Actions → *Change severity…*: new severity, a reason (required when raising it, so a later reader knows why; and when backdated by more than an hour), *when it
 happened*. `CaseService.ChangeSeverityAsync` → `Case.ChangeSeverity`. Needs `EditCases`. Not gated; no
 notification. Severity drives the SLA targets and stale-case thresholds. Timeline milestone "Severity X → Y".
 

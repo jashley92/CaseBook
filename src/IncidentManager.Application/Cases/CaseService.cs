@@ -981,6 +981,8 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    public const string SeverityRaiseNeedsReason = "Say why the severity is going up; one line is enough.";
+
     public async Task ChangeSeverityAsync(Guid id, Domain.Enums.Severity severity, string? reason = null,
         DateTimeOffset? effectiveAtUtc = null, CancellationToken ct = default)
     {
@@ -988,6 +990,9 @@ public sealed class CaseService
         RequireReasonIfBackdated(effectiveAtUtc, reason);
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        // HR-11: going up is a judgement a later reader will want explained (classification already asks for one).
+        if (severity > c.Severity && string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException(SeverityRaiseNeedsReason);
         c.ChangeSeverity(severity, reason, _user.UserId, _clock.UtcNow, effectiveAtUtc);
         await db.SaveChangesAsync(ct);
     }

@@ -149,7 +149,7 @@ public sealed class CaseConcurrencyTests : IDisposable
         var detailsBaseline = await DetailsStampAsync(id);
 
         // A concurrent, unrelated edit to the same row (severity) touches ModifiedAtUtc but not the details fields.
-        await svc.ChangeSeverityAsync(id, Severity.High);
+        await svc.ChangeSeverityAsync(id, Severity.High, "Scope grew");
 
         // The details save still succeeds — the stamp is scoped to the details fields only.
         var act = async () => await svc.UpdateDetailsAsync(id, "Retitled", null, null, null, null,

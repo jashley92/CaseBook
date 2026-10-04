@@ -82,6 +82,23 @@ public sealed class TransitionEffectiveTimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Raising_severity_needs_a_reason_and_lowering_it_does_not()
+    {
+        // HR-11
+        var svc = NewService();
+        var created = await svc.CreateAsync(Req());
+        var start = (await svc.GetDetailAsync(created.Id))!.Severity;
+
+        var up = () => svc.ChangeSeverityAsync(created.Id, start + 1, "  ");
+        await up.Should().ThrowAsync<ArgumentException>().WithMessage(CaseService.SeverityRaiseNeedsReason);
+
+        await svc.ChangeSeverityAsync(created.Id, start + 1, "Second mailbox confirmed");
+        await svc.ChangeSeverityAsync(created.Id, start);
+        var c = (await svc.GetDetailAsync(created.Id))!;
+        c.Severity.Should().Be(start);
+    }
+
+    [Fact]
     public async Task A_reclassification_can_be_dated_before_the_case_was_filed_but_not_before_detection()
     {
         var svc = NewService();
