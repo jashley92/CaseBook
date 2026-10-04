@@ -45,6 +45,7 @@ public static class AuditLabels
         "CaseTemplateStep" => "Template step",
         "ClassificationChange" => "Classification change",
         "DataElement" => "Data element",
+        "CaseOutcome" => "Case outcome",
         "EntityRelationship" => "Entity relationship",
         "ImprovementAction" => "Improvement action",
         "MaterialityChange" => "Materiality change",

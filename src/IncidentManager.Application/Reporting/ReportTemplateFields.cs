@@ -61,6 +61,8 @@ public static partial class ReportTemplateFields
         (new("case.contained", "Contained (UTC)"), m => D(m.ContainedAtUtc)),
         (new("case.resolved", "Resolved (UTC)"), m => D(m.ResolvedAtUtc)),
         (new("case.closed", "Closed (UTC)"), m => D(m.ClosedAtUtc)),
+        (new("case.outcome", "Outcome (when closed)"), m => m.Outcome ?? ""),
+        (new("case.conclusion", "Conclusion (closing brief)"), m => m.Conclusion ?? ""),
         (new("org.name", "Organization name (Administration → Organization)"), m => m.OrganizationName ?? ""),
         (new("org.team", "Team name"), m => m.TeamName ?? ""),
         (new("report.type", "\"Incident report\" or \"Post-incident review\", so one template can serve both reports"),

@@ -37,6 +37,9 @@ public static class DevDataSeeder
         // admin-managed reference data seeded on first run (codes are the original enum bit values).
         await SeedDataElementsAsync(db, clock, ct);
 
+        // HR-01: the built-in case outcomes (what a case concluded), admin-managed thereafter.
+        await SeedCaseOutcomesAsync(db, clock, ct);
+
         // Per-jurisdiction notification-deadline rules (PROD-07): a minimal baseline; admin-managed thereafter.
         await SeedNotificationRulesAsync(db, clock, ct);
 
@@ -288,6 +291,18 @@ public static class DevDataSeeder
     /// stable <c>Key</c> (the value a case stores and the canonical hashes). Seeded only when none exist;
     /// admins may then rename / reorder / archive / add.
     /// </summary>
+    public static async Task SeedCaseOutcomesAsync(AppDbContext db, IClock clock, CancellationToken ct = default)
+    {
+        if (await db.CaseOutcomes.AnyAsync(ct)) return;
+        var now = clock.UtcNow;
+        db.CaseOutcomes.AddRange(CaseOutcomeCatalog.Defaults.Select(s => new CaseOutcome
+        {
+            Key = s.Key, Label = s.Label, Description = s.Description, SortOrder = s.SortOrder,
+            IsActive = true, IsSystem = true, CreatedBy = "system", CreatedAtUtc = now
+        }));
+        await db.SaveChangesAsync(ct);
+    }
+
     public static async Task SeedDataElementsAsync(AppDbContext db, IClock clock, CancellationToken ct = default)
     {
         if (await db.DataElements.AnyAsync(ct)) return;
@@ -781,7 +796,16 @@ public static class DevDataSeeder
                 c.ChangePhase(CasePhase.Containment, "Contained", actor, contained);
                 c.ChangePhase(CasePhase.Eradication, "Eradicated", actor, resolved.AddHours(-4));
                 c.ChangePhase(CasePhase.Recovery, "Recovered", actor, resolved);
-                c.ChangePhase(CasePhase.Closed, "Closed after review", actor, closed);
+                // HR-01: history closes with an outcome (mostly confirmed; some benign, false positive or inconclusive).
+                var outcome = rnd.NextDouble() switch
+                {
+                    < 0.6 => CaseOutcomeCatalog.Confirmed,
+                    < 0.72 => CaseOutcomeCatalog.BenignOrExpected,
+                    < 0.84 => CaseOutcomeCatalog.FalsePositive,
+                    < 0.92 => CaseOutcomeCatalog.PolicyViolation,
+                    _ => CaseOutcomeCatalog.Inconclusive
+                };
+                c.ChangePhase(CasePhase.Closed, "Closed after review", actor, closed, outcomeKey: outcome);
                 await db.SaveChangesAsync(ct);
             }
         }

@@ -454,6 +454,25 @@ public class CaseTests
     }
 
     [Fact]
+    public void The_outcome_is_hashed_only_when_recorded_and_cleared_on_reopen()
+    {
+        // HR-01: cases closed before outcomes existed keep their exact hash.
+        var c = NewCase();
+        var before = c.BuildCanonicalContent();
+        before.Should().NotContain("|outcome|");
+
+        c.ChangePhase(CasePhase.Closed, "Concluded", "ic1", Now.AddHours(1), outcomeKey: "Confirmed");
+        c.BuildCanonicalContent().Should().EndWith("|outcome|Confirmed");
+        c.StatusChanges.Last().OutcomeKey.Should().Be("Confirmed");
+
+        c.Reopen("More activity", "ic1", Now.AddHours(2));
+        c.OutcomeKey.Should().BeNull();
+        c.BuildCanonicalContent().Should().NotContain("|outcome|");
+        var act = () => c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(3), outcomeKey: "Confirmed");
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void AddEntity_again_does_not_downgrade_benign_either()
     {
         var c = NewCase();

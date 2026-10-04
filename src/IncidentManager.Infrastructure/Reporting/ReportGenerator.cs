@@ -271,6 +271,9 @@ public sealed partial class ReportGenerator : IReportGenerator
 
     private static void AppendOutcome(Body body, CaseReportModel m)
     {
+        // HR-01: what the case concluded leads the section.
+        if (m.Outcome is { } outcome) body.AppendChild(P($"Outcome: {outcome}"));
+        if (m.Conclusion is { } conclusion) body.AppendChild(P($"Conclusion: {conclusion}"));
         body.AppendChild(P($"Current phase: {m.Phase}. Classification: {m.Classification}. Severity: {m.Severity}."));
         void Stamp(string label, DateTimeOffset? at) { if (at is { } v) body.AppendChild(P($"{label}: {v:u}")); }
         Stamp("Detected", m.DetectedAtUtc);

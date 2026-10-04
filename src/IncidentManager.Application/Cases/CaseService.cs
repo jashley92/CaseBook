@@ -173,7 +173,8 @@ public sealed class CaseService
         using var db = _factory.CreateDbContext();
         var q = Scoped(db.Cases.AsNoTracking());
 
-        if (!filter.IncludeClosed) q = q.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived);
+        if (!filter.IncludeClosed && string.IsNullOrEmpty(filter.OutcomeKey)) q = q.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived);
+        if (filter.OutcomeKey is { Length: > 0 } outcomeKey) q = q.Where(c => c.OutcomeKey == outcomeKey);   // HR-01
         // PROD-43: tabletop/exercise cases stay out of the working queue unless explicitly requested.
         if (!filter.IncludeExercises) q = q.ExcludingExercises();
         if (filter.Classification is { } cl) q = q.Where(c => c.Classification == cl);
@@ -674,21 +675,70 @@ public sealed class CaseService
             _siem?.Emit(Security.SecurityEvents.BreachEscalated(_user.UserId, _user.UserPrincipalName, c.CaseNumber));
     }
 
+    /// <summary>
+    /// HR-01: what closing a case records: the outcome (a <c>CaseOutcome</c> key) and the closing brief: what happened
+    /// (the summary) and what the team concluded (the working assessment's final version).
+    /// </summary>
+    public sealed record CaseClosing(string OutcomeKey, string Summary, string Conclusion);
+
     public async Task ChangePhaseAsync(Guid id, CasePhase to, string? reason,
         IReadOnlySet<Guid>? attestedRequirementIds = null, string? overrideJustification = null,
-        DateTimeOffset? effectiveAtUtc = null, CancellationToken ct = default)
+        DateTimeOffset? effectiveAtUtc = null, CancellationToken ct = default, CaseClosing? closing = null)
     {
         Require();
-        RequireReasonIfBackdated(effectiveAtUtc, reason);
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        var now = _clock.UtcNow;
+        var closingNow = to == CasePhase.Closed && c.Phase != CasePhase.Closed;
+        if (closing is not null && !closingNow)
+            throw new ArgumentException("An outcome is recorded only when a case is closed.");
 
-        if (to == CasePhase.Closed && c.Phase != CasePhase.Closed)
-            await ApplyGateAsync(db, c, StageGateTrigger.CloseCase, attestedRequirementIds, overrideJustification, reason, ct);
+        string? outcomeKey = null;
+        if (closingNow)
+        {
+            // HR-01: a case closes with a conclusion of record. The closing brief's conclusion stands in for the
+            // transition reason when none is given separately.
+            var (key, summary, conclusion) = await ValidateClosingAsync(db, closing, ct);
+            outcomeKey = key;
+            reason = string.IsNullOrWhiteSpace(reason) ? Clip(conclusion, 2000) : reason;
+            RequireReasonIfBackdated(effectiveAtUtc, reason);
+            await ApplyGateAsync(db, c, StageGateTrigger.CloseCase, attestedRequirementIds, overrideJustification, reason, ct,
+                summaryProvided: true);   // the closing brief records the summary
 
-        c.ChangePhase(to, reason, _user.UserId, _clock.UtcNow, effectiveAtUtc);
+            await db.CaseBriefs.Where(b => b.CaseId == id && b.IsCurrent).ToListAsync(ct);
+            var current = c.Briefs.FirstOrDefault(b => b.IsCurrent);
+            if (current is null || current.Summary != summary || current.WorkingAssessment != conclusion)
+            {
+                // Recorded at the same instant as the close, so the brief doesn't read as out of date because of it.
+                var nextSteps = CaseNext.Snapshot(c, now, u => _users?.DisplayFor(u) ?? u);
+                c.ReviseBrief(summary, conclusion, current?.Known, current?.OpenQuestions, nextSteps, _user.UserId, now);
+            }
+        }
+        else RequireReasonIfBackdated(effectiveAtUtc, reason);
+
+        c.ChangePhase(to, reason, _user.UserId, now, effectiveAtUtc, outcomeKey);
         await db.SaveChangesAsync(ct);
     }
+
+    private static async Task<(string Key, string Summary, string Conclusion)> ValidateClosingAsync(IAppDbContext db,
+        CaseClosing? closing, CancellationToken ct)
+    {
+        if (closing is null)
+            throw new ArgumentException("Record the outcome and what the team concluded to close the case.");
+        var key = (closing.OutcomeKey ?? "").Trim();
+        if (key.Length == 0) throw new ArgumentException("Choose an outcome to close the case.");
+        if (!await db.CaseOutcomes.AsNoTracking().AnyAsync(o => o.Key == key && o.IsActive, ct))
+            throw new ArgumentException("That outcome isn't available any more. Choose another.");
+        var summary = (closing.Summary ?? "").Trim();
+        var conclusion = (closing.Conclusion ?? "").Trim();
+        if (summary.Length == 0) throw new ArgumentException("Say what happened to close the case.");
+        if (conclusion.Length == 0) throw new ArgumentException("Say what the team concluded to close the case.");
+        if (summary.Length > CaseBrief.MaxPartLength || conclusion.Length > CaseBrief.MaxPartLength)
+            throw new ArgumentException($"Keep each part of the closing brief to {CaseBrief.MaxPartLength:N0} characters or fewer.");
+        return (key, summary, conclusion);
+    }
+
+    private static string Clip(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
 
     /// <summary>
     /// Reopens a closed case (E-27) with a required reason: returns it to its pre-closure phase and clears
@@ -707,10 +757,12 @@ public sealed class CaseService
     }
 
     /// <summary>Evaluates the active gate for a transition (read-only) — for the workspace readiness view.</summary>
-    public async Task<GateEvaluation> EvaluateGateAsync(Guid id, StageGateTrigger trigger, CancellationToken ct = default)
+    /// <param name="summaryProvided">HR-01: the transition records a summary itself (closing), which meets the summary check.</param>
+    public async Task<GateEvaluation> EvaluateGateAsync(Guid id, StageGateTrigger trigger, CancellationToken ct = default,
+        bool summaryProvided = false)
     {
         using var db = _factory.CreateDbContext();
-        return await _gates.EvaluateAsync(db, id, trigger, ct);
+        return await _gates.EvaluateAsync(db, id, trigger, ct, summaryProvided);
     }
 
     /// <summary>
@@ -719,9 +771,10 @@ public sealed class CaseService
     /// and records a tamper-evident <c>GatePassage</c> capturing the outcome (including any override).
     /// </summary>
     private async Task ApplyGateAsync(IAppDbContext db, Case c, StageGateTrigger trigger,
-        IReadOnlySet<Guid>? attestedIds, string? overrideJustification, string? reason, CancellationToken ct)
+        IReadOnlySet<Guid>? attestedIds, string? overrideJustification, string? reason, CancellationToken ct,
+        bool summaryProvided = false)
     {
-        var eval = await _gates.EvaluateAsync(db, c.Id, trigger, ct);
+        var eval = await _gates.EvaluateAsync(db, c.Id, trigger, ct, summaryProvided);
         if (!eval.GateExists) return;
 
         var attested = attestedIds ?? (IReadOnlySet<Guid>)ImmutableHashSet<Guid>.Empty;

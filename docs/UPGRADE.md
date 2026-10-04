@@ -165,6 +165,12 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   MISMATCH* on every database (fixed in v1.2.2); before v1.2.3 the ASP.NET Core Module check could fail from a
   32-bit PowerShell even when the module was installed. v1.2.4's script adds missing storage settings (below).
 
+- **The next release asks for an outcome when closing.** Closing a case needs an outcome and the closing brief
+  (what happened and the conclusion); six outcomes are seeded on upgrade and can be changed under Administration →
+  Case outcomes. Cases closed before the upgrade keep their records unchanged and have no outcome. A task raised from
+  a brief question now needs an answer to be marked done. Configuration bundles become schema v4 (they carry the
+  outcomes); older bundles still import.
+
 - **After v1.2.4, a missing seal-signing key stops startup.** Outside Development the app no longer generates a
   key when `Integrity:SigningKeyPath` points at a missing file; it refuses to start. An existing install already
   has its key file there, so nothing changes unless the file was moved or deleted.

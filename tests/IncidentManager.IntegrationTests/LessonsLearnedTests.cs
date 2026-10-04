@@ -237,7 +237,8 @@ public sealed class LessonsLearnedTests : IDisposable
         var svc = Lessons();
         await using (var db = NewContext())
         {
-            var close = () => Cases(db).ChangePhaseAsync(id, CasePhase.Closed, "done");
+            await IncidentManager.Infrastructure.Persistence.DevDataSeeder.SeedCaseOutcomesAsync(db, _clock);
+            var close = () => Cases(db).ChangePhaseAsync(id, CasePhase.Closed, "done", closing: TestOutcomes.Closing());
             await close.Should().ThrowAsync<GateNotSatisfiedException>("no review yet");
 
             // What happened alone isn't enough: the follow-up question must be answered too.
@@ -246,7 +247,7 @@ public sealed class LessonsLearnedTests : IDisposable
 
             var stamp = (await svc.GetForCaseAsync(id)).Review!.Stamp;
             await svc.SaveReviewAsync(id, new PostIncidentReviewInput("What happened.", null, null, null, NoActionsIdentified: true), stamp);
-            await Cases(db).ChangePhaseAsync(id, CasePhase.Closed, "done");
+            await Cases(db).ChangePhaseAsync(id, CasePhase.Closed, "done", closing: TestOutcomes.Closing());
         }
 
         // Improvement actions stay editable after the case closes: follow-up work outlives the case.

@@ -59,6 +59,9 @@ public sealed record ConfigDataElement(
 public sealed record ConfigNotificationRule(
     string Code, string Label, int WindowHours, bool IsActive, bool IsSystem);
 
+/// <summary>A case outcome (HR-01, schema v4). Matched on import by its stable <see cref="Key"/>.</summary>
+public sealed record ConfigCaseOutcome(string Key, string Label, string? Description, int SortOrder, bool IsActive, bool IsSystem);
+
 /// <summary>The editable-configuration payload. This is the object that gets canonically serialized and signed.</summary>
 public sealed record ConfigBundle(
     IReadOnlyList<ConfigSetting> Settings,
@@ -73,7 +76,11 @@ public sealed record ConfigBundle(
     // Added in schema v3 (PROD-47). Null on an older bundle, which then leaves the library and profile defaults alone.
     // Left out of the JSON when null, so a v2 bundle's canonical form (and signature) is unchanged.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<ConfigReportTemplate>? ReportTemplates = null);
+    IReadOnlyList<ConfigReportTemplate>? ReportTemplates = null,
+    // Added in schema v4 (HR-01). Null on an older bundle, which then leaves the outcomes alone; left out of the JSON
+    // when null, so an older bundle's canonical form (and signature) is unchanged.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<ConfigCaseOutcome>? CaseOutcomes = null);
 
 /// <summary>
 /// The downloadable file: the <see cref="ConfigBundle"/> plus provenance and a signature over the bundle's
@@ -92,7 +99,8 @@ public static class ConfigBundleJson
     public const string FormatTag = "casebook-config-bundle";
     // v2 (PROD-07) added ConfigBundle.NotificationRules. Older v1 bundles still import (the field reads as empty).
     // v3 (PROD-47) added the Word template library and each report profile's default template.
-    public const int CurrentSchemaVersion = 3;
+    // v4 (HR-01) added the case outcomes.
+    public const int CurrentSchemaVersion = 4;
 
     /// <summary>Human-readable, stable-cased options for the downloadable envelope file (diff-friendly).</summary>
     public static readonly JsonSerializerOptions File = new(JsonSerializerDefaults.Web)

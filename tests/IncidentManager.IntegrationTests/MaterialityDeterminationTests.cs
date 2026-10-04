@@ -116,6 +116,7 @@ public sealed class MaterialityDeterminationTests : IDisposable
         await using (var db = NewContext())
         {
             await SeedCloseGateAsync(db);
+            await IncidentManager.Infrastructure.Persistence.DevDataSeeder.SeedCaseOutcomesAsync(db, _clock);
             var svc = NewService(db);
             id = await NewIncidentAsync(svc);
         }
@@ -124,7 +125,7 @@ public sealed class MaterialityDeterminationTests : IDisposable
         await using (var db = NewContext())
         {
             var svc = NewService(db);
-            var act = () => svc.ChangePhaseAsync(id, CasePhase.Closed, "wrapping up");
+            var act = () => svc.ChangePhaseAsync(id, CasePhase.Closed, "wrapping up", closing: TestOutcomes.Closing());
             await act.Should().ThrowAsync<GateNotSatisfiedException>();
             (await db.Cases.FirstAsync(c => c.Id == id)).Phase.Should().NotBe(CasePhase.Closed);
         }
@@ -134,7 +135,7 @@ public sealed class MaterialityDeterminationTests : IDisposable
         {
             var svc = NewService(db);
             await svc.RecordMaterialityAsync(id, MaterialityStatus.UnderReview, null, null, null);
-            var act = () => svc.ChangePhaseAsync(id, CasePhase.Closed, "wrapping up");
+            var act = () => svc.ChangePhaseAsync(id, CasePhase.Closed, "wrapping up", closing: TestOutcomes.Closing());
             await act.Should().ThrowAsync<GateNotSatisfiedException>();
         }
 
@@ -144,7 +145,7 @@ public sealed class MaterialityDeterminationTests : IDisposable
             var svc = NewService(db);
             await svc.RecordMaterialityAsync(id, MaterialityStatus.NotMaterial,
                 "General Counsel", _clock.UtcNow, "No sensitive data left our estate.");
-            await svc.ChangePhaseAsync(id, CasePhase.Closed, "wrapping up");
+            await svc.ChangePhaseAsync(id, CasePhase.Closed, "wrapping up", closing: TestOutcomes.Closing());
         }
 
         await using (var verify = NewContext())

@@ -24,6 +24,7 @@
 @inject IncidentManager.Web.Services.CaseCommandRegistry PaletteActions
 @inject IncidentManager.Application.Cases.CaseShortcutService Shortcuts
 @inject IncidentManager.Application.Evidence.EvidenceService EvidenceSvc
+@inject IncidentManager.Application.Admin.CaseOutcomeService Outcomes
 
 <PageTitle>@(_case?.CaseNumber ?? "Case")</PageTitle>
 
@@ -415,7 +416,7 @@ else
         @* INV-29: where the panel isn't beside the tab (narrow screens, or hidden), its content is a strip here. *@
         <CaseContextRail Strip="true" AlwaysStrip="!_railOpen" Case="_case" Notify="_notifyDeadlines" CanEdit="_canEdit"
                          OnOpenEntity="OpenEntity" OnGoToTab="SetTab" OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
-        <CaseOverviewTab @ref="_overviewTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" CanEdit="_canEdit" CanLiftRestriction="@(_canEdit && CanLiftRestriction)"
+        <CaseOverviewTab @ref="_overviewTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" OutcomeLabels="_outcomeLabels" CanEdit="_canEdit" CanLiftRestriction="@(_canEdit && CanLiftRestriction)"
                          RetentionMessage="@_retentionMsg" ReadinessEval="_readinessEval"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" OnOpenModal="OpenModal"
                          OnFix="FixGateItem" OnGoToTab="SetTab" OnShowSince="ShowSinceAt" RefreshToken="_liveRefresh" />
@@ -425,7 +426,7 @@ else
         @* UX-13: extracted to CaseTimelineTab. It owns its Investigation EasyMDE editor; the parent keeps
            the flash, the screenshot lightbox (OnPreview→OpenShot), the Ctrl+Enter hotkey (via @ref), the
            paste-shim registration (element ids kept in the child), and the live-collab "new entries" pill. *@
-        <CaseTimelineTab @ref="_timelineTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" CanEdit="_canEdit" CanChangeClassification="_canReclassify"
+        <CaseTimelineTab @ref="_timelineTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" OutcomeLabels="_outcomeLabels" CanEdit="_canEdit" CanChangeClassification="_canReclassify"
                          DetectionLabel="@DetectionLabel" OnChanged="Reload" OnPreview="OpenShot"
                          FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts"
                          ChangedSinceUtc="_timelineSince" OnClearSince="() => _timelineSince = null"
@@ -579,9 +580,16 @@ else
                         {
                             <label class="form-label small" for="ws-status">New status</label>
                             <select id="ws-status" class="form-select mb-2" @bind="_newPhase" @bind:after="OnStatusTargetChanged">@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
-                            <label class="form-label small" for="ws-status-reason">@(_case is { } cs && _newPhase > cs.Phase ? "What was achieved" : "Reason") <span class="text-muted">@(_gateEval is { RequiresCommentary: true } || Backdated ? "(required)" : "(optional)")</span></label>
-                            <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
-                            @RationaleHint(_phaseReason)
+                            @if (Closing)
+                            {
+                                @ClosingSection()
+                            }
+                            else
+                            {
+                                <label class="form-label small" for="ws-status-reason">@(_case is { } cs && _newPhase > cs.Phase ? "What was achieved" : "Reason") <span class="text-muted">@(_gateEval is { RequiresCommentary: true } || Backdated ? "(required)" : "(optional)")</span></label>
+                                <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
+                                @RationaleHint(_phaseReason)
+                            }
                             @WhenItHappened()
                             @NotificationWarning()
                             @OpenTasksWarning()
@@ -1171,6 +1179,9 @@ else
         _notFound = _case is null;
         _taskResults = _case is null ? new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>()
             : await Cases.GetTaskResultsAsync(_case.Id);
+        // HR-01: outcome labels (admin-managed) for the header and the Closed milestone; only closed cases show one.
+        if (_case?.StatusChanges.Any(s => s.OutcomeKey is not null) == true && _outcomeLabels.Count == 0)
+            _outcomeLabels = await Outcomes.LabelsAsync();
         // C-05: record the authorized case-detail open (best-effort; coalesced into a view-session).
         if (_case is not null)
         {
@@ -1356,7 +1367,8 @@ else
     private async Task<GateEvaluation?> LoadGateAsync(StageGateTrigger? trigger)
     {
         if (trigger is not { } t) return null;
-        var eval = await Cases.EvaluateGateAsync(Id, t);
+        // HR-01: closing writes the summary from the closing brief, so the summary check is met by it.
+        var eval = await Cases.EvaluateGateAsync(Id, t, summaryProvided: t == StageGateTrigger.CloseCase);
         return eval.GateExists ? eval : null;
     }
 
@@ -1372,7 +1384,87 @@ else
         _attested.Clear();
         _gateOverride = null;
         _gateEval = await LoadGateAsync(StatusTrigger());
+        if (Closing) await PrepareClosingAsync();
     }
+
+    // --- HR-01: closing records an outcome and the closing brief ---
+    private bool Closing => _activeModal == "status" && _newPhase == CasePhase.Closed && _case is { Phase: not CasePhase.Closed };
+    private List<IncidentManager.Application.Admin.CaseOutcomeView> _outcomes = [];
+    private string? _closeOutcome, _closeSummary, _closeConclusion;
+    private Guid? _closePrefilledFor;
+    private IReadOnlyDictionary<string, string> _outcomeLabels = new Dictionary<string, string>();
+    private string OutcomeLabel(string key) =>
+        _outcomeLabels.GetValueOrDefault(key) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(key);
+
+    private async Task PrepareClosingAsync()
+    {
+        _outcomes = await Outcomes.ListActiveAsync();
+        if (_case is null || _closePrefilledFor == _case.Id) return;
+        // Start from the current brief, so the analyst edits what's there into the conclusion instead of retyping it.
+        var brief = _case.Briefs.FirstOrDefault(b => b.IsCurrent);
+        _closeSummary = brief?.Summary ?? _case.Summary;
+        _closeConclusion = brief?.WorkingAssessment;
+        _closeOutcome = null;
+        _closePrefilledFor = _case.Id;
+    }
+
+    private RenderFragment ClosingSection() => @<text>
+        <label class="form-label small" for="ws-close-outcome">Outcome <span class="text-muted">(required)</span></label>
+        <select id="ws-close-outcome" class="form-select mb-1" @bind="_closeOutcome">
+            <option value="">Choose what the case concluded…</option>
+            @foreach (var o in _outcomes)
+            {
+                <option value="@o.Key">@o.Label</option>
+            }
+        </select>
+        @if (_outcomes.FirstOrDefault(o => o.Key == _closeOutcome)?.Description is { Length: > 0 } hint)
+        {
+            <div class="form-text mt-0 mb-2">@hint</div>
+        }
+        <label class="form-label small mt-1" for="ws-close-summary">What happened <span class="text-muted">(required · the case summary, printed in the report)</span></label>
+        <textarea id="ws-close-summary" class="form-control mb-2" rows="3" maxlength="@CaseBrief.MaxPartLength"
+                  @bind="_closeSummary" @bind:event="oninput"></textarea>
+        <label class="form-label small" for="ws-close-conclusion">Conclusion <span class="text-muted">(required · what the team concluded, and on what basis; was the working assessment)</span></label>
+        <textarea id="ws-close-conclusion" class="form-control mb-1" rows="3" maxlength="@CaseBrief.MaxPartLength"
+                  placeholder="e.g. Account takeover with preparation for payment fraud. No other user affected; no payment made."
+                  @bind="_closeConclusion" @bind:event="oninput"></textarea>
+        @RationaleHint(_closeConclusion)
+        <div class="small text-muted mb-2">Saved as the brief's closing version. Known and the open questions carry over.</div>
+        @ClosingQuestions()
+    </text>;
+
+    // The brief's open questions and whether each has an answer (HR-02), so a conclusion that rests on an unanswered
+    // question is visible before closing. Advisory: the analyst can answer it on the Tasks tab or close anyway.
+    private RenderFragment ClosingQuestions() => @<text>
+        @{
+            var brief = _case?.Briefs.FirstOrDefault(b => b.IsCurrent);
+            var questions = brief is null ? null : IncidentManager.Application.Cases.CaseNext.Questions(brief.OpenQuestions);
+        }
+        @if (questions is { Count: > 0 })
+        {
+            <div class="small fw-semibold mb-1">Open questions</div>
+            <ul class="im-close-q">
+                @foreach (var q in questions)
+                {
+                    var title = Md.ToPlainText(q).Replace('\n', ' ').Trim();
+                    var task = _case!.ActionItems.Where(t => t.RaisedFromBriefId is not null && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(t => t.Status == ActionItemStatus.Done).ThenByDescending(t => t.CreatedAtUtc).FirstOrDefault();
+                    var answered = task is { Status: ActionItemStatus.Done } && _taskResults.ContainsKey(task.Id);
+                    <li class="@(answered ? "im-close-q-ok" : "im-close-q-open")">
+                        <span>@title</span>
+                        @if (answered)
+                        {
+                            <span class="d-block text-muted">@IncidentManager.Application.Cases.TaskResults.Excerpt(_taskResults[task!.Id].Text)</span>
+                        }
+                        else
+                        {
+                            <span class="d-block">No answer recorded. Answer it on the Tasks tab, or say in the conclusion why it doesn't matter.</span>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    </text>;
 
     private void ToggleAttest(Guid id, bool on)
     {
@@ -1663,8 +1755,10 @@ else
             || (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
             || GateRationaleError(_reclassReason) is not null,
         "status" => (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
-            || GateRationaleError(_phaseReason) is not null
-            || _when is null || (Backdated && string.IsNullOrWhiteSpace(_phaseReason)),
+            || GateRationaleError(Closing ? _closeConclusion : _phaseReason) is not null
+            || _when is null || (Backdated && !Closing && string.IsNullOrWhiteSpace(_phaseReason))
+            || (Closing && (string.IsNullOrWhiteSpace(_closeOutcome) || string.IsNullOrWhiteSpace(_closeSummary)
+                            || string.IsNullOrWhiteSpace(_closeConclusion))),
         "severity" => _when is null || (Backdated && string.IsNullOrWhiteSpace(_severityReason)),
         "handoff" => string.IsNullOrWhiteSpace(_hoTo) || string.IsNullOrWhiteSpace(_hoState),
         _ => false
@@ -1704,11 +1798,14 @@ else
                 case "status":
                     if (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
                     { _modalError = "Enter an override justification for the unmet requirements."; return; }
-                    if (GateRationaleError(_phaseReason) is { } m2) { _modalError = m2; return; }
-                    await Cases.ChangePhaseAsync(Id, _newPhase, _phaseReason,
-                        _attested.Count > 0 ? _attested : null, _gateOverride, EffectiveUtc());
+                    if (GateRationaleError(Closing ? _closeConclusion : _phaseReason) is { } m2) { _modalError = m2; return; }
+                    var closing = Closing ? new CaseService.CaseClosing(_closeOutcome ?? "", _closeSummary ?? "", _closeConclusion ?? "") : null;
+                    await Cases.ChangePhaseAsync(Id, _newPhase, closing is null ? _phaseReason : null,
+                        _attested.Count > 0 ? _attested : null, _gateOverride, EffectiveUtc(), closing: closing);
                     _phaseReason = null;
-                    done = $"Phase changed to {Ui.Label(_newPhase)}";
+                    done = closing is null ? $"Phase changed to {Ui.Label(_newPhase)}"
+                        : $"Case closed: {_outcomes.FirstOrDefault(o => o.Key == closing.OutcomeKey)?.Label ?? closing.OutcomeKey}";
+                    _closePrefilledFor = null;
                     break;
                 case "supersede":
                 {
@@ -1781,7 +1878,10 @@ else
             {
                 _closeAfterSupersede = null;
                 await AdvanceTo(CasePhase.Closed);
-                _phaseReason = closeReason;
+                // HR-01: a superseded case closes as a duplicate, with the reason as its conclusion.
+                if (_outcomes.Any(o => o.Key == IncidentManager.Application.Admin.CaseOutcomeCatalog.Duplicate))
+                    _closeOutcome = IncidentManager.Application.Admin.CaseOutcomeCatalog.Duplicate;
+                _closeConclusion = closeReason;
             }
         }
         catch (ForbiddenException)
@@ -1872,6 +1972,11 @@ else
                 <span class="im-phasebar-step">step @(cur + 1) of @phases.Length</span>
             }
         </span>
+        @* HR-01: what a closed case concluded, beside its phase. *@
+        @if (c.Phase == CasePhase.Closed && c.OutcomeKey is { } outcome)
+        {
+            <span class="im-outcome" title="Outcome recorded when the case closed">@OutcomeLabel(outcome)</span>
+        }
         @* On the Overview the context strip above the brief already shows the clocks, so only the scrolled bar needs it. *@
         @if ((slim || _activeTab != "Overview") && HeadAlert() is { } alert)
         {

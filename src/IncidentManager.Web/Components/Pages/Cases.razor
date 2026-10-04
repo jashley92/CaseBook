@@ -17,6 +17,7 @@
 @inject IAuthorizationService Authz
 @inject AuthenticationStateProvider AuthState
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Admin.CaseOutcomeService Outcomes
 
 <PageTitle>Cases</PageTitle>
 
@@ -109,6 +110,14 @@
             <option value="">Any origin</option>
             <option value="@nameof(CaseOrigin.InternalDetection)">Internal</option>
             <option value="@nameof(CaseOrigin.ThirdParty)">Third-party</option>
+        </select>
+        @* HR-01: closed cases by what they concluded. *@
+        <select id="cases-outcome" class="form-select form-select-sm" aria-label="Outcome" @bind="_outcome" @bind:after="ApplyFilters">
+            <option value="">Any outcome</option>
+            @foreach (var o in _outcomes)
+            {
+                <option value="@o.Key">@o.Label</option>
+            }
         </select>
         <input id="cases-search" class="form-control form-control-sm im-filter-search" placeholder="Search number, title, note or IOC"
                aria-label="Search cases" @bind="_search" @bind:after="ApplyFilters" />
@@ -586,6 +595,7 @@ else
     [SupplyParameterFromQuery(Name = "phase")] public string? QPhase { get; set; }
     [SupplyParameterFromQuery(Name = "sev")] public string? QSeverity { get; set; }
     [SupplyParameterFromQuery(Name = "origin")] public string? QOrigin { get; set; }
+    [SupplyParameterFromQuery(Name = "outcome")] public string? QOutcome { get; set; }
     [SupplyParameterFromQuery(Name = "q")] public string? QSearch { get; set; }
     [SupplyParameterFromQuery(Name = "closed")] public bool QClosed { get; set; }
     [SupplyParameterFromQuery(Name = "exercises")] public bool QExercises { get; set; }
@@ -616,6 +626,8 @@ else
     private string _phase = "";
     private string _minSeverity = "";
     private string _origin = "";
+    private string _outcome = "";
+    private List<IncidentManager.Application.Admin.CaseOutcomeView> _outcomes = [];
     private string _search = "";
     private bool _includeClosed;
     private bool _includeExercises;
@@ -639,7 +651,7 @@ else
     private bool _filtersOpen;
 
     private bool _hasActiveFilter => !(string.IsNullOrEmpty(_classification) && string.IsNullOrEmpty(_phase)
-        && string.IsNullOrEmpty(_minSeverity) && string.IsNullOrEmpty(_origin)
+        && string.IsNullOrEmpty(_minSeverity) && string.IsNullOrEmpty(_origin) && string.IsNullOrEmpty(_outcome)
         && string.IsNullOrEmpty(_search) && !_includeClosed && !_includeExercises && !_overdueOnly && !_slaAtRiskOnly && !_notifyOnly
         && !_referredOnly && !_onHoldOnly && _openedLabel is null && _assignee is null);
 
@@ -669,6 +681,7 @@ else
         var auth = await AuthState.GetAuthenticationStateAsync();
         _canEdit = (await Authz.AuthorizeAsync(auth.User, Policies.EditCases)).Succeeded;
         _dash = await Dashboard.GetAsync();
+        _outcomes = (await Outcomes.ListAllAsync()).Where(o => o.IsActive || o.UseCount > 0).ToList();
         await ReloadViews();
 
         _liveDebounce = new System.Threading.Timer(_ => _ = InvokeAsync(LiveReload), null,
@@ -756,6 +769,7 @@ else
         _phase = QPhase ?? "";
         _minSeverity = QSeverity ?? "";
         _origin = QOrigin ?? "";
+        _outcome = QOutcome ?? "";
         _search = QSearch ?? "";
         _includeClosed = QClosed;
         _includeExercises = QExercises;
@@ -808,6 +822,7 @@ else
         ["phase"] = Blank(_phase),
         ["sev"] = Blank(_minSeverity),
         ["origin"] = Blank(_origin),
+        ["outcome"] = Blank(_outcome),
         ["q"] = Blank(_search),
         ["closed"] = _includeClosed ? "true" : null,
         ["exercises"] = _includeExercises ? "true" : null,
@@ -889,6 +904,8 @@ else
             yield return ("Origin: Internal", () => _origin = "");
         else if (_origin == nameof(CaseOrigin.ThirdParty))
             yield return ("Origin: Third-party", () => _origin = "");
+        if (!string.IsNullOrEmpty(_outcome))
+            yield return ($"Outcome: {_outcomes.FirstOrDefault(o => o.Key == _outcome)?.Label ?? _outcome}", () => _outcome = "");
         if (!string.IsNullOrWhiteSpace(_search))
             yield return ($"Search: “{_search}”", () => _search = "");
         if (_includeClosed) yield return ("Including closed", () => _includeClosed = false);
@@ -1038,6 +1055,7 @@ else
         _filter.Phase = Enum.TryParse<CasePhase>(_phase, out var p) ? p : null;
         _filter.MinSeverity = Enum.TryParse<Severity>(_minSeverity, out var sev) ? sev : null;
         _filter.Origin = Enum.TryParse<CaseOrigin>(_origin, out var o) ? o : null;
+        _filter.OutcomeKey = string.IsNullOrEmpty(_outcome) ? null : _outcome;
         _filter.Search = _search;
         _filter.IncludeClosed = _includeClosed;
         _filter.IncludeExercises = _includeExercises;

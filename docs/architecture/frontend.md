@@ -46,7 +46,7 @@ caught by the server and redirected to `/access-denied?from=…`; an unknown pag
 | `/program-report` | `ProgramReportPage` | ViewCases | Quarterly program metrics |
 | `/account/access`, `/account/api-tokens`, `/account/notifications` | `Account*` | signed in | My access; personal tokens; notification preferences |
 | `/admin`, `/admin/settings/{Section?}` | `Admin` | Administer | Settings sections (below) |
-| `/admin/templates`, `/admin/gates`, `/admin/taxonomy`, `/admin/data-elements`, `/admin/roles`, `/admin/api-tokens`, `/admin/email-templates`, `/admin/config-bundle`, `/admin/style` | `Admin*`, `StyleGuide` | Administer | Case templates, stage gates, labels, data elements, roles and AD mappings, system tokens, email wording, configuration bundle, live style guide |
+| `/admin/templates`, `/admin/gates`, `/admin/taxonomy`, `/admin/data-elements`, `/admin/outcomes`, `/admin/roles`, `/admin/api-tokens`, `/admin/email-templates`, `/admin/config-bundle`, `/admin/style` | `Admin*`, `StyleGuide` | Administer | Case templates, stage gates, labels, data elements, roles and AD mappings, system tokens, email wording, configuration bundle, live style guide |
 | `/access-denied`, `/not-found` | `NoAccess`, `NotFoundPage` | signed in | Friendly 403 and 404 |
 | `/Error`, `/session-expired` | `Error`, `SessionExpired` | anonymous (blank layout) | Error with a reference id; idle lock landing |
 

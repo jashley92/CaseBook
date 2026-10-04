@@ -21,6 +21,7 @@ public sealed class StatusChangeConfiguration : IEntityTypeConfiguration<StatusC
     {
         b.ToTable("StatusChanges");
         b.Property(x => x.Reason).HasMaxLength(2000);
+        b.Property(x => x.OutcomeKey).HasMaxLength(64);   // HR-01
         b.Property(x => x.ChangedBy).HasMaxLength(200);
         b.HasIndex(x => x.CaseId);
     }
@@ -276,6 +277,22 @@ public sealed class ReportTemplateConfiguration : IEntityTypeConfiguration<Repor
         b.Property(x => x.Sha256).HasMaxLength(64).IsRequired();
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.RowHash).HasMaxLength(64);
+    }
+}
+
+/// <summary>HR-01: case outcomes, admin-managed reference data keyed (like data elements) by a stable Key.</summary>
+public sealed class CaseOutcomeConfiguration : IEntityTypeConfiguration<CaseOutcome>
+{
+    public void Configure(EntityTypeBuilder<CaseOutcome> b)
+    {
+        b.ToTable("CaseOutcomes");
+        b.Property(x => x.Key).HasMaxLength(64).IsRequired();
+        b.Property(x => x.Label).HasMaxLength(200).IsRequired();
+        b.Property(x => x.Description).HasMaxLength(500);
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.ModifiedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.HasIndex(x => x.Key).IsUnique();
     }
 }
 

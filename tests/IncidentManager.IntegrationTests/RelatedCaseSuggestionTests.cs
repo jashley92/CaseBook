@@ -121,7 +121,8 @@ public sealed class RelatedCaseSuggestionTests : IDisposable
         foreach (var id in new[] { alpha, closed, archived })
             await svc.AddEntityAsync(id, EntityType.FileHash, "44d88612fea8a8f36de82e1278abb02f", null, EntityDisposition.Malicious, null, null);
 
-        await svc.ChangePhaseAsync(closed, CasePhase.Closed, "resolved");
+        await IncidentManager.Infrastructure.Persistence.DevDataSeeder.SeedCaseOutcomesAsync(db, _clock);
+        await svc.ChangePhaseAsync(closed, CasePhase.Closed, "resolved", closing: TestOutcomes.Closing());
         await svc.SetArchivedAsync(archived, true);
 
         (await svc.FindRelatedOpenCasesAsync(alpha)).Should().BeEmpty();

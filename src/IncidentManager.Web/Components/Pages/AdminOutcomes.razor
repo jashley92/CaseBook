@@ -1,0 +1,193 @@
+@page "/admin/outcomes"
+@using IncidentManager.Application.Admin
+@attribute [Authorize(Policy = Policies.Administer)]
+@layout AdminLayout
+@inject CaseOutcomeService Outcomes
+@inject ToastService Toasts
+
+<PageTitle>Case outcomes</PageTitle>
+
+<PageHeader Title="Case outcomes">
+    <Actions>
+        <span class="im-badge im-b-neutral"><span class="bi bi-shield-lock me-1"></span>SysAdmin only</span>
+    </Actions>
+</PageHeader>
+<p class="text-muted">
+    What a case can conclude, chosen when it's closed and printed in the case report. <strong>Add</strong>,
+    <strong>rename</strong>, <strong>describe</strong>, <strong>reorder</strong> or <strong>archive</strong> them to fit
+    your organization. The description is shown in the close dialog to help people choose. Archiving an outcome, even a
+    built-in one, removes it from the close dialog but keeps it on cases that recorded it. An outcome no close has used
+    can be deleted. Keep the wording neutral: it's part of the case record. Changes are audited.
+</p>
+
+@if (_active is null)
+{
+    <LoadingBlock />
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><span class="bi bi-flag me-1"></span>Active outcomes</span>
+            <button class="btn btn-sm btn-primary" @onclick="Save">Save changes</button>
+        </div>
+        <div class="card-body">
+            <ol class="list-group mb-3">
+                @for (var i = 0; i < _active.Count; i++)
+                {
+                    var idx = i;
+                    var r = _active[idx];
+                    <li class="list-group-item d-flex align-items-center gap-2 flex-wrap">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button class="btn btn-outline-secondary" title="Move up"
+                                    disabled="@(idx == 0)" @onclick="() => Move(idx, -1)"><span class="bi bi-arrow-up"></span></button>
+                            <button class="btn btn-outline-secondary" title="Move down"
+                                    disabled="@(idx == _active.Count - 1)" @onclick="() => Move(idx, 1)"><span class="bi bi-arrow-down"></span></button>
+                        </div>
+                        <div style="min-width:6.5rem">
+                            @if (r.IsNew) { <span class="im-badge im-b-info">New</span> }
+                            else if (r.IsSystem) { <span class="im-badge im-b-neutral">Built-in</span> }
+                            else { <span class="im-badge im-b-info">Custom</span> }
+                        </div>
+                        <input class="form-control form-control-sm" style="width:12rem;flex:0 0 auto" type="text" aria-label="Outcome @(idx + 1) label" maxlength="200"
+                               placeholder="Label" @bind="r.Label" @bind:event="oninput" />
+                        <input class="form-control form-control-sm" style="width:auto;flex:1 1 12rem;min-width:12rem" type="text" aria-label="Outcome @(idx + 1) description" maxlength="500"
+                               placeholder="When to choose it (optional)" @bind="r.Description" @bind:event="oninput" />
+                        @if (r.Uses > 0) { <span class="small text-muted text-nowrap" title="Closes that recorded this outcome">@r.Uses @(r.Uses == 1 ? "case" : "cases")</span> }
+                        @if (r.IsNew)
+                        {
+                            <button class="btn btn-sm btn-outline-danger" title="Discard this new row" @onclick="() => _active.RemoveAt(idx)"><span class="bi bi-x-lg"></span></button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" title="Remove from the close dialog; stays on cases that recorded it" @onclick="() => Archive(r.Id!.Value)">Archive</button>
+                        }
+                    </li>
+                }
+            </ol>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="AddRow"><span class="bi bi-plus-lg me-1"></span>Add outcome</button>
+        </div>
+    </div>
+
+    @if (_archived.Count > 0)
+    {
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><span class="bi bi-archive me-1"></span>Archived (@_archived.Count)</span>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="() => _showArchived = !_showArchived">
+                    @(_showArchived ? "Hide" : "Show")
+                </button>
+            </div>
+            @if (_showArchived)
+            {
+                <div class="card-body">
+                    <p class="small text-muted">Archived outcomes aren't offered when closing but still label the cases that
+                    recorded them. Restore one to offer it again, or delete one that no close used.</p>
+                    <table class="table table-sm align-middle mb-0">
+                        <tbody>
+                            @foreach (var a in _archived)
+                            {
+                                <tr>
+                                    <td>
+                                        @a.Label
+                                        @if (a.IsSystem) { <span class="im-badge im-b-neutral ms-1">Built-in</span> }
+                                        @if (a.UseCount > 0) { <span class="im-badge im-b-neutral ms-1" title="Recorded when closing one or more cases">In use</span> }
+                                    </td>
+                                    <td class="text-end" style="width:12rem">
+                                        <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => Restore(a.Id)">Restore</button>
+                                        @if (a.IsDeletable)
+                                        {
+                                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => ConfirmDelete(a.Id, a.Label)">Delete</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+}
+
+@* S-23: destructive actions state their consequence and ask first. *@
+<ConfirmDialog @ref="_confirm" />
+
+@code {
+    private ConfirmDialog _confirm = null!;
+
+    private void ConfirmDelete(Guid id, string label) => _confirm.Ask(this, "Delete outcome",
+        $"Permanently delete “{label}”? This can't be undone.",
+        "Delete outcome", () => Delete(id));
+
+    private sealed class Row
+    {
+        public Guid? Id { get; init; }
+        public bool IsSystem { get; init; }
+        public int Uses { get; init; }
+        public string Label { get; set; } = "";
+        public string? Description { get; set; }
+        public bool IsNew => Id is null;
+    }
+
+    private List<Row>? _active;
+    private List<CaseOutcomeView> _archived = new();
+    private bool _showArchived;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var all = await Outcomes.ListAllAsync();
+        _active = all.Where(o => o.IsActive)
+            .Select(o => new Row { Id = o.Id, IsSystem = o.IsSystem, Uses = o.UseCount, Label = o.Label, Description = o.Description })
+            .ToList();
+        _archived = all.Where(o => !o.IsActive).ToList();
+    }
+
+    private void AddRow() => _active?.Add(new Row());
+
+    private void Move(int index, int delta)
+    {
+        if (_active is null) return;
+        var target = index + delta;
+        if (target < 0 || target >= _active.Count) return;
+        (_active[index], _active[target]) = (_active[target], _active[index]);
+    }
+
+    private async Task Save()
+    {
+        if (_active is null) return;
+        var payload = _active.Select(r => new CaseOutcomeRow(r.Id, r.Label, r.Description)).ToList();
+        try
+        {
+            await Outcomes.SaveAsync(payload);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        await LoadAsync();
+        Toasts.Success("Outcomes saved");
+    }
+
+    private async Task Archive(Guid id) => await Lifecycle(() => Outcomes.SetArchivedAsync(id, true), "Outcome archived");
+    private async Task Restore(Guid id) => await Lifecycle(() => Outcomes.SetArchivedAsync(id, false), "Outcome restored");
+    private async Task Delete(Guid id) => await Lifecycle(() => Outcomes.DeleteAsync(id), "Outcome deleted");
+
+    private async Task Lifecycle(Func<Task> action, string ok)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+            return;
+        }
+        await LoadAsync();
+        Toasts.Info(ok);
+    }
+}

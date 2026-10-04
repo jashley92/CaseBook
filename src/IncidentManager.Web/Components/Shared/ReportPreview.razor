@@ -191,6 +191,8 @@ else
 
                     case ReportSection.Outcome:
                         <ul class="mb-0 small">
+                            @if (Model.Outcome is { } outcome) { <li><strong>Outcome: @outcome</strong></li> }
+                            @if (Model.Conclusion is { } conclusion) { <li>Conclusion: @conclusion</li> }
                             <li>Current phase: @Model.Phase. Classification: @Model.Classification. Severity: @Model.Severity.</li>
                             @if (Model.DetectedAtUtc is { } d) { <li>Detected: @d.ToString("u")</li> }
                             @if (Model.ContainedAtUtc is { } cn) { <li>Contained: @cn.ToString("u")</li> }

@@ -81,6 +81,8 @@ public sealed class CaseFilter
     public CasePhase? Phase { get; set; }
     public Severity? MinSeverity { get; set; }
     public CaseOrigin? Origin { get; set; }
+    /// <summary>HR-01: only cases closed with this outcome (a CaseOutcome key). Implies closed cases are included.</summary>
+    public string? OutcomeKey { get; set; }
     public bool IncludeClosed { get; set; }
     public bool OnlyMine { get; set; }
 

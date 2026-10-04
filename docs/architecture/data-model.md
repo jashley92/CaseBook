@@ -106,6 +106,7 @@ The aggregate root. Every state change on a case goes through a method on `Domai
 | `OccurredAtUtc` | datetimeoffset | yes | When activity began (dwell time). |
 | `DetectedAtUtc` | datetimeoffset | yes | When it was detected; the start of SLA clocks. Defaults to creation. |
 | `ContainedAtUtc`, `ResolvedAtUtc`, `ClosedAtUtc` | datetimeoffset | yes | Set the first time the case enters Containment, Recovery or Closed (effective time). Closed is cleared on reopen. |
+| `OutcomeKey` | nvarchar(64) | yes | What the case concluded: a `CaseOutcomes.Key` (no foreign key). Set when it closes, cleared on reopen. Indexed. Hashed only when set. |
 | `ReportedAtUtc` | datetimeoffset | yes | When regulators were notified. Stops **every** jurisdiction's notification clock. |
 | `IncidentCommander` | nvarchar(200) | yes | User id of the current IC (mirrors the IC assignment). |
 | `IsRestricted` | bit | no | Need-to-know. |
@@ -136,7 +137,7 @@ recorded correction.
 | Table | Columns | Notes |
 |---|---|---|
 | `ClassificationChanges` | `From` (int, null), `To` (int), `Reason` (required, 2000), `ChangedBy`, `ChangedAtUtc`, `EffectiveAtUtc` (null) | `From = NULL` is either the opening classification or a promotion from Complex Event; code tells them apart by `ChangedAtUtc > Case.CreatedAtUtc`. |
-| `StatusChanges` (phase) | `From` (null), `To`, `Reason` (optional), `ChangedBy`, `ChangedAtUtc`, `EffectiveAtUtc` | The first row is `null → New`. |
+| `StatusChanges` (phase) | `From` (null), `To`, `Reason` (optional), `ChangedBy`, `ChangedAtUtc`, `EffectiveAtUtc`, `OutcomeKey` (on a change to Closed) | The first row is `null → New`. A close keeps its outcome here after a reopen. |
 | `SeverityChanges` | `From` (null), `To`, `Reason`, `ChangedBy`, `ChangedAtUtc`, `EffectiveAtUtc` | First row "Initial severity". |
 | `MaterialityChanges` | `From`, `To`, `DecisionMaker`, `DecidedOnUtc`, `Rationale`, `ChangedBy`, `ChangedAtUtc` | Written only when the status changes. No effective time. |
 | `AssignmentChanges` | `UserId`, `UserDisplayName`, `From` (role, null = joined), `To` (role, null = left), `ChangedBy`, `ChangedAtUtc` | Written only when a role actually changes. No effective time. |
@@ -324,6 +325,7 @@ All are row-hashed and audited, and are edited in Administration by the `Adminis
 | `ReportProfiles` | `Name` (unique), `Description`, `IsActive`, `SortOrder`, `SectionLayout`, `TemplateId` (FK, restrict) | Can be deleted; cases pointing at it fall back to the default layout. |
 | `ReportTemplates` | `Name`, `FileName`, `Sha256`, `SizeBytes`, `IsActive`, `IsLessonsDefault` | File stored as `{id}.docx`. Can't be deleted while a profile or the lessons default uses it. |
 | `DataElements` | `Key` (unique, stable), `Label`, `SortOrder`, `IsActive`, `IsSystem`, `NotificationJurisdictions` (`"US, NY"`) | 13 system elements are seeded. `Key` must never change. System elements can be archived but not deleted; custom ones only when unused. |
+| `CaseOutcomes` | `Key` (unique, stable), `Label`, `Description`, `SortOrder`, `IsActive`, `IsSystem` | Six system outcomes are seeded. `Key` must never change. System outcomes can be archived but not deleted; added ones only when no close recorded them. At least one stays active. |
 | `NotificationRules` | `Code` (unique, upper-case, matches jurisdiction codes), `Label`, `WindowHours`, `IsActive`, `IsSystem` | NY and US (72 h) are seeded. |
 | `AppSettings` | `Key` (unique), `Value`, `UpdatedAtUtc`, `UpdatedBy` | Whitelisted operational settings, plus `Taxonomy:*` and `EmailTemplate:*` keys. Deleting a row resets the setting. |
 

@@ -90,6 +90,8 @@ public sealed partial class ConfigBundleService
         Diff("Report profile", incoming.ReportProfiles, live.ReportProfiles, p => p.Name, items);
         // Notification rules match on their portable jurisdiction Code (null when importing a pre-v2 bundle).
         Diff("Notification rule", incoming.NotificationRules ?? [], live.NotificationRules, r => r.Code, items);
+        // HR-01: outcomes match on their stable Key (null when importing a pre-v4 bundle).
+        Diff("Case outcome", incoming.CaseOutcomes ?? [], live.CaseOutcomes ?? [], o => o.Key, items);
 
         // Data elements match on Key (codes are per-instance), so compare a code-agnostic shape.
         var liveByKey = live.DataElements.ToDictionary(e => e.Key, StringComparer.Ordinal);
@@ -356,6 +358,27 @@ public sealed partial class ConfigBundleService
                 if (changed) { existing.Description = p.Description; existing.IsActive = p.IsActive;
                     existing.SortOrder = p.SortOrder; existing.SectionLayout = p.SectionLayout; existing.TemplateId = templateId;
                     existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
+                Tally(false, changed);
+            }
+        }
+
+        // --- Case outcomes (HR-01; match by stable Key; absent from a pre-v4 bundle) ---
+        var outcomeRows = await db.CaseOutcomes.ToListAsync(ct);
+        foreach (var o in bundle.CaseOutcomes ?? [])
+        {
+            var existing = outcomeRows.FirstOrDefault(x => x.Key == o.Key);
+            if (existing is null)
+            {
+                db.CaseOutcomes.Add(new CaseOutcome { Key = o.Key, Label = o.Label, Description = o.Description,
+                    SortOrder = o.SortOrder, IsActive = o.IsActive, IsSystem = o.IsSystem, CreatedBy = actor, CreatedAtUtc = now });
+                Tally(true, true);
+            }
+            else
+            {
+                var changed = existing.Label != o.Label || existing.Description != o.Description
+                    || existing.SortOrder != o.SortOrder || existing.IsActive != o.IsActive;
+                if (changed) { existing.Label = o.Label; existing.Description = o.Description; existing.SortOrder = o.SortOrder;
+                    existing.IsActive = o.IsActive; existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
                 Tally(false, changed);
             }
         }

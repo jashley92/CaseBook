@@ -893,6 +893,8 @@ else
 @code {
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    /// <summary>HR-01: outcome labels by key (admin-managed), for the Closed milestone.</summary>
+    [Parameter] public IReadOnlyDictionary<string, string> OutcomeLabels { get; set; } = new Dictionary<string, string>();
     /// <summary>HR-02: each task's latest recorded result.</summary>
     [Parameter] public IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> TaskResults { get; set; } = new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
     [Parameter] public bool CanEdit { get; set; }
@@ -1732,7 +1734,8 @@ else
     }
 
     private IReadOnlyList<CaseMilestone> Milestones() => CaseMilestones.Project(Case, new MilestoneLabels(
-        c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m)));
+        c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m),
+        k => OutcomeLabels.GetValueOrDefault(k) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(k)));
 
     // Interleave entries and milestones by when they happened; the entry list arrives already ordered.
     private List<TlRow> MergeRows(IEnumerable<TimelineEntry> entries, IEnumerable<CaseMilestone> milestones)

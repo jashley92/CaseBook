@@ -22,6 +22,7 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 | Stage gates | `/admin/gates` | One gate per trigger: requirements, blocking or advisory, minimum reason length |
 | Taxonomy labels | `/admin/taxonomy` | Rename, hide or reorder display labels for six lists: classifications, phases, entity types, dispositions, timeline entry types and relationship types (display only; stored values don't change). Severity labels are under Response & SLA |
 | Data elements | `/admin/data-elements` | Personal-data categories and their notification jurisdictions; archive or (if unused) delete |
+| Case outcomes | `/admin/outcomes` | What a case can conclude when it closes; add, relabel, describe, reorder, archive or (if unused) delete |
 | Response & SLA | `/admin/settings/sla` | SLA targets per severity, breach overrides, at-risk threshold, severity labels |
 | Roles & access | `/admin/roles` | Custom roles (from the eight permissions) and AD group mappings |
 | API tokens | `/admin/api-tokens` | System tokens for machine producers |
@@ -85,6 +86,15 @@ active. Gate edits don't change past passages, which recorded their own outcome.
 
 ![Data elements](../screenshots/data-elements.png)
 
+## Case outcomes
+
+What a case can conclude, chosen in the close dialog ([closing](case-lifecycle.md#closing-outcome-and-closing-brief))
+and printed in the report. Six are seeded: Confirmed, Policy violation, Benign or expected, False positive,
+Inconclusive and Duplicate. Each has a stable key (stored on cases, never renamed), a label and a one-line
+description you can change, and a sort order. Added outcomes get a key made from the label ("Insider misuse" →
+`InsiderMisuse`). Built-in outcomes can be archived but not deleted; an added one can be deleted only if no close
+recorded it. At least one outcome must stay active. Keep the wording neutral: it's part of the case record.
+
 ## API tokens
 
 System tokens: a name (unique among active tokens), the roles they act with, and a required expiry (up to 365
@@ -97,7 +107,7 @@ Moves editable configuration between instances (test to production, a new instan
 snapshots it for comparison with a revised incident response plan.
 
 - **Export** (`/export/config-bundle.json`): editable settings and taxonomy labels, roles, AD mappings, case
-  templates, stage gates, report profiles with their Word templates, data elements and notification rules,
+  templates, stage gates, report profiles with their Word templates, data elements, case outcomes and notification rules,
   signed with the instance's seal key. Email-template wording isn't included. Recorded in the audit chain.
 - **Import** (up to 64 MB): the signature is checked against the public key **inside the file**, and the page
   says whether that key is this instance's. A valid signature is required: the page won't offer Apply without

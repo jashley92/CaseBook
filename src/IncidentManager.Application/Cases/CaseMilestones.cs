@@ -49,8 +49,12 @@ public sealed record MilestoneLabels(
     Func<Classification?, string> Classification,
     Func<Severity, string> Severity,
     Func<CasePhase, string> Phase,
-    Func<MaterialityStatus, string> Materiality)
+    Func<MaterialityStatus, string> Materiality,
+    Func<string, string>? Outcome = null)
 {
+    /// <summary>HR-01: an outcome's label (admin-managed when supplied, else the built-in default).</summary>
+    public string OutcomeLabel(string key) => Outcome?.Invoke(key) ?? Admin.CaseOutcomeCatalog.Label(key);
+
     /// <summary>INV-31: a case role as it's written in a sentence ("incident commander", "analyst").</summary>
     public static string Role(CaseAssignmentRole role) => role switch
     {
@@ -94,7 +98,8 @@ public static class CaseMilestones
 
         foreach (var x in c.StatusChanges.Where(x => x.From is not null))
             list.Add(new CaseMilestone($"phase:{x.Id}", x.EffectiveAt, MilestoneKind.Phase,
-                $"Phase {labels.Phase(x.From!.Value)} → {labels.Phase(x.To)}",
+                $"Phase {labels.Phase(x.From!.Value)} → {labels.Phase(x.To)}"
+                    + (x.OutcomeKey is { } outcome ? $" · {labels.OutcomeLabel(outcome)}" : ""),   // HR-01
                 Blank(x.Reason), x.ChangedBy, "phase change", RecordedAtUtc: Recorded(x.EffectiveAtUtc, x.ChangedAtUtc),
                 Transition: (TransitionKind.Phase, x.Id)));
 

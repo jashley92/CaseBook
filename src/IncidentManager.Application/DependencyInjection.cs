@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<Admin.TaxonomyAdminService>();
         services.AddScoped<Admin.EmailTemplateAdminService>();
         services.AddScoped<Admin.DataElementService>();
+        services.AddScoped<Admin.CaseOutcomeService>();    // HR-01: outcomes offered when closing a case
         services.AddScoped<Admin.NotificationRuleService>();          // PROD-07: per-jurisdiction deadline rules
         services.AddScoped<Compliance.NotificationDeadlineService>(); // PROD-07: per-case deadline evaluation
         services.AddScoped<Compliance.LegalRegisterService>();        // PROD-12: Legal/Privacy obligations register export

@@ -2592,3 +2592,70 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004060405_AddCaseOutcomes'
+)
+BEGIN
+    ALTER TABLE [StatusChanges] ADD [OutcomeKey] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004060405_AddCaseOutcomes'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [OutcomeKey] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004060405_AddCaseOutcomes'
+)
+BEGIN
+    CREATE TABLE [CaseOutcomes] (
+        [Id] uniqueidentifier NOT NULL,
+        [Key] nvarchar(64) NOT NULL,
+        [Label] nvarchar(200) NOT NULL,
+        [Description] nvarchar(500) NULL,
+        [SortOrder] int NOT NULL,
+        [IsActive] bit NOT NULL,
+        [IsSystem] bit NOT NULL,
+        [RowHash] nvarchar(64) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(200) NULL,
+        CONSTRAINT [PK_CaseOutcomes] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004060405_AddCaseOutcomes'
+)
+BEGIN
+    CREATE INDEX [IX_Cases_OutcomeKey] ON [Cases] ([OutcomeKey]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004060405_AddCaseOutcomes'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_CaseOutcomes_Key] ON [CaseOutcomes] ([Key]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004060405_AddCaseOutcomes'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261004060405_AddCaseOutcomes', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

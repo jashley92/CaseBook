@@ -75,7 +75,8 @@ public sealed class ReportService
     /// response milestones, interleaved by when they happened. An item entered more than an hour after it happened
     /// can carry a neutral "Recorded …" note (<see cref="ReportingOptions.MarkLateEntries"/>).
     /// </summary>
-    private List<ReportTimelineItem> InvestigationTimeline(Case c, ReportDefanger d, ReportingOptions opts)
+    private List<ReportTimelineItem> InvestigationTimeline(Case c, ReportDefanger d, ReportingOptions opts,
+        IReadOnlyDictionary<string, string>? outcomeLabels = null)
     {
         string Late(DateTimeOffset happened, DateTimeOffset recorded) =>
             opts.MarkLateEntries && recorded - happened > Cases.CaseService.BackdateReasonThreshold
@@ -95,7 +96,8 @@ public sealed class ReportService
 
         if (opts.IncludeMilestones)
         {
-            var labels = new Cases.MilestoneLabels(ClassificationLabel, _severityLabels.For, PhaseLabel, MaterialityLabel);
+            var labels = new Cases.MilestoneLabels(ClassificationLabel, _severityLabels.For, PhaseLabel, MaterialityLabel,
+                k => outcomeLabels?.GetValueOrDefault(k) ?? Admin.CaseOutcomeCatalog.Label(k));
             // A report listing its own earlier versions reads oddly, so final-report milestones stay out; so do
             // staffing changes (INV-31), which are the team's working record rather than findings.
             foreach (var m in Cases.CaseMilestones.Project(c, labels)
@@ -190,7 +192,7 @@ public sealed class ReportService
         var logo = await _branding.GetLogoAsync(ct);
         var sections = await ResolveSectionsAsync(db, c.ReportProfileId, ct);
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
-        var model = BuildModel(c, now, logo, sections, elemSummary, triggers, tlp, await TaskResultsAsync(db, c.Id, ct));
+        var model = BuildModel(c, now, logo, sections, elemSummary, triggers, tlp, await ExtrasAsync(db, c.Id, ct));
 
         // PROD-47: the report can be filled from a customer-designed template (the profile's default, or one picked
         // for this report). Reports are Word only: there's no way to turn a filled template into a matching PDF on
@@ -270,7 +272,7 @@ public sealed class ReportService
             var full = await LoadFullCaseAsync(db, caseId, ct) ?? throw new InvalidOperationException("Case not found.");
             var sections = await ResolveSectionsAsync(db, full.ReportProfileId, ct);
             var (elemSummary, triggers) = await ImpactElementsAsync(db, full, ct);
-            var caseModel = BuildModel(full, now, await _branding.GetLogoAsync(ct), sections, elemSummary, triggers, tlp, await TaskResultsAsync(db, full.Id, ct));
+            var caseModel = BuildModel(full, now, await _branding.GetLogoAsync(ct), sections, elemSummary, triggers, tlp, await ExtrasAsync(db, full.Id, ct));
             rendered = _templates!.Render(t.Bytes, caseModel with
             {
                 Kind = ReportKind.LessonsLearned,
@@ -504,7 +506,7 @@ public sealed class ReportService
         var logo = await _branding.GetLogoAsync(ct);
         var sections = await ResolveSectionsAsync(db, selectedProfileId, ct);
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
-        return BuildModel(c, _clock.UtcNow, logo, sections, elemSummary, triggers, tlp, await TaskResultsAsync(db, c.Id, ct));
+        return BuildModel(c, _clock.UtcNow, logo, sections, elemSummary, triggers, tlp, await ExtrasAsync(db, c.Id, ct));
     }
 
     /// <summary>
@@ -527,14 +529,17 @@ public sealed class ReportService
         var logo = await _branding.GetLogoAsync(ct);
         var sections = await ResolveSectionsAsync(db, selectedProfileId, ct);
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
-        var model = BuildModel(c, _clock.UtcNow, logo, sections, elemSummary, triggers, tlp, await TaskResultsAsync(db, c.Id, ct));
+        var model = BuildModel(c, _clock.UtcNow, logo, sections, elemSummary, triggers, tlp, await ExtrasAsync(db, c.Id, ct));
         return (t.Name, _templates!.Render(t.Bytes, await WithReviewAsync(db, c, model, ct)));
     }
 
-    // HR-02: the latest recorded result of each task, for the Response Tasks table.
-    private static async Task<IReadOnlyDictionary<Guid, TaskResult>> TaskResultsAsync(IAppDbContext db, Guid caseId, CancellationToken ct) =>
+    // Records the report reads beside the case aggregate: each task's latest result (HR-02) and outcome labels (HR-01).
+    private sealed record ReportExtras(IReadOnlyDictionary<Guid, TaskResult> TaskResults, IReadOnlyDictionary<string, string> OutcomeLabels);
+
+    private static async Task<ReportExtras> ExtrasAsync(IAppDbContext db, Guid caseId, CancellationToken ct) => new(
         TaskResults.Latest(await db.ActionItemComments.AsNoTracking()
-            .Where(x => x.CaseId == caseId && x.Body.StartsWith(TaskResults.Prefix)).ToListAsync(ct));
+            .Where(x => x.CaseId == caseId && x.Body.StartsWith(TaskResults.Prefix)).ToListAsync(ct)),
+        await db.CaseOutcomes.AsNoTracking().ToDictionaryAsync(o => o.Key, o => o.Label, StringComparer.Ordinal, ct));
 
     private static Task<Case?> LoadFullCaseAsync(IAppDbContext db, Guid caseId, CancellationToken ct) =>
         // S8733: eager-loading many independent collections in one query is a Cartesian explosion (row count =
@@ -680,9 +685,9 @@ public sealed class ReportService
 
     private CaseReportModel BuildModel(Case c, DateTimeOffset now, ReportLogo? logo, IReadOnlyList<ReportSection> sections,
         string? dataElementsSummary, string? notificationTriggersSummary, TlpLevel? tlp = null,
-        IReadOnlyDictionary<Guid, TaskResult>? taskResults = null)
+        ReportExtras? extras = null)
     {
-        taskResults ??= new Dictionary<Guid, TaskResult>();
+        var taskResults = extras?.TaskResults ?? new Dictionary<Guid, TaskResult>();
         var contentHash = _hasher.Hash(c.BuildCanonicalContent());
         var opts = _reporting.CurrentValue;
         var d = ReportDefanger.For(c.Entities, opts.DefangIndicators);   // PROD-44
@@ -734,6 +739,10 @@ public sealed class ReportService
             ContainedAtUtc = c.ContainedAtUtc,
             ResolvedAtUtc = c.ResolvedAtUtc,
             ClosedAtUtc = c.ClosedAtUtc,
+            // HR-01: the outcome and the closing brief's conclusion (the current brief, written when it closed).
+            Outcome = c.OutcomeKey is { } ok ? extras?.OutcomeLabels.GetValueOrDefault(ok) ?? Admin.CaseOutcomeCatalog.Label(ok) : null,
+            Conclusion = c.OutcomeKey is null ? null
+                : c.Briefs.FirstOrDefault(b => b.IsCurrent)?.WorkingAssessment is { Length: > 0 } wa ? d.Text(_markdown.ToPlainText(wa)) : null,
             // INV-05: history reads in the order things happened, dated when they happened.
             ClassificationHistory = c.ClassificationChanges
                 .OrderBy(x => x.EffectiveAt)
@@ -763,7 +772,7 @@ public sealed class ReportService
                     x.TechniqueId,
                     d.Text(x.Description)))
                 .ToList(),
-            InvestigationTimeline = InvestigationTimeline(c, d, opts),
+            InvestigationTimeline = InvestigationTimeline(c, d, opts, extras?.OutcomeLabels),
             Brief = c.Briefs.FirstOrDefault(b => b.IsCurrent) is { } brief
                 ? new ReportBrief(brief.Version, brief.CreatedAtUtc, _users.DisplayFor(brief.CreatedBy),
                     BriefText(brief.WorkingAssessment, d), BriefText(brief.Known, d),

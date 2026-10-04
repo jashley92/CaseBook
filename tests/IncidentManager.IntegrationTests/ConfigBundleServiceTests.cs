@@ -59,6 +59,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
     private async Task SeedConfigAsync(AppDbContext db)
     {
         await DevDataSeeder.SeedDataElementsAsync(db, _clock);
+        await DevDataSeeder.SeedCaseOutcomesAsync(db, _clock);
         await DevDataSeeder.SeedDefaultReportProfilesAsync(db, _clock);
         await DevDataSeeder.SeedStarterTemplatesAsync(db, _clock);
         await DevDataSeeder.SeedDefaultStageGatesAsync(db, _clock);
@@ -84,6 +85,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         var bundle = await NewService(db).BuildBundleAsync();
 
         bundle.DataElements.Should().HaveCount(13);
+        bundle.CaseOutcomes.Should().HaveCount(6);   // HR-01
         bundle.ReportProfiles.Should().NotBeEmpty();
         bundle.CaseTemplates.Should().NotBeEmpty();
         bundle.StageGates.Should().NotBeEmpty();
@@ -229,6 +231,29 @@ public sealed class ConfigBundleServiceTests : IDisposable
         imported.Label.Should().Be("Passport number");
         imported.NotificationJurisdictions.Should().Be("US,NY");
         after.ReportProfiles[0].Description.Should().Be("Reworded for the IRP");
+    }
+
+    [Fact]
+    public async Task Case_outcomes_travel_by_key_and_an_older_bundle_leaves_them_alone()
+    {
+        // HR-01: a custom outcome and a relabel are promoted; a pre-v4 bundle (no outcomes) changes nothing.
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var incoming = live with
+        {
+            CaseOutcomes = live.CaseOutcomes!.Select(o => o.Key == "Inconclusive" ? o with { Label = "Undetermined" } : o)
+                .Append(new ConfigCaseOutcome("InsiderMisuse", "Insider misuse", "A person with access misused it.", 7, true, false)).ToList()
+        };
+
+        await svc.ImportAsync(Signed(incoming));
+        var after = await svc.BuildBundleAsync();
+        after.CaseOutcomes!.Single(o => o.Key == "InsiderMisuse").Label.Should().Be("Insider misuse");
+        after.CaseOutcomes!.Single(o => o.Key == "Inconclusive").Label.Should().Be("Undetermined");
+
+        await svc.ImportAsync(Signed(after with { CaseOutcomes = null }));
+        (await svc.BuildBundleAsync()).CaseOutcomes.Should().HaveCount(7);
     }
 
     [Fact]
@@ -543,7 +568,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         var source = NewInstance("source");
         var (sourceTemplateId, profileName) = await SeedTemplateDefaultAsync(source.Factory, source.Store);
         var export = await source.Config.ExportAsync();
-        export.Envelope.SchemaVersion.Should().Be(3);
+        export.Envelope.SchemaVersion.Should().Be(ConfigBundleJson.CurrentSchemaVersion);
         var bundle = export.Envelope.Bundle;
         bundle.ReportTemplates.Should().ContainSingle(t => t.Name == "Examiner pack" && t.FileName == "examiner.docx");
         bundle.ReportProfiles.Single(p => p.Name == profileName).Template.Should().Be("Examiner pack");

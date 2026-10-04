@@ -571,6 +571,10 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<int>("Origin")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("OutcomeKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Phase")
                         .HasColumnType("INTEGER");
 
@@ -613,6 +617,8 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.HasIndex("Classification");
 
                     b.HasIndex("IsArchived");
+
+                    b.HasIndex("OutcomeKey");
 
                     b.HasIndex("Phase");
 
@@ -906,6 +912,61 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("CaseLinks", (string)null);
+                });
+
+            modelBuilder.Entity("IncidentManager.Domain.Entities.CaseOutcome", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ModifiedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.ToTable("CaseOutcomes", (string)null);
                 });
 
             modelBuilder.Entity("IncidentManager.Domain.Entities.CaseTechnique", b =>
@@ -2157,6 +2218,10 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
 
                     b.Property<int?>("From")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("OutcomeKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Reason")
                         .HasMaxLength(2000)

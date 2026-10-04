@@ -21,6 +21,11 @@
         @if (Current is { } cur && !_editing)
         {
             <span class="im-badge im-b-neutral">v@(cur.Version)</span>
+            @* HR-01: on a case closed with an outcome, the current version is the closing brief, its assessment the conclusion. *@
+            @if (Case.Phase == CasePhase.Closed && Case.OutcomeKey is not null)
+            {
+                <span class="im-badge im-b-info" title="Written when the case closed; the working assessment is the conclusion">Closing brief</span>
+            }
             <span class="small text-muted" title="@TimeDisp.Long(cur.CreatedAtUtc)">
                 Revised @Ui.RelativeTime(cur.CreatedAtUtc, Clock.UtcNow) by @Users.DisplayFor(cur.CreatedBy)
             </span>
@@ -242,7 +247,8 @@
                 {
                     if (p.Get(b) is { Length: > 0 } text)
                     {
-                        <dt>@p.Label</dt>
+                        @* HR-01: on a closed case's closing brief, the assessment is the conclusion. *@
+                        <dt>@(current && p.Key == "assessment" && Case.Phase == CasePhase.Closed && Case.OutcomeKey is not null ? "Conclusion" : p.Label)</dt>
                         @if (current && p.Key == OpenKey && CaseNext.Questions(text) is { } questions)
                         {
                             <dd>@Questions(questions)</dd>

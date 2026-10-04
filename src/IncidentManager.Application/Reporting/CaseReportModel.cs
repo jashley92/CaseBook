@@ -157,6 +157,10 @@ public sealed record CaseReportModel
     public DateTimeOffset? ContainedAtUtc { get; init; }
     public DateTimeOffset? ResolvedAtUtc { get; init; }
     public DateTimeOffset? ClosedAtUtc { get; init; }
+    /// <summary>HR-01: what the case concluded when it closed (the outcome's label), when one was recorded.</summary>
+    public string? Outcome { get; init; }
+    /// <summary>HR-01: the closing brief's conclusion, printed with the outcome.</summary>
+    public string? Conclusion { get; init; }
 
     public IReadOnlyList<ReportClassificationItem> ClassificationHistory { get; init; } = [];
     public IReadOnlyList<ReportClassificationItem> SeverityHistory { get; init; } = [];

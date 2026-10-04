@@ -87,12 +87,37 @@ notification. Severity drives the SLA targets and stale-case thresholds. Timelin
 | | |
 |---|---|
 | **Trigger** | *Advance to <next phase>* in the header, the phase bar, or Actions → *Change phase…* |
-| **The user sees** | Target phase (all seven listed), "What was achieved" (optional when moving forward; required when the close gate demands commentary or when backdated), *when it happened*, a warning listing **open tasks** for the phases being left ("You can continue anyway. They stay open."), and when closing with a running notification clock, a warning that closing doesn't stop it. When closing, the **close gate**. ![](../screenshots/doc-phase-dialog.png) |
-| **Behind the scenes** | `CaseService.ChangePhaseAsync` → if the target is Closed, evaluate the `CloseCase` gate → `Case.ChangePhase` → save. |
+| **The user sees** | Target phase (all seven listed), "What was achieved" (optional when moving forward; required when the close gate demands commentary or when backdated; when closing, the closing fields below replace it), *when it happened*, a warning listing **open tasks** for the phases being left ("You can continue anyway. They stay open."), and when closing with a running notification clock, a warning that closing doesn't stop it. When closing, the **close gate**. ![](../screenshots/doc-phase-dialog.png) |
+| **Behind the scenes** | `CaseService.ChangePhaseAsync` → if the target is Closed, validate the closing record and evaluate the `CloseCase` gate, then write the closing brief → `Case.ChangePhase` → one save. |
 | **Rules** | **Any phase can follow any other**, forwards or backwards. Entering Containment, Recovery and Closed for the first time sets `ContainedAtUtc`, `ResolvedAtUtc` and `ClosedAtUtc` at the effective time; later visits don't move them. Leaving Closed clears `ClosedAtUtc`. Eradication and Post-Incident set no timestamp. |
 | **Permission** | `EditCases` |
 | **Errors** | The gate messages above; "Give a reason when recording a change more than an hour after it happened."; effective-time limits |
 | **Afterwards** | Milestone "Phase X → Y"; SLA clocks stop at contained and resolved; dashboards update; the Report tab becomes prominent from Recovery and Lessons learned from Post-Incident. |
+
+### Closing: outcome and closing brief
+
+A case closes with a conclusion of record. When the target is **Closed**, the dialog asks for:
+
+| Field | Notes |
+|---|---|
+| **Outcome** (required) | What the case concluded, from the active [case outcomes](administration.md#case-outcomes): Confirmed, Policy violation, Benign or expected, False positive, Inconclusive or Duplicate out of the box. Each shows its description. Stored on the case (`OutcomeKey`) and on the close's `StatusChange`. |
+| **What happened** (required) | Pre-filled from the brief's summary. Becomes the case summary, which the report prints as Summary. |
+| **Conclusion** (required) | Pre-filled from the brief's working assessment: what the team concluded, and on what basis. It also stands in for the transition reason. |
+| Open questions | The brief's open questions, each with its answer from the task that followed it up, or "No answer recorded" (advisory). |
+
+Saving writes a new brief version (the **closing brief**: what happened, the conclusion, and Known and the open
+questions carried over) and the phase change in one save, at the same instant, so the brief doesn't read as out of
+date. When nothing changed, no new version is written. The closing fields count as the summary for the gate's
+"Case summary recorded" check. A superseded case's close dialog opens with the outcome *Duplicate* and the
+supersede reason as the conclusion.
+
+Errors: "Record the outcome and what the team concluded to close the case." · "Choose an outcome to close the
+case." · "That outcome isn't available any more. Choose another." · "Say what happened to close the case." · "Say
+what the team concluded to close the case."
+
+Afterwards the header shows the outcome beside the phase, the Closed milestone reads "Phase X → Closed ·
+*outcome*", the brief is marked **Closing brief** with its assessment labelled **Conclusion**, the report's
+Outcome section leads with the outcome and the conclusion, and the case list can filter by outcome.
 
 ### The close gate
 
@@ -115,7 +140,8 @@ Needs `EditCases`, plus `ChangeClassification` for a classification change.
 ## 7. Reopening
 
 Shown on a closed case: **Reopen case…** with a required reason. `Case.Reopen` returns the case to the phase it
-was in before the latest close (Recovery if unknown), as an ordinary phase change. Closing again re-runs the gate.
+was in before the latest close (Recovery if unknown), as an ordinary phase change. The case's outcome is cleared
+(the earlier close's history row keeps it), and closing again asks for one. Closing again re-runs the gate.
 Errors: "Only a closed case can be reopened." · "A reason is required to reopen a case." Reopen can't be
 backdated. Needs `EditCases`.
 

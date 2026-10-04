@@ -39,6 +39,9 @@ public class StatusChange : Entity
 
     /// <summary>When the change happened: the effective time if one was given, else the recorded time.</summary>
     public DateTimeOffset EffectiveAt => EffectiveAtUtc ?? ChangedAtUtc;
+
+    /// <summary>HR-01: on a change to Closed, the outcome the case was closed with (a <see cref="CaseOutcome"/> key).</summary>
+    public string? OutcomeKey { get; set; }
 }
 
 /// <summary>Immutable record of a materiality-determination transition (Undetermined → Under review →

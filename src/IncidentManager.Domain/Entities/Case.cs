@@ -115,6 +115,13 @@ public class Case : AuditableEntity, IHashableEntity
     public DateTimeOffset? ResolvedAtUtc { get; set; }
     public DateTimeOffset? ClosedAtUtc { get; set; }
 
+    /// <summary>
+    /// HR-01: what the case concluded, as the stable key of a <see cref="CaseOutcome"/>. Recorded when it's closed
+    /// (and on that close's <see cref="StatusChange"/>), cleared when it's reopened. Null on cases closed before
+    /// outcomes were recorded.
+    /// </summary>
+    public string? OutcomeKey { get; set; }
+
     public string? RowHash { get; set; }
 
     // --- Owned collections ---
@@ -280,9 +287,11 @@ public class Case : AuditableEntity, IHashableEntity
     /// <paramref name="effectiveAtUtc"/> (INV-05) is when the move actually happened, for a change recorded after
     /// the fact; the milestone timestamps take that time, not the moment it was recorded.</summary>
     public void ChangePhase(CasePhase to, string? reason, string actor, DateTimeOffset nowUtc,
-        DateTimeOffset? effectiveAtUtc = null)
+        DateTimeOffset? effectiveAtUtc = null, string? outcomeKey = null)
     {
         if (to == Phase) return;
+        if (outcomeKey is not null && to != CasePhase.Closed)
+            throw new ArgumentException("An outcome is recorded only when a case is closed.");
 
         var effective = CheckEffective(effectiveAtUtc, nowUtc, "phase",
             StatusChanges.Where(x => x.From is not null).Select(x => x.EffectiveAt));
@@ -293,8 +302,10 @@ public class Case : AuditableEntity, IHashableEntity
         StatusChanges.Add(new StatusChange
         {
             CaseId = Id, From = from, To = to, Reason = reason, ChangedBy = actor, ChangedAtUtc = nowUtc,
-            EffectiveAtUtc = effective
+            EffectiveAtUtc = effective, OutcomeKey = to == CasePhase.Closed ? outcomeKey : null
         });
+        // HR-01: the outcome belongs to this close. Reopening clears it (the close's history row keeps it).
+        OutcomeKey = to == CasePhase.Closed ? outcomeKey : null;
 
         switch (to)
         {
@@ -1319,7 +1330,9 @@ public class Case : AuditableEntity, IHashableEntity
         IncidentCommander, IsRestricted, IsArchived, LegalHold, IsExercise,
         OccurredAtUtc?.ToString("o"), DetectedAtUtc?.ToString("o"), ReportedAtUtc?.ToString("o"),
         ContainedAtUtc?.ToString("o"), ResolvedAtUtc?.ToString("o"), ClosedAtUtc?.ToString("o"),
-        CreatedBy, CreatedAtUtc.ToString("o"));
+        CreatedBy, CreatedAtUtc.ToString("o"))
+        // HR-01: the outcome only when one is recorded, so existing rows keep their exact hash.
+        + (OutcomeKey is { Length: > 0 } outcome ? "|outcome|" + outcome : "");
 
     public static string FormatCaseNumber(int year, int sequence, string descriptiveName)
         => $"{year:0000}-{sequence:00}_{descriptiveName}";

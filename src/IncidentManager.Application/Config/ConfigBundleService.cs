@@ -117,8 +117,12 @@ public sealed partial class ConfigBundleService
             .Select(r => new ConfigNotificationRule(r.Code, r.Label, r.WindowHours, r.IsActive, r.IsSystem))
             .ToListAsync(ct);
 
+        var outcomes = await db.CaseOutcomes.AsNoTracking().OrderBy(o => o.SortOrder).ThenBy(o => o.Key)
+            .Select(o => new ConfigCaseOutcome(o.Key, o.Label, o.Description, o.SortOrder, o.IsActive, o.IsSystem))
+            .ToListAsync(ct);
+
         return new ConfigBundle(settings, roles, mappings, templates, gates, profiles, dataElements, notificationRules,
-            reportTemplates);
+            reportTemplates, outcomes);
     }
 
     /// <summary>Builds, signs, and packages the bundle for download, recording the export in the audit trail.</summary>
@@ -149,7 +153,7 @@ public sealed partial class ConfigBundleService
             $"Exported configuration bundle ({bundle.Settings.Count} settings, {bundle.Roles.Count} roles, " +
             $"{bundle.CaseTemplates.Count} templates, {bundle.StageGates.Count} gates, " +
             $"{bundle.ReportProfiles.Count} report profiles, {bundle.ReportTemplates?.Count ?? 0} Word templates, " +
-            $"{bundle.DataElements.Count} data elements, " +
+            $"{bundle.DataElements.Count} data elements, {bundle.CaseOutcomes?.Count ?? 0} case outcomes, " +
             $"{bundle.NotificationRules.Count} notification rules)", ct);
 
         return new ConfigExport(bytes, fileName, envelope);

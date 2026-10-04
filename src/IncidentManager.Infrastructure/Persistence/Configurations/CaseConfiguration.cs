@@ -86,6 +86,8 @@ public sealed class CaseConfiguration : IEntityTypeConfiguration<Case>
 
         b.HasIndex(c => c.Classification);
         b.HasIndex(c => c.Phase);
+        b.Property(c => c.OutcomeKey).HasMaxLength(64);   // HR-01: a CaseOutcome key (no foreign key, like data elements)
+        b.HasIndex(c => c.OutcomeKey);
         b.HasIndex(c => c.IsArchived);
     }
 }

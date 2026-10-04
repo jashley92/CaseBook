@@ -29,7 +29,7 @@ public static class AdminActionPermissions
     /// <summary>The admin/config services whose writes are asserted here (the unit test walks these).</summary>
     public static readonly IReadOnlyList<Type> GuardedServices =
     [
-        typeof(AdminSettingsService), typeof(CaseTemplateService), typeof(DataElementService),
+        typeof(AdminSettingsService), typeof(CaseTemplateService), typeof(DataElementService), typeof(CaseOutcomeService),
         typeof(EmailTemplateAdminService), typeof(NotificationRuleService), typeof(ReportProfileService), typeof(ReportTemplateService),
         typeof(RoleService), typeof(StageGateService), typeof(TaxonomyAdminService), typeof(IntegrityService),
         typeof(Config.ConfigBundleService), typeof(ComplianceBundleService), typeof(IAccessLogService),
@@ -52,6 +52,9 @@ public static class AdminActionPermissions
 
             // Reference data & templates
             [Key<DataElementService>(nameof(DataElementService.SaveAsync))] = Permission.Administer,
+            [Key<CaseOutcomeService>(nameof(CaseOutcomeService.SaveAsync))] = Permission.Administer,          // HR-01
+            [Key<CaseOutcomeService>(nameof(CaseOutcomeService.SetArchivedAsync))] = Permission.Administer,
+            [Key<CaseOutcomeService>(nameof(CaseOutcomeService.DeleteAsync))] = Permission.Administer,
             [Key<DataElementService>(nameof(DataElementService.SetArchivedAsync))] = Permission.Administer,
             [Key<DataElementService>(nameof(DataElementService.DeleteAsync))] = Permission.Administer,
             [Key<CaseTemplateService>(nameof(CaseTemplateService.CreateAsync))] = Permission.Administer,

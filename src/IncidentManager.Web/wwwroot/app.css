@@ -2515,6 +2515,12 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 .im-brief-q li::before { content: "?"; font-weight: 700; color: var(--im-text-muted); width: 0.6rem; }
 .im-brief-q-text > p { display: inline; margin: 0; }
 .im-brief-q-task { font-size: var(--im-text-xs); cursor: pointer; }
+/* HR-01: a closed case's outcome beside its phase, and the close dialog's open questions. */
+.im-outcome { font-size: var(--im-text-xs); font-weight: 600; padding: 0.05rem 0.5rem; border-radius: var(--im-radius-sm); color: var(--im-accent-text); background: var(--im-accent-bg); white-space: nowrap; }
+.im-close-q { list-style: none; margin: 0 0 0.5rem; padding: 0; display: grid; gap: 0.35rem; font-size: var(--im-text-sm); }
+.im-close-q li { padding-left: 0.6rem; border-left: 2px solid var(--im-ok); }
+.im-close-q li.im-close-q-open { border-left-color: var(--im-warn); }
+.im-close-q li.im-close-q-open > span:last-child { color: var(--im-warn); }
 /* HR-02: a question's answer, from the task that followed it up. */
 .im-brief-q-answer { flex-basis: 100%; margin: 0.1rem 0 0.2rem 0.7rem; padding-left: 0.6rem; border-left: 2px solid var(--im-ok); font-size: var(--im-text-sm); white-space: pre-line; }
 .im-brief-q-answer.im-missing { border-left-color: var(--im-warn); color: var(--im-text-muted); font-style: italic; }
