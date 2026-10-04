@@ -181,8 +181,8 @@ public sealed class ReportService
         return first.CreatedAtUtc;
     }
 
-    private string PhaseLabel(CasePhase p) =>
-        _taxonomy?.Label("CasePhase", p.ToString(), p.ToString()) ?? p.ToString();
+    // HR-16: the catalog's label ("Post-Incident"), not the enum name, when no override is set.
+    private string PhaseLabel(CasePhase p) => TaxLabel("CasePhase", p.ToString());
 
     // Applies a taxonomy override (X-02) with the catalog's built-in default as the fallback, so entity and
     // timeline labels in the report match the on-screen labels whether or not an override is set.
@@ -773,6 +773,7 @@ public sealed class ReportService
             ReportedAtUtc = c.ReportedAtUtc,
             ContainedAtUtc = c.ContainedAtUtc,
             ResolvedAtUtc = c.ResolvedAtUtc,
+            ActivityBeganAtUtc = c.OccurredAtUtc,
             ClosedAtUtc = c.ClosedAtUtc,
             // HR-01: the outcome and the closing brief's conclusion (the current brief, written when it closed).
             Outcome = c.OutcomeKey is { } ok ? extras?.OutcomeLabels.GetValueOrDefault(ok) ?? Admin.CaseOutcomeCatalog.Label(ok) : null,

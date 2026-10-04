@@ -94,6 +94,33 @@ public sealed class ReportingIntegrationTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task The_report_names_phases_as_the_app_does_and_carries_when_the_activity_began()
+    {
+        // HR-16: "Post-Incident", not the enum name "PostIncident".
+        _user.RoleSet = [AppRole.IncidentCommander];
+        Guid caseId;
+        var began = _clock.UtcNow.AddMinutes(-21);
+        await using (var db = NewContext())
+        {
+            var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
+                new CaseNumberGenerator(db), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            caseId = (await cases.CreateAsync(new IncidentManager.Application.Cases.CreateCaseRequest
+            {
+                DescriptiveName = "Takeover", Title = "Impossible travel", Classification = Classification.Incident,
+                Severity = Severity.High, Origin = CaseOrigin.InternalDetection, DetectedAtUtc = _clock.UtcNow, OccurredAtUtc = began
+            })).Id;
+            await cases.ChangePhaseAsync(caseId, CasePhase.PostIncident, "Recovered; review under way");
+        }
+
+        await using (var db = NewContext())
+        {
+            var m = await NewReportService(db).BuildPreviewModelAsync(caseId, null);
+            m.Phase.Should().Be("Post-Incident");
+            m.ActivityBeganAtUtc.Should().Be(began);
+        }
+    }
+
     /// <summary>Resolves every id to "Name of {id}", so a test can tell a resolved name from a raw id.</summary>
     private sealed class NamingUserDirectory : IncidentManager.Application.Abstractions.IUserDirectory
     {

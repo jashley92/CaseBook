@@ -156,7 +156,10 @@ public sealed record CaseReportModel
     /// <summary>PROD-07: the regulatory-notification milestone, when set. Legal reads the report, not the app.</summary>
     public DateTimeOffset? ReportedAtUtc { get; init; }
     public DateTimeOffset? ContainedAtUtc { get; init; }
+    /// <summary>When recovery began (the case's resolved time is set on entering Recovery).</summary>
     public DateTimeOffset? ResolvedAtUtc { get; init; }
+    /// <summary>HR-16: when the activity began, if recorded, so the Outcome section tells the story in order.</summary>
+    public DateTimeOffset? ActivityBeganAtUtc { get; init; }
     public DateTimeOffset? ClosedAtUtc { get; init; }
     /// <summary>HR-01: what the case concluded when it closed (the outcome's label), when one was recorded.</summary>
     public string? Outcome { get; init; }
