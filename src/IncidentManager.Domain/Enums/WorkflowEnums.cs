@@ -100,6 +100,20 @@ public enum TaskKind
 
 public static class TaskKindExtensions
 {
+    /// <summary>
+    /// HR-10: the timeline type a task's result is logged as by default: the containment work of a Contain task is
+    /// Containment, an investigation's finding is Analysis, and so on. General is Other.
+    /// </summary>
+    public static TimelineEntryType ResultType(this TaskKind k) => k switch
+    {
+        TaskKind.Investigate => TimelineEntryType.Analysis,
+        TaskKind.Contain => TimelineEntryType.Containment,
+        TaskKind.Eradicate => TimelineEntryType.Eradication,
+        TaskKind.Recover => TimelineEntryType.Recovery,
+        TaskKind.Notify => TimelineEntryType.Communication,
+        _ => TimelineEntryType.Other
+    };
+
     /// <summary>The phase a kind of task belongs to (the work to finish before moving past it), if any.</summary>
     public static CasePhase? Phase(this TaskKind k) => k switch
     {

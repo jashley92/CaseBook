@@ -32,6 +32,18 @@ public class TaskKindTests
     }
 
     [Fact]
+    public void A_task_result_is_logged_as_what_the_task_was()
+    {
+        // HR-10: no more "Other" for a containment task's result.
+        TaskKind.Investigate.ResultType().Should().Be(TimelineEntryType.Analysis);
+        TaskKind.Contain.ResultType().Should().Be(TimelineEntryType.Containment);
+        TaskKind.Eradicate.ResultType().Should().Be(TimelineEntryType.Eradication);
+        TaskKind.Recover.ResultType().Should().Be(TimelineEntryType.Recovery);
+        TaskKind.Notify.ResultType().Should().Be(TimelineEntryType.Communication);
+        TaskKind.General.ResultType().Should().Be(TimelineEntryType.Other);
+    }
+
+    [Fact]
     public void The_no_open_tasks_check_passes_only_when_nothing_is_open()
     {
         var facts = new GateCaseFacts(true, true, true, true, true, 1, 1, 1, 1, true);

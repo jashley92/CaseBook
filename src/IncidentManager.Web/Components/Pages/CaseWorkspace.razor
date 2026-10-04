@@ -473,7 +473,7 @@ else
         @* UX-13: extracted to CaseTasksTab. Self-loads its playbooks and builds due-dates; the parent keeps
            the flash and hotkey dispatch (@ref) and reloads the case after a write. *@
         <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" CanEdit="_canEdit" OnOpenEntity="OpenEntity" OnGoToTab="SetTab" OnFocusItem="FocusItem"
-                      OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh"
+                      OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh" OnAdvancePhase="AdvanceWithResult"
                       AutofocusComposer="_tasksAutofocus" OnAutofocusHandled="() => _tasksAutofocus = false" />
     }
     else if (_activeTab == "Review")
@@ -1926,6 +1926,15 @@ else
         await OpenModal("status");
         _newPhase = phase;
         await OnStatusTargetChanged(); // load the gate (if any) for the selected target
+    }
+
+    // HR-10: a finished Contain/Eradicate/Recover task's result becomes what was achieved; the analyst still reviews and
+    // applies the change in the dialog (gate, effective time).
+    private async Task AdvanceWithResult((CasePhase Phase, string Achieved, DateTimeOffset? At) offer)
+    {
+        await AdvanceTo(offer.Phase);
+        _phaseReason = offer.Achieved;
+        if (offer.At is { } at) _when = UtcToWall(at);
     }
 
     private bool _titleExpanded;

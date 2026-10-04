@@ -149,6 +149,18 @@
     </div>
 </AuthorizeView>
 
+@if (_advanceOffer is { } offer && CanEdit && Case.Phase < offer.Phase)
+{
+    @* HR-10: finishing the work of a later phase offers to move the case there: one human act, through the usual
+       phase dialog (gate, effective time), with the result as what was achieved. *@
+    <div class="alert alert-info d-flex flex-wrap align-items-center gap-2 py-2 small" role="status">
+        <span class="bi bi-signpost-split" aria-hidden="true"></span>
+        <span class="flex-grow-1">That was @Ui.Label(offer.Phase).ToLowerInvariant() work. Move the case to @Ui.Label(offer.Phase), with this result as what was achieved?</span>
+        <button type="button" class="btn btn-sm btn-primary" @onclick="AcceptAdvance">Move to @Ui.Label(offer.Phase)…</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _advanceOffer = null">Not now</button>
+    </div>
+}
+
 @if (Case.ActionItems.Count == 0)
 {
     <p class="text-muted">No tasks yet.@(CanEdit ? " Add the first one above." : "")</p>
@@ -252,7 +264,7 @@ else
                         @if (CanEdit && isOpen)
                         {
                             <button class="btn btn-sm btn-outline-success me-1" title="Mark done"
-                                    aria-label="@($"Mark done: {t.Title}")" @onclick="() => BeginComplete(t.Id)">
+                                    aria-label="@($"Mark done: {t.Title}")" @onclick="() => BeginComplete(t)">
                                 <span class="bi bi-check2" aria-hidden="true"></span>
                             </button>
                         }
@@ -776,9 +788,11 @@ else
                 or TimelineEntryType.DataConfirmed or TimelineEntryType.Remediation or TimelineEntryType.RegulatoryNotification))
             .ToList();
 
-    private void BeginComplete(Guid id)
+    private void BeginComplete(ActionItem t)
     {
-        _completingId = id;
+        _completingId = t.Id;
+        // HR-10: the result is logged as what the task was (Contain → Containment); a question's answer is Analysis.
+        _doneType = t.FollowsUpQuestion ? TimelineEntryType.Analysis : t.Kind.ResultType();
         _doneResult = null;
         _doneWhen = _doneWhenDefault = ToWall(Clock.UtcNow);
         _doneLog = true;
@@ -804,7 +818,24 @@ else
         _completingId = null;
         _selected.Remove(id);
         Toasts.Success(_doneLog && !string.IsNullOrWhiteSpace(_doneResult) ? "Task done and result added to the timeline" : "Task done");
+        // HR-10: containment, eradication or recovery work finished ahead of the case's phase.
+        _advanceOffer = Case.ActionItems.FirstOrDefault(x => x.Id == id) is { Kind: TaskKind.Contain or TaskKind.Eradicate or TaskKind.Recover } done
+                        && done.Kind.Phase() is { } phase && Case.Phase < phase && Case.Phase != CasePhase.Closed
+            ? (phase, string.IsNullOrWhiteSpace(_doneResult) ? done.Title : _doneResult.Trim(),
+               _doneWhen == _doneWhenDefault ? null : WallToUtc(_doneWhen))
+            : null;
         await OnChanged.InvokeAsync();
+    }
+
+    /// <summary>HR-10: ask the workspace to open its phase dialog for this phase, pre-filled with what was achieved and when.</summary>
+    [Parameter] public EventCallback<(CasePhase Phase, string Achieved, DateTimeOffset? At)> OnAdvancePhase { get; set; }
+    private (CasePhase Phase, string Achieved, DateTimeOffset? At)? _advanceOffer;
+
+    private async Task AcceptAdvance()
+    {
+        if (_advanceOffer is not { } offer) return;
+        _advanceOffer = null;
+        await OnAdvancePhase.InvokeAsync(offer);
     }
 
     private DateTime ToWall(DateTimeOffset utc)
