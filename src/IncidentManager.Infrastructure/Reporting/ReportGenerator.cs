@@ -296,8 +296,8 @@ public sealed partial class ReportGenerator : IReportGenerator
             m.Relationships.Select(x => new[] { x.Source, x.Relationship, x.Target, x.Description ?? "" })));
 
         body.AppendChild(SubHeading("C. MITRE ATT&CK techniques"));
-        body.AppendChild(WordTable(["Technique", "Name", "Tactic"],
-            m.Techniques.Select(x => new[] { x.TechniqueId, x.Name, x.Tactic })));
+        body.AppendChild(WordTable(["Technique", "Name", "Tactic", "Source"],
+            m.Techniques.Select(x => new[] { x.TechniqueId, x.Name, x.Tactic, x.Source })));
 
         body.AppendChild(SubHeading("D. Classification history"));
         body.AppendChild(WordTable(["When (UTC)", "From", "To", "Reason", "By"],

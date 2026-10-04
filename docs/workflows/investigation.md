@@ -145,6 +145,11 @@ Team changes appear on the timeline ("X is incident commander, taking over from 
 - **Case techniques**: Overview → ATT&CK matrix picker. Added and removed one by one (a partial failure leaves
   what was already saved).
 - **Event steps** carry tactics and a technique.
+- The Overview card and the report's ATT&CK appendix show **both**: the tags, plus each technique recorded on an
+  attack-chain step (one per technique and tactic, named from the catalog). A technique only on the chain has a
+  dashed chip with a link mark and no ×; remove it by editing its step. The report's table has a Source column
+  ("Tagged", "Attack chain (2 steps)" or both; template field `technique.source`). A third-party case's event steps are
+  disclosure milestones and add nothing.
 - `/attack-coverage` combines both across cases you can see.
 
 ## Case links and campaigns

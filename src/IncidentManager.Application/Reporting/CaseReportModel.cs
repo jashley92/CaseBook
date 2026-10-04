@@ -66,7 +66,8 @@ public sealed record ReportImprovementActionRow(string Title, string? RelatedAre
     DateTimeOffset? TargetDateUtc, string Status, string? OutcomeNote);
 public sealed record ReportEntityRow(string Type, string Value, string? Label, string Disposition, string? Description, string? Source);
 public sealed record ReportRelationshipRow(string Source, string Relationship, string Target, string? Description);
-public sealed record ReportTechniqueRow(string TechniqueId, string Name, string Tactic);
+/// <param name="Source">HR-13: "Tagged", "Attack chain (2 steps)" or both.</param>
+public sealed record ReportTechniqueRow(string TechniqueId, string Name, string Tactic, string Source = "Tagged");
 /// <summary>PROD-45: one indicator of compromise (malicious or suspicious), value defanged when reports defang.</summary>
 public sealed record ReportIocRow(string Type, string Value, string Verdict, string? Tlp, DateTimeOffset AddedAtUtc,
     string? Source, string? Description);

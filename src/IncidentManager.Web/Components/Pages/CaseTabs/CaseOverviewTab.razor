@@ -365,21 +365,33 @@
             </div>
             <div class="im-sec">
             <div class="im-sec-head"><h3>MITRE ATT&CK</h3></div>
+            @{ var techniques = IncidentManager.Application.Mitre.CaseTechniques.For(Case); }
             <div class="im-chips">
-                @if (Case.Techniques.Count == 0)
+                @if (techniques.Count == 0)
                 {
-                    <span class="text-muted small">No techniques tagged.</span>
+                    <span class="text-muted small">No techniques tagged or on the attack chain.</span>
                 }
-                @foreach (var t in Case.Techniques.OrderBy(x => x.Tactic).ThenBy(x => x.TechniqueId))
+                @* HR-13: tags plus what the attack chain records; a chain-only technique is marked and removed from its step. *@
+                @foreach (var t in techniques)
                 {
-                    <span class="im-chip im-chip-tac" style="--tac:@Ui.TacticColor(t.Tactic)" title="@(t.TechniqueId + (string.IsNullOrWhiteSpace(t.Name) ? "" : ": " + t.Name) + " · " + Ui.Label(t.Tactic))">
+                    var origin = t.IsTagged && t.FromChain ? " · tagged and on the attack chain"
+                        : t.FromChain ? $" · from the attack chain ({t.ChainSteps} {(t.ChainSteps == 1 ? "step" : "steps")})" : "";
+                    <span class="im-chip im-chip-tac @(t.IsTagged ? "" : "im-chip-derived")" style="--tac:@Ui.TacticColor(t.Tactic)" title="@(t.TechniqueId + (string.IsNullOrWhiteSpace(t.Name) ? "" : ": " + t.Name) + " · " + Ui.Label(t.Tactic) + origin)">
                         <a href="https://attack.mitre.org/techniques/@(t.TechniqueId.Replace('.', '/'))/" target="_blank" rel="noopener noreferrer"><code>@t.TechniqueId</code></a>
                         @if (t.Tactic != MitreTactic.Unspecified) { <span class="im-chip-role">@Ui.Label(t.Tactic)</span> }
-                        <AuthorizeView Policy="@Policies.EditCases" Context="tq">
-                            <button type="button" class="im-chip-x" aria-label="Remove @t.TechniqueId"
-                                    @onclick='() => Confirm($"Remove technique {t.TechniqueId}?", () => RemoveTechnique(t.Id))'>×</button>
-                        </AuthorizeView>
+                        @if (t.FromChain) { <span class="bi bi-link-45deg" aria-label="On the attack chain"></span> }
+                        @if (t.TagId is { } tagId)
+                        {
+                            <AuthorizeView Policy="@Policies.EditCases" Context="tq">
+                                <button type="button" class="im-chip-x" aria-label="Remove @t.TechniqueId"
+                                        @onclick='() => Confirm($"Remove technique {t.TechniqueId}?", () => RemoveTechnique(tagId))'>×</button>
+                            </AuthorizeView>
+                        }
                     </span>
+                }
+                @if (techniques.Any(t => t.FromChain))
+                {
+                    <span class="small text-muted w-100"><span class="bi bi-link-45deg" aria-hidden="true"></span> recorded on the attack chain (Timeline); a dashed chip is there only, so change it on its step</span>
                 }
                 <AuthorizeView Policy="@Policies.EditCases" Context="tqadd">
                     <button type="button" class="im-chip-add" @onclick="OpenTechMatrix">

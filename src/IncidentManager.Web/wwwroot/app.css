@@ -376,6 +376,8 @@ h1:focus {
     border-color: color-mix(in srgb, var(--tac, var(--bs-border-color)) 55%, transparent);
     background: color-mix(in srgb, var(--tac, var(--bs-border-color)) 15%, var(--bs-body-bg));
 }
+/* HR-13: a technique only on the attack chain (not tagged): dashed, so it reads as derived. */
+.im-chip-tac.im-chip-derived { border-style: dashed; }
 .im-chip-tac .im-chip-role { color: color-mix(in srgb, var(--tac, var(--bs-secondary-color)) 75%, var(--bs-secondary-color)); }
 
 /* Low-chrome sections (heading + content, no card border) for secondary content. Token-driven, theme-aware. */

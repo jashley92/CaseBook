@@ -840,9 +840,14 @@ public sealed class ReportService
                     d.Text(EntityDisplay(c, x.SourceEntityId)), TaxLabel("EntityRelationshipType", x.Type.ToString()),
                     d.Text(EntityDisplay(c, x.TargetEntityId)), d.NullableText(x.Description)))
                 .ToList(),
-            Techniques = c.Techniques
-                .OrderBy(x => x.Tactic).ThenBy(x => x.TechniqueId)
-                .Select(x => new ReportTechniqueRow(x.TechniqueId, x.Name, Humanize(x.Tactic.ToString())))
+            // HR-13: the tags plus the techniques recorded on the attack chain.
+            Techniques = Mitre.CaseTechniques.For(c)
+                .Select(x => new ReportTechniqueRow(x.TechniqueId, x.Name, Humanize(x.Tactic.ToString()),
+                    string.Join("; ", new[]
+                    {
+                        x.IsTagged ? "Tagged" : null,
+                        x.FromChain ? $"Attack chain ({x.ChainSteps} {(x.ChainSteps == 1 ? "step" : "steps")})" : null
+                    }.Where(s => s is not null))))
                 .ToList(),
             AttackChainImages = sections.Contains(ReportSection.EventTimeline) ? AttackChainImages(c, d) : [],
             EntityGraphImage = sections.Contains(ReportSection.SystemsReviewed) ? EntityGraphImage(c, d) : null,
