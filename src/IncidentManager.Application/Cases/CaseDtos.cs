@@ -169,7 +169,10 @@ public static class CaseSorts
 }
 
 /// <summary>A page of case rows plus the total matching count, for paged list views.</summary>
-public sealed record CasePage(IReadOnlyList<CaseListItem> Items, int Total, int Page, int PageSize)
+/// <param name="Matches">HR-09: for a search, where each case on the page matched when it wasn't its number, title or
+/// summary, e.g. "decision, 1 Oct 2026: …MFA fatigue gave the attacker…". Keyed by case id.</param>
+public sealed record CasePage(IReadOnlyList<CaseListItem> Items, int Total, int Page, int PageSize,
+    IReadOnlyDictionary<Guid, string>? Matches = null)
 {
     public int TotalPages => PageSize <= 0 ? 1 : Math.Max(1, (int)Math.Ceiling(Total / (double)PageSize));
 }

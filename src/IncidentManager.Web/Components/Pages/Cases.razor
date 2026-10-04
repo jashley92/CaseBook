@@ -119,7 +119,7 @@
                 <option value="@o.Key">@o.Label</option>
             }
         </select>
-        <input id="cases-search" class="form-control form-control-sm im-filter-search" placeholder="Search number, title, note or IOC"
+        <input id="cases-search" class="form-control form-control-sm im-filter-search" placeholder="Search cases: number, title, IOC, timeline, notes, tasks…"
                aria-label="Search cases" @bind="_search" @bind:after="ApplyFilters" />
         @* FR-16: the rarer toggles collapse behind "More filters"; they auto-reveal whenever one is active so a
            set filter is never hidden (each also shows as a chip). *@
@@ -401,6 +401,11 @@ else
                             @if (c.LegalHold) { <span class="im-badge im-b-danger" title="Under a legal hold: preserve, don't delete">Hold</span> }
                             @if (c.IsExercise) { <span class="im-badge im-b-info" title="Exercise case, excluded from dashboards, reminders and feeds">Exercise</span> }
                         </div>
+                        @* HR-09: where a search matched, when it isn't the number, title or summary. *@
+                        @if (_page.Matches?.GetValueOrDefault(c.Id) is { } matched)
+                        {
+                            <div class="case-match small text-muted im-ellipsis" title="@matched"><span class="bi bi-search" aria-hidden="true"></span> @matched</div>
+                        }
                     </td>
                     <td class="case-cell-class"><span class="@Ui.ClassificationBadge(c.Classification)">@Ui.Label(c.Classification)</span></td>
                     <td class="case-cell-phase"><span class="@Ui.PhaseBadge(c.Phase)">@Ui.Label(c.Phase)</span></td>

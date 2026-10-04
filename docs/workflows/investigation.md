@@ -105,7 +105,7 @@ the timeline".
 | **Behind the scenes** | `CaseService.AddNoteAsync`; mentions are de-duplicated, the author dropped, and anyone who can't see the case dropped. After saving, each person mentioned is emailed a link to the note. |
 | **Editing** | Saves a new version; only people **newly** mentioned are emailed. |
 | **Report** | Notes are working reasoning and are **not** in the case report unless a report layout includes the Analyst Notes section. |
-| **Search** | The case-list search matches current note text. |
+| **Search** | The case-list search matches current note text, as well as the number, title, summary, entities, current timeline entries and decisions (with their why), the current brief, task titles, task comments and results, phase-change reasons and the post-incident review. When the match isn't the number, title or summary, the row says where: "decision, 1 Oct 2026: …MFA fatigue on a payment account…". |
 | **Removal** | Not possible. |
 
 > UI inconsistency: the composer hint says notes are excluded from the report by default, but the empty state

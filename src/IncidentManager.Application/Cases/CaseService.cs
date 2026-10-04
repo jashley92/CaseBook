@@ -273,13 +273,29 @@ public sealed class CaseService
 #pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower()/Contains() to SQL; culture overloads don't translate.
             var s = filter.Search.Trim().ToLower();
             // Match across the case's own fields and its IOCs and notes, so analysts can find a case
-            // by an indicator or a note as well as by number/title.
+            // by an indicator or a note as well as by number/title. HR-09: and across the record itself (timeline
+            // entries and decisions, the brief, tasks and their results, the review, phase reasons), so an old case
+            // can be found by what happened in it.
+            var comments = db.ActionItemComments;
+            var reviews = db.PostIncidentReviews;
             q = q.Where(c =>
                 c.CaseNumber.ToLower().Contains(s) ||
                 c.Title.ToLower().Contains(s) ||
                 (c.Summary != null && c.Summary.ToLower().Contains(s)) ||
                 c.Entities.Any(e => e.Value.ToLower().Contains(s) || (e.Label != null && e.Label.ToLower().Contains(s))) ||
-                c.Notes.Any(n => n.IsCurrent && n.Body.ToLower().Contains(s)));
+                c.Notes.Any(n => n.IsCurrent && n.Body.ToLower().Contains(s)) ||
+                c.TimelineEntries.Any(e => e.IsCurrent && (e.Description.ToLower().Contains(s)
+                                                           || (e.Rationale != null && e.Rationale.ToLower().Contains(s)))) ||
+                c.Briefs.Any(b => b.IsCurrent && ((b.WorkingAssessment != null && b.WorkingAssessment.ToLower().Contains(s))
+                                                  || (b.Known != null && b.Known.ToLower().Contains(s))
+                                                  || (b.OpenQuestions != null && b.OpenQuestions.ToLower().Contains(s)))) ||
+                c.ActionItems.Any(t => t.Title.ToLower().Contains(s)) ||
+                comments.Any(x => x.CaseId == c.Id && x.Body.ToLower().Contains(s)) ||
+                c.StatusChanges.Any(x => x.Reason != null && x.Reason.ToLower().Contains(s)) ||
+                reviews.Any(r => r.CaseId == c.Id && ((r.WhatHappened != null && r.WhatHappened.ToLower().Contains(s))
+                                                      || (r.ContributingFactors != null && r.ContributingFactors.ToLower().Contains(s))
+                                                      || (r.WhatWorkedWell != null && r.WhatWorkedWell.ToLower().Contains(s))
+                                                      || (r.OpportunitiesToImprove != null && r.OpportunitiesToImprove.ToLower().Contains(s)))));
 #pragma warning restore CA1304, CA1311, CA1862
         }
 
@@ -305,7 +321,72 @@ public sealed class CaseService
                 .ToListAsync(ct);
         }
 
-        return new CasePage(items, total, page, size);
+        var matches = string.IsNullOrWhiteSpace(filter.Search) || items.Count == 0 ? null
+            : await SearchMatchesAsync(db, items, filter.Search.Trim(), ct);
+        return new CasePage(items, total, page, size, matches);
+    }
+
+    /// <summary>
+    /// HR-09: for each case on a search page, where the term matched when it isn't in the number, title or summary:
+    /// the first of an entity, a note, a timeline entry or decision, the brief, a task, a task comment or result, a phase
+    /// reason, or the review, with a snippet around the match.
+    /// </summary>
+    private static async Task<Dictionary<Guid, string>> SearchMatchesAsync(IAppDbContext db, IReadOnlyList<CaseListItem> items,
+        string term, CancellationToken ct)
+    {
+        var ids = items.Where(i => !i.CaseNumber.Contains(term, StringComparison.OrdinalIgnoreCase)
+                                   && !i.Title.Contains(term, StringComparison.OrdinalIgnoreCase)).Select(i => i.Id).ToList();
+        var result = new Dictionary<Guid, string>();
+        if (ids.Count == 0) return result;
+        var summaries = await db.Cases.AsNoTracking().Where(c => ids.Contains(c.Id)).Select(c => new { c.Id, c.Summary }).ToListAsync(ct);
+        ids = ids.Where(id => summaries.FirstOrDefault(x => x.Id == id)?.Summary?.Contains(term, StringComparison.OrdinalIgnoreCase) != true).ToList();
+        if (ids.Count == 0) return result;
+
+        // Candidates in display priority; the first that contains the term wins. Loaded per page (at most a page of cases).
+        var candidates = new List<(Guid CaseId, int Rank, string Where, DateTimeOffset? At, string Text)>();
+        foreach (var e in await db.CaseEntities.AsNoTracking().Where(e => ids.Contains(e.CaseId)).Select(e => new { e.CaseId, e.Value, e.Label }).ToListAsync(ct))
+            candidates.Add((e.CaseId, 0, "entity", null, e.Label is null ? e.Value : $"{e.Label} ({e.Value})"));
+        foreach (var e in await db.TimelineEntries.AsNoTracking().Where(e => ids.Contains(e.CaseId) && e.IsCurrent)
+                     .Select(e => new { e.CaseId, e.Type, e.OccurredAtUtc, e.Description, e.Rationale }).ToListAsync(ct))
+            candidates.Add((e.CaseId, 1, e.Type == TimelineEntryType.Decision ? "decision" : "timeline entry", e.OccurredAtUtc,
+                Content.RichText.ToText(e.Description) + (e.Rationale is { } why ? " Why: " + why : "")));
+        foreach (var b in await db.CaseBriefs.AsNoTracking().Where(b => ids.Contains(b.CaseId) && b.IsCurrent)
+                     .Select(b => new { b.CaseId, b.WorkingAssessment, b.Known, b.OpenQuestions }).ToListAsync(ct))
+            candidates.Add((b.CaseId, 2, "brief", null, string.Join(" ", new[] { b.WorkingAssessment, b.Known, b.OpenQuestions }.Where(x => x is not null))));
+        foreach (var n in await db.Notes.AsNoTracking().Where(n => ids.Contains(n.CaseId) && n.IsCurrent)
+                     .Select(n => new { n.CaseId, n.CreatedAtUtc, n.Body }).ToListAsync(ct))
+            candidates.Add((n.CaseId, 3, "note", n.CreatedAtUtc, Content.RichText.ToText(n.Body)));
+        foreach (var t in await db.ActionItems.AsNoTracking().Where(t => ids.Contains(t.CaseId)).Select(t => new { t.CaseId, t.Title }).ToListAsync(ct))
+            candidates.Add((t.CaseId, 4, "task", null, t.Title));
+        foreach (var x in await db.ActionItemComments.AsNoTracking().Where(x => ids.Contains(x.CaseId))
+                     .Select(x => new { x.CaseId, x.CreatedAtUtc, x.Body }).ToListAsync(ct))
+            candidates.Add((x.CaseId, 5, TaskResults.Parse(x.Body) is null ? "task comment" : "task result", x.CreatedAtUtc,
+                TaskResults.Parse(x.Body) ?? x.Body));
+        foreach (var x in await db.StatusChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId) && x.Reason != null)
+                     .Select(x => new { x.CaseId, x.ChangedAtUtc, x.EffectiveAtUtc, x.Reason }).ToListAsync(ct))
+            candidates.Add((x.CaseId, 6, "phase change", x.EffectiveAtUtc ?? x.ChangedAtUtc, x.Reason!));   // when it happened
+        foreach (var r in await db.PostIncidentReviews.AsNoTracking().Where(r => ids.Contains(r.CaseId))
+                     .Select(r => new { r.CaseId, r.WhatHappened, r.ContributingFactors, r.WhatWorkedWell, r.OpportunitiesToImprove }).ToListAsync(ct))
+            candidates.Add((r.CaseId, 7, "post-incident review", null,
+                string.Join(" ", new[] { r.WhatHappened, r.ContributingFactors, r.WhatWorkedWell, r.OpportunitiesToImprove }.Where(x => x is not null))));
+
+        foreach (var g in candidates.Where(x => x.Text.Contains(term, StringComparison.OrdinalIgnoreCase)).GroupBy(x => x.CaseId))
+        {
+            var hit = g.OrderBy(x => x.Rank).ThenByDescending(x => x.At).First();
+            result[g.Key] = $"{hit.Where}{(hit.At is { } at ? $", {at.UtcDateTime:d MMM yyyy}" : "")}: {Snippet(hit.Text, term)}";
+        }
+        return result;
+    }
+
+    // A short window of text around the first occurrence of the term, on one line.
+    private static string Snippet(string text, string term, int radius = 60)
+    {
+        var line = string.Join(' ', text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+        var i = line.IndexOf(term, StringComparison.OrdinalIgnoreCase);
+        if (i < 0) return TaskResults.Excerpt(line, radius * 2);
+        var start = Math.Max(0, i - radius);
+        var end = Math.Min(line.Length, i + term.Length + radius);
+        return (start > 0 ? "…" : "") + line[start..end].Trim() + (end < line.Length ? "…" : "");
     }
 
     private static IQueryable<Case> Ordered(IQueryable<Case> q, CaseSort sort, bool desc) => sort switch

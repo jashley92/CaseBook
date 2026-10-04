@@ -43,8 +43,9 @@ filtered case list. Exercise cases are excluded. **Export metrics (CSV)** downlo
 
 1. **Mine / All** scope (also `/cases/mine`).
 2. **Count chips**: one-click filters for open, breaches, SLA over or at risk, and overdue tasks.
-3. **Filters**: classification, phase, minimum severity, origin and search (case number, title, note text or
-   IOC). *More filters* adds closed, exercises, notify state, legal referral, legal hold, assignee and opened
+3. **Filters**: classification, phase, minimum severity, origin, outcome and search (case number, title, IOC,
+   and the record: timeline entries and decisions, the brief, notes, tasks and their results, the review; a row
+   says where it matched). *More filters* adds closed, exercises, notify state, legal referral, legal hold, assignee and opened
    window. All filters live in the URL, so a view can be bookmarked or saved under **Views**.
 4. **A case row.** The left edge is marked for High or Critical cases. In the list, `j`/`k` move, `p` opens a
    read-only preview beside the list, and `Enter` opens the case.

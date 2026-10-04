@@ -374,5 +374,34 @@ public sealed class CaseSearchTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Search_covers_the_record_and_says_where_it_matched()
+    {
+        // HR-09: an old case can be found by what happened in it, not only its number, title, IOCs or notes.
+        _user.RoleSet = [AppRole.IncidentCommander];
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var a = (await svc.CreateAsync(Req("Alpha"))).Id;
+        await svc.AddTimelineEntryAsync(a, TimelineKind.Investigation, TimelineEntryType.Decision, _clock.UtcNow, "Disable the account", null,
+            decision: new CaseService.DecisionDetails("Confirmed MFA fatigue on a payment account", null, null));
+        var b = (await svc.CreateAsync(Req("Bravo"))).Id;
+        await svc.AddActionItemAsync(b, "Check other mailboxes", null, null);
+        var task = (await svc.GetDetailAsync(b))!.ActionItems.Single();
+        await svc.CompleteActionItemAsync(b, task.Id, null, "No inbox rule on any other mailbox", null);
+        var c = (await svc.CreateAsync(Req("Charlie"))).Id;
+        await svc.ChangePhaseAsync(c, CasePhase.Containment, "Account moved to FIDO2 keys");
+
+        async Task<CasePage> Find(string q) => await svc.ListAsync(new CaseFilter { Search = q, IncludeClosed = true });
+
+        var fatigue = await Find("mfa fatigue");
+        fatigue.Items.Select(i => i.Id).Should().Equal(a);
+        fatigue.Matches![a].Should().StartWith("decision, ").And.Contain("MFA fatigue");
+        var rule = await Find("inbox rule");
+        rule.Items.Select(i => i.Id).Should().Equal(b);
+        rule.Matches![b].Should().StartWith("task result");
+        (await Find("FIDO2")).Items.Select(i => i.Id).Should().Equal(c);
+        (await Find("Alpha")).Matches.Should().BeEmpty("a title match needs no explanation");
+    }
+
     public void Dispose() => _connection.Dispose();
 }
