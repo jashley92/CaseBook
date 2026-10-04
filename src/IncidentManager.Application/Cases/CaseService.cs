@@ -15,8 +15,25 @@ namespace IncidentManager.Application.Cases;
 /// <summary>A saved graph node position for one entity (cosmetic view state).</summary>
 public sealed record EntityPosition(Guid EntityId, double X, double Y);
 
-/// <summary>An entity on this case that also appears on another case the user can see.</summary>
-public sealed record EntityOverlap(Guid EntityId, Guid OtherCaseId, string OtherCaseNumber);
+/// <summary>
+/// An entity on this case that also appears on another case the user can see. HR-03: with what that case is and how it
+/// ended: its title, phase, the verdict it reached there, and, once closed, when, its outcome and its closing line
+/// (the closing brief's conclusion, else the close's reason).
+/// </summary>
+public sealed record EntityOverlap(Guid EntityId, Guid OtherCaseId, string OtherCaseNumber,
+    string OtherTitle = "", CasePhase OtherPhase = CasePhase.New, EntityDisposition DispositionThere = EntityDisposition.Unknown,
+    DateTimeOffset? ClosedAtUtc = null, string? OutcomeKey = null, string? ClosingLine = null, Classification? OtherClassification = null)
+{
+    public bool IsClosed => OtherPhase == CasePhase.Closed;
+}
+
+/// <summary>
+/// HR-03: a visible <em>closed</em> case whose entities include indicators being entered on a new case: what it concluded,
+/// when, and the verdict each shared indicator reached there. Shown at intake as "seen before", beside the open matches.
+/// </summary>
+public sealed record CaseHistoryMatch(Guid CaseId, string CaseNumber, string Title, Classification? Classification,
+    DateTimeOffset? ClosedAtUtc, string? OutcomeKey, string? ClosingLine,
+    IReadOnlyList<(string Value, EntityDisposition Disposition)> Indicators);
 
 /// <summary>A case related to the one in view (E-14), resolved to the "other" case's summary.</summary>
 public sealed record CaseLinkView(
@@ -1035,26 +1052,108 @@ public sealed class CaseService
             .ToListAsync(ct);
         if (mine.Count == 0) return Array.Empty<EntityOverlap>();
 
-        var values = mine.Select(m => m.Value).Distinct().ToList();
+        // HR-03: compare values ignoring case on every provider (SQLite's IN is case-sensitive).
+        var values = mine.Select(m => m.Value.ToLowerInvariant()).Distinct().ToList();
 
+#pragma warning disable CA1304, CA1311 // EF Core translates ToLower() to SQL LOWER(); the invariant overload doesn't translate.
         var others = await (
             from e in db.CaseEntities.AsNoTracking()
-            where e.CaseId != caseId && values.Contains(e.Value)
+            where e.CaseId != caseId && values.Contains(e.Value.ToLower())
             join c in Scoped(db.Cases.AsNoTracking()).ExcludingExercises() on e.CaseId equals c.Id
-            select new { e.Type, e.Value, OtherCaseId = c.Id, c.CaseNumber }
+            select new { e.Type, e.Value, e.Disposition, OtherCaseId = c.Id, c.CaseNumber, c.Title, c.Phase, c.Classification,
+                c.ClosedAtUtc, c.OutcomeKey }
         ).ToListAsync(ct);
+#pragma warning restore CA1304, CA1311
+        var closing = await ClosingLinesAsync(db, others.Where(o => o.Phase == CasePhase.Closed).Select(o => o.OtherCaseId), ct);
 
         var result = new List<EntityOverlap>();
         foreach (var m in mine)
         {
+            // HR-03: the same observable across types in one family (an account and an email address with one value).
+            var family = Domain.Observables.IocObservable.MatchFamily(m.Type);
             var matches = others
-                .Where(o => o.Type == m.Type && string.Equals(o.Value, m.Value, StringComparison.OrdinalIgnoreCase))
-                .Select(o => (o.OtherCaseId, o.CaseNumber))
-                .Distinct();
-            foreach (var (ocid, ocn) in matches)
-                result.Add(new EntityOverlap(m.Id, ocid, ocn));
+                .Where(o => Domain.Observables.IocObservable.MatchFamily(o.Type) == family
+                            && string.Equals(o.Value, m.Value, StringComparison.OrdinalIgnoreCase))
+                .GroupBy(o => o.OtherCaseId);
+            foreach (var g in matches)
+            {
+                var o = g.OrderByDescending(x => Intel.IndicatorService.Severity(x.Disposition)).First();
+                result.Add(new EntityOverlap(m.Id, o.OtherCaseId, o.CaseNumber, o.Title, o.Phase, o.Disposition,
+                    o.Phase == CasePhase.Closed ? o.ClosedAtUtc : null, o.Phase == CasePhase.Closed ? o.OutcomeKey : null,
+                    closing.GetValueOrDefault(o.OtherCaseId), o.Classification));
+            }
         }
         return result;
+    }
+
+    /// <summary>
+    /// HR-03: one line on how each closed case ended: its closing brief's conclusion (the current brief's working
+    /// assessment, when it closed with an outcome), else the reason given when it closed.
+    /// </summary>
+    private static async Task<Dictionary<Guid, string>> ClosingLinesAsync(IAppDbContext db, IEnumerable<Guid> caseIds,
+        CancellationToken ct)
+    {
+        var ids = caseIds.Distinct().ToList();
+        if (ids.Count == 0) return [];
+        var withOutcome = await db.Cases.AsNoTracking().Where(c => ids.Contains(c.Id) && c.OutcomeKey != null)
+            .Select(c => c.Id).ToListAsync(ct);
+        var briefs = await db.CaseBriefs.AsNoTracking()
+            .Where(b => withOutcome.Contains(b.CaseId) && b.IsCurrent && b.WorkingAssessment != null)
+            .Select(b => new { b.CaseId, b.WorkingAssessment }).ToListAsync(ct);
+        var closes = await db.StatusChanges.AsNoTracking()
+            .Where(s => ids.Contains(s.CaseId) && s.To == CasePhase.Closed && s.Reason != null)
+            .Select(s => new { s.CaseId, s.Reason, s.ChangedAtUtc }).ToListAsync(ct);
+        var lines = new Dictionary<Guid, string>();
+        foreach (var id in ids)
+        {
+            var line = briefs.FirstOrDefault(b => b.CaseId == id)?.WorkingAssessment
+                       ?? closes.Where(s => s.CaseId == id).OrderByDescending(s => s.ChangedAtUtc).FirstOrDefault()?.Reason;
+            if (!string.IsNullOrWhiteSpace(line)) lines[id] = TaskResults.Excerpt(line, 220);
+        }
+        return lines;
+    }
+
+    /// <summary>
+    /// HR-03: given the raw indicators an analyst is entering on a new case, the visible <b>closed</b> cases that already
+    /// recorded any of them, with how each ended and the verdict each indicator reached there: "seen before". Matched like
+    /// <see cref="FindOpenCaseMatchesForIocsAsync"/> (refanged, value only, ignoring case); need-to-know scoped;
+    /// exercises excluded. Most recently closed first.
+    /// </summary>
+    public async Task<IReadOnlyList<CaseHistoryMatch>> FindCaseHistoryForIocsAsync(
+        IEnumerable<string> rawIndicators, CancellationToken ct = default)
+    {
+        var wanted = (rawIndicators ?? Enumerable.Empty<string>())
+            .Select(r => Domain.Observables.IocObservable.Refang(r))
+            .Where(v => v.Length > 0)
+            .Select(v => v.ToLowerInvariant())
+            .Distinct()
+            .ToList();
+        if (wanted.Count == 0) return Array.Empty<CaseHistoryMatch>();
+
+        using var db = _factory.CreateDbContext();
+#pragma warning disable CA1304, CA1311 // EF Core translates ToLower() to SQL LOWER(); the invariant overload doesn't translate.
+        var hits = await (
+            from e in db.CaseEntities.AsNoTracking()
+            join c in Scoped(db.Cases.AsNoTracking()).ExcludingExercises() on e.CaseId equals c.Id
+            where c.Phase == CasePhase.Closed && wanted.Contains(e.Value.ToLower())
+            select new { c.Id, c.CaseNumber, c.Title, c.Classification, c.ClosedAtUtc, c.OutcomeKey, e.Value, e.Disposition }
+        ).ToListAsync(ct);
+#pragma warning restore CA1304, CA1311
+        var closing = await ClosingLinesAsync(db, hits.Select(h => h.Id), ct);
+
+        return hits
+            .GroupBy(h => h.Id)
+            .Select(g =>
+            {
+                var f = g.First();
+                return new CaseHistoryMatch(f.Id, f.CaseNumber, f.Title, f.Classification, f.ClosedAtUtc, f.OutcomeKey,
+                    closing.GetValueOrDefault(f.Id),
+                    g.GroupBy(x => x.Value, StringComparer.OrdinalIgnoreCase)
+                        .Select(v => (v.First().Value, v.Select(x => x.Disposition).MaxBy(Intel.IndicatorService.Severity)))
+                        .ToList());
+            })
+            .OrderByDescending(m => m.ClosedAtUtc)
+            .ToList();
     }
 
     /// <summary>

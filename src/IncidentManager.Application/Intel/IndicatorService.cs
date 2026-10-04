@@ -50,7 +50,8 @@ public sealed record IndicatorLibrary(IndicatorSummary Summary, IReadOnlyList<In
 /// instead of staying buried inside one case's "also in" badge. Read-only presentation over existing data:
 /// need-to-know scoped exactly like the campaign walk and the overlap engine (an occurrence on a case the
 /// viewer can't see is never counted or listed), exercise cases left out unless asked for, and matching is
-/// by type + case-insensitive value, the same rule as <see cref="CaseService.FindEntityOverlapsAsync"/>.
+/// by type family (an account and an email address are one identity, HR-03) + case-insensitive value, the same rule
+/// as <see cref="CaseService.FindEntityOverlapsAsync"/>.
 /// </summary>
 public sealed class IndicatorService
 {
@@ -87,7 +88,12 @@ public sealed class IndicatorService
         if (!filter.IncludeExercises) cases = cases.ExcludingExercises();
 
         var entities = db.CaseEntities.AsNoTracking();
-        if (filter.Type is { } t) entities = entities.Where(e => e.Type == t);
+        // HR-03: a type filter takes in the type's match family (an account and an email address are one identity).
+        if (filter.Type is { } t)
+        {
+            var family = IocObservable.FamilyTypes(t);
+            entities = entities.Where(e => family.Contains(e.Type));
+        }
         else if (filter.Scope == IndicatorTypeScope.Indicators) entities = entities.Where(e => IocTypes.Contains(e.Type));
 
         var raw = await (
@@ -101,7 +107,7 @@ public sealed class IndicatorService
 
         // Group in memory: case-insensitive value, and DateTimeOffset aggregation stays off SQLite (F-08).
         var all = raw
-            .GroupBy(r => (r.Type, Key: r.Value.Trim().ToLowerInvariant()))
+            .GroupBy(r => (Type: IocObservable.MatchFamily(r.Type), Key: r.Value.Trim().ToLowerInvariant()))
             .Select(g =>
             {
                 var perCase = g.GroupBy(x => x.Id)
@@ -115,7 +121,7 @@ public sealed class IndicatorService
                     .OrderByDescending(c => c.AddedAtUtc)
                     .ToList();
                 return new IndicatorRow(
-                    g.Key.Type,
+                    g.OrderByDescending(x => x.CreatedAtUtc).First().Type,   // the latest recorded type within the family
                     g.OrderByDescending(x => x.CreatedAtUtc).First().Value.Trim(),
                     perCase.Select(c => c.Disposition).MaxBy(Severity),
                     g.Min(x => x.CreatedAtUtc),

@@ -63,7 +63,8 @@ A single page, not a wizard.
    team. **Exercise** (just above) is permanent.
 4. **Detected / Initial activity**: entered in your display time zone and stored as UTC.
 5. **Indicators**: one per line, defanged input accepted. **Check now** looks for open cases you can see
-   that already carry them. You can mark matches as related, duplicate or same campaign. A match pauses the
+   that already carry them, and lists closed ones as **Seen before**, with each one's outcome, closing line and the
+   verdict the indicator reached there. You can mark matches as related, duplicate or same campaign. A match pauses the
    first *Create* but never blocks it.
 
 ## The case workspace

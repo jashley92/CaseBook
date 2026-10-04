@@ -1,0 +1,33 @@
+@* HR-03: one closed case where an indicator was seen before: what it was, how it ended, and the verdict it reached
+   there. Used at intake (New case) and in the entity panel. *@
+@inject TimeDisplay TimeDisp
+
+<div class="im-seen">
+    <div class="im-seen-h">
+        <a href="cases/@CaseId" target="@(NewTab ? "_blank" : null)" rel="@(NewTab ? "noopener noreferrer" : null)" class="im-data">@CaseNumber</a>
+        @if (!string.IsNullOrWhiteSpace(Title)) { <span class="im-seen-title">@Title</span> }
+    </div>
+    <div class="im-seen-meta">
+        @if (Classification is { } cl) { <span class="@Ui.ClassificationBadge(cl)">@Ui.Label(cl)</span> }
+        @if (OutcomeLabel is { } outcome) { <span class="im-outcome" title="Outcome recorded when it closed">@outcome</span> }
+        <span class="text-muted">closed @(ClosedAtUtc is { } at ? TimeDisp.Short(at) : "")</span>
+        @if (Verdicts is { Length: > 0 }) { <span class="text-muted">· @Verdicts</span> }
+    </div>
+    @if (!string.IsNullOrWhiteSpace(ClosingLine))
+    {
+        <div class="im-seen-line">@ClosingLine</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    [Parameter, EditorRequired] public string CaseNumber { get; set; } = "";
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public Classification? Classification { get; set; }
+    [Parameter] public DateTimeOffset? ClosedAtUtc { get; set; }
+    [Parameter] public string? OutcomeLabel { get; set; }
+    [Parameter] public string? ClosingLine { get; set; }
+    /// <summary>The verdict(s) the shared indicator(s) reached there, e.g. "Compromised there".</summary>
+    [Parameter] public string? Verdicts { get; set; }
+    [Parameter] public bool NewTab { get; set; }
+}

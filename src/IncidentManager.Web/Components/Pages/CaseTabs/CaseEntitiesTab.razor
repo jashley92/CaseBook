@@ -341,7 +341,7 @@ else
                                     <small><span class="im-badge im-b-info">also in</span>
                                         @foreach (var o in alsoIn)
                                         {
-                                            <a class="ms-1" href="cases/@o.OtherCaseId"><code class="small">@o.OtherCaseNumber</code></a>
+                                            <a class="ms-1" href="cases/@o.OtherCaseId" title="@AlsoInTitle(o)"><code class="small">@o.OtherCaseNumber</code></a>
                                         }
                                         @* PROD-10: pivot to every case carrying it (by id, so the value stays out of the URL). *@
                                         <a class="ms-2" href="indicators?entity=@e.Id" title="Every case this indicator appears on">
@@ -560,6 +560,12 @@ else
 
     // Cross-case "also in" overlaps (entity id → other cases sharing it).
     private Dictionary<Guid, IReadOnlyList<EntityOverlap>> _overlaps = new();
+    // HR-03: what the other case is and how it ended, on hover; the entity panel shows it in full.
+    private static string AlsoInTitle(EntityOverlap o) =>
+        $"{o.OtherTitle} · {Ui.Label(o.OtherPhase)}"
+        + (o.IsClosed && o.OutcomeKey is { } k ? $" · {IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(k)}" : "")
+        + $" · {Ui.Label(o.DispositionThere)} there"
+        + (o.ClosingLine is { } line ? $" · {line}" : "");
     private int _loadedToken = int.MinValue;
 
     // PROD-40: mid-investigation correlation — visible OPEN cases sharing indicators, not yet linked.

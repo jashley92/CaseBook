@@ -5,6 +5,7 @@
 @inject CaseService Cases
 @inject ILogger<CreateCase> Logger
 @inject CaseTemplateService Templates
+@inject IncidentManager.Application.Admin.CaseOutcomeService Outcomes
 @inject NavigationManager Nav
 @inject IConfiguration Config
 @inject ISeverityLabels SevLabels
@@ -209,7 +210,7 @@
                       placeholder="e.g. 1.2.3.4, evil.example.com, hxxp://bad[.]site/x, or a file hash"
                       @onblur="CheckOverlaps"></textarea>
             <div class="form-text">
-                Checked against open cases for duplicates, then added as entities when the case is created. Defanged values are fine.
+                Checked against open cases for duplicates and against closed ones for history, then added as entities when the case is created. Defanged values are fine.
                 <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="CheckOverlaps" disabled="@_checking">Check now</button>
             </div>
 
@@ -251,6 +252,22 @@
                         </div>
                     }
                     <div class="small text-muted">Links are optional and are applied when you create the case.</div>
+                </div>
+            }
+            @* HR-03: closed cases that recorded these indicators: what was concluded there, before this one is filed. *@
+            @if (!_checking && _history.Count > 0 && _checkedInput == _indicators)
+            {
+                <div class="im-seen-box mt-2">
+                    <div class="fw-semibold small mb-1">
+                        <span class="bi bi-clock-history me-1" aria-hidden="true"></span>
+                        Seen before: @(_history.Count == 1 ? "1 closed case" : $"{_history.Count} closed cases") recorded these indicators
+                    </div>
+                    @foreach (var h in _history)
+                    {
+                        <CaseHistoryItem CaseId="h.CaseId" CaseNumber="@h.CaseNumber" Title="@h.Title" Classification="h.Classification"
+                                         ClosedAtUtc="h.ClosedAtUtc" OutcomeLabel="@OutcomeLabel(h.OutcomeKey)" ClosingLine="@h.ClosingLine" NewTab="true"
+                                         Verdicts="@string.Join(", ", h.Indicators.Select(i => $"{i.Value}: {Ui.Label(i.Disposition)} there"))" />
+                    }
                 </div>
             }
         </div>
@@ -330,6 +347,10 @@
     // E-23: creation-time IOC entry + duplicate/related-case detection.
     private string? _indicators;
     private List<CaseIocMatch> _matches = new();
+    private IReadOnlyList<CaseHistoryMatch> _history = [];   // HR-03
+    private IReadOnlyDictionary<string, string> _outcomeLabels = new Dictionary<string, string>();
+    private string? OutcomeLabel(string? key) => key is null ? null
+        : _outcomeLabels.GetValueOrDefault(key) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(key);
     private bool _checking;
     private string? _checkedInput; // the indicator text last checked — so "no matches" feedback clears once it's edited
     private readonly Dictionary<Guid, CaseLinkType?> _linkChoice = new();
@@ -355,9 +376,14 @@
         _overlapPrompt = false;
         var lines = IndicatorLines(_indicators).ToList();
         _checkedInput = _indicators;
-        if (lines.Count == 0) { _matches = new(); return; }
+        if (lines.Count == 0) { _matches = new(); _history = []; return; }
         _checking = true;
-        try { _matches = (await Cases.FindOpenCaseMatchesForIocsAsync(lines)).ToList(); }
+        try
+        {
+            _matches = (await Cases.FindOpenCaseMatchesForIocsAsync(lines)).ToList();
+            _history = await Cases.FindCaseHistoryForIocsAsync(lines);
+            if (_history.Count > 0 && _outcomeLabels.Count == 0) _outcomeLabels = await Outcomes.LabelsAsync();
+        }
         finally { _checking = false; }
         // Drop choices for cases that are no longer matched (indicators edited).
         foreach (var id in _linkChoice.Keys.Where(k => _matches.All(m => m.CaseId != k)).ToList())

@@ -29,6 +29,16 @@ public static partial class IocObservable
     /// <see cref="EntityType.Other"/> and can be re-typed on the Entities tab. The value is refanged
     /// first, so a defanged paste (<c>1.1.1[.]1</c>, <c>hxxp://evil[.]com</c>) classifies correctly.
     /// </summary>
+    /// <summary>
+    /// HR-03: the family two entities must share to be the same observable across cases. An account and an email
+    /// address with the same value are one identity (a UPN is filed either way); every other type is its own family.
+    /// </summary>
+    public static EntityType MatchFamily(EntityType type) => type == EntityType.EmailAddress ? EntityType.Account : type;
+
+    /// <summary>HR-03: the types in <paramref name="type"/>'s match family.</summary>
+    public static IReadOnlyList<EntityType> FamilyTypes(EntityType type) =>
+        MatchFamily(type) == EntityType.Account ? [EntityType.Account, EntityType.EmailAddress] : [type];
+
     public static EntityType DetectType(string? value)
     {
         var v = Refang(value);

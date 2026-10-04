@@ -2517,6 +2517,14 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 .im-brief-q-task { font-size: var(--im-text-xs); cursor: pointer; }
 /* HR-01: a closed case's outcome beside its phase, and the close dialog's open questions. */
 .im-outcome { font-size: var(--im-text-xs); font-weight: 600; padding: 0.05rem 0.5rem; border-radius: var(--im-radius-sm); color: var(--im-accent-text); background: var(--im-accent-bg); white-space: nowrap; }
+/* HR-03: a closed case where an indicator was seen before. */
+.im-seen-box { border: 1px solid var(--im-border); border-left: 3px solid var(--im-accent-strong); border-radius: var(--im-radius); padding: 0.5rem 0.75rem; display: grid; gap: 0.5rem; }
+.im-seen { display: grid; gap: 0.15rem; font-size: var(--im-text-sm); }
+.im-seen + .im-seen { border-top: 1px dashed var(--im-border); padding-top: 0.45rem; }
+.im-seen-h { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; align-items: baseline; }
+.im-seen-title { font-weight: 600; }
+.im-seen-meta { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; align-items: center; font-size: var(--im-text-xs); }
+.im-seen-line { color: var(--im-text); }
 .im-close-q { list-style: none; margin: 0 0 0.5rem; padding: 0; display: grid; gap: 0.35rem; font-size: var(--im-text-sm); }
 .im-close-q li { padding-left: 0.6rem; border-left: 2px solid var(--im-ok); }
 .im-close-q li.im-close-q-open { border-left-color: var(--im-warn); }

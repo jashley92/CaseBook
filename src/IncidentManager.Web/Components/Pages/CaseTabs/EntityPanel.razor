@@ -6,6 +6,7 @@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject CaseService Cases
 @inject ActionItemCommentService TaskComments
+@inject IncidentManager.Application.Admin.CaseOutcomeService Outcomes
 @inject ToastService Toasts
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject TimeDisplay TimeDisp
@@ -122,24 +123,43 @@
                 </section>
             }
 
+            @* HR-03: closed cases first, with how they ended ("seen before"), then open ones. *@
+            @if (_otherCases is { } others && others.Any(o => o.IsClosed))
+            {
+                <section>
+                    <h3 class="im-entity-panel-h">Seen before · @others.Count(o => o.IsClosed)</h3>
+                    @foreach (var o in others.Where(o => o.IsClosed).OrderByDescending(o => o.ClosedAtUtc))
+                    {
+                        <CaseHistoryItem CaseId="o.OtherCaseId" CaseNumber="@o.OtherCaseNumber" Title="@o.OtherTitle" Classification="o.OtherClassification"
+                                         ClosedAtUtc="o.ClosedAtUtc" OutcomeLabel="@OutcomeLabel(o.OutcomeKey)" ClosingLine="@o.ClosingLine"
+                                         Verdicts="@($"{Ui.Label(o.DispositionThere)} there")" />
+                    }
+                </section>
+            }
             <section>
-                <h3 class="im-entity-panel-h">Other cases you can see@(_otherCases is null ? "" : $" · {_otherCases.Count}")</h3>
+                <h3 class="im-entity-panel-h">Open cases you can see@(_otherCases is null ? "" : $" · {_otherCases.Count(o => !o.IsClosed)}")</h3>
                 @if (_otherCases is null)
                 {
                     <p class="small text-muted mb-0">Checking…</p>
                 }
-                else if (_otherCases.Count == 0)
+                else if (_otherCases.All(o => o.IsClosed))
                 {
-                    <p class="small text-muted mb-0">It isn't on any other case you can see.</p>
+                    <p class="small text-muted mb-0">It isn't on any other open case you can see.</p>
                 }
                 else
                 {
                     <ul class="list-unstyled mb-1 small">
-                        @foreach (var o in _otherCases)
+                        @foreach (var o in _otherCases.Where(o => !o.IsClosed))
                         {
-                            <li><a href="cases/@o.OtherCaseId" class="im-data">@o.OtherCaseNumber</a></li>
+                            <li>
+                                <a href="cases/@o.OtherCaseId" class="im-data">@o.OtherCaseNumber</a>
+                                <span class="text-muted">@o.OtherTitle · @Ui.Label(o.OtherPhase) · @Ui.Label(o.DispositionThere) there</span>
+                            </li>
                         }
                     </ul>
+                }
+                @if (_otherCases is { Count: > 0 })
+                {
                     <a class="small" href="indicators?entity=@en.Id">Compare verdicts across cases</a>
                 }
             </section>
@@ -179,6 +199,9 @@
     private CaseEntity? Entity => EntityId is { } id ? Case.Entities.FirstOrDefault(e => e.Id == id) : null;
 
     private IReadOnlyList<EntityOverlap>? _otherCases;
+    private IReadOnlyDictionary<string, string> _outcomeLabels = new Dictionary<string, string>();
+    private string? OutcomeLabel(string? key) => key is null ? null
+        : _outcomeLabels.GetValueOrDefault(key) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(key);
     private IReadOnlyList<ActionItemCommentView> _taskComments = [];
     private Guid? _loadedFor;
 
@@ -192,6 +215,7 @@
         {
             _otherCases = (await Cases.FindEntityOverlapsAsync(Case.Id)).Where(o => o.EntityId == id)
                 .DistinctBy(o => o.OtherCaseId).ToList();
+            if (_otherCases.Any(o => o.IsClosed) && _outcomeLabels.Count == 0) _outcomeLabels = await Outcomes.LabelsAsync();
             _taskComments = await TaskComments.ListForCaseAsync(Case.Id);   // INV-34
         }
     }
