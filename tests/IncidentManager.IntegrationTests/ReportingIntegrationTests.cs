@@ -372,6 +372,41 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_decision_prints_the_actions_taken_with_their_results()
+    {
+        // HR-08: decision → task → result, traceable in the report.
+        _user.RoleSet = [AppRole.IncidentCommander];
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
+                new CaseNumberGenerator(db), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            caseId = (await cases.CreateAsync(new IncidentManager.Application.Cases.CreateCaseRequest
+            {
+                DescriptiveName = "Act", Title = "Actions case", Classification = Classification.Incident,
+                Severity = Severity.High, Origin = CaseOrigin.InternalDetection
+            })).Id;
+            await cases.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Decision, _clock.UtcNow,
+                "Disable the account", null,
+                decision: new IncidentManager.Application.Cases.CaseService.DecisionDetails("Confirmed takeover", null, null));
+            var decision = (await cases.GetDetailAsync(caseId))!.TimelineEntries.Single();
+            await cases.AddActionItemAsync(caseId, "Disable j.morales", null, null, about: $"entry:{decision.Id}");
+            await cases.AddActionItemAsync(caseId, "Reset MFA", null, null, about: $"entry:{decision.Id}");
+            var task = (await cases.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Title == "Disable j.morales");
+            _clock.UtcNow = _clock.UtcNow.AddMinutes(20);
+            await cases.CompleteActionItemAsync(caseId, task.Id, null, "Disabled; sessions revoked", null, doneBy: "Identity team");
+        }
+
+        await using (var db2 = NewContext())
+        {
+            _reporting.CurrentValue.IncludeMilestones = false;
+            var item = (await NewReportService(db2).BuildPreviewModelAsync(caseId, null)).InvestigationTimeline.Single();
+            item.Description.Should().EndWith("Actions taken: Disable j.morales (done "
+                + _clock.UtcNow.UtcDateTime.ToString("yyyy-MM-dd HH:mm") + " UTC by Identity team): Disabled; sessions revoked; Reset MFA (open).");
+        }
+    }
+
+    [Fact]
     public async Task A_generated_report_is_a_draft_until_approved_and_its_stored_hash_matches_the_record()
     {
         await using var db = NewContext();

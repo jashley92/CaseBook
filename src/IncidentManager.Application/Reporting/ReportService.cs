@@ -76,8 +76,10 @@ public sealed class ReportService
     /// can carry a neutral "Recorded …" note (<see cref="ReportingOptions.MarkLateEntries"/>).
     /// </summary>
     private List<ReportTimelineItem> InvestigationTimeline(Case c, ReportDefanger d, ReportingOptions opts,
-        IReadOnlyDictionary<string, string>? outcomeLabels = null)
+        ReportExtras? extras = null)
     {
+        var outcomeLabels = extras?.OutcomeLabels;
+        var taskResults = extras?.TaskResults ?? new Dictionary<Guid, Cases.TaskResult>();
         string Late(DateTimeOffset happened, DateTimeOffset recorded) =>
             opts.MarkLateEntries && recorded - happened > Cases.CaseService.BackdateReasonThreshold
                 ? $" (Recorded {recorded.ToString("u", System.Globalization.CultureInfo.InvariantCulture)}.)"
@@ -90,7 +92,7 @@ public sealed class ReportService
             // INV-23: an imported entry was always recorded after it happened; the subtitle says so once.
             .Select(x => (At: x.OccurredAtUtc, Order: x.CreatedAtUtc, Item: new ReportTimelineItem(x.OccurredAtUtc,
                 TaxLabel("TimelineEntryType", x.Type.ToString()),
-                d.Text(EntryText(x)) + Cited(c, x) + (x.IsImported ? "" : Late(x.OccurredAtUtc, FirstRecorded(c, x))),
+                d.Text(EntryText(x) + ActionsTaken(c, x, taskResults)) + Cited(c, x) + (x.IsImported ? "" : Late(x.OccurredAtUtc, FirstRecorded(c, x))),
                 x.Source, x.IsImported, _users.DisplayFor(x.CreatedBy))))
             .ToList();
 
@@ -128,6 +130,26 @@ public sealed class ReportService
         if (e.OptionsConsidered is { } options) sb.Append(" Options considered: ").Append(options.TrimEnd('.')).Append('.');
         if (e.DecidedBy is { } who) sb.Append(" Decided by: ").Append(who.TrimEnd('.')).Append('.');
         return sb.ToString();
+    }
+
+    // HR-08: what was done about a decision: the tasks started from it, with when, by whom and the result.
+    private string ActionsTaken(Case c, TimelineEntry e, IReadOnlyDictionary<Guid, Cases.TaskResult> results)
+    {
+        if (e.Type != TimelineEntryType.Decision) return "";
+        var first = e;
+        while (first.SupersedesEntryId is { } prior && c.TimelineEntries.FirstOrDefault(x => x.Id == prior) is { } p) first = p;
+        var about = $"{ActionItem.AboutEntry}:{first.Id}";
+        var tasks = c.ActionItems.Where(t => t.AboutRef == about).OrderBy(t => t.CompletedAtUtc ?? DateTimeOffset.MaxValue).ToList();
+        if (tasks.Count == 0) return "";
+        var parts = tasks.Select(t =>
+        {
+            if (t.Status != ActionItemStatus.Done)
+                return $"{t.Title} ({TaskStatusLabel(t.Status).ToLowerInvariant()})";
+            var done = t.CompletedAtUtc is { } at ? $"done {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC" : "done";
+            if (t.CompletedBy is { } by) done += $" by {_users.DisplayFor(by)}";
+            return results.TryGetValue(t.Id, out var r) ? $"{t.Title} ({done}): {Cases.TaskResults.Excerpt(r.Text, 300)}" : $"{t.Title} ({done})";
+        });
+        return " Actions taken: " + string.Join("; ", parts.Select(x => x.TrimEnd('.'))) + ".";
     }
 
     // INV-19: a brief part as report text — Markdown flattened, indicators defanged.
@@ -775,7 +797,7 @@ public sealed class ReportService
                     x.TechniqueId,
                     d.Text(x.Description)))
                 .ToList(),
-            InvestigationTimeline = InvestigationTimeline(c, d, opts, extras?.OutcomeLabels),
+            InvestigationTimeline = InvestigationTimeline(c, d, opts, extras),
             Brief = c.Briefs.FirstOrDefault(b => b.IsCurrent) is { } brief
                 ? new ReportBrief(brief.Version, brief.CreatedAtUtc, _users.DisplayFor(brief.CreatedBy),
                     BriefText(brief.WorkingAssessment, d), BriefText(brief.Known, d),

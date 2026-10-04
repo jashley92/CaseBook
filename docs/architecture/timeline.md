@@ -96,7 +96,7 @@ links, entity and IOC changes other than verdicts, ATT&CK tags, legal referral a
 | Type, text, source | Source is free-text provenance: the tool, "Handoff", "Task: …", or an import's origin. |
 | Event steps | One or more ATT&CK tactics, an optional technique, an actor and target from the case's entities. |
 | Decisions | Rationale (required), options considered, decided by (a free-text name, which may differ from who logged it). |
-| Links | A pasted screenshot (`EvidenceId`), cited evidence (`EvidenceCitations`), the task it logs (`ActionItemId`), tasks raised about it (`ActionItem.AboutRef`), and where it was promoted from. |
+| Links | A pasted screenshot (`EvidenceId`), cited evidence (`EvidenceCitations`), the task it logs (`ActionItemId`), tasks raised about it (`ActionItem.AboutRef`), and where it was promoted from. On screen, a decision shows its tasks with when, by whom and the result, and a task's result entry says "Carries out the decision of …". |
 | Version | Investigation entries: version number and the entry it supersedes. |
 
 Times are covered by the rules in [decision 0010](../decisions/0010-after-the-fact-recording.md):
@@ -169,7 +169,7 @@ in the composer.
 |---|---|
 | Event timeline | All event steps by occurred time: type, defanged text, source. No "By" column. |
 | Attack chain | Event steps numbered, drawn across ATT&CK tactic lanes. Empty for third-party cases. |
-| Investigation timeline | Current investigation entries (Markdown flattened; decisions printed with "Why", "Options considered" and "Decided by"; cited evidence appended; "(Recorded …)" for late entries if `Reporting:MarkLateEntries`), plus milestones if `Reporting:IncludeMilestones`, **except** report approvals and team changes. Columns: time, type, description (with source), **By** (who logged it, or the milestone's actor). |
+| Investigation timeline | Current investigation entries (Markdown flattened; decisions printed with "Why", "Options considered", "Decided by" and "Actions taken" (the tasks started from the decision, with when, by whom and the result); cited evidence appended; "(Recorded …)" for late entries if `Reporting:MarkLateEntries`), plus milestones if `Reporting:IncludeMilestones`, **except** report approvals and team changes. Columns: time, type, description (with source), **By** (who logged it, or the milestone's actor). |
 
 So the screen and the report agree, except that the report leaves out staffing changes and report approvals.
 

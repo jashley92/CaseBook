@@ -2605,6 +2605,8 @@ button.im-phase-seg { cursor: pointer; }
 .tl-task-done { color: var(--im-text-muted); }   /* HR-02: not struck through; its result follows */
 /* HR-07: the gate a transition passed, and folded record-keeping rows. */
 .tl-ms-note { font-size: var(--im-text-xs); color: var(--im-ok); border: 1px solid currentColor; border-radius: var(--im-radius-sm); padding: 0 0.35rem; white-space: nowrap; }
+/* HR-08: a result entry names the decision it carried out. */
+.tl-carries { margin-top: 0.3rem; color: var(--im-text); }
 .tl-fold { padding: 0.25rem 0.75rem 0.5rem; }
 .tl-task-result { flex-basis: 100%; margin-top: -0.15rem; padding-left: 1.2rem; color: var(--im-text); }
 /* HR-02: a done task's result on the Tasks tab. */
