@@ -70,6 +70,9 @@ public static class GateCheckKeys
     /// isn't triggered, or no jurisdiction is in play) or the reported time has been recorded. Self-scoping, so it
     /// only bites on a case with a running clock. Belongs on the close gate: closing must not silently end the watch.</summary>
     public const string NotificationsRecorded = nameof(NotificationsRecorded);
+    /// <summary>HR-12: no entity / IOC is left with an Unknown verdict. Usually advisory on the close gate: an
+    /// indicator nobody assessed is what the next case to see it will find.</summary>
+    public const string EntitiesAssessed = nameof(EntitiesAssessed);
 }
 
 /// <summary>
@@ -127,6 +130,9 @@ public static class GateCheckRegistry
         // INV-43: a running notification clock must be answered by a recorded report time before close.
         new(GateCheckKeys.NotificationsRecorded, _ => "Required regulatory notifications recorded",
             (f, _) => !f.NotificationPending),
+        // HR-12: an Unknown verdict closed into the record is what "Seen before" shows the next case.
+        new(GateCheckKeys.EntitiesAssessed, _ => "Every entity / IOC has a verdict (none left Unknown)",
+            (f, _) => f.UnknownEntityCount == 0),
     ];
 
     private static readonly IReadOnlyDictionary<string, GateCheckDescriptor> _byKey =

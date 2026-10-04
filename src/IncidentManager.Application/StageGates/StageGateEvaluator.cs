@@ -45,7 +45,7 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
                     && GateCheckRegistry.IsSatisfied(r.CheckKey, facts, r.CheckParam)))
             .ToList();
 
-        return new GateEvaluation(true, trigger, gate.Name, results, gate.CommentaryMinLength);
+        return new GateEvaluation(true, trigger, gate.Name, results, gate.CommentaryMinLength, facts);
     }
 
     private async Task<GateCaseFacts> BuildFactsAsync(IAppDbContext db, Guid caseId, CancellationToken ct)
@@ -82,16 +82,21 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
         var maliciousCount = await db.CaseEntities
             .CountAsync(e => e.CaseId == caseId && e.Disposition == EntityDisposition.Malicious, ct);
         var evidenceCount = await db.Evidence.CountAsync(e => e.CaseId == caseId, ct);
+        // HR-12: the facts shown beside the attestations.
+        var noCustody = await db.Evidence.CountAsync(e => e.CaseId == caseId && !e.CustodyEvents.Any(), ct);
+        var unknown = await db.CaseEntities
+            .CountAsync(e => e.CaseId == caseId && e.Disposition == EntityDisposition.Unknown, ct);
         // Only case reports count: the separate lessons-learned report is not the examiner-facing record.
         var reportCount = await db.Reports.CountAsync(r => r.CaseId == caseId && r.Kind == ReportKind.Case, ct);
 
         // E-26/PROD-41: what happened is recorded, and the follow-up question answered — actions logged or "none identified".
         var review = await db.PostIncidentReviews.AsNoTracking()
             .Where(r => r.CaseId == caseId)
-            .Select(r => new { r.WhatHappened, r.NoActionsIdentified })
+            .Select(r => new { r.WhatHappened, r.NoActionsIdentified, At = r.ModifiedAtUtc ?? r.CreatedAtUtc })
             .FirstOrDefaultAsync(ct);
-        var lessonsCaptured = review is not null && !string.IsNullOrWhiteSpace(review.WhatHappened)
-            && (review.NoActionsIdentified || await db.ImprovementActions.AnyAsync(a => a.CaseId == caseId, ct));
+        var actions = await db.ImprovementActions.CountAsync(a => a.CaseId == caseId, ct);
+        var reviewRecorded = review is not null && !string.IsNullOrWhiteSpace(review.WhatHappened);
+        var lessonsCaptured = reviewRecorded && (review!.NoActionsIdentified || actions > 0);
 
         // INV-13: tasks still open (not done or cancelled).
         var openTasks = await db.ActionItems.CountAsync(a => a.CaseId == caseId
@@ -114,6 +119,7 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
             c.HasSummary, c.HasAffectedCount, c.HasDataElements, c.HasAffectedStates, c.HasDetectionCaseId,
             entityCount, maliciousCount, evidenceCount, reportCount, c.HasIncidentCommander,
             c.AffectedIndividualsCount, c.Classification, c.MaterialityDetermined, lessonsCaptured, openTasks,
-            notificationPending);
+            notificationPending, unknown, noCustody, reviewRecorded ? review!.At : null, actions,
+            review?.NoActionsIdentified ?? false);
     }
 }

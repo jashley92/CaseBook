@@ -2205,7 +2205,7 @@ else
         _activeModal = null;
         switch (checkKey)
         {
-            case GateCheckKeys.AtLeastOneEntity or GateCheckKeys.AtLeastOneMaliciousEntity: await SetTab("Entities"); break;
+            case GateCheckKeys.AtLeastOneEntity or GateCheckKeys.AtLeastOneMaliciousEntity or GateCheckKeys.EntitiesAssessed: await SetTab("Entities"); break;
             case GateCheckKeys.AtLeastOneEvidence: await SetTab("Evidence"); break;
             case GateCheckKeys.AtLeastOneReport: await SetTab("Report"); break;
             case GateCheckKeys.LessonsCaptured: await SetTab("Review"); break;

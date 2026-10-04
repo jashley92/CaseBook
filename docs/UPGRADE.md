@@ -170,6 +170,10 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   Case outcomes. Cases closed before the upgrade keep their records unchanged and have no outcome. A task raised from
   a brief question now needs an answer to be marked done. Configuration bundles become schema v4 (they carry the
   outcomes); older bundles still import.
+  The close gate's shipped "Post-incident review complete" attestation becomes the "Post-incident review recorded"
+  check (Incidents & Breaches; it was tickable with no review), and an advisory "Every entity / IOC has a verdict"
+  check is added. A close-gate attestation you worded yourself is left as it is; change either under
+  Administration → Stage gates.
 
 - **After v1.2.4, a missing seal-signing key stops startup.** Outside Development the app no longer generates a
   key when `Integrity:SigningKeyPath` points at a missing file; it refuses to start. An existing install already

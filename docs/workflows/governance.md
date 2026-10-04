@@ -42,11 +42,16 @@ an optional number) or an **attestation** (a statement the person ticks in the d
 | `LessonsCaptured` | Passes below Incident; otherwise the review has "what happened" and at least one improvement action, or "no actions identified" |
 | `NoOpenTasks` | No open tasks |
 | `NotificationsRecorded` | Passes unless the deadline clock is on, a deadline applies (a data element with notification jurisdictions and a start time) and no reported time is recorded |
+| `EntitiesAssessed` | No entity is left with the verdict **Unknown** ("Assess" goes to the Entities tab; the dialog shows how many are left) |
 
 Rules:
 
 - Checks look at the **saved** case, not unsaved edits in the dialog.
 - Attestations count **only** when ticked in the dialog at the moment of the transition, never from stored data.
+- An attestation shows the record's facts beside it, so it isn't ticked blind: one about evidence or custody shows
+  "1 evidence file · custody log on it" or "No evidence files attached"; one about a post-incident review or lessons
+  shows "Review recorded 3 Oct 2026 · 2 improvement actions" or "No post-incident review recorded". What was shown
+  is kept in the gate passage's record ("shown: …"). Other attestations show nothing extra.
 - An unknown check key never passes.
 - One active gate per trigger.
 - The dialog offers a "Fix" jump next to each unmet check (to the right tab, the assign dialog, the materiality
@@ -75,7 +80,7 @@ Seeded on first start in every environment:
 | Promotion readiness | Summary present |
 | Incident readiness | Summary present; at least one entity; IC assigned (advisory) |
 | Breach readiness | Summary present; affected individuals count; data elements; affected jurisdictions; at least one malicious entity (advisory); attestation "Impact assessment reviewed with leadership / Legal" |
-| Closure readiness | Summary present; a report generated (advisory); required regulatory notifications recorded; attestations "Post-incident review complete" and "Evidence preserved and chain of custody complete" |
+| Closure readiness | Summary present; a report generated (advisory); required regulatory notifications recorded; post-incident review recorded (Incidents & Breaches); every entity has a verdict (advisory); attestation "Evidence preserved and chain of custody complete" |
 
 Configure them in Administration → Stage gates.
 

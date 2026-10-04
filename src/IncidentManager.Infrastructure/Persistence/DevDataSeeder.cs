@@ -502,7 +502,9 @@ public static class DevDataSeeder
                 Check(GateCheckKeys.SummaryPresent),
                 Check(GateCheckKeys.AtLeastOneReport, blocking: false),
                 Check(GateCheckKeys.NotificationsRecorded), // INV-43
-                Attest("Post-incident review complete"),
+                // HR-12: the review is checked, not attested (Incidents & Breaches; minor cases pass it).
+                Check(GateCheckKeys.LessonsCaptured),
+                Check(GateCheckKeys.EntitiesAssessed, blocking: false),
                 Attest("Evidence preserved and chain of custody complete")));
 
         await db.SaveChangesAsync(ct);

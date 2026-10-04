@@ -2,6 +2,8 @@
    checkboxes the analyst must consciously tick. Used in the reclassify and close confirm modals, and
    read-only on the Overview readiness card (Interactive=false hides the checkboxes' effect). *@
 
+@inject IncidentManager.Web.Services.TimeDisplay TimeDisp
+
 <div class="gate-panel">
     <div class="gate-panel-title"><span class="bi bi-shield-check me-1" aria-hidden="true"></span>@Eval.GateName</div>
     @foreach (var r in Eval.Requirements)
@@ -15,6 +17,7 @@
                 <span>
                     <span class="bi bi-pen me-1 text-muted" aria-hidden="true"></span>@r.Label
                     @if (!r.IsBlocking) { <span class="text-muted ms-1">(optional)</span> }
+                    @Fact(r)
                 </span>
             </label>
         }
@@ -27,15 +30,25 @@
                 @if (!r.IsBlocking) { <span class="text-muted ms-1">(optional)</span> }
                 @if (!ok && OnFix.HasDelegate && r.CheckKey is { } key && CanFix(key))
                 {
+                    var verb = key == GateCheckKeys.EntitiesAssessed ? "Assess" : "Fix";
                     <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline gate-fix"
-                            aria-label="@($"Fix: {r.Label}")" @onclick="() => OnFix.InvokeAsync(key)">Fix</button>
+                            aria-label="@($"{verb}: {r.Label}")" @onclick="() => OnFix.InvokeAsync(key)">@verb</button>
                 }
+                @Fact(r)
             </div>
         }
     }
 </div>
 
 @code {
+    // HR-12: what the record holds behind this requirement, so an attestation isn't ticked blind.
+    private RenderFragment Fact(GateRequirementResult r) => @<text>
+        @if (Eval.FactFor(r, d => TimeDisp.DateOnly(d)) is { } fact)
+        {
+            <span class="gate-fact d-block small text-muted">@fact</span>
+        }
+    </text>;
+
     [Parameter, EditorRequired] public GateEvaluation Eval { get; set; } = default!;
     [Parameter, EditorRequired] public HashSet<Guid> Attested { get; set; } = default!;
 
@@ -57,7 +70,7 @@
         or GateCheckKeys.AtLeastOneEntity or GateCheckKeys.AtLeastOneMaliciousEntity
         or GateCheckKeys.AtLeastOneEvidence or GateCheckKeys.AtLeastOneReport
         or GateCheckKeys.IncidentCommanderAssigned or GateCheckKeys.MaterialityDetermined
-        or GateCheckKeys.LessonsCaptured;
+        or GateCheckKeys.LessonsCaptured or GateCheckKeys.EntitiesAssessed;
 
     private async Task Toggle(Guid id, bool on)
     {

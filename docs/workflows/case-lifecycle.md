@@ -122,8 +122,9 @@ Outcome section leads with the outcome and the conclusion, and the case list can
 ### The close gate
 
 Seeded for every installation: *Closure readiness*, with "Case summary recorded" (required), "A report has been
-generated" (advisory), "Required regulatory notifications recorded" (required), and two attestations to tick:
-"Post-incident review complete" and "Evidence preserved and chain of custody complete". Administrators change it under
+generated" (advisory), "Required regulatory notifications recorded" (required), "Post-incident review recorded"
+(required on Incidents & Breaches), "Every entity / IOC has a verdict" (advisory), and one attestation to tick,
+"Evidence preserved and chain of custody complete", shown beside the evidence it's about. Administrators change it under
 Administration → Stage gates. The full list of machine checks is in [governance.md](governance.md#stage-gates).
 
 ## 6. Correcting when a transition happened
