@@ -24,6 +24,15 @@ public class ActionItem : AuditableEntity, IHashableEntity
     public bool IsOpen => Status is not (ActionItemStatus.Done or ActionItemStatus.Cancelled);
     public DateTimeOffset? CompletedAtUtc { get; set; }
 
+    /// <summary>
+    /// HR-02: who did the work, recorded when the task is marked done: a directory user id or a free-text name (as
+    /// <see cref="Owner"/>). Null while not done, and on tasks completed before this was recorded.
+    /// </summary>
+    public string? CompletedBy { get; set; }
+
+    /// <summary>HR-02: the task follows up an open question in the brief, so completing it needs an answer.</summary>
+    public bool FollowsUpQuestion => RaisedFromBriefId is not null;
+
     /// <summary>INV-25: the brief version whose open question this task follows up, when it was raised from one.</summary>
     public Guid? RaisedFromBriefId { get; set; }
 
@@ -53,6 +62,8 @@ public class ActionItem : AuditableEntity, IHashableEntity
         if (Kind != TaskKind.General) content = string.Join('|', content, "kind", (int)Kind);
         if (RaisedFromBriefId is { } b) content = string.Join('|', content, "brief", b);
         // INV-28: likewise what it's about, only when set.
-        return AboutRef is { } about ? string.Join('|', content, "about", about) : content;
+        if (AboutRef is { } about) content = string.Join('|', content, "about", about);
+        // HR-02: likewise who completed it, only when set.
+        return CompletedBy is { Length: > 0 } by ? string.Join('|', content, "by", by) : content;
     }
 }

@@ -7,6 +7,7 @@
 @inject IncidentManager.Application.Admin.CaseTemplateService Templates
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IClock Clock
+@inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
 
@@ -219,9 +220,27 @@ else
                         {
                             <div class="small text-muted" style="white-space:pre-wrap">@t.Description</div>
                         }
+                        @* HR-02: what a done task found or did, and who did it, without opening its comments. *@
+                        @if (t.Status == ActionItemStatus.Done)
+                        {
+                            var doneMeta = (t.CompletedAtUtc is { } doneAt ? $"done {TimeDisp.Short(doneAt)}" : "done")
+                                           + (t.CompletedBy is { } doneBy ? $" by {Users.DisplayFor(doneBy)}" : "");
+                            @if (TaskResults.TryGetValue(t.Id, out var res))
+                            {
+                                <span class="im-task-result">@res.Text<span class="im-meta">@doneMeta</span></span>
+                            }
+                            else if (t.CompletedBy is not null)
+                            {
+                                <div class="small text-muted">@(char.ToUpperInvariant(doneMeta[0]) + doneMeta[1..])</div>
+                            }
+                        }
                     </td>
                     <td>
-                        @if (string.IsNullOrWhiteSpace(t.Owner))
+                        @if (string.IsNullOrWhiteSpace(t.Owner) && !t.IsOpen)
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                        else if (string.IsNullOrWhiteSpace(t.Owner))
                         {
                             <span class="im-badge im-b-warn" title="No owner assigned">Unassigned</span>
                         }
@@ -259,12 +278,34 @@ else
                         <td colspan="@colCount" class="bg-body-tertiary">
                             <div class="row g-2">
                                 <div class="col-12">
-                                    <label class="form-label small mb-0" for="task-done-result">What was the result? <span class="text-muted">(optional)</span></label>
+                                    @if (t.FollowsUpQuestion)
+                                    {
+                                        @* HR-02: a question's task is done when the question has an answer. *@
+                                        <label class="form-label small mb-0" for="task-done-result">What did you find? <span class="text-muted">(required: this task follows up a question in the brief, and the answer shows there)</span></label>
+                                    }
+                                    else
+                                    {
+                                        <label class="form-label small mb-0" for="task-done-result">What was the result? <span class="text-muted">(optional)</span></label>
+                                    }
                                     <textarea id="task-done-result" class="form-control form-control-sm" rows="2" maxlength="8000"
                                               @bind="_doneResult" @bind:event="oninput"
                                               placeholder="e.g. all 12 domains added to the proxy block list (change CHG-20931); verified from the Finance VLAN"></textarea>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-3">
+                                    <label class="form-label small mb-0" for="task-done-by">Done by</label>
+                                    <select id="task-done-by" class="form-select form-select-sm" @bind="_doneBy">
+                                        @foreach (var u in Users.All())
+                                        {
+                                            <option value="@u.UserId">@u.DisplayName</option>
+                                        }
+                                        <option value="@ExternalOwnerSentinel">External / other…</option>
+                                    </select>
+                                    @if (_doneBy == ExternalOwnerSentinel)
+                                    {
+                                        <input class="form-control form-control-sm mt-1" aria-label="Done by (name)" @bind="_doneByExternal" @bind:event="oninput" placeholder="Name" />
+                                    }
+                                </div>
+                                <div class="col-md-3">
                                     <label class="form-label small mb-0" for="task-done-when">Completed at (@TimeDisp.Label)</label>
                                     <input id="task-done-when" type="datetime-local" class="form-control form-control-sm" @bind="_doneWhen" />
                                     <div class="tl-nudges" role="group" aria-label="Adjust the time">
@@ -274,7 +315,7 @@ else
                                         <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = _doneWhen.AddMinutes(15)" aria-label="15 minutes later">+15 min</button>
                                     </div>
                                 </div>
-                                <div class="col-md-5">
+                                <div class="col-md-3">
                                     <div class="form-check mt-3">
                                         <input class="form-check-input" type="checkbox" id="task-done-log" @bind="_doneLog" disabled="@string.IsNullOrWhiteSpace(_doneResult)" />
                                         <label class="form-check-label small" for="task-done-log">Add the result to the timeline as</label>
@@ -289,7 +330,7 @@ else
                                 </div>
                                 <div class="col-md-3 d-flex align-items-end justify-content-end gap-2">
                                     <button class="btn btn-sm btn-outline-secondary" @onclick="CancelComplete">Cancel</button>
-                                    <button class="btn btn-sm btn-primary" disabled="@_completing" @onclick="() => CompleteTask(t.Id)">Mark done</button>
+                                    <button class="btn btn-sm btn-primary" disabled="@(_completing || (t.FollowsUpQuestion && string.IsNullOrWhiteSpace(_doneResult)))" @onclick="() => CompleteTask(t.Id)">Mark done</button>
                                 </div>
                             </div>
                         </td>
@@ -418,6 +459,8 @@ else
 @code {
     private bool _addOpen;
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    /// <summary>HR-02: each task's latest recorded result.</summary>
+    [Parameter] public IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> TaskResults { get; set; } = new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
     /// <summary>INV-28: open the entity a task is about.</summary>
     [Parameter] public EventCallback<Guid> OnOpenEntity { get; set; }
     /// <summary>INV-28: switch to the tab holding what a task is about (Timeline, Evidence).</summary>
@@ -720,6 +763,8 @@ else
     private DateTime _doneWhen;
     private DateTime _doneWhenDefault;
     private bool _doneLog = true;
+    private string _doneBy = "";               // HR-02: who did the work (defaults to whoever marks it done)
+    private string? _doneByExternal;
     private TimelineEntryType _doneType = TimelineEntryType.Other;
     private bool _completing;
 
@@ -737,6 +782,8 @@ else
         _doneResult = null;
         _doneWhen = _doneWhenDefault = ToWall(Clock.UtcNow);
         _doneLog = true;
+        _doneBy = CurrentUser.UserId;
+        _doneByExternal = null;
     }
 
     private void CancelComplete() => _completingId = null;
@@ -747,9 +794,10 @@ else
         try
         {
             var result = string.IsNullOrWhiteSpace(_doneResult) ? null : _doneResult;
+            var doneBy = _doneBy == ExternalOwnerSentinel ? _doneByExternal : _doneBy;
             await Cases.CompleteActionItemAsync(CaseId, id,
                 _doneWhen == _doneWhenDefault ? null : WallToUtc(_doneWhen),
-                result, _doneLog && result is not null ? _doneType : null);
+                result, _doneLog && result is not null ? _doneType : null, doneBy: doneBy);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
         finally { _completing = false; }

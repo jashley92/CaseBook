@@ -174,15 +174,15 @@ else
                         <p class="small fst-italic text-muted mb-1">Tasks recorded on the case, with their status.</p>
                         <div class="table-responsive">
                             <table class="table table-sm table-bordered small mb-0">
-                                <thead><tr><th>Task</th><th>Owner</th><th>Due (UTC)</th><th>Status</th></tr></thead>
+                                <thead><tr><th>Task</th><th>Owner</th><th>Due (UTC)</th><th>Status</th><th>Result</th></tr></thead>
                                 <tbody>
                                     @if (Model.ActionItems.Count == 0)
                                     {
-                                        <tr><td colspan="4" class="text-muted">(none)</td></tr>
+                                        <tr><td colspan="5" class="text-muted">(none)</td></tr>
                                     }
                                     @foreach (var x in Model.ActionItems)
                                     {
-                                        <tr><td>@x.Title</td><td>@x.Owner</td><td>@(x.DueAtUtc?.ToString("u"))</td><td>@x.Status</td></tr>
+                                        <tr><td>@x.Title</td><td>@x.Owner</td><td>@(x.DueAtUtc?.ToString("u"))</td><td>@x.StatusLine</td><td>@x.Result</td></tr>
                                     }
                                 </tbody>
                             </table>

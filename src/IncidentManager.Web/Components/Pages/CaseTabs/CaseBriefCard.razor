@@ -128,6 +128,8 @@
 
 @code {
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    /// <summary>HR-02: each task's latest recorded result.</summary>
+    [Parameter] public IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> TaskResults { get; set; } = new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
     [Parameter] public bool CanEdit { get; set; }
     [Parameter] public EventCallback OnChanged { get; set; }
     /// <summary>Switch the workspace to another tab (a task opens the Tasks tab).</summary>
@@ -342,6 +344,21 @@
                         <span class="bi @(task.IsOpen ? "bi-list-check" : "bi-check2")" aria-hidden="true"></span>
                         Task · @(task.IsOpen ? (string.IsNullOrWhiteSpace(task.Owner) ? "open" : Users.DisplayFor(task.Owner)) : (task.Status == ActionItemStatus.Done ? "done" : "canceled"))
                     </button>
+                    @* HR-02: the answer stays with the question. *@
+                    @if (task.Status == ActionItemStatus.Done)
+                    {
+                        @if (TaskResults.TryGetValue(task.Id, out var answer))
+                        {
+                            <div class="im-brief-q-answer">
+                                @answer.Text
+                                <span class="im-meta">@Users.DisplayFor(task.CompletedBy ?? answer.RecordedBy) · @TimeDisp.Short(task.CompletedAtUtc ?? answer.RecordedAtUtc)</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="im-brief-q-answer im-missing">Marked done without an answer.</div>
+                        }
+                    }
                 }
                 else if (CanEdit)
                 {

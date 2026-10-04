@@ -222,6 +222,7 @@ Created only by `EvidenceService.UploadAsync`. **No update or delete path exists
 | `Status` | int | 0 Open, 1 In progress, 2 Blocked, 3 Done, 4 Cancelled. "Open" in logic means not Done and not Cancelled. |
 | `Kind` | int | 0 General, 1 Investigate, 2 Contain, 3 Eradicate, 4 Recover, 5 Notify (linked to phases Triage, Containment, Eradication, Recovery). |
 | `CompletedAtUtc` | datetimeoffset | Set on Done. |
+| `CompletedBy` | nvarchar(200) | Who did the work: a user id or a typed name. Set on Done (defaults to whoever marks it done), cleared when it leaves Done. Hashed only when set. |
 | `RaisedFromBriefId` | uniqueidentifier | The brief version whose open question raised it. |
 | `AboutRef` | nvarchar(64) | `entity:<id>`, `evidence:<id>` or `entry:<first-version id>`. |
 
@@ -230,7 +231,7 @@ Status can move from any value to any value; the service sets it directly. Never
 ### `ActionItemComments` (H, A)
 
 `ActionItemId`, `CaseId` (no foreign keys), `Body` (8000). Append-only; never edited or deleted. A completed
-task's result is stored as a comment starting "Result:".
+task's result is stored as a comment starting "Result:"; the latest one is the task's result (`TaskResults`), so earlier answers stay on record after a reopen.
 
 ### `CaseAssignments` (A)
 

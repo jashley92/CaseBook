@@ -415,7 +415,7 @@ else
         @* INV-29: where the panel isn't beside the tab (narrow screens, or hidden), its content is a strip here. *@
         <CaseContextRail Strip="true" AlwaysStrip="!_railOpen" Case="_case" Notify="_notifyDeadlines" CanEdit="_canEdit"
                          OnOpenEntity="OpenEntity" OnGoToTab="SetTab" OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
-        <CaseOverviewTab @ref="_overviewTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" CanLiftRestriction="@(_canEdit && CanLiftRestriction)"
+        <CaseOverviewTab @ref="_overviewTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" CanEdit="_canEdit" CanLiftRestriction="@(_canEdit && CanLiftRestriction)"
                          RetentionMessage="@_retentionMsg" ReadinessEval="_readinessEval"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" OnOpenModal="OpenModal"
                          OnFix="FixGateItem" OnGoToTab="SetTab" OnShowSince="ShowSinceAt" RefreshToken="_liveRefresh" />
@@ -425,7 +425,7 @@ else
         @* UX-13: extracted to CaseTimelineTab. It owns its Investigation EasyMDE editor; the parent keeps
            the flash, the screenshot lightbox (OnPreview→OpenShot), the Ctrl+Enter hotkey (via @ref), the
            paste-shim registration (element ids kept in the child), and the live-collab "new entries" pill. *@
-        <CaseTimelineTab @ref="_timelineTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" CanChangeClassification="_canReclassify"
+        <CaseTimelineTab @ref="_timelineTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" CanEdit="_canEdit" CanChangeClassification="_canReclassify"
                          DetectionLabel="@DetectionLabel" OnChanged="Reload" OnPreview="OpenShot"
                          FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts"
                          ChangedSinceUtc="_timelineSince" OnClearSince="() => _timelineSince = null"
@@ -471,7 +471,7 @@ else
     {
         @* UX-13: extracted to CaseTasksTab. Self-loads its playbooks and builds due-dates; the parent keeps
            the flash and hotkey dispatch (@ref) and reloads the case after a write. *@
-        <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" CanEdit="_canEdit" OnOpenEntity="OpenEntity" OnGoToTab="SetTab" OnFocusItem="FocusItem"
+        <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" CanEdit="_canEdit" OnOpenEntity="OpenEntity" OnGoToTab="SetTab" OnFocusItem="FocusItem"
                       OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh"
                       AutofocusComposer="_tasksAutofocus" OnAutofocusHandled="() => _tasksAutofocus = false" />
     }
@@ -778,6 +778,8 @@ else
     };
 
     private Case? _case;
+    // HR-02: each task's latest recorded result, shown under brief questions, on tasks and on timeline task chips.
+    private IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> _taskResults = new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
     private bool _notFound;
 
     // Case-number rename (inline in the header)
@@ -1167,6 +1169,8 @@ else
     {
         _case = detail;
         _notFound = _case is null;
+        _taskResults = _case is null ? new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>()
+            : await Cases.GetTaskResultsAsync(_case.Id);
         // C-05: record the authorized case-detail open (best-effort; coalesced into a view-session).
         if (_case is not null)
         {

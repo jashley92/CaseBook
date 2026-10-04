@@ -31,7 +31,7 @@
    The clocks, dates and team live in the case context panel (or its strip), not here. The open tasks are the
    brief's Next steps here, so beside the Overview the panel's Next shrinks to its summary line (INV-40). *@
 @* INV-09 / INV-36: the brief leads, with the case summary as its first part. *@
-<CaseBriefCard @ref="_brief" Case="Case" CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
+<CaseBriefCard @ref="_brief" Case="Case" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
 
 <div class="im-ov">
     @{ var recent = RecentOnTimeline(); }
@@ -527,6 +527,8 @@
 @code {
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    /// <summary>HR-02: each task's latest recorded result.</summary>
+    [Parameter] public IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> TaskResults { get; set; } = new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
     [Parameter] public bool CanEdit { get; set; }
     /// <summary>S-08: whether this user may lift the need-to-know restriction (the IC or a cleared role).</summary>
     [Parameter] public bool CanLiftRestriction { get; set; }

@@ -151,8 +151,8 @@ public sealed partial class ReportGenerator : IReportGenerator
                 body.AppendChild(Heading("Response Tasks"));
                 body.AppendChild(P("Tasks recorded on the case, with their status.", italic: true, size: 18));
                 body.AppendChild(WordTable(
-                    ["Task", "Owner", "Due (UTC)", "Status"],
-                    m.ActionItems.Select(x => new[] { x.Title, x.Owner ?? "", x.DueAtUtc?.ToString("u") ?? "", x.Status })));
+                    ["Task", "Owner", "Due (UTC)", "Status", "Result"],
+                    m.ActionItems.Select(x => new[] { x.Title, x.Owner ?? "", x.DueAtUtc?.ToString("u") ?? "", x.StatusLine, x.Result ?? "" })));
                 break;
 
             case ReportSection.Outcome:

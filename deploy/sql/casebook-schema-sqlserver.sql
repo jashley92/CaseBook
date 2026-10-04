@@ -2571,3 +2571,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004054804_AddTaskCompletedBy'
+)
+BEGIN
+    ALTER TABLE [ActionItems] ADD [CompletedBy] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004054804_AddTaskCompletedBy'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261004054804_AddTaskCompletedBy', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

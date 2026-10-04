@@ -258,6 +258,55 @@ public sealed class TaskCompletionTests : IDisposable
         await again.Should().ThrowAsync<InvalidOperationException>("an open task already follows it up");
     }
 
+    // --- HR-02: answers stay with their questions ---
+
+    private async Task<(CaseService Svc, Guid CaseId, Guid QuestionTaskId, Guid PlainTaskId)> CaseWithQuestionTask()
+    {
+        var (svc, caseId, plainId) = await CaseWithTask();
+        await svc.ReviseBriefAsync(caseId, null, "Lure reached Finance", null, null, "- Were any vendor banking changes requested?");
+        await svc.RaiseTaskFromQuestionAsync(caseId, "Were any vendor banking changes requested?");
+        var q = (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.RaisedFromBriefId is not null);
+        return (svc, caseId, q.Id, plainId);
+    }
+
+    [Fact]
+    public async Task A_question_task_cannot_be_done_without_an_answer_by_any_path()
+    {
+        var (svc, caseId, qId, _) = await CaseWithQuestionTask();
+
+        var complete = () => svc.CompleteActionItemAsync(caseId, qId, null, "  ", null);
+        await complete.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Say what was found*");
+        var status = () => svc.SetActionItemStatusAsync(caseId, qId, ActionItemStatus.Done);
+        await status.Should().ThrowAsync<InvalidOperationException>();
+        var edit = () => svc.UpdateActionItemAsync(caseId, qId, "Were any vendor banking changes requested?", null, null,
+            ActionItemStatus.Done, null);
+        await edit.Should().ThrowAsync<InvalidOperationException>();
+
+        (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Id == qId).IsOpen.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task An_answer_is_kept_with_who_did_it_and_survives_a_reopen()
+    {
+        var (svc, caseId, qId, plainId) = await CaseWithQuestionTask();
+
+        await svc.CompleteActionItemAsync(caseId, qId, null, "None. AP confirmed no change requests.", null, doneBy: "Accounts Payable lead");
+        await svc.SetActionItemStatusAsync(caseId, plainId, ActionItemStatus.Done);   // a plain task needs no result
+
+        var c = (await svc.GetDetailAsync(caseId))!;
+        c.ActionItems.Single(t => t.Id == qId).CompletedBy.Should().Be("Accounts Payable lead");
+        c.ActionItems.Single(t => t.Id == plainId).CompletedBy.Should().Be(_user.UserId);
+        var results = await svc.GetTaskResultsAsync(caseId);
+        results[qId].Text.Should().Be("None. AP confirmed no change requests.");
+        results.Should().NotContainKey(plainId);
+
+        // Reopened, then done again from the status menu: the earlier answer still counts and stays on record.
+        await svc.SetActionItemStatusAsync(caseId, qId, ActionItemStatus.InProgress);
+        (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Id == qId).CompletedBy.Should().BeNull();
+        await svc.SetActionItemStatusAsync(caseId, qId, ActionItemStatus.Done);
+        (await svc.GetTaskResultsAsync(caseId))[qId].Text.Should().Be("None. AP confirmed no change requests.");
+    }
+
     [Fact]
     public async Task A_brief_saved_from_an_older_version_is_refused_and_an_empty_one_is_rejected()
     {

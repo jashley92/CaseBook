@@ -48,7 +48,15 @@ public sealed record ReportBrief(int Version, DateTimeOffset RevisedAtUtc, strin
 public sealed record ReportEvidenceItem(string FileName, long SizeBytes, string Sha256, DateTimeOffset UploadedAtUtc, string UploadedBy);
 /// <summary>An analyst note: <see cref="Body"/> is plain text; <see cref="Blocks"/> keeps its Markdown formatting for print.</summary>
 public sealed record ReportNoteItem(DateTimeOffset AtUtc, string Author, string Body, IReadOnlyList<RichBlock>? Blocks = null);
-public sealed record ReportActionItemRow(string Title, string? Owner, DateTimeOffset? DueAtUtc, string Status);
+/// <summary>A response task. HR-02: a done task carries its recorded result, when it was completed and by whom.</summary>
+public sealed record ReportActionItemRow(string Title, string? Owner, DateTimeOffset? DueAtUtc, string Status,
+    string? Result = null, DateTimeOffset? CompletedAtUtc = null, string? CompletedBy = null)
+{
+    /// <summary>The status as printed: "Done, 2026-10-01 10:18 UTC by Dev Analyst" for a completed task.</summary>
+    public string StatusLine => CompletedAtUtc is { } at
+        ? $"{Status}, {at:yyyy-MM-dd HH:mm} UTC{(string.IsNullOrWhiteSpace(CompletedBy) ? "" : " by " + CompletedBy)}"
+        : Status;
+}
 public sealed record ReportAssignmentRow(string User, string Role);
 /// <summary>E-26: the post-incident review, as printed in the lessons-learned report (Markdown kept as blocks).</summary>
 public sealed record ReportReview(IReadOnlyList<RichBlock> WhatHappened, IReadOnlyList<RichBlock> ContributingFactors,

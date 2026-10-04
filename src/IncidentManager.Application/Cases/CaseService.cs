@@ -408,6 +408,21 @@ public sealed class CaseService
             open.Count, next, latest, indicators, entities.Count, team);
     }
 
+    /// <summary>
+    /// HR-02: the latest recorded result of each task on a case (see <see cref="TaskResults"/>). Need-to-know scoped:
+    /// a case the caller can't see has none.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, TaskResult>> GetTaskResultsAsync(Guid caseId, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        if (!await Scoped(db.Cases.AsNoTracking()).AnyAsync(c => c.Id == caseId, ct))
+            return new Dictionary<Guid, TaskResult>();
+        var rows = await db.ActionItemComments.AsNoTracking()
+            .Where(c => c.CaseId == caseId && c.Body.StartsWith(TaskResults.Prefix))
+            .ToListAsync(ct);
+        return TaskResults.Latest(rows);
+    }
+
     /// <summary>Loads a case with all detail for the workspace, enforcing access scoping.</summary>
     public async Task<Case?> GetDetailAsync(Guid id, CancellationToken ct = default)
     {
@@ -1861,10 +1876,12 @@ public sealed class CaseService
     /// work is written once. One save, one audited unit.
     /// </summary>
     public async Task CompleteActionItemAsync(Guid caseId, Guid actionItemId, DateTimeOffset? completedAtUtc,
-        string? result, TimelineEntryType? logAs, CancellationToken ct = default)
+        string? result, TimelineEntryType? logAs, CancellationToken ct = default, string? doneBy = null)
     {
         Require();
         var text = string.IsNullOrWhiteSpace(result) ? null : result.Trim();
+        var by = string.IsNullOrWhiteSpace(doneBy) ? _user.UserId : doneBy.Trim();
+        if (by.Length > 200) throw new ArgumentException("Keep \"done by\" to 200 characters or fewer.");
         if (text is { Length: > 8000 }) throw new ArgumentException("Keep the result to 8,000 characters or fewer.");
         if (logAs is not null && text is null)
             throw new ArgumentException("Describe the result to add it to the timeline.");
@@ -1875,6 +1892,9 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, caseId, ct);
         var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
                    ?? throw new InvalidOperationException("Task not found.");
+        // HR-02: a task that follows up a question in the brief is done when the question has an answer.
+        if (item.FollowsUpQuestion && text is null)
+            await EnsureQuestionAnsweredAsync(db, item, ct);
         var now = _clock.UtcNow;
         var at = completedAtUtc ?? now;
         if (at > now) throw new ArgumentException("A task can't be completed in the future.");
@@ -1883,6 +1903,7 @@ public sealed class CaseService
 
         item.Status = ActionItemStatus.Done;
         item.CompletedAtUtc = at;
+        item.CompletedBy = by;
         item.ModifiedBy = _user.UserId;
         item.ModifiedAtUtc = now;
 
@@ -1890,7 +1911,7 @@ public sealed class CaseService
         {
             db.ActionItemComments.Add(new ActionItemComment
             {
-                ActionItemId = item.Id, CaseId = c.Id, Body = $"Result: {text}", CreatedBy = _user.UserId, CreatedAtUtc = now
+                ActionItemId = item.Id, CaseId = c.Id, Body = TaskResults.Body(text), CreatedBy = _user.UserId, CreatedAtUtc = now
             });
             if (logAs is { } type)
                 c.TimelineEntries.Add(new TimelineEntry
@@ -1903,6 +1924,19 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    private const string QuestionNeedsAnswer =
+        "This task follows up a question in the brief. Say what was found to mark it done.";
+
+    // HR-02: a status change can't complete a question's task without an answer. An answer recorded before (the task
+    // was reopened since) still counts; otherwise "Mark done" is the way to give one.
+    private static async Task EnsureQuestionAnsweredAsync(IAppDbContext db, ActionItem item, CancellationToken ct)
+    {
+        if (!item.FollowsUpQuestion) return;
+        var answered = await db.ActionItemComments.AsNoTracking()
+            .AnyAsync(c => c.ActionItemId == item.Id && c.Body.StartsWith(TaskResults.Prefix), ct);
+        if (!answered) throw new InvalidOperationException(QuestionNeedsAnswer);
+    }
+
     public async Task SetActionItemStatusAsync(Guid caseId, Guid actionItemId, ActionItemStatus status,
         CancellationToken ct = default)
     {
@@ -1911,12 +1945,15 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, caseId, ct);
         var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
                    ?? throw new InvalidOperationException("Task not found.");
+        if (status == ActionItemStatus.Done && item.Status != ActionItemStatus.Done)
+            await EnsureQuestionAnsweredAsync(db, item, ct);
         item.Status = status;
         item.ModifiedBy = _user.UserId;
         item.ModifiedAtUtc = _clock.UtcNow;
         // Completed only while Done — reopening a task (back to Open/InProgress/Blocked) clears the
         // completion timestamp so it re-enters the open queues and metrics stay accurate.
         item.CompletedAtUtc = status == ActionItemStatus.Done ? _clock.UtcNow : null;
+        item.CompletedBy = status == ActionItemStatus.Done ? _user.UserId : null;   // HR-02
         await db.SaveChangesAsync(ct);
     }
 
@@ -1964,6 +2001,9 @@ public sealed class CaseService
         item.Owner = string.IsNullOrWhiteSpace(owner) ? null : owner.Trim();
         item.DueAtUtc = dueAtUtc;
         item.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        if (status == ActionItemStatus.Done && item.Status != ActionItemStatus.Done)
+            await EnsureQuestionAnsweredAsync(db, item, ct);
+        item.CompletedBy = status == ActionItemStatus.Done ? (item.Status == ActionItemStatus.Done ? item.CompletedBy : _user.UserId) : null;   // HR-02
         item.Status = status;
         item.CompletedAtUtc = status == ActionItemStatus.Done ? (item.CompletedAtUtc ?? _clock.UtcNow) : null;
         if (kind is { } k) item.Kind = k;

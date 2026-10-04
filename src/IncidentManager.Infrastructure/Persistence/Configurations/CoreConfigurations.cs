@@ -140,6 +140,7 @@ public sealed class ActionItemConfiguration : IEntityTypeConfiguration<ActionIte
         b.Property(x => x.AboutRef).HasMaxLength(64);
         b.Property(x => x.Description).HasMaxLength(4000);
         b.Property(x => x.Owner).HasMaxLength(200);
+        b.Property(x => x.CompletedBy).HasMaxLength(200);   // HR-02
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.RowHash).HasMaxLength(64);
         b.HasIndex(x => new { x.CaseId, x.Status });

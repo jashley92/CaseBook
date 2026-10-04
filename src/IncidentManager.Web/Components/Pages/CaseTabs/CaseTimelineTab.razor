@@ -893,6 +893,8 @@ else
 @code {
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    /// <summary>HR-02: each task's latest recorded result.</summary>
+    [Parameter] public IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> TaskResults { get; set; } = new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
     [Parameter] public bool CanEdit { get; set; }
     [Parameter] public string DetectionLabel { get; set; } = "SIEM";
     /// <summary>Reload the case after a timeline write so the rest of the workspace refreshes.</summary>
@@ -1411,8 +1413,17 @@ else
                 {
                     <span class="tl-task @(t.IsOpen ? "" : "tl-task-done")" title="@(t.IsOpen ? "Open task" : "Done")">
                         <span class="bi @(t.IsOpen ? "bi-square" : "bi-check2-square")" aria-hidden="true"></span> @t.Title
-                        @if (!string.IsNullOrWhiteSpace(t.Owner)) { <span class="text-muted">· @Users.DisplayFor(t.Owner)</span> }
+                        @if (t.Status == ActionItemStatus.Done && t.CompletedAtUtc is { } doneAt)
+                        {
+                            <span class="text-muted">&nbsp;· done @TimeDisp.Short(doneAt)@(t.CompletedBy is { } by ? $" by {Users.DisplayFor(by)}" : "")</span>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(t.Owner)) { <span class="text-muted">· @Users.DisplayFor(t.Owner)</span> }
                     </span>
+                    @* HR-02: what the task found or did, right under the entry it follows up. *@
+                    @if (t.Status == ActionItemStatus.Done && TaskResults.TryGetValue(t.Id, out var res))
+                    {
+                        <span class="tl-task-result" title="@res.Text">@IncidentManager.Application.Cases.TaskResults.Excerpt(res.Text)</span>
+                    }
                 }
             </div>
         }
