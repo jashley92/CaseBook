@@ -29,6 +29,12 @@
             <span class="small text-muted" title="@TimeDisp.Long(cur.CreatedAtUtc)">
                 Revised @Ui.RelativeTime(cur.CreatedAtUtc, Clock.UtcNow) by @Users.DisplayFor(cur.CreatedBy)
             </span>
+            @if (cur.ConfirmedAtUtc is { } confirmed)
+            {
+                <span class="small text-muted" title="@($"Confirmed still accurate {TimeDisp.Long(confirmed)}")">
+                    · confirmed @Ui.RelativeTime(confirmed, Clock.UtcNow) by @Users.DisplayFor(cur.ConfirmedBy)
+                </span>
+            }
             @if (Earlier.Count > 0)
             {
                 <button type="button" class="btn btn-sm btn-link p-0" aria-expanded="@Ui.Aria(_showHistory)" @onclick="() => _showHistory = !_showHistory">
@@ -37,10 +43,15 @@
             }
             @if (Freshness is { Count: > 0 } fresh)
             {
-                <button type="button" class="im-badge im-b-warn im-brief-fresh" @onclick="() => OnShowSince.InvokeAsync(cur.CreatedAtUtc)"
+                <button type="button" class="im-badge im-b-warn im-brief-fresh" @onclick="() => OnShowSince.InvokeAsync(cur.CurrentAsOfUtc)"
                         title="@($"Recorded since this version: {string.Join(", ", fresh.Breakdown.Select(b => $"{b.Count} {b.What}"))}. Click to see them on the timeline.")">
                     @IncidentManager.Application.Common.Plural.Of(fresh.Count, "change") since
                 </button>
+                @if (CanEdit && !_editing)
+                {
+                    <button type="button" class="btn btn-link btn-sm p-0" disabled="@_saving" @onclick="ConfirmStillAccurate"
+                            title="You've checked the brief against what's changed and it still stands: record that, without a new version">Still accurate</button>
+                }
             }
         }
         @if (CanEdit && !_editing)
@@ -101,6 +112,9 @@
                 @if (CanEdit)
                 {
                     <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="BeginEdit">Update the brief</button>
+                    <span class="text-muted">or</span>
+                    <button type="button" class="btn btn-link btn-sm p-0 align-baseline" disabled="@_saving" @onclick="ConfirmStillAccurate"
+                            title="Nothing to change: record that you've checked it, without a new version">mark it still accurate</button>
                 }
             </div>
         }
@@ -209,16 +223,36 @@
         StateHasChanged();
     }
 
+    // Says the current version still stands, without a new one; the "changes since" count starts again.
+    private async Task ConfirmStillAccurate()
+    {
+        if (Current is not { } cur) return;
+        _saving = true;
+        try
+        {
+            await Cases.ConfirmBriefAsync(Case.Id, cur.Id);
+            Toasts.Success("Brief marked still accurate");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException or StaleEditException)
+        {
+            Toasts.Error(ex.Message);
+            await OnChanged.InvokeAsync();
+        }
+        finally { _saving = false; }
+    }
+
     private async Task Save()
     {
         _saving = true;
         _error = null;
         try
         {
-            await Cases.ReviseBriefAsync(Case.Id, _openedFrom, Linked(SummaryKey), Linked("assessment"), Linked("known"),
+            var saved = await Cases.ReviseBriefAsync(Case.Id, _openedFrom, Linked(SummaryKey), Linked("assessment"), Linked("known"),
                 Linked("open"));
             _editing = false;
-            Toasts.Success("Brief saved");
+            if (saved) Toasts.Success("Brief saved");
+            else Toasts.Info("No changes; the brief is unchanged. Use \"mark it still accurate\" to record that you've checked it.");
             await OnChanged.InvokeAsync();
         }
         catch (StaleEditException ex)

@@ -20,7 +20,7 @@ public static class BriefFreshness
 
     public static Result Since(Case c, CaseBrief brief, MilestoneLabels labels)
     {
-        var since = brief.CreatedAtUtc;
+        var since = brief.CurrentAsOfUtc;   // written, or last confirmed as still accurate
 
         var entries = c.TimelineEntries.Where(e => e.IsCurrent && e.CreatedAtUtc > since).ToList();
         var milestones = CaseMilestones.Project(c, labels)

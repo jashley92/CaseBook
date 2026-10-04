@@ -37,6 +37,29 @@ public class BriefFreshnessTests
     }
 
     [Fact]
+    public void Saving_the_same_text_makes_no_version_and_confirming_restarts_the_count()
+    {
+        var c = NewCase();
+        var brief = c.ReviseBrief("Lure reached Finance.", "Credential harvesting.", null, null, null, "ic1", T0.AddHours(1))!;
+        var hashBefore = brief.BuildCanonicalContent();
+        Entry(c, TimelineEntryType.Analysis, T0.AddHours(2));
+
+        c.ReviseBrief(" Lure reached Finance. ", "Credential harvesting.", "", null, "- new task", "ic1", T0.AddHours(3))
+            .Should().BeNull("only whitespace and the next-steps snapshot differ");
+        c.Briefs.Should().ContainSingle();
+        BriefFreshness.Since(c, brief, Labels).Count.Should().Be(1);
+
+        c.ConfirmBrief("an1", T0.AddHours(4));
+
+        brief.ConfirmedBy.Should().Be("an1");
+        brief.CurrentAsOfUtc.Should().Be(T0.AddHours(4));
+        BriefFreshness.Since(c, brief, Labels).Count.Should().Be(0, "the count starts again from the confirmation");
+        brief.BuildCanonicalContent().Should().Be(hashBefore + $"|confirmed|an1|{T0.AddHours(4):o}");
+        c.ReviseBrief("Lure reached Finance.", "Credential harvesting; one mailbox accessed.", null, null, null, "ic1", T0.AddHours(5))
+            .Should().NotBeNull().And.Match<CaseBrief>(b => b.Version == brief.Version + 1);
+    }
+
+    [Fact]
     public void Changes_recorded_after_the_brief_are_counted_and_the_latest_turning_point_is_named()
     {
         var c = NewCase();

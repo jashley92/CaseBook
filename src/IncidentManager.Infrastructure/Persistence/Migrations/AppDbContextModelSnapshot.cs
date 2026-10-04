@@ -727,6 +727,13 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("CaseId")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("ConfirmedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ConfirmedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
                     b.Property<long>("CreatedAtUtc")
                         .HasColumnType("INTEGER");
 

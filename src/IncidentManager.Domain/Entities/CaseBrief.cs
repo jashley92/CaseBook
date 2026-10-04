@@ -39,9 +39,22 @@ public class CaseBrief : AuditableEntity, IHashableEntity
         string.IsNullOrWhiteSpace(Summary) && string.IsNullOrWhiteSpace(WorkingAssessment) &&
         string.IsNullOrWhiteSpace(Known) && string.IsNullOrWhiteSpace(OpenQuestions) && string.IsNullOrWhiteSpace(NextSteps);
 
+    /// <summary>
+    /// When someone last confirmed this version is still accurate without changing it, and who. A re-save of the
+    /// same text doesn't make a new version; confirming says "I've looked; it still stands". Null until confirmed.
+    /// </summary>
+    public DateTimeOffset? ConfirmedAtUtc { get; set; }
+    public string? ConfirmedBy { get; set; }
+
+    /// <summary>What the brief is current as of: the later of when it was written and when it was last confirmed.
+    /// The "changes since" count runs from here.</summary>
+    public DateTimeOffset CurrentAsOfUtc => ConfirmedAtUtc is { } c && c > CreatedAtUtc ? c : CreatedAtUtc;
+
     public string? RowHash { get; set; }
 
+    // The confirmation is folded in only when set, so rows written before it existed hash exactly as before.
     public string BuildCanonicalContent() => string.Join('|',
         CaseId, Version, SupersedesBriefId, Summary, WorkingAssessment, Known, OpenQuestions, NextSteps,
-        CreatedBy, CreatedAtUtc.ToString("o"));
+        CreatedBy, CreatedAtUtc.ToString("o"))
+        + (ConfirmedAtUtc is { } at ? $"|confirmed|{ConfirmedBy}|{at:o}" : "");
 }

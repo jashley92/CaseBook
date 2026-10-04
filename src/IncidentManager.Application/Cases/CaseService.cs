@@ -2051,7 +2051,8 @@ public sealed class CaseService
     /// (FR-06 style), so neither author's understanding is silently overwritten. INV-25: the next steps are the
     /// case's open tasks, recorded with the version as they stand, not written as text.
     /// </summary>
-    public async Task ReviseBriefAsync(Guid caseId, Guid? expectedCurrentId, string? summary, string? workingAssessment,
+    /// <returns>False when nothing written changed, so no version was saved.</returns>
+    public async Task<bool> ReviseBriefAsync(Guid caseId, Guid? expectedCurrentId, string? summary, string? workingAssessment,
         string? known, string? openQuestions, CancellationToken ct = default)
     {
         Require();
@@ -2064,7 +2065,25 @@ public sealed class CaseService
             throw new StaleEditException(currentId?.ToString() ?? "",
                 "Someone else saved a newer version of the brief while you were editing. Your text is still here; review theirs, then save again to replace it.");
         var nextSteps = CaseNext.Snapshot(c, _clock.UtcNow, u => _users?.DisplayFor(u) ?? u);
-        c.ReviseBrief(summary, workingAssessment, known, openQuestions, nextSteps, _user.UserId, _clock.UtcNow);
+        if (c.ReviseBrief(summary, workingAssessment, known, openQuestions, nextSteps, _user.UserId, _clock.UtcNow) is null)
+            return false;
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    /// <summary>Confirms the current brief still stands without changing it (no new version). Refused when someone saved
+    /// a newer version since the caller looked, so what's confirmed is what they read.</summary>
+    public async Task ConfirmBriefAsync(Guid caseId, Guid expectedCurrentId, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, caseId, ct);
+        await db.CaseBriefs.Where(b => b.CaseId == caseId && b.IsCurrent).ToListAsync(ct);
+        var currentId = c.Briefs.FirstOrDefault(b => b.IsCurrent)?.Id;
+        if (currentId != expectedCurrentId)
+            throw new StaleEditException(currentId?.ToString() ?? "",
+                "Someone saved a newer version of the brief. Read it, then confirm that one.");
+        c.ConfirmBrief(_user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
 

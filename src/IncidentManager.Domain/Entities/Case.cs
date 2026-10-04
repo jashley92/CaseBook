@@ -1234,13 +1234,35 @@ public class Case : AuditableEntity, IHashableEntity
     /// with its time and author). A version must say something, and each part is capped in length. INV-36: the
     /// first part is the case summary, so this also sets <see cref="Summary"/>.
     /// </summary>
-    public CaseBrief ReviseBrief(string? summary, string? workingAssessment, string? known, string? openQuestions,
+    /// <returns>The new version, or null when the written parts are unchanged: saving the same text again makes no
+    /// version (use <see cref="ConfirmBrief"/> to say it still stands). The next steps are a snapshot of the tasks,
+    /// not written, so they don't count as a change.</returns>
+    public CaseBrief? ReviseBrief(string? summary, string? workingAssessment, string? known, string? openQuestions,
         string? nextSteps, string actor, DateTimeOffset nowUtc)
     {
+        if (Briefs.FirstOrDefault(b => b.IsCurrent) is { } current
+            && Clean(summary) == current.Summary && Clean(workingAssessment) == current.WorkingAssessment
+            && Clean(known) == current.Known && Clean(openQuestions) == current.OpenQuestions
+            && new[] { current.Summary, current.WorkingAssessment, current.Known, current.OpenQuestions }.Any(p => p is not null))
+            return null;
         var next = AddBriefVersion(summary, workingAssessment, known, openQuestions, nextSteps, actor, nowUtc,
             requireContent: true);
         Touch(actor, nowUtc);
         return next;
+    }
+
+    /// <summary>
+    /// Confirms the current brief still stands, without a new version: records who and when on it, and the "changes
+    /// since" count starts again from now.
+    /// </summary>
+    public CaseBrief ConfirmBrief(string actor, DateTimeOffset nowUtc)
+    {
+        var current = Briefs.FirstOrDefault(b => b.IsCurrent)
+                      ?? throw new InvalidOperationException("There's no brief to confirm yet. Write one first.");
+        current.ConfirmedAtUtc = nowUtc;
+        current.ConfirmedBy = actor;
+        Touch(actor, nowUtc);
+        return current;
     }
 
     /// <summary>

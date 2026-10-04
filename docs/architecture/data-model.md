@@ -189,7 +189,9 @@ Edits supersede. Never deleted.
 
 The "Where it stands" brief. `Summary`, `WorkingAssessment`, `Known`, `OpenQuestions`, `NextSteps` (each up to
 8000), `Version`, `IsCurrent`, `SupersedesBriefId`. `NextSteps` is a snapshot of the open tasks when the
-version was saved. Saving any version also sets `Cases.Summary`.
+version was saved. Saving any version also sets `Cases.Summary`. `ConfirmedAtUtc` / `ConfirmedBy` (nullable,
+nvarchar(200); hashed only when set): the latest "still accurate" confirmation of the current version, from which
+"changes since" counts.
 
 ### `Evidence` (H, A)
 

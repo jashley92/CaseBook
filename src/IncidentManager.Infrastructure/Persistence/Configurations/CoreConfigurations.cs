@@ -321,7 +321,7 @@ public sealed class DataElementConfiguration : IEntityTypeConfiguration<DataElem
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.ModifiedBy).HasMaxLength(200);
         b.Property(x => x.RowHash).HasMaxLength(64);
-        // Key is the stable identity referenced by cases and matched by imports — unique, never renamed.
+        // Key is the stable identity referenced by cases and matched by imports â€” unique, never renamed.
         b.HasIndex(x => x.Key).IsUnique();
     }
 }
@@ -348,7 +348,7 @@ public sealed class CaseDataElementConfiguration : IEntityTypeConfiguration<Case
         b.ToTable("CaseDataElements");
         b.Property(x => x.ElementKey).HasMaxLength(100).IsRequired();
         // A case references each element key at most once. The key is a loose stable reference to
-        // DataElement.Key (the X-02 taxonomy pattern) — no FK, so archiving a reference element never
+        // DataElement.Key (the X-02 taxonomy pattern) â€” no FK, so archiving a reference element never
         // dangles a historical case; the display label is resolved by key at read time.
         b.HasIndex(x => new { x.CaseId, x.ElementKey }).IsUnique();
     }
@@ -364,7 +364,7 @@ public sealed class StageGateConfiguration : IEntityTypeConfiguration<StageGate>
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.RowHash).HasMaxLength(64);
         // At most one active gate per transition; inactive history may accumulate, so the uniqueness
-        // is filtered to active rows (SQL Server) — enforced in the service on providers without it.
+        // is filtered to active rows (SQL Server) â€” enforced in the service on providers without it.
         b.HasIndex(x => new { x.Trigger, x.IsActive });
         // Requirements are cascade-owned by the gate row.
         b.HasMany(x => x.Requirements).WithOne().HasForeignKey(x => x.GateId).OnDelete(DeleteBehavior.Cascade);
@@ -569,6 +569,7 @@ public sealed class CaseBriefConfiguration : IEntityTypeConfiguration<CaseBrief>
         b.Property(x => x.OpenQuestions).HasMaxLength(CaseBrief.MaxPartLength);
         b.Property(x => x.NextSteps).HasMaxLength(CaseBrief.MaxPartLength);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.ConfirmedBy).HasMaxLength(200);
         b.Property(x => x.RowHash).HasMaxLength(64);
         b.HasIndex(x => x.CaseId);
     }
@@ -708,7 +709,7 @@ public sealed class PendingImportConfiguration : IEntityTypeConfiguration<Pendin
         b.Property(x => x.SubmittedBy).HasMaxLength(200).IsRequired();
         b.Property(x => x.Origin).HasMaxLength(200);
         b.Property(x => x.Summary).HasMaxLength(300);
-        b.Property(x => x.RawJson).IsRequired(); // document body — unbounded (nvarchar(max) / TEXT)
+        b.Property(x => x.RawJson).IsRequired(); // document body â€” unbounded (nvarchar(max) / TEXT)
         b.Property(x => x.DecidedBy).HasMaxLength(200);
         b.Property(x => x.DecisionNote).HasMaxLength(2000);
         b.Property(x => x.ResolvedCaseNumber).HasMaxLength(200);

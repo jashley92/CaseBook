@@ -2751,3 +2751,32 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004223836_AddBriefConfirmation'
+)
+BEGIN
+    ALTER TABLE [CaseBriefs] ADD [ConfirmedAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004223836_AddBriefConfirmation'
+)
+BEGIN
+    ALTER TABLE [CaseBriefs] ADD [ConfirmedBy] nvarchar(200) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261004223836_AddBriefConfirmation'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261004223836_AddBriefConfirmation', N'10.0.12');
+END;
+
+COMMIT;
+GO
+
