@@ -104,7 +104,8 @@ public sealed class ReportService
             foreach (var m in Cases.CaseMilestones.Project(c, labels)
                          .Where(m => m.Kind is not (Cases.MilestoneKind.ReportFinal or Cases.MilestoneKind.Command)))
             {
-                var text = m.Detail is { } detail ? $"{m.Title}. {detail}" : m.Title;
+                var title = m.Note is { } note ? $"{m.Title} ({note})" : m.Title;   // HR-07: the gate it passed
+                var text = m.Detail is { } detail ? $"{title}. {detail}" : title;
                 if (m.RecordedAtUtc is { } rec) text += Late(m.AtUtc, rec);
                 var by = m.Actor is { } who ? _users.DisplayFor(who) : null;
                 rows.Add((m.AtUtc, m.AtUtc, new ReportTimelineItem(m.AtUtc, ReportTimelineItem.Milestone, d.Text(text),

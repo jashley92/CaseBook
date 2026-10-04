@@ -784,7 +784,9 @@
     private static readonly HashSet<MilestoneKind> RecentMilestones =
     [
         MilestoneKind.Classification, MilestoneKind.Severity, MilestoneKind.Phase, MilestoneKind.Materiality,
-        MilestoneKind.Gate, MilestoneKind.Reported, MilestoneKind.TaskDone, MilestoneKind.Command, MilestoneKind.Verdict, MilestoneKind.Assessment
+        // HR-07: team changes are record-keeping, not what happened; gates fold into their transitions.
+        MilestoneKind.Gate, MilestoneKind.Reported, MilestoneKind.TaskDone, MilestoneKind.Verdict, MilestoneKind.Assessment,
+        MilestoneKind.ActivityBegan, MilestoneKind.Opened
     ];
 
     private List<RecentItem> RecentOnTimeline()

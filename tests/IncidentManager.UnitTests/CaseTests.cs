@@ -525,6 +525,37 @@ public class CaseTests
     }
 
     [Fact]
+    public void A_case_filed_late_starts_at_detection_and_passed_gates_fold_into_their_transition()
+    {
+        // HR-07: the story starts when the activity did; record-keeping doesn't crowd it.
+        var c = NewCase();   // opened at Now
+        c.UpdateDetails(c.Title, null, "XSIAM-88231", null, null, Now.AddDays(-3), Now.AddDays(-3).AddMinutes(-21), "an1", Now);
+        c.RecordGatePassage(StageGateTrigger.EscalateToIncident, false, null, "Takeover confirmed", "[MET] x", "ic1", Now.AddMinutes(10));
+        c.Reclassify(Classification.Incident, "Takeover confirmed", "ic1", Now.AddMinutes(10), Now.AddDays(-3).AddHours(1));
+        c.RecordGatePassage(StageGateTrigger.CloseCase, true, "Report pending", "Closed", "[UNMET(OVERRIDDEN)] y", "ic1", Now.AddMinutes(20));
+        c.ChangePhase(CasePhase.Closed, "Closed", "ic1", Now.AddMinutes(20), Now.AddDays(-1), outcomeKey: "Confirmed");
+
+        var ms = IncidentManager.Application.Cases.CaseMilestones.Project(c,
+            new IncidentManager.Application.Cases.MilestoneLabels(x => x?.ToString() ?? "Complex Event", s => s.ToString(), p => p.ToString(), m => ""));
+
+        var opened = ms.Single(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Opened);
+        opened.AtUtc.Should().Be(Now.AddDays(-3));
+        opened.RecordedAtUtc.Should().Be(Now);
+        opened.Title.Should().StartWith("Detected (XSIAM-88231); case opened as");
+        var began = ms.Single(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.ActivityBegan);
+        (began.AtUtc, began.Detail).Should().Be((Now.AddDays(-3).AddMinutes(-21), "21 min before detection"));
+
+        ms.Single(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Classification).Note
+            .Should().Be("Incident escalation gate passed");
+        var gate = ms.Single(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Gate);   // the override stays a row
+        gate.Flagged.Should().BeTrue();
+        gate.AtUtc.Should().Be(Now.AddDays(-1), "at the close it guarded, not when it was recorded");
+        gate.RecordedAtUtc.Should().Be(Now.AddMinutes(20));
+        ms.Select(m => m.Kind).Should().ContainInOrder(
+            IncidentManager.Application.Cases.MilestoneKind.ActivityBegan, IncidentManager.Application.Cases.MilestoneKind.Opened);
+    }
+
+    [Fact]
     public void AddEntity_again_does_not_downgrade_benign_either()
     {
         var c = NewCase();

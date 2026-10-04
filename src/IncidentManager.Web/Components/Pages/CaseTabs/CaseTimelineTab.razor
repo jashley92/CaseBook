@@ -34,6 +34,9 @@
     // an entry filter (type / tactic / source) doesn't apply to them, so they step aside while one is active.
     var msAll = _msOnly || (_tlLens is null && _showMilestones)
         ? Milestones().Where(m => !KeyOnlyApplies || IsKeyMilestone(m)).ToList() : [];
+    // HR-07: a closed case reads as a story; team changes are record-keeping, folded until asked for.
+    var teamHidden = Case.Phase == CasePhase.Closed && !_showTeamChanges ? msAll.Count(m => m.Kind == MilestoneKind.Command) : 0;
+    if (teamHidden > 0) msAll = msAll.Where(m => m.Kind != MilestoneKind.Command).ToList();
     var msView = FiltersActive ? []
         : ChangedSinceUtc is { } msSince ? msAll.Where(m => (m.RecordedAtUtc ?? m.AtUtc) > msSince).ToList() : msAll;
     var rows = MergeRows(tlView, msView);
@@ -517,6 +520,13 @@ else if (rows.Count == 0)
 else
 {
     <div class="tl-panel">
+    @if (teamHidden > 0)
+    {
+        <div class="tl-fold small text-muted">
+            <span class="bi bi-people" aria-hidden="true"></span> @teamHidden team @(teamHidden == 1 ? "change" : "changes") hidden
+            <button type="button" class="btn btn-link btn-sm p-0 ms-1" @onclick="() => _showTeamChanges = true">Show</button>
+        </div>
+    }
     <ol class="tl">
         @{ DateOnly? lastDay = null; }
         @foreach (var row in rows)
@@ -537,6 +547,11 @@ else
                         <div class="tl-head">
                             <span class="tl-kind-label"><span class="bi bi-flag" aria-hidden="true"></span> Milestone</span>
                             <span class="tl-ms-title">@m.Title</span>
+                            @if (m.Note is { } note)
+                            {
+                                @* HR-07: the gate this transition passed, folded in rather than a row of its own. *@
+                                <span class="tl-ms-note"><span class="bi bi-shield-check" aria-hidden="true"></span> @note</span>
+                            }
                             @TimeLabel(m.AtUtc)
                         </div>
                         @if (m.Detail is { } detail)
@@ -935,7 +950,9 @@ else
     private TimelineEntryType? _tlFilterType;
     private MitreTactic? _tlFilterTactic;
     private string _tlFilterSource = "";
-    private bool _tlOldestFirst;   // default newest-first (most recent activity at top)
+    private bool _tlOldestFirst;   // default newest-first (most recent activity at top); oldest-first for a closed case (HR-07)
+    private Guid? _orderSetFor;
+    private bool _showTeamChanges;
     private bool _showKillChain;    // INV-26: folded by default; the user's choice is remembered (display preferences)
     private bool _showFilters;
     // Open while a filter is set, or while milestones are hidden or only key entries show, so none is invisible.
@@ -1547,6 +1564,13 @@ else
 
     protected override void OnParametersSet()
     {
+        // HR-07: an open case is worked newest-first; a closed one is read as a story, oldest-first. Set once per case
+        // so the analyst's own toggle sticks.
+        if (_orderSetFor != Case.Id)
+        {
+            _orderSetFor = Case.Id;
+            _tlOldestFirst = Case.Phase == CasePhase.Closed;
+        }
         if (AutofocusComposer && !_autofocusPending && CanEdit && _tlEditId is null)
         {
             _autofocusPending = true;
@@ -1764,6 +1788,7 @@ else
         MilestoneKind.Command => "bi-person-badge",
         MilestoneKind.Verdict => "bi-bullseye",   // HR-05
         MilestoneKind.Assessment => "bi-lightbulb",   // HR-06
+        MilestoneKind.ActivityBegan => "bi-hourglass-top",   // HR-07
         _ => "bi-flag"
     };
 

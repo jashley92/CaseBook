@@ -26,7 +26,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 | Medium | **The settings form shows catalog defaults, not effective values** (e.g. the production template's 24 h auto-seal shows as 6). | Misleading; the *Setting sources* page is correct. | Show the effective value. |
 | Low | `Retention:CaseYears` is editable but nothing reads it; nothing flags cases past retention. | Implies a control that doesn't exist. | Remove the setting, or build the review queue. |
 | Low | The composer doesn't reject a **future** occurred time on the server (only the browser does). | Possible bad data via a crafted request. | Validate in `AddTimelineEntryAsync`/`AddEventStepAsync`. |
-| Low | **Gate passages are timed when recorded**, even when the transition was backdated. | The two appear at different points on the timeline. | Use the transition's effective time. |
 | Low | Import: an **unknown classification** warns "Using Adverse Event instead." but opens a Complex Event. | Misleading message. | Fix the message or the fallback. |
 | Low | Notes tab: the composer hint says notes aren't in the report by default; the empty state says "Notes print in the case report". | Contradictory copy (the hint is right). | Fix the empty state. |
 | Low | Report version numbers are "count + 1" with no unique index. | Two simultaneous generations can share a number. | Unique index or sequence. |

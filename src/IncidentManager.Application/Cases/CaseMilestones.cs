@@ -21,7 +21,9 @@ public enum MilestoneKind
     /// <summary>HR-05: an entity's verdict changed (a finding), with why.</summary>
     Verdict,
     /// <summary>HR-06: the brief's working assessment changed: what the team believes, in sequence.</summary>
-    Assessment
+    Assessment,
+    /// <summary>HR-07: when the activity began (the case's initial-activity time), the start of the story.</summary>
+    ActivityBegan
 }
 
 /// <summary>
@@ -46,7 +48,8 @@ public sealed record CaseMilestone(
     string Source,
     bool Flagged = false,
     DateTimeOffset? RecordedAtUtc = null,
-    (TransitionKind Kind, Guid ChangeId)? Transition = null);
+    (TransitionKind Kind, Guid ChangeId)? Transition = null,
+    string? Note = null);
 
 /// <summary>Display labels the projection needs, supplied by the caller (they're admin-customizable).</summary>
 public sealed record MilestoneLabels(
@@ -87,10 +90,13 @@ public static class CaseMilestones
         // The opening state: the initial classification (a Complex Event has none) and severity.
         var initialClass = c.ClassificationChanges.FirstOrDefault(IsInitial(c));
         var initialSev = c.SeverityChanges.Where(x => x.From is null).OrderBy(x => x.ChangedAtUtc).FirstOrDefault();
-        list.Add(new CaseMilestone($"open:{c.Id}", c.CreatedAtUtc, MilestoneKind.Opened,
-            $"Case opened as {labels.Classification(initialClass?.To)}" +
+        // HR-07: a case filed well after detection starts the story at detection, marked as recorded later.
+        var filedLater = c.DetectedAtUtc is { } detected && c.CreatedAtUtc - detected > CaseService.BackdateReasonThreshold;
+        list.Add(new CaseMilestone($"open:{c.Id}", filedLater ? c.DetectedAtUtc!.Value : c.CreatedAtUtc, MilestoneKind.Opened,
+            (filedLater ? $"Detected{(string.IsNullOrWhiteSpace(c.DetectionCaseId) ? "" : $" ({c.DetectionCaseId.Trim()})")}; case opened as "
+                        : "Case opened as ") + labels.Classification(initialClass?.To) +
             (initialSev is null ? "" : $" · {labels.Severity(initialSev.To)}"),
-            null, c.CreatedBy, "case creation"));
+            null, c.CreatedBy, "case creation", RecordedAtUtc: filedLater ? c.CreatedAtUtc : null));
 
         foreach (var x in c.ClassificationChanges.Where(x => !IsInitial(c)(x)))
             list.Add(new CaseMilestone($"cls:{x.Id}", x.EffectiveAt, MilestoneKind.Classification,
@@ -165,12 +171,28 @@ public static class CaseMilestones
                 Blank(detail), x.ChangedBy, "materiality record"));
         }
 
+        // HR-07: a gate passage belongs to the transition it guarded (recorded in the same save). A passed gate folds
+        // into that milestone as a note; an override stays its own flagged row, at the transition's time.
         foreach (var g in c.GatePassages)
-            list.Add(new CaseMilestone($"gate:{g.Id}", g.PassedAtUtc, MilestoneKind.Gate,
+        {
+            var guarded = GuardedTransitionKey(c, g);
+            var at = guarded is { } gk && list.FirstOrDefault(m => m.Key == gk) is { } tm ? tm.AtUtc : g.PassedAtUtc;
+            if (!g.WasOverridden && guarded is { } key && list.FindIndex(m => m.Key == key) is var i and >= 0)
+            {
+                list[i] = list[i] with { Note = $"{GateName(g.Trigger)} gate passed" };
+                continue;
+            }
+            list.Add(new CaseMilestone($"gate:{g.Id}", at, MilestoneKind.Gate,
                 $"{GateName(g.Trigger)} gate {(g.WasOverridden ? "overridden" : "passed")}",
                 g.WasOverridden ? Blank(g.OverrideJustification) is { } why ? $"Justification: {why}" : null
                                 : Blank(g.Commentary),
-                g.PassedBy, "stage gate", Flagged: g.WasOverridden));
+                g.PassedBy, "stage gate", Flagged: g.WasOverridden, RecordedAtUtc: at != g.PassedAtUtc ? g.PassedAtUtc : null));
+        }
+
+        // HR-07: the story starts when the activity did.
+        if (c.OccurredAtUtc is { } began && (c.DetectedAtUtc is null || began < c.DetectedAtUtc))
+            list.Add(new CaseMilestone($"began:{c.Id}", began, MilestoneKind.ActivityBegan, "Activity began",
+                c.DetectedAtUtc is { } det ? $"{Span(det - began)} before detection" : null, null, "case record"));
 
         if (c.ReportedAtUtc is { } reported)
             list.Add(new CaseMilestone($"reported:{c.Id}", reported, MilestoneKind.Reported,
@@ -184,8 +206,9 @@ public static class CaseMilestones
             list.Add(new CaseMilestone($"task:{t.Id}", t.CompletedAtUtc!.Value, MilestoneKind.TaskDone,
                 $"Task done: {t.Title}", null, t.ModifiedBy ?? t.Owner, "task"));
 
-        // A screenshot pasted into a timeline entry already shows on that entry; list only the rest.
-        var onEntries = c.TimelineEntries.Where(e => e.EvidenceId is not null).Select(e => e.EvidenceId!.Value).ToHashSet();
+        // A screenshot pasted into a timeline entry already shows on that entry; so does a file an entry cites (HR-07).
+        var onEntries = c.TimelineEntries.Where(e => e.EvidenceId is not null).Select(e => e.EvidenceId!.Value)
+            .Concat(c.Citations.Select(x => x.EvidenceId)).ToHashSet();
         foreach (var ev in c.Evidence.Where(ev => !onEntries.Contains(ev.Id)))
             list.Add(new CaseMilestone($"ev:{ev.Id}", ev.CreatedAtUtc, MilestoneKind.EvidenceAdded,
                 $"Evidence added: {ev.OriginalFileName}", Blank(ev.Description), ev.CreatedBy, "evidence"));
@@ -207,6 +230,31 @@ public static class CaseMilestones
         effective is not null ? recorded : null;
 
     private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    // HR-07: the transition milestone a gate passage guarded: the change to Closed for the close gate, the change to
+    // the gate's classification for the others, recorded within a minute of the passage (the same save).
+    private static string? GuardedTransitionKey(Case c, GatePassage g)
+    {
+        static bool Near(DateTimeOffset a, DateTimeOffset b) => (a - b).Duration() <= TimeSpan.FromMinutes(1);
+        if (g.Trigger == StageGateTrigger.CloseCase)
+            return c.StatusChanges.Where(s => s.To == CasePhase.Closed && s.From is not null && Near(s.ChangedAtUtc, g.PassedAtUtc))
+                .OrderBy(s => (s.ChangedAtUtc - g.PassedAtUtc).Duration()).Select(s => $"phase:{s.Id}").FirstOrDefault();
+        Classification? to = g.Trigger switch
+        {
+            StageGateTrigger.PromoteToAdverseEvent => Classification.AdverseEvent,
+            StageGateTrigger.EscalateToIncident => Classification.Incident,
+            StageGateTrigger.EscalateToBreach => Classification.Breach,
+            _ => null
+        };
+        return c.ClassificationChanges.Where(x => !IsInitial(c)(x) && Near(x.ChangedAtUtc, g.PassedAtUtc)
+                                                  && (to is null || x.To == to || g.Trigger == StageGateTrigger.PromoteToAdverseEvent))
+            .OrderBy(x => (x.ChangedAtUtc - g.PassedAtUtc).Duration()).Select(x => $"cls:{x.Id}").FirstOrDefault();
+    }
+
+    private static string Span(TimeSpan t) =>
+        t.TotalMinutes < 90 ? $"{Math.Max(1, (int)Math.Round(t.TotalMinutes))} min"
+        : t.TotalHours < 48 ? $"{(int)Math.Round(t.TotalHours)} h"
+        : $"{(int)t.TotalDays} d {(int)(t.TotalHours % 24)} h";
 
     private static string GateName(StageGateTrigger t) => t switch
     {
