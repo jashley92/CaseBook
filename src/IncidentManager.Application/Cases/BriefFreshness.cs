@@ -69,6 +69,7 @@ public static class BriefFreshness
         (MilestoneKind.EvidenceAdded, _) => n == 1 ? "evidence file" : "evidence files",
         (MilestoneKind.Command, _) => n == 1 ? "team change" : "team changes",
         (MilestoneKind.Verdict, _) => n == 1 ? "verdict change" : "verdict changes",
+        (MilestoneKind.Assessment, _) => n == 1 ? "assessment revision" : "assessment revisions",
         _ => n == 1 ? "other milestone" : "other milestones"
     };
 }

@@ -19,7 +19,9 @@ public enum MilestoneKind
     /// <summary>INV-31: someone joined, changed role (including command) or left the case.</summary>
     Command,
     /// <summary>HR-05: an entity's verdict changed (a finding), with why.</summary>
-    Verdict
+    Verdict,
+    /// <summary>HR-06: the brief's working assessment changed: what the team believes, in sequence.</summary>
+    Assessment
 }
 
 /// <summary>
@@ -115,6 +117,20 @@ public static class CaseMilestones
                 $"{x.EntityLabel} assessed {labels.DispositionLabel(x.To)}"
                     + (x.From == EntityDisposition.Unknown ? "" : $" (was {labels.DispositionLabel(x.From)})"),
                 Blank(x.Reason), x.ChangedBy, "verdict change"));
+
+        // HR-06: changes in understanding. Each brief version whose working assessment differs from the one before.
+        // A closing brief's conclusion is left out: the Closed milestone already carries it.
+        string? previous = null;
+        foreach (var b in c.Briefs.OrderBy(b => b.Version))
+        {
+            var text = b.WorkingAssessment?.Trim();
+            var atClose = c.StatusChanges.Any(s => s.To == CasePhase.Closed && s.ChangedAtUtc == b.CreatedAtUtc);
+            if (!string.IsNullOrEmpty(text) && text != previous && !atClose)
+                list.Add(new CaseMilestone($"assessment:{b.Id}", b.CreatedAtUtc, MilestoneKind.Assessment,
+                    previous is null ? $"Working assessment recorded (brief v{b.Version})" : $"Assessment revised (brief v{b.Version})",
+                    text.Length > 600 ? text[..599] + "…" : text, b.CreatedBy, "brief"));
+            if (!string.IsNullOrEmpty(text)) previous = text;
+        }
 
         // INV-31: who took command, joined, changed role or left. A commander handing over as someone else takes
         // command (both at the same moment) reads as one milestone.

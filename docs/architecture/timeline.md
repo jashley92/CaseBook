@@ -81,9 +81,10 @@ From `Application/Cases/CaseMilestones.cs`:
 | Evidence added: *file* (unless it's a screenshot already shown on an entry) | `Evidence` | upload time | uploader |
 | Case / lessons-learned report *vN* approved as final | `Report` | approval time | approver |
 | *Entity* assessed *verdict* (was *previous*), with the reason | `EntityVerdictChange` (an existing entity re-assessed; adding one with a verdict isn't recorded) | when recorded | who changed it |
+| Working assessment recorded / Assessment revised (brief v*N*), with the new assessment | `CaseBrief` versions whose working assessment differs from the version before; a closing brief's conclusion is left to the Closed milestone | when the version was saved | who saved it |
 
 Not on the timeline (they're in their own tabs and in the Audit tab): notes themselves, task comments, case
-links, entity and IOC changes other than verdicts, ATT&CK tags, legal referral and hold, restriction, archive, brief versions.
+links, entity and IOC changes other than verdicts, ATT&CK tags, legal referral and hold, restriction, archive, brief versions that don't change the working assessment.
 
 ## What an entry contains
 

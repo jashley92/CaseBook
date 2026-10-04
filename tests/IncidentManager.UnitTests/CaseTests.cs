@@ -504,6 +504,27 @@ public class CaseTests
     }
 
     [Fact]
+    public void Changes_in_the_working_assessment_are_projected_and_the_closing_conclusion_is_left_to_the_close()
+    {
+        // HR-06: what the team believed, in sequence. Versions that don't change the assessment add nothing.
+        var c = NewCase();
+        c.ReviseBrief("Impossible travel", null, null, null, null, "an1", Now);
+        c.ReviseBrief("Impossible travel", "Probably MFA fatigue", null, null, null, "an1", Now.AddHours(1));
+        c.ReviseBrief("Impossible travel", "Probably MFA fatigue", "- Tor sign-in", null, null, "an1", Now.AddHours(2));
+        c.ReviseBrief("Impossible travel", "Takeover; inbox rule points to payment fraud", "- Tor sign-in", null, null, "an2", Now.AddHours(3));
+        c.ReviseBrief("What happened", "Concluded: takeover, no payment", null, null, null, "an1", Now.AddHours(5));
+        c.ChangePhase(CasePhase.Closed, "Concluded: takeover, no payment", "an1", Now.AddHours(5), outcomeKey: "Confirmed");
+
+        var ms = IncidentManager.Application.Cases.CaseMilestones.Project(c,
+                new IncidentManager.Application.Cases.MilestoneLabels(x => "", s => "", p => "", m => ""))
+            .Where(m => m.Kind == IncidentManager.Application.Cases.MilestoneKind.Assessment).ToList();
+
+        ms.Select(m => (m.Title, m.Detail, m.Actor)).Should().Equal(
+            ("Working assessment recorded (brief v2)", "Probably MFA fatigue", "an1"),
+            ("Assessment revised (brief v4)", "Takeover; inbox rule points to payment fraud", "an2"));
+    }
+
+    [Fact]
     public void AddEntity_again_does_not_downgrade_benign_either()
     {
         var c = NewCase();
