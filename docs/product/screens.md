@@ -91,6 +91,12 @@ Further down the Overview: recent timeline items, scope and impact (affected ind
 jurisdictions), the notification deadline table with *Mark reported*, readiness for the next stage gate, the
 case record, access (restriction), ATT&CK techniques, related cases and change history.
 
+A **closed** case's Overview leads with the record instead: an outcome strip (the outcome, when the activity
+began, detected → contained and recovery → closed with how long each took, and the improvement actions still
+open), then the closing brief, then "How it unfolded": the key moments oldest first (the first eight and the last
+four, with the rest a click away on the timeline). An unrecorded scope reads "Not recorded" rather than "Not
+assessed yet".
+
 On a phone the same page stacks, with the rail folded into a strip:
 
 <img src="../screenshots/doc-mobile-workspace.png" alt="Case workspace at phone width" width="300">

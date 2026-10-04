@@ -19,6 +19,7 @@
 @inject IJSRuntime JS
 @inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
 @inject IncidentManager.Application.Compliance.NotificationDeadlineService Deadlines
+@inject IncidentManager.Application.Lessons.LessonsService Lessons
 @using IncidentManager.Application.Compliance
 
 @if (RetentionMessage is not null)
@@ -30,6 +31,53 @@
    brief), what just happened, how bad it is and who must be told, whether it can move on, then the reference facts.
    The clocks, dates and team live in the case context panel (or its strip), not here. The open tasks are the
    brief's Next steps here, so beside the Overview the panel's Next shrinks to its summary line (INV-40). *@
+@if (Case.Phase == CasePhase.Closed)
+{
+    @* HR-14: a closed case is read, months later, for what it was and how it went: the outcome and the response's
+       shape first, then the closing brief, then the story. *@
+    <dl class="im-ov-facts im-ov-outcome" aria-label="Outcome of this case">
+        <div>
+            <dt>Outcome</dt>
+            <dd class="im-ov-outcome-main">@(Case.OutcomeKey is { } ok ? OutcomeLabels.GetValueOrDefault(ok) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(ok) : "Not recorded")</dd>
+        </div>
+        <div>
+            <dt>Activity began</dt>
+            <dd>@(Case.OccurredAtUtc is { } began ? TimeDisp.Short(began) : "Not recorded")</dd>
+        </div>
+        <div>
+            <dt>Detected → contained</dt>
+            <dd>@SpanFragment(Case.DetectedAtUtc, Case.ContainedAtUtc)</dd>
+        </div>
+        <div>
+            @if (RecoveryStarted is not null)
+            {
+                <dt>Recovery → closed</dt>
+                <dd>@SpanFragment(RecoveryStarted, Case.ClosedAtUtc)</dd>
+            }
+            else
+            {
+                <dt>Closed</dt>
+                <dd>@(Case.ClosedAtUtc is { } closed ? TimeDisp.Short(closed) : "Not recorded")</dd>
+            }
+        </div>
+        <div>
+            <dt>After closure</dt>
+            <dd>
+                @if (_lessons is null) { <span class="text-muted">…</span> }
+                else if (_lessons.Review is not { IsRecorded: true }) { <span>No post-incident review</span> }
+                else
+                {
+                    var open = _lessons.Actions.Count(a => a.Status is ImprovementActionStatus.Open or ImprovementActionStatus.InProgress);
+                    <button type="button" class="btn btn-link p-0 align-baseline text-start" @onclick='() => OnGoToTab.InvokeAsync("Review")'>
+                        @(open == 0 ? (_lessons.Actions.Count == 0 ? "No improvement actions" : "Improvement actions all closed")
+                                    : $"{open} improvement {(open == 1 ? "action" : "actions")} open")
+                    </button>
+                }
+            </dd>
+        </div>
+    </dl>
+}
+
 @* INV-09 / INV-36: the brief leads, with the case summary as its first part. *@
 <CaseBriefCard @ref="_brief" Case="Case" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
 
@@ -37,7 +85,16 @@
     @{ var recent = RecentOnTimeline(); }
     <section class="im-ov-sec" id="ov-recent" aria-labelledby="ov-recent-h">
         <div class="im-ov-head">
-            <h2 class="im-ov-h" id="ov-recent-h">Recent on the timeline</h2>
+            @if (Case.Phase == CasePhase.Closed)
+            {
+                @* HR-14: told as a story, oldest first. *@
+                <h2 class="im-ov-h" id="ov-recent-h">How it unfolded</h2>
+                <span class="small text-muted">key moments, oldest first</span>
+            }
+            else
+            {
+                <h2 class="im-ov-h" id="ov-recent-h">Recent on the timeline</h2>
+            }
             <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick='() => OnGoToTab.InvokeAsync("Timeline")'>Open the timeline <span aria-hidden="true">→</span></button>
         </div>
         @if (recent.Count == 0)
@@ -47,8 +104,14 @@
         else
         {
             <ul class="im-ov-recent">
-                @foreach (var r in recent)
+                @for (var i = 0; i < recent.Count; i++)
                 {
+                    var r = recent[i];
+                    @if (i == 8 && _storyHidden > 0 && Case.Phase == CasePhase.Closed)
+                    {
+                        <li class="im-ov-recent-gap"><span></span><span class="bi bi-three-dots" aria-hidden="true"></span>
+                            <button type="button" class="btn btn-link btn-sm p-0 text-start" @onclick='() => OnGoToTab.InvokeAsync("Timeline")'>@_storyHidden more on the timeline</button></li>
+                    }
                     <li>
                         <span class="im-ov-recent-at" title="@TimeDisp.Long(r.At)">@TimeDisp.DateOnly(r.At)<br /> @TimeDisp.TimeOnly(r.At)</span>
                         <span class="bi @r.Icon" aria-hidden="true"></span>
@@ -102,7 +165,15 @@
                 }
                 else if (Case.AffectedIndividualsCount is null && Case.DataElements.Count == 0 && string.IsNullOrWhiteSpace(Case.AffectedStates))
                 {
-                    <p class="text-muted small mb-0">Not assessed yet. Record the affected count, data elements and jurisdictions for the Legal and regulatory handoff.</p>
+                    @if (Case.Phase == CasePhase.Closed)
+                    {
+                        @* HR-14: on a closed case it wasn't "not yet" anything; it wasn't recorded. *@
+                        <p class="text-muted small mb-0">Not recorded.</p>
+                    }
+                    else
+                    {
+                        <p class="text-muted small mb-0">Not assessed yet. Record the affected count, data elements and jurisdictions for the Legal and regulatory handoff.</p>
+                    }
                 }
                 else
                 {
@@ -718,6 +789,13 @@
             _loadedToken = RefreshToken;
             await LoadLinks();
         }
+        // HR-14: what's still open after closure (the review and its improvement actions).
+        if (Case.Phase == CasePhase.Closed && _lessonsFor != (Case.Id, RefreshToken))
+        {
+            _lessonsFor = (Case.Id, RefreshToken);
+            try { _lessons = await Lessons.GetForCaseAsync(Case.Id); }
+            catch (ForbiddenException) { _lessons = null; }
+        }
         // Re-evaluate the notification deadlines whenever the parent passes an updated case (e.g. after a
         // materiality determination or reported milestone recorded from the header Actions), so the card and
         // the header badge stay in sync (PROD-07).
@@ -815,8 +893,42 @@
             .Select(e => e.Type == TimelineEntryType.Decision
                 ? new RecentItem(e.OccurredAtUtc, "bi-diamond-fill im-ov-dec", "Decision", OneLine(e.Description))
                 : new RecentItem(e.OccurredAtUtc, "bi-arrow-left-right", "Handoff", OneLine(e.Description)));
-        return milestones.Concat(entries).OrderByDescending(r => r.At).Take(5).ToList();
+        if (Case.Phase != CasePhase.Closed)
+            return milestones.Concat(entries).OrderByDescending(r => r.At).Take(5).ToList();
+        // HR-14: a closed case reads oldest-first: how it began and how it ended, with the full story a click away.
+        var story = milestones.Concat(entries).OrderBy(r => r.At).ToList();
+        _storyHidden = Math.Max(0, story.Count - 12);
+        return story.Count <= 12 ? story : story.Take(8).Concat(story.TakeLast(4)).ToList();
     }
+
+    // --- HR-14: the closed-case outcome strip ---
+    private int _storyHidden;
+    private IncidentManager.Application.Lessons.CaseLessonsView? _lessons;
+    private (Guid Case, int Token)? _lessonsFor;
+
+    // When recovery began: the (effective) time of the latest move into Recovery.
+    private DateTimeOffset? RecoveryStarted => Case.StatusChanges
+        .Where(s => s.To == CasePhase.Recovery).OrderByDescending(s => s.EffectiveAt).Select(s => (DateTimeOffset?)s.EffectiveAt).FirstOrDefault();
+
+    // "2026-10-01 09:12 UTC" over "→ 10:20 UTC" over "68 min" (the end's date only when it differs).
+    private RenderFragment SpanFragment(DateTimeOffset? from, DateTimeOffset? to) => @<text>
+        @if (from is not { } a && to is not { })
+        {
+            <span class="text-muted">Not recorded</span>
+        }
+        else
+        {
+            <span>@(from is { } f ? TimeDisp.Short(f) : "Start not recorded")</span><br />
+            <span class="text-muted">→ @(to is { } b ? (from is { } s && TimeDisp.DateOnly(s) == TimeDisp.DateOnly(b) ? TimeDisp.TimeOnly(b) : TimeDisp.Short(b)) : "not recorded")</span>
+            @if (from is { } x && to is { } y && y >= x)
+            {
+                <br /><span class="im-ov-took">@Took(y - x)</span>
+            }
+        }
+    </text>;
+
+    private static string Took(TimeSpan d) => d.TotalMinutes < 120 ? $"{Math.Round(d.TotalMinutes)} min"
+        : d.TotalHours < 48 ? $"{d.TotalHours:0.#} h" : $"{d.TotalDays:0.#} days";
 
     private string OneLine(string markdown)
     {

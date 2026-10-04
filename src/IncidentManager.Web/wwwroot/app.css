@@ -2480,6 +2480,12 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 .im-ov-facts dt { font-size: var(--im-text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--im-text-muted); margin-bottom: 0.15rem; }
 .im-ov-facts dd { margin: 0; }
 .im-ov-big { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+/* HR-14: a closed case's outcome strip, above the closing brief. */
+.im-ov-outcome { max-width: 62rem; padding: 0.75rem 1rem; margin-bottom: 1rem; border: 1px solid var(--im-border); border-radius: var(--im-radius-lg); background: var(--im-surface); font-size: 0.9rem; }
+.im-ov-outcome { grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); column-gap: 1rem; }
+.im-ov-took { font-weight: 600; }
+.im-ov-outcome dd { font-variant-numeric: tabular-nums; }
+.im-ov-outcome-main { font-size: 1.05rem; font-weight: 700; }
 .im-ov-recent { list-style: none; margin: 0; padding: 0; }
 .im-ov-recent li { display: grid; grid-template-columns: 6.5rem 1.1rem minmax(0, 1fr); gap: 0.5rem; align-items: baseline; padding: 0.35rem 0; border-bottom: 1px solid var(--im-border); font-size: 0.9rem; }
 .im-ov-recent li:last-child { border-bottom: 0; }
