@@ -1434,7 +1434,64 @@ else
         @RationaleHint(_closeConclusion)
         <div class="small text-muted mb-2">Saved as the brief's closing version. Known and the open questions carry over.</div>
         @ClosingQuestions()
+        @* HR-18: bring-your-own AI. CaseBook only builds the prompt and reads the reply back; the analyst runs it in
+           their organisation's approved tool and edits what it fills in. Nothing is saved until the case closes. *@
+        <details class="im-ai-draft mt-2">
+            <summary class="small">Draft these with your own AI tool</summary>
+            <div class="small text-muted mt-1">
+                Copies a prompt holding this case's record (the brief, the timeline, verdicts and task results) for your
+                organisation's approved AI tool. CaseBook sends nothing anywhere. Paste the reply below and it fills in
+                <em>What happened</em>, <em>Conclusion</em> and the outcome, for you to check and edit.
+            </div>
+            @if (_case?.IsRestricted == true)
+            {
+                <div class="small text-warning mt-1"><span class="bi bi-lock-fill" aria-hidden="true"></span> This case is restricted to need-to-know. Use a tool approved for that, or write the brief yourself.</div>
+            }
+            <button type="button" class="btn btn-sm btn-outline-secondary mt-2" @onclick="CopyClosingPrompt"><span class="bi bi-clipboard me-1" aria-hidden="true"></span>Copy closing-brief prompt</button>
+            <label class="form-label small mt-2 mb-0" for="ws-close-ai">The AI's reply</label>
+            <textarea id="ws-close-ai" class="form-control form-control-sm" rows="3" @bind="_closeAiReply" @bind:event="oninput"
+                      placeholder="WHAT HAPPENED: … CONCLUSION: … OUTCOME: …"></textarea>
+            <button type="button" class="btn btn-sm btn-outline-primary mt-1" disabled="@string.IsNullOrWhiteSpace(_closeAiReply)" @onclick="UseClosingDraft">Fill in from this reply</button>
+        </details>
     </text>;
+
+    // --- HR-18: the closing-brief prompt for the analyst's own AI tool ---
+    private string? _closeAiReply;
+
+    private async Task CopyClosingPrompt()
+    {
+        if (_case is null) return;
+        var labels = _case.Entities.ToDictionary(e => e.Id, e => string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!);
+        var narrative = IncidentManager.Application.Lessons.CaseNarrative.Draft(_case, id => labels.GetValueOrDefault(id), s => SevLabels.For(s), Clock.UtcNow);
+        var prompt = IncidentManager.Application.Cases.ClosingBriefPrompt.Build(_case, narrative,
+            _outcomes.Select(o => new IncidentManager.Application.Cases.ClosingOutcomeOption(o.Key, o.Label, o.Description)).ToList(),
+            _taskResults, id => Users.DisplayFor(id));
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", prompt);
+            Toasts.Success("Prompt copied. Paste it into your approved AI tool, then paste its reply here.");
+        }
+        catch (JSException)
+        {
+            Toasts.Error("Couldn't copy the prompt to the clipboard.");
+        }
+    }
+
+    private void UseClosingDraft()
+    {
+        var draft = IncidentManager.Application.Cases.ClosingBriefPrompt.Parse(_closeAiReply, _outcomes.Select(o => o.Key));
+        if (draft.WhatHappened is null && draft.Conclusion is null)
+        {
+            _modalError = "That reply has no \"WHAT HAPPENED:\" or \"CONCLUSION:\" part. Paste the AI's whole reply.";
+            return;
+        }
+        _modalError = null;
+        if (draft.WhatHappened is { } what) _closeSummary = what;
+        if (draft.Conclusion is { } conclusion) _closeConclusion = conclusion;
+        if (draft.OutcomeKey is { } key && string.IsNullOrEmpty(_closeOutcome)) _closeOutcome = key;
+        _closeAiReply = null;
+        Toasts.Success("Filled in from the reply. Check and edit it before closing.");
+    }
 
     // The brief's open questions and whether each has an answer (HR-02), so a conclusion that rests on an unanswered
     // question is visible before closing. Advisory: the analyst can answer it on the Tasks tab or close anyway.

@@ -104,6 +104,7 @@ A case closes with a conclusion of record. When the target is **Closed**, the di
 | **What happened** (required) | Pre-filled from the brief's summary. Becomes the case summary, which the report prints as Summary. |
 | **Conclusion** (required) | Pre-filled from the brief's working assessment: what the team concluded, and on what basis. It also stands in for the transition reason. |
 | Open questions | The brief's open questions, each with its answer from the task that followed it up, or "No answer recorded" (advisory). |
+| Draft these with your own AI tool | Collapsed. **Copy closing-brief prompt** puts a prompt on the clipboard holding the case's record (the account drafted from it, the current brief and the answers to its questions, the investigation timeline with decisions' reasons, the verdicts and the task results), the active outcomes, and rules for neutral, factual wording. The analyst runs it in their organisation's approved AI tool and pastes the reply; **Fill in from this reply** puts its "WHAT HAPPENED:" and "CONCLUSION:" parts into the fields, and its "OUTCOME:" when that's an active outcome key and none is chosen yet, for the analyst to check and edit. CaseBook calls no AI and sends nothing; a restricted case adds a reminder to use a tool approved for need-to-know material. |
 
 Saving writes a new brief version (the **closing brief**: what happened, the conclusion, and Known and the open
 questions carried over) and the phase change in one save, at the same instant, so the brief doesn't read as out of
