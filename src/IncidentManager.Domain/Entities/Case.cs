@@ -564,9 +564,19 @@ public class Case : AuditableEntity, IHashableEntity
         Touch(actor, nowUtc);
     }
 
+    /// <summary>The entity with this type and value on the case (matched after normalizing, ignoring case), or null.</summary>
+    public CaseEntity? FindEntity(EntityType type, string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var v = IocObservable.Normalize(type, value);
+        return Entities.FirstOrDefault(e => e.Type == type && string.Equals(e.Value, v, StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>
-    /// Adds an entity/IOC (account, host, IP, hash, URL…). Idempotent by (type, value): a
-    /// repeat of the same observable updates its label/disposition/details rather than duplicating.
+    /// Adds an entity/IOC (account, host, IP, hash, URL…). Idempotent by (type, value). Adding one that's already on
+    /// the case never overwrites what the case has recorded about it (HR-04): its verdict changes only when it's still
+    /// Unknown, and its label, description and source are filled only where blank. Changing a recorded verdict or
+    /// detail is an edit (<see cref="EditEntity"/>), so re-pasting a list of indicators can't erase a finding.
     /// </summary>
     public CaseEntity AddEntity(EntityType type, string value, string? label, EntityDisposition disposition,
         string? description, string? source, string actor, DateTimeOffset nowUtc)
@@ -577,17 +587,24 @@ public class Case : AuditableEntity, IHashableEntity
         // Refang defanged IOC notation on entry so correlation (E-08), links (E-05) and the pushed
         // feed (E-13) all match on canonical values — and so this dedup catches "1.1.1[.]1" == "1.1.1.1".
         var v = IocObservable.Normalize(type, value);
-        var existing = Entities.FirstOrDefault(e => e.Type == type &&
-            string.Equals(e.Value, v, StringComparison.OrdinalIgnoreCase));
+        var existing = FindEntity(type, v);
         if (existing is not null)
         {
-            existing.Label = label;
-            existing.Disposition = disposition;
-            existing.Description = description;
-            existing.Source = source;
-            existing.ModifiedBy = actor;
-            existing.ModifiedAtUtc = nowUtc;
-            Touch(actor, nowUtc);
+            var changed = false;
+            if (existing.Disposition == EntityDisposition.Unknown && disposition != EntityDisposition.Unknown)
+            {
+                existing.Disposition = disposition;
+                changed = true;
+            }
+            if (string.IsNullOrWhiteSpace(existing.Label) && !string.IsNullOrWhiteSpace(label)) { existing.Label = label; changed = true; }
+            if (string.IsNullOrWhiteSpace(existing.Description) && !string.IsNullOrWhiteSpace(description)) { existing.Description = description; changed = true; }
+            if (string.IsNullOrWhiteSpace(existing.Source) && !string.IsNullOrWhiteSpace(source)) { existing.Source = source; changed = true; }
+            if (changed)
+            {
+                existing.ModifiedBy = actor;
+                existing.ModifiedAtUtc = nowUtc;
+                Touch(actor, nowUtc);
+            }
             return existing;
         }
 

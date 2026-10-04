@@ -1079,13 +1079,26 @@ public sealed class CaseService
 
     public async Task<Guid> AddEntityAsync(Guid id, EntityType type, string value, string? label,
         EntityDisposition disposition, string? description, string? source, CancellationToken ct = default)
+        => (await AddOrMatchEntityAsync(id, type, value, label, disposition, description, source, ct)).Id;
+
+    /// <summary>
+    /// What adding an entity did (HR-04): added it, or found it already on the case. When it was already there,
+    /// <see cref="Disposition"/> is the verdict the case keeps, which may differ from the one asked for: adding never
+    /// overwrites a recorded verdict.
+    /// </summary>
+    public sealed record EntityAddResult(Guid Id, bool AlreadyOnCase, EntityDisposition Disposition, string? Label);
+
+    /// <summary>Adds an entity, or reports that it's already on the case (HR-04). See <see cref="Case.AddEntity"/>.</summary>
+    public async Task<EntityAddResult> AddOrMatchEntityAsync(Guid id, EntityType type, string value, string? label,
+        EntityDisposition disposition, string? description, string? source, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        var existed = c.FindEntity(type, value) is not null;
         var entity = c.AddEntity(type, value, label, disposition, description, source, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
-        return entity.Id;
+        return new EntityAddResult(entity.Id, existed, entity.Disposition, entity.Label);
     }
 
     /// <summary>

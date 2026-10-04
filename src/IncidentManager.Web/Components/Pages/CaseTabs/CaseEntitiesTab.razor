@@ -667,14 +667,19 @@ else
         try
         {
             var addedVal = _enValue;
-            var newId = await Cases.AddEntityAsync(CaseId, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource);
-            if (_enTlp is not null) await Cases.SetEntityTlpAsync(CaseId, newId, _enTlp);   // PROD-45
+            var asked = _enDisposition;
+            var r = await Cases.AddOrMatchEntityAsync(CaseId, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource);
+            if (_enTlp is not null && !r.AlreadyOnCase) await Cases.SetEntityTlpAsync(CaseId, r.Id, _enTlp);   // PROD-45
             _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null; _enTlp = null;
             await OnChanged.InvokeAsync();
             await LoadOverlaps(); // the new IOC may correlate with another case — surface "also in" now
             _relatedDismissed = false; // a new IOC may reveal a related case — re-surface the suggestion (PROD-40)
             await LoadRelated();
-            Toasts.Success($"Added {addedVal}");
+            // HR-04: adding one that's already here never overwrites its verdict, so say what the case kept.
+            if (!r.AlreadyOnCase) Toasts.Success($"Added {addedVal}");
+            else if (r.Disposition != asked)
+                Toasts.Warning($"{addedVal} is already on this case as {Ui.Label(r.Disposition)}. Its verdict wasn't changed; use Edit to change it.");
+            else Toasts.Info($"{addedVal} is already on this case.");
         }
         catch (Exception ex) { _entityError = ex.Message; }
     }
@@ -711,21 +716,27 @@ else
         _bulkBusy = true;
         _bulkError = null;
         var added = 0;
+        var existing = 0;
         try
         {
             // One case is a coherent cohort (like PROD-21's per-case task bulk), so no E-18 cross-case
-            // metering applies here. AddEntity upserts by (type, value), so re-pasting is idempotent.
+            // metering applies here. AddEntity upserts by (type, value), so re-pasting is idempotent, and it
+            // never overwrites a recorded verdict or detail (HR-04).
             foreach (var r in rows)
             {
-                await Cases.AddEntityAsync(CaseId, r.Type, r.Value, null, _bulkDisposition, null, _bulkSource);
-                added++;
+                var res = await Cases.AddOrMatchEntityAsync(CaseId, r.Type, r.Value, null, _bulkDisposition, null, _bulkSource);
+                if (res.AlreadyOnCase) existing++; else added++;
             }
             ClearBulk();
             await OnChanged.InvokeAsync();
             await LoadOverlaps(); // pasted IOCs may correlate with other cases — refresh "also in"
             _relatedDismissed = false; // pasted IOCs may reveal related cases — re-surface the suggestion (PROD-40)
             await LoadRelated();
-            Toasts.Success($"Added {IncidentManager.Application.Common.Plural.Of(added, "indicator")}");
+            var plural = IncidentManager.Application.Common.Plural.Of;
+            var kept = $"{plural(existing, "was", "were")} already on this case and kept {(existing == 1 ? "its" : "their")} verdict.";
+            Toasts.Success(existing == 0 ? $"Added {plural(added, "indicator")}"
+                : added == 0 ? (existing == 1 ? "That indicator was already on this case and kept its verdict." : $"All {kept}")
+                : $"Added {plural(added, "indicator")}. {kept}");
         }
         catch (Exception ex)
         {

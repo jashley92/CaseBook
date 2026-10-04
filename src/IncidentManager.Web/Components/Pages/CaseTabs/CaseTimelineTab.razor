@@ -991,10 +991,13 @@ else
         _newIocSaving = true; _newIocError = null;
         try
         {
-            var id = (await Cases.AddEntityAsync(CaseId, _newIocType, _newIocValue.Trim(), _newIocLabel, _newIocDisposition, null, null)).ToString();
+            var r = await Cases.AddOrMatchEntityAsync(CaseId, _newIocType, _newIocValue.Trim(), _newIocLabel, _newIocDisposition, null, null);
+            var id = r.Id.ToString();
             await OnChanged.InvokeAsync();   // reload so the new entity is in the lists before it's selected
             if (_newIocFor == "actor") _evtActorId = _actorPrev = id; else _evtTargetId = _targetPrev = id;
-            Toasts.Success($"Added {_newIocValue.Trim()}");
+            // HR-04: an existing one is selected as it is; its recorded verdict isn't overwritten.
+            if (r.AlreadyOnCase) Toasts.Info($"{_newIocValue.Trim()} is already on this case ({Ui.Label(r.Disposition)}). Selected it.");
+            else Toasts.Success($"Added {_newIocValue.Trim()}");
             _newIocFor = null;
         }
         catch (Exception ex) { _newIocError = ex.Message; }

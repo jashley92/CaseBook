@@ -251,8 +251,9 @@ Analyst (one IC per case is enforced in code, not the database). Unassigning del
 | `Tlp` | int | Per-indicator TLP. Not hashed. |
 | `IsPinned` | bit | Shown first in the context rail. Not hashed. |
 
-`(Type, Value)` is unique per case, case-insensitively, **in code only**. Adding an existing one updates it
-instead of duplicating. Removing an entity removes its relationships and layout, but **fails at the database if
+`(Type, Value)` is unique per case, case-insensitively, **in code only**. Adding an existing one never duplicates it
+and never overwrites what's recorded: its disposition changes only while it's Unknown, and label, description and
+source are filled only where blank. Changing a recorded value is an edit (`Case.EditEntity`). Removing an entity removes its relationships and layout, but **fails at the database if
 an event step uses it as actor or target** ([known issue](../reference/known-issues.md)).
 
 ### `EntityRelationships` (H, A)

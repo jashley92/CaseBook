@@ -66,6 +66,31 @@ public sealed class RecordEditingPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Adding_an_entity_already_on_the_case_keeps_its_verdict_and_records_no_change()
+    {
+        // HR-04: a re-add reports what the case kept instead of overwriting the recorded finding.
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+        var first = await svc.AddOrMatchEntityAsync(id, EntityType.IpAddress, "185.220.101.47", "Tor exit node",
+            EntityDisposition.Malicious, null, "Entra ID");
+        first.AlreadyOnCase.Should().BeFalse();
+        var updatesBefore = await db.AuditLog.CountAsync(a => a.EntityType == "CaseEntity" && a.Action == AuditAction.Update);
+
+        var again = await svc.AddOrMatchEntityAsync(id, EntityType.IpAddress, "185.220.101[.]47", null,
+            EntityDisposition.Suspicious, null, "Proxy log");
+
+        again.AlreadyOnCase.Should().BeTrue();
+        again.Id.Should().Be(first.Id);
+        again.Disposition.Should().Be(EntityDisposition.Malicious);
+        again.Label.Should().Be("Tor exit node");
+        (await db.AuditLog.CountAsync(a => a.EntityType == "CaseEntity" && a.Action == AuditAction.Update))
+            .Should().Be(updatesBefore, "an unchanged re-add writes nothing");
+        var loaded = (await svc.GetDetailAsync(id))!;
+        loaded.Entities.Should().ContainSingle().Which.Source.Should().Be("Entra ID");
+    }
+
+    [Fact]
     public async Task Editing_an_entity_in_place_reassesses_it_and_records_the_reason_with_a_valid_chain()
     {
         Guid id, entityId;

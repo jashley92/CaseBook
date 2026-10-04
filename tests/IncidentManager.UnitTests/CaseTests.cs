@@ -422,13 +422,50 @@ public class CaseTests
     {
         var c = NewCase();
 
-        c.AddEntity(EntityType.IpAddress, "203.0.113.66", null, EntityDisposition.Suspicious, null, null, "analyst1", Now);
+        c.AddEntity(EntityType.IpAddress, "203.0.113.66", null, EntityDisposition.Unknown, null, null, "analyst1", Now);
         c.AddEntity(EntityType.IpAddress, "203.0.113.66", "Attacker", EntityDisposition.Malicious, null, "SIEM", "analyst1", Now.AddHours(1));
 
         c.Entities.Should().ContainSingle();
         var e = c.Entities[0];
-        e.Disposition.Should().Be(EntityDisposition.Malicious); // updated in place
-        e.Label.Should().Be("Attacker");
+        e.Disposition.Should().Be(EntityDisposition.Malicious); // an Unknown verdict takes the first real one
+        e.Label.Should().Be("Attacker");                          // blanks are filled
+        e.Source.Should().Be("SIEM");
+    }
+
+    [Fact]
+    public void AddEntity_again_never_overwrites_a_recorded_verdict_or_detail()
+    {
+        // HR-04: re-adding an indicator (form, paste, "+ New IOC…") silently turned "Malicious · Tor exit node" into
+        // "Suspicious · —". A re-add now keeps what the case recorded; changing it is an edit.
+        var c = NewCase();
+        c.AddEntity(EntityType.IpAddress, "185.220.101.47", "Tor exit node", EntityDisposition.Malicious,
+            "Source of the unauthorized sign-in", "Entra ID", "analyst1", Now);
+        var stamp = c.Entities[0].ModifiedAtUtc;
+
+        var again = c.AddEntity(EntityType.IpAddress, "185.220.101[.]47", null, EntityDisposition.Suspicious,
+            null, "Proxy log", "analyst2", Now.AddHours(2));
+
+        c.Entities.Should().ContainSingle();
+        again.Disposition.Should().Be(EntityDisposition.Malicious);
+        again.Label.Should().Be("Tor exit node");
+        again.Description.Should().Be("Source of the unauthorized sign-in");
+        again.Source.Should().Be("Entra ID");
+        again.ModifiedAtUtc.Should().Be(stamp, "nothing changed, so nothing is recorded as edited");
+    }
+
+    [Fact]
+    public void AddEntity_again_does_not_downgrade_benign_either()
+    {
+        var c = NewCase();
+        c.AddEntity(EntityType.Host, "FIN-LT-0442", null, EntityDisposition.Benign, null, null, "analyst1", Now);
+
+        c.AddEntity(EntityType.Host, "fin-lt-0442", "Laptop", EntityDisposition.Suspicious, null, null, "analyst1", Now.AddHours(1));
+
+        c.Entities.Should().ContainSingle();
+        c.Entities[0].Disposition.Should().Be(EntityDisposition.Benign);
+        c.Entities[0].Label.Should().Be("Laptop");
+        c.FindEntity(EntityType.Host, "FIN-LT-0442").Should().BeSameAs(c.Entities[0]);
+        c.FindEntity(EntityType.Account, "FIN-LT-0442").Should().BeNull();
     }
 
     [Fact]
@@ -438,7 +475,7 @@ public class CaseTests
 
         // An analyst pastes a defanged IOC, then someone else adds the live form (E-19).
         var first = c.AddEntity(EntityType.Url, "hxxp://evil[.]com/login", null,
-            EntityDisposition.Suspicious, null, null, "analyst1", Now);
+            EntityDisposition.Unknown, null, null, "analyst1", Now);
         var second = c.AddEntity(EntityType.Url, "http://evil.com/login", "Phishing kit",
             EntityDisposition.Malicious, null, "SIEM", "analyst2", Now.AddHours(1));
 

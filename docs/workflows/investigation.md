@@ -71,8 +71,8 @@ the timeline".
 
 | Action | How | Rules |
 |---|---|---|
-| Add one | *Add entity / IOC*: type, value, label, disposition, source, TLP, description → `AddEntityAsync` → `Case.AddEntity` | Network types are refanged (`hxxp`, `[.]`); hashes, file names and accounts are kept exactly. **Adding an existing (type, value) updates it** rather than duplicating. |
-| Paste many | *Paste indicators*: one per line, comma, semicolon or tab | Types are detected; duplicates merged. |
+| Add one | *Add entity / IOC*: type, value, label, disposition, source, TLP, description → `AddEntityAsync` → `Case.AddEntity` | Network types are refanged (`hxxp`, `[.]`); hashes, file names and accounts are kept exactly. **Adding an existing (type, value) never overwrites it**: an Unknown disposition takes the new one, blank details are filled, and anything already recorded is kept ("…is already on this case as Malicious. Its verdict wasn't changed; use Edit to change it."). |
+| Paste many | *Paste indicators*: one per line, comma, semicolon or tab | Types are detected; duplicates merged. Indicators already on the case keep their verdict, and the confirmation says how many. |
 | Edit | *Edit* (optional reason) | Can't collide with another entity of the same type and value. |
 | Disposition | Unknown, Benign, Suspicious, Malicious, **Compromised** (a legitimate asset taken over) | An Unknown entity referenced three or more times is suggested for review. |
 | Pin | From the entity panel | Pinned entities show first in the context rail, followed by Malicious, Compromised and Suspicious ones. |
