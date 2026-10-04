@@ -1394,6 +1394,10 @@ else
     private bool Closing => _activeModal == "status" && _newPhase == CasePhase.Closed && _case is { Phase: not CasePhase.Closed };
     private List<IncidentManager.Application.Admin.CaseOutcomeView> _outcomes = [];
     private string? _closeOutcome, _closeSummary, _closeConclusion;
+    private readonly Dictionary<string, string> _closeRefs = new(StringComparer.Ordinal);
+
+    private string? Linked(string? text) => _case is null ? text
+        : IncidentManager.Application.Content.TagText.FromEditable(text, _closeRefs, _case.Entities.Select(e => (e.Id, e.Label, e.Value)));
     private Guid? _closePrefilledFor;
     private IReadOnlyDictionary<string, string> _outcomeLabels = new Dictionary<string, string>();
     private string OutcomeLabel(string key) =>
@@ -1405,8 +1409,10 @@ else
         if (_case is null || _closePrefilledFor == _case.Id) return;
         // Start from the current brief, so the analyst edits what's there into the conclusion instead of retyping it.
         var brief = _case.Briefs.FirstOrDefault(b => b.IsCurrent);
-        _closeSummary = brief?.Summary ?? _case.Summary;
-        _closeConclusion = brief?.WorkingAssessment;
+        // Entity tags and evidence citations show as [[name]] in the plain boxes, and turn back into links on save.
+        _closeRefs.Clear();
+        _closeSummary = IncidentManager.Application.Content.TagText.ToEditable(brief?.Summary ?? _case.Summary, _closeRefs);
+        _closeConclusion = IncidentManager.Application.Content.TagText.ToEditable(brief?.WorkingAssessment, _closeRefs);
         _closeOutcome = null;
         _closePrefilledFor = _case.Id;
     }
@@ -1432,7 +1438,7 @@ else
                   placeholder="e.g. Account takeover with preparation for payment fraud. No other user affected; no payment made."
                   @bind="_closeConclusion" @bind:event="oninput"></textarea>
         @RationaleHint(_closeConclusion)
-        <div class="small text-muted mb-2">Saved as the brief's closing version. Known and the open questions carry over.</div>
+        <div class="small text-muted mb-2">Saved as the brief's closing version. Known and the open questions carry over. <code>[[name]]</code> tags an entity.</div>
         @ClosingQuestions()
         @* HR-18: bring-your-own AI. CaseBook only builds the prompt and reads the reply back; the analyst runs it in
            their organisation's approved tool and edits what it fills in. Nothing is saved until the case closes. *@
@@ -1859,7 +1865,7 @@ else
                     if (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
                     { _modalError = "Enter an override justification for the unmet requirements."; return; }
                     if (GateRationaleError(Closing ? _closeConclusion : _phaseReason) is { } m2) { _modalError = m2; return; }
-                    var closing = Closing ? new CaseService.CaseClosing(_closeOutcome ?? "", _closeSummary ?? "", _closeConclusion ?? "") : null;
+                    var closing = Closing ? new CaseService.CaseClosing(_closeOutcome ?? "", Linked(_closeSummary) ?? "", Linked(_closeConclusion) ?? "") : null;
                     await Cases.ChangePhaseAsync(Id, _newPhase, closing is null ? _phaseReason : null,
                         _attested.Count > 0 ? _attested : null, _gateOverride, EffectiveUtc(), closing: closing);
                     _phaseReason = null;

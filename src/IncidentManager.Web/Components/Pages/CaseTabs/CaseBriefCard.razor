@@ -162,13 +162,14 @@
     private const string OpenKey = "open";
     private const string KnownKey = "known";
 
-    // INV-33: appends "[file](evidence:<id>)" to Known, on the current line.
+    // INV-33: appends "[[file]]" to Known, on the current line; saved as "[file](evidence:<id>)".
     private void CiteInKnown(string? evidenceId)
     {
         if (!Guid.TryParse(evidenceId, out var id) || Case.Evidence.FirstOrDefault(e => e.Id == id) is not { } ev) return;
         var name = ev.OriginalFileName.Replace("[", "(").Replace("]", ")");
         var current = (_draft.GetValueOrDefault(KnownKey) ?? "").TrimEnd();
-        _draft[KnownKey] = (current.Length == 0 ? "- " : current + " ") + $"[{name}](evidence:{id})";
+        _refs[name] = $"evidence:{id}";
+        _draft[KnownKey] = (current.Length == 0 ? "- " : current + " ") + $"[[{name}]]";
     }
     private const string NextKey = "next";
     private const int NextShown = 5;
@@ -186,6 +187,10 @@
     private bool _adding;
     private Guid? _openedFrom;
     private readonly Dictionary<string, string?> _draft = new();
+    private readonly Dictionary<string, string> _refs = new(StringComparer.Ordinal);
+
+    private string? Linked(string key) => IncidentManager.Application.Content.TagText.FromEditable(
+        _draft.GetValueOrDefault(key), _refs, Case.Entities.Select(e => (e.Id, e.Label, e.Value)));
 
     /// <summary>Opens the editor (also used by the close gate's "Fix" for a missing summary).</summary>
     public void BeginEdit()
@@ -193,9 +198,12 @@
         if (!CanEdit || _editing) return;
         var cur = Current;
         _openedFrom = cur?.Id;
-        foreach (var p in Parts.Where(p => p.Editable)) _draft[p.Key] = cur is null ? null : p.Get(cur);
+        // Entity tags and evidence citations show as [[name]] in the plain boxes, and turn back into links on save.
+        _refs.Clear();
+        foreach (var p in Parts.Where(p => p.Editable))
+            _draft[p.Key] = cur is null ? null : IncidentManager.Application.Content.TagText.ToEditable(p.Get(cur), _refs);
         // The case's own summary is the current one (a version recorded before INV-36 may hold other text).
-        _draft[SummaryKey] = Case.Summary;
+        _draft[SummaryKey] = IncidentManager.Application.Content.TagText.ToEditable(Case.Summary, _refs);
         _error = null;
         _editing = true;
         StateHasChanged();
@@ -207,8 +215,8 @@
         _error = null;
         try
         {
-            await Cases.ReviseBriefAsync(Case.Id, _openedFrom, _draft[SummaryKey], _draft["assessment"], _draft["known"],
-                _draft["open"]);
+            await Cases.ReviseBriefAsync(Case.Id, _openedFrom, Linked(SummaryKey), Linked("assessment"), Linked("known"),
+                Linked("open"));
             _editing = false;
             Toasts.Success("Brief saved");
             await OnChanged.InvokeAsync();
