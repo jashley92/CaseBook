@@ -162,6 +162,8 @@ public sealed record CaseReportModel
     public string? Outcome { get; init; }
     /// <summary>HR-01: the closing brief's conclusion, printed with the outcome.</summary>
     public string? Conclusion { get; init; }
+    /// <summary>HR-15: on a closed case changed since it closed, a neutral note saying how often and by whom.</summary>
+    public string? ChangedAfterClosure { get; init; }
 
     public IReadOnlyList<ReportClassificationItem> ClassificationHistory { get; init; } = [];
     public IReadOnlyList<ReportClassificationItem> SeverityHistory { get; init; } = [];

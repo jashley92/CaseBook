@@ -20,7 +20,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 | Sev | Current behavior | Why it matters | Possible fix |
 |---|---|---|---|
 | Medium | **Removing an entity used as an event step's actor or target fails at the database** (Restrict foreign key) with a generic error; `Case.RemoveEntity` doesn't check first. Tasks "about" a removed entity keep a dangling reference. | Confusing failure. | Pre-check and explain, or clear the references. |
-| Medium | **Closed and archived cases can still be edited.** No service checks phase or archive state. | May surprise examiners expecting a locked record (the audit trail still shows every change). | Decide on a lock policy; enforce in `LoadTrackedAsync`. |
 | Medium | **One reported time stops every jurisdiction's notification clock.** | Multi-jurisdiction cases can't record staggered notifications. | Per-jurisdiction reported times. |
 | Medium | **Blank number settings restore the file value instead of meaning "off"**, contrary to the SLA settings' descriptions. | An admin who clears an SLA target still has one. | Store blank as an explicit "none"; fix the text meanwhile. |
 | Medium | **The settings form shows catalog defaults, not effective values** (e.g. the production template's 24 h auto-seal shows as 6). | Misleading; the *Setting sources* page is correct. | Show the effective value. |

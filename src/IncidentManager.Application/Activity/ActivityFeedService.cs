@@ -52,6 +52,18 @@ public sealed class ActivityFeedService
         return (rows.Count, rows.Distinct().Select(a => _users.DisplayFor(a)).ToList());
     }
 
+    /// <summary>HR-15: what was changed on a closed case after it closed, by whom (display names). Null while open
+    /// or for a case the caller can't see.</summary>
+    public async Task<(Cases.AfterClosureChanges Changes, IReadOnlyList<string> People)?> ChangesAfterClosureAsync(Guid caseId,
+        CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        if (!await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct)) return null;
+        return await Cases.AfterClosure.QueryAsync(db, caseId, ct) is { } a
+            ? (a, a.People.Select(p => _users.DisplayFor(p)).ToList())
+            : null;
+    }
+
     /// <param name="othersOnly">Leave out the caller's own actions (the notification bell: you know what you did).</param>
     public async Task<IReadOnlyList<ActivityItem>> RecentAsync(int take = 20, CancellationToken ct = default,
         bool othersOnly = false)

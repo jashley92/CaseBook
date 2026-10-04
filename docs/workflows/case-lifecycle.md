@@ -138,6 +138,15 @@ Limits: not in the future, not before detection, between the neighbouring change
 opening state ("That change isn't on this case, or it's the opening state, which can't be re-dated.").
 Needs `EditCases`, plus `ChangeClassification` for a classification change.
 
+### After closure
+
+A closed case can still be edited: late evidence and answers are recorded where they belong. It isn't hidden,
+though. The header shows **"N changes after closure"** (one per save, from the audit trail after the save that
+closed it; the post-incident review and improvement actions don't count) and opens the audit trail. Timeline entries
+added or edited after closure are marked "added after closure" or "edited after closure". The report says the same
+on each entry and adds a line under Outcome ("2 changes were recorded after the case closed on …, by …"; template
+field `case.changed_after_closure`). Reopen when the conclusion itself is in question.
+
 ## 7. Reopening
 
 Shown on a closed case: **Reopen case…** with a required reason. `Case.Reopen` returns the case to the phase it

@@ -2524,6 +2524,10 @@ html[data-density="compact"] { --im-row-h: 2.125rem; }
 .im-brief-q-text > p { display: inline; margin: 0; }
 .im-brief-q-task { font-size: var(--im-text-xs); cursor: pointer; }
 /* HR-01: a closed case's outcome beside its phase, and the close dialog's open questions. */
+/* HR-15: a closed case changed since, and entries added or edited after closure. Marked, not locked. */
+.im-after-closure { font-size: var(--im-text-xs); font-weight: 600; padding: 0.05rem 0.5rem; border-radius: var(--im-radius-sm); border: 1px solid var(--im-warn); color: var(--im-warn); background: transparent; white-space: nowrap; }
+.im-after-closure:hover, .im-after-closure:focus-visible { background: color-mix(in srgb, var(--im-warn) 12%, transparent); }
+.tl-after-closure { color: var(--im-warn); white-space: nowrap; }
 .im-outcome { font-size: var(--im-text-xs); font-weight: 600; padding: 0.05rem 0.5rem; border-radius: var(--im-radius-sm); color: var(--im-accent-text); background: var(--im-accent-bg); white-space: nowrap; }
 /* HR-03: a closed case where an indicator was seen before. */
 .im-seen-box { border: 1px solid var(--im-border); border-left: 3px solid var(--im-accent-strong); border-radius: var(--im-radius); padding: 0.5rem 0.75rem; display: grid; gap: 0.5rem; }

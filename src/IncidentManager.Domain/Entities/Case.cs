@@ -116,6 +116,15 @@ public class Case : AuditableEntity, IHashableEntity
     public DateTimeOffset? ClosedAtUtc { get; set; }
 
     /// <summary>
+    /// HR-15: when the current closure was recorded (the latest move to Closed, by recorded time, not its effective
+    /// time), or null while the case is open. Anything recorded after it was added after closure. Needs
+    /// <see cref="StatusChanges"/> loaded.
+    /// </summary>
+    public DateTimeOffset? ClosureRecordedAtUtc => Phase == CasePhase.Closed
+        ? StatusChanges.Where(s => s.To == CasePhase.Closed).Select(s => (DateTimeOffset?)s.ChangedAtUtc).Max()
+        : null;
+
+    /// <summary>
     /// HR-01: what the case concluded, as the stable key of a <see cref="CaseOutcome"/>. Recorded when it's closed
     /// (and on that close's <see cref="StatusChange"/>), cleared when it's reopened. Null on cases closed before
     /// outcomes were recorded.

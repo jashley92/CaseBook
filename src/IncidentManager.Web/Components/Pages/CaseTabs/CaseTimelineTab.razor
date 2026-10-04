@@ -681,6 +681,7 @@ else
                             {
                                 <span class="text-muted" title="@TimeDisp.Long(mod)">· edited by @Users.DisplayFor(e.ModifiedBy)</span>
                             }
+                            @AfterClosureMark(e.CreatedAtUtc, e.ModifiedAtUtc ?? e.CreatedAtUtc)
                             @if (CanEdit)
                             {
                                 <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => StartEventEdit(e)">
@@ -761,6 +762,7 @@ else
                                 @* INV-03: entered well after it happened — said openly, as on milestones and in the report. *@
                                 <span class="tl-late" title="Entered @TimeDisp.Long(firstRecorded)"><span class="bi bi-clock-history" aria-hidden="true"></span> recorded @TimeDisp.Short(firstRecorded)</span>
                             }
+                            @AfterClosureMark(firstRecorded, e.CreatedAtUtc)
                             @if (history.Count > 0)
                             {
                                 <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => ToggleHistory(e.Id)">
@@ -1411,6 +1413,16 @@ else
         while (first.SupersedesEntryId is { } prior && Case.TimelineEntries.FirstOrDefault(x => x.Id == prior) is { } p) first = p;
         return first.Id;
     }
+
+    // HR-15: an entry added or edited after the case closed says so; the record isn't locked, it's marked.
+    private RenderFragment AfterClosureMark(DateTimeOffset added, DateTimeOffset lastChanged) => @<text>
+        @if (Case.ClosureRecordedAtUtc is { } closed && lastChanged > closed)
+        {
+            <span class="tl-after-closure" title="@($"The case closed {TimeDisp.Long(closed)}; this was {(added > closed ? "added" : "edited")} {TimeDisp.Long(lastChanged)}")">
+                <span class="bi bi-pencil-square" aria-hidden="true"></span> @(added > closed ? "added" : "edited") after closure
+            </span>
+        }
+    </text>;
 
     // HR-08: a task result logged on the timeline says which entry (usually a decision) the task carried out.
     private RenderFragment CarriesOut(TimelineEntry e) => @<text>

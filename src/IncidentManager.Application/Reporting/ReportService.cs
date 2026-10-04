@@ -92,7 +92,8 @@ public sealed class ReportService
             // INV-23: an imported entry was always recorded after it happened; the subtitle says so once.
             .Select(x => (At: x.OccurredAtUtc, Order: x.CreatedAtUtc, Item: new ReportTimelineItem(x.OccurredAtUtc,
                 TaxLabel("TimelineEntryType", x.Type.ToString()),
-                d.Text(EntryText(x) + ActionsTaken(c, x, taskResults)) + Cited(c, x) + (x.IsImported ? "" : Late(x.OccurredAtUtc, FirstRecorded(c, x))),
+                d.Text(EntryText(x) + ActionsTaken(c, x, taskResults)) + Cited(c, x) + (x.IsImported ? "" : Late(x.OccurredAtUtc, FirstRecorded(c, x)))
+                    + AfterClosureNote(c, FirstRecorded(c, x), x.CreatedAtUtc),
                 x.Source, x.IsImported, _users.DisplayFor(x.CreatedBy))))
             .ToList();
 
@@ -166,6 +167,12 @@ public sealed class ReportService
     }
 
     // When an investigation entry was first put on the record: its original version's creation time.
+    // HR-15: an entry added or edited after the case closed says so, as the timeline does.
+    private static string AfterClosureNote(Case c, DateTimeOffset added, DateTimeOffset lastChanged) =>
+        c.ClosureRecordedAtUtc is { } closed && lastChanged > closed
+            ? $" ({(added > closed ? "Added" : "Edited")} after closure, {lastChanged.ToString("u", System.Globalization.CultureInfo.InvariantCulture)}.)"
+            : "";
+
     private static DateTimeOffset FirstRecorded(Case c, TimelineEntry e)
     {
         var first = e;
@@ -558,12 +565,15 @@ public sealed class ReportService
     }
 
     // Records the report reads beside the case aggregate: each task's latest result (HR-02) and outcome labels (HR-01).
-    private sealed record ReportExtras(IReadOnlyDictionary<Guid, TaskResult> TaskResults, IReadOnlyDictionary<string, string> OutcomeLabels);
+    // HR-15: and what changed after closure.
+    private sealed record ReportExtras(IReadOnlyDictionary<Guid, TaskResult> TaskResults, IReadOnlyDictionary<string, string> OutcomeLabels,
+        AfterClosureChanges? AfterClosure = null);
 
     private static async Task<ReportExtras> ExtrasAsync(IAppDbContext db, Guid caseId, CancellationToken ct) => new(
         TaskResults.Latest(await db.ActionItemComments.AsNoTracking()
             .Where(x => x.CaseId == caseId && x.Body.StartsWith(TaskResults.Prefix)).ToListAsync(ct)),
-        await db.CaseOutcomes.AsNoTracking().ToDictionaryAsync(o => o.Key, o => o.Label, StringComparer.Ordinal, ct));
+        await db.CaseOutcomes.AsNoTracking().ToDictionaryAsync(o => o.Key, o => o.Label, StringComparer.Ordinal, ct),
+        await AfterClosure.QueryAsync(db, caseId, ct));
 
     private static Task<Case?> LoadFullCaseAsync(IAppDbContext db, Guid caseId, CancellationToken ct) =>
         // S8733: eager-loading many independent collections in one query is a Cartesian explosion (row count =
@@ -766,6 +776,11 @@ public sealed class ReportService
             ClosedAtUtc = c.ClosedAtUtc,
             // HR-01: the outcome and the closing brief's conclusion (the current brief, written when it closed).
             Outcome = c.OutcomeKey is { } ok ? extras?.OutcomeLabels.GetValueOrDefault(ok) ?? Admin.CaseOutcomeCatalog.Label(ok) : null,
+            ChangedAfterClosure = extras?.AfterClosure is { Count: > 0 } after
+                ? $"{after.Count} {(after.Count == 1 ? "change was" : "changes were")} recorded after the case closed on "
+                  + $"{after.ClosedRecordedAtUtc.ToString("u", System.Globalization.CultureInfo.InvariantCulture)}, by "
+                  + string.Join(", ", after.People.Select(_users.DisplayFor)) + ". Each is in the case's audit trail."
+                : null,
             Conclusion = c.OutcomeKey is null ? null
                 : c.Briefs.FirstOrDefault(b => b.IsCurrent)?.WorkingAssessment is { Length: > 0 } wa ? d.Text(_markdown.ToPlainText(wa)) : null,
             // INV-05: history reads in the order things happened, dated when they happened.

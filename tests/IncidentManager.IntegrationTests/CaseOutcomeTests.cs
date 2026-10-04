@@ -124,6 +124,36 @@ public sealed class CaseOutcomeTests : IDisposable
     }
 
     [Fact]
+    public async Task Changes_after_closure_are_counted_by_save_and_marked_but_not_prevented()
+    {
+        // HR-15
+        var (db, svc, id) = await OpenCaseAsync();
+        await using var _ = db;
+        await svc.ChangePhaseAsync(id, CasePhase.Closed, null, closing: TestOutcomes.Closing());
+
+        (await AfterClosure.QueryAsync(db, id))!.Count.Should().Be(0, "the close's own writes (brief, case row) don't count");
+
+        _clock.UtcNow = _clock.UtcNow.AddDays(2);
+        await svc.AddTimelineEntryAsync(id, TimelineKind.Investigation, TimelineEntryType.Analysis, _clock.UtcNow.AddDays(-3),
+            "Vendor confirmed no payment change was requested.", "AP");
+        _clock.UtcNow = _clock.UtcNow.AddHours(1);
+        await svc.ChangeSeverityAsync(id, Severity.Medium);
+
+        var after = (await AfterClosure.QueryAsync(db, id))!;
+        after.Count.Should().Be(2, "two saves, though each wrote more than one audit row");
+        after.People.Should().ContainSingle();
+        after.LastAtUtc.Should().Be(_clock.UtcNow);
+
+        var c = (await svc.GetDetailAsync(id))!;
+        var entry = c.TimelineEntries.Single(e => e.Source == "AP");
+        (entry.CreatedAtUtc > c.ClosureRecordedAtUtc).Should().BeTrue("the timeline marks it added after closure");
+
+        await svc.ReopenAsync(id, "More to check");
+        (await AfterClosure.QueryAsync(db, id)).Should().BeNull("an open case has no closure to be after");
+        (await svc.GetDetailAsync(id))!.ClosureRecordedAtUtc.Should().BeNull();
+    }
+
+    [Fact]
     public async Task An_unchanged_closing_brief_does_not_add_a_version_and_the_list_filters_by_outcome()
     {
         var (db, svc, id) = await OpenCaseAsync();

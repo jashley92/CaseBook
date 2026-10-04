@@ -54,6 +54,7 @@ making touches one of these, read the linked page first and add a test that woul
 | L7 | **Exercise cases are fixed at creation** and excluded from every aggregate, reminder, feed and correlation, but kept in the audit chain. New aggregate queries must call `ExcludingExercises()`. | Tabletops mustn't distort metrics or trigger real follow-up. | `Case.IsExercise`, `CaseQueryExtensions.ExcludingExercises` |
 | L8 | **One reported time stops all jurisdictions' notification clocks.** Closing doesn't stop them. | Current design; see [known issues](known-issues.md). | `Case.MarkReported`, `NotificationDeadlineService` |
 | L9 | **Materiality is recorded only on Incidents and Breaches**, and a final status needs who decided, when and why. CaseBook records determinations; it doesn't make them. | The decision is Legal's or a committee's. | `Case.RecordMateriality` |
+| L10 | **A closed case isn't locked; changes after closure are marked.** The header says "N changes after closure" (counted per save from the audit trail, leaving out the post-incident review and improvement actions); timeline entries added or edited after closure say so; the report's Outcome section and timeline note them. | Records are completed after the fact (late evidence, a vendor's answer); an examiner sees what changed and when, instead of a lock that pushes the work elsewhere. | `AfterClosure`, `Case.ClosureRecordedAtUtc` |
 
 ## Content
 

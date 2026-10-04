@@ -1198,6 +1198,8 @@ else
                 if (_lastViewed is { } lv)
                     (_sinceCount, _sincePeople) = await Feed.ChangesSinceAsync(_case.Id, lv);
             }
+            // HR-15: a closed case says openly what changed after it closed (it isn't locked).
+            _afterClosure = _case.Phase == CasePhase.Closed ? await Feed.ChangesAfterClosureAsync(_case.Id) : null;
             await AccessLog.RecordCaseOpenAsync(_case.Id, _case.CaseNumber, _case.IsRestricted);
             _isPinned = await Shortcuts.IsPinnedAsync(_case.Id); // PROD-20: header star + palette action state
         }
@@ -1987,6 +1989,14 @@ else
         {
             <span class="im-outcome" title="Outcome recorded when the case closed">@OutcomeLabel(outcome)</span>
         }
+        @* HR-15: changes after closure are marked, not prevented. *@
+        @if (c.Phase == CasePhase.Closed && _afterClosure is { Changes.Count: > 0 } ac)
+        {
+            <button type="button" class="im-after-closure" @onclick='() => SetTab("Audit")'
+                    title="@($"Changed after the case closed on {TimeDisp.Short(ac.Changes.ClosedRecordedAtUtc)}, by {string.Join(", ", ac.People)}. Latest {TimeDisp.Short(ac.Changes.LastAtUtc ?? ac.Changes.ClosedRecordedAtUtc)}. See the audit trail.")">
+                <span class="bi bi-pencil-square" aria-hidden="true"></span> @ac.Changes.Count @(ac.Changes.Count == 1 ? "change" : "changes") after closure
+            </button>
+        }
         @* On the Overview the context strip above the brief already shows the clocks, so only the scrolled bar needs it. *@
         @if ((slim || _activeTab != "Overview") && HeadAlert() is { } alert)
         {
@@ -2172,6 +2182,7 @@ else
     private Guid? _sinceCheckedFor;
     private DateTimeOffset? _lastViewed;
     private int _sinceCount;
+    private (IncidentManager.Application.Cases.AfterClosureChanges Changes, IReadOnlyList<string> People)? _afterClosure;   // HR-15
     private IReadOnlyList<string> _sincePeople = [];
     private bool _sinceDismissed;
     private DateTimeOffset? _timelineSince;
