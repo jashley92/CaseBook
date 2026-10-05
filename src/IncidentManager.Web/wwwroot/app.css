@@ -2853,3 +2853,15 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-modes button:hover { color: var(--im-text); }
 .im-modes button.on { background: var(--im-surface); color: var(--im-text); font-weight: 600; box-shadow: 0 0 0 1px var(--im-border-strong), inset 0 -2px 0 var(--im-accent); }
 .im-modes button:focus-visible { outline: 2px solid var(--im-accent); outline-offset: 1px; }
+
+/* RD-09 (Casefile) follow-ups saved with an entry. */
+.im-then { border-top: 1px dashed var(--im-border-strong); padding-top: .5rem; }
+.im-then-row { display: flex; align-items: center; gap: .4rem; margin-top: .4rem; flex-wrap: wrap; }
+.im-then-row > .bi:first-child { color: var(--im-text-muted); }
+.im-then-row .form-control, .im-then-row .form-select { width: auto; }
+.im-then-row input[aria-label="Task"], .im-then-wide { flex: 1 1 16rem; min-width: 0; }
+.im-then-results { margin: .3rem 0 0 1.4rem; }
+.im-then-summary { margin-top: .5rem; padding: .35rem .6rem; border-radius: var(--im-radius); background: var(--im-surface-2); border: 1px solid var(--im-border); font-size: .8rem; color: var(--im-text); }
+.im-then-summary .bi { color: var(--im-ok); }
+.im-then-row input[aria-label="Task"] { flex: 1 1 12rem; }
+.im-then-row input[type="date"] { width: 9.5rem; }

@@ -330,6 +330,7 @@
                                   placeholder="e.g. Vendor confirmed our policyholder records were in the exposed dataset"></textarea>
                     </div>
                 }
+                @if (_tlEditId is null) { @ThenSection() }
                 <div class="row g-2 align-items-end mt-1">
                     <div class="col-md-4">
                         <label class="form-label small mb-0" for="tl-evt-source">Source</label>
@@ -436,6 +437,7 @@
                             <input id="tl-inv-reason" class="form-control form-control-sm" @bind="_tlReason" placeholder="e.g. clarified meeting outcome" />
                         </div>
                     }
+                    @if (_tlEditId is null && _special != ComposerMode.Note) { @ThenSection() }
                     <div class="mt-2 d-flex justify-content-end gap-2">
                         @if (_tlEditId is null && _special == ComposerMode.Note)
                         {
@@ -1207,6 +1209,163 @@ else
         }
     }
 
+    // --- RD-09: follow-ups saved with the entry ("Then") ---
+    private sealed class FuTask
+    {
+        public string Title { get; set; } = "";
+        public string Owner { get; set; } = "";
+        public TaskKind Kind { get; set; } = TaskKind.General;
+        public DateTime? Due { get; set; }
+    }
+    private readonly List<FuTask> _fuTasks = [];
+    private bool _fuQuestionOpen, _fuKnownOpen, _fuLinkOpen;
+    private string? _fuQuestion, _fuKnown, _fuLinkQuery;
+    private bool _fuQuestionTask = true;
+    private LinkableCase? _fuLink;
+    private CaseLinkType _fuLinkType = CaseLinkType.RelatedTo;
+    private IReadOnlyList<LinkableCase> _fuLinkResults = [];
+
+    private void ResetFollowUps()
+    {
+        _fuTasks.Clear();
+        _fuQuestionOpen = _fuKnownOpen = _fuLinkOpen = false;
+        _fuQuestion = _fuKnown = _fuLinkQuery = null;
+        _fuQuestionTask = true;
+        _fuLink = null;
+        _fuLinkType = CaseLinkType.RelatedTo;
+        _fuLinkResults = [];
+    }
+
+    private EntryFollowUps? FollowUps()
+    {
+        var f = new EntryFollowUps(
+            Tasks: _fuTasks.Where(t => !string.IsNullOrWhiteSpace(t.Title))
+                .Select(t => new FollowUpTask(t.Title, string.IsNullOrWhiteSpace(t.Owner) ? null : t.Owner, t.Kind,
+                    t.Due is { } d ? WallToUtc(d) : null)).ToList(),
+            Question: _fuQuestionOpen ? _fuQuestion : null, QuestionTask: _fuQuestionTask,
+            KnownLine: _fuKnownOpen ? _fuKnown : null,
+            LinkCaseId: _fuLinkOpen ? _fuLink?.Id : null, LinkType: _fuLinkType);
+        return f.Any ? f : null;
+    }
+
+    // What the save writes, said before it happens (and as the toast after).
+    private string? SaveSummary()
+    {
+        if (FollowUps() is not { } f) return null;
+        var what = CurrentMode switch
+        {
+            ComposerMode.Decision => "1 decision",
+            ComposerMode.Adversary => IsThirdParty && !_evtAttackMode ? "1 disclosure step" : "1 adversary step",
+            _ => "1 entry"
+        };
+        var parts = new List<string> { what };
+        var tasks = (f.Tasks?.Count ?? 0) + (EntryFollowUps.Clean(f.Question) is not null && f.QuestionTask ? 1 : 0);
+        if (tasks > 0) parts.Add(IncidentManager.Application.Common.Plural.Of(tasks, "task"));
+        var brief = new List<string>();
+        if (EntryFollowUps.Clean(f.KnownLine) is not null) brief.Add("Known +1");
+        if (EntryFollowUps.Clean(f.Question) is not null) brief.Add("1 question");
+        if (brief.Count > 0) parts.Add($"a new brief version ({string.Join(", ", brief)})");
+        if (f.LinkCaseId is not null && _fuLink is { } l) parts.Add($"a link to {l.CaseNumber}");
+        return "Saved together: " + string.Join(" · ", parts);
+    }
+
+    private IReadOnlyList<(string Id, string Name)> TaskOwners() =>
+        Case.Assignments.OrderBy(a => a.Role).Select(a => (a.UserId, Users.DisplayFor(a.UserId)))
+            .DistinctBy(x => x.UserId).ToList();
+
+    private async Task SearchFuLink() =>
+        _fuLinkResults = string.IsNullOrWhiteSpace(_fuLinkQuery) ? [] : await Cases.SearchLinkableCasesAsync(CaseId, _fuLinkQuery, take: 6);
+
+    private RenderFragment ThenSection() => @<div class="im-then mt-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="small fw-semibold">Then</span>
+            <span class="small text-muted">saved with it, in the same save</span>
+            <span class="ms-auto d-flex gap-1 flex-wrap">
+                <button type="button" class="btn btn-sm btn-link p-0 me-2" @onclick="() => _fuTasks.Add(new FuTask { Kind = CurrentMode == ComposerMode.Adversary ? TaskKind.Investigate : TaskKind.General })">
+                    <span class="bi bi-plus-lg" aria-hidden="true"></span> Task</button>
+                @if (!_fuQuestionOpen) { <button type="button" class="btn btn-sm btn-link p-0 me-2" @onclick="() => _fuQuestionOpen = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> Question</button> }
+                @if (!_fuKnownOpen) { <button type="button" class="btn btn-sm btn-link p-0 me-2" @onclick="() => _fuKnownOpen = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> Line for Known</button> }
+                @if (!_fuLinkOpen) { <button type="button" class="btn btn-sm btn-link p-0" @onclick="() => _fuLinkOpen = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> Link a case</button> }
+            </span>
+        </div>
+        @foreach (var t in _fuTasks)
+        {
+            var task = t;
+            <div class="im-then-row">
+                <span class="bi bi-check2-square" aria-hidden="true"></span>
+                <input class="form-control form-control-sm" placeholder="What needs doing" maxlength="@ActionItem.MaxTitleLength" aria-label="Task"
+                       @bind="task.Title" @bind:event="oninput" />
+                <select class="form-select form-select-sm" aria-label="Owner" @bind="task.Owner">
+                    <option value="">Unassigned</option>
+                    @foreach (var (id, name) in TaskOwners()) { <option value="@id">@name</option> }
+                </select>
+                <select class="form-select form-select-sm" aria-label="Kind" @bind="task.Kind">
+                    @foreach (var k in Enum.GetValues<TaskKind>()) { <option value="@k">@k</option> }
+                </select>
+                <input type="date" class="form-control form-control-sm" aria-label="Due" @bind="task.Due" />
+                <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove this task" @onclick="() => _fuTasks.Remove(task)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+            </div>
+        }
+        @if (_fuQuestionOpen)
+        {
+            <div class="im-then-row">
+                <span class="bi bi-question-circle" aria-hidden="true"></span>
+                <input class="form-control form-control-sm im-then-wide" placeholder="A question for the brief" maxlength="@ActionItem.MaxTitleLength" aria-label="Question"
+                       @bind="_fuQuestion" @bind:event="oninput" />
+                <div class="form-check small mb-0">
+                    <input class="form-check-input" type="checkbox" id="fu-q-task" @bind="_fuQuestionTask" />
+                    <label class="form-check-label" for="fu-q-task">and a task to answer it</label>
+                </div>
+                <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove the question" @onclick="() => { _fuQuestionOpen = false; _fuQuestion = null; }"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+            </div>
+        }
+        @if (_fuKnownOpen)
+        {
+            <div class="im-then-row">
+                <span class="bi bi-book" aria-hidden="true"></span>
+                <input class="form-control form-control-sm im-then-wide im-rec" placeholder="What this establishes, in a line, for the brief's Known" maxlength="2000" aria-label="Line for Known"
+                       @bind="_fuKnown" @bind:event="oninput" />
+                <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove the line" @onclick="() => { _fuKnownOpen = false; _fuKnown = null; }"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+            </div>
+        }
+        @if (_fuLinkOpen)
+        {
+            <div class="im-then-row">
+                <span class="bi bi-link-45deg" aria-hidden="true"></span>
+                @if (_fuLink is { } picked)
+                {
+                    <span class="small">Link <code>@picked.CaseNumber</code> as</span>
+                    <select class="form-select form-select-sm" aria-label="Link type" @bind="_fuLinkType">
+                        <option value="@CaseLinkType.RelatedTo">Related to</option>
+                        <option value="@CaseLinkType.PartOfCampaign">Part of campaign</option>
+                    </select>
+                    <button type="button" class="btn btn-sm btn-link p-0" @onclick="() => _fuLink = null">Change</button>
+                }
+                else
+                {
+                    <input class="form-control form-control-sm im-then-wide" placeholder="Case number or title" aria-label="Case to link"
+                           @bind="_fuLinkQuery" @bind:event="oninput" @bind:after="SearchFuLink" />
+                }
+                <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove the link" @onclick="() => { _fuLinkOpen = false; _fuLink = null; _fuLinkQuery = null; _fuLinkResults = []; }"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
+            </div>
+            @if (_fuLink is null && _fuLinkResults.Count > 0)
+            {
+                <div class="im-then-results">
+                    @foreach (var r in _fuLinkResults)
+                    {
+                        <button type="button" class="btn btn-sm btn-link p-0 d-block text-start" @onclick="() => { _fuLink = r; _fuLinkResults = []; }">
+                            <code>@r.CaseNumber</code> <span class="text-muted">@r.Title</span>
+                        </button>
+                    }
+                </div>
+            }
+        }
+        @if (SaveSummary() is { } summary)
+        {
+            <div class="im-then-summary"><span class="bi bi-check2" aria-hidden="true"></span> @summary.Replace("Saved together", "Saves together")</div>
+        }
+    </div>;
+
     // --- RD-07: the composer's five modes ---
     private enum ComposerMode { Finding, Decision, Adversary, Question, Note }
     // Question and Note aren't timeline entries; the other three map onto the entry kind and type.
@@ -1375,17 +1534,18 @@ else
         {
             shotId = await UploadTimelineShotAsync();
             await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, _tlDesc, _tlSource,
-                evidenceId: shotId, decision: Decision());
+                evidenceId: shotId, decision: Decision(), followUps: FollowUps());
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
             Toasts.Error($"Couldn't add the timeline entry. {ex.Message}");
             return;
         }
-        _tlDesc = ""; _tlSource = null; ClearTimelineShot(); ClearDecision();
+        var saved = SaveSummary();
+        _tlDesc = ""; _tlSource = null; ClearTimelineShot(); ClearDecision(); ResetFollowUps();
         ComposerDrafts?.Remove(InvEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
-        Toasts.Success(shotId is null ? "Timeline entry added" : "Timeline entry added with screenshot");
+        Toasts.Success(saved ?? (shotId is null ? "Timeline entry added" : "Timeline entry added with screenshot"));
         try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); }
         catch (JSException) { /* best effort */ }
     }
@@ -1403,14 +1563,14 @@ else
             if (disclosure)
             {
                 await Cases.AddEventStepAsync(CaseId, whenUtc, Array.Empty<MitreTactic>(), null, null, null,
-                    _tlDesc, _tlSource, evidenceId: shotId, type: _evtStage);
+                    _tlDesc, _tlSource, evidenceId: shotId, type: _evtStage, followUps: FollowUps());
             }
             else
             {
                 Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
                 Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
-                await Cases.AddEventStepAsync(CaseId, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, evidenceId: shotId);
+                await Cases.AddEventStepAsync(CaseId, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, evidenceId: shotId, followUps: FollowUps());
             }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
@@ -1422,8 +1582,10 @@ else
         _evtTactic = MitreTactic.Unspecified;
         ClearTimelineShot();
         await OnChanged.InvokeAsync();
+        var savedStep = SaveSummary();
+        ResetFollowUps();
         var what = disclosure ? "Disclosure step" : IsThirdParty ? "Attack step" : "Event step";
-        Toasts.Success(shotId is null ? $"{what} added" : $"{what} added with screenshot");
+        Toasts.Success(savedStep ?? (shotId is null ? $"{what} added" : $"{what} added with screenshot"));
     }
 
     // Switch the timeline lens (All / Event / Investigation); abandon any in-progress edit and clear

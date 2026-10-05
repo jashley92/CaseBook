@@ -1057,14 +1057,15 @@ public sealed class CaseService
 
     public async Task AddTimelineEntryAsync(Guid id, TimelineKind kind, TimelineEntryType type,
         DateTimeOffset occurredAtUtc, string description, string? source, Guid? evidenceId = null,
-        DecisionDetails? decision = null, bool imported = false, CancellationToken ct = default)
+        DecisionDetails? decision = null, bool imported = false, EntryFollowUps? followUps = null, CancellationToken ct = default)
     {
         Require();
         TimelineEntry.EnsureDecisionHasRationale(type, decision?.Rationale);
+        followUps?.Validate();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         var isDecision = type == TimelineEntryType.Decision;
-        c.TimelineEntries.Add(new TimelineEntry
+        var entry = new TimelineEntry
         {
             CaseId = c.Id, Kind = kind, Type = type, OccurredAtUtc = occurredAtUtc, Description = description,
             Source = source, EvidenceId = evidenceId, CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow,
@@ -1072,8 +1073,57 @@ public sealed class CaseService
             OptionsConsidered = isDecision && !string.IsNullOrWhiteSpace(decision?.OptionsConsidered) ? decision.OptionsConsidered.Trim() : null,
             DecidedBy = isDecision && !string.IsNullOrWhiteSpace(decision?.DecidedBy) ? decision.DecidedBy.Trim() : null,
             PromotedFrom = imported ? TimelineEntry.Imported : null   // INV-23
-        });
+        };
+        c.TimelineEntries.Add(entry);
+        if (followUps is not null) await ApplyFollowUpsAsync(db, c, entry, followUps, ct);
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// RD-09: what the composer saves with an entry, in the same save: tasks about the entry (a decision's tasks read
+    /// "carries out a decision"), a question for the brief (optionally followed up as a task), a line for the brief's
+    /// Known, and a link to another case. The brief changes make one new brief version.
+    /// </summary>
+    private async Task ApplyFollowUpsAsync(IAppDbContext db, Case c, TimelineEntry entry, EntryFollowUps f, CancellationToken ct)
+    {
+        foreach (var t in f.Tasks ?? [])
+            c.ActionItems.Add(new ActionItem
+            {
+                CaseId = c.Id, Title = t.Title.Trim(), Owner = string.IsNullOrWhiteSpace(t.Owner) ? null : t.Owner.Trim(),
+                Kind = t.Kind, DueAtUtc = t.DueAtUtc, AboutRef = $"{ActionItem.AboutEntry}:{entry.Id}",
+                CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
+            });
+
+        var question = EntryFollowUps.Clean(f.Question);
+        var known = EntryFollowUps.Clean(f.KnownLine);
+        if (question is not null || known is not null)
+        {
+            await db.CaseBriefs.Where(b => b.CaseId == c.Id && b.IsCurrent).ToListAsync(ct);
+            var cur = c.Briefs.FirstOrDefault(b => b.IsCurrent);
+            if (question is not null && CaseNext.Questions(cur?.OpenQuestions)?.Any(x => string.Equals(x, question, StringComparison.OrdinalIgnoreCase)) == true)
+                throw new InvalidOperationException("That question is already open in the brief.");
+            string? Append(string? part, string? line) => line is null ? part
+                : string.IsNullOrWhiteSpace(part) ? $"- {line}" : $"{part.TrimEnd()}\n- {line}";
+            var nextSteps = CaseNext.Snapshot(c, _clock.UtcNow, u => _users?.DisplayFor(u) ?? u);
+            c.ReviseBrief(c.Summary, cur?.WorkingAssessment, Append(cur?.Known, known), Append(cur?.OpenQuestions, question),
+                nextSteps, _user.UserId, _clock.UtcNow);
+            if (question is not null && f.QuestionTask) c.RaiseTaskFromQuestion(question, _user.UserId, _clock.UtcNow);
+        }
+
+        if (f.LinkCaseId is { } other)
+        {
+            if (other == c.Id) throw new ArgumentException("A case can't be linked to itself.");
+            var visible = await Scoped(db.Cases.AsNoTracking()).AnyAsync(x => x.Id == other, ct);
+            if (!visible) throw new InvalidOperationException("The case to link must exist and be visible to you.");
+            var already = await db.CaseLinks.AsNoTracking().AnyAsync(l =>
+                (l.CaseId == c.Id && l.RelatedCaseId == other) || (l.CaseId == other && l.RelatedCaseId == c.Id), ct);
+            if (!already)
+                db.CaseLinks.Add(new CaseLink
+                {
+                    CaseId = c.Id, RelatedCaseId = other, Type = f.LinkType, Description = null,
+                    CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
+                });
+        }
     }
 
     /// <summary>
@@ -1082,13 +1132,16 @@ public sealed class CaseService
     /// </summary>
     public async Task AddEventStepAsync(Guid id, DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
-        Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other, CancellationToken ct = default)
+        Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other, EntryFollowUps? followUps = null,
+        CancellationToken ct = default)
     {
         Require();
+        followUps?.Validate();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
-        c.AddEventStep(occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, description, source,
+        var step = c.AddEventStep(occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, description, source,
             _user.UserId, _clock.UtcNow, evidenceId, type);
+        if (followUps is not null) await ApplyFollowUpsAsync(db, c, step, followUps, ct);
         await db.SaveChangesAsync(ct);
     }
 

@@ -315,6 +315,42 @@ public sealed class TaskCompletionTests : IDisposable
         await empty.Should().ThrowAsync<ArgumentException>();
     }
 
+    [Fact]
+    public async Task A_decision_saves_with_its_follow_ups_in_one_go(/* RD-09 */)
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+        await svc.ReviseBriefAsync(caseId, null, "Lure reached Finance", "Opportunistic", "- One session from a foreign ASN", null);
+        var other = await svc.CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "VPN Travel", Title = "Impossible-travel VPN sign-in", Classification = Classification.AdverseEvent,
+            Severity = Severity.Low, Origin = CaseOrigin.InternalDetection
+        });
+        var follow = new EntryFollowUps(
+            Tasks: [new FollowUpTask("Block 203.0.113.66 at the VPN gateway", "analyst1", TaskKind.Contain)],
+            Question: "Is 203.0.113.66 one of our VPN provider's addresses?", QuestionTask: true,
+            KnownLine: "203.0.113.66 was used again on 4 Oct against a second account.",
+            LinkCaseId: other.Id, LinkType: CaseLinkType.RelatedTo);
+
+        await svc.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Decision, _clock.UtcNow,
+            "Block 203.0.113.66 for all users.", null, decision: new CaseService.DecisionDetails("Malicious here and seen again today.", null, "IC"),
+            followUps: follow);
+
+        var c = (await svc.GetDetailAsync(caseId))!;
+        var decision = c.TimelineEntries.Single(e => e.Type == TimelineEntryType.Decision);
+        c.ActionItems.Single(t => t.Title.StartsWith("Block 203")).AboutRef.Should().Be($"entry:{decision.Id}");
+        var brief = c.Briefs.Single(b => b.IsCurrent);
+        brief.Version.Should().Be(2, "the question and the Known line make one new version");
+        brief.Known.Should().EndWith("- 203.0.113.66 was used again on 4 Oct against a second account.");
+        brief.OpenQuestions.Should().Be("- Is 203.0.113.66 one of our VPN provider's addresses?");
+        c.ActionItems.Should().Contain(t => t.RaisedFromBriefId == brief.Id);
+        (await svc.GetCaseLinksAsync(caseId)).Should().ContainSingle(l => l.OtherCaseId == other.Id);
+
+        var bad = () => svc.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Analysis, _clock.UtcNow,
+            "Second entry", null, followUps: new EntryFollowUps(Tasks: [new FollowUpTask("  ")]));
+        await bad.Should().ThrowAsync<ArgumentException>();
+        (await svc.GetDetailAsync(caseId))!.TimelineEntries.Should().NotContain(e => e.Description == "Second entry", "nothing is written when a follow-up is invalid");
+    }
+
     // --- HR-02: answers stay with their questions ---
 
     private async Task<(CaseService Svc, Guid CaseId, Guid QuestionTaskId, Guid PlainTaskId)> CaseWithQuestionTask()
