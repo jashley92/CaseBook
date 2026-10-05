@@ -14,7 +14,7 @@ browser's local zone because the profile menu was set to *Local*; stored times a
 
 ![Navigation](../screenshots/doc-navigation.png)
 
-1. **Workspace**: Desk, Cases, Campaigns, Indicators, ATT&CK coverage, **Program**, and New case (with
+1. **Workspace**: Desk, Cases, **Intel** (Indicators, Campaigns, ATT&CK coverage under one bar), **Program**, and New case (with
    `EditCases`). Opening `/` goes to Program for roles with `ViewAllCases`, and to the Desk for everyone else.
    **Program** gathers the cross-case views under one bar: Overview (the leadership dashboard), Team, Due work
    (open tasks across the team by when they're due), Improvement actions, the Legal register and the Program

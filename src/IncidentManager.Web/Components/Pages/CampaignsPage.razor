@@ -1,4 +1,4 @@
-@page "/campaigns"
+@page "/intel/campaigns"
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @using IncidentManager.Application.Campaigns
 @inject CampaignService Svc
@@ -8,8 +8,9 @@
 <PageTitle>Campaigns</PageTitle>
 
 <div class="campaign">
-    <PageHeader Title="Campaigns"
-                Subtitle="Linked groups of cases worked as one attack wave." />
+    <PageHeader Title="Intel"
+                Subtitle="Campaigns: linked groups of cases worked as one attack wave." />
+    <IntelNav />
 
     @if (_campaigns is null)
     {
@@ -63,7 +64,7 @@
                             <td><span class="@Ui.ClassificationBadge(c.HighestClassification)">@Ui.Label(c.HighestClassification)</span></td>
                             <td>@c.OpenCount</td>
                             <td class="small im-data">@TimeDisp.Long(c.LatestActivityUtc)</td>
-                            <td><a class="btn btn-sm btn-outline-primary py-0" href="campaigns/@c.AnchorCaseId">Open</a></td>
+                            <td><a class="btn btn-sm btn-outline-primary py-0" href="intel/campaigns/@c.AnchorCaseId">Open</a></td>
                         </tr>
                     }
                 </tbody>

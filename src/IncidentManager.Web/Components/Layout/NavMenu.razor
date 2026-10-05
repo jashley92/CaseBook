@@ -40,22 +40,10 @@
                 <span class="bi bi-folder2-open" aria-hidden="true"></span><span class="nav-text">Cases</span>
             </NavLink>
         </div>
-        @* Prefix match so the /campaigns/{id} rollup keeps this highlighted too. *@
+        @* RD-18: Intel, what the cases know across each other: indicators, campaigns, ATT&CK coverage. *@
         <div class="nav-item">
-            <NavLink class="nav-link" href="campaigns" Match="NavLinkMatch.Prefix" title="Campaigns">
-                <span class="bi bi-diagram-3" aria-hidden="true"></span><span class="nav-text">Campaigns</span>
-            </NavLink>
-        </div>
-        @* PROD-10: the cross-case indicator pivot — every recorded IOC, deduped, most-shared first. *@
-        <div class="nav-item">
-            <NavLink class="nav-link" href="indicators" Match="NavLinkMatch.All" title="Indicators">
-                <span class="bi bi-crosshair" aria-hidden="true"></span><span class="nav-text">Indicators</span>
-            </NavLink>
-        </div>
-        @* PROD-42: program-wide ATT&CK heatmap of what the SOC has faced. *@
-        <div class="nav-item">
-            <NavLink class="nav-link" href="attack-coverage" Match="NavLinkMatch.All" title="ATT&amp;CK coverage">
-                <span class="bi bi-grid-3x3-gap" aria-hidden="true"></span><span class="nav-text">ATT&amp;CK coverage</span>
+            <NavLink class="nav-link" href="intel/indicators" Match="NavLinkMatch.Prefix" title="Intel">
+                <span class="bi bi-crosshair" aria-hidden="true"></span><span class="nav-text">Intel</span>
             </NavLink>
         </div>
         @* RD-17: Program, the cross-case view (overview, team, due work, improvement actions, the legal register and

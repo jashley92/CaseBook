@@ -156,7 +156,7 @@ Team changes appear on the timeline ("X is incident commander, taking over from 
   dashed chip with a link mark and no ×; remove it by editing its step. The report's table has a Source column
   ("Tagged", "Attack chain (2 steps)" or both; template field `technique.source`). A third-party case's event steps are
   disclosure milestones and add nothing.
-- `/attack-coverage` combines both across cases you can see.
+- Intel › ATT&CK coverage (`/intel/attack`) combines both across cases you can see.
 
 ## Case links and campaigns
 
@@ -164,7 +164,7 @@ Team changes appear on the timeline ("X is incident commander, taking over from 
 |---|---|---|
 | Link | Things › Connections → *Link a case*; *Then* in the composer; from the new-case duplicate check; from *Possibly related open cases*; from Supersede | Types: Related to, Duplicate of (directional), Part of campaign. **One link per pair of cases.** No self-links ("A case can't be linked to itself."). You must be able to see both. |
 | Remove | × on the link | |
-| Campaign | Any connected group of "Part of campaign" links | Not a record. `/campaigns/{id}` rolls up members, shared indicators (strongest verdict wins), combined ATT&CK, merged event timeline and overall posture. Only links where you can see both cases are followed, so a restricted case can't connect two groups for you. JSON export at `/campaigns/{id}/rollup.json`. |
+| Campaign | Any connected group of "Part of campaign" links | Not a record. Intel › Campaigns (`/intel/campaigns/{id}`) rolls up members, shared indicators (strongest verdict wins), combined ATT&CK, merged event timeline and overall posture. Only links where you can see both cases are followed, so a restricted case can't connect two groups for you. JSON export at `/campaigns/{id}/rollup.json`. |
 
 Links to cases you can't see are hidden.
 

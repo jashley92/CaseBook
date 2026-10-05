@@ -1,4 +1,4 @@
-@page "/attack-coverage"
+@page "/intel/attack"
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @* PROD-42: the program-wide ATT&CK heatmap — which tactics and techniques the SOC has actually faced, across
    the cases the viewer can see, coloured by how many cases exercised each. Feeds the XSIAM detection-engineering
@@ -9,8 +9,9 @@
 
 <PageTitle>ATT&amp;CK coverage</PageTitle>
 
-<PageHeader Title="ATT&CK coverage"
-            Subtitle="The tactics and techniques your cases have recorded, shaded by how many cases saw each." />
+<PageHeader Title="Intel"
+            Subtitle="ATT&CK coverage: the tactics and techniques your cases have recorded, shaded by how many cases saw each." />
+<IntelNav />
 
 @if (_data is null)
 {

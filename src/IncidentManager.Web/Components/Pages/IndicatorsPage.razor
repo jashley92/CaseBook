@@ -1,4 +1,4 @@
-@page "/indicators"
+@page "/intel/indicators"
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @* PROD-10: the cross-case indicator pivot. Every IOC/entity analysts have recorded, deduped by type + value
    across the cases the viewer can see, most-shared first — "this indicator appears in N cases" as a first-class
@@ -12,8 +12,9 @@
 
 <PageTitle>Indicators</PageTitle>
 
-<PageHeader Title="Indicators"
+<PageHeader Title="Intel"
             Subtitle="Indicators from all your cases, deduplicated so repeat IPs, domains and hashes stand out." />
+<IntelNav />
 
 @if (_library is null)
 {

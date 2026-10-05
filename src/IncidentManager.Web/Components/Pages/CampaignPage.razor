@@ -1,4 +1,4 @@
-@page "/campaigns/{Id:guid}"
+@page "/intel/campaigns/{Id:guid}"
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @using IncidentManager.Application.Campaigns
 @inject CampaignService Svc
@@ -12,7 +12,7 @@
     @if (_loaded && _rollup is null)
     {
         <h1>Campaign not found</h1>
-        <p>This campaign doesn't exist, or you don't have access to its cases. <a href="campaigns">Back to campaigns</a>.</p>
+        <p>This campaign doesn't exist, or you don't have access to its cases. <a href="intel/campaigns">Back to campaigns</a>.</p>
     }
     else
     {
@@ -231,7 +231,7 @@
     // Campaigns › [campaign]. A campaign is named by its anchor case (the lowest-numbered member), as on the
     // Campaigns list; each member case links from the table below.
     private string? AnchorNumber => _rollup?.Members.FirstOrDefault(m => m.CaseId == _rollup.AnchorCaseId)?.CaseNumber;
-    private IReadOnlyList<Crumb> _crumbs => [new Crumb("Campaigns", "campaigns"), new Crumb(AnchorNumber ?? "Campaign")];
+    private IReadOnlyList<Crumb> _crumbs => [new Crumb("Campaigns", "intel/campaigns"), new Crumb(AnchorNumber ?? "Campaign")];
 
     protected override async Task OnParametersSetAsync()
     {

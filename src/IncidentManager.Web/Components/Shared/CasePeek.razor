@@ -106,7 +106,7 @@
                             @if (i.OtherCases > 0)
                             {
                                 @* PROD-10: pivot by entity id so the indicator value never rides in a URL. *@
-                                <a class="small text-nowrap" href="indicators?entity=@i.EntityId"
+                                <a class="small text-nowrap" href="intel/indicators?entity=@i.EntityId"
                                    title="Every case this indicator appears on">+@i.OtherCases</a>
                             }
                         </li>

@@ -76,7 +76,7 @@
         <ul class="cmdk-help-list">
             <li><span class="cmdk-keys"><kbd>Ctrl</kbd>&thinsp;/&thinsp;<kbd>&#8984;</kbd><kbd>K</kbd></span><span>Open the command palette</span></li>
             <li><span class="cmdk-keys"><kbd>/</kbd></span><span>Search cases &amp; jump</span></li>
-            <li><span class="cmdk-keys"><kbd>g</kbd><kbd>d</kbd></span><span>Go to Dashboard</span></li>
+            <li><span class="cmdk-keys"><kbd>g</kbd><kbd>d</kbd></span><span>Go to Program</span></li>
             <li><span class="cmdk-keys"><kbd>g</kbd><kbd>m</kbd></span><span>Go to your Desk</span></li>
             <li><span class="cmdk-keys"><kbd>g</kbd><kbd>c</kbd></span><span>Go to Cases</span></li>
             @if (CurrentUser.Has(Permission.EditCases))
@@ -103,6 +103,9 @@
 
 @code {
     // RD-11: the case's views and the parts worth jumping to directly.
+    // RD-17: Program opens on its overview for roles that see every case, else on improvement actions.
+    private string ProgramHome => CurrentUser.Has(Permission.ViewAllCases) ? "program" : "program/improvement-actions";
+
     private static readonly string[] CaseTabs =
         ["Timeline", "Entities", "Evidence", "Tasks", "Briefing", "Report", "Review", "Audit"];
 
@@ -177,7 +180,7 @@
 
     private Task Go(string k) => k switch
     {
-        "d" => GoTo(""),
+        "d" => GoTo(ProgramHome),
         "m" => GoTo("desk"),
         "c" => GoTo("cases"),
         "n" => CurrentUser.Has(Permission.EditCases) ? GoTo("cases/new") : Task.CompletedTask,
@@ -292,7 +295,8 @@
 
     private IEnumerable<Cmd> StaticCommands()
     {
-        yield return new Cmd("Navigate", "bi-speedometer2", "Dashboard", null, () => GoTo(""));
+        yield return new Cmd("Navigate", "bi-speedometer2", "Program", null, () => GoTo(ProgramHome));
+        yield return new Cmd("Navigate", "bi-crosshair", "Intel", null, () => GoTo("intel/indicators"));
         yield return new Cmd("Navigate", "bi-person-workspace", "Desk", null, () => GoTo("desk"));
         yield return new Cmd("Navigate", "bi-folder2-open", "Cases", null, () => GoTo("cases"));
         if (CurrentUser.Has(Permission.EditCases))

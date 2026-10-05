@@ -38,9 +38,9 @@ caught by the server and redirected to `/access-denied?from=…`; an unknown pag
 | `/cases/import` | `CaseImport` | EditCases | Structured import; pending-import queue. `?into=` (existing case), `?pending=` |
 | `/cases/{Id:guid}` | `CaseWorkspace` | ViewCases | The case workspace. `?tab=`, `?entity=`, `?note=` |
 | `/cases/{Number}` | `CaseByNumber` | ViewCases | Resolves `2026-14` or `2026-14_Name` and redirects |
-| `/campaigns`, `/campaigns/{Id}` | `CampaignsPage`, `CampaignPage` | ViewCases | Campaign list and rollup |
-| `/indicators` | `IndicatorsPage` | ViewCases | Cross-case indicators. `?entity=` |
-| `/attack-coverage` | `AttackCoveragePage` | ViewCases | ATT&CK heatmap |
+| `/intel/indicators` | `IndicatorsPage` | ViewCases | Intel › Indicators: cross-case indicators, each one's cases and verdicts. `?entity=` |
+| `/intel/campaigns`, `/intel/campaigns/{Id}` | `CampaignsPage`, `CampaignPage` | ViewCases | Intel › Campaigns: list and rollup (`/campaigns/{id}/rollup.json` is the export) |
+| `/intel/attack` | `AttackCoveragePage` | ViewCases | Intel › ATT&CK coverage heatmap. Every Intel page carries `Shared/IntelNav` |
 | `/program/improvement-actions` | `ImprovementActionsPage` | ViewCases | Program › Improvement actions |
 | `/integrity` | `Integrity` | ViewCases | Verify chain, seals, audit trail, compliance bundle |
 | `/access-log` | `AccessLogPage` | Administer | Read and download log |
