@@ -26,7 +26,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 | Low | `Retention:CaseYears` is editable but nothing reads it; nothing flags cases past retention. | Implies a control that doesn't exist. | Remove the setting, or build the review queue. |
 | Low | The composer doesn't reject a **future** occurred time on the server (only the browser does). | Possible bad data via a crafted request. | Validate in `AddTimelineEntryAsync`/`AddEventStepAsync`. |
 | Low | Import: an **unknown classification** warns "Using Adverse Event instead." but opens a Complex Event. | Misleading message. | Fix the message or the fallback. |
-| Low | Notes tab: the composer hint says notes aren't in the report by default; the empty state says "Notes print in the case report". | Contradictory copy (the hint is right). | Fix the empty state. |
 | Low | Report version numbers are "count + 1" with no unique index. | Two simultaneous generations can share a number. | Unique index or sequence. |
 | Low | Uniqueness of entity values, relationships, case links, active gates and others is enforced only in code. | Concurrent writes can create duplicates. | Unique indexes where possible. |
 | Low | Applying a pending import and marking it applied are separate saves. | If the second fails, the case is written but the import stays pending (re-applying is resume-safe). | One unit of work. |

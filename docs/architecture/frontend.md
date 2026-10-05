@@ -79,23 +79,24 @@ appears under `/admin/settings/other`. Each section has one Save bar; leaving wi
 | Concern | How it works |
 |---|---|
 | Loading | `CaseService.GetDetailAsync(id)` loads the whole case with its children. Each load records a case open in the access log. A missing or hidden case shows "Case not found". |
-| Tabs | Keys `Overview, Timeline, Entities, Evidence, Notes, Tasks, Review, Report, Audit` (shown as "IOCs & entities" and "Lessons learned"). `?tab=` selects one; switching uses `history.replaceState`, so the case isn't reloaded. Each tab is wrapped in its own `ErrorBoundary`. |
+| Tabs | Keys `Overview, Timeline, Entities, Evidence, Tasks, Review, Report, Audit` (shown as "IOCs & entities" and "Lessons learned"); `?tab=Notes` opens the Timeline's Working notes lens. `?tab=` selects one; switching uses `history.replaceState`, so the case isn't reloaded. Each tab is wrapped in its own `ErrorBoundary`. |
 | Dialogs | All case dialogs (reclassify, phase, severity, handoff, assign, restrict, legal, materiality, supersede, archive, reopen, legal-hold release) live in the shell, so they work from any tab. One generic confirm dialog is offered to tabs through a `RequestConfirm` callback. Shared fragments: the gate checklist with override justification, "when it happened" with nudges, open-task and notification warnings. Apply buttons are disabled exactly when the server would reject the input. |
 | Live updates | The shell subscribes to `ICaseChangeNotifier`. When someone else saves, it reloads, flashes the new items in that person's color, puts a dot on other tabs, shows a toast, and shows a "N new entries" pill on the timeline. Your own changes don't flash. Presence avatars (`Shared/CasePresence.razor`) show who else is viewing. All of this is in-process (one server only). |
 | Unsaved text | Composer drafts survive tab switches (kept in server memory). Leaving the case with unsaved editor text asks first. |
 | Permissions | Checked when the case loads and again when they change mid-session; editing controls are hidden for view-only users, with a "View only" note. |
-| Keyboard | `1`–`9` switch tabs; `n`, `l`, `t` open the note, timeline and task composers; `Ctrl+Enter` submits the active composer. |
-| Context rail | `CaseContextRail.razor`: clocks, what's next, team, key entities. Beside the tabs at 1400 px and wider; otherwise a strip at the top of Overview. |
-| Entity panel | `EntityPanel.razor`: a side panel opened from any entity chip, tag or `?entity=`; shows where the case refers to it, tasks, relationships and other cases. |
+| Keyboard | `1`–`9` switch tabs; `l` opens the composer, `n` in Working note mode, `t` the task form; `Ctrl+Enter` submits the active composer. |
+| Now/Next pane | `CaseNowNext.razor`: the brief (`CaseBriefCard` with `Pane`), obligations, open tasks with their why (`WhyChip`), next-gate readiness, team, key entities. Shown beside every tab when the viewport is at least 1200 px wide, which `js/media.js` (`imMedia.watch`) reports to the workspace (`OnMediaChanged`). Narrower, the Overview keeps the brief and `CaseContextRail` as a strip. |
+| Entity panel | `EntityPanel.razor`: a side panel opened from any entity chip, tag or `?entity=`; the verdict picker with its reason, where the case refers to it, tasks, relationships and Seen before. |
+| Evidence panel | `EvidencePanel.razor`: opened from an evidence row, a cited-file chip or `?evidence=`; preview on request (`EvidenceService.PreviewTextAsync` for text), integrity, custody, cited by, transfer. |
+| State marks | `Shared/SeverityMark`, `RungMark`, `VerdictMark`, `ClockMark`, `PhaseSteps`, `WhyChip`: a word plus a form that isn't colour. Shown on the style guide. |
 | Brief | `CaseBriefCard.razor`: the versioned "Where it stands". |
 
 | Tab | Component | Main actions |
 |---|---|---|
 | Overview | `CaseOverviewTab` | Brief, recent timeline, scope and impact, notification deadlines and *Mark reported*, next-gate readiness, case details, restriction, ATT&CK techniques, related cases |
-| Timeline | `CaseTimelineTab` | Lenses, filters, composer (event step or investigation entry), edit, versions, cite evidence, raise task, correct time, screenshot paste |
+| Timeline | `CaseTimelineTab` | Lenses (including Working notes, which hosts `CaseNotesTab`), filters, the five-mode composer with follow-ups, edit, versions, cite evidence, raise task, correct time, screenshot paste |
 | IOCs & entities | `CaseEntitiesTab` | Add, paste, edit, remove; relationships; graph; also-in; related-case suggestions; defang view; STIX |
 | Evidence | `CaseEvidenceTab` | Upload, paste, drag and drop; custody; transfer; preview; raise task |
-| Notes | `CaseNotesTab` | Add, edit (new version), @mentions, `[[` tags, add to timeline |
 | Tasks | `CaseTasksTab` | Add, apply playbook, complete with result, comments, bulk select, "about" chips |
 | Lessons learned | `CaseReviewTab` | Review, improvement actions, lessons-learned report |
 | Report | `CaseReportTab` | Profile, TLP, preview, generate, approve |

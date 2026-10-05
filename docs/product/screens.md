@@ -74,18 +74,25 @@ A single page, not a wizard.
 
 1. **Case number and title.** The pencil renames the number (a custom number is kept through promotion).
    Links of the form `/cases/2026-01` also work.
-2. **State line**: classification, severity, a phase bar (hover a segment for when it was reached; click to
-   change phase), and quiet flags (Material, Legal referred, Restricted, Legal hold, Exercise).
-3. **Advance to the next phase**, **pin**, and the **Actions** menu (below).
-4. **Tabs**: Overview, Timeline, IOCs & entities, Evidence, Notes, Tasks, Lessons learned, Report, Audit.
+2. **State line**: the classification as rungs on the ladder, severity as bars, a phase bar with how long the
+   case has been in its phase (hover a segment for when it was reached; click to change phase), the flags that
+   matter (Material, Referred to Legal, Restricted, Legal hold, Exercise) and the incident commander. It ends with
+   the **most urgent clock**: a running notification deadline, else the running SLA clock, with its deadline.
+3. **Pin**, **Hand off**, the **Actions** menu (below), and the one **primary act** the state calls for:
+   *Promote onto the ladder…* for an unclassified event, *Advance to* the next phase, *Close the case…* from
+   Post-Incident, or *Reopen case…* on a closed case.
+4. **Tabs**: Overview, Timeline, IOCs & entities, Evidence, Tasks, Lessons learned, Report, Audit.
    Number keys `1`–`9` switch tabs. The tab is in the URL (`?tab=Timeline`). Report and Lessons learned stay
    dimmed until they're relevant (Report: a breach, a running notification clock, or Recovery and later;
    Lessons learned: Post-Incident and later). A dot marks a tab where someone else just added something.
-5. **Where it stands** (the brief): versioned summary, working assessment, known, open questions (each can
-   become a task) and next steps (the open tasks). It tells you when the record has moved on since it was
-   written.
-6. **Context rail** (beside the tabs at 1400 px and wider, otherwise a strip at the top of Overview): SLA
-   clocks and notification deadlines with their dates, what's next, the team, and key entities (pinned first).
+5. **Now and Next**, beside every tab from 1200 px wide (the button at the end of the tab bar hides it). **Now**
+   is the brief, "where it stands": the versioned summary (in a serif, as written into the record), working
+   assessment, known, and each open question with whoever is answering it. It tells you when the record has
+   moved on since it was written, and *Still accurate* or *Update* answers that. **Next** lists running
+   obligations first (a notification deadline with *Mark reported…*, then the SLA clocks), the open tasks each
+   with why it exists (answers a question, carries out a decision, about an entity or file, feeds a notification,
+   phase work), and the next gate's readiness as a meter that opens its checklist. The team and key entities
+   follow. Below 1200 px the brief stays on the Overview with a context strip above it.
 
 Further down the Overview: recent timeline items, scope and impact (affected individuals, data elements,
 jurisdictions), the notification deadline table with *Mark reported*, readiness for the next stage gate, the
@@ -97,7 +104,7 @@ open), then the closing brief, then "How it unfolded": the key moments oldest fi
 four, with the rest a click away on the timeline). An unrecorded scope reads "Not recorded" rather than "Not
 assessed yet".
 
-On a phone the same page stacks, with the rail folded into a strip:
+On a phone the same page stacks, with the context folded into a strip:
 
 <img src="../screenshots/doc-mobile-workspace.png" alt="Case workspace at phone width" width="300">
 
@@ -134,7 +141,7 @@ doesn't change the incident commander; that's a separate assignment.
 
 ![Timeline](../screenshots/doc-timeline.png)
 
-1. **Lenses**: All, Event (Disclosure on third-party cases), Investigation, Milestones, Decisions.
+1. **Lenses**: All, Event (Disclosure on third-party cases), Investigation, Milestones, Decisions, Working notes.
 2. **Filter**: tactic or type, source, entity, and *key entries only*.
 3. **Clock / T+**: show times as clock times or as time since detection.
 4. **Add** opens the composer (below).
@@ -151,14 +158,19 @@ doesn't change the incident commander; that's a separate assignment.
 
 ![Timeline composer](../screenshots/doc-timeline-add.png)
 
-1. **Event step** (what the adversary or vendor did) or **Investigation entry** (what the team did, including
-   decisions).
+1. **Five modes**: **Finding** (what the team found or did), **Decision** (with its why), **Adversary step**
+   (*Disclosure step* on a third-party case), **Question** (added to the brief's open questions, optionally with a
+   task to answer it) and **Working note** (off the record; `@` mentions a teammate).
 2. **When it occurred**, in your display zone, with nudges.
 3. **Actor and target** from the case's entities. *New IOC…* in the list creates one without leaving the
    composer. Each step becomes an edge on the relationship graph.
 4. **ATT&CK** technique or tactic search, or the matrix picker.
 
 Paste a screenshot anywhere in the composer to attach it as hashed evidence.
+
+**Then**, under a finding, decision or adversary step, adds follow-ups saved in the same act: tasks about the
+entry (a decision's tasks read as carrying it out), a question for the brief, a line for the brief's Known, and a
+link to another case. The footer says what the save writes before you save it.
 
 ## IOCs & entities tab
 
@@ -186,18 +198,26 @@ Below the list, relationships are added and edited (type, description and direct
    transferred) and records a transfer; **Download** is itself a custody event; **Task** raises a task about
    the file. Evidence can't be deleted.
 
-## Notes tab
+## Working notes
 
-![Notes](../screenshots/doc-notes.png)
+Working notes are the Timeline's **Working notes** lens (there is no Notes tab; `?tab=Notes` and `n` open the
+lens). Write one with the composer's *Working note* mode. Each note shows the people mentioned (`@`, emailed a
+link), *Edit* (saves a new version; earlier versions stay readable), **Put on the record** (adds it to the
+investigation timeline as an entry; the note itself is unchanged) and *Task*. Notes are off the record: not on
+the timeline and not in the case report unless a report layout includes analyst notes.
 
-1. **Markdown editor.** `@` mentions someone who can see the case (they're emailed a link); `[[` tags a case
-   entity. The toolbar button does the same.
-2. **People mentioned** in the note.
-3. **Add to timeline**: puts the note on the investigation timeline (the note itself is unchanged). *Edit*,
-   beside it, saves a new version.
+## Entity and evidence panels
 
-Editing a note saves a new version; earlier versions stay readable. Notes are not in the case report unless a
-report profile turns the section on.
+Any entity chip, tag or row opens the **entity panel** over the current tab (`?entity=<id>`): the value with a
+copy of its defanged form, type, source and TLP; the **verdict on this case** as five shapes to choose from (a
+change asks why, required for Malicious or Compromised, and shows on the timeline); where the case refers to it;
+tasks about it; relationships; and **Seen before**, the open and closed cases where the same value appears, each
+with the verdict reached there and, for closed ones, how they ended.
+
+An evidence file name, a cited-file chip or a brief citation opens the **evidence panel** (`?evidence=<id>`): a
+preview on request (images, or the first lines of a text file; looking records a "Viewed" custody event), the full
+SHA-256, the chain of custody, what cites it, tasks about it, and *Download* (a custody event), *Task about it* and
+*Record a transfer…*.
 
 ## Tasks tab
 

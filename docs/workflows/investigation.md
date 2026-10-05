@@ -27,15 +27,23 @@ How the timeline works internally is in [architecture/timeline.md](../architectu
 
 | | |
 |---|---|
-| **Trigger** | Timeline tab → **Add** (or `l`), choose *Investigation entry* |
+| **Trigger** | Timeline tab → **Add** (or `l`), mode *Finding* or *Decision* |
 | **Fields** | Type (Detection, Analysis, Containment, Eradication, Recovery, Communication, Evidence, Escalation, Note, Other, **Decision**), when it occurred (with nudges), Markdown text (with `[[` entity tags), source, an optional pasted screenshot. A Decision adds **why** (required), options considered and decided by (suggests the case team, then everyone; free text such as "IC with Legal" still works). |
 | **Behind the scenes** | `CaseService.AddTimelineEntryAsync`. A pasted screenshot is uploaded as evidence first ("Pasted into the timeline", up to 15 MB) and linked. |
 | **Errors** | "A decision on the timeline needs its why." |
 | **Afterwards** | Shows "recorded …" if more than an hour after it occurred. Prints in the report's investigation timeline. A decision prompts a brief update. |
+| **Follow-ups** | *Then* adds, in the same save: tasks about the entry (title, owner, kind, due), a question for the brief (optionally with a task to answer it), a line for the brief's Known, and a link to another case. `EntryFollowUps` on `AddTimelineEntryAsync` / `AddEventStepAsync`: everything is validated first and lands in one `SaveChanges`; the brief changes make one new version; the link follows `LinkCaseAsync`'s rules (visible, not self, one per pair, an existing link is left as it is). |
+
+### Adding a question
+
+Composer → *Question*: one line for the brief's open questions, and "Follow it up as a task" (on by default).
+`CaseService.AddOpenQuestionAsync` writes a new brief version with the question on its own list line and, if
+asked, the task that follows it up, in one save. Errors: "Write the question." · "That question is already open in
+the brief."
 
 ### Adding an event step (the attack chain)
 
-Same composer, *Event step*: when, one or more ATT&CK tactics and an optional technique, **actor → target**
+Same composer, *Adversary step*: when, one or more ATT&CK tactics and an optional technique, **actor → target**
 (entities on this case; *New IOC…* creates one in a dialog without leaving), what the adversary did, source,
 optional screenshot. `CaseService.AddEventStepAsync` → `Case.AddEventStep`. Errors: "The actor is not an entity
 on this case." (and the same for the target), technique ids must look like `T1566` or `T1566.001`.
@@ -58,12 +66,12 @@ allows attack steps.
 real additions and removals are audited). Superseded entries can't be cited. Cited files print with the entry in
 the report.
 
-### Putting a note or task comment on the timeline
+### Putting a note or task comment on the record
 
-*Add to timeline* on a note or task comment: pick a type (not Decision: "Record a decision as a Decision entry on
-the timeline, with why it was made."), a time (not in the future), and edit the text if needed. Creates an
-investigation entry that remembers where it came from; the original is unchanged, and the Notes tab marks it "on
-the timeline".
+*Put on the record* on a working note, or *Add to timeline* on a task comment: pick a type (not Decision: "Record a
+decision as a Decision entry on the timeline, with why it was made."), a time (not in the future), and edit the
+text if needed. Creates an investigation entry that remembers where it came from; the original is unchanged, and
+the note is marked "On the record".
 
 ## Entities and IOCs
 
@@ -75,7 +83,7 @@ the timeline".
 | Paste many | *Paste indicators*: one per line, comma, semicolon or tab | Types are detected; duplicates merged. Indicators already on the case keep their verdict, and the confirmation says how many. |
 | Edit | *Edit* (optional reason) | Can't collide with another entity of the same type and value. |
 | Disposition | Unknown, Benign, Suspicious, Malicious, **Compromised** (a legitimate asset taken over). Changing it on an existing entity is recorded with its reason and shown as a **verdict** milestone on the timeline, in the report and in the entity panel's verdict history; marking one Malicious or Compromised needs a reason ("Say why it's compromised: the reason is kept with the verdict.") | An Unknown entity referenced three or more times is suggested for review. |
-| Pin | From the entity panel | Pinned entities show first in the context rail, followed by Malicious, Compromised and Suspicious ones. |
+| Pin | From the entity panel | Pinned entities show first under Key entities in the Now/Next pane, followed by Malicious, Compromised and Suspicious ones. |
 | TLP | Per indicator | Controls sharing in exports. |
 | Relationships | *Add relationship*: source, type (14 kinds), target, description | Directed; no self-links; no duplicates; editable in place (type, description, swap direction). |
 | Graph | Drag to arrange; *Re-layout*; *Fit*; *Freeze* | Positions are shared by everyone and not audited. Event steps are drawn as tactic-colored edges. |
@@ -100,7 +108,7 @@ the timeline".
 
 | | |
 |---|---|
-| **Trigger** | Notes tab (or `n`) |
+| **Trigger** | Composer → *Working note* (or `n`); the notes are listed in the Timeline's *Working notes* lens |
 | **Fields** | Markdown body; `@` to mention someone who can see the case; `[[` to tag an entity |
 | **Behind the scenes** | `CaseService.AddNoteAsync`; mentions are de-duplicated, the author dropped, and anyone who can't see the case dropped. After saving, each person mentioned is emailed a link to the note. |
 | **Editing** | Saves a new version; only people **newly** mentioned are emailed. |
@@ -108,8 +116,6 @@ the timeline".
 | **Search** | The case-list search matches current note text, as well as the number, title, summary, entities, current timeline entries and decisions (with their why), the current brief, task titles, task comments and results, phase-change reasons and the post-incident review. When the match isn't the number, title or summary, the row says where: "decision, 1 Oct 2026: …MFA fatigue on a payment account…". |
 | **Removal** | Not possible. |
 
-> UI inconsistency: the composer hint says notes are excluded from the report by default, but the empty state
-> says "Notes print in the case report". The hint is right.
 
 ## Tasks
 
@@ -132,9 +138,9 @@ Tasks are never deleted; cancel them instead.
 
 | Action | How | Effect |
 |---|---|---|
-| Assign | Context rail → *Assign*: person and role (Incident commander, Analyst, Observer); or Actions → *Assign to me* | `Case.Assign`. Re-assigning changes the role. A new incident commander demotes the previous one to Analyst. The assignee is emailed (not when assigning yourself) if assignment emails are on. On a restricted case, assigning someone gives them access. |
+| Assign | Now/Next pane → Team → *Assign*: person and role (Incident commander, Analyst, Observer); or Actions → *Assign to me* | `Case.Assign`. Re-assigning changes the role. A new incident commander demotes the previous one to Analyst. The assignee is emailed (not when assigning yourself) if assignment emails are on. On a restricted case, assigning someone gives them access. |
 | Unassign | × beside a team member | Recorded as "no longer on the case". |
-| Hand off | Actions → *Hand off…*: recipient (only people who can see the case), where it stands (required), done since the last handoff, still open, watch for; options to email it and to give them your open tasks | `CaseService.HandOffAsync` adds a **Handoff** timeline entry and can move your open tasks. It doesn't change the incident commander; that's a separate assignment. "Choose someone other than yourself." |
+| Hand off | *Hand off* in the case header: recipient (only people who can see the case), where it stands (required), done since the last handoff, still open, watch for; options to email it and to give them your open tasks | `CaseService.HandOffAsync` adds a **Handoff** timeline entry and can move your open tasks. It doesn't change the incident commander; that's a separate assignment. "Choose someone other than yourself." |
 
 ![Hand off](../screenshots/doc-handoff.png)
 
