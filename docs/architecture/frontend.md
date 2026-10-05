@@ -201,8 +201,8 @@ Vendored libraries are in `wwwroot/lib` (EasyMDE, vis-network, docx-preview with
   Every color token is defined for both themes. An administrator can override the accent and ink colors
   (`Branding:*`), injected as a `<style id="im-brand">` block.
 - Density: comfortable (40 px rows) or compact (34 px), via `data-density`.
-- Breakpoints: 641 px (sidebar becomes the top bar), 720 px (tile grid), 980 px (wide splits stack), 1400 px
-  (context rail beside the tabs).
+- Breakpoints: 641 px (sidebar becomes the top bar), 720 px (tile grid), 980 px (wide splits stack), 1200 px
+  (the Now/Next pane beside the tabs).
 
 ## Accessibility
 
