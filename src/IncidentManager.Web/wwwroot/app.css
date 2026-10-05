@@ -3039,3 +3039,7 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-program-nav { display: flex; flex-wrap: wrap; gap: .25rem; margin: -.25rem 0 1.25rem; padding-bottom: .55rem; border-bottom: 1px solid var(--im-border); }
 .im-program-nav .im-part { text-decoration: none; }
 @media print { .im-program-nav { display: none; } }
+
+/* RD-19: a notification task due after the running notification deadline. */
+.im-task-notice { margin-top: .15rem; font-size: var(--im-text-xs); color: var(--im-danger); }
+.im-task-notice .btn-link { font-size: inherit; }

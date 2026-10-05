@@ -263,7 +263,21 @@ else
                         }
                         else { @Users.DisplayFor(t.Owner) }
                     </td>
-                    <td>@(t.DueAtUtc is { } due ? TimeDisp.Short(due) : "—")</td>
+                    <td>
+                        @(t.DueAtUtc is { } due ? TimeDisp.Short(due) : "—")
+                        @* RD-19: a notification task due after the running notification deadline (or undated) says so. *@
+                        @if (LateForNotice(t) is { } notice)
+                        {
+                            <div class="im-task-notice">
+                                <span class="bi bi-alarm" aria-hidden="true"></span>
+                                @(t.DueAtUtc is null ? "Undated;" : "After") the @notice.JurisdictionCode deadline, @TimeDisp.Brief(notice.DueAtUtc!.Value, Clock.UtcNow)
+                                @if (CanEdit)
+                                {
+                                    <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => DueByNotice(t)">Due by then</button>
+                                }
+                            </div>
+                        }
+                    </td>
                     <td>@StatusLabel(t.Status)</td>
                     <td class="text-end text-nowrap">
                         @if (CanEdit && isOpen)
@@ -566,6 +580,28 @@ else
     /// <summary>INV-41: switch to a tab and bring one item on it into view (an "about" chip's target).</summary>
     [Parameter] public EventCallback<(string Tab, Guid Id)> OnFocusItem { get; set; }
     [Parameter] public bool CanEdit { get; set; }
+    /// <summary>RD-19: the running notification deadline (the most urgent unreported one), if any.</summary>
+    [Parameter] public IncidentManager.Application.Compliance.NotificationDeadlineStatus? NoticeDeadline { get; set; }
+
+    private IncidentManager.Application.Compliance.NotificationDeadlineStatus? LateForNotice(ActionItem t) =>
+        t.IsOpen && t.Kind == TaskKind.Notify && NoticeDeadline is { IsActive: true, DueAtUtc: { } deadline } n
+        && (t.DueAtUtc is null || t.DueAtUtc > deadline) ? n : null;
+
+    // One click: due by the deadline, everything else unchanged.
+    private async Task DueByNotice(ActionItem t)
+    {
+        if (NoticeDeadline?.DueAtUtc is not { } deadline) return;
+        try
+        {
+            await Cases.UpdateActionItemAsync(CaseId, t.Id, t.Title, t.Owner, deadline, t.Status, t.Description, t.Kind);
+            await OnChanged.InvokeAsync();
+            Toasts.Success($"Due {TimeDisp.Short(deadline)}, by the {NoticeDeadline.JurisdictionCode} deadline");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
     /// <summary>Reload the case after a task/playbook write so the list (and the rest of the workspace) refreshes.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
     /// <summary>Live-collab flash hooks (parent owns the flash state).</summary>

@@ -489,7 +489,7 @@ else
     {
         @* UX-13: extracted to CaseTasksTab. Self-loads its playbooks and builds due-dates; the parent keeps
            the flash and hotkey dispatch (@ref) and reloads the case after a write. *@
-        <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" CanEdit="_canEdit" OnOpenEntity="OpenEntity" OnGoToTab="SetTab" OnFocusItem="FocusItem"
+        <CaseTasksTab @ref="_tasksTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" CanEdit="_canEdit" NoticeDeadline="RunningNotice" OnOpenEntity="OpenEntity" OnGoToTab="SetTab" OnFocusItem="FocusItem"
                       OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" RefreshToken="_liveRefresh" OnAdvancePhase="AdvanceWithResult"
                       AutofocusComposer="_tasksAutofocus" OnAutofocusHandled="() => _tasksAutofocus = false" />
     }
@@ -1047,6 +1047,10 @@ else
 
     // --- Overview "Stage readiness" card: the gate for this case's next likely transition (passed to the tab) ---
     private GateEvaluation? _readinessEval;
+
+    // RD-19: the most urgent notification deadline still running (not yet reported).
+    private IncidentManager.Application.Compliance.NotificationDeadlineStatus? RunningNotice =>
+        _notifyDeadlines is { ReportedAtUtc: null, Headline: { IsActive: true } h } ? h : null;
 
     // PROD-07: the case's evaluated regulatory-notification deadlines (null when the feature is off).
     private IncidentManager.Application.Compliance.CaseNotificationDeadlines? _notifyDeadlines;

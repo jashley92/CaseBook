@@ -131,6 +131,7 @@ the note is marked "On the record".
 | Comment | 💬 → append-only comment | Needs only **`ViewCases`**, so view-only roles can comment. Can be put on the timeline. |
 | Reminders | Background jobs, when enabled | Overdue and due-soon emails to the owner (else the IC), escalating to the IC then managers. Off by default. |
 | Phase link | Kinds Investigate, Contain, Eradicate and Recover map to Triage, Containment, Eradication and Recovery | Open tasks of a phase being left are listed as a warning when changing phase; the `NoOpenTasks` gate check can require none. |
+| Notification timing | An open **Notify** task due after the running notification deadline (the most urgent one not yet reported), or with no due date | Flagged under its due date ("After the NY deadline, Tue 15:02") with **Due by then**, which sets its due date to the deadline and changes nothing else (`UpdateActionItemAsync`). The Briefing marks it too. |
 
 Tasks are never deleted; cancel them instead.
 
