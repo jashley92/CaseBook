@@ -557,6 +557,42 @@ public sealed class CaseService
         return c;
     }
 
+    /// <summary>
+    /// RD-22: re-reads only the given parts of a workspace's case snapshot (from <see cref="GetDetailAsync"/>), in place,
+    /// after a collaborator changed them. Returns false when the case is no longer visible to the caller (or
+    /// <see cref="CaseRegions.Whole"/> was asked for): the caller re-reads the whole case instead.
+    /// </summary>
+    public async Task<bool> RefreshPartsAsync(Case snapshot, CaseRegions parts, CancellationToken ct = default)
+    {
+        if (parts.HasFlag(CaseRegions.Whole)) return false;
+        using var db = _factory.CreateDbContext();
+        var id = snapshot.Id;
+        if (!await Scoped(db.Cases.AsNoTracking()).AnyAsync(c => c.Id == id, ct)) return false;
+
+        if (parts.HasFlag(CaseRegions.Record))
+            snapshot.TimelineEntries = await db.TimelineEntries.AsNoTracking().Include(t => t.Tactics).Where(t => t.CaseId == id).ToListAsync(ct);
+        if (parts.HasFlag(CaseRegions.Record) || parts.HasFlag(CaseRegions.Evidence))
+            snapshot.Citations = await db.Cases.AsNoTracking().Where(c => c.Id == id).SelectMany(c => c.Citations).ToListAsync(ct);
+        if (parts.HasFlag(CaseRegions.Notes))
+            snapshot.Notes = await db.Notes.AsNoTracking().Where(n => n.CaseId == id).ToListAsync(ct);
+        if (parts.HasFlag(CaseRegions.Tasks))
+            snapshot.ActionItems = await db.ActionItems.AsNoTracking().Where(t => t.CaseId == id).ToListAsync(ct);
+        if (parts.HasFlag(CaseRegions.Things))
+        {
+            snapshot.Entities = await db.CaseEntities.AsNoTracking().Where(e => e.CaseId == id).ToListAsync(ct);
+            snapshot.EntityRelationships = await db.EntityRelationships.AsNoTracking().Where(r => r.CaseId == id).ToListAsync(ct);
+            snapshot.VerdictChanges = await db.EntityVerdictChanges.AsNoTracking().Where(v => v.CaseId == id).ToListAsync(ct);
+            snapshot.Techniques = await db.CaseTechniques.AsNoTracking().Where(t => t.CaseId == id).ToListAsync(ct);
+        }
+        if (parts.HasFlag(CaseRegions.Evidence))
+            snapshot.Evidence = await db.Evidence.AsNoTracking().Where(x => x.CaseId == id).ToListAsync(ct);
+        if (parts.HasFlag(CaseRegions.Brief))
+            snapshot.Briefs = await db.CaseBriefs.AsNoTracking().Where(b => b.CaseId == id).ToListAsync(ct);
+        if (parts.HasFlag(CaseRegions.Paper))
+            snapshot.Reports = await db.Reports.AsNoTracking().Where(r => r.CaseId == id).ToListAsync(ct);
+        return true;
+    }
+
     /// <summary>The active data-element reference set (X-03), in display order — the options the impact
     /// assessment offers. Archived elements are excluded from new selection but still resolve for display.</summary>
     public async Task<IReadOnlyList<DataElement>> ListActiveDataElementsAsync(CancellationToken ct = default)

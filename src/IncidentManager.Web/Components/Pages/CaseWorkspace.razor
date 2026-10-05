@@ -858,7 +858,7 @@ else
         AuthState.AuthenticationStateChanged += OnAuthStateChanged;
 
         // Live collaboration: refresh when another analyst changes this case.
-        _caseSub = Notifier.Subscribe(Id, OnCaseChangedAsync);
+        _caseSub = Notifier.SubscribeChanges(Id, OnCaseChangedAsync);
 
         // PROD-19: publish this case's action verbs to the command palette. The provider is a closure over
         // live state, so the palette reflects the case as it currently is (permissions, next phase, hold state).
@@ -871,11 +871,32 @@ else
             _ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
-    private async Task OnCaseChangedAsync(string actorId)
+    private async Task OnCaseChangedAsync(IncidentManager.Application.Abstractions.CaseChange change)
     {
+        var actorId = change.ActorId;
         await InvokeAsync(async () =>
         {
             if (_accessLost) return; // REL-07: already holding the workspace for a copy-out — don't churn it
+
+            // RD-22: a change to the record, tasks, things, evidence, the brief or the paperwork re-reads only that part
+            // of the case; anything touching the case itself (phase, rung, team, gates…) re-reads the whole case below.
+            var regions = IncidentManager.Application.Cases.CaseRegionMap.Of(change);
+            if (_case is not null && !regions.HasFlag(IncidentManager.Application.Cases.CaseRegions.Whole))
+            {
+                var known = _knownIds;
+                if (await Cases.RefreshPartsAsync(_case, regions))
+                {
+                    if (regions.HasFlag(IncidentManager.Application.Cases.CaseRegions.Tasks))
+                        _taskResults = await Cases.GetTaskResultsAsync(_case.Id);
+                    _readinessEval = NextGateTrigger() is { } gt ? await LoadGateAsync(gt) : null;   // the gate reads them all
+                    SeedKnownIds();
+                    if (LiveRefreshFor(_activeTab, regions)) _liveRefresh++;
+                    await SetTab(_activeTab);
+                    FlagNewItems(known, actorId);
+                    StateHasChanged();
+                    return;
+                }
+            }
 
             var hadCase = _case is not null;
             var prevKnown = _knownIds; // U-30: snapshot before Reload re-seeds, so we can diff what appeared
@@ -902,6 +923,14 @@ else
             StateHasChanged();
         });
     }
+
+    // RD-22: whether a part that loads its own data needs to re-query for a change to these regions. Working notes stay
+    // out of the report and the lessons, so a note alone doesn't re-query those; everything else re-queries as before.
+    private static bool LiveRefreshFor(string part, IncidentManager.Application.Cases.CaseRegions regions) => part switch
+    {
+        "Report" or "Review" => regions != IncidentManager.Application.Cases.CaseRegions.Notes,
+        _ => true,
+    };
 
     // --- U-30: live-collaboration motion --------------------------------------------------------
     // When another analyst adds something to this case, the diff of item ids (before/after reload)

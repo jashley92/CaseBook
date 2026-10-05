@@ -13,7 +13,11 @@ public sealed class CaseChangeNotifier : ICaseChangeNotifier
     private readonly Dictionary<Guid, List<Subscription>> _subs = new();
     private readonly List<GlobalSubscription> _globalSubs = new();
 
-    public IDisposable Subscribe(Guid caseId, Func<string, Task> onChanged)
+    public IDisposable Subscribe(Guid caseId, Func<string, Task> onChanged) =>
+        SubscribeChanges(caseId, change => onChanged(change.ActorId));
+
+    /// <summary>RD-22: subscribers get the change itself (what changed), so they can re-read only that.</summary>
+    public IDisposable SubscribeChanges(Guid caseId, Func<CaseChange, Task> onChanged)
     {
         var sub = new Subscription(this, caseId, onChanged);
         lock (_gate)
@@ -35,21 +39,24 @@ public sealed class CaseChangeNotifier : ICaseChangeNotifier
         return sub;
     }
 
-    public void Publish(Guid caseId, string actorId)
+    public void Publish(Guid caseId, string actorId) => Publish(new CaseChange(caseId, actorId, []));
+
+    public void Publish(CaseChange change)
     {
-        Func<string, Task>[] handlers;
+        var (caseId, actorId) = (change.CaseId, change.ActorId);
+        Func<CaseChange, Task>[] handlers;
         Func<Guid, string, Task>[] globalHandlers;
         lock (_gate)
         {
             handlers = _subs.TryGetValue(caseId, out var list) && list.Count > 0
                 ? list.Select(s => s.Handler).ToArray()
-                : Array.Empty<Func<string, Task>>();
+                : Array.Empty<Func<CaseChange, Task>>();
             globalHandlers = _globalSubs.Count > 0
                 ? _globalSubs.Select(s => s.Handler).ToArray()
                 : Array.Empty<Func<Guid, string, Task>>();
         }
         foreach (var h in handlers)
-            _ = Task.Run(async () => { try { await h(actorId); } catch { /* subscriber disposed or errored */ } });
+            _ = Task.Run(async () => { try { await h(change); } catch { /* subscriber disposed or errored */ } });
         foreach (var h in globalHandlers)
             _ = Task.Run(async () => { try { await h(caseId, actorId); } catch { /* subscriber disposed or errored */ } });
     }
@@ -94,9 +101,9 @@ public sealed class CaseChangeNotifier : ICaseChangeNotifier
         private readonly CaseChangeNotifier _owner;
         private bool _disposed;
         public Guid CaseId { get; }
-        public Func<string, Task> Handler { get; }
+        public Func<CaseChange, Task> Handler { get; }
 
-        public Subscription(CaseChangeNotifier owner, Guid caseId, Func<string, Task> handler)
+        public Subscription(CaseChangeNotifier owner, Guid caseId, Func<CaseChange, Task> handler)
         {
             _owner = owner;
             CaseId = caseId;

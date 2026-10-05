@@ -43,8 +43,9 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     private readonly IClock _clock;
     private readonly ICaseChangeNotifier _notifier;
 
-    // Cases touched by the in-flight save, captured before commit and broadcast once it succeeds.
-    private readonly HashSet<Guid> _pendingCaseIds = new();
+    // Cases touched by the in-flight save, with what changed on each (RD-22), captured before commit and broadcast
+    // once it succeeds.
+    private readonly Dictionary<Guid, List<CaseChangeItem>> _pendingCaseIds = new();
 
     // REL-05: true when this save acquired the process-wide audit-chain gate in SavingChanges and must
     // release it on completion (success, failure, or cancellation). The interceptor is scoped, so a
@@ -115,7 +116,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     {
         // The actor is whoever this unit of work belongs to — used by viewers to attribute the change (U-30).
         var actorId = _user.UserId;
-        foreach (var id in _pendingCaseIds) _notifier.Publish(id, actorId);
+        foreach (var (id, items) in _pendingCaseIds) _notifier.Publish(new CaseChange(id, actorId, items));
         _pendingCaseIds.Clear();
     }
 
@@ -180,7 +181,12 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         foreach (var e in auditable)
         {
             var cid = e.Entity is Case cse ? cse.Id : TryGetCaseId(e);
-            if (cid is { } id) _pendingCaseIds.Add(id);
+            if (cid is not { } id) continue;
+            if (!_pendingCaseIds.TryGetValue(id, out var items)) _pendingCaseIds[id] = items = [];
+            items.Add(new CaseChangeItem(e.Entity.GetType().Name, ((Entity)e.Entity).Id, e.State switch
+            {
+                EntityState.Added => CaseChangeOp.Added, EntityState.Deleted => CaseChangeOp.Deleted, _ => CaseChangeOp.Modified
+            }));
         }
 
         if (auditable.Count == 0) return null;

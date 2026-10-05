@@ -20,7 +20,7 @@ worse.
 | Path | Behavior | Watch out for |
 |---|---|---|
 | **Opening a case** | `CaseService.GetDetailAsync` loads the whole case and all children in one split query (about 20 `Include`s). The timeline merges entries and milestones in memory. No paging inside a case. | Adding another `Include` adds a round trip to every case open. Keep children small; don't load blobs. |
-| **Live refresh** | Every save by anyone re-fetches the case for every viewer of it. | A burst of saves on a busy case reloads it for everyone watching. |
+| **Live refresh** | A save re-reads, for every viewer of the case, only the parts it changed (an entry re-reads the record, a task the tasks); a change to the case itself (phase, rung, severity, team, gates) still re-reads the whole case. The gate readiness is re-evaluated either way. | A burst of case-level changes on a busy case still reloads it for everyone watching. |
 | **Case list** | Filtered and paged in SQL (default 25). Sorting by **SLA** loads a small projection of every matching case into memory, ranks them and then loads the page. | Fine at thousands of cases; reconsider if the filtered set grows into tens of thousands. |
 | **Dashboard** | Counts and averages are computed in a single scan (`OneScan`, conditional aggregates), measured at 100k cases on SQL Server. Trends are rebuilt from case timestamps. | Don't add per-figure queries; register figures with `OneScan`. |
 | **Elapsed-time math** | `DbTime.TicksBetween` maps to `DATEDIFF_BIG` on SQL Server and subtraction on SQLite, so durations aggregate in the database. | Use it rather than loading rows to compute durations. |

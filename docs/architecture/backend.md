@@ -174,7 +174,10 @@ Caveats:
 ## Real-time
 
 `CaseChangeNotifier` (singleton) publishes "case X changed by Y" after each commit; the workspace, the activity
-bell and the case list subscribe. `CasePresenceService` tracks who's viewing which case; a circuit handler
+bell and the case list subscribe. The event also carries what changed (`CaseChange.Items`: each row's entity type,
+id, and added, modified or deleted), collected by the audit interceptor from the same tracked entries it audits.
+`CaseRegionMap` turns that into the parts of a case to re-read (record, notes, tasks, things, evidence, brief,
+paperwork, or the whole case), and `CaseService.RefreshPartsAsync` re-reads only those, need-to-know scoped. `CasePresenceService` tracks who's viewing which case; a circuit handler
 removes a closed tab. Both are in-process. Writes made outside EF tracking, or by another process, aren't
 broadcast.
 

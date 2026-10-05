@@ -28,6 +28,7 @@ public sealed class CaseActionPermissionsTests
         nameof(CaseService.FindIdByNumberAsync),
         nameof(CaseService.ListAsync),
         nameof(CaseService.GetDetailAsync),
+        nameof(CaseService.RefreshPartsAsync),   // RD-22: re-reads parts of a snapshot
         nameof(CaseService.GetTaskResultsAsync),   // HR-02: scoped read of task results
         nameof(CaseService.GetPreviewAsync),
         nameof(CaseService.ListActiveDataElementsAsync),
