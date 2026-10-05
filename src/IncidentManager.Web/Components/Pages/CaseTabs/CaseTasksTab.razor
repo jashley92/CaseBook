@@ -213,7 +213,7 @@ else
                 var isOpen = t.Status != ActionItemStatus.Done && t.Status != ActionItemStatus.Cancelled;
                 var threadOpen = _openThreads.Contains(t.Id);
                 var comments = CommentsFor(t.Id);
-                <tr class="im-enter @(t.IsOverdue(Clock.UtcNow) ? "im-row-danger" : "") @FlashClass?.Invoke(t.Id)" style="@FlashStyle?.Invoke(t.Id)" @key="t.Id">
+                <tr class="im-enter @(t.IsOverdue(Clock.UtcNow) ? "im-row-danger" : "") @FlashClass?.Invoke(t.Id)" style="@FlashStyle?.Invoke(t.Id)" @key="t.Id" id="task-@t.Id">
                     @if (CanEdit)
                     {
                         <td>

@@ -15,12 +15,21 @@
 @inject ToastService Toasts
 @inject ISeverityLabels SevLabels
 
-<section class="card im-brief mb-4" id="ov-brief" aria-labelledby="brief-title">
-    <div class="card-header d-flex align-items-center flex-wrap gap-2">
-        <h2 class="h6 mb-0" id="brief-title">Where it stands</h2>
+@* RD-04: Pane renders the same brief as the Now section of the Now/Next pane: no card chrome, the record serif,
+   labels above the parts, and no next-steps list (Next, below it, is that list). *@
+<section class="@(Pane ? "im-now im-nn-sec" : "card im-brief mb-4")" id="@(Pane ? "nn-brief" : "ov-brief")" aria-labelledby="@(Pane ? "nn-brief-title" : "brief-title")">
+    <div class="@(Pane ? "im-nn-head flex-wrap" : "card-header") d-flex align-items-center flex-wrap gap-2">
+        @if (Pane)
+        {
+            <h2 class="im-nn-h" id="nn-brief-title" title="Where it stands: the brief">Now</h2>
+        }
+        else
+        {
+            <h2 class="h6 mb-0" id="brief-title">Where it stands</h2>
+        }
         @if (Current is { } cur && !_editing)
         {
-            <span class="im-badge im-b-neutral">v@(cur.Version)</span>
+            <span class="im-badge im-b-neutral" title="Brief version">v@(cur.Version)</span>
             @* HR-01: on a case closed with an outcome, the current version is the closing brief, its assessment the conclusion. *@
             @if (Case.Phase == CasePhase.Closed && Case.OutcomeKey is not null)
             {
@@ -57,11 +66,11 @@
         @if (CanEdit && !_editing)
         {
             <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="BeginEdit">
-                <span class="bi bi-pencil" aria-hidden="true"></span> @(Current is null && !HasSummary ? "Write the brief" : "Revise")
+                <span class="bi bi-pencil" aria-hidden="true"></span> @(Current is null && !HasSummary ? "Write the brief" : Pane ? "Update" : "Revise")
             </button>
         }
     </div>
-    <div class="card-body">
+    <div class="@(Pane ? "im-nn-body" : "card-body")">
 
     @if (_editing)
     {
@@ -88,11 +97,18 @@
                           value="@_draft[part.Key]" @oninput="e => _draft[part.Key] = e.Value?.ToString()"></textarea>
             </div>
         }
-        <div class="mb-2">
-            <span class="form-label small mb-0 fw-semibold">Next steps</span>
-            <span class="small text-muted ms-1">The case's open tasks. Saving records them with this version; change them on the Tasks tab.</span>
-            @NextList(editing: true)
-        </div>
+        @if (!Pane)
+        {
+            <div class="mb-2">
+                <span class="form-label small mb-0 fw-semibold">Next steps</span>
+                <span class="small text-muted ms-1">The case's open tasks. Saving records them with this version; change them on the Tasks tab.</span>
+                @NextList(editing: true)
+            </div>
+        }
+        else
+        {
+            <p class="small text-muted mb-2">Next steps are saved with this version from the open tasks, as listed under Next.</p>
+        }
         @if (_error is not null)
         {
             <p class="text-danger small mb-2" role="alert">@_error</p>
@@ -155,6 +171,8 @@
     [Parameter] public EventCallback<string> OnGoToTab { get; set; }
     /// <summary>INV-27: show the timeline's changes since a time (the current version's).</summary>
     [Parameter] public EventCallback<DateTimeOffset> OnShowSince { get; set; }
+    /// <summary>RD-04: render as the Now section of the Now/Next pane.</summary>
+    [Parameter] public bool Pane { get; set; }
 
     // INV-27: how far the record has moved on since the current version (null without one).
     private BriefFreshness.Result? Freshness => Current is { } cur
@@ -275,7 +293,7 @@
             <div class="im-brief-summary-h"><span class="fw-semibold">Summary</span> @if (current) { @ReportNote() }</div>
             @if (!string.IsNullOrWhiteSpace(summary))
             {
-                <div class="md-body">@((MarkupString)Md.ToHtml(summary, Case.Id))</div>
+                <div class="md-body @(Pane ? "im-rec" : "")">@((MarkupString)Md.ToHtml(summary, Case.Id))</div>
             }
             else
             {
@@ -302,7 +320,7 @@
                     }
                 }
             }
-            @if (current)
+            @if (current && !Pane)
             {
                 <dt>Next steps</dt>
                 <dd>

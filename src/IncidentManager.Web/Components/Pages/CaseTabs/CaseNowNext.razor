@@ -1,0 +1,307 @@
+@* RD-04 (Casefile): the case's Now and Next, beside every tab on wide screens.
+   Now is the brief: what the team believes, what's known, and each open question with whoever is answering it.
+   Next is what must happen, in order of consequence: running obligations (notification deadlines, then the SLA
+   clocks), the open tasks with why each exists, and how ready the case is for its next gate. The team and the key
+   entities follow. Replaces the context rail (INV-12); on narrower screens the Overview keeps the brief and the strip. *@
+@inject CaseService Cases
+@inject IClock Clock
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
+
+@{
+    var now = Clock.UtcNow;
+    var (contain, resolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
+        Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification);
+    var open = CaseNext.Open(Case, now);
+}
+
+<aside class="im-nownext" aria-label="Now and next">
+    <CaseBriefCard @ref="_brief" Pane="true" Case="Case" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged"
+                   OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
+
+    <section class="im-nn-sec" aria-labelledby="nn-next-h">
+        <div class="im-nn-head">
+            <h2 class="im-nn-h" id="nn-next-h">Next</h2>
+            @if (CanEdit)
+            {
+                <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick="() => OnAddTask.InvokeAsync()">
+                    <span class="bi bi-plus-lg" aria-hidden="true"></span> Task
+                </button>
+            }
+        </div>
+
+        @* Obligations first: a notification deadline is a legal clock; then the response SLA. *@
+        @if (Notify?.Headline is { } nh && (nh.IsActive || Notify.ReportedAtUtc is not null))
+        {
+            <div class="im-nn-ob">
+                <ClockMark State="nh.State" Label="@($"Notify {nh.JurisdictionLabel}")" />
+                @if (CanEdit && nh.IsActive && !_marking)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="BeginMarkReported">Mark reported…</button>
+                }
+                <div class="im-nn-sub">
+                    @if (Notify.ReportedAtUtc is { } rep)
+                    {
+                        <text>Reported @TimeDisp.Brief(rep, now) · @nh.WindowHours h window</text>
+                    }
+                    else if (nh.DueAtUtc is { } due)
+                    {
+                        <span title="@TimeDisp.Long(due)">@(nh.Remaining is { } r && r < TimeSpan.Zero ? $"{Ui.Hours(-r.TotalHours)} over" : nh.Remaining is { } r2 ? $"{Ui.Hours(r2.TotalHours)} left" : "") · due @TimeDisp.Brief(due, now)</span>
+                        @if (Notify.Statuses.Count > 1) { <text> · @Notify.Statuses.Count jurisdictions</text> }
+                    }
+                </div>
+                @if (_marking)
+                {
+                    <div class="im-nn-mark">
+                        <label class="form-label small mb-0" for="nn-reported-at">Reported to regulators at (@TimeDisp.Label)</label>
+                        <div class="d-flex gap-2">
+                            <input id="nn-reported-at" type="datetime-local" class="form-control form-control-sm" @bind="_reportedAt" />
+                            <button type="button" class="btn btn-sm btn-primary" disabled="@_saving" @onclick="MarkReported">Save</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _marking = false">Cancel</button>
+                        </div>
+                        <div class="im-nn-sub">One reported time stops every jurisdiction's clock.</div>
+                        @if (_error is not null) { <div class="text-danger small" role="alert">@_error</div> }
+                    </div>
+                }
+            </div>
+        }
+        @foreach (var st in new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget))
+        {
+            <div class="im-nn-ob">
+                <ClockMark State="st.State" Label="@(st.Clock is { } k ? Ui.SlaClockLabel(k) : "SLA")" Detail="@Ui.SlaShort(st)"
+                           Title="@((st.TargetHours is { } h ? $"Target {h} h" : "") + (st.DueAtUtc is { } d ? $" · due {TimeDisp.Short(d)}" : ""))" />
+            </div>
+        }
+
+        @* Then the work, each item with why it exists. *@
+        @if (open.Count == 0)
+        {
+            <p class="im-nn-empty">No open tasks.</p>
+        }
+        else
+        {
+            <ul class="im-nn-tasks">
+                @foreach (var t in open.Take(TasksShown))
+                {
+                    var why = Why(t);
+                    var late = t.IsOverdue(now);
+                    <li>
+                        <button type="button" class="im-nn-task" @onclick='() => OnFocusTask.InvokeAsync(t.Id)'>@t.Title</button>
+                        <div class="im-nn-task-meta">
+                            @if (why is { } w) { <WhyChip Icon="@w.Icon" Text="@w.Text" Title="@w.Title" /> }
+                            <span>@(string.IsNullOrWhiteSpace(t.Owner) ? "Unassigned" : Users.DisplayFor(t.Owner))</span>
+                            @if (t.Status == ActionItemStatus.Blocked) { <span class="im-nn-blocked">Blocked</span> }
+                            @if (t.DueAtUtc is { } due)
+                            {
+                                <span class="@(late ? "im-nn-late" : "")" title="@TimeDisp.Long(due)">@(late ? "overdue · " : "")@TimeDisp.Brief(due, now)</span>
+                            }
+                        </div>
+                    </li>
+                }
+            </ul>
+            @if (open.Count > TasksShown)
+            {
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@(open.Count - TasksShown) more on the Tasks tab</button>
+            }
+        }
+
+        @* Readiness for the next gate, so what a transition will need is visible before the moment of it. *@
+        @if (Readiness is { GateExists: true } rg && rg.Requirements.Count > 0)
+        {
+            var checks = rg.Requirements.Where(i => i.Kind == GateRequirementKind.MachineCheck).ToList();
+            var total = checks.Count;
+            var met = checks.Count(i => i.MachineSatisfied);
+            var missing = checks.Where(i => !i.MachineSatisfied).OrderByDescending(i => i.IsBlocking).ToList();
+            @if (total > 0)
+            {
+                <button type="button" class="im-nn-gate" @onclick='() => OnShowReadiness.InvokeAsync()'
+                        title="What the next gate checks. Open the Overview to see each check and fix it.">
+                    <span class="d-flex align-items-center gap-2">
+                        <span class="bi bi-shield-check" aria-hidden="true"></span>
+                        <span>@StageGateTriggers.Label(rg.Trigger)</span>
+                        <span class="ms-auto">@met of @total met</span>
+                    </span>
+                    <span class="im-nn-meter" aria-hidden="true">
+                        <i style="width:@(total == 0 ? 0 : met * 100 / total)%"></i>
+                    </span>
+                    @if (missing.Count > 0)
+                    {
+                        <span class="im-nn-sub">@(missing.Any(m => m.IsBlocking) ? "Missing" : "Advisory"): @string.Join(", ", missing.Take(3).Select(m => m.Label))@(missing.Count > 3 ? $" and {missing.Count - 3} more" : "")</span>
+                    }
+                </button>
+            }
+        }
+    </section>
+
+    <section class="im-nn-sec" aria-labelledby="nn-team-h">
+        <div class="im-nn-head">
+            <h2 class="im-nn-h" id="nn-team-h">Team</h2>
+            @if (CanEdit)
+            {
+                <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick="() => OnAssign.InvokeAsync()">
+                    <span class="bi bi-plus-lg" aria-hidden="true"></span> Assign
+                </button>
+            }
+        </div>
+        @if (Case.Assignments.Count == 0)
+        {
+            <p class="im-nn-empty">No one is assigned.</p>
+        }
+        else
+        {
+            <ul class="im-nn-people">
+                @foreach (var a in Case.Assignments.OrderBy(a => a.Role))
+                {
+                    <li>
+                        <span>@Users.DisplayFor(a.UserId)</span>
+                        <span class="im-nn-sub">@Ui.Label(a.Role)</span>
+                        @if (CanEdit)
+                        {
+                            <button type="button" class="im-rail-x" aria-label="Remove @Users.DisplayFor(a.UserId)" title="Remove from the case"
+                                    @onclick="() => OnUnassign.InvokeAsync(a)">×</button>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+
+    @{
+        var key = Case.Entities
+            .Where(e => e.IsPinned || e.Disposition is EntityDisposition.Malicious or EntityDisposition.Compromised or EntityDisposition.Suspicious)
+            .OrderByDescending(e => e.IsPinned)
+            .ThenBy(e => e.Disposition switch { EntityDisposition.Malicious => 0, EntityDisposition.Compromised => 1, EntityDisposition.Suspicious => 2, _ => 3 })
+            .Take(6).ToList();
+        var review = EntityMentions.NeedingReview(Case).Take(2).ToList();
+    }
+    @if (key.Count > 0 || review.Count > 0)
+    {
+        <section class="im-nn-sec" aria-labelledby="nn-ent-h">
+            <div class="im-nn-head"><h2 class="im-nn-h" id="nn-ent-h">Key entities</h2></div>
+            <ul class="im-nn-ents">
+                @foreach (var e in key)
+                {
+                    <li>
+                        <button type="button" class="im-nn-ent" @onclick="() => OnOpenEntity.InvokeAsync(e.Id)" title="@e.Value">
+                            @if (e.IsPinned) { <span class="bi bi-pin-fill" title="Pinned" aria-label="Pinned"></span> }
+                            <span class="im-nn-ent-name">@(string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label)</span>
+                        </button>
+                        <VerdictMark Value="e.Disposition" />
+                    </li>
+                }
+            </ul>
+            @foreach (var (e, refs) in review)
+            {
+                <div class="im-nn-sub mt-1">
+                    <VerdictMark Value="EntityDisposition.Unknown" ShowLabel="false" />
+                    <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => OnOpenEntity.InvokeAsync(e.Id)">@(string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label)</button>
+                    is referred to @refs times and still Unknown.
+                </div>
+            }
+        </section>
+    }
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter] public IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> TaskResults { get; set; } = new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
+    [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
+    [Parameter] public GateEvaluation? Readiness { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public EventCallback<string> OnGoToTab { get; set; }
+    [Parameter] public EventCallback<DateTimeOffset> OnShowSince { get; set; }
+    [Parameter] public EventCallback<Guid> OnOpenEntity { get; set; }
+    /// <summary>Open a task where it's worked (the Tasks tab, scrolled to it).</summary>
+    [Parameter] public EventCallback<Guid> OnFocusTask { get; set; }
+    [Parameter] public EventCallback OnAddTask { get; set; }
+    [Parameter] public EventCallback OnShowReadiness { get; set; }
+    [Parameter] public EventCallback OnAssign { get; set; }
+    [Parameter] public EventCallback<CaseAssignment> OnUnassign { get; set; }
+
+    private const int TasksShown = 6;
+    private CaseBriefCard? _brief;
+    private bool _marking, _saving;
+    private DateTime? _reportedAt;
+    private string? _error;
+
+    /// <summary>Opens the brief editor (the close gate's "Fix" for a missing summary).</summary>
+    public void BeginBriefEdit() => _brief?.BeginEdit();
+
+    private sealed record WhyInfo(string Icon, string Text, string? Title);
+
+    // Why the task exists: the question it answers, the decision it carries out, what it's about, the obligation it
+    // feeds, or the phase its kind belongs to. The first that applies.
+    private WhyInfo? Why(ActionItem t)
+    {
+        if (t.RaisedFromBriefId is not null) return new("bi-question-circle", "Answers a question", "Raised from an open question in the brief");
+        if (t.About is { } about)
+        {
+            switch (about.Kind)
+            {
+                case ActionItem.AboutEntry:
+                    var entry = Case.TimelineEntries.FirstOrDefault(e => e.Id == about.Id || e.SupersedesEntryId == about.Id);
+                    return entry?.Type == TimelineEntryType.Decision
+                        ? new("bi-signpost-split", "Carries out a decision", OneLine(entry.Description))
+                        : new("bi-journal-text", "From an entry", entry is null ? null : OneLine(entry.Description));
+                case ActionItem.AboutEntity:
+                    var ent = Case.Entities.FirstOrDefault(e => e.Id == about.Id);
+                    return ent is null ? null : new("bi-crosshair", string.IsNullOrWhiteSpace(ent.Label) ? ent.Value : ent.Label, "About this entity");
+                case ActionItem.AboutEvidence:
+                    var ev = Case.Evidence.FirstOrDefault(e => e.Id == about.Id);
+                    return ev is null ? null : new("bi-paperclip", ev.OriginalFileName, "About this evidence file");
+                case ActionItem.AboutNote:
+                    return new("bi-pencil", "From a note", null);
+            }
+        }
+        if (t.Kind == TaskKind.Notify && Notify?.Headline is { IsActive: true } nh)
+            return new("bi-alarm", $"Feeds Notify {nh.JurisdictionCode}", $"Notification to {nh.JurisdictionLabel}");
+        return t.Kind switch
+        {
+            TaskKind.Investigate => new("bi-search", "Investigation", null),
+            TaskKind.Contain => new("bi-flag", Ui.Label(CasePhase.Containment), "Containment work"),
+            TaskKind.Eradicate => new("bi-flag", Ui.Label(CasePhase.Eradication), "Eradication work"),
+            TaskKind.Recover => new("bi-flag", Ui.Label(CasePhase.Recovery), "Recovery work"),
+            TaskKind.Notify => new("bi-megaphone", "Notification", null),
+            _ => null
+        };
+    }
+
+    private static string OneLine(string? text)
+    {
+        var t = (text ?? "").Replace('\n', ' ').Trim();
+        return t.Length <= 120 ? t : t[..117] + "…";
+    }
+
+    private void BeginMarkReported()
+    {
+        _error = null;
+        _reportedAt = DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(Clock.UtcNow, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
+        _marking = true;
+    }
+
+    private async Task MarkReported()
+    {
+        _error = null;
+        if (_reportedAt is not { } wall) { _error = "Enter when regulators were notified."; return; }
+        _saving = true;
+        try
+        {
+            var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
+            DateTimeOffset utc;
+            try { utc = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, TimeDisp.Zone), TimeSpan.Zero); }
+            catch (ArgumentException) { utc = new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); }
+            await Cases.MarkReportedAsync(Case.Id, utc);
+            _marking = false;
+            Toasts.Success("Reported milestone recorded");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _error = ex.Message;
+        }
+        finally { _saving = false; }
+    }
+}

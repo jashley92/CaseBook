@@ -79,7 +79,11 @@
 }
 
 @* INV-09 / INV-36: the brief leads, with the case summary as its first part. *@
-<CaseBriefCard @ref="_brief" Case="Case" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
+@* RD-04: where the Now/Next pane is beside the tab, the brief lives there and isn't repeated here. *@
+@if (!BriefInPane)
+{
+    <CaseBriefCard @ref="_brief" Case="Case" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
+}
 
 <div class="im-ov">
     @{ var recent = RecentOnTimeline(); }
@@ -621,6 +625,10 @@
     [Parameter] public string? RetentionMessage { get; set; }
     /// <summary>The next-gate readiness evaluation, computed in the parent's Reload (null when none applies).</summary>
     [Parameter] public GateEvaluation? ReadinessEval { get; set; }
+    /// <summary>RD-04: the brief is in the Now/Next pane beside this tab, so the Overview doesn't show it.</summary>
+    [Parameter] public bool BriefInPane { get; set; }
+    /// <summary>RD-04: open the brief editor in the pane (the summary gate check's Fix).</summary>
+    [Parameter] public EventCallback OnEditBrief { get; set; }
     /// <summary>Reload the case after a write so the rest of the workspace refreshes.</summary>
     [Parameter] public EventCallback OnChanged { get; set; }
     /// <summary>Ask the parent's shared confirm dialog to guard a destructive action.</summary>
@@ -821,6 +829,7 @@
         {
             case GateCheckKeys.SummaryPresent:
                 // INV-36: the summary is the brief's first part.
+                if (BriefInPane) { await OnEditBrief.InvokeAsync(); return; }
                 _brief?.BeginEdit();
                 _scrollTo = "ov-brief";
                 break;
