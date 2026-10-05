@@ -21,7 +21,7 @@ flowchart LR
 |---|---|
 | **Where** | Report tab |
 | **The user sees** | Report profile (a named section layout; can be saved as the case's default), TLP marking, a **Preview** in the browser (a Word template is rendered with docx-preview), **Generate draft**, and the stored reports with version, hash, author, template and state. |
-| **Generate** | `ReportService.GenerateAsync` (needs `EditCases` and need-to-know) → model → Word file → stored with its SHA-256 → `Report` row (draft, version = previous count + 1, file `{CaseNumber}_v{n}.docx`). Generating **never approves**. |
+| **Generate** | Queued (`BackgroundJobs/ReportJobs`) and run in the background as the person who asked, so they can keep working; the Report part shows the stage it's on with a meter, and a toast says when it's ready, wherever they are. One job per person, case and kind at a time. Then `ReportService.GenerateAsync` (needs `EditCases` and need-to-know) → model → Word file → stored with its SHA-256 → `Report` row (draft, version = previous count + 1, file `{CaseNumber}_v{n}.docx`). Generating **never approves**. |
 | **Approve** | *Approve & finalize* → `ReportService.ApproveAsync` (needs `ApproveReports`). With `Reporting:RequireSeparateApprover` on, the person who generated it can't approve it ("Two-person control is on. Someone other than the analyst who generated this report must approve it."). Once only ("This report is already approved and final."). Milestone "Case report vN approved as final". |
 | **Verify** | The stored file can be re-hashed and compared with the recorded hash. |
 | **Download** | `GET /reports/{id}`; logged to the access log and SIEM (5303). |

@@ -1,0 +1,73 @@
+@* RD-23 (Casefile): a report being generated in the background for this case, by you: where it is in the queue or
+   which stage it's on, with a meter; and why it failed if it did. The finished report appears in the list below it
+   (and a toast says so wherever you are). Starts a job with Start(); one at a time per case and kind. *@
+@implements IDisposable
+@using IncidentManager.Web.BackgroundJobs
+@inject ReportJobs Jobs
+@inject AuthenticationStateProvider AuthState
+@inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
+
+@if (Current is { } j)
+{
+    if (j.IsActive)
+    {
+        var pct = (int)Math.Round(100 * IncidentManager.Application.Reporting.ReportStages.Fraction(j.Stage));
+        <div class="im-reportjob" role="status" aria-live="polite">
+            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+            <span>@(j.State == ReportJobState.Queued ? Queued(j) : $"{j.Stage ?? "Starting"}…")</span>
+            <div class="progress im-reportjob-bar" role="progressbar" aria-label="Report progress" aria-valuenow="@pct" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar" style="width: @(pct)%"></div>
+            </div>
+            <span class="text-muted small">You can keep working; it appears below when it's ready.</span>
+        </div>
+    }
+    else if (j.State == ReportJobState.Failed)
+    {
+        <div class="im-reportjob is-failed" role="alert">
+            <span class="bi bi-exclamation-triangle" aria-hidden="true"></span>
+            <span>Couldn't generate the report. @j.Error</span>
+            <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _dismissed = j.Id">Dismiss</button>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+    [Parameter] public ReportKind Kind { get; set; } = ReportKind.Case;
+    /// <summary>Raised (on the circuit) when this person's job for the case finishes.</summary>
+    [Parameter] public EventCallback<ReportJob> OnDone { get; set; }
+
+    private Guid? _dismissed;
+
+    private ReportJob? Current =>
+        Jobs.For(CaseId, CurrentUser.UserId, Kind).FirstOrDefault() is { } j && j.Id != _dismissed && j.State != ReportJobState.Done ? j : null;
+
+    /// <summary>True while a report of this kind is queued or running for the case.</summary>
+    public bool Busy => Jobs.For(CaseId, CurrentUser.UserId, Kind).Any(j => j.IsActive);
+
+    public async Task Start(TlpLevel? tlp, Guid? template)
+    {
+        var user = (await AuthState.GetAuthenticationStateAsync()).User;
+        Jobs.Enqueue(new ReportJobRequest(user, CurrentUser.UserId, CaseId, Kind, tlp, template));
+        _dismissed = null;
+        StateHasChanged();
+    }
+
+    protected override void OnInitialized() => Jobs.Changed += OnJob;
+
+    private void OnJob(ReportJob j)
+    {
+        if (j.CaseId != CaseId || j.Kind != Kind || j.UserId != CurrentUser.UserId) return;
+        _ = InvokeAsync(async () =>
+        {
+            if (j.State == ReportJobState.Done) await OnDone.InvokeAsync(j);
+            StateHasChanged();
+        });
+    }
+
+    private string Queued(ReportJob j) => Jobs.Ahead(j) is var n and > 0
+        ? $"Waiting for {n} other report{(n == 1 ? "" : "s")} to finish"
+        : "Starting";
+
+    public void Dispose() => Jobs.Changed -= OnJob;
+}

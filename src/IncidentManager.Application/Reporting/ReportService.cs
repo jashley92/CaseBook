@@ -207,10 +207,12 @@ public sealed class ReportService
     /// </summary>
     /// <param name="template">PROD-47: which Word template to fill. Null = the case's profile default (the built-in
     /// layout when it has none); <see cref="Guid.Empty"/> = the built-in layout; otherwise that library template.</param>
+    /// <param name="progress">RD-23: told each stage as it starts (<see cref="ReportStages"/>), for a background run's progress.</param>
     public async Task<Report> GenerateAsync(Guid caseId, TlpLevel? tlp = null, CancellationToken ct = default,
-        Guid? template = null)
+        Guid? template = null, IProgress<string>? progress = null)
     {
         if (!_user.Has(Permission.EditCases)) throw new Security.ForbiddenException(Permission.EditCases);
+        progress?.Report(ReportStages.Reading);
         using var db = _factory.CreateDbContext();
         // Need-to-know on the parent case, same "not found" message as the preview so a restricted case's
         // existence isn't leaked by generating against its GUID.
@@ -223,6 +225,7 @@ public sealed class ReportService
         var logo = await _branding.GetLogoAsync(ct);
         var sections = await ResolveSectionsAsync(db, c.ReportProfileId, ct);
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
+        progress?.Report(ReportStages.Writing);
         var model = BuildModel(c, now, logo, sections, elemSummary, triggers, tlp, await ExtrasAsync(db, c.Id, ct));
 
         // PROD-47: the report can be filled from a customer-designed template (the profile's default, or one picked
@@ -238,6 +241,7 @@ public sealed class ReportService
             used = t;
         }
 
+        progress?.Report(ReportStages.Storing);
         return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.Case, model, now, ct, rendered, used);
     }
 
@@ -282,14 +286,16 @@ public sealed class ReportService
     /// <param name="template">Which Word template to fill. Null = the library's lessons-learned default (the built-in
     /// layout when there is none); <see cref="Guid.Empty"/> = the built-in layout; otherwise that library template.</param>
     public async Task<Report> GenerateLessonsAsync(Guid caseId, TlpLevel? tlp = null, CancellationToken ct = default,
-        Guid? template = null)
+        Guid? template = null, IProgress<string>? progress = null)
     {
         if (!_user.Has(Permission.EditCases)) throw new Security.ForbiddenException(Permission.EditCases);
+        progress?.Report(ReportStages.Reading);
         using var db = _factory.CreateDbContext();
         var c = await db.Cases.AsNoTracking().ForUser(_user).FirstOrDefaultAsync(x => x.Id == caseId, ct)
             ?? throw new InvalidOperationException("Case not found.");
 
         var now = _clock.UtcNow;
+        progress?.Report(ReportStages.Writing);
         var model = await BuildLessonsModelAsync(db, c, now, ct, tlp);
 
         // A Word template may use any field, case fields included (the admin decides what it prints), so it's filled
@@ -314,6 +320,7 @@ public sealed class ReportService
             });
             used = t;
         }
+        progress?.Report(ReportStages.Storing);
         return await StoreAsync(db, caseId, c.CaseNumber, ReportKind.LessonsLearned, model, now, ct, rendered, used);
     }
 

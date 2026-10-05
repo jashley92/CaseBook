@@ -1,0 +1,22 @@
+@* RD-23: says when a report you asked for is ready (or failed), wherever you are in the app. Hosted once in MainLayout. *@
+@implements IDisposable
+@using IncidentManager.Web.BackgroundJobs
+@inject ReportJobs Jobs
+@inject ToastService Toasts
+@inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
+
+@code {
+    protected override void OnInitialized() => Jobs.Changed += OnJob;
+
+    private void OnJob(ReportJob j)
+    {
+        if (j.UserId != CurrentUser.UserId) return;
+        var what = j.Kind == ReportKind.LessonsLearned ? "Lessons-learned report" : "Report";
+        if (j.State == ReportJobState.Done)
+            _ = InvokeAsync(() => Toasts.Success($"{what} ready: {j.FileName}. It's in the case's Paper."));
+        else if (j.State == ReportJobState.Failed)
+            _ = InvokeAsync(() => Toasts.Error($"{what} couldn't be generated. {j.Error}"));
+    }
+
+    public void Dispose() => Jobs.Changed -= OnJob;
+}

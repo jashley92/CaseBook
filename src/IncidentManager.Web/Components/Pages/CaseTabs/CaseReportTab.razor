@@ -80,11 +80,13 @@
             <button class="btn btn-sm btn-outline-secondary" @onclick="TogglePreview">
                 <span class="bi bi-eye me-1"></span>@(State.ShowPreview ? "Hide preview" : "Preview")
             </button>
-            <button class="btn btn-sm btn-primary ms-2" @onclick="Generate">
+            <button class="btn btn-sm btn-primary ms-2" @onclick="Generate" disabled="@(_job?.Busy == true)">
                 Generate draft
             </button>
             <span class="ms-2 small text-muted">Reports are Word documents, generated as drafts. Approve one below to make it the locked final. If someone needs a PDF, save the final as PDF in Word.</span>
             @if (_reportMsg is not null) { <div class="small text-muted mt-1">@_reportMsg</div> }
+            @* RD-23: generation runs in the background; its progress shows here. *@
+            <ReportJobProgress @ref="_job" CaseId="CaseId" Kind="ReportKind.Case" OnDone="OnGenerated" />
         </div>
     </div>
 
@@ -262,13 +264,18 @@
             await SaveProfile();
             if (_profileDirty) return; // the save failed and said why; don't generate against the old profile
         }
-        IncidentManager.Domain.Entities.Report report;
-        try { report = await Reports.GenerateAsync(CaseId, _tlp, template: TemplateChoice); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't generate the report. {ex.Message}"); return; }
-        _reportMsg = $"Generated draft {report.FileName} (SHA-256 {report.ContentSha256[..12]}…)";
+        // RD-23: queued and generated in the background, as you; the toast and the list below say when it's ready.
+        _reportMsg = null;
+        if (_job is not null) await _job.Start(_tlp, TemplateChoice);
+    }
+
+    private IncidentManager.Web.Components.Shared.ReportJobProgress? _job;
+
+    private async Task OnGenerated(IncidentManager.Web.BackgroundJobs.ReportJob j)
+    {
+        _reportMsg = $"Generated draft {j.FileName}";
         await LoadReports();
         await OnCaseChanged.InvokeAsync();
-        Toasts.Success("Draft generated");
     }
 
     private async Task ApproveReport(Guid reportId)

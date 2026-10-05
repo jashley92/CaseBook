@@ -99,6 +99,9 @@ builder.Services.AddHostedService<DigestHostedService>();
 // --- PROD-15: quarterly executive report email (last quarter's program figures to managers). Off by default. ---
 builder.Services.Configure<ExecutiveReportOptions>(builder.Configuration.GetSection("Notifications:ExecutiveReport"));
 builder.Services.AddHostedService<ExecutiveReportHostedService>();
+// RD-23: case and lessons-learned reports generate in the background, as the person who asked.
+builder.Services.AddSingleton<ReportJobs>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ReportJobs>());
 
 // --- F-18: outbound security-event stream. Transports fan out from a background dispatcher. ---
 builder.Services.AddHttpClient("siem");

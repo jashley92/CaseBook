@@ -304,8 +304,10 @@ else
         <span class="small text-muted">@Tlp.Meaning(_tlp)</span>
     </div>
     <div class="d-flex gap-2 mb-2">
-        <button class="btn btn-sm btn-primary" @onclick="GenerateReport" disabled="@_saving">Generate draft</button>
+        <button class="btn btn-sm btn-primary" @onclick="GenerateReport" disabled="@(_saving || _job?.Busy == true)">Generate draft</button>
     </div>
+    @* RD-23: generation runs in the background; its progress shows here. *@
+    <ReportJobProgress @ref="_job" CaseId="CaseId" Kind="ReportKind.LessonsLearned" OnDone="OnGenerated" />
 </AuthorizeView>
 <StoredReportTable Reports="_reports" EmptyText="No lessons-learned report generated yet." OnApprove="ApproveReport" />
 
@@ -598,22 +600,18 @@ else
     private List<IncidentManager.Application.Admin.ReportTemplateView>? _templates;
     private TlpLevel _tlp => _tlpChoice ?? ReportingOpts.CurrentValue.EffectiveDefaultTlp;
 
+    // RD-23: queued and generated in the background, as you; the toast and the list say when it's ready.
     private async Task GenerateReport()
     {
-        _saving = true;
-        try
-        {
-            var r = await Reports.GenerateLessonsAsync(CaseId, _tlp,
-                template: Guid.TryParse(_wordTemplate, out var tid) ? tid : null);
-            _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
-            Toasts.Success($"Generated {r.FileName}");
-            await OnChanged.InvokeAsync();
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
-        {
-            Toasts.Error(ex.Message);
-        }
-        finally { _saving = false; }
+        if (_job is not null) await _job.Start(_tlp, Guid.TryParse(_wordTemplate, out var tid) ? tid : null);
+    }
+
+    private IncidentManager.Web.Components.Shared.ReportJobProgress? _job;
+
+    private async Task OnGenerated(IncidentManager.Web.BackgroundJobs.ReportJob j)
+    {
+        _reports = await Reports.ListAsync(CaseId, ReportKind.LessonsLearned);
+        await OnChanged.InvokeAsync();
     }
 
     private async Task ApproveReport(Guid reportId)

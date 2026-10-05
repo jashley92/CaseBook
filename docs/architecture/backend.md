@@ -162,8 +162,9 @@ scope per cycle, and log and continue on failure. In a background scope the "use
 | `DigestHostedService` | Per-user digest | 5 min poll; 1 h | `Notifications:DigestScan:*` | off |
 | `ExecutiveReportHostedService` | Quarterly figures to managers, first 7 days of a quarter | hourly | `Notifications:ExecutiveReport:Enabled` | off |
 | `SecurityEventDispatcher` | Drain the SIEM queue to each enabled transport | continuous | `Siem:*` | idle unless a transport is enabled |
+| `ReportJobs` (RD-23) | Generate a case or lessons-learned report someone asked for, in its own scope with that person's identity (their permissions, need-to-know and audit attribution); one at a time, progress in memory for an hour | on request | none | on |
 
-**No job changes case state** (verified: no scanner saves; the only job write is the integrity seal).
+**No job changes case state** (verified: no scanner saves; the only scheduled write is the integrity seal). `ReportJobs` writes only the report a person asked for, as that person; generating never approves.
 
 Caveats:
 

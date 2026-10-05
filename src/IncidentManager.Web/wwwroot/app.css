@@ -3113,3 +3113,9 @@ a.im-find-quote:hover { text-decoration: underline; }
 @media (min-width: 1400px) { .page.has-beside #main-content { padding-right: calc(min(38rem, 40vw) + 1.5rem) !important; } }
 @media (max-width: 1399.98px) { .im-beside { --im-beside-w: min(36rem, 100vw); box-shadow: -12px 0 32px rgba(0, 0, 0, .3); } }
 @media print { .im-beside, .im-casetabs { display: none; } }
+
+/* RD-23: a report generating in the background. */
+.im-reportjob { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .75rem; margin-top: .6rem; padding: .5rem .75rem;
+    border: 1px solid var(--im-border); border-radius: var(--im-radius); background: var(--im-surface-2); font-size: var(--im-text-sm); }
+.im-reportjob-bar { flex: 1 1 10rem; height: .4rem; min-width: 6rem; }
+.im-reportjob.is-failed { border-color: var(--im-danger); color: var(--im-danger); }

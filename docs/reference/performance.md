@@ -27,7 +27,7 @@ worse.
 | **Integrity monitor** | **Every 10 minutes it loads the entire audit log** and recomputes every hash. | Linear in audit rows. At hundreds of thousands of rows this becomes noticeable CPU and memory every 10 minutes; incremental verification from the last seal isn't implemented. |
 | **Compliance bundle** | Loads the whole chain into memory to verify it, then writes the segment. | Same growth as above. |
 | **Evidence re-hash** | Reads every stored file on its interval. | I/O heavy; off by default; schedule it for quiet hours via the interval. |
-| **Report generation** | Builds the model, renders diagrams with SkiaSharp, writes Word. | A case with very large timelines or graphs takes seconds; it runs on the circuit, so the user waits. |
+| **Report generation** | Builds the model, renders diagrams with SkiaSharp, writes Word. | A case with very large timelines or graphs takes seconds. It runs in the background (`ReportJobs`, one at a time), so nobody waits on the page; a queue of many large reports finishes in order. |
 | **Indicators page** | Capped at 300 rows. | |
 | **Audit and access-log CSV** | Capped at 100,000 rows, silently. | Large ranges are truncated. |
 | **Graph** | vis-network in the browser; positions saved per drag. | Hundreds of nodes get slow to lay out. |
