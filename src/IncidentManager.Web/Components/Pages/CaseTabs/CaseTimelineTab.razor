@@ -48,7 +48,7 @@
 
 <div class="tl-toolbar">
     <div class="im-seg" role="group" aria-label="Timeline lens">
-        <button class="btn btn-sm @(_tlLens is null && !_msOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens is null && !_msOnly)"
+        <button class="btn btn-sm @(_tlLens is null && !_msOnly && !_notesOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens is null && !_msOnly && !_notesOnly)"
                 title="The full chronology: what happened, what the team did, and the response milestones, interleaved."
                 @onclick="() => SwitchLens(null)">All <span class="tl-count">@(CurrentEntries.Count() + Milestones().Count)</span></button>
         <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Event)"
@@ -64,8 +64,12 @@
         <button class="btn btn-sm @(_decOnly ? "active" : "")" aria-pressed="@Ui.Aria(_decOnly)"
                 title="Decisions, each with why it was made, what else was considered and who decided."
                 @onclick="SwitchToDecisions">Decisions <span class="tl-count">@CurrentEntries.Count(x => x.Type == TimelineEntryType.Decision)</span></button>
+        @* RD-08: the working notes, off the record, as a lens of it (the Notes tab is gone). *@
+        <button class="btn btn-sm @(_notesOnly ? "active" : "")" aria-pressed="@Ui.Aria(_notesOnly)"
+                title="Working notes: reasoning as you go, off the record and out of the report until put on the record."
+                @onclick="SwitchToNotes">Working notes <span class="tl-count">@Case.Notes.Count(n => n.IsCurrent)</span></button>
     </div>
-    @if (totalAll > 0)
+    @if (totalAll > 0 && !_notesOnly)
     {
         @if (!_msOnly)
         {
@@ -118,7 +122,7 @@
         </AuthorizeView>
     }
 </div>
-@if (totalAll > 0 && !_msOnly && FiltersShown)
+@if (totalAll > 0 && !_msOnly && !_notesOnly && FiltersShown)
 {
     <div class="tl-filters" id="tl-filter-row">
         @if (_tlLens is null)
@@ -462,7 +466,7 @@
 
 
 @* The attack chain is a first-party kill-chain view; a third-party/vendor case (E-32) has none. *@
-@if (_tlLens != TimelineKind.Investigation && !_msOnly && tlChain.Count > 0 && !IsThirdParty)
+@if (_tlLens != TimelineKind.Investigation && !_msOnly && !_notesOnly && tlChain.Count > 0 && !IsThirdParty)
 {
     <div class="killchain-wrap mb-3 @(_showKillChain ? "" : "killchain-collapsed")">
         @* INV-26: folded, it's one line — the tactics in order — so the history below stays in view. *@
@@ -530,7 +534,12 @@
     </div>
 }
 
-@if (totalAll == 0)
+@if (_notesOnly)
+{
+    <CaseNotesTab @ref="_notesList" CaseId="CaseId" Notes="Case.Notes" Entities="Case.Entities" Tasks="Case.ActionItems" CanEdit="CanEdit"
+                  Promoted="PromotedSources" OnChanged="OnChanged" FlashClass="FlashClass" FlashStyle="FlashStyle" FocusNoteId="FocusNoteId" />
+}
+else if (totalAll == 0)
 {
     <div class="empty-state">
         <div class="empty-state-icon"><span class="bi bi-clock-history" aria-hidden="true"></span></div>
@@ -1293,10 +1302,18 @@ else
             })
             .ToArray();
 
+    private async Task OpenNotesNow()
+    {
+        await SwitchToNotes();
+        await OnOpenNotesHandled.InvokeAsync();
+        StateHasChanged();
+    }
+
     /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — submit whichever composer is active.</summary>
     public async Task SubmitAsync()
     {
         if (!CanEdit) return;
+        if (_notesOnly && _notesList is { IsEditing: true } list) { await list.SubmitAsync(); return; }
         if (_tlEditId is not null)
         {
             if (_tlAddKind == TimelineKind.Event) await SaveEventEdit(); else await SaveInvestigationEdit();
@@ -1417,6 +1434,7 @@ else
         _msOnly = false;
         _decOnly = false;
         _keyOnly = false;
+        _notesOnly = false;
         _tlLens = lens;
         if (lens is { } k) { _tlAddKind = k; _special = null; }   // a focused lens drives what the composer adds
         ClearTimelineFilters();
@@ -1775,6 +1793,10 @@ else
             _tlAddKind = TimelineKind.Investigation;
             _composerOpen = true;
         }
+        if (OpenNotes && !_notesOnly)
+        {
+            _ = OpenNotesNow();
+        }
         if (PresetEntityFilter != _appliedPreset)
         {
             _appliedPreset = PresetEntityFilter;
@@ -1880,6 +1902,26 @@ else
         e.Kind == TimelineKind.Event || e.Type is TimelineEntryType.Decision or TimelineEntryType.Handoff;
     private static bool IsKeyMilestone(CaseMilestone m) =>
         m.Kind is not (MilestoneKind.TaskDone or MilestoneKind.EvidenceAdded);
+
+    // --- RD-08: the Working notes lens ---
+    private bool _notesOnly;
+    private CaseNotesTab? _notesList;
+    /// <summary>A note to bring into view (a mention email links to it).</summary>
+    [Parameter] public Guid? FocusNoteId { get; set; }
+    /// <summary>Open on the Working notes lens (a link to a note, or the 'n' shortcut).</summary>
+    [Parameter] public bool OpenNotes { get; set; }
+    [Parameter] public EventCallback OnOpenNotesHandled { get; set; }
+
+    // The notes already put on the record, so the list can say so (INV-07).
+    private IReadOnlySet<string> PromotedSources =>
+        Case.TimelineEntries.Where(e => e.IsCurrent && e.PromotedFrom is not null).Select(e => e.PromotedFrom!).ToHashSet();
+
+    private async Task SwitchToNotes()
+    {
+        await SwitchLens(null);
+        _notesOnly = true;
+        SetMode(ComposerMode.Note);   // the composer, if opened here, writes a working note
+    }
 
     private async Task SwitchToDecisions()
     {

@@ -1,9 +1,7 @@
-@* Case workspace — Notes tab (UX-13, interwoven pass). Markdown notes with versioned edits (U-35). This
-   tab owns its two EasyMDE editors (the add composer + the in-place edit editor): it reconciles them in its
-   own OnAfterRenderAsync via the shared markdownEditor JS API and tears them down on dispose, so the parent's
-   central editor reconcile no longer carries a Notes branch. Cross-tab concerns stay in the parent and are
-   threaded in: live-collab flash (delegates), a Reload after a write (OnChanged), and the case hotkeys —
-   the parent calls SubmitAsync() via @ref for Ctrl/⌘+Enter, and sets AutofocusComposer for the 'n' shortcut.
+@* RD-08: the working notes, shown as the Timeline's "Working notes" lens (the Notes tab is gone). Markdown notes with
+   versioned edits (U-35). New notes are written in the timeline composer's Working note mode; this list owns the
+   in-place edit editor only, reconciled via the shared markdownEditor JS API and torn down on dispose. A note stays
+   off the record until someone chooses "Put on the record", which adds an investigation entry that remembers it.
    INV-37: a note can @mention teammates (people who can see the case) to point them at it; they're emailed a link to
    the note. There are no replies: the conversation happens in the team's chat. *@
 @implements IAsyncDisposable
@@ -14,30 +12,14 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 
-<AuthorizeView Policy="@Policies.EditCases">
-    @* Phones: the composer folds behind a button so the notes start near the top. The editor redraws itself
-       when it becomes visible (autoRefresh). *@
-    <button type="button" class="btn btn-sm btn-outline-primary mb-3 d-sm-none" aria-expanded="@Ui.Aria(ComposerShown)"
-            aria-controls="note-add-form" @onclick="() => _composerOpen = !ComposerShown">
-        <span class="bi @(ComposerShown ? "bi-chevron-up" : "bi-plus-lg") me-1" aria-hidden="true"></span>@(ComposerShown ? "Hide form" : "Add note")
-    </button>
-    <div id="note-add-form" class="card mb-3 @(ComposerShown ? "" : "im-phone-collapsed")">
-        <div class="card-body">
-            <label class="form-label small mb-1" for="@NoteAddEditorId">Note <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, lists, links · <code>@@</code> to mention a teammate · <code>[[</code> to tag an entity</span></label>
-            @* EasyMDE enhances this textarea (managed in OnAfterRenderAsync); value pulled on Add. *@
-            <ComposerHint>Working notes: findings and reasoning as you go. Not in the case report unless its report profile includes Analyst Notes. <code>@@</code>mentioned teammates are emailed a link to the note.</ComposerHint>
-            <textarea id="@NoteAddEditorId" class="form-control mb-2"></textarea>
-            <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="AddNote">Add note</button>
-        </div>
-    </div>
-</AuthorizeView>
-
+<p class="small text-muted mb-2"><span class="bi bi-journal-text me-1" aria-hidden="true"></span>Working notes are off the record: not on the timeline
+    and not in the case report unless its layout includes analyst notes. Put one on the record when it matters.</p>
 @if (Notes.Count == 0)
 {
     <div class="empty-state">
         <div class="empty-state-icon"><span class="bi bi-journal-text" aria-hidden="true"></span></div>
-        <div class="empty-state-title">No notes yet</div>
-        <div class="empty-state-msg">Record findings and reasoning here. Notes print in the case report, and edits keep every prior version.</div>
+        <div class="empty-state-title">No working notes yet</div>
+        <div class="empty-state-msg">Write one with the composer's Working note mode. Edits keep every earlier version.</div>
     </div>
 }
 else
@@ -76,7 +58,8 @@ else
                         <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => StartNoteEdit(n)">Edit</button>
                         @if (!IsPromoted(n))
                         {
-                            <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => _promoting = n.Id">Add to timeline</button>
+                            <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => _promoting = n.Id"
+                                    title="Add it to the investigation timeline as an entry; the note itself stays as it is">Put on the record</button>
                         }
                         @* HR-17: a note's follow-up becomes a task that remembers the note. *@
                         <button class="btn btn-sm btn-link p-0 ms-2" @onclick="() => _taskFor = _taskFor == n.Id ? null : n.Id">
@@ -102,7 +85,7 @@ else
                     }
                     @if (IsPromoted(n))
                     {
-                        <span class="im-badge im-b-info ms-2"><span class="bi bi-clock-history" aria-hidden="true"></span> On the timeline</span>
+                        <span class="im-badge im-b-info ms-2"><span class="bi bi-clock-history" aria-hidden="true"></span> On the record</span>
                     }
                     @if (_promoting == n.Id)
                     {
@@ -116,9 +99,6 @@ else
 }
 
 @code {
-    private bool _composerOpen;
-    // The 'n' shortcut (AutofocusComposer) opens it too, so the keyboard path never lands on a hidden editor.
-    private bool ComposerShown => _composerOpen || AutofocusComposer;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<AnalystNote> Notes { get; set; } = [];
     /// <summary>The case's entities/IOCs, offered as inline "[[" tags in the note editors.</summary>
@@ -159,12 +139,6 @@ else
     /// <summary>Live-collab flash hooks (parent owns the flash state); render a note's flash class / hue.</summary>
     [Parameter] public Func<Guid, string?>? FlashClass { get; set; }
     [Parameter] public Func<Guid, string?>? FlashStyle { get; set; }
-    /// <summary>The 'n' shortcut: focus the composer once it's mounted, then signal the parent to clear the flag.</summary>
-    [Parameter] public bool AutofocusComposer { get; set; }
-    [Parameter] public EventCallback OnAutofocusHandled { get; set; }
-    /// <summary>FR-02: parent-owned draft store (survives tab switches). The add composer stashes its
-    /// unsubmitted text here on teardown and re-seeds from it on remount, so hopping tabs doesn't lose a note.</summary>
-    [Parameter] public Dictionary<string, string>? ComposerDrafts { get; set; }
     /// <summary>INV-37: a note to bring into view (a mention email links to it). Any version of it may be named.</summary>
     [Parameter] public Guid? FocusNoteId { get; set; }
 
@@ -192,11 +166,9 @@ else
         return false;
     }
 
-    private string NoteAddEditorId => $"note-md-{CaseId}";
     private static string NoteEditEditorId(Guid noteId) => $"noteedit-md-{noteId}";
     private readonly HashSet<string> _mdEditors = new();  // element ids of currently-mounted EasyMDE instances
 
-    private string _noteBody = "";
     private Guid? _editNoteId;
     private string _editNoteBody = "";
 
@@ -212,26 +184,14 @@ else
             catch (JSException) { /* best effort */ }
         }
 
-        // U-14: place the caret in the composer when reached via the 'n' shortcut (once it's mounted).
-        if (AutofocusComposer && _mdEditors.Contains(NoteAddEditorId))
-        {
-            try { await JS.InvokeVoidAsync("markdownEditor.focus", NoteAddEditorId); }
-            catch (JSException) { /* editor not ready; harmless */ }
-            await OnAutofocusHandled.InvokeAsync();
-        }
     }
 
-    // Reconcile this tab's EasyMDE editors (add composer + the in-place edit editor) against what's needed.
-    // Id-keyed via the shared markdownEditor JS API; the seed value applies on first mount only.
+    // Reconcile the in-place edit editor against what's needed. Id-keyed via the shared markdownEditor JS API; the
+    // seed value applies on first mount only.
     private async Task ReconcileEditors()
     {
         var desired = new Dictionary<string, string>();
-        if (CanEdit)
-        {
-            // FR-02: on (re)mount, seed the add composer from a stashed draft if one survived a tab switch.
-            desired[NoteAddEditorId] = ComposerDrafts?.GetValueOrDefault(NoteAddEditorId) ?? _noteBody ?? "";
-            if (_editNoteId is { } nid) desired[NoteEditEditorId(nid)] = _editNoteBody ?? "";
-        }
+        if (CanEdit && _editNoteId is { } nid) desired[NoteEditEditorId(nid)] = _editNoteBody ?? "";
 
         foreach (var id in _mdEditors.Where(id => !desired.ContainsKey(id)).ToList())
         {
@@ -257,27 +217,13 @@ else
             })
             .ToArray();
 
-    /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — submit whichever composer is active.</summary>
+    /// <summary>A note is being edited in place (Ctrl/⌘+Enter saves it).</summary>
+    public bool IsEditing => _editNoteId is not null;
+
+    /// <summary>Ctrl/⌘+Enter from the timeline: save the note being edited.</summary>
     public async Task SubmitAsync()
     {
-        if (!CanEdit) return;
-        if (_editNoteId is not null) await SaveNoteEdit(); else await AddNote();
-    }
-
-    private async Task AddNote()
-    {
-        try { _noteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteAddEditorId); }
-        catch (JSException) { /* editor not mounted; fall back to bound value */ }
-        if (string.IsNullOrWhiteSpace(_noteBody)) return;
-        var mentions = await MentionsIn(NoteAddEditorId);
-        try { await Cases.AddNoteAsync(CaseId, _noteBody, mentions); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException) { Toasts.Error($"Couldn't add the note. {ex.Message}"); return; }
-        _noteBody = "";
-        ComposerDrafts?.Remove(NoteAddEditorId); // FR-02: the draft is now saved
-        await OnChanged.InvokeAsync();
-        Toasts.Success("Note added");
-        try { await JS.InvokeVoidAsync("markdownEditor.setValue", NoteAddEditorId, ""); }
-        catch (JSException) { /* best effort */ }
+        if (CanEdit && _editNoteId is not null) await SaveNoteEdit();
     }
 
     // The teammates whose "@Name" appears in the editor's text (an edit keeps its earlier mentions; only new ones notify).
@@ -315,23 +261,8 @@ else
         Toasts.Success("Note updated");
     }
 
-    // FR-02: capture the add composer's unsubmitted text into the parent-owned store before teardown, so a
-    // tab switch preserves it. Best-effort: if the editor/circuit is already gone, there's nothing to save.
-    private async Task StashDraft()
-    {
-        if (ComposerDrafts is null) return;
-        try
-        {
-            var val = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteAddEditorId);
-            if (!string.IsNullOrWhiteSpace(val)) ComposerDrafts[NoteAddEditorId] = val;
-            else ComposerDrafts.Remove(NoteAddEditorId);
-        }
-        catch { /* editor not mounted or circuit tearing down — nothing to stash */ }
-    }
-
     public async ValueTask DisposeAsync()
     {
-        await StashDraft();
         foreach (var id in _mdEditors)
         {
             try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); }

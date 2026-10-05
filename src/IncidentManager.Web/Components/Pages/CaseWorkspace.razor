@@ -429,7 +429,8 @@ else
                          FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts"
                          ChangedSinceUtc="_timelineSince" OnClearSince="() => _timelineSince = null"
                          PresetEntityFilter="_timelineEntity" OnOpenEntity="OpenEntity"
-                         AutofocusComposer="_timelineAutofocus" OnAutofocusHandled="() => _timelineAutofocus = false" />
+                         AutofocusComposer="_timelineAutofocus" OnAutofocusHandled="() => _timelineAutofocus = false"
+                         FocusNoteId="QNote" OpenNotes="_openNotes" OnOpenNotesHandled="() => _openNotes = false" />
         @* U-32: a floating "jump to what just arrived" pill when a collaborator adds timeline entries. *@
         @if (_newTimelineIds.Count > 0)
         {
@@ -456,15 +457,6 @@ else
         <CaseEvidenceTab CaseId="_case.Id" EvidenceItems="_case.Evidence" Citations="_case.Citations" OnPreview="OpenShot" OnOpenEvidence="OpenEvidence"
                          OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" CanEdit="_canEdit" Tasks="_case.ActionItems"
                          BriefText="@CurrentBriefText()" />
-    }
-    else if (_activeTab == "Notes")
-    {
-        @* UX-13: extracted to CaseNotesTab. It owns its EasyMDE editors (so the central reconcile no longer
-           carries a Notes branch); the parent keeps the flash + the Ctrl+Enter / 'n' hotkeys (dispatched to
-           the child via @ref / AutofocusComposer) and reloads the case after a write. *@
-        <CaseNotesTab @ref="_notesTab" CaseId="_case.Id" Notes="_case.Notes" Entities="_case.Entities" Tasks="_case.ActionItems" CanEdit="_canEdit" Promoted="PromotedSources()"
-                      OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts"
-                      AutofocusComposer="_notesAutofocus" OnAutofocusHandled="() => _notesAutofocus = false" FocusNoteId="QNote" />
     }
     else if (_activeTab == "Tasks")
     {
@@ -776,7 +768,9 @@ else
     /// <summary>INV-37: deep-link one note (a mention email's link): <c>?tab=Notes&amp;note={guid}</c> brings it into view.</summary>
     [SupplyParameterFromQuery(Name = "note")] public Guid? QNote { get; set; }
 
-    private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Notes", "Tasks", "Review", "Report", "Audit"];
+    // RD-08: the Notes tab is gone; working notes are the Timeline's "Working notes" lens (?tab=Notes still opens it).
+    private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Tasks", "Review", "Report", "Audit"];
+    private bool _openNotes;
     private string _activeTab = "Overview";
 
     // UX-19: each tab string is the stable routing key (?tab=, inline entity-chip deep-links, TabCount /
@@ -929,8 +923,6 @@ else
 
     // Notes: the tab is extracted to CaseNotesTab (UX-13), which owns its editors + note state. The parent
     // keeps a ref for hotkey dispatch (Ctrl+Enter submit) and a flag for the 'n' focus shortcut.
-    private CaseNotesTab? _notesTab;
-    private bool _notesAutofocus;
     private bool _timelineAutofocus;   // INV-14
     private bool _tasksAutofocus;      // INV-14
 
@@ -1098,7 +1090,7 @@ else
         foreach (var x in _case.TimelineEntries.Where(t => t.IsCurrent)) yield return new FeedItem(x.Id, "Timeline", "timeline entry");
         foreach (var x in _case.Entities) yield return new FeedItem(x.Id, "Entities", "entity");
         foreach (var x in _case.Evidence) yield return new FeedItem(x.Id, "Evidence", "evidence item");
-        foreach (var x in _case.Notes.Where(n => n.IsCurrent)) yield return new FeedItem(x.Id, "Notes", "note");
+        foreach (var x in _case.Notes.Where(n => n.IsCurrent)) yield return new FeedItem(x.Id, "Timeline", "note");
         foreach (var x in _case.ActionItems) yield return new FeedItem(x.Id, "Tasks", "task");
     }
 
@@ -1163,7 +1155,8 @@ else
         // Honor an explicit ?tab=, otherwise refresh whatever tab is already active. The Id can change
         // under a reused component (e.g. following an "also in" cross-case link) while the active tab
         // stays the same, so always reload the active tab's data rather than only on a tab-name change.
-        var tab = _tabs.FirstOrDefault(t => string.Equals(t, QTab, StringComparison.OrdinalIgnoreCase)) ?? _activeTab;
+        var tab = string.Equals(QTab, "Notes", StringComparison.OrdinalIgnoreCase) ? "Notes"
+            : _tabs.FirstOrDefault(t => string.Equals(t, QTab, StringComparison.OrdinalIgnoreCase)) ?? _activeTab;
         await SetTab(tab);
         // U-30: a fresh case view starts with a clean slate — nothing is "new" until a collaborator acts.
         _flash.Clear();
@@ -1249,6 +1242,8 @@ else
 
     private async Task SetTab(string tab)
     {
+        // RD-08: working notes live in the Timeline's lens.
+        if (string.Equals(tab, "Notes", StringComparison.OrdinalIgnoreCase)) { _openNotes = true; tab = "Timeline"; }
         _activeTab = tab;
         // U-30: viewing a tab clears its "new" pulse; any items flashing there fade a moment after they're seen.
         _newOnTab.Remove(tab);
@@ -2359,9 +2354,6 @@ else
         await SetTab("Timeline");
     }
 
-    // INV-07: the notes and comments already put on the timeline, so their tabs can say so.
-    private IReadOnlySet<string> PromotedSources() => _case is null ? new HashSet<string>()
-        : _case.TimelineEntries.Where(e => e.IsCurrent && e.PromotedFrom is not null).Select(e => e.PromotedFrom!).ToHashSet();
     private Guid? _watchedHeadFor;
 
     // A stage-gate "Fix" link (from the Overview readiness card or a gate dialog): close any dialog and go to
@@ -2399,7 +2391,6 @@ else
             "Timeline" => _case.TimelineEntries.Count,
             "Entities" => _case.Entities.Count,
             "Evidence" => _case.Evidence.Count,
-            "Notes" => _case.Notes.Count(x => x.IsCurrent),
             "Tasks" => _case.ActionItems.Count(a => a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled),
             _ => -1
         };
@@ -2758,9 +2749,6 @@ else
             if (!_canEdit) return;
             switch (_activeTab)
             {
-                case "Notes":
-                    if (_notesTab is not null) await _notesTab.SubmitAsync();
-                    break;
                 case "Timeline":
                     if (_timelineTab is not null) await _timelineTab.SubmitAsync();
                     break;
@@ -2784,7 +2772,8 @@ else
 
         if (cmd == "note" && _canEdit)
         {
-            _notesAutofocus = true;        // CaseNotesTab focuses its composer once mounted, then clears this
+            // RD-08: 'n' opens the composer in Working note mode on the Timeline's notes lens.
+            _timelineAutofocus = true;
             await SetTab("Notes");
             StateHasChanged();
         }
