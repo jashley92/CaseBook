@@ -17,10 +17,15 @@
     var open = CaseNext.Open(Case, now);
 }
 
-<aside class="im-nownext" aria-label="Now and next">
-    <CaseBriefCard @ref="_brief" Pane="true" Case="Case" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged"
-                   OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
+<aside class="im-nownext @(Show is "now" or "next" ? "is-phone" : "")" aria-label="@(Show switch { "now" => "Now", "next" => "Next", _ => "Now and next" })">
+    @if (Show != "next")
+    {
+        <CaseBriefCard @ref="_brief" Pane="true" Case="Case" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged"
+                       OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
+    }
 
+    @if (Show != "now")
+    {
     <section class="im-nn-sec" aria-labelledby="nn-next-h">
         <div class="im-nn-head">
             <h2 class="im-nn-h" id="nn-next-h">Next</h2>
@@ -87,8 +92,17 @@
                 {
                     var why = Why(t);
                     var late = t.IsOverdue(now);
+                    var task = t;
                     <li>
-                        <button type="button" class="im-nn-task" @onclick='() => OnFocusTask.InvokeAsync(t.Id)'>@t.Title</button>
+                        <div class="im-nn-task-row">
+                            <button type="button" class="im-nn-task" @onclick='() => OnFocusTask.InvokeAsync(task.Id)'>@t.Title</button>
+                            @if (CanEdit && _doneFor != t.Id)
+                            {
+                                @* RD-25: record a result from here, without going to the Tasks part. *@
+                                <button type="button" class="btn btn-link btn-sm p-0 im-nn-done" @onclick="() => BeginDone(task)"
+                                        aria-label="@($"Done: {t.Title}")">Done…</button>
+                            }
+                        </div>
                         <div class="im-nn-task-meta">
                             @if (why is { } w) { <WhyChip Icon="@w.Icon" Text="@w.Text" Title="@w.Title" /> }
                             <span>@(string.IsNullOrWhiteSpace(t.Owner) ? "Unassigned" : Users.DisplayFor(t.Owner))</span>
@@ -98,6 +112,22 @@
                                 <span class="@(late ? "im-nn-late" : "")" title="@TimeDisp.Long(due)">@(late ? "overdue · " : "")@TimeDisp.Brief(due, now)</span>
                             }
                         </div>
+                        @if (_doneFor == t.Id)
+                        {
+                            <div class="im-nn-doneform">
+                                <label class="form-label small mb-1" for="nn-result-@t.Id">What came of it (optional)</label>
+                                <textarea id="nn-result-@t.Id" class="form-control form-control-sm im-rec" rows="3" maxlength="8000" @bind="_result" @bind:event="oninput"></textarea>
+                                <div class="form-check small mt-1">
+                                    <input class="form-check-input" type="checkbox" id="nn-log-@t.Id" @bind="_logIt" disabled="@string.IsNullOrWhiteSpace(_result)" />
+                                    <label class="form-check-label" for="nn-log-@t.Id">Put the result on the record too</label>
+                                </div>
+                                <div class="d-flex gap-2 mt-1">
+                                    <button type="button" class="btn btn-sm btn-primary" disabled="@_saving" @onclick="() => Done(task)">Mark done</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _doneFor = null">Cancel</button>
+                                </div>
+                                @if (_doneError is not null) { <div class="text-danger small mt-1" role="alert">@_doneError</div> }
+                            </div>
+                        }
                     </li>
                 }
             </ul>
@@ -135,6 +165,10 @@
         }
     </section>
 
+    }
+
+    @if (Show != "now")
+    {
     <section class="im-nn-sec" aria-labelledby="nn-team-h">
         <div class="im-nn-head">
             <h2 class="im-nn-h" id="nn-team-h">Team</h2>
@@ -168,14 +202,12 @@
         }
     </section>
 
-    @{
         var key = Case.Entities
             .Where(e => e.IsPinned || e.Disposition is EntityDisposition.Malicious or EntityDisposition.Compromised or EntityDisposition.Suspicious)
             .OrderByDescending(e => e.IsPinned)
             .ThenBy(e => e.Disposition switch { EntityDisposition.Malicious => 0, EntityDisposition.Compromised => 1, EntityDisposition.Suspicious => 2, _ => 3 })
             .Take(6).ToList();
         var review = EntityMentions.NeedingReview(Case).Take(2).ToList();
-    }
     @if (key.Count > 0 || review.Count > 0)
     {
         <section class="im-nn-sec" aria-labelledby="nn-ent-h">
@@ -202,6 +234,7 @@
             }
         </section>
     }
+    }
 </aside>
 
 @code {
@@ -220,6 +253,40 @@
     [Parameter] public EventCallback OnShowReadiness { get; set; }
     [Parameter] public EventCallback OnAssign { get; set; }
     [Parameter] public EventCallback<CaseAssignment> OnUnassign { get; set; }
+    /// <summary>RD-25: on a phone the case's Now and Next are separate tabs: "now", "next", or both (the pane).</summary>
+    [Parameter] public string Show { get; set; } = "both";
+
+    // RD-25: completing a task, with its result, from Next.
+    private Guid? _doneFor;
+    private string? _result, _doneError;
+    private bool _logIt;
+
+    private void BeginDone(ActionItem t)
+    {
+        _doneFor = t.Id;
+        _result = null;
+        _logIt = false;
+        _doneError = null;
+    }
+
+    private async Task Done(ActionItem t)
+    {
+        _saving = true;
+        _doneError = null;
+        try
+        {
+            var logAs = _logIt && !string.IsNullOrWhiteSpace(_result) ? TimelineEntryType.Analysis : (TimelineEntryType?)null;
+            await Cases.CompleteActionItemAsync(Case.Id, t.Id, null, _result, logAs);
+            _doneFor = null;
+            Toasts.Success(logAs is null ? "Task done" : "Task done; the result is on the record");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
+        {
+            _doneError = ex.Message;
+        }
+        finally { _saving = false; }
+    }
 
     private const int TasksShown = 6;
     private CaseBriefCard? _brief;

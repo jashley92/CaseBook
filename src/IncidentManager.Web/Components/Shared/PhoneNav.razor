@@ -1,0 +1,31 @@
+@* RD-25 (Casefile): on a phone, the places you go most sit along the bottom: Desk, Cases and Find (the activity bell
+   stays in the top bar). A case has its own bottom tabs instead, so this steps aside there. Administration and the
+   import queue say they're done at a desk. Hidden from 768px up (CSS). *@
+@implements IDisposable
+@inject NavigationManager Nav
+
+@{
+    var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
+    var parts = path.Split('/');
+    var onCase = parts.Length == 2 && parts[0].Equals("cases", StringComparison.OrdinalIgnoreCase) && Guid.TryParse(parts[1], out _);
+    var deskOnly = path.StartsWith("admin", StringComparison.OrdinalIgnoreCase) || path.Equals("cases/import", StringComparison.OrdinalIgnoreCase);
+}
+@if (deskOnly)
+{
+    <p class="im-phone-deskonly im-phone-deskonly-page">This is done at a desk. You can look, but the layout needs a wider screen to work well.</p>
+}
+@if (!onCase)
+{
+    <div class="im-phone-spacer" aria-hidden="true"></div>
+    <nav class="im-phone-nav" aria-label="Main">
+        <NavLink href="desk" Match="NavLinkMatch.All"><span class="bi bi-person-workspace" aria-hidden="true"></span><span>Desk</span></NavLink>
+        <NavLink href="cases" Match="NavLinkMatch.All"><span class="bi bi-folder2-open" aria-hidden="true"></span><span>Cases</span></NavLink>
+        <NavLink href="find" Match="NavLinkMatch.All"><span class="bi bi-search" aria-hidden="true"></span><span>Find</span></NavLink>
+    </nav>
+}
+
+@code {
+    protected override void OnInitialized() => Nav.LocationChanged += OnLocation;
+    private void OnLocation(object? s, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+    public void Dispose() => Nav.LocationChanged -= OnLocation;
+}

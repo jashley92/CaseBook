@@ -234,6 +234,9 @@ else
             }
             @PrimaryAct(slim: false)
         </div>
+        @* RD-25: on a phone the acts that need room are left to a desk, and it says so. *@
+        <p class="im-phone-deskonly">On a phone you can read, log, answer questions and finish tasks. Phase changes, gates,
+            closing and reports are done at a desk.</p>
     </div>
 
     @* INV-38 / RD-03: the case's state as one line: rung, severity, phase and how long, outcome, the flags that
@@ -413,6 +416,19 @@ else
        doesn't force an extra remount. *@
     @* INV-12: on wide screens the case's context sits beside every tab. *@
     <div class="ws-body @(PaneShown ? "ws-body-pane" : "")">
+    @if (PhoneNowNext)
+    {
+        <CaseNowNext Show="@(_phoneTab == "Now" ? "now" : "next")" Case="_case" TaskResults="_taskResults" Notify="_notifyDeadlines" Readiness="_readinessEval" CanEdit="_canEdit"
+                     OnChanged="Reload" OnGoToTab="async t => { _phoneTab = null; await SetTab(t); }" OnShowSince="ShowSinceAt" OnOpenEntity="OpenEntity"
+                     OnFocusTask='async id => { _phoneTab = null; await FocusItem(("Tasks", id)); }' OnAddTask="async () => { _phoneTab = null; await AddTaskFromPane(); }"
+                     OnShowReadiness="ShowReadiness" OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
+    }
+    else
+    {
+    if (_phone && ActiveView == "Paper")
+    {
+        <p class="im-phone-deskonly is-shown">Reports are generated and approved at a desk. You can read what's here.</p>
+    }
     <div class="tabbody" @key="_activeTab">
     @* REL-01: a per-tab error boundary. Because .tabbody is @key'd on the active tab, switching tabs mounts
        a fresh boundary — so a tab that throws shows a contained "this tab couldn't load" fallback (the case
@@ -522,6 +538,7 @@ else
     </ErrorContent>
     </ErrorBoundary>
     </div>@* /.tabbody *@
+    }
     @* RD-04: Now and Next beside every tab, where there's room. *@
     @if (PaneShown)
     {
@@ -531,6 +548,11 @@ else
                      OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
     }
     </div>@* /.ws-body *@
+    @if (_phone)
+    {
+        <div class="im-phone-spacer" aria-hidden="true"></div>
+        @PhoneTabs()
+    }
 
     @* Action modal — rendered outside the tab blocks so Actions works on every tab. RD-15: a change of rung, severity
        or phase is a sheet under the header instead (below). *@
@@ -2501,6 +2523,64 @@ else
         return InvokeAsync(StateHasChanged);
     }
 
+    // --- RD-25: phone layout. A case opens on Now; Now · Record · Next · Things are tabs along the bottom (with More for
+    // Tasks, Briefing and Paper). Acts that need room (phase changes, gates, closing, reports) say they're done at a desk.
+    private bool _phone;
+    private string? _phoneTab;          // "Now" or "Next" while one of those is showing; null = the active view
+    private bool _phoneMore;
+    private Guid _phoneOpenedFor;
+
+    [JSInvokable]
+    public Task OnPhoneChanged(bool phone)
+    {
+        if (_phone == phone) return Task.CompletedTask;
+        _phone = phone;
+        if (phone && _phoneOpenedFor != Id)
+        {
+            _phoneOpenedFor = Id;
+            if (string.IsNullOrEmpty(QTab) && QEntry is null && QNote is null && QEntity is null && QEvidence is null) _phoneTab = "Now";
+        }
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private bool PhoneNowNext => _phone && _phoneTab is "Now" or "Next";
+
+    private string PhoneActive => _phoneTab ?? (ActiveView is "Record" or "Things" ? ActiveView : "More");
+
+    private async Task PhoneGo(string tab)
+    {
+        _phoneMore = false;
+        if (tab is "Now" or "Next") { _phoneTab = tab; return; }
+        _phoneTab = null;
+        await SetView(tab);
+    }
+
+    private RenderFragment PhoneTabs() => __builder =>
+    {
+        <nav class="im-phone-casetabs" aria-label="Case">
+            @if (_phoneMore)
+            {
+                <div class="im-phone-more" role="menu">
+                    @foreach (var v in new[] { "Tasks", "Briefing", "Paper" })
+                    {
+                        var view = v;
+                        <button type="button" role="menuitem" class="@(_phoneTab is null && ActiveView == v ? "active" : "")" @onclick="() => PhoneGo(view)">@v</button>
+                    }
+                </div>
+            }
+            @foreach (var (tab, icon) in new[] { ("Now", "bi-lightbulb"), ("Record", "bi-clock-history"), ("Next", "bi-list-check"), ("Things", "bi-diagram-3") })
+            {
+                var t = tab;
+                <button type="button" class="@(PhoneActive == t ? "active" : "")" aria-current="@(PhoneActive == t ? "page" : null)" @onclick="() => PhoneGo(t)">
+                    <span class="bi @icon" aria-hidden="true"></span><span>@t</span>
+                </button>
+            }
+            <button type="button" class="@(PhoneActive == "More" ? "active" : "")" aria-expanded="@Ui.Aria(_phoneMore)" @onclick="() => _phoneMore = !_phoneMore">
+                <span class="bi bi-three-dots" aria-hidden="true"></span><span>More</span>
+            </button>
+        </nav>
+    };
+
     private async Task AddTaskFromPane()
     {
         _tasksAutofocus = true;
@@ -2971,6 +3051,9 @@ else
             // RD-04: whether the Now/Next pane fits beside the tab.
             try { await JS.InvokeVoidAsync("imMedia.watch", _dotNetRef, "(min-width: 1200px)"); }
             catch (JSException) { /* without it the pane shows, as on a wide screen */ }
+            // RD-25: phone layout below 768px.
+            try { await JS.InvokeVoidAsync("imMedia.watch", _dotNetRef, "(max-width: 767.98px)", "OnPhoneChanged"); }
+            catch (JSException) { /* without it the desktop layout shows */ }
         }
 
         // Phones: the tab strip scrolls sideways, so keep the active tab in view after it changes.

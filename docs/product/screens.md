@@ -38,6 +38,12 @@ browser's local zone because the profile menu was set to *Local*; stored times a
 
 The sidebar collapses to icons (the `«` button), and below 641 px it becomes a top bar with a menu button.
 
+**On a phone** (below 768 px) Desk, Cases and Find sit along the bottom. A case opens on **Now** (the brief), with
+**Now · Record · Next · Things** along the bottom and **More** for Tasks, Briefing and Paper. Next lists the
+obligations and open tasks; *Done…* on a task records its result (and can put it on the record) without leaving
+it. What needs room says so instead of offering a cramped form: phase changes, gates, closing and reports are done
+at a desk, and so are administration and the import queue.
+
 ## Dashboard
 
 ![Leadership dashboard](../screenshots/dashboard.png)

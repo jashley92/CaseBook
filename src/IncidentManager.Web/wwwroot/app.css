@@ -3127,3 +3127,39 @@ a.im-find-quote:hover { text-decoration: underline; }
 .im-keys-group th { padding-top: .9rem; font-size: var(--im-text-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--im-text-muted); font-weight: 600; }
 .im-keys-input { font-family: var(--im-font-data); }
 .im-keys-input.is-off { text-decoration: line-through; color: var(--im-text-muted); }
+
+/* RD-25: phones. A case opens on Now, with Now · Record · Next · Things (and More) along the bottom; elsewhere Desk,
+   Cases and Find. Acts that need room say they're done at a desk. 44px targets. */
+.im-phone-casetabs, .im-phone-nav, .im-phone-spacer, .im-phone-deskonly { display: none; }
+@media (max-width: 767.98px) {
+    .im-phone-spacer { display: block; height: calc(3.75rem + env(safe-area-inset-bottom, 0px)); }
+    .im-phone-casetabs, .im-phone-nav {
+        display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        background: var(--im-surface); border-top: 1px solid var(--im-border-strong);
+    }
+    .im-phone-casetabs > button, .im-phone-nav > a {
+        flex: 1 1 0; min-height: 3.25rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .1rem;
+        border: 0; background: none; color: var(--im-text-muted); font-size: .72rem; text-decoration: none; margin: 0 !important;
+    }
+    .im-phone-casetabs > button .bi, .im-phone-nav > a .bi { font-size: 1.15rem; }
+    .im-phone-casetabs > button.active, .im-phone-nav > a.active { color: var(--im-accent-text); font-weight: 600; box-shadow: inset 0 2px 0 var(--im-accent); }
+    .im-phone-more { position: absolute; right: .5rem; bottom: calc(100% + .4rem); display: grid; min-width: 11rem;
+        background: var(--im-surface); border: 1px solid var(--im-border-strong); border-radius: var(--im-radius-lg); box-shadow: var(--im-shadow-lg, 0 8px 24px rgba(0,0,0,.3)); }
+    .im-phone-more > button { min-height: 2.75rem; border: 0; background: none; text-align: left; padding: 0 1rem; color: var(--im-text); }
+    .im-phone-more > button.active { font-weight: 600; color: var(--im-accent-text); }
+    .im-phone-deskonly { display: block; margin: .5rem 0 0; font-size: var(--im-text-sm); color: var(--im-text-muted); }
+    .im-phone-deskonly-page { margin: 0 0 1rem; padding: .6rem .8rem; border: 1px dashed var(--im-border-strong); border-radius: var(--im-radius); }
+    /* The view bar, the Actions menu and the header's primary act give way to the bottom tabs and the note above. */
+    .im-workspace-tabs, .im-ch-acts .dropdown, .im-ch-acts > .btn-primary, .ws-slim .btn-primary { display: none !important; }
+    .im-nownext.is-phone { border: 0; background: none; margin-top: 0; }
+    .im-nn-done, .im-nn-task { min-height: 2.75rem; }
+}
+.im-nn-task-row { display: flex; align-items: baseline; gap: .5rem; }
+.im-nn-task-row .im-nn-task { flex: 1 1 auto; }
+.im-nn-done { flex: 0 0 auto; font-size: .78rem; }
+.im-nn-doneform { margin-top: .4rem; }
+/* RD-25: grid children that hold text or tables shrink to the screen instead of widening the page. */
+.im-desk-main > *, .im-desk-side > *, .im-find-main > *, .im-find-side > * { min-width: 0; }
+.im-desk-need-body { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 767.98px) { .btn-group { flex-wrap: wrap; } }

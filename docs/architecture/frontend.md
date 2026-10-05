@@ -65,7 +65,9 @@ appears under `/admin/settings/other`. Each section has one Save bar; leaving wi
   menu), integrity and evidence-drift banners for administrators, an `ErrorBoundary` around the page (reset on
   navigation), and the singletons rendered once per circuit: `ToastHost`, `CommandPalette`, `IdleGuard`.
 - **`Layout/NavMenu.razor`**: groups and items as in [the screen tour](../product/screens.md#navigation-shell),
-  each gated with `AuthorizeView`. Collapses to icons on desktop (state saved per user); below 641 px it becomes
+  each gated with `AuthorizeView`. Below 768 px `Shared/PhoneNav.razor` adds Desk, Cases and Find along the bottom (a
+  case has its own bottom tabs from `CaseWorkspace`, which watches `(max-width: 767.98px)` through `imMedia` and shows
+  `CaseNowNext` with `Show="now"` or `"next"`). Collapses to icons on desktop (state saved per user); below 641 px it becomes
   a top bar with a CSS-only menu toggle.
 - **Open-case tabs** (`Shared/CaseTabStrip.razor`, `Services/CaseTabsState`): the user's open cases from
   `CaseTabsService` (stored per user), each tab holding only header state and the URL last used in the case.

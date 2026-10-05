@@ -193,3 +193,5 @@ a.sla-line:hover { filter: brightness(1.05); }
     .kpi-lead { grid-column: auto; }
     .rt-grid { grid-template-columns: 1fr; }
 }
+/* RD-25: phones have no hover, and the hidden tooltips at the axis ends widened the page. */
+@media (max-width: 767.98px) { .col-tip { display: none; } .col { min-width: 0; overflow: hidden; } }
