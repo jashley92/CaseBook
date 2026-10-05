@@ -2734,3 +2734,27 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 
 .im-why { display: inline-flex; align-items: center; gap: .25rem; height: 1.15rem; padding: 0 .35rem; border: 1px solid var(--im-border); border-radius: .3rem; font-size: .7rem; color: var(--im-text-muted); background: var(--im-surface); white-space: nowrap; }
 .im-why .bi { font-size: .7rem; }
+
+/* RD-03 (Casefile) two-line case header. */
+.im-ch .im-casehead-line { align-items: center; margin-bottom: .25rem; }
+.im-ch .im-casehead-line h1 { font-size: 1rem; margin: 0; }
+.im-ch .im-casehead-num { font-size: .82rem; font-weight: 500; color: var(--im-text-muted); border: 1px solid var(--im-border-strong); border-radius: .35rem; padding: .05rem .4rem; background: transparent; }
+.im-ch .im-casehead-line .im-casehead-title { font-size: 1.2rem; font-weight: 600; color: var(--im-text); letter-spacing: -.005em; }
+.im-casehead-state { gap: .35rem 1.1rem; }
+.im-casehead-state .im-state-words { gap: .9rem; align-items: center; }
+.im-casehead-state .im-flags { gap: .2rem 1rem; align-items: center; }
+.im-flags > span::before { display: none; }
+.im-flags > span { display: inline-flex; align-items: center; gap: .3rem; }
+.im-flags > span .bi { font-size: .8rem; color: var(--im-text-muted); }
+.im-flags > .im-flag-hot { color: var(--im-text); }
+.im-flags > .im-flag-hot .bi { color: var(--im-danger); }
+.im-ch-clock { margin-left: auto; }
+.ws-slim .im-ch-clock { margin-left: 0; }
+.ws-slim .im-sevmark, .ws-slim .im-rungmark { font-size: var(--im-text-sm); }
+/* Phase segments in the Casefile look: earlier phases muted, the current one brass and taller. Hover still names them. */
+.im-phase-seg { width: 1.1rem; height: 5px; border-radius: 1.5px; }
+.im-phase-seg.done { background: var(--im-text-muted); opacity: 1; }
+.im-phase-seg.cur { background: var(--im-accent); height: 7px; }
+.im-phase-seg.cur:hover, .im-phase-seg.cur:focus-visible { background: var(--im-accent-bg); color: var(--im-accent-text); }
+.im-phase-seg.done:hover, .im-phase-seg.done:focus-visible { background: var(--im-surface-2); color: var(--im-text); }
+@media (max-width: 640px) { .im-ch-acts .im-ch-label { display: none; } }

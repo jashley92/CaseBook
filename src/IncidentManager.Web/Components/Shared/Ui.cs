@@ -457,6 +457,9 @@ public static class Ui
         return st.State is SlaState.Met or SlaState.Missed ? $"{SlaLabel(st.State)} · {timing}" : timing;
     }
 
+    /// <summary>RD-03: a duration in hours as compact text ("5h", "1d 6h", "&lt;1h"), for clocks.</summary>
+    public static string Hours(double hours) => HoursText(hours);
+
     // Compact hours/days phrasing for SLA deltas (e.g. 30 → "1d 6h", 5 → "5h", 0.5 → "<1h").
     private static string HoursText(double hours)
     {

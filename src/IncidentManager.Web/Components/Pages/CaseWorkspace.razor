@@ -90,7 +90,9 @@ else
     }
     @* FR-17: wrap so the action group (Advance / Actions) drops below the title on a phone instead of
        overflowing the row and forcing whole-page horizontal scroll. *@
-    <div id="ws-head" class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+    @* RD-03: a two-line header. Line 1 is identity and the acts (presence, pin, hand off, the overflow menu and the one
+       primary act the state calls for); line 2 is state, ending with the most urgent clock. *@
+    <div id="ws-head" class="im-ch d-flex justify-content-between align-items-start flex-wrap gap-2">
         <div class="im-casehead-main">
             @* INV-02: the case number and its title share one line, and the state (badges, phase, next step)
                shares the next, so the tabs start about half as far down the page. *@
@@ -133,26 +135,20 @@ else
         </div>
         @* ms-auto: when a long case number pushes these onto their own line they stay at the right edge, so the
            right-anchored Actions menu opens into view instead of off the left of the screen. *@
-        <div class="d-flex align-items-center gap-2 ms-auto">
+        <div class="im-ch-acts d-flex align-items-center gap-2 ms-auto">
             <CasePresence CaseId="_case.Id" />
-            @* INV-02: the next step sits with the case's actions, so the phase stepper fits beside the badges. *@
-            @if (_canEdit && NextPhase() is { } np)
-            {
-                <button class="btn btn-sm btn-primary" @onclick="() => AdvanceTo(np)">Advance to @Ui.Label(np) →</button>
-            }
-            @if (_canEdit && _case.Phase == CasePhase.Closed)
-            {
-                <button class="btn btn-sm btn-outline-primary" @onclick='() => OpenModal("reopen")'>
-                    <span class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></span>Reopen case
-                </button>
-            }
-            @* PROD-20: pin this case so it's one keystroke away (palette) and on My Work. Personal, any viewer. *@
             <button type="button" class="btn btn-sm @(_isPinned ? "btn-warning" : "btn-outline-secondary")"
                     title="@(_isPinned ? "Unpin this case" : "Pin this case for quick access")"
                     aria-pressed="@Ui.Aria(_isPinned)" aria-label="@(_isPinned ? "Unpin this case" : "Pin this case")"
                     @onclick="TogglePin">
                 <span class="bi @(_isPinned ? "bi-pin-angle-fill" : "bi-pin-angle")" aria-hidden="true"></span>
             </button>
+            @if (_canEdit)
+            {
+                <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Hand off" title="Hand off the case" @onclick='() => OpenModal("handoff")'>
+                    <span class="bi bi-arrow-left-right" aria-hidden="true"></span><span class="im-ch-label ms-1">Hand off</span>
+                </button>
+            }
             @if (_canAnyAction)
             {
                 <div class="dropdown">
@@ -171,7 +167,6 @@ else
                             {
                                 <button class="dropdown-item" @onclick="AssignToMe">Assign to me</button>
                             }
-                            <button class="dropdown-item" @onclick='() => OpenModal("handoff")'>Hand off…</button>
                             <button class="dropdown-item" @onclick='() => OpenModal("severity")'>Change severity…</button>
                             <button class="dropdown-item" @onclick='() => OpenModal("status")'>Change phase…</button>
                             <button class="dropdown-item" @onclick='() => OpenModal("legal")'>Refer to Legal / Privacy…</button>
@@ -236,12 +231,12 @@ else
                     </div>
                 </div>
             }
+            @PrimaryAct(slim: false)
         </div>
     </div>
 
-    @* INV-38: the case's state as one line that reads as a sentence (classification · severity, the phase, quiet
-       flags). The clocks live in the context panel; an alert chip stands in for them only where the panel isn't
-       beside the tab. *@
+    @* INV-38 / RD-03: the case's state as one line: rung, severity, phase and how long, outcome, the flags that
+       matter, the commander, and the most urgent clock at the end. *@
     <div class="im-casehead-state">@StateLine(slim: false)</div>
 
     @* INV-04: what other people changed since this viewer last had the case open, with a one-click view of it. *@
@@ -288,10 +283,8 @@ else
             <code class="im-casehead-num">@_case.CaseNumber</code>
             @StateLine(slim: true)
             <span class="ws-slim-title text-muted">@_case.Title</span>
-            @if (_canEdit && NextPhase() is { } snp)
-            {
-                <button class="btn btn-sm btn-primary ms-auto" tabindex="-1" @onclick="() => AdvanceTo(snp)">Advance to @Ui.Label(snp) →</button>
-            }
+            <span class="ms-auto"></span>
+            @PrimaryAct(slim: true)
         </div>
     <ul class="nav nav-tabs im-workspace-tabs">
         @foreach (var tab in _tabs)
@@ -2014,7 +2007,8 @@ else
             var cur = Array.IndexOf(phases, c.Phase);
         }
         <span class="im-state-words">
-            <span class="@Ui.ClassificationBadge(c.Classification) im-word">@Ui.Label(c.Classification)</span><span class="im-state-dot" aria-hidden="true">·</span><span class="@Ui.SeverityBadge(c.Severity) im-word">@SevLabels.For(c.Severity)</span>
+            <RungMark Value="c.Classification" Title="@(c.Classification is null ? "Complex Event: not yet classified" : "Classification")" />
+            <SeverityMark Value="c.Severity" Title="Severity" />
         </span>
         <span class="im-phasebar">
             @if (_canEdit && !slim)
@@ -2044,7 +2038,7 @@ else
                         }
                     }
                 </span>
-                <span class="im-phasebar-step">step @(cur + 1) of @phases.Length</span>
+                <span class="im-phasebar-step">@PhaseSince(c)</span>
             }
         </span>
         @* HR-01: what a closed case concluded, beside its phase. *@
@@ -2060,26 +2054,27 @@ else
                 <span class="bi bi-pencil-square" aria-hidden="true"></span> @ac.Changes.Count @(ac.Changes.Count == 1 ? "change" : "changes") after closure
             </button>
         }
-        @* On the Overview the context strip above the brief already shows the clocks, so only the scrolled bar needs it. *@
-        @if ((slim || _activeTab != "Overview") && HeadAlert() is { } alert)
-        {
-            <span class="im-head-alert @(alert.Danger ? "" : "im-head-alert-warn") @(_railOpen ? "" : "im-head-alert-always")" title="@alert.Title">
-                <span class="bi bi-exclamation-triangle-fill" aria-hidden="true"></span> @alert.Text
-            </span>
-        }
         @if (!slim)
         {
             <span class="im-flags">
                 @if (c.Materiality.Status != MaterialityStatus.Undetermined)
                 {
-                    <span class="@(c.Materiality.Status == MaterialityStatus.Material ? "im-flag-hot" : "")" title="Materiality determination">@Ui.Label(c.Materiality.Status)</span>
+                    <span class="@(c.Materiality.Status == MaterialityStatus.Material ? "im-flag-hot" : "")" title="Materiality determination"><span class="bi bi-flag" aria-hidden="true"></span>@Ui.Label(c.Materiality.Status)</span>
                 }
-                @if (c.LegalReferral.IsReferred) { <span>Legal referred</span> }
-                @if (c.LegalHold) { <span class="im-flag-hot">Legal hold</span> }
-                @if (c.IsRestricted) { <span>Restricted</span> }
-                @if (c.IsExercise) { <span title="Tabletop exercise or drill">Exercise</span> }
-                @if (c.IsArchived) { <span>Archived</span> }
+                @if (c.LegalReferral.IsReferred) { <span title="@(c.LegalReferral.ReferredAtUtc is { } ra ? $"Referred {TimeDisp.Short(ra)}" : "Referred to Legal / Privacy")"><span class="bi bi-bank" aria-hidden="true"></span>Referred to Legal</span> }
+                @if (c.LegalHold) { <span class="im-flag-hot"><span class="bi bi-lock" aria-hidden="true"></span>Legal hold</span> }
+                @if (c.IsRestricted) { <span><span class="bi bi-eye-slash" aria-hidden="true"></span>Restricted</span> }
+                @if (c.IsExercise) { <span title="Tabletop exercise or drill"><span class="bi bi-mortarboard" aria-hidden="true"></span>Exercise</span> }
+                @if (c.IsArchived) { <span><span class="bi bi-archive" aria-hidden="true"></span>Archived</span> }
+                @if (!string.IsNullOrWhiteSpace(c.IncidentCommander))
+                {
+                    <span title="Incident commander"><span class="bi bi-person" aria-hidden="true"></span>@Users.DisplayFor(c.IncidentCommander), commander</span>
+                }
             </span>
+        }
+        @if (UrgentClock() is { } uc)
+        {
+            <span class="im-ch-clock"><ClockMark State="uc.State" Label="@uc.Label" Detail="@(slim ? uc.Short : uc.Detail)" Title="@uc.Title" /></span>
         }
     </text>;
 
@@ -2095,25 +2090,65 @@ else
             : _canEdit ? $"{name}{when}. Click to move the case back here." : $"{name}{when}";
     }
 
-    private sealed record HeadAlertInfo(string Text, string Title, bool Danger);
+    private sealed record UrgentClockInfo(SlaState State, string Label, string Detail, string Short, string Title);
 
-    // Something that needs action now: an overdue response clock, or a notification deadline at risk or overdue.
-    // Shown in the header only where the context panel isn't beside the tab (CSS hides it otherwise).
-    private HeadAlertInfo? HeadAlert()
+    // RD-03: the one clock that matters most right now, at the end of the state line: a running notification deadline
+    // first (it's a legal obligation), else the running SLA clock. Stopped clocks stay in the Next pane.
+    private UrgentClockInfo? UrgentClock()
     {
         if (_case is null) return null;
-        if (_notifyDeadlines?.Headline is { IsActive: true, State: SlaState.Breached or SlaState.AtRisk } nh)
-            return new($"Notify {nh.JurisdictionCode}: {Ui.SlaLabel(nh.State).ToLowerInvariant()}",
-                $"Notification to {nh.JurisdictionLabel}" + (nh.DueAtUtc is { } due ? $", due {TimeDisp.Short(due)}" : ""),
-                nh.State == SlaState.Breached);
-        var sla = SlaPolicy.Evaluate(_case.Severity, _case.Phase, _case.DetectedAtUtc, _case.ContainedAtUtc,
-            _case.ResolvedAtUtc, SlaProvider.Current, Clock.UtcNow, _case.Classification);
-        if (sla.State == SlaState.Breached)
+        var now = Clock.UtcNow;
+        if (_notifyDeadlines?.Headline is { IsActive: true } nh)
         {
-            var clock = sla.Clock is { } k ? Ui.SlaClockLabel(k) : "SLA";
-            return new($"{clock}: {Ui.SlaShort(sla)}", $"{clock} is overdue" + (sla.DueAtUtc is { } d ? $" (was due {TimeDisp.Short(d)})" : ""), true);
+            var label = $"Notify {nh.JurisdictionCode}";
+            var timing = nh.Remaining is { } r ? (r >= TimeSpan.Zero ? $"{Ui.Hours(r.TotalHours)} left" : $"{Ui.Hours(-r.TotalHours)} over") : Ui.SlaLabel(nh.State);
+            var due = nh.DueAtUtc is { } d ? TimeDisp.Brief(d, now) : null;
+            return new(nh.State, label, due is null ? timing : $"{timing} · {due}", timing,
+                $"Notification to {nh.JurisdictionLabel} ({nh.WindowHours} h)" + (nh.DueAtUtc is { } dd ? $", due {TimeDisp.Short(dd)}" : ""));
+        }
+        var sla = SlaPolicy.Evaluate(_case.Severity, _case.Phase, _case.DetectedAtUtc, _case.ContainedAtUtc,
+            _case.ResolvedAtUtc, SlaProvider.Current, now, _case.Classification);
+        if (sla.State is SlaState.OnTrack or SlaState.AtRisk or SlaState.Breached)
+        {
+            var label = sla.Clock switch { SlaClock.Containment => "Contain", SlaClock.Resolution => "Resolve", SlaClock.Detection => "Detect", _ => "SLA" };
+            var timing = Ui.SlaTiming(sla);
+            var due = sla.DueAtUtc is { } d && sla.State != SlaState.Breached ? TimeDisp.Brief(d, now) : null;
+            return new(sla.State, label, due is null ? timing : $"{timing} · {due}", timing,
+                (sla.Clock is { } k ? Ui.SlaClockLabel(k) : "SLA") + (sla.DueAtUtc is { } dd ? $", due {TimeDisp.Short(dd)}" : "")
+                + (sla.TargetHours is { } h ? $" (target {h} h)" : ""));
         }
         return null;
+    }
+
+    // RD-03: the one act the case's state calls for. An unclassified event is promoted (or closed); a closed case is
+    // reopened; otherwise the next phase, with "Close the case" once it reaches Post-Incident.
+    private RenderFragment PrimaryAct(bool slim) => @<text>
+        @if (_case is { } c)
+        {
+            var tab = slim ? "-1" : null;
+            @if (c.Classification is null && _canReclassify && c.Phase != CasePhase.Closed)
+            {
+                <button class="btn btn-sm btn-primary" tabindex="@tab" @onclick='() => OpenModal("reclass")'>Promote onto the ladder…</button>
+            }
+            else if (_canEdit && c.Phase == CasePhase.Closed)
+            {
+                <button class="btn btn-sm btn-primary" tabindex="@tab" @onclick='() => OpenModal("reopen")'>
+                    <span class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></span>Reopen case…
+                </button>
+            }
+            else if (_canEdit && NextPhase() is { } np)
+            {
+                <button class="btn btn-sm btn-primary" tabindex="@tab" @onclick="() => AdvanceTo(np)">@(np == CasePhase.Closed ? "Close the case…" : $"Advance to {Ui.Label(np)} →")</button>
+            }
+        }
+    </text>;
+
+    // RD-03: how long the case has been in its phase ("since Tue 29 Sep"), from the effective time it entered it.
+    private string PhaseSince(Case c)
+    {
+        DateTimeOffset? at = c.Phase == CasePhase.New ? c.CreatedAtUtc
+            : c.StatusChanges.Where(x => x.To == c.Phase).OrderByDescending(x => x.EffectiveAt).Select(x => (DateTimeOffset?)x.EffectiveAt).FirstOrDefault();
+        return at is { } t ? $"since {TimeDisp.Brief(t, Clock.UtcNow)}" : "";
     }
 
     // INV-38: tabs keep their places; the ones built at the end (lessons, report) stay quiet until they matter, and

@@ -122,6 +122,20 @@ public sealed class TimeDisplay
         return $"{z.ToString(Hm, Inv)} {OffsetLabel(z.Offset)}";
     }
 
+    /// <summary>
+    /// RD-03: a short stamp that reads as speech, relative to now: within the coming or past six days the weekday
+    /// and time ("Tue 15:02"); otherwise the day and month ("29 Sep"), with the year when it isn't this year
+    /// ("14 Nov 2025"). No zone label: callers put the full stamp (<see cref="Short"/>) in the title.
+    /// </summary>
+    public string Brief(DateTimeOffset ts, DateTimeOffset nowUtc)
+    {
+        var z = ToZone(ts);
+        var n = ToZone(nowUtc);
+        var days = Math.Abs((z.Date - n.Date).TotalDays);
+        if (days < 6) return z.ToString("ddd " + Hm, Inv);
+        return z.Year == n.Year ? z.ToString("ddd d MMM", Inv) : z.ToString("d MMM yyyy", Inv);
+    }
+
     /// <summary>Calendar date in the active zone (no time), for due dates and month labels.</summary>
     public string DateOnly(DateTimeOffset ts) => $"{ToZone(ts):yyyy-MM-dd}";
 
