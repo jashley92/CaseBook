@@ -304,7 +304,15 @@ else
                 </button>
             </li>
         }
-        <li class="nav-item ms-auto im-rail-toggle" hidden="@(_activeTab == "Briefing")">
+        @if (_closeOutOpen && _case.Phase != CasePhase.Closed)
+        {
+            <li class="nav-item">
+                <button class="nav-link im-tab-closeout @(_activeTab == "Closeout" ? "active" : "")" aria-current="@(_activeTab == "Closeout" ? "page" : null)" @onclick="OpenCloseOut">
+                    <span class="bi bi-check2-circle" aria-hidden="true"></span> Close-out
+                </button>
+            </li>
+        }
+        <li class="nav-item ms-auto im-rail-toggle" hidden="@(_activeTab is "Briefing" or "Closeout")">
             <button type="button" class="nav-link" aria-pressed="@Ui.Aria(_railOpen)" @onclick="() => _railOpen = !_railOpen"
                     title="@(_railOpen ? "Hide Now and Next" : "Show Now and Next")">
                 <span class="bi @(_railOpen ? "bi-layout-sidebar-inset-reverse" : "bi-layout-sidebar-reverse")" aria-hidden="true"></span>
@@ -426,6 +434,10 @@ else
                          RetentionMessage="@_retentionMsg" ReadinessEval="_readinessEval" BriefInPane="PaneShown" OnEditBrief="() => _nowNext?.BeginBriefEdit()"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" OnOpenModal="OpenModal"
                          OnFix="FixGateItem" OnGoToTab="SetTab" OnShowSince="ShowSinceAt" RefreshToken="_liveRefresh" />
+    }
+    else if (_activeTab == "Closeout")
+    {
+        @CloseOutView()
     }
     else if (_activeTab == "Timeline")
     {
@@ -582,16 +594,9 @@ else
                         {
                             <label class="form-label small" for="ws-status">New status</label>
                             <select id="ws-status" class="form-select mb-2" @bind="_newPhase" @bind:after="OnStatusTargetChanged">@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
-                            @if (Closing)
-                            {
-                                @ClosingSection()
-                            }
-                            else
-                            {
-                                <label class="form-label small" for="ws-status-reason">@(_case is { } cs && _newPhase > cs.Phase ? "What was achieved" : "Reason") <span class="text-muted">@(_gateEval is { RequiresCommentary: true } || Backdated ? "(required)" : "(optional)")</span></label>
-                                <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
-                                @RationaleHint(_phaseReason)
-                            }
+                            <label class="form-label small" for="ws-status-reason">@(_case is { } cs && _newPhase > cs.Phase ? "What was achieved" : "Reason") <span class="text-muted">@(_gateEval is { RequiresCommentary: true } || Backdated ? "(required)" : "(optional)")</span></label>
+                            <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
+                            @RationaleHint(_phaseReason)
                             @WhenItHappened()
                             @NotificationWarning()
                             @OpenTasksWarning()
@@ -793,7 +798,7 @@ else
     private Guid _partsFor;   // the case the active part was chosen for (a different case starts on its default)
     private readonly Dictionary<string, string> _lastPart = new(StringComparer.Ordinal);
 
-    private static string ViewOf(string part) => _views.FirstOrDefault(v => v.Parts.Contains(part)).View ?? "Record";
+    private static string ViewOf(string part) => part == "Closeout" ? "Close-out" : _views.FirstOrDefault(v => v.Parts.Contains(part)).View ?? "Record";
     private string ActiveView => ViewOf(_activeTab);
 
     // Impact is a Things part from Incident up, or wherever impact has been recorded.
@@ -801,7 +806,7 @@ else
         || c.AffectedIndividualsCount is not null || c.DataElements.Count > 0 || !string.IsNullOrWhiteSpace(c.AffectedStates));
 
     private List<string> PartsShown(string view) =>
-        _views.First(v => v.View == view).Parts.Where(p => p != "Impact" || ImpactMatters || _activeTab == "Impact").ToList();
+        (_views.FirstOrDefault(v => v.View == view).Parts ?? []).Where(p => p != "Impact" || ImpactMatters || _activeTab == "Impact").ToList();
 
     // A closed case opens on its Briefing (the outcome leads); an open one on its Record.
     private string DefaultPart() => _case?.Phase == CasePhase.Closed ? "Briefing" : "Timeline";
@@ -1202,6 +1207,7 @@ else
         // under a reused component (e.g. following an "also in" cross-case link) while the active tab
         // stays the same, so always reload the active tab's data rather than only on a tab-name change.
         // RD-11: a different case opens on its default view.
+        if (_partsFor != Id) _closeOutOpen = false;   // RD-14: a close-out draft belongs to its case
         var tab = ResolvePart(QTab) ?? (_partsFor != Id ? DefaultPart() : _activeTab);
         _partsFor = Id;
         await SetTab(tab);
@@ -1435,6 +1441,12 @@ else
 
     private async Task OnStatusTargetChanged()
     {
+        // RD-14: closing has a view of its own.
+        if (_activeModal == "status" && _newPhase == CasePhase.Closed && _case is { Phase: not CasePhase.Closed })
+        {
+            await OpenCloseOut();
+            return;
+        }
         _attested.Clear();
         _gateOverride = null;
         _gateEval = await LoadGateAsync(StatusTrigger());
@@ -1442,7 +1454,82 @@ else
     }
 
     // --- HR-01: closing records an outcome and the closing brief ---
-    private bool Closing => _activeModal == "status" && _newPhase == CasePhase.Closed && _case is { Phase: not CasePhase.Closed };
+    private bool Closing => _activeTab == "Closeout" && _newPhase == CasePhase.Closed && _case is { Phase: not CasePhase.Closed };
+
+    // --- RD-14: the close-out view ---
+    private bool _closeOutOpen;   // a close-out draft exists (its tab stays in the bar until it's closed or discarded)
+
+    private async Task OpenCloseOut()
+    {
+        if (_case is null || _case.Phase == CasePhase.Closed || !_canEdit) return;
+        _activeModal = null;
+        _modalError = null;
+        if (!_closeOutOpen)
+        {
+            _when = _whenDefault = UtcToWall(Clock.UtcNow);
+            _attested.Clear();
+            _gateOverride = null;
+            _closeOutOpen = true;
+        }
+        _newPhase = CasePhase.Closed;
+        _gateEval = await LoadGateAsync(StageGateTrigger.CloseCase);
+        await PrepareClosingAsync();
+        await SetTab("Closeout");
+    }
+
+    private async Task LeaveCloseOut(bool discard)
+    {
+        if (discard)
+        {
+            _closeOutOpen = false;
+            _closePrefilledFor = null;
+            _closeAiReply = null;
+        }
+        _modalError = null;
+        await SetTab(DefaultPart());
+    }
+
+    private async Task CloseFromView()
+    {
+        _modalError = null;
+        _newPhase = CasePhase.Closed;   // a dialog opened meanwhile may have moved it
+        try
+        {
+            if (await ApplyStatusAsync() is not { } done) return;
+            _closeOutOpen = false;
+            await Reload();
+            Toasts.Success(done);
+            await SetTab("Briefing");
+        }
+        catch (ForbiddenException)
+        {
+            OnForbidden();
+            Toasts.Error(PermissionLostMessage);
+        }
+        catch (GateNotSatisfiedException ex) { _modalError = ex.Message; }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { _modalError = ex.Message; }
+    }
+
+    // A phase change from the dialog, or the close from the close-out view. Null when the input is refused.
+    private async Task<string?> ApplyStatusAsync()
+    {
+        if (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
+        { _modalError = "Enter an override justification for the unmet requirements."; return null; }
+        if (GateRationaleError(Closing ? _closeConclusion : _phaseReason) is { } m2) { _modalError = m2; return null; }
+        var closing = Closing ? new CaseService.CaseClosing(_closeOutcome ?? "", Linked(_closeSummary) ?? "", Linked(_closeConclusion) ?? "") : null;
+        await Cases.ChangePhaseAsync(Id, _newPhase, closing is null ? _phaseReason : null,
+            _attested.Count > 0 ? _attested : null, _gateOverride, EffectiveUtc(), closing: closing);
+        _phaseReason = null;
+        if (closing is not null) _closePrefilledFor = null;
+        return closing is null ? $"Phase changed to {Ui.Label(_newPhase)}"
+            : $"Case closed: {_outcomes.FirstOrDefault(o => o.Key == closing.OutcomeKey)?.Label ?? closing.OutcomeKey}";
+    }
+
+    private bool StatusApplyDisabled => (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
+        || GateRationaleError(Closing ? _closeConclusion : _phaseReason) is not null
+        || _when is null || (Backdated && !Closing && string.IsNullOrWhiteSpace(_phaseReason))
+        || (Closing && (string.IsNullOrWhiteSpace(_closeOutcome) || string.IsNullOrWhiteSpace(_closeSummary)
+                        || string.IsNullOrWhiteSpace(_closeConclusion)));
     private List<IncidentManager.Application.Admin.CaseOutcomeView> _outcomes = [];
     private string? _closeOutcome, _closeSummary, _closeConclusion;
     private readonly Dictionary<string, string> _closeRefs = new(StringComparer.Ordinal);
@@ -1468,48 +1555,90 @@ else
         _closePrefilledFor = _case.Id;
     }
 
-    private RenderFragment ClosingSection() => @<text>
-        <label class="form-label small" for="ws-close-outcome">Outcome <span class="text-muted">(required)</span></label>
-        <select id="ws-close-outcome" class="form-select mb-1" @bind="_closeOutcome">
-            <option value="">Choose what the case concluded…</option>
-            @foreach (var o in _outcomes)
-            {
-                <option value="@o.Key">@o.Label</option>
-            }
-        </select>
-        @if (_outcomes.FirstOrDefault(o => o.Key == _closeOutcome)?.Description is { Length: > 0 } hint)
-        {
-            <div class="form-text mt-0 mb-2">@hint</div>
-        }
-        <label class="form-label small mt-1" for="ws-close-summary">What happened <span class="text-muted">(required · the case summary, printed in the report)</span></label>
-        <textarea id="ws-close-summary" class="form-control mb-2" rows="3" maxlength="@CaseBrief.MaxPartLength"
-                  @bind="_closeSummary" @bind:event="oninput"></textarea>
-        <label class="form-label small" for="ws-close-conclusion">Conclusion <span class="text-muted">(required · what the team concluded, and on what basis; was the working assessment)</span></label>
-        <textarea id="ws-close-conclusion" class="form-control mb-1" rows="3" maxlength="@CaseBrief.MaxPartLength"
-                  placeholder="e.g. Account takeover with preparation for payment fraud. No other user affected; no payment made."
-                  @bind="_closeConclusion" @bind:event="oninput"></textarea>
-        @RationaleHint(_closeConclusion)
-        <div class="small text-muted mb-2">Saved as the brief's closing version. Known and the open questions carry over. <code>[[name]]</code> tags an entity.</div>
-        @ClosingQuestions()
-        @* HR-18: bring-your-own AI. CaseBook only builds the prompt and reads the reply back; the analyst runs it in
-           their organisation's approved tool and edits what it fills in. Nothing is saved until the case closes. *@
-        <details class="im-ai-draft mt-2">
-            <summary class="small">Draft these with your own AI tool</summary>
-            <div class="small text-muted mt-1">
-                Copies a prompt holding this case's record (the brief, the timeline, verdicts and task results) for your
-                organisation's approved AI tool. CaseBook sends nothing anywhere. Paste the reply below and it fills in
-                <em>What happened</em>, <em>Conclusion</em> and the outcome, for you to check and edit.
+    // RD-14: the close-out view. The closing brief and the outcome on the left; readiness, when, warnings and the
+    // act on the right. Its draft stays while you look at the rest of the case (the "Close-out" tab returns to it).
+    private RenderFragment CloseOutView() => @<text>
+        <div class="im-co">
+            <div class="im-co-head">
+                <div>
+                    <h2 class="im-co-h">Close the case</h2>
+                    <p class="im-co-lede">The outcome, what happened and the conclusion become the closing version of the brief and the
+                        report's summary. Nothing is saved until you close.</p>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="() => LeaveCloseOut(false)">Keep the draft and go back</button>
             </div>
-            @if (_case?.IsRestricted == true)
-            {
-                <div class="small text-warning mt-1"><span class="bi bi-lock-fill" aria-hidden="true"></span> This case is restricted to need-to-know. Use a tool approved for that, or write the brief yourself.</div>
-            }
-            <button type="button" class="btn btn-sm btn-outline-secondary mt-2" @onclick="CopyClosingPrompt"><span class="bi bi-clipboard me-1" aria-hidden="true"></span>Copy closing-brief prompt</button>
-            <label class="form-label small mt-2 mb-0" for="ws-close-ai">The AI's reply</label>
-            <textarea id="ws-close-ai" class="form-control form-control-sm" rows="3" @bind="_closeAiReply" @bind:event="oninput"
-                      placeholder="WHAT HAPPENED: … CONCLUSION: … OUTCOME: …"></textarea>
-            <button type="button" class="btn btn-sm btn-outline-primary mt-1" disabled="@string.IsNullOrWhiteSpace(_closeAiReply)" @onclick="UseClosingDraft">Fill in from this reply</button>
-        </details>
+            <div class="im-co-grid">
+                <div class="im-co-main">
+                    <fieldset class="im-co-outcomes">
+                        <legend class="form-label small">Outcome <span class="text-muted">(required)</span></legend>
+                        @foreach (var o in _outcomes)
+                        {
+                            <label class="im-co-outcome @(_closeOutcome == o.Key ? "is-on" : "")">
+                                <input type="radio" name="co-outcome" value="@o.Key" checked="@(_closeOutcome == o.Key)" @onchange="() => _closeOutcome = o.Key" />
+                                <span class="im-co-outcome-label">@o.Label</span>
+                                @if (o.Description is { Length: > 0 } d) { <span class="im-co-outcome-desc">@d</span> }
+                            </label>
+                        }
+                    </fieldset>
+                    <label class="form-label small mt-3" for="ws-close-summary">What happened <span class="text-muted">(required · the case summary, printed in the report)</span></label>
+                    <textarea id="ws-close-summary" class="form-control im-rec mb-2" rows="5" maxlength="@CaseBrief.MaxPartLength"
+                              @bind="_closeSummary" @bind:event="oninput"></textarea>
+                    <label class="form-label small" for="ws-close-conclusion">Conclusion <span class="text-muted">(required · what the team concluded, and on what basis; was the working assessment)</span></label>
+                    <textarea id="ws-close-conclusion" class="form-control im-rec mb-1" rows="4" maxlength="@CaseBrief.MaxPartLength"
+                              placeholder="e.g. Account takeover with preparation for payment fraud. No other user affected; no payment made."
+                              @bind="_closeConclusion" @bind:event="oninput"></textarea>
+                    @RationaleHint(_closeConclusion)
+                    <div class="small text-muted mb-3">Saved as the brief's closing version. Known and the open questions carry over. <code>[[name]]</code> tags an entity.</div>
+                    @ClosingQuestions()
+                    @* HR-18: bring-your-own AI. CaseBook only builds the prompt and reads the reply back; the analyst runs it in
+                       their organisation's approved tool and edits what it fills in. Nothing is saved until the case closes. *@
+                    <details class="im-ai-draft mt-3">
+                        <summary class="small">Draft these with your own AI tool</summary>
+                        <div class="small text-muted mt-1">
+                            Copies a prompt holding this case's record (the brief, the timeline, verdicts and task results) for your
+                            organisation's approved AI tool. CaseBook sends nothing anywhere. Paste the reply below and it fills in
+                            <em>What happened</em>, <em>Conclusion</em> and the outcome, for you to check and edit.
+                        </div>
+                        @if (_case?.IsRestricted == true)
+                        {
+                            <div class="small text-warning mt-1"><span class="bi bi-lock-fill" aria-hidden="true"></span> This case is restricted to need-to-know. Use a tool approved for that, or write the brief yourself.</div>
+                        }
+                        <button type="button" class="btn btn-sm btn-outline-secondary mt-2" @onclick="CopyClosingPrompt"><span class="bi bi-clipboard me-1" aria-hidden="true"></span>Copy closing-brief prompt</button>
+                        <label class="form-label small mt-2 mb-0" for="ws-close-ai">The AI's reply</label>
+                        <textarea id="ws-close-ai" class="form-control form-control-sm" rows="3" @bind="_closeAiReply" @bind:event="oninput"
+                                  placeholder="WHAT HAPPENED: … CONCLUSION: … OUTCOME: …"></textarea>
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-1" disabled="@string.IsNullOrWhiteSpace(_closeAiReply)" @onclick="UseClosingDraft">Fill in from this reply</button>
+                    </details>
+                </div>
+                <aside class="im-co-side" aria-label="Readiness and closing">
+                    <section class="im-co-card">
+                        <h3 class="im-cap">Readiness</h3>
+                        @if (_gateEval is null)
+                        {
+                            <p class="small text-muted mb-0">No checks are set for closing a case at this rung.</p>
+                        }
+                        @GateModalSection()
+                    </section>
+                    <section class="im-co-card">
+                        <h3 class="im-cap">When it closed</h3>
+                        @WhenItHappened()
+                        @NotificationWarning()
+                        @OpenTasksWarning()
+                    </section>
+                    <section class="im-co-card">
+                        <h3 class="im-cap">After closing</h3>
+                        <p class="small mb-0">Closing doesn't lock the case. Anything recorded afterwards is kept, marked as after closure, and
+                            shown on the case and in its audit trail. Reopen it if the work resumes.</p>
+                    </section>
+                    @if (_modalError is { } coErr)
+                    {
+                        <div class="alert alert-danger small py-2 mb-0" role="alert">@coErr</div>
+                    }
+                    <button type="button" class="btn btn-primary" disabled="@StatusApplyDisabled" @onclick="CloseFromView">Close the case</button>
+                    <button type="button" class="btn btn-link btn-sm text-danger p-0" @onclick="() => LeaveCloseOut(true)">Discard the draft</button>
+                </aside>
+            </div>
+        </div>
     </text>;
 
     // --- HR-18: the closing-brief prompt for the analyst's own AI tool ---
@@ -1871,11 +2000,7 @@ else
         "reclass" => string.IsNullOrWhiteSpace(_reclassReason) || _when is null
             || (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
             || GateRationaleError(_reclassReason) is not null,
-        "status" => (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
-            || GateRationaleError(Closing ? _closeConclusion : _phaseReason) is not null
-            || _when is null || (Backdated && !Closing && string.IsNullOrWhiteSpace(_phaseReason))
-            || (Closing && (string.IsNullOrWhiteSpace(_closeOutcome) || string.IsNullOrWhiteSpace(_closeSummary)
-                            || string.IsNullOrWhiteSpace(_closeConclusion))),
+        "status" => StatusApplyDisabled,
         "severity" => _when is null || ((Backdated || (_case is { } sv && _newSeverity > sv.Severity)) && string.IsNullOrWhiteSpace(_severityReason)),   // HR-11
         "handoff" => string.IsNullOrWhiteSpace(_hoTo) || string.IsNullOrWhiteSpace(_hoState),
         _ => false
@@ -1913,16 +2038,8 @@ else
                     done = $"Severity changed to {SevLabels.For(_newSeverity)}";
                     break;
                 case "status":
-                    if (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
-                    { _modalError = "Enter an override justification for the unmet requirements."; return; }
-                    if (GateRationaleError(Closing ? _closeConclusion : _phaseReason) is { } m2) { _modalError = m2; return; }
-                    var closing = Closing ? new CaseService.CaseClosing(_closeOutcome ?? "", Linked(_closeSummary) ?? "", Linked(_closeConclusion) ?? "") : null;
-                    await Cases.ChangePhaseAsync(Id, _newPhase, closing is null ? _phaseReason : null,
-                        _attested.Count > 0 ? _attested : null, _gateOverride, EffectiveUtc(), closing: closing);
-                    _phaseReason = null;
-                    done = closing is null ? $"Phase changed to {Ui.Label(_newPhase)}"
-                        : $"Case closed: {_outcomes.FirstOrDefault(o => o.Key == closing.OutcomeKey)?.Label ?? closing.OutcomeKey}";
-                    _closePrefilledFor = null;
+                    if (await ApplyStatusAsync() is not { } changed) return;
+                    done = changed;
                     break;
                 case "supersede":
                 {
@@ -2304,7 +2421,7 @@ else
     // Whether the viewport is wide enough for the pane (reported by imMedia; assumed until it says otherwise).
     private bool _wide = true;
     // RD-12: the Briefing has the brief and its own obligations, governance and team, so the pane steps aside there.
-    private bool PaneShown => _railOpen && _wide && _activeTab != "Briefing";
+    private bool PaneShown => _railOpen && _wide && _activeTab is not ("Briefing" or "Closeout");
     private CaseNowNext? _nowNext;
 
     /// <summary>RD-04: imMedia reports whether the pane fits (min-width 1200px).</summary>

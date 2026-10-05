@@ -88,7 +88,7 @@ active. Gate edits don't change past passages, which recorded their own outcome.
 
 ## Case outcomes
 
-What a case can conclude, chosen in the close dialog ([closing](case-lifecycle.md#closing-outcome-and-closing-brief))
+What a case can conclude, chosen in the close-out view ([closing](case-lifecycle.md#closing-outcome-and-closing-brief))
 and printed in the report. Six are seeded: Confirmed, Policy violation, Benign or expected, False positive,
 Inconclusive and Duplicate. Each has a stable key (stored on cases, never renamed), a label and a one-line
 description you can change, and a sort order. Added outcomes get a key made from the label ("Insider misuse" →

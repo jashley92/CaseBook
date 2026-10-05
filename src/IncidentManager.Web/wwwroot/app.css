@@ -2966,3 +2966,25 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .tl-mini-legend i.is-resp { background: #2fb8c9; }
 .tl-mini-legend i.is-dec { background: var(--im-accent-strong); border-radius: 1px; transform: rotate(45deg); }
 .tl-tasks-h { flex: 0 0 100%; font-size: var(--im-text-xs); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--im-text-muted); }
+
+/* RD-14: the close-out view. */
+.im-co-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .75rem; margin-bottom: 1.1rem; }
+.im-co-h { font-size: var(--im-text-lg); font-weight: 600; margin: 0 0 .2rem; }
+.im-co-lede { margin: 0; color: var(--im-text-muted); font-size: var(--im-text-sm); max-width: 44rem; }
+.im-co-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+@media (min-width: 1100px) { .im-co-grid { grid-template-columns: minmax(0, 1fr) 22rem; gap: 2rem; } }
+.im-co-main { min-width: 0; max-width: 46rem; }
+.im-co-outcomes { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: .5rem; margin: 0; padding: 0; border: 0; }
+.im-co-outcomes legend { float: left; width: 100%; grid-column: 1 / -1; margin-bottom: .1rem; }
+.im-co-outcome { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .1rem .5rem; align-items: baseline; padding: .55rem .7rem;
+    border: 1px solid var(--im-border); border-radius: var(--im-radius); background: var(--im-surface); cursor: pointer; }
+.im-co-outcome:hover { border-color: var(--im-border-strong); }
+.im-co-outcome.is-on { border-color: var(--im-accent); box-shadow: 0 0 0 1px var(--im-accent); }
+.im-co-outcome input { margin: 0; accent-color: var(--im-accent-strong); }
+.im-co-outcome-label { font-weight: 600; }
+.im-co-outcome-desc { grid-column: 2; font-size: var(--im-text-sm); color: var(--im-text-muted); }
+.im-co-side { display: grid; gap: .9rem; align-content: start; }
+.im-co-card { background: var(--im-surface); border: 1px solid var(--im-border); border-radius: var(--im-radius-lg); padding: .8rem .9rem; }
+.im-co-card h3.im-cap { margin: 0 0 .5rem; }
+.im-co-card > .mt-3:first-of-type { margin-top: 0 !important; }
+.im-tab-closeout .bi { color: var(--im-accent-strong); }

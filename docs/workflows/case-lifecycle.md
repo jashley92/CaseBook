@@ -87,7 +87,7 @@ notification. Severity drives the SLA targets and stale-case thresholds. Timelin
 | | |
 |---|---|
 | **Trigger** | *Advance to <next phase>* in the header, the phase bar, or Actions → *Change phase…* |
-| **The user sees** | Target phase (all seven listed), "What was achieved" (optional when moving forward; required when the close gate demands commentary or when backdated; when closing, the closing fields below replace it), *when it happened*, a warning listing **open tasks** for the phases being left ("You can continue anyway. They stay open."), and when closing with a running notification clock, a warning that closing doesn't stop it. When closing, the **close gate**. ![](../screenshots/doc-phase-dialog.png) |
+| **The user sees** | Target phase (all seven listed), "What was achieved" (optional when moving forward; required when the gate demands commentary or when backdated; choosing **Closed** opens the close-out view below instead), *when it happened*, a warning listing **open tasks** for the phases being left ("You can continue anyway. They stay open."), and when closing with a running notification clock, a warning that closing doesn't stop it. When closing, the **close gate**. ![](../screenshots/doc-phase-dialog.png) |
 | **Behind the scenes** | `CaseService.ChangePhaseAsync` → if the target is Closed, validate the closing record and evaluate the `CloseCase` gate, then write the closing brief → `Case.ChangePhase` → one save. |
 | **Rules** | **Any phase can follow any other**, forwards or backwards. Entering Containment, Recovery and Closed for the first time sets `ContainedAtUtc`, `ResolvedAtUtc` and `ClosedAtUtc` at the effective time; later visits don't move them. Leaving Closed clears `ClosedAtUtc`. Eradication and Post-Incident set no timestamp. |
 | **Permission** | `EditCases` |
@@ -96,11 +96,17 @@ notification. Severity drives the SLA targets and stale-case thresholds. Timelin
 
 ### Closing: outcome and closing brief
 
-A case closes with a conclusion of record. When the target is **Closed**, the dialog asks for:
+A case closes with a conclusion of record, in the **close-out view** (a view of the case, not a dialog): *Close the
+case…* in the header from Post-Incident, Closed in the phase bar, or Closed chosen in *Change phase…*. The left
+column holds the closing record below; the right column the close gate's **readiness** (each check with its *Fix*,
+statements to attest, the override justification), *when it closed*, the notification and open-task warnings, a note
+that closing doesn't lock the case (what's recorded afterwards is marked "after closure"), and **Close the case**.
+The draft stays while you look at the rest of the case: a *Close-out* tab in the bar returns to it until the case
+closes or *Discard the draft*. The view asks for:
 
 | Field | Notes |
 |---|---|
-| **Outcome** (required) | What the case concluded, from the active [case outcomes](administration.md#case-outcomes): Confirmed, Policy violation, Benign or expected, False positive, Inconclusive or Duplicate out of the box. Each shows its description. Stored on the case (`OutcomeKey`) and on the close's `StatusChange`. |
+| **Outcome** (required) | What the case concluded, from the active [case outcomes](administration.md#case-outcomes): Confirmed, Policy violation, Benign or expected, False positive, Inconclusive or Duplicate out of the box, as choices each with its description. Stored on the case (`OutcomeKey`) and on the close's `StatusChange`. |
 | **What happened** (required) | Pre-filled from the brief's summary. Becomes the case summary, which the report prints as Summary. |
 | **Conclusion** (required) | Pre-filled from the brief's working assessment: what the team concluded, and on what basis. It also stands in for the transition reason. |
 | Open questions | The brief's open questions, each with its answer from the task that followed it up, or "No answer recorded" (advisory). |
@@ -109,7 +115,7 @@ A case closes with a conclusion of record. When the target is **Closed**, the di
 Saving writes a new brief version (the **closing brief**: what happened, the conclusion, and Known and the open
 questions carried over) and the phase change in one save, at the same instant, so the brief doesn't read as out of
 date. When nothing changed, no new version is written. The closing fields count as the summary for the gate's
-"Case summary recorded" check. A superseded case's close dialog opens with the outcome *Duplicate* and the
+"Case summary recorded" check. A superseded case's close-out opens with the outcome *Duplicate* and the
 supersede reason as the conclusion.
 
 Errors: "Record the outcome and what the team concluded to close the case." · "Choose an outcome to close the
@@ -160,7 +166,7 @@ backdated. Needs `EditCases`.
 
 Actions → *Supersede as a duplicate…* (not on closed cases): pick the primary case and optionally copy indicators
 it's missing. In one save: a "Duplicate of" link, the copied entities (source "Copied from …"), and a note on each
-case pointing at the other. It **doesn't close** the duplicate; the close dialog then opens pre-filled "Duplicate
+case pointing at the other. It **doesn't close** the duplicate; the close-out view then opens pre-filled "Duplicate
 of …". Needs `EditCases`.
 
 ## 9. Archiving and restoring
