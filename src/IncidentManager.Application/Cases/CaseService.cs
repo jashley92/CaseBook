@@ -2089,6 +2089,31 @@ public sealed class CaseService
 
     /// <summary>INV-25: follows up one of the brief's open questions as a task (unowned, general; the analyst
     /// fills in the rest on the Tasks tab).</summary>
+    /// <summary>
+    /// RD-07: the composer's Question mode. Adds a question to the brief's open questions (a new brief version, so the
+    /// earlier one stays readable) and, when <paramref name="followUp"/> is set, raises the task that follows it up, in
+    /// one save. The question goes on its own list line, so it can be answered there when the task is done.
+    /// </summary>
+    public async Task AddOpenQuestionAsync(Guid caseId, string question, bool followUp, CancellationToken ct = default)
+    {
+        Require();
+        var q = string.Join(' ', (question ?? "").Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+        if (q.StartsWith("- ")) q = q[2..].Trim();
+        if (q.Length == 0) throw new ArgumentException("Write the question.");
+        if (q.Length > ActionItem.MaxTitleLength) throw new ArgumentException($"Keep the question to {ActionItem.MaxTitleLength} characters or fewer.");
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, caseId, ct);
+        await db.CaseBriefs.Where(b => b.CaseId == caseId && b.IsCurrent).ToListAsync(ct);
+        var cur = c.Briefs.FirstOrDefault(b => b.IsCurrent);
+        if (CaseNext.Questions(cur?.OpenQuestions)?.Any(x => string.Equals(x, q, StringComparison.OrdinalIgnoreCase)) == true)
+            throw new InvalidOperationException("That question is already open in the brief.");
+        var open = string.IsNullOrWhiteSpace(cur?.OpenQuestions) ? $"- {q}" : $"{cur!.OpenQuestions!.TrimEnd()}\n- {q}";
+        var nextSteps = CaseNext.Snapshot(c, _clock.UtcNow, u => _users?.DisplayFor(u) ?? u);
+        c.ReviseBrief(c.Summary, cur?.WorkingAssessment, cur?.Known, open, nextSteps, _user.UserId, _clock.UtcNow);
+        if (followUp) c.RaiseTaskFromQuestion(q, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task RaiseTaskFromQuestionAsync(Guid caseId, string question, CancellationToken ct = default)
     {
         Require();

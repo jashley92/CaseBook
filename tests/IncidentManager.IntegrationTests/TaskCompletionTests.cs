@@ -293,6 +293,28 @@ public sealed class TaskCompletionTests : IDisposable
         await again.Should().ThrowAsync<InvalidOperationException>("an open task already follows it up");
     }
 
+    [Fact]
+    public async Task A_question_from_the_composer_joins_the_brief_and_can_be_followed_up_at_once(/* RD-07 */)
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+        await svc.ReviseBriefAsync(caseId, null, "Lure reached Finance", "Opportunistic", "- One session from a foreign ASN", "- Did the lure reach other teams?");
+
+        await svc.AddOpenQuestionAsync(caseId, "Did the other two users' credentials get used?", followUp: true);
+
+        var c = (await svc.GetDetailAsync(caseId))!;
+        var brief = c.Briefs.Single(b => b.IsCurrent);
+        brief.Version.Should().Be(2);
+        brief.OpenQuestions.Should().Be("- Did the lure reach other teams?\n- Did the other two users' credentials get used?");
+        brief.WorkingAssessment.Should().Be("Opportunistic", "the other parts carry over");
+        brief.Known.Should().Be("- One session from a foreign ASN");
+        c.ActionItems.Single(t => t.RaisedFromBriefId == brief.Id).Title.Should().Be("Did the other two users' credentials get used?");
+
+        var again = () => svc.AddOpenQuestionAsync(caseId, "did the other two users' credentials get used?", followUp: false);
+        await again.Should().ThrowAsync<InvalidOperationException>("it's already open");
+        var empty = () => svc.AddOpenQuestionAsync(caseId, "  ", followUp: false);
+        await empty.Should().ThrowAsync<ArgumentException>();
+    }
+
     // --- HR-02: answers stay with their questions ---
 
     private async Task<(CaseService Svc, Guid CaseId, Guid QuestionTaskId, Guid PlainTaskId)> CaseWithQuestionTask()

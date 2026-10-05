@@ -212,20 +212,38 @@
                             @onclick="CancelTimelineEdit">Cancel</button>
                 </div>
             }
-            @if (_tlEditId is null && _tlLens is null)
+            @if (_tlEditId is null)
             {
-                @* All lens: the composer serves both timelines, so pick which to add. *@
-                <div class="d-flex align-items-center gap-2 mb-2">
-                    <span class="text-muted small">Add:</span>
-                    <div class="im-seg" role="group" aria-label="What to add">
-                        <button type="button" class="btn @(_tlAddKind == TimelineKind.Event ? "active" : "")" aria-pressed="@Ui.Aria(_tlAddKind == TimelineKind.Event)"
-                                @onclick="() => SetAddKind(TimelineKind.Event)">@(IsThirdParty ? "Disclosure step" : "Event step")</button>
-                        <button type="button" class="btn @(_tlAddKind == TimelineKind.Investigation ? "active" : "")" aria-pressed="@Ui.Aria(_tlAddKind == TimelineKind.Investigation)"
-                                @onclick="() => SetAddKind(TimelineKind.Investigation)">Investigation entry</button>
-                    </div>
+                @* RD-07: one composer, five modes, for everything written into the case: what we found or did, a decision
+                   with its why, what the adversary (or vendor) did, a question for the brief, or a working note. *@
+                <div class="im-modes mb-2" role="radiogroup" aria-label="What to log">
+                    @foreach (var (m, icon, label) in Modes())
+                    {
+                        var on = CurrentMode == m;
+                        <button type="button" role="radio" aria-checked="@Ui.Aria(on)" class="@(on ? "on" : "")" @onclick="() => SetMode(m)">
+                            <span class="bi @icon" aria-hidden="true"></span> @label
+                        </button>
+                    }
                 </div>
             }
-            @if (_tlAddKind == TimelineKind.Event)
+            @if (_special == ComposerMode.Question && _tlEditId is null)
+            {
+                @* RD-07: a question goes on the brief's open questions (a new brief version), optionally followed up as a task. *@
+                <label class="form-label small mb-1" for="tl-question">What does the team still need to find out?</label>
+                <textarea id="tl-question" class="form-control form-control-sm im-rec" rows="2" maxlength="400" @bind="_question" @bind:event="oninput"
+                          placeholder="e.g. Did the other two users' credentials get used?"></textarea>
+                <div class="form-check small mt-2">
+                    <input class="form-check-input" type="checkbox" id="tl-question-task" @bind="_questionTask" />
+                    <label class="form-check-label" for="tl-question-task">Follow it up as a task, so its answer comes back to the brief</label>
+                </div>
+                <div class="d-flex justify-content-end align-items-center gap-2 mt-2">
+                    <span class="small text-muted me-auto">Saves a new version of the brief with the question added@(_questionTask ? ", and a task" : "").</span>
+                    <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" disabled="@(string.IsNullOrWhiteSpace(_question) || _saving)" @onclick="AddQuestion">
+                        <span class="bi bi-question-circle" aria-hidden="true"></span> Add question
+                    </button>
+                </div>
+            }
+            else if (_tlAddKind == TimelineKind.Event)
             {
                 @if (IsThirdParty)
                 {
@@ -339,17 +357,23 @@
             }
             else
             {
-                @* Investigation = the analyst's working log: response type + Markdown notes. *@
+                @* Investigation = the analyst's working log: response type + Markdown notes. RD-07: a working note uses the
+                   same editor without the record's fields. *@
+                @if (_special != ComposerMode.Note)
+                {
                 <div class="row g-2 align-items-start">
+                    @if (_tlEditId is not null || CurrentMode != ComposerMode.Decision)
+                    {
                     <div class="col-md-3">
                         <label class="form-label small mb-0" for="tl-inv-type">Type</label>
                         <select id="tl-inv-type" class="form-select form-select-sm" @bind="_tlType">
-                            @foreach (var t in InvestigationTypeOptions())
+                            @foreach (var t in InvestigationTypeOptions().Where(t => _tlEditId is not null || t != TimelineEntryType.Decision))
                             {
                                 <option value="@t">@Ui.Label(t)</option>
                             }
                         </select>
                     </div>
+                    }
                     <div class="col-md-3">
                         <label class="form-label small mb-0" for="tl-inv-when">Occurred (@TimeDisp.Label)</label>
                         <input id="tl-inv-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
@@ -360,15 +384,18 @@
                         <input id="tl-inv-source" class="form-control form-control-sm" @bind="_tlSource" placeholder="@($"{DetectionLabel}…")" />
                     </div>
                 </div>
-                <div class="mt-3">
+                }
+                <div class="@(_special == ComposerMode.Note ? "" : "mt-3")">
                     <label class="form-label small mb-1" for="@InvEditorId">
-                        @(IsDecision ? "The decision" : "Notes") <span class="text-muted">· Markdown: headings, <strong>**bold**</strong>, bullet/numbered lists, links · <code>[[</code> to tag an entity</span>
+                        @(_special == ComposerMode.Note ? "Working note" : IsDecision ? "The decision" : "What you found or did") <span class="text-muted">· Markdown · <code>[[</code> to tag an entity@(_special == ComposerMode.Note ? " · " : "")@if (_special == ComposerMode.Note) {<code>@@</code><text> to mention a teammate</text>}</span>
                     </label>
                     @if (_tlEditId is null)
                     {
-                        <ComposerHint>@(IsDecision
+                        <ComposerHint>@(_special == ComposerMode.Note
+                            ? "Working reasoning as you go. Not on the timeline and not in the case report unless its layout includes analyst notes; put it on the record later if it matters. Mentioned teammates are emailed a link."
+                            : IsDecision
                             ? "What was decided. Say why below: the decision and its reasons appear together in the report's investigation timeline. Write facts and reasons; this is part of the case record."
-                            : "What the team did and when: actions, decisions, meetings. Appears in the report's investigation timeline and doesn't notify anyone.")</ComposerHint>
+                            : "What the team found or did, and when. Appears in the report's investigation timeline and doesn't notify anyone.")</ComposerHint>
                     }
                     @* EasyMDE enhances this textarea (managed in this tab's OnAfterRenderAsync); value pulled on Add/Save. *@
                     <textarea id="@InvEditorId" class="form-control"></textarea>
@@ -406,10 +433,16 @@
                         </div>
                     }
                     <div class="mt-2 d-flex justify-content-end gap-2">
-                        @if (_tlEditId is null)
+                        @if (_tlEditId is null && _special == ComposerMode.Note)
+                        {
+                            <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" disabled="@_saving" @onclick="AddNote">
+                                <span class="bi bi-journal-text" aria-hidden="true"></span> Save working note
+                            </button>
+                        }
+                        else if (_tlEditId is null)
                         {
                             <button class="btn btn-sm btn-primary" title="Ctrl / ⌘ + Enter" @onclick="AddTimeline">
-                                <span class="bi bi-plus-lg" aria-hidden="true"></span> Add entry
+                                <span class="bi bi-plus-lg" aria-hidden="true"></span> @(IsDecision ? "Record decision" : "Add to the record")
                             </button>
                         }
                         else
@@ -1138,12 +1171,115 @@ else
             try { await JS.InvokeVoidAsync("markdownEditor.destroy", id); } catch (JSException) { /* ignore */ }
             _mdEditors.Remove(id);
         }
+        // RD-07: @mentions only mean something in a working note (entries don't notify anyone), so the editor offers
+        // them only in that mode; switching re-creates it with the text kept.
+        var wantMentions = _special == ComposerMode.Note;
+        if (_mdEditors.Contains(InvEditorId) && wantMentions != _editorMentions)
+        {
+            string? keep = null;
+            try { keep = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); } catch (JSException) { }
+            try { await JS.InvokeVoidAsync("markdownEditor.destroy", InvEditorId); } catch (JSException) { }
+            _mdEditors.Remove(InvEditorId);
+            if (desired.ContainsKey(InvEditorId)) desired[InvEditorId] = keep ?? "";
+        }
+        if (wantMentions && _mentionsFor != CaseId)
+        {
+            _mentionsFor = CaseId;
+            try { _mentionable = await Cases.MentionableAsync(CaseId); } catch (Exception) { _mentionable = []; }
+        }
         foreach (var (id, seed) in desired)
         {
             if (_mdEditors.Contains(id)) continue;
-            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed, new { entities = EntityCandidates }); _mdEditors.Add(id); }
+            object options = wantMentions
+                ? new { entities = EntityCandidates, mentions = _mentionable.Select(u => (object)new { id = u.UserId, name = u.DisplayName }).ToArray() }
+                : new { entities = EntityCandidates };
+            try { await JS.InvokeVoidAsync("markdownEditor.init", id, seed, options); _mdEditors.Add(id); _editorMentions = wantMentions; }
             catch (JSException) { /* editor is a progressive enhancement */ }
         }
+    }
+
+    // --- RD-07: the composer's five modes ---
+    private enum ComposerMode { Finding, Decision, Adversary, Question, Note }
+    // Question and Note aren't timeline entries; the other three map onto the entry kind and type.
+    private ComposerMode? _special;
+    private ComposerMode CurrentMode => _special
+        ?? (_tlAddKind == TimelineKind.Event ? ComposerMode.Adversary : _tlType == TimelineEntryType.Decision ? ComposerMode.Decision : ComposerMode.Finding);
+    private bool _editorMentions;
+    private IReadOnlyList<IncidentManager.Application.Abstractions.UserSummary> _mentionable = [];
+    private Guid _mentionsFor;
+    private string? _question;
+    private bool _questionTask = true;
+    private bool _saving;
+
+    private IEnumerable<(ComposerMode Mode, string Icon, string Label)> Modes()
+    {
+        yield return (ComposerMode.Finding, "bi-search", "Finding");
+        yield return (ComposerMode.Decision, "bi-signpost-split", "Decision");
+        yield return (ComposerMode.Adversary, "bi-lightning", IsThirdParty ? "Disclosure step" : "Adversary step");
+        yield return (ComposerMode.Question, "bi-question-circle", "Question");
+        yield return (ComposerMode.Note, "bi-journal-text", "Working note");
+    }
+
+    private void SetMode(ComposerMode m)
+    {
+        _special = m is ComposerMode.Question or ComposerMode.Note ? m : null;
+        switch (m)
+        {
+            case ComposerMode.Adversary:
+                _tlAddKind = TimelineKind.Event;
+                break;
+            case ComposerMode.Decision:
+                _tlAddKind = TimelineKind.Investigation;
+                _tlType = TimelineEntryType.Decision;
+                break;
+            default:
+                _tlAddKind = TimelineKind.Investigation;
+                if (_tlType == TimelineEntryType.Decision) _tlType = TimelineEntryType.Analysis;
+                break;
+        }
+    }
+
+    private async Task AddQuestion()
+    {
+        if (string.IsNullOrWhiteSpace(_question) || _saving) return;
+        _saving = true;
+        try
+        {
+            await Cases.AddOpenQuestionAsync(CaseId, _question, _questionTask);
+            _question = null;
+            await OnChanged.InvokeAsync();
+            Toasts.Success(_questionTask ? "Question added to the brief, with a task to answer it" : "Question added to the brief");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task AddNote()
+    {
+        if (_saving) return;
+        string body;
+        try { body = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
+        catch (JSException) { return; }
+        if (string.IsNullOrWhiteSpace(body)) return;
+        string[] mentions = [];
+        try { mentions = await JS.InvokeAsync<string[]>("markdownEditor.getMentions", InvEditorId); } catch (JSException) { }
+        _saving = true;
+        try
+        {
+            await Cases.AddNoteAsync(CaseId, body, mentions);
+            ComposerDrafts?.Remove(InvEditorId);
+            try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); } catch (JSException) { }
+            await OnChanged.InvokeAsync();
+            Toasts.Success(mentions.Length > 0 ? $"Working note saved; {IncidentManager.Application.Common.Plural.Of(mentions.Length, "person", "people")} emailed" : "Working note saved");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
+        finally { _saving = false; }
     }
 
     // The case's entities as inline "[[" tag candidates ({id, value, hint}) for the Investigation editor.
@@ -1165,6 +1301,8 @@ else
         {
             if (_tlAddKind == TimelineKind.Event) await SaveEventEdit(); else await SaveInvestigationEdit();
         }
+        else if (_special == ComposerMode.Question) await AddQuestion();
+        else if (_special == ComposerMode.Note) await AddNote();
         else if (_tlAddKind == TimelineKind.Event) await AddEventStep();
         else await AddTimeline();
     }
@@ -1280,7 +1418,7 @@ else
         _decOnly = false;
         _keyOnly = false;
         _tlLens = lens;
-        if (lens is { } k) _tlAddKind = k;   // a focused lens drives what the composer adds
+        if (lens is { } k) { _tlAddKind = k; _special = null; }   // a focused lens drives what the composer adds
         ClearTimelineFilters();
     }
 
@@ -1290,6 +1428,7 @@ else
     // Load an Event step into the composer for an in-place correction.
     private void StartEventEdit(TimelineEntry e)
     {
+        _special = null;
         _tlAddKind = TimelineKind.Event;
         _evtAttackMode = IsThirdParty && IsAttackStep(e); // FR-24: edit an attack step in attack mode
         _tlEditId = e.Id;

@@ -2846,3 +2846,10 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-evp-transferred { border-color: var(--im-accent); }
 .im-evp-open { font-size: inherit; color: var(--im-text); text-decoration: none; }
 .im-evp-open:hover { color: var(--im-accent-text); text-decoration: underline; }
+
+/* RD-07 (Casefile) the composer's five modes. */
+.im-modes { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: var(--im-radius); background: var(--im-surface-2); border: 1px solid var(--im-border); }
+.im-modes button { border: 0; background: transparent; color: var(--im-text-muted); font-size: .82rem; padding: .25rem .65rem; border-radius: calc(var(--im-radius) - 2px); }
+.im-modes button:hover { color: var(--im-text); }
+.im-modes button.on { background: var(--im-surface); color: var(--im-text); font-weight: 600; box-shadow: 0 0 0 1px var(--im-border-strong), inset 0 -2px 0 var(--im-accent); }
+.im-modes button:focus-visible { outline: 2px solid var(--im-accent); outline-offset: 1px; }
