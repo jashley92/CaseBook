@@ -167,6 +167,44 @@ public sealed class EvidenceService
         return custody;
     }
 
+    /// <summary>RD-06: file types whose start can be shown as text in the evidence drawer.</summary>
+    public static bool IsTextPreviewable(string? contentType, string? fileName)
+    {
+        var ct = (contentType ?? "").ToLowerInvariant();
+        if (ct.StartsWith("text/") || ct is "application/json" or "application/xml" or "application/x-ndjson" or "message/rfc822")
+            return true;
+        var ext = Path.GetExtension(fileName ?? "").ToLowerInvariant();
+        return ext is ".txt" or ".csv" or ".tsv" or ".log" or ".json" or ".ndjson" or ".xml" or ".eml" or ".md" or ".yaml" or ".yml"
+            or ".ini" or ".conf" or ".cfg" or ".evtx.txt" or ".ps1" or ".sh" or ".py" or ".js" or ".html" or ".htm";
+    }
+
+    /// <summary>
+    /// RD-06: the first lines of a text file (up to <paramref name="maxBytes"/>), for the evidence drawer's preview.
+    /// Opening a preview is a deliberate look, so it records a "Viewed" custody event the same way the image preview
+    /// does (folded into a recent view by the same person). Need-to-know applies. Null for files that aren't text,
+    /// including any whose first bytes contain a NUL (binary under a text name).
+    /// </summary>
+    public async Task<string?> PreviewTextAsync(Guid evidenceId, int maxBytes = 4096, CancellationToken ct = default)
+    {
+        var (evidence, stream) = await OpenAsync(evidenceId, recordDownload: false, ct);
+        await using (stream)
+        {
+            if (!IsTextPreviewable(evidence.ContentType, evidence.OriginalFileName)) return null;
+            var buffer = new byte[maxBytes];
+            var read = 0;
+            int n;
+            while (read < maxBytes && (n = await stream.ReadAsync(buffer.AsMemory(read, maxBytes - read), ct)) > 0) read += n;
+            if (buffer.AsSpan(0, read).IndexOf((byte)0) >= 0) return null;
+            var text = System.Text.Encoding.UTF8.GetString(buffer, 0, read);
+            // Keep line breaks and tabs; drop other control characters so nothing odd reaches the page.
+            var clean = new System.Text.StringBuilder(text.Length);
+            foreach (var ch in text)
+                if (ch is '\n' or '\t' || !char.IsControl(ch)) clean.Append(ch);
+            await RecordViewedAsync(evidenceId, ct);
+            return read == maxBytes ? clean.ToString().TrimEnd() + "\n…" : clean.ToString();
+        }
+    }
+
     /// <summary>Loads evidence for a write, enforcing need-to-know on the parent case ("not found" either way).</summary>
     private async Task<Domain.Entities.Evidence> LoadScopedAsync(IAppDbContext db, Guid evidenceId, CancellationToken ct)
     {

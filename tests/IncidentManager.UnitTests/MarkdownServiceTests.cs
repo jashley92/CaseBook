@@ -99,7 +99,7 @@ public class MarkdownServiceTests
 
         var html = _md.ToHtml($"- Session from AS9009 [signin-export.csv](evidence:{evidenceId})", caseId);
 
-        html.Should().Contain("class=\"im-evidence-tag\"").And.Contain($"href=\"/cases/{caseId}?tab=Evidence\"")
+        html.Should().Contain("class=\"im-evidence-tag\"").And.Contain($"href=\"/cases/{caseId}?evidence={evidenceId}\"")
             .And.Contain("signin-export.csv").And.Contain("bi-paperclip");
         _md.ToHtml("[x](evidence:not-a-guid)", caseId).Should().Contain("<span class=\"im-evidence-tag\"").And.NotContain("href");
         _md.ToPlainText($"[signin-export.csv](evidence:{evidenceId})").Should().Contain("signin-export.csv").And.NotContain("evidence:");

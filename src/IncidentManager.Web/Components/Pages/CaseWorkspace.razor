@@ -314,6 +314,8 @@ else
     </div>
 
     @* INV-11: an entity in context, over whatever tab is open. *@
+    <EvidencePanel Case="_case" EvidenceId="_panelEvidence" CanEdit="_canEdit" OnClose="CloseEvidencePanel" OnChanged="Reload"
+                   OnPreviewImage="OpenShot" OnShowCitation="ShowCitation" />
     <EntityPanel Case="_case" EntityId="_panelEntity" OnClose="CloseEntityPanel" CanEdit="_canEdit" OnChanged="Reload"
                           OnShowOnTimeline="ShowEntityOnTimeline" OnGoToTab="EntityPanelGoTo" />
 
@@ -451,7 +453,7 @@ else
         @* UX-13: extracted to CaseEvidenceTab. The screenshot lightbox (OpenShot) + live-collab flash stay
            in this parent and are threaded in; the paste/drop shim is still registered by this component's
            OnAfterRenderAsync against the element IDs the child keeps (evidence-dropzone / -file-input / -file-drop). *@
-        <CaseEvidenceTab CaseId="_case.Id" EvidenceItems="_case.Evidence" Citations="_case.Citations" OnPreview="OpenShot"
+        <CaseEvidenceTab CaseId="_case.Id" EvidenceItems="_case.Evidence" Citations="_case.Citations" OnPreview="OpenShot" OnOpenEvidence="OpenEvidence"
                          OnChanged="Reload" FlashClass="FlashClass" FlashStyle="FlashStyle" CanEdit="_canEdit" Tasks="_case.ActionItems"
                          BriefText="@CurrentBriefText()" />
     }
@@ -768,6 +770,8 @@ else
     /// <summary>Deep-link a specific entity (from an inline entity tag chip): <c>?entity={guid}</c> opens it in the
     /// entity panel (INV-11) over the current tab, and focuses its row when the Entities tab is open.</summary>
     [SupplyParameterFromQuery(Name = "entity")] public Guid? QEntity { get; set; }
+    /// <summary>RD-06: an evidence file to open in its panel (a cited-file chip links here).</summary>
+    [SupplyParameterFromQuery(Name = "evidence")] public Guid? QEvidence { get; set; }
 
     /// <summary>INV-37: deep-link one note (a mention email's link): <c>?tab=Notes&amp;note={guid}</c> brings it into view.</summary>
     [SupplyParameterFromQuery(Name = "note")] public Guid? QNote { get; set; }
@@ -1155,6 +1159,7 @@ else
     {
         await Reload();
         _panelEntity = QEntity;   // INV-11: an entity tag link opens the entity panel
+        _panelEvidence = QEntity is null ? QEvidence : null;   // RD-06: a cited-file chip opens the evidence panel
         // Honor an explicit ?tab=, otherwise refresh whatever tab is already active. The Id can change
         // under a reused component (e.g. following an "also in" cross-case link) while the active tab
         // stays the same, so always reload the active tab's data rather than only on a tab-name change.
@@ -1748,7 +1753,7 @@ else
 
     // UX-01: whether any of the three trap modals is currently open (drives arm/release in OnAfterRenderAsync).
     private bool AnyTrapModalOpen => _confirm is not null || _previewShotId is not null || _activeModal is not null || _confirmLeaveOpen
-        || _panelEntity is not null;
+        || _panelEntity is not null || _panelEvidence is not null;
     private bool _modalTrapArmed;
     private string? _revealedTab;
 
@@ -2285,7 +2290,27 @@ else
     private Guid? _panelEntity;
     private Guid? _timelineEntity;
 
-    private void OpenEntity(Guid id) => _panelEntity = id;
+    private void OpenEntity(Guid id) { _panelEvidence = null; _panelEntity = id; }
+
+    // --- RD-06: the evidence panel ---
+    private Guid? _panelEvidence;
+
+    private void OpenEvidence(Guid id) { _panelEntity = null; _panelEvidence = id; }
+
+    private async Task CloseEvidencePanel()
+    {
+        _panelEvidence = null;
+        try { await JS.InvokeVoidAsync("history.replaceState", null, "", Nav.GetUriWithQueryParameter("evidence", (string?)null)); }
+        catch (JSException) { /* cosmetic */ }
+    }
+
+    // A citing entry opens on the timeline, flashed; the brief is in the Now pane (or on the Overview).
+    private async Task ShowCitation(Guid? entryId)
+    {
+        await CloseEvidencePanel();
+        if (entryId is { } id) await FocusItem(("Timeline", id));
+        else if (!PaneShown) await SetTab("Overview");
+    }
 
     private async Task CloseEntityPanel()
     {

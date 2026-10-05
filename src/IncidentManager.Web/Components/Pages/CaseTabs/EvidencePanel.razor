@@ -1,0 +1,288 @@
+@* RD-06 (Casefile): an evidence file in a side panel over whatever tab is open: what it is, a preview on request,
+   its integrity in words, the chain of custody, what cites it and the tasks about it, with the acts on the file
+   (cite, task, record a transfer, download). Opened from an evidence row, a cited-file chip or a brief citation;
+   deep-linked as ?evidence=<id>. A preview is a deliberate look and records a "Viewed" custody event; a download
+   records "Downloaded" and says so before you click. *@
+@using Microsoft.Extensions.Logging
+@inject EvidenceService Evidence
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+@inject IClock Clock
+@inject ILogger<EvidencePanel> Logger
+
+@if (File is { } ev)
+{
+    <div class="im-panel-scrim" @onclick="OnClose"></div>
+    <aside class="im-entity-panel im-trap" role="dialog" aria-modal="true" aria-labelledby="evidence-panel-title" tabindex="-1" @onkeydown="OnKey">
+        <div class="im-entity-panel-head">
+            <div class="d-flex align-items-center gap-2">
+                <span class="bi @(IsImage(ev) ? "bi-file-earmark-image" : "bi-file-earmark-text") im-dossier-glyph" aria-hidden="true"></span>
+                <h2 class="im-dossier-value mb-0" id="evidence-panel-title"><span class="im-data">@ev.OriginalFileName</span></h2>
+                <button type="button" class="btn-close ms-auto" aria-label="Close" @onclick="OnClose"></button>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(ev.Description)) { <div class="im-dossier-label">@ev.Description</div> }
+            <div class="small text-muted">
+                @(string.IsNullOrWhiteSpace(ev.ContentType) ? "File" : ev.ContentType) · @FormatSize(ev.SizeBytes) · added @TimeDisp.Brief(ev.CreatedAtUtc, Clock.UtcNow) by @Users.DisplayFor(ev.CreatedBy)
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-2">
+                <a class="btn btn-sm btn-outline-secondary" href="evidence/@ev.Id" target="_blank" rel="noopener"
+                   title="Downloading adds a custody event in your name and an access-log entry">
+                    <span class="bi bi-download" aria-hidden="true"></span> Download
+                </a>
+                @if (CanEdit)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => { _addingTask = true; _transferOpen = false; }">
+                        <span class="bi bi-plus-lg" aria-hidden="true"></span> Task about it
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => { _transferOpen = true; _addingTask = false; }">
+                        <span class="bi bi-arrow-left-right" aria-hidden="true"></span> Record a transfer…
+                    </button>
+                }
+            </div>
+            <div class="small text-muted mt-1">Downloading adds a custody event in your name and an access-log entry.</div>
+        </div>
+
+        <div class="im-entity-panel-body">
+            @if (_addingTask)
+            {
+                <section>
+                    <QuickTask CaseId="Case.Id" About="@($"{ActionItem.AboutEvidence}:{ev.Id}")" Placeholder="A task about this file"
+                               OnDone="async () => { _addingTask = false; await OnChanged.InvokeAsync(); }" OnCancel="() => _addingTask = false" />
+                </section>
+            }
+            @if (_transferOpen)
+            {
+                <section class="im-dossier-reason">
+                    <h3 class="im-entity-panel-h">Record a transfer</h3>
+                    <p class="small text-muted mb-2">Who received a copy outside CaseBook, how and why. It's added to the chain of custody and the audit trail.</p>
+                    <label class="form-label small mb-0" for="evp-to">Recipient</label>
+                    <input id="evp-to" class="form-control form-control-sm mb-2" maxlength="200" @bind="_xferTo" placeholder="e.g. Outside counsel (Smith LLP)" />
+                    <label class="form-label small mb-0" for="evp-how">Method <span class="text-muted">(optional)</span></label>
+                    <input id="evp-how" class="form-control form-control-sm mb-2" maxlength="100" @bind="_xferHow" placeholder="e.g. Encrypted SFTP" />
+                    <label class="form-label small mb-0" for="evp-why">Purpose</label>
+                    <input id="evp-why" class="form-control form-control-sm mb-2" maxlength="500" @bind="_xferWhy" placeholder="e.g. Forensic analysis under engagement letter" />
+                    @if (_xferError is not null) { <div class="text-danger small mb-2" role="alert">@_xferError</div> }
+                    <div class="d-flex gap-2 justify-content-end">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _transferOpen = false">Cancel</button>
+                        <button type="button" class="btn btn-sm btn-primary" disabled="@_xferBusy" @onclick="() => SaveTransfer(ev)">Record transfer</button>
+                    </div>
+                </section>
+            }
+
+            <section>
+                <h3 class="im-entity-panel-h">Preview</h3>
+                @if (IsImage(ev))
+                {
+                    <button type="button" class="btn p-0 border-0 bg-transparent" title="Open the image" @onclick="() => OnPreviewImage.InvokeAsync(ev.Id)">
+                        <img src="evidence/@ev.Id/inline" alt="Preview of @ev.OriginalFileName" loading="lazy" class="im-evp-thumb" />
+                    </button>
+                    <div class="small text-muted mt-1">Opening the image records that you viewed it.</div>
+                }
+                else if (EvidenceService.IsTextPreviewable(ev.ContentType, ev.OriginalFileName))
+                {
+                    @if (_preview is { } text)
+                    {
+                        <pre class="im-evp-text">@text</pre>
+                    }
+                    else if (_previewMissing)
+                    {
+                        <p class="small text-muted mb-0">This file doesn't read as text. Download it to look inside.</p>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_previewLoading" @onclick="() => LoadPreview(ev)">
+                            <span class="bi bi-eye" aria-hidden="true"></span> Show the first lines
+                        </button>
+                        <div class="small text-muted mt-1">Looking records a "Viewed" event in the chain of custody.</div>
+                    }
+                }
+                else
+                {
+                    <p class="small text-muted mb-0">No preview for this kind of file. Download it to open it.</p>
+                }
+            </section>
+
+            <section>
+                <h3 class="im-entity-panel-h">Integrity</h3>
+                <div class="im-data im-evp-hash">@ev.Sha256</div>
+                <div class="small mt-1"><span class="bi bi-shield-check text-success" aria-hidden="true"></span>
+                    SHA-256 taken as the file arrived. If the stored bytes ever change, the evidence re-check raises an integrity alarm.</div>
+            </section>
+
+            <section>
+                <h3 class="im-entity-panel-h">Chain of custody@(_custody is null ? "" : $" · {_custody.Count}")</h3>
+                @if (_custody is null)
+                {
+                    <p class="small text-muted mb-0">Loading…</p>
+                }
+                else if (_custody.Count == 0)
+                {
+                    <p class="small text-muted mb-0">No custody events recorded.</p>
+                }
+                else
+                {
+                    <ol class="im-evp-custody">
+                        @foreach (var c in _custody)
+                        {
+                            <li>
+                                <span class="im-data small" title="@TimeDisp.Long(c.AtUtc)">@TimeDisp.Brief(c.AtUtc, Clock.UtcNow)</span>
+                                <span class="im-evp-dot im-evp-@c.Action.ToLowerInvariant()" aria-hidden="true"></span>
+                                <span><strong>@c.Action</strong> by @Users.DisplayFor(c.Actor)@if (!string.IsNullOrWhiteSpace(c.Details) && c.Action != "Uploaded") {<span class="d-block small text-muted">@c.Details</span>}</span>
+                            </li>
+                        }
+                    </ol>
+                }
+            </section>
+
+            <section>
+                <h3 class="im-entity-panel-h">Cited by · @CitedBy(ev).Count</h3>
+                @if (CitedBy(ev) is { Count: > 0 } cites)
+                {
+                    <ul class="list-unstyled mb-0">
+                        @foreach (var (label, text, entryId) in cites)
+                        {
+                            <li class="im-entity-ref">
+                                <button type="button" class="btn btn-link p-0 text-start" @onclick="() => Go(entryId)">
+                                    <span class="im-badge im-b-neutral me-1">@label</span>@text
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p class="small text-muted mb-0">Nothing cites it yet. Cite it from a timeline entry, or in the brief's Known.</p>
+                }
+            </section>
+
+            @if (Case.ActionItems.Where(t => t.AboutRef == $"{ActionItem.AboutEvidence}:{ev.Id}").ToList() is { Count: > 0 } tasks)
+            {
+                <section>
+                    <h3 class="im-entity-panel-h">Tasks · @tasks.Count</h3>
+                    <ul class="list-unstyled mb-0 small">
+                        @foreach (var t in tasks)
+                        {
+                            <li class="im-entity-ref">
+                                <span class="@(t.IsOpen ? "" : "text-muted text-decoration-line-through")">@t.Title</span>
+                                <div class="text-muted">@(t.IsOpen ? "Open" : "Done")@(string.IsNullOrWhiteSpace(t.Owner) ? "" : $" · {Users.DisplayFor(t.Owner)}")</div>
+                            </li>
+                        }
+                    </ul>
+                </section>
+            }
+        </div>
+    </aside>
+}
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter] public Guid? EvidenceId { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>Open the image lightbox (it records the view).</summary>
+    [Parameter] public EventCallback<Guid> OnPreviewImage { get; set; }
+    /// <summary>Show a citing timeline entry (null: the brief, on the Overview).</summary>
+    [Parameter] public EventCallback<Guid?> OnShowCitation { get; set; }
+
+    private Evidence? File => EvidenceId is { } id ? Case.Evidence.FirstOrDefault(e => e.Id == id) : null;
+    private Guid? _loadedFor;
+    private List<ChainOfCustodyEvent>? _custody;
+    private string? _preview;
+    private bool _previewLoading, _previewMissing, _addingTask, _transferOpen, _xferBusy;
+    private string? _xferTo, _xferHow, _xferWhy, _xferError;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (EvidenceId == _loadedFor) return;
+        _loadedFor = EvidenceId;
+        _custody = null;
+        _preview = null;
+        _previewMissing = _addingTask = _transferOpen = false;
+        _xferTo = _xferHow = _xferWhy = _xferError = null;
+        if (EvidenceId is { } id) await LoadCustody(id);
+    }
+
+    private async Task LoadCustody(Guid id)
+    {
+        try { _custody = await Evidence.GetCustodyAsync(id); }
+        catch (Exception ex) when (ex is InvalidOperationException) { _custody = []; }
+    }
+
+    private async Task LoadPreview(Evidence ev)
+    {
+        _previewLoading = true;
+        try
+        {
+            _preview = await Evidence.PreviewTextAsync(ev.Id);
+            _previewMissing = _preview is null;
+            await LoadCustody(ev.Id);   // the view was just recorded
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(UserFacingError.Describe(ex, Logger, "previewing evidence", "Couldn't show the preview. Try again."));
+        }
+        finally { _previewLoading = false; }
+    }
+
+    private async Task SaveTransfer(Evidence ev)
+    {
+        if (_xferBusy) return;
+        _xferError = null;
+        _xferBusy = true;
+        try
+        {
+            await Evidence.RecordTransferAsync(ev.Id, _xferTo ?? "", _xferHow, _xferWhy ?? "");
+            _transferOpen = false;
+            _xferTo = _xferHow = _xferWhy = null;
+            await LoadCustody(ev.Id);
+            Toasts.Success("Transfer recorded in the chain of custody");
+        }
+        catch (Exception ex)
+        {
+            _xferError = UserFacingError.Describe(ex, Logger, "recording an evidence transfer", "Couldn't record the transfer. Try again.");
+        }
+        finally { _xferBusy = false; }
+    }
+
+    // What relies on the file: current timeline entries that cite it (or show it as their screenshot), and the brief.
+    private List<(string Label, string Text, Guid? EntryId)> CitedBy(Evidence ev)
+    {
+        var list = new List<(string, string, Guid?)>();
+        var cited = Case.Citations.Where(c => c.EvidenceId == ev.Id).Select(c => c.TimelineEntryId).ToHashSet();
+        foreach (var e in Case.TimelineEntries.Where(t => t.IsCurrent && (cited.Contains(t.Id) || t.EvidenceId == ev.Id)).OrderBy(t => t.OccurredAtUtc))
+        {
+            var kind = e.Kind == TimelineKind.Event ? "Event" : e.Type == TimelineEntryType.Decision ? "Decision" : Ui.Label(e.Type);
+            list.Add(($"{kind}, {TimeDisp.Brief(e.OccurredAtUtc, Clock.UtcNow)}", Snippet(e.Description), e.Id));
+        }
+        var brief = Case.Briefs.FirstOrDefault(b => b.IsCurrent);
+        if (new[] { Case.Summary, brief?.WorkingAssessment, brief?.Known, brief?.OpenQuestions }
+                .Any(p => p?.Contains($"evidence:{ev.Id}", StringComparison.OrdinalIgnoreCase) == true))
+            list.Add(("Brief", $"The brief (v{brief?.Version ?? 1})", null));
+        return list;
+    }
+
+    private async Task Go(Guid? entryId) => await OnShowCitation.InvokeAsync(entryId);
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await OnClose.InvokeAsync();
+    }
+
+    private string Snippet(string markdown)
+    {
+        var text = Md.ToPlainText(markdown).Replace('\n', ' ').Trim();
+        return text.Length <= 110 ? text : text[..107] + "…";
+    }
+
+    private static bool IsImage(Evidence ev) => ev.ContentType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        >= 1024 * 1024 => $"{bytes / (1024.0 * 1024):0.0} MB",
+        >= 1024 => $"{bytes / 1024.0:0.0} KB",
+        _ => $"{bytes} B"
+    };
+}

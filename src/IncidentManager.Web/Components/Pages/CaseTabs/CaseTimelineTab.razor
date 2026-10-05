@@ -1525,7 +1525,8 @@ else
                     }
                     else
                     {
-                        <a class="tl-cite" href="evidence/@ev.Id" target="_blank" title="Download @ev.OriginalFileName">
+                        @* RD-06: a cited file opens its panel (preview, integrity, custody) instead of downloading. *@
+                        <a class="tl-cite" href="cases/@CaseId?evidence=@ev.Id" title="Open @ev.OriginalFileName">
                             <span class="bi bi-paperclip" aria-hidden="true"></span> @ev.OriginalFileName
                         </a>
                     }

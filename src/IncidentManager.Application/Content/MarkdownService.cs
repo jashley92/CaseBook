@@ -93,11 +93,13 @@ public sealed class MarkdownService : IMarkdownService
                 renderer.Write(navigable ? "</a>" : "</span>");
                 return;
             }
-            // INV-33: an evidence citation — a file chip that opens the Evidence tab (the guid is validated first).
+            // INV-33: an evidence citation, as a file chip. RD-06: it opens the evidence panel over whatever tab is open
+            // (no tab in the link), the way an entity tag does (the guid is validated first).
             if (link.Url is { } ev && ev.StartsWith(EvidenceScheme, StringComparison.OrdinalIgnoreCase))
             {
-                var ok = caseId is { } && Guid.TryParse(ev.Substring(EvidenceScheme.Length), out _);
-                renderer.Write(ok ? $"<a class=\"im-evidence-tag\" href=\"/cases/{caseId}?tab=Evidence\" title=\"Cited evidence\">"
+                var evId = Guid.Empty;
+                var ok = caseId is { } && Guid.TryParse(ev.Substring(EvidenceScheme.Length), out evId);
+                renderer.Write(ok ? $"<a class=\"im-evidence-tag\" href=\"/cases/{caseId}?evidence={evId}\" title=\"Cited evidence\">"
                                   : "<span class=\"im-evidence-tag\" title=\"Cited evidence\">");
                 renderer.Write("<span class=\"bi bi-paperclip\" aria-hidden=\"true\"></span>");
                 renderer.WriteChildren(link);

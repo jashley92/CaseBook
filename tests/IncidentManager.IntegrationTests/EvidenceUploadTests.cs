@@ -216,6 +216,25 @@ public sealed class EvidenceUploadTests : IDisposable
     }
 
     [Fact]
+    public async Task A_text_preview_shows_the_start_of_the_file_and_records_a_view(/* RD-06 */)
+    {
+        var (svc, caseId, _) = await SeedEvidenceAsync();
+        await using var csv = new MemoryStream(Encoding.UTF8.GetBytes("timestamp_utc,user,source_ip\n2026-09-29T16:02:00Z,jdoe,203.0.113.66\n"));
+        var csvId = (await svc.UploadAsync(caseId, "signin-export.csv", "text/csv", csv, null)).Id;
+
+        var text = await svc.PreviewTextAsync(csvId);
+
+        text.Should().StartWith("timestamp_utc,user,source_ip").And.Contain("203.0.113.66");
+        (await svc.GetCustodyAsync(csvId)).Select(e => e.Action).Should().BeEquivalentTo("Uploaded", "Viewed");
+
+        await using var bin = new MemoryStream([0x50, 0x4B, 0x03, 0x04, 0x00, 0x00]);
+        var binId = (await svc.UploadAsync(caseId, "archive.txt", "text/plain", bin, null)).Id;
+        (await svc.PreviewTextAsync(binId)).Should().BeNull("a NUL byte means it isn't text, whatever its name");
+        EvidenceService.IsTextPreviewable("application/octet-stream", "notes.log").Should().BeTrue();
+        EvidenceService.IsTextPreviewable("image/png", "shot.png").Should().BeFalse();
+    }
+
+    [Fact]
     public async Task A_transfer_needs_a_recipient_a_purpose_and_edit_rights(/* PROD-13 */)
     {
         var (svc, _, evId) = await SeedEvidenceAsync();

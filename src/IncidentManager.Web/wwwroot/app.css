@@ -2833,3 +2833,16 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-dossier-reason { padding: .55rem .65rem; border: 1px solid var(--im-accent); border-radius: var(--im-radius); background: var(--im-surface-2); }
 .im-seen { padding: .4rem 0; border-bottom: 1px solid var(--im-border); }
 .im-entity-panel-head .im-data { white-space: normal; overflow-wrap: anywhere; }
+
+/* RD-06 (Casefile) the evidence panel. */
+.im-evp-thumb { max-width: 100%; max-height: 14rem; border-radius: var(--im-radius); border: 1px solid var(--im-border); cursor: zoom-in; }
+.im-evp-text { font-family: var(--im-font-data); font-size: .74rem; line-height: 1.55; background: var(--im-surface-2); border: 1px solid var(--im-border);
+    border-radius: var(--im-radius); padding: .55rem .7rem; margin: 0; max-height: 14rem; overflow: auto; white-space: pre; color: var(--im-text); }
+.im-evp-hash { font-size: .74rem; white-space: normal; overflow-wrap: anywhere; color: var(--im-text-muted); }
+.im-evp-custody { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+.im-evp-custody li { display: grid; grid-template-columns: 6.5rem 14px minmax(0, 1fr); gap: .5rem; align-items: start; font-size: .82rem; }
+.im-evp-dot { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--im-text-muted); margin-top: .25rem; }
+.im-evp-uploaded { background: var(--im-ok); border-color: var(--im-ok); }
+.im-evp-transferred { border-color: var(--im-accent); }
+.im-evp-open { font-size: inherit; color: var(--im-text); text-decoration: none; }
+.im-evp-open:hover { color: var(--im-accent-text); text-decoration: underline; }
