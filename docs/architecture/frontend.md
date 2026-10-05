@@ -36,8 +36,9 @@ caught by the server and redirected to `/access-denied?from=…`; an unknown pag
 | `/cases`, `/cases/mine` | `Cases` | ViewCases | Case list ([query parameters](#lists-filters-and-url-state)) |
 | `/cases/new` | `CreateCase` | EditCases | New case form |
 | `/cases/import` | `CaseImport` | EditCases | Structured import; pending-import queue. `?into=` (existing case), `?pending=` |
-| `/cases/{Id:guid}` | `CaseWorkspace` | ViewCases | The case workspace. `?tab=`, `?entity=`, `?note=` |
+| `/cases/{Id:guid}` | `CaseWorkspace` | ViewCases | The case workspace. `?tab=`, `?entity=`, `?evidence=`, `?note=`, `?entry=` (brings one record entry into view) |
 | `/cases/{Number}` | `CaseByNumber` | ViewCases | Resolves `2026-14` or `2026-14_Name` and redirects |
+| `/find` | `FindPage` | ViewCases | Find: typed results across the cases you can see. `?q=` holds the query, grammar in [workflows/find.md](../workflows/find.md) |
 | `/intel/indicators` | `IndicatorsPage` | ViewCases | Intel › Indicators: cross-case indicators, each one's cases and verdicts. `?entity=` |
 | `/intel/campaigns`, `/intel/campaigns/{Id}` | `CampaignsPage`, `CampaignPage` | ViewCases | Intel › Campaigns: list and rollup (`/campaigns/{id}/rollup.json` is the export) |
 | `/intel/attack` | `AttackCoveragePage` | ViewCases | Intel › ATT&CK coverage heatmap. Every Intel page carries `Shared/IntelNav` |
@@ -68,7 +69,8 @@ appears under `/admin/settings/other`. Each section has one Save bar; leaving wi
   a top bar with a CSS-only menu toggle.
 - **Command palette** (`Shared/CommandPalette.razor`): `Ctrl+K`, `⌘K` or `/`. Shows pinned and recent cases,
   navigation, the open case's actions (published by the workspace through `Services/CaseCommandRegistry`), "go
-  to tab" for the open case, and live case search.
+  to tab" for the open case, and Find's typed results as you type (`FindService`, a few of each kind, then *See all
+  in Find*).
 - **Activity bell** (`Shared/NotificationBell.razor`): recent changes by others on cases you can see, updated
   live; unread state per browser.
 - **Account menu** (`Shared/ProfileMenu.razor`): identity and roles, links to account pages, *Lock now*, and

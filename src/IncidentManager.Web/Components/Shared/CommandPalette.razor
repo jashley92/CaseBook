@@ -1,12 +1,12 @@
 @implements IDisposable
 @inject NavigationManager Nav
-@inject CaseService Cases
 @inject ICurrentUser CurrentUser
 @inject IJSRuntime JS
 @inject ISeverityLabels SevLabels
 @inject IncidentManager.Web.Services.CommandPaletteController Palette
 @inject IncidentManager.Web.Services.CaseCommandRegistry PaletteActions
 @inject IncidentManager.Application.Cases.CaseShortcutService Shortcuts
+@inject IncidentManager.Application.Search.FindService Finder
 
 @* Command palette + keyboard-first layer (U-22, with the light chords from U-14). Hosted once in
    MainLayout. All shortcut behaviour funnels through OnHotkey, invoked by the CSP-safe global
@@ -20,7 +20,7 @@
         <div class="cmdk-search">
             <span class="bi bi-search cmdk-search-ic" aria-hidden="true"></span>
             <input @ref="_input" class="cmdk-input" type="text" autocomplete="off" spellcheck="false"
-                   placeholder="Search cases, jump to a page, run an action…"
+                   placeholder="Find anything, jump to a page, run an action…"
                    value="@_query" @oninput="OnInput" @onkeydown="OnKeyDown"
                    aria-label="Command palette search" aria-controls="cmdk-list" />
             <kbd class="cmdk-esc">Esc</kbd>
@@ -220,8 +220,8 @@
         await _results[index].Run();
     }
 
-    // Rebuilds the result list: static/contextual commands filtered by the query, plus a scoped
-    // case search once the analyst starts typing (need-to-know is enforced by CaseService.ListAsync).
+    // Rebuilds the result list: static/contextual commands filtered by the query, plus Find's typed results once the
+    // analyst starts typing (RD-20; need-to-know is enforced by FindService).
     private async Task Refresh()
     {
         var q = _query.Trim();
@@ -257,26 +257,45 @@
             var seq = ++_searchSeq;
             try
             {
-                var page = await Cases.ListAsync(new CaseFilter
-                {
-                    Search = q,
-                    IncludeClosed = true,
-                    Page = 1,
-                    PageSize = 7
-                });
+                var r = await Finder.FindAsync(q, limit: 5);
                 if (seq != _searchSeq) return; // a newer keystroke already superseded this search
-                foreach (var it in page.Items)
+                foreach (var e in r.Entities.Take(3))
                 {
-                    var caseId = it.Id;
-                    items.Add(new Cmd("Cases", "bi-folder2-open",
-                        $"{it.CaseNumber} · {it.Title}",
-                        $"{Ui.Label(it.Classification)} · {SevLabels.For(it.Severity)} · {Ui.Label(it.Phase)}",
-                        () => GoTo($"cases/{caseId}")));
+                    var anchor = e.Cases[0].EntityId;
+                    items.Add(new Cmd("Entities", "bi-bullseye", e.Value,
+                        $"{Ui.Label(e.Type)} · on {e.Cases.Count} case{(e.Cases.Count == 1 ? "" : "s")}, {Ui.Label(e.Cases.Select(c => c.Verdict).MaxBy(IncidentManager.Application.Intel.IndicatorService.Severity))} at worst",
+                        () => GoTo($"intel/indicators?entity={anchor}")));
                 }
-                // More matches than fit here (an indicator on hundreds of cases, say): hand off to the case list.
-                if (page.Total > page.Items.Count)
-                    items.Add(new Cmd("Cases", "bi-search", $"See all {page.Total} matching cases", "Opens the case list, closed cases included",
-                        () => GoTo($"cases?q={Uri.EscapeDataString(q)}&closed=true")));
+                foreach (var c in r.Cases)
+                {
+                    var caseId = c.Id;
+                    items.Add(new Cmd("Cases", "bi-folder2-open", $"{c.CaseNumber} · {c.Title}",
+                        $"{Ui.Label(c.Classification)} · {SevLabels.For(c.Severity)} · {Ui.Label(c.Phase)}",
+                        () => GoTo(c.Phase == CasePhase.Closed ? $"cases/{caseId}?tab=Briefing" : $"cases/{caseId}")));
+                }
+                foreach (var e in r.Entries.Take(3))
+                {
+                    var href = e.IsClosingBrief ? $"cases/{e.CaseId}?tab=Briefing" : $"cases/{e.CaseId}?tab=Timeline&entry={e.Id}";
+                    items.Add(new Cmd("Record", e.IsClosingBrief ? "bi-flag" : "bi-journal-text",
+                        IncidentManager.Application.Cases.TaskResults.Excerpt(e.Text, 90),
+                        $"{EntryKind(e)} · {e.CaseNumber}", () => GoTo(href)));
+                }
+                foreach (var t in r.Tasks.Take(3))
+                {
+                    var caseId = t.CaseId;
+                    items.Add(new Cmd("Tasks", "bi-check2-square", t.Title, t.CaseNumber, () => GoTo($"cases/{caseId}?tab=Tasks")));
+                }
+                foreach (var x in r.Evidence.Take(2))
+                {
+                    var (caseId, evId) = (x.CaseId, x.Id);
+                    items.Add(new Cmd("Evidence", "bi-paperclip", x.FileName, x.CaseNumber, () => GoTo($"cases/{caseId}?evidence={evId}")));
+                }
+                // Find says how it read the query, and holds everything that didn't fit here.
+                var find = $"find?q={Uri.EscapeDataString(q)}";
+                items.Add(new Cmd("Find", "bi-search",
+                    r.Total == 0 ? "Open in Find" : $"See all {r.Total} result{(r.Total == 1 ? "" : "s")} in Find",
+                    r.Total == 0 ? $"Read as {r.Reading}; nothing matched" : $"Read as {r.Reading}",
+                    () => GoTo(find)));
             }
             catch { /* transient — keep the static matches already gathered */ }
         }
@@ -296,6 +315,7 @@
     private IEnumerable<Cmd> StaticCommands()
     {
         yield return new Cmd("Navigate", "bi-speedometer2", "Program", null, () => GoTo(ProgramHome));
+        yield return new Cmd("Navigate", "bi-search", "Find", null, () => GoTo("find"));
         yield return new Cmd("Navigate", "bi-crosshair", "Intel", null, () => GoTo("intel/indicators"));
         yield return new Cmd("Navigate", "bi-person-workspace", "Desk", null, () => GoTo("desk"));
         yield return new Cmd("Navigate", "bi-folder2-open", "Cases", null, () => GoTo("cases"));
@@ -365,6 +385,12 @@
             ? g
             : null;
     }
+
+    private static string EntryKind(IncidentManager.Application.Search.FindEntry e) =>
+        e.IsClosingBrief ? "Closing brief"
+        : e.Type == TimelineEntryType.Decision ? "Decision"
+        : e.Kind == TimelineKind.Event ? "Adversary step"
+        : e.Type is { } t ? Ui.Label(t) : "Entry";
 
     // Display label for a tab key; matches the case workspace tab bar.
     private static string TabLabel(string tab) => tab switch

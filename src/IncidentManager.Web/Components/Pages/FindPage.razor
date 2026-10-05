@@ -1,0 +1,403 @@
+@page "/find"
+@* RD-20 (Casefile): Find. One query, typed results across entities (with each one's verdict on every case), cases,
+   record entries (a closed case's conclusion included), tasks, evidence names and, on request, working notes. It says
+   how it read the query, and the filters beside the results edit the query you can see: there is no hidden state and
+   no AI reading of the question, only the documented grammar (FindQuery). Need-to-know scoped by FindService. *@
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@using IncidentManager.Application.Search
+@inject FindService Finder
+@inject NavigationManager Nav
+@inject TimeDisplay TimeDisp
+@inject IClock Clock
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+
+<PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "Find" : $"Find: {Q}")</PageTitle>
+
+<PageHeader Title="Find" Subtitle="Entities, cases, the record, tasks and evidence, across the cases you can see." />
+
+<form class="im-find-bar" role="search" @onsubmit="Submit" @onsubmit:preventDefault>
+    <span class="bi bi-search" aria-hidden="true"></span>
+    <input class="form-control" type="search" aria-label="Find" autocomplete="off" spellcheck="false"
+           placeholder="An indicator, a case number, a person, words from the record, or a question like type:decision reset"
+           @bind="_draft" @bind:event="oninput" />
+    <button type="submit" class="btn btn-primary">Find</button>
+</form>
+
+@if (_result is { } r && !r.Query.IsEmpty)
+{
+    <div class="im-find-read" aria-live="polite">
+        <div><span class="im-find-read-k">Read as</span> <strong>@r.Reading</strong> on cases you can see@(r.Query.Exercises ? "" : ", exercises left out")</div>
+        @if (r.Filters.Count > 0)
+        {
+            <div class="im-find-filters">
+                @foreach (var f in r.Filters)
+                {
+                    <span class="im-find-filter @(f.StartsWith("not understood") ? "is-unread" : "")">@f</span>
+                }
+            </div>
+        }
+        <div class="im-find-counts">
+            @if (r.Total == 0) { <span>Nothing found.</span> }
+            else
+            {
+                @string.Join(" · ", Kinds.Where(k => r.Counts.GetValueOrDefault(k) > 0).Select(k => CountWords(k, r.Counts[k])))
+            }
+        </div>
+    </div>
+}
+
+<div class="im-find-grid">
+    <div class="im-find-main">
+        @if (_loading)
+        {
+            <LoadingBlock />
+        }
+        else if (_result is not { } res || res.Query.IsEmpty)
+        {
+            <p class="text-muted">Type what you're looking for. Find says how it read it, then lists what matched by kind.</p>
+            @Examples()
+        }
+        else
+        {
+            var res2 = _result!;
+            @if (Shows(FindKind.Entities) && res2.Entities.Count > 0)
+            {
+                <section class="im-find-sec" aria-labelledby="find-ent">
+                    <h2 id="find-ent">Entities <span class="im-part-n">@res2.Counts[FindKind.Entities]</span></h2>
+                    <ul class="im-find-list">
+                        @foreach (var e in res2.Entities)
+                        {
+                            var anchor = e.Cases[0];
+                            <li class="im-find-entity">
+                                <div class="im-find-entity-head">
+                                    <code class="im-find-value">@e.Value</code>
+                                    <span class="im-find-sub">@Ui.Label(e.Type)@(e.Label is { } l ? $" · {l}" : "")</span>
+                                    <a class="ms-auto small" href="intel/indicators?entity=@anchor.EntityId">Across cases</a>
+                                </div>
+                                <ul class="im-find-verdicts">
+                                    @foreach (var c in e.Cases)
+                                    {
+                                        <li>
+                                            <a href="cases/@c.CaseId?entity=@c.EntityId"><code>@c.CaseNumber</code></a>
+                                            <span class="im-find-sub">@(c.Phase == CasePhase.Closed ? "closed" : "open") · @Ui.Label(c.Classification)</span>
+                                            <VerdictMark Value="c.Verdict" />
+                                        </li>
+                                    }
+                                </ul>
+                            </li>
+                        }
+                    </ul>
+                    @More(FindKind.Entities, res2.Entities.Count)
+                </section>
+            }
+            @if (Shows(FindKind.Cases) && res2.Cases.Count > 0)
+            {
+                <section class="im-find-sec" aria-labelledby="find-cases">
+                    <h2 id="find-cases">Cases <span class="im-part-n">@res2.Counts[FindKind.Cases]</span></h2>
+                    <ul class="im-find-list">
+                        @foreach (var c in res2.Cases)
+                        {
+                            <li>
+                                <div><a href="@CaseHref(c)"><code>@c.CaseNumber</code></a> @Mark(c.Title)</div>
+                                <div class="im-find-sub">
+                                    <RungMark Value="c.Classification" /> <SeverityMark Value="c.Severity" />
+                                    @if (c.ClosedAtUtc is { } closed) { <span>closed @TimeDisp.DateOnly(closed)</span> }
+                                    else { <span>@Ui.Label(c.Phase), opened @TimeDisp.DateOnly(c.OpenedAtUtc)</span> }
+                                    @if (c.IsExercise) { <span class="badge text-bg-secondary">Exercise</span> }
+                                </div>
+                                @if (c.ClosingLine is { } line)
+                                {
+                                    <div class="im-find-quote">@Mark(line)</div>
+                                }
+                            </li>
+                        }
+                    </ul>
+                    @More(FindKind.Cases, res2.Cases.Count)
+                </section>
+            }
+            @if (Shows(FindKind.Entries) && res2.Entries.Count > 0)
+            {
+                <section class="im-find-sec" aria-labelledby="find-rec">
+                    <h2 id="find-rec">Record entries <span class="im-part-n">@res2.Counts[FindKind.Entries]</span></h2>
+                    <ul class="im-find-list">
+                        @foreach (var e in res2.Entries)
+                        {
+                            <li>
+                                <a class="im-find-quote im-rec" href="@EntryHref(e)">@Mark(e.Text)</a>
+                                @if (e.Why is { } why) { <div class="im-find-why">Why: @Mark(why)</div> }
+                                <div class="im-find-sub">@EntryKind(e) · <code>@e.CaseNumber</code> · @TimeDisp.Short(e.AtUtc)</div>
+                            </li>
+                        }
+                    </ul>
+                    @More(FindKind.Entries, res2.Entries.Count)
+                </section>
+            }
+            @if (Shows(FindKind.Tasks) && res2.Tasks.Count > 0)
+            {
+                var now = Clock.UtcNow;
+                <section class="im-find-sec" aria-labelledby="find-tasks">
+                    <h2 id="find-tasks">Tasks <span class="im-part-n">@res2.Counts[FindKind.Tasks]</span></h2>
+                    <ul class="im-find-list">
+                        @foreach (var t in res2.Tasks)
+                        {
+                            var done = t.Status is ActionItemStatus.Done or ActionItemStatus.Cancelled;
+                            <li>
+                                <a href="cases/@t.CaseId?tab=Tasks" class="@(done ? "text-decoration-line-through" : "")">@Mark(t.Title)</a>
+                                <div class="im-find-sub">
+                                    @(t.Owner is null ? "Unassigned" : Users.DisplayFor(t.Owner))
+                                    @if (t.DueAtUtc is { } due) { <span class="@(due < now && !done ? "text-danger" : "")"> · due @TimeDisp.Brief(due, now)</span> }
+                                    · @(t.Status == ActionItemStatus.InProgress ? "In progress" : t.Status.ToString()) · <code>@t.CaseNumber</code>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                    @More(FindKind.Tasks, res2.Tasks.Count)
+                </section>
+            }
+            @if (Shows(FindKind.Evidence) && res2.Evidence.Count > 0)
+            {
+                <section class="im-find-sec" aria-labelledby="find-ev">
+                    <h2 id="find-ev">Evidence <span class="im-part-n">@res2.Counts[FindKind.Evidence]</span></h2>
+                    <ul class="im-find-list">
+                        @foreach (var x in res2.Evidence)
+                        {
+                            <li>
+                                <a href="cases/@x.CaseId?evidence=@x.Id"><span class="bi bi-paperclip" aria-hidden="true"></span> @Mark(x.FileName)</a>
+                                <div class="im-find-sub">
+                                    @if (x.HashMatch) { <span>the file's SHA-256 matches ·</span> }
+                                    @if (!string.IsNullOrWhiteSpace(x.Description)) { <span>@Mark(x.Description) ·</span> }
+                                    <code>@x.CaseNumber</code> · added @TimeDisp.DateOnly(x.AddedAtUtc)
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                    @More(FindKind.Evidence, res2.Evidence.Count)
+                </section>
+            }
+            @if (Shows(FindKind.Notes) && res2.Notes.Count > 0)
+            {
+                <section class="im-find-sec" aria-labelledby="find-notes">
+                    <h2 id="find-notes">Working notes <span class="im-part-n">@res2.Counts[FindKind.Notes]</span></h2>
+                    <ul class="im-find-list">
+                        @foreach (var n in res2.Notes)
+                        {
+                            <li>
+                                <a class="im-find-quote" href="cases/@n.CaseId?tab=Notes&note=@n.Id">@Mark(n.Text)</a>
+                                <div class="im-find-sub">@n.By · <code>@n.CaseNumber</code> · @TimeDisp.Short(n.AtUtc)</div>
+                            </li>
+                        }
+                    </ul>
+                    @More(FindKind.Notes, res2.Notes.Count)
+                </section>
+            }
+        }
+    </div>
+
+    <aside class="im-find-side" aria-label="Narrow and learn the grammar">
+        @if (_result is { } s && !s.Query.IsEmpty)
+        {
+            <div class="im-desk-card">
+                <h2 class="im-cap">Show</h2>
+                @foreach (var k in Kinds)
+                {
+                    var kind = k;
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="find-show-@k" checked="@(!_hidden.Contains(k) && (k != FindKind.Notes || s.Query.Notes))"
+                               @onchange="() => Toggle(kind)" disabled="@(k == FindKind.Notes && !s.Query.Notes)" />
+                        <label class="form-check-label d-flex gap-2" for="find-show-@k">
+                            @KindName(k) <span class="im-part-n ms-auto">@(s.Counts.TryGetValue(k, out var n) ? n : 0)</span>
+                        </label>
+                    </div>
+                }
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" role="switch" id="find-notes" checked="@s.Query.Notes"
+                           @onchange='() => Go(FindQuery.WithFilter(Q, "in", s.Query.Notes ? null : "notes"))' />
+                    <label class="form-check-label" for="find-notes">Include working notes</label>
+                </div>
+            </div>
+            <div class="im-desk-card">
+                <h2 class="im-cap">Cases</h2>
+                <div class="btn-group btn-group-sm w-100 mb-2" role="group" aria-label="Open or closed">
+                    <button type="button" class="btn btn-outline-secondary @(s.Query.Open is null ? "active" : "")" aria-pressed="@Ui.Aria(s.Query.Open is null)"
+                            @onclick='() => Go(FindQuery.WithFilter(Q, "status", null))'>Any</button>
+                    <button type="button" class="btn btn-outline-secondary @(s.Query.Open == true ? "active" : "")" aria-pressed="@Ui.Aria(s.Query.Open == true)"
+                            @onclick='() => Go(FindQuery.WithFilter(Q, "status", "open"))'>Open</button>
+                    <button type="button" class="btn btn-outline-secondary @(s.Query.Open == false ? "active" : "")" aria-pressed="@Ui.Aria(s.Query.Open == false)"
+                            @onclick='() => Go(FindQuery.WithFilter(Q, "status", "closed"))'>Closed</button>
+                </div>
+                <label class="form-label small mb-1" for="find-class">Rung</label>
+                <select id="find-class" class="form-select form-select-sm mb-2" value="@ClassValue(s.Query)" @onchange="OnClass">
+                    <option value="">Any</option>
+                    <option value="event">Complex Event</option>
+                    <option value="adverse">Adverse Event</option>
+                    <option value="incident">Incident</option>
+                    <option value="breach">Breach</option>
+                </select>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="find-ex" checked="@s.Query.Exercises"
+                           @onchange='() => Go(FindQuery.WithFilter(Q, "exercises", s.Query.Exercises ? null : "yes"))' />
+                    <label class="form-check-label" for="find-ex">Include exercises</label>
+                </div>
+            </div>
+            <div class="im-desk-card">
+                <h2 class="im-cap">Ask it the way you'd say it</h2>
+                @Examples()
+            </div>
+        }
+        <div class="im-desk-card im-find-limits">
+            <h2 class="im-cap">How Find matches</h2>
+            <p>Words must each appear, ignoring case; quote a phrase to keep it together. An indicator matches entities by its
+               exact value; an account and an email address with the same value are one identity. Part of a domain matches the
+               record's text, not related indicators.</p>
+            <p>Restricted cases you can't see don't appear, and nothing says they exist. Nothing interprets the question
+               but the filters listed in <a href="find#find-grammar">the grammar</a>.</p>
+        </div>
+    </aside>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+
+    private static readonly FindKind[] Kinds =
+        [FindKind.Entities, FindKind.Cases, FindKind.Entries, FindKind.Tasks, FindKind.Evidence, FindKind.Notes];
+
+    private FindResult? _result;
+    private string _draft = "";
+    private bool _loading;
+    private string? _ranFor;
+    private readonly HashSet<FindKind> _hidden = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_ranFor == Q && _result is not null) return;
+        _ranFor = Q;
+        _draft = Q ?? "";
+        if (string.IsNullOrWhiteSpace(Q)) { _result = null; return; }
+        _loading = true;
+        try { _result = await Finder.FindAsync(Q); }
+        finally { _loading = false; }
+    }
+
+    private void Submit() => Go(_draft);
+
+    private void Go(string query) =>
+        Nav.NavigateTo(string.IsNullOrWhiteSpace(query) ? "find" : $"find?q={Uri.EscapeDataString(query.Trim())}");
+
+    private void Toggle(FindKind k) { if (!_hidden.Remove(k)) _hidden.Add(k); }
+    private bool Shows(FindKind k) => !_hidden.Contains(k);
+
+    private void OnClass(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        Go(FindQuery.WithFilter(Q, "class", string.IsNullOrEmpty(v) ? null : v));
+    }
+
+    private static string ClassValue(FindQuery q) => !q.ClassFilter ? "" : q.Class switch
+    {
+        null => "event", Classification.AdverseEvent => "adverse", Classification.Incident => "incident", _ => "breach"
+    };
+
+    private static string KindName(FindKind k) => k switch
+    {
+        FindKind.Entities => "Entities", FindKind.Cases => "Cases", FindKind.Entries => "Record entries",
+        FindKind.Tasks => "Tasks", FindKind.Evidence => "Evidence names", _ => "Working notes"
+    };
+
+    private static string CountWords(FindKind k, int n) => k switch
+    {
+        FindKind.Entities => n == 1 ? "1 entity" : $"{n} entities",
+        FindKind.Cases => n == 1 ? "1 case" : $"{n} cases",
+        FindKind.Entries => n == 1 ? "1 record entry" : $"{n} record entries",
+        FindKind.Tasks => n == 1 ? "1 task" : $"{n} tasks",
+        FindKind.Evidence => n == 1 ? "1 evidence file" : $"{n} evidence files",
+        _ => n == 1 ? "1 working note" : $"{n} working notes"
+    };
+
+    private static string CaseHref(FindCase c) => c.Phase == CasePhase.Closed ? $"cases/{c.Id}?tab=Briefing" : $"cases/{c.Id}";
+
+    private static string EntryHref(FindEntry e) =>
+        e.IsClosingBrief ? $"cases/{e.CaseId}?tab=Briefing" : $"cases/{e.CaseId}?tab=Timeline&entry={e.Id}";
+
+    private static string EntryKind(FindEntry e) =>
+        e.IsClosingBrief ? "Closing brief"
+        : e.Type == TimelineEntryType.Decision ? "Decision"
+        : e.Type == TimelineEntryType.Handoff ? "Handoff"
+        : e.Kind == TimelineKind.Event ? $"Adversary step · {Ui.Label(e.Type!.Value)}"
+        : Ui.Label(e.Type!.Value);
+
+    private RenderFragment More(FindKind k, int shown) => __builder =>
+    {
+        var total = _result!.Counts[k];
+        if (total > shown)
+        {
+            <p class="im-find-more">Showing the @shown most recent of @total. Add words or a filter to narrow it.</p>
+        }
+    };
+
+    // The words found, marked where they appear (an indicator by its value).
+    private RenderFragment Mark(string? text) => __builder =>
+    {
+        foreach (var (seg, hit) in Segments(text))
+        {
+            if (hit) { <mark>@seg</mark> }
+            else { @seg }
+        }
+    };
+
+    private List<(string Text, bool Hit)> Segments(string? text)
+    {
+        var parts = new List<(string, bool)>();
+        if (string.IsNullOrEmpty(text)) return parts;
+        var terms = _result is { ReadAs: FindReadAs.Words or FindReadAs.Indicator } r ? r.Query.Terms.Where(t => t.Length > 1).ToList() : [];
+        if (_result?.Query.Entity is { } ent) terms.Add(ent);
+        var i = 0;
+        while (i < text.Length)
+        {
+            var (at, len) = (-1, 0);
+            foreach (var t in terms)
+            {
+                var j = text.IndexOf(t, i, StringComparison.OrdinalIgnoreCase);
+                if (j >= 0 && (at < 0 || j < at)) (at, len) = (j, t.Length);
+            }
+            if (at < 0) { parts.Add((text[i..], false)); break; }
+            if (at > i) parts.Add((text[i..at], false));
+            parts.Add((text.Substring(at, len), true));
+            i = at + len;
+        }
+        return parts;
+    }
+
+    private RenderFragment Examples() => __builder =>
+    {
+        <dl class="im-find-examples" id="find-grammar">
+            @foreach (var (say, query) in ExampleQueries)
+            {
+                <dt>@say</dt>
+                <dd><a href="find?q=@Uri.EscapeDataString(query)"><code>@query</code></a></dd>
+            }
+        </dl>
+        <details class="im-find-grammar">
+            <summary>Every filter</summary>
+            <ul>
+                <li><code>entity:VALUE</code> about one entity, by its exact value</li>
+                <li><code>status:open</code> or <code>status:closed</code></li>
+                <li><code>class:event</code>, <code>adverse</code>, <code>incident</code> or <code>breach</code></li>
+                <li><code>type:decision</code>, <code>handoff</code>, <code>adversary</code>, <code>response</code>, or any entry type</li>
+                <li><code>after:2026-01-01</code> (that day on), <code>before:2026-07-01</code> (up to that day)</li>
+                <li><code>by:NAME</code> or <code>by:me</code> who recorded it; <code>owner:NAME</code> whose task</li>
+                <li><code>state:NY</code> cases with that state's residents affected</li>
+                <li><code>in:notes</code> include working notes; <code>exercises:yes</code> include exercises</li>
+                <li><code>"a phrase"</code> keeps words together</li>
+            </ul>
+        </details>
+    };
+
+    private static readonly (string Say, string Query)[] ExampleQueries =
+    [
+        ("My tasks on open cases", "owner:me status:open"),
+        ("Decisions about password resets this year", $"type:decision reset after:{DateTime.UtcNow.Year}-01-01"),
+        ("Breaches with New York residents", "class:breach state:NY"),
+        ("Handoffs I recorded", "type:handoff by:me"),
+        ("Closed cases mentioning a host", "status:closed FIN-WKS-07"),
+    ];
+}

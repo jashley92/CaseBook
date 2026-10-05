@@ -3043,3 +3043,40 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 /* RD-19: a notification task due after the running notification deadline. */
 .im-task-notice { margin-top: .15rem; font-size: var(--im-text-xs); color: var(--im-danger); }
 .im-task-notice .btn-link { font-size: inherit; }
+
+/* RD-20: Find. */
+.im-find-bar { display: flex; align-items: center; gap: .5rem; margin-bottom: .9rem; }
+.im-find-bar > .bi { color: var(--im-text-muted); }
+.im-find-bar input { flex: 1 1 auto; min-width: 0; }
+.im-find-read { display: grid; gap: .35rem; margin-bottom: 1.25rem; padding-bottom: .75rem; border-bottom: 1px solid var(--im-border); }
+.im-find-read-k { color: var(--im-text-muted); }
+.im-find-filters { display: flex; flex-wrap: wrap; gap: .3rem; }
+.im-find-filter { font-size: var(--im-text-xs); padding: .1rem .5rem; border: 1px solid var(--im-border-strong); border-radius: 999px; background: var(--im-surface); }
+.im-find-filter.is-unread { border-color: var(--im-warn); color: var(--im-warn); }
+.im-find-counts { font-size: var(--im-text-sm); color: var(--im-text-muted); font-variant-numeric: tabular-nums; }
+.im-find-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+@media (min-width: 1100px) { .im-find-grid { grid-template-columns: minmax(0, 1fr) 19rem; gap: 2rem; } }
+.im-find-main { min-width: 0; display: grid; gap: 1.5rem; align-content: start; }
+.im-find-side { display: grid; gap: 1rem; align-content: start; }
+.im-find-sec h2 { display: flex; align-items: baseline; gap: .5rem; font-size: var(--im-text-md); font-weight: 600; margin: 0 0 .4rem;
+    padding-bottom: .3rem; border-bottom: 1px solid var(--im-border); }
+.im-find-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.im-find-list > li { display: grid; gap: .15rem; padding: .55rem 0; border-bottom: 1px solid var(--im-border); min-width: 0; }
+.im-find-list > li:last-child { border-bottom: 0; }
+.im-find-sub { font-size: var(--im-text-sm); color: var(--im-text-muted); display: flex; flex-wrap: wrap; align-items: center; gap: .15rem .5rem; }
+.im-find-quote { font-family: var(--im-font-record); color: var(--im-text); text-decoration: none; overflow-wrap: anywhere; }
+a.im-find-quote:hover { text-decoration: underline; }
+.im-find-why { font-size: var(--im-text-sm); color: var(--im-text-muted); font-family: var(--im-font-record); }
+.im-find-list mark { background: var(--im-accent-bg); color: inherit; padding: 0; border-radius: 2px; box-shadow: 0 0 0 1px var(--im-accent-bg); }
+.im-find-entity-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .6rem; }
+.im-find-value { font-size: var(--im-text-md); overflow-wrap: anywhere; }
+.im-find-verdicts { list-style: none; margin: .25rem 0 0; padding: 0; display: grid; gap: .2rem; }
+.im-find-verdicts li { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .6rem; font-size: var(--im-text-sm); }
+.im-find-more { font-size: var(--im-text-sm); color: var(--im-text-muted); margin: .35rem 0 0; }
+.im-find-examples { margin: 0; display: grid; gap: .1rem; font-size: var(--im-text-sm); }
+.im-find-examples dt { font-weight: 400; color: var(--im-text-muted); margin-top: .35rem; }
+.im-find-examples dd { margin: 0; overflow-wrap: anywhere; }
+.im-find-grammar { margin-top: .6rem; font-size: var(--im-text-sm); }
+.im-find-grammar ul { padding-left: 1.1rem; margin: .4rem 0 0; display: grid; gap: .2rem; }
+.im-find-limits p { font-size: var(--im-text-sm); color: var(--im-text-muted); margin: 0 0 .5rem; }
+.im-find-limits p:last-child { margin-bottom: 0; }

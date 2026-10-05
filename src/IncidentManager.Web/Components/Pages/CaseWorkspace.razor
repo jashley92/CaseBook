@@ -457,7 +457,7 @@ else
                          ChangedSinceUtc="_timelineSince" OnClearSince="() => _timelineSince = null"
                          PresetEntityFilter="_timelineEntity" OnOpenEntity="OpenEntity"
                          AutofocusComposer="_timelineAutofocus" OnAutofocusHandled="() => _timelineAutofocus = false"
-                         FocusNoteId="QNote" OpenNotes="_openNotes" OnOpenNotesHandled="() => _openNotes = false" />
+                         FocusNoteId="QNote" FocusEntryId="QEntry" OpenNotes="_openNotes" OnOpenNotesHandled="() => _openNotes = false" />
         @* U-32: a floating "jump to what just arrived" pill when a collaborator adds timeline entries. *@
         @if (_newTimelineIds.Count > 0)
         {
@@ -562,6 +562,8 @@ else
 
     /// <summary>INV-37: deep-link one note (a mention email's link): <c>?tab=Notes&amp;note={guid}</c> brings it into view.</summary>
     [SupplyParameterFromQuery(Name = "note")] public Guid? QNote { get; set; }
+    /// <summary>RD-20: one record entry to bring into view (a Find result): <c>?tab=Timeline&amp;entry={guid}</c>.</summary>
+    [SupplyParameterFromQuery(Name = "entry")] public Guid? QEntry { get; set; }
 
     // RD-11: views replace the nine tabs. Each view holds one or more parts, and a part's key is the stable routing
     // key (?tab=, chips, counts, flashes, the feed), so a link to "Entities" or "Report" lands on that part. A view's
@@ -996,6 +998,12 @@ else
         // U-30: a fresh case view starts with a clean slate — nothing is "new" until a collaborator acts.
         _flash.Clear();
         _newOnTab.Clear();
+        // RD-20: an entry linked from Find flashes once it's in view, so it's plain which one was meant.
+        if (QEntry is { } qe && _case?.TimelineEntries.Any(e => e.Id == qe) == true)
+        {
+            _flash[qe] = (Ui.AvatarHue(_myId ?? ""), "Timeline");
+            _ = ClearFlashesAfter([qe]);
+        }
         _newTimelineIds.Clear();
         // FR-02: a different case starts with a clean draft slate; within the same case (e.g. an entity
         // deep-link that re-runs OnParametersSetAsync) keep any in-progress composer text.

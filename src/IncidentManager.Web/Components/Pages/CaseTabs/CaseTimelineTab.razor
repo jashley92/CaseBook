@@ -1971,6 +1971,22 @@ else
             _appliedPreset = PresetEntityFilter;
             if (PresetEntityFilter is { } en) { _decOnly = false; _keyOnly = false; _tlLens = null; _tlFilterEntity = en; }
         }
+        // RD-20: a link to one entry (a Find result) brings it into view on Everything.
+        if (FocusEntryId != _appliedFocusEntry)
+        {
+            _appliedFocusEntry = FocusEntryId;
+            if (FocusEntryId is { } fe && Case.TimelineEntries.Any(x => x.Id == fe)) _ = FocusEntryNow(fe);
+        }
+    }
+
+    /// <summary>RD-20: an entry to bring into view (<c>?entry=</c>).</summary>
+    [Parameter] public Guid? FocusEntryId { get; set; }
+    private Guid? _appliedFocusEntry;
+
+    private async Task FocusEntryNow(Guid id)
+    {
+        await JumpTo(id.ToString());
+        StateHasChanged();
     }
 
     // --- INV-04: show only what changed since the viewer last had the case open (set by the workspace) ---

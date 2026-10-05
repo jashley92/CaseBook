@@ -14,16 +14,17 @@ browser's local zone because the profile menu was set to *Local*; stored times a
 
 ![Navigation](../screenshots/doc-navigation.png)
 
-1. **Workspace**: Desk, Cases, **Intel** (Indicators, Campaigns, ATT&CK coverage under one bar), **Program**, and New case (with
+1. **Workspace**: Desk, Cases, **Find** (typed results across every case you can see; see
+   [Find](../workflows/find.md)), **Intel** (Indicators, Campaigns, ATT&CK coverage under one bar), **Program**, and New case (with
    `EditCases`). Opening `/` goes to Program for roles with `ViewAllCases`, and to the Desk for everyone else.
    **Program** gathers the cross-case views under one bar: Overview (the leadership dashboard), Team, Due work
    (open tasks across the team by when they're due), Improvement actions, the Legal register and the Program
    report. The first three need `ViewAllCases`. Your calendar feed is in *Notification settings*.
 3. **Audit & exports**: Integrity & audit (everyone), Access log (administrators), Exports.
 4. **Administration**: settings hub, administrators only.
-5. **Command palette** (`Ctrl+K` or `/`): jump to a page or a case by number, title or IOC, or run an action
-   on the open case. `?` lists the keyboard shortcuts. `g` then `d`/`m`/`c`/`n`/`i` goes to the dashboard, my
-   work, cases, a new case or integrity.
+5. **Command bar** (`Ctrl+K` or `/`): Find's typed results as you type (entities, cases, record entries,
+   tasks, evidence), jump to a page, or run an action on the open case. `?` lists the keyboard shortcuts. `g`
+   then `d`/`m`/`c`/`n`/`i` goes to Program, your Desk, cases, a new case or integrity.
 6. **Recent activity**: changes others made to cases you can see. Unread is tracked per browser.
 7. **Account menu**: notification preferences, personal API tokens, *My access*, *Lock now*, theme, row
    density, UTC or local times, and 24- or 12-hour clock. These preferences are saved to your account.

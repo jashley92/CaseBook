@@ -5,7 +5,8 @@ End-to-end descriptions of what people do in CaseBook and what happens behind ea
 | Page | Covers |
 |---|---|
 | [case-lifecycle.md](case-lifecycle.md) | Opening (form, import, API), promotion and reclassification, severity, phases, the close gate, correcting transition times, reopening, superseding duplicates, archiving |
-| [investigation.md](investigation.md) | The brief, timeline entries and decisions, event steps, citations, entities and IOCs, evidence, notes, tasks, team and handoff, ATT&CK, case links and campaigns, the Desk and Agenda |
+| [investigation.md](investigation.md) | The brief, timeline entries and decisions, event steps, citations, entities and IOCs, evidence, notes, tasks, team and handoff, ATT&CK, case links and campaigns, the Desk, Due work and Team |
+| [find.md](find.md) | Find: typed results across entities, cases, the record, tasks and evidence; how it reads a query; the filter grammar and its limits |
 | [governance.md](governance.md) | Stage gates and their checks, materiality, regulatory notification deadlines, legal referral, legal hold, restriction |
 | [reporting.md](reporting.md) | The case report, Word templates, approval, lessons learned and improvement actions, cross-case exports |
 | [administration.md](administration.md) | Settings, roles and AD mappings, templates, gates, data elements, API tokens, configuration bundle, integrity operations, access log |
