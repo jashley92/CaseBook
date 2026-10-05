@@ -2223,10 +2223,13 @@ public sealed class CaseService
     /// investigation timeline as an entry of that type, dated at completion and linked to the task — so the
     /// work is written once. One save, one audited unit.
     /// </summary>
+    /// <param name="knownLine">RD-10: a line to add to the brief's Known in the same save (a new brief version).</param>
     public async Task CompleteActionItemAsync(Guid caseId, Guid actionItemId, DateTimeOffset? completedAtUtc,
-        string? result, TimelineEntryType? logAs, CancellationToken ct = default, string? doneBy = null)
+        string? result, TimelineEntryType? logAs, CancellationToken ct = default, string? doneBy = null, string? knownLine = null)
     {
         Require();
+        var known = EntryFollowUps.Clean(knownLine);
+        if (known is { Length: > 2000 }) throw new ArgumentException("Keep the line for Known to 2,000 characters or fewer.");
         var text = string.IsNullOrWhiteSpace(result) ? null : result.Trim();
         var by = string.IsNullOrWhiteSpace(doneBy) ? _user.UserId : doneBy.Trim();
         if (by.Length > 200) throw new ArgumentException("Keep \"done by\" to 200 characters or fewer.");
@@ -2268,6 +2271,14 @@ public sealed class CaseService
                     Description = text, Source = $"Task: {item.Title}", ActionItemId = item.Id,
                     CreatedBy = _user.UserId, CreatedAtUtc = now
                 });
+        }
+        if (known is not null)
+        {
+            await db.CaseBriefs.Where(b => b.CaseId == c.Id && b.IsCurrent).ToListAsync(ct);
+            var cur = c.Briefs.FirstOrDefault(b => b.IsCurrent);
+            var newKnown = string.IsNullOrWhiteSpace(cur?.Known) ? $"- {known}" : $"{cur!.Known!.TrimEnd()}\n- {known}";
+            c.ReviseBrief(c.Summary, cur?.WorkingAssessment, newKnown, cur?.OpenQuestions,
+                CaseNext.Snapshot(c, now, u => _users?.DisplayFor(u) ?? u), _user.UserId, now);
         }
         await db.SaveChangesAsync(ct);
     }

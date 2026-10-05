@@ -351,6 +351,22 @@ public sealed class TaskCompletionTests : IDisposable
         (await svc.GetDetailAsync(caseId))!.TimelineEntries.Should().NotContain(e => e.Description == "Second entry", "nothing is written when a follow-up is invalid");
     }
 
+    [Fact]
+    public async Task Completing_a_task_can_add_its_finding_to_Known(/* RD-10 */)
+    {
+        var (svc, caseId, taskId) = await CaseWithTask();
+        await svc.ReviseBriefAsync(caseId, null, "Lure reached Finance", null, "- One session from a foreign ASN", null);
+
+        await svc.CompleteActionItemAsync(caseId, taskId, null, "All 12 domains blocked at the proxy.", null,
+            knownLine: "The 12 look-alike domains are blocked at the proxy.");
+
+        var c = (await svc.GetDetailAsync(caseId))!;
+        c.ActionItems.Single(t => t.Id == taskId).Status.Should().Be(ActionItemStatus.Done);
+        var brief = c.Briefs.Single(b => b.IsCurrent);
+        brief.Version.Should().Be(2);
+        brief.Known.Should().Be("- One session from a foreign ASN\n- The 12 look-alike domains are blocked at the proxy.");
+    }
+
     // --- HR-02: answers stay with their questions ---
 
     private async Task<(CaseService Svc, Guid CaseId, Guid QuestionTaskId, Guid PlainTaskId)> CaseWithQuestionTask()

@@ -345,7 +345,21 @@ else
                                         }
                                     </select>
                                 </div>
-                                <div class="col-md-3 d-flex align-items-end justify-content-end gap-2">
+                                @* RD-10: what the work established can go straight into the brief's Known. *@
+                                <div class="col-12">
+                                    <div class="form-check small mb-1">
+                                        <input class="form-check-input" type="checkbox" id="task-done-known" checked="@_doneKnown"
+                                               @onchange="e => { _doneKnown = e.Value is true; if (_doneKnown && string.IsNullOrWhiteSpace(_doneKnownLine)) _doneKnownLine = FirstLine(_doneResult); }" />
+                                        <label class="form-check-label" for="task-done-known">Also add a line to the brief's Known</label>
+                                    </div>
+                                    @if (_doneKnown)
+                                    {
+                                        <input class="form-control form-control-sm im-rec" maxlength="2000" aria-label="Line for Known" @bind="_doneKnownLine" @bind:event="oninput"
+                                               placeholder="What this establishes, in a line" />
+                                        <div class="small text-muted mt-1">Saved with the task as a new version of the brief.</div>
+                                    }
+                                </div>
+                                <div class="col-md-3 d-flex align-items-end justify-content-end gap-2 ms-auto">
                                     <button class="btn btn-sm btn-outline-secondary" @onclick="CancelComplete">Cancel</button>
                                     <button class="btn btn-sm btn-primary" disabled="@(_completing || (t.FollowsUpQuestion && string.IsNullOrWhiteSpace(_doneResult)))" @onclick="() => CompleteTask(t.Id)">Mark done</button>
                                 </div>
@@ -807,6 +821,10 @@ else
     // --- INV-08: complete one task, optionally recording its result on the timeline ---
     private Guid? _completingId;
     private string? _doneResult;
+    private bool _doneKnown;
+    private string? _doneKnownLine;
+    private static string? FirstLine(string? text) =>
+        string.IsNullOrWhiteSpace(text) ? null : text.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
     private DateTime _doneWhen;
     private DateTime _doneWhenDefault;
     private bool _doneLog = true;
@@ -828,7 +846,7 @@ else
         _completingId = t.Id;
         // HR-10: the result is logged as what the task was (Contain → Containment); a question's answer is Analysis.
         _doneType = t.FollowsUpQuestion ? TimelineEntryType.Analysis : t.Kind.ResultType();
-        _doneResult = null;
+        _doneResult = null; _doneKnown = false; _doneKnownLine = null;
         _doneWhen = _doneWhenDefault = ToWall(Clock.UtcNow);
         _doneLog = true;
         _doneBy = CurrentUser.UserId;
@@ -846,13 +864,17 @@ else
             var doneBy = _doneBy == ExternalOwnerSentinel ? _doneByExternal : _doneBy;
             await Cases.CompleteActionItemAsync(CaseId, id,
                 _doneWhen == _doneWhenDefault ? null : WallToUtc(_doneWhen),
-                result, _doneLog && result is not null ? _doneType : null, doneBy: doneBy);
+                result, _doneLog && result is not null ? _doneType : null, doneBy: doneBy,
+                knownLine: _doneKnown ? _doneKnownLine : null);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
         finally { _completing = false; }
         _completingId = null;
         _selected.Remove(id);
-        Toasts.Success(_doneLog && !string.IsNullOrWhiteSpace(_doneResult) ? "Task done and result added to the timeline" : "Task done");
+        Toasts.Success((_doneLog && !string.IsNullOrWhiteSpace(_doneResult) ? "Task done and result added to the timeline" : "Task done")
+            + (_doneKnown && !string.IsNullOrWhiteSpace(_doneKnownLine) ? "; Known updated" : ""));
+        _doneKnown = false;
+        _doneKnownLine = null;
         // HR-10: containment, eradication or recovery work finished ahead of the case's phase.
         _advanceOffer = Case.ActionItems.FirstOrDefault(x => x.Id == id) is { Kind: TaskKind.Contain or TaskKind.Eradicate or TaskKind.Recover } done
                         && done.Kind.Phase() is { } phase && Case.Phase < phase && Case.Phase != CasePhase.Closed
