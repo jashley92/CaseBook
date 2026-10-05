@@ -1,0 +1,416 @@
+@page "/desk"
+@* RD-16 (Casefile): the Desk, an analyst's home. It replaces My work: since you last looked, what needs you (by
+   consequence), your cases (your part and the next thing for you), your next (your tasks by when, each with why),
+   the clocks on your cases and the quiet changes that need nothing. Read only, apart from adding or finishing one of
+   your own tasks. *@
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@using IncidentManager.Application.Work
+@inject DeskService Svc
+@inject IncidentManager.Application.Cases.CaseService Cases
+@inject IncidentManager.Application.Cases.CaseShortcutService Shortcuts
+@inject IncidentManager.Application.Activity.ActivityFeedService Feed
+@inject IncidentManager.Web.Services.ToastService Toasts
+@inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
+@inject IClock Clock
+@inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IAuthorizationService Authz
+@inject AuthenticationStateProvider AuthState
+
+<PageTitle>Desk</PageTitle>
+
+<div class="im-desk">
+    <PageHeader Title="Desk" Subtitle="@($"{CurrentUser.DisplayName} · {TimeDisp.DateOnly(Clock.UtcNow)}")">
+        <Actions>
+            @if (_hasDashboard)
+            {
+                <a class="btn btn-sm btn-outline-secondary" href="" title="Go to the leadership dashboard">
+                    <span class="bi bi-speedometer2" aria-hidden="true"></span> Dashboard
+                </a>
+            }
+            <a class="btn btn-sm btn-outline-secondary" href="cases?scope=mine">
+                <span class="bi bi-inbox" aria-hidden="true"></span> Full queue
+            </a>
+            <a class="btn btn-sm btn-outline-secondary" href="agenda" title="Due work across the team, and your calendar feed">
+                <span class="bi bi-calendar3" aria-hidden="true"></span> Agenda
+            </a>
+        </Actions>
+    </PageHeader>
+
+    @if (_desk is null)
+    {
+        <span class="visually-hidden" role="status">Loading your desk…</span>
+        <section class="im-card"><SkeletonTable Rows="4" Columns="4" TableClass="table-sm" /></section>
+    }
+    else
+    {
+        var now = Clock.UtcNow;
+        <p class="im-desk-since">
+            @if (_desk.Cases.Count == 0)
+            {
+                <text>You have no open cases.</text>
+            }
+            else if (_desk.ChangesSince == 0)
+            {
+                <text>Nothing has changed on your cases since you last looked at them.</text>
+            }
+            else
+            {
+                <text>Since you last looked at them: <strong>@_desk.ChangesSince @(_desk.ChangesSince == 1 ? "change" : "changes")</strong> on your cases by @People(_desk.ChangedBy).</text>
+            }
+        </p>
+
+        <div class="im-desk-grid">
+            <div class="im-desk-main">
+                <section class="im-desk-sec" aria-labelledby="desk-needs">
+                    <div class="im-desk-head">
+                        <h2 id="desk-needs">Needs you</h2>
+                        <span class="im-desk-note">@(_desk.Needs.Count == 0 ? "nothing right now" : $"{_desk.Needs.Count} · most consequential first")</span>
+                    </div>
+                    @if (_desk.Needs.Count > 0)
+                    {
+                        <ul class="im-desk-needs">
+                            @foreach (var n in _desk.Needs)
+                            {
+                                var (icon, lead, href, act) = NeedView(n);
+                                <li class="is-@n.Kind.ToString().ToLowerInvariant()">
+                                    <span class="bi @icon" aria-hidden="true"></span>
+                                    <div class="im-desk-need-body">
+                                        <div><span class="im-desk-need-lead">@lead</span> @n.Title</div>
+                                        <div class="im-desk-sub"><code>@n.CaseNumber</code>@NeedDetail(n, now)</div>
+                                    </div>
+                                    <a class="btn btn-sm btn-outline-secondary" href="@href">@act</a>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </section>
+
+                <section class="im-desk-sec" aria-labelledby="desk-cases">
+                    <div class="im-desk-head">
+                        <h2 id="desk-cases">Your cases</h2>
+                        <span class="im-desk-note">@_desk.Cases.Count open</span>
+                    </div>
+                    @if (_desk.Cases.Count == 0)
+                    {
+                        <p class="im-desk-empty">Nothing assigned to you right now. <a href="cases">Browse all cases</a>.</p>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle im-table mb-0">
+                                <thead><tr><th>Case</th><th>State</th><th>Phase</th><th>You</th><th>Next for you</th><th>Since you looked</th><th></th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in _desk.Cases)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <a href="cases/@c.Id" class="fw-semibold text-decoration-none"><code>@c.CaseNumber</code></a>
+                                                @if (c.IsRestricted) { <span class="bi bi-lock-fill text-warning" title="Restricted"></span> }
+                                                <div class="im-desk-sub im-clamp-2" title="@c.Title">@c.Title</div>
+                                            </td>
+                                            <td class="text-nowrap"><RungMark Value="c.Classification" /> <SeverityMark Value="c.Severity" /></td>
+                                            <td class="text-nowrap">@Ui.Label(c.Phase) <span class="im-desk-sub">· @Ui.Age(c.PhaseSinceUtc, now)</span></td>
+                                            <td class="small">@(c.Role is { } r ? Ui.Label(r) : "—")</td>
+                                            <td class="small">
+                                                @if (c.NextForYou is { } nx)
+                                                {
+                                                    <span>@nx</span>
+                                                    @if (c.NextDueUtc is { } nd) { <span class="im-desk-sub @(nd < now ? "im-desk-late" : "")"> · @TimeDisp.Brief(nd, now)</span> }
+                                                }
+                                                else { <span class="text-muted">nothing assigned</span> }
+                                            </td>
+                                            <td class="small">
+                                                @if (c.ChangesSince == 0) { <span class="text-muted">@(c.LastViewedUtc is null ? "not opened yet" : "no changes")</span> }
+                                                else { <span>@c.ChangesSince · @People(c.ChangedBy)</span> }
+                                            </td>
+                                            <td class="text-end text-nowrap">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 im-peek-open" title="Preview this case"
+                                                        aria-label="@($"Preview {c.CaseNumber}")" aria-pressed="@Ui.Aria(_peekId == c.Id)" @onclick="() => TogglePeek(c.Id)">
+                                                    <span class="bi bi-layout-sidebar-reverse" aria-hidden="true"></span>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </section>
+
+                <section class="im-desk-sec" aria-labelledby="desk-next">
+                    <div class="im-desk-head">
+                        <h2 id="desk-next">Your next</h2>
+                        <span class="im-desk-note">@_desk.Next.Count open · <a href="agenda">calendar feed</a></span>
+                    </div>
+                    @* PROD-21: add one of your own tasks without opening its case. *@
+                    <AuthorizeView Policy="@Policies.EditCases">
+                        @if (_desk.Cases.Count > 0)
+                        {
+                            <div class="im-desk-add">
+                                <label class="visually-hidden" for="desk-task-title">New task</label>
+                                <input id="desk-task-title" class="form-control form-control-sm" placeholder="Add a task for yourself"
+                                       @bind="_newTaskTitle" @bind:event="oninput" @onkeydown="OnQuickAddKey" />
+                                <label class="visually-hidden" for="desk-task-case">On case</label>
+                                <select id="desk-task-case" class="form-select form-select-sm" @bind="_newTaskCaseId">
+                                    @foreach (var c in _desk.Cases) { <option value="@c.Id">@c.CaseNumber</option> }
+                                </select>
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="AddQuickTask" disabled="@string.IsNullOrWhiteSpace(_newTaskTitle)">Add</button>
+                            </div>
+                        }
+                    </AuthorizeView>
+                    @if (_desk.Next.Count == 0)
+                    {
+                        <p class="im-desk-empty">No open tasks of yours.</p>
+                    }
+                    else
+                    {
+                        @foreach (var g in _desk.Next.GroupBy(t => Bucket(t.DueAtUtc, now)).OrderBy(g => g.Key))
+                        {
+                            <h3 class="im-cap im-desk-bucket">@BucketLabel(g.Key)</h3>
+                            <ul class="im-desk-tasks">
+                                @foreach (var t in g)
+                                {
+                                    var why = WhyView(t);
+                                    <li>
+                                        <div class="im-desk-task-body">
+                                            <a href="cases/@t.CaseId?tab=Tasks" class="text-decoration-none">@t.Title</a>
+                                            <div class="im-desk-sub">
+                                                @if (why is { } w) { <WhyChip Icon="@w.Icon" Text="@w.Text" /> }
+                                                <span><code>@t.CaseNumber</code></span>
+                                                @if (t.DueAtUtc is { } due) { <span class="@(due < now ? "im-desk-late" : "")" title="@TimeDisp.Long(due)">@TimeDisp.Brief(due, now)</span> }
+                                            </div>
+                                        </div>
+                                        <AuthorizeView Policy="@Policies.EditCases">
+                                            <button class="btn btn-sm btn-outline-secondary py-0" @onclick="() => MarkDone(t)" title="Mark done (record a result from the case's Tasks)">
+                                                <span class="bi bi-check2" aria-hidden="true"></span> Done
+                                            </button>
+                                        </AuthorizeView>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    }
+                </section>
+            </div>
+
+            <aside class="im-desk-side" aria-label="Clocks and changes">
+                <section class="im-desk-card" aria-labelledby="desk-clocks">
+                    <h2 id="desk-clocks" class="im-cap">Clocks on your cases</h2>
+                    @if (_desk.Clocks.Count == 0) { <p class="im-desk-empty mb-0">None running.</p> }
+                    @foreach (var k in _desk.Clocks)
+                    {
+                        <div class="im-desk-clock">
+                            @if (k.Notify is { } n)
+                            {
+                                <ClockMark State="n.State" Label="@($"Notify {n.JurisdictionCode} {n.WindowHours} h")" />
+                                <div class="im-desk-sub"><code>@k.CaseNumber</code>@if (n.DueAtUtc is { } d) { <text> · due @TimeDisp.Brief(d, now)</text> }</div>
+                            }
+                            else if (k.Sla is { } s)
+                            {
+                                <ClockMark State="s.State" Label="@(s.Clock is { } sc ? Ui.SlaClockLabel(sc) : "SLA")" Detail="@Ui.SlaShort(s)" />
+                                <div class="im-desk-sub"><code>@k.CaseNumber</code></div>
+                            }
+                        </div>
+                    }
+                </section>
+
+                <section class="im-desk-card" aria-labelledby="desk-quiet">
+                    <h2 id="desk-quiet" class="im-cap">Quiet changes</h2>
+                    @if (_quiet.Count == 0) { <p class="im-desk-empty mb-0">Nothing from others lately.</p> }
+                    <ul class="im-desk-quiet">
+                        @foreach (var q in _quiet)
+                        {
+                            <li>
+                                <span>@q.ActorDisplay @Lower(q.Summary)</span>
+                                <span class="im-desk-sub"><a href="cases/@q.CaseId"><code>@q.CaseNumber</code></a> · @TimeDisp.Brief(q.AtUtc, now)</span>
+                            </li>
+                        }
+                    </ul>
+                </section>
+
+                @if (_pinned is { Count: > 0 })
+                {
+                    <section class="im-desk-card" aria-labelledby="desk-pinned">
+                        <h2 id="desk-pinned" class="im-cap">Pinned</h2>
+                        <ul class="im-desk-quiet">
+                            @foreach (var c in _pinned)
+                            {
+                                <li>
+                                    <a href="cases/@c.Id"><code>@c.CaseNumber</code></a>
+                                    <span class="im-desk-sub im-clamp-2">@c.Title</span>
+                                    <button class="btn btn-link btn-sm p-0 text-muted" title="Unpin" aria-label="@($"Unpin {c.CaseNumber}")" @onclick="() => Unpin(c.Id)">Unpin</button>
+                                </li>
+                            }
+                        </ul>
+                    </section>
+                }
+
+                @if (_desk.RecentEscalations.Count > 0)
+                {
+                    <section class="im-desk-card" aria-labelledby="desk-esc">
+                        <h2 id="desk-esc" class="im-cap">Escalated lately</h2>
+                        <ul class="im-desk-quiet">
+                            @foreach (var e in _desk.RecentEscalations)
+                            {
+                                <li>
+                                    <a href="cases/@e.CaseId"><code>@e.CaseNumber</code></a>
+                                    <span class="im-desk-sub">@Ui.Label(e.From) → @Ui.Label(e.To) · @TimeDisp.Brief(e.ChangedAtUtc, now)</span>
+                                </li>
+                            }
+                        </ul>
+                    </section>
+                }
+            </aside>
+        </div>
+    }
+</div>
+
+@if (_peekId is { } peek)
+{
+    <CasePeek CaseId="peek" Drawer="true" OnClose="() => _peekId = null" />
+}
+
+@code {
+    private Desk? _desk;
+    private IReadOnlyList<IncidentManager.Application.Activity.ActivityItem> _quiet = [];
+    private IReadOnlyList<IncidentManager.Application.Cases.CaseListItem>? _pinned;
+    private bool _hasDashboard;
+    private Guid? _peekId;
+    private string _newTaskTitle = "";
+    private Guid _newTaskCaseId;
+
+    private void TogglePeek(Guid id) => _peekId = _peekId == id ? null : id;
+
+    // "Revised the brief" reads "Ivy revised the brief" after a name.
+    private static string Lower(string s) => s.Length == 0 ? s : char.ToLowerInvariant(s[0]) + s[1..];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthState.GetAuthenticationStateAsync();
+        _hasDashboard = (await Authz.AuthorizeAsync(auth.User, Policies.ViewAllCases)).Succeeded;
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        _desk = await Svc.GetAsync();
+        _pinned = await Shortcuts.PinnedAsync();
+        var mine = _desk.Cases.Select(c => c.Id).ToHashSet();
+        _quiet = (await Feed.RecentAsync(60, othersOnly: true)).Where(a => a.CaseId is { } id && mine.Contains(id)).Take(6).ToList();
+        if (_desk.Cases.All(c => c.Id != _newTaskCaseId))
+            _newTaskCaseId = _desk.Cases.FirstOrDefault()?.Id ?? Guid.Empty;
+    }
+
+    private string People(IReadOnlyList<string> ids)
+    {
+        var names = ids.Select(i => Users.DisplayFor(i)).ToList();
+        return names.Count switch
+        {
+            0 => "no one",
+            1 => names[0],
+            2 => $"{names[0]} and {names[1]}",
+            _ => $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}"
+        };
+    }
+
+    private (string Icon, string Lead, string Href, string Act) NeedView(DeskNeed n) => n.Kind switch
+    {
+        DeskNeedKind.Notify => ("bi-alarm", "Running notification deadline:", $"cases/{n.CaseId}?tab=Briefing", "Open"),
+        DeskNeedKind.Overdue => ("bi-exclamation-circle", "Overdue:", $"cases/{n.CaseId}?tab=Tasks", "Work on it"),
+        DeskNeedKind.Mention => ("bi-at", $"{Users.DisplayFor(n.ByUserId)} mentioned you:", $"cases/{n.CaseId}?tab=Notes&note={n.NoteId}", "Open note"),
+        DeskNeedKind.Assigned => ("bi-person-plus", $"{Users.DisplayFor(n.ByUserId)} added you to", $"cases/{n.CaseId}", "Open"),
+        _ => ("bi-clock", "Due within a day:", $"cases/{n.CaseId}?tab=Tasks", "Work on it"),
+    };
+
+    private RenderFragment NeedDetail(DeskNeed n, DateTimeOffset now) => n.Kind switch
+    {
+        DeskNeedKind.Notify => @<text> · @n.Detail@if (n.AtUtc is { } d) { <span class="@(d < now ? "im-desk-late" : "")"> · @(d < now ? "overdue, was due" : "due") @TimeDisp.Brief(d, now)</span> }</text>,
+        DeskNeedKind.Assigned => @<text> · as @(Enum.TryParse<CaseAssignmentRole>(n.Detail, out var r) ? Ui.Label(r) : n.Detail)@if (n.AtUtc is { } a) { <text> · @TimeDisp.Brief(a, now)</text> }</text>,
+        DeskNeedKind.Mention => @<text> · @n.Detail@if (n.AtUtc is { } m) { <text> · @TimeDisp.Brief(m, now)</text> }</text>,
+        _ => @<text> · @n.Detail@if (n.AtUtc is { } due) { <span class="@(due < now ? "im-desk-late" : "")"> · @(due < now ? "was due" : "due") @TimeDisp.Brief(due, now)</span> }</text>,
+    };
+
+    private sealed record WhyInfo(string Icon, string Text);
+
+    private static WhyInfo? WhyView(DeskTask t) => t.Why switch
+    {
+        DeskWhy.Question => new("bi-question-circle", "Answers a question"),
+        DeskWhy.Decision => new("bi-signpost-split", "Carries out a decision"),
+        DeskWhy.Entry => new("bi-journal-text", "From an entry"),
+        DeskWhy.Entity => new("bi-crosshair", t.WhyDetail ?? "About an entity"),
+        DeskWhy.Evidence => new("bi-paperclip", t.WhyDetail ?? "About a file"),
+        DeskWhy.Note => new("bi-pencil", "From a note"),
+        DeskWhy.Notify => new("bi-megaphone", "Notification"),
+        DeskWhy.Investigate => new("bi-search", "Investigation"),
+        DeskWhy.Contain => new("bi-flag", Ui.Label(CasePhase.Containment)),
+        DeskWhy.Eradicate => new("bi-flag", Ui.Label(CasePhase.Eradication)),
+        DeskWhy.Recover => new("bi-flag", Ui.Label(CasePhase.Recovery)),
+        _ => null
+    };
+
+    // Buckets by the viewer's own calendar day.
+    private int Bucket(DateTimeOffset? due, DateTimeOffset now)
+    {
+        if (due is not { } d) return 5;
+        if (d < now) return 0;
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, TimeDisp.Zone).DateTime);
+        var day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(d, TimeDisp.Zone).DateTime);
+        var diff = day.DayNumber - today.DayNumber;
+        return diff <= 0 ? 1 : diff == 1 ? 2 : diff <= 7 ? 3 : 4;
+    }
+
+    private static string BucketLabel(int b) => b switch
+    {
+        0 => "Overdue", 1 => "Today", 2 => "Tomorrow", 3 => "This week", 4 => "Later", _ => "No date"
+    };
+
+    private async Task Unpin(Guid caseId)
+    {
+        try
+        {
+            await Shortcuts.TogglePinAsync(caseId);
+            await Reload();
+            Toasts.Info("Unpinned.");
+        }
+        catch (InvalidOperationException ex) { Toasts.Error(ex.Message); }
+    }
+
+    private async Task OnQuickAddKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await AddQuickTask();
+    }
+
+    private async Task AddQuickTask()
+    {
+        var title = _newTaskTitle.Trim();
+        if (string.IsNullOrWhiteSpace(title) || _newTaskCaseId == Guid.Empty) return;
+        try
+        {
+            await Cases.AddActionItemAsync(_newTaskCaseId, title, CurrentUser.UserId, null);
+            _newTaskTitle = "";
+            Toasts.Success("Task added");
+            await Reload();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
+                                   or IncidentManager.Application.Security.ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+
+    private async Task MarkDone(DeskTask t)
+    {
+        try
+        {
+            await Cases.SetActionItemStatusAsync(t.CaseId, t.Id, ActionItemStatus.Done);
+            Toasts.Success("Task done");
+            await Reload();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
+                                   or IncidentManager.Application.Security.ForbiddenException)
+        {
+            Toasts.Error(ex.Message);
+        }
+    }
+}

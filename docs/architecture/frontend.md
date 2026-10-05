@@ -27,9 +27,9 @@ caught by the server and redirected to `/access-denied?from=…`; an unknown pag
 
 | Route | Page | Policy | Purpose |
 |---|---|---|---|
-| `/` | `Home` | ViewCases | Leadership dashboard. Users without `ViewAllCases` are sent to `/work` |
+| `/` | `Home` | ViewCases | Leadership dashboard. Users without `ViewAllCases` are sent to `/desk` |
 | `/team` | `TeamWorkloadPage` | ViewAllCases | Open caseload per analyst, unassigned queue |
-| `/work`, `/my` | `MyWorkPage` | ViewCases | My open cases and tasks, recent escalations |
+| `/desk` | `DeskPage` | ViewCases | The Desk (`DeskService`, on `MyWorkService`): since you last looked, what needs you, your cases with your part, your tasks with why, clocks, quiet changes, pinned, recent escalations |
 | `/agenda` | `AgendaPage` | ViewCases | Open tasks by due date; calendar feed link. `?owner=` |
 | `/cases`, `/cases/mine` | `Cases` | ViewCases | Case list ([query parameters](#lists-filters-and-url-state)) |
 | `/cases/new` | `CreateCase` | EditCases | New case form |

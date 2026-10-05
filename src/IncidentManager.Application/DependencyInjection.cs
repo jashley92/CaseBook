@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<EvidenceService>();
         services.AddScoped<DashboardService>();
         services.AddScoped<Work.MyWorkService>();
+        services.AddScoped<Work.DeskService>();   // RD-16
         services.AddScoped<Work.TeamWorkloadService>();
         services.AddScoped<Work.AgendaService>();
         services.AddScoped<Work.AgendaFeedService>();

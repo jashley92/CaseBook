@@ -124,7 +124,7 @@ the note is marked "On the record".
 | Action | How | Rules |
 |---|---|---|
 | Add | Title, owner (a person or a typed external name), kind, due date and time (in your zone) → `AddActionItemAsync` | "Say what needs doing." Title up to 400 characters. |
-| Raise from something | *Task* on a timeline entry, entity, evidence file or note; *Follow up as a task* on a brief question; quick add on My work | The task remembers what it's about. For a timeline entry or a note it points at the first version, so the link survives edits. *Task* on a Decision starts with the decision's text as the title, to trim into the action. |
+| Raise from something | *Task* on a timeline entry, entity, evidence file or note; *Follow up as a task* on a brief question; quick add on the Desk | The task remembers what it's about. For a timeline entry or a note it points at the first version, so the link survives edits. *Task* on a Decision starts with the decision's text as the title, to trim into the action. |
 | Apply a playbook | *Apply playbook*: choose a template, steps and a default owner → `ApplyTemplateAsync` | Owner = the step's hint, else the incident commander, else the default owner. Due = now + the step's offset, so a playbook applied mid-case isn't instantly overdue. |
 | Complete | ✓ → result text, **done by** (you, another person, or a typed name), completion time (can be backdated; not in the future or before detection), optionally "add to the timeline as …" → `CompleteActionItemAsync` | The result is saved as a "Result: …" comment, and optionally an investigation entry, in one save. It shows under the task's title, on the task chip of the timeline entry it's about, and in the report's Response Tasks. **A task raised from a brief question needs an answer** ("This task follows up a question in the brief. Say what was found to mark it done."), and the answer shows under the question in the brief. The timeline type defaults to the task's kind: Contain → Containment, Eradicate → Eradication, Recover → Recovery, Investigate (or a question's task) → Analysis, Notify → Communication, General → Other. **Finishing Contain, Eradicate or Recover work while the case is in an earlier phase** offers "Move the case to <phase>…": it opens the usual phase dialog with the result as what was achieved and the completion time as when, and the analyst reviews and applies it (nothing moves on its own). |
 | Change status | Edit, or bulk "mark done" | Any status to any status (Open, In progress, Blocked, Done, Cancelled). Cancelling in Edit asks "Why cancel it?" (optional); the answer is kept as a "Cancelled: …" comment and shown under the task. Leaving Done clears the completion time and "done by". A question's task can be set to Done this way only if it was answered before (it was reopened since). |
@@ -168,11 +168,11 @@ Team changes appear on the timeline ("X is incident commander, taking over from 
 
 Links to cases you can't see are hidden.
 
-## My work, Agenda and Team workload
+## Desk, Agenda and Team workload
 
 | Page | Shows | Who |
 |---|---|---|
-| **My work** (`/work`) | Your open cases, your overdue and upcoming tasks (owner matched against any of your identifiers), recent escalations, cases sharing an indicator you added; quick-add task | everyone |
+| **Desk** (`/desk`) | Since you last looked: how many changes others made to your cases, and who. **Needs you**, most consequential first: a running notification deadline, your overdue tasks, notes mentioning you, being added to a case, tasks due within a day. **Your cases**: state, phase and how long, your part, the next thing for you, changes since you looked. **Your next**: your tasks by when (overdue, today, tomorrow, this week, later, no date), each with why it exists; quick-add and *Done*. Beside them: the clocks running on your cases, quiet changes by others, pinned cases and recent escalations. "Since you looked" counts audit entries by others after you last opened the case (or the last 14 days). | everyone |
 | **Agenda** (`/agenda`) | Open tasks across cases you can see, bucketed Overdue / Today / This week / Later / Undated, filterable by owner; your personal calendar feed URL (needs `Agenda:FeedKey`) | everyone |
 | **Team workload** (`/team`) | Open cases per person by severity, SLA and stale pressure, and the unassigned queue | `ViewAllCases` |
 

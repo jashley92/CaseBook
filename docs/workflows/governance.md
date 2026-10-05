@@ -159,6 +159,6 @@ stateDiagram-v2
 |---|---|
 | **Restrict** | Actions → *Restrict to need-to-know…* (reason optional). Anyone with `EditCases`. If you'd lose access, you're added as an Analyst. |
 | **Lift** | Actions → *Lift restriction…* (reason required). Only the incident commander, or someone with `ViewAllCases` or `ViewRestricted`. |
-| **Effect** | The case disappears for everyone except its team and cleared roles: lists, search, My work, dashboards, indicators, ATT&CK coverage, campaigns, exports, mentions and handoff pickers. A hidden case and a missing one look the same. Opening a restricted case is a higher-severity SIEM event (5305). The reason goes on the audit entry. SIEM 5504 / 5505. |
+| **Effect** | The case disappears for everyone except its team and cleared roles: lists, search, the Desk, dashboards, indicators, ATT&CK coverage, campaigns, exports, mentions and handoff pickers. A hidden case and a missing one look the same. Opening a restricted case is a higher-severity SIEM event (5305). The reason goes on the audit entry. SIEM 5504 / 5505. |
 
 See [architecture/security.md](../architecture/security.md#need-to-know) for the exact rule and its known gaps.

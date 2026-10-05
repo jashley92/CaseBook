@@ -15,8 +15,8 @@ browser's local zone because the profile menu was set to *Local*; stored times a
 ![Navigation](../screenshots/doc-navigation.png)
 
 1. **Overview**: the leadership dashboard and team workload. Shown only to roles with `ViewAllCases`. Anyone
-   else opening `/` is sent to *My work*.
-2. **Workspace**: My work, Agenda (tasks by due date, with a calendar feed), Cases, Campaigns, Indicators,
+   else opening `/` is sent to the *Desk*.
+2. **Workspace**: Desk, Agenda (tasks by due date, with a calendar feed), Cases, Campaigns, Indicators,
    ATT&CK coverage, Improvement actions, and New case (with `EditCases`).
 3. **Audit & exports**: Integrity & audit (everyone), Access log (administrators), Exports, Program report.
 4. **Administration**: settings hub, administrators only.

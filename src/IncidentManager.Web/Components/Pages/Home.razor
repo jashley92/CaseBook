@@ -13,9 +13,9 @@
            Subtitle="@(_asOf is null ? null : $"As of {_asOf}")">
     <Actions>
         @* UX-06: quick jump to the caller's own queue (the opposite-view cross-link). *@
-        <a class="btn btn-sm btn-outline-secondary" href="work"
-           title="Your open cases and tasks">
-            <span class="bi bi-person-workspace" aria-hidden="true"></span> My work
+        <a class="btn btn-sm btn-outline-secondary" href="desk"
+           title="Your cases, tasks and what needs you">
+            <span class="bi bi-person-workspace" aria-hidden="true"></span> Desk
         </a>
         @* UX-14: Team workload is the Dashboard's Overview-cluster sibling — a one-click lateral hop. *@
         <a class="btn btn-sm btn-outline-secondary" href="team"
@@ -297,7 +297,7 @@ else
         var user = (await AuthState.GetAuthenticationStateAsync()).User;
         if (!(await AuthZ.AuthorizeAsync(user, Policies.ViewAllCases)).Succeeded)
         {
-            Nav.NavigateTo("work", replace: true);
+            Nav.NavigateTo("desk", replace: true);
             return;
         }
 

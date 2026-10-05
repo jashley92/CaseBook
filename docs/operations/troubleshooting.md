@@ -26,7 +26,7 @@ How to diagnose problems in a running CaseBook, from startup failures to integri
 
 ### The 60-second health check
 
-1. The dashboard (or My work) loads for a mapped user.
+1. The dashboard (or the Desk) loads for a mapped user.
 2. Integrity → *Verify now* reports **VALID**, and there's no red banner.
 3. A seal exists within the auto-seal interval.
 4. Diagnostics → Backup & restore health reads **Fresh** for both.

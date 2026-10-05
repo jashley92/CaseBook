@@ -55,7 +55,7 @@ public sealed class CaseNotifications : ICaseNotifications
     private string BaseUrl => (_config["App:BaseUrl"] ?? "").TrimEnd('/');
     private string? CaseUrl(Guid id) => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases/{id}";
     private string? OverdueUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases?overdue=true&closed=true";
-    private string? AgendaUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/work";
+    private string? AgendaUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/desk";
     private string? CasesUrl() => BaseUrl.Length == 0 ? null : $"{BaseUrl}/cases";
 
     // PROD-02: is a given notification type routed to the team chat channel? Requires both a configured
