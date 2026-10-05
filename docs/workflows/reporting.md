@@ -58,17 +58,17 @@ template filled it (name and hash, by value).
 | **Gate** | The `LessonsCaptured` check can require a review before closing an Incident or Breach. |
 | **Wording** | Neutral on purpose ("improvement actions", "opportunities to improve"), because these records are discoverable ([decision 0012](../decisions/0012-discovery-conscious-records.md)). |
 
-The **Improvement actions** page (`/improvement-actions`) is the cross-case register, with a CSV export
+**Program › Improvement actions** (`/program/improvement-actions`) is the cross-case register, with a CSV export
 (exercises excluded unless asked for).
 
 ## Cross-case reporting
 
 | Output | Where | Contents |
 |---|---|---|
-| Leadership dashboard | `/` | Open mix, attention items, SLA performance, phases, notification compliance, 12-month trend; every figure links to the filtered list |
+| Leadership dashboard | Program › Overview, `/program` | Open mix, attention items, SLA performance, phases, notification compliance, 12-month trend; every figure links to the filtered list |
 | Metrics CSV | `/export/metrics.csv` | Dashboard figures with monthly and quarterly rollups |
-| Program report | `/program-report`, `/export/program-report.csv` | Quarter against the previous quarter: volumes, time to detect, contain and resolve, SLA attainment, regulatory reporting, post-incident follow-through, top techniques. Optional quarterly email to managers. |
-| Legal register | `/export/legal-register.csv` | Referrals, holds, materiality, notification deadlines |
+| Program report | Program › Program report (`/program/report`), `/export/program-report.csv` | Quarter against the previous quarter: volumes, time to detect, contain and resolve, SLA attainment, regulatory reporting, post-incident follow-through, top techniques. Optional quarterly email to managers. |
+| Legal register | Program › Legal register (`/program/legal`), `/export/legal-register.csv` | Referrals, holds, materiality, notification deadlines |
 | IOC feed | `/export/iocs.csv` | Malicious indicators across visible cases (a blocklist feed) |
 | Case audit | `/export/case-audit.csv?case=…` | One case's audit trail |
 | Compliance bundle | Integrity page or `/export/compliance-bundle.zip` | Audit segment, seals, public key and verification instructions ([integrity.md](../architecture/integrity.md#the-compliance-evidence-bundle)) |

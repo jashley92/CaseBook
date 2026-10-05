@@ -29,34 +29,10 @@
 <div class="nav-scrollable">
     @* title attributes double as tooltips when the sidebar is collapsed to icons (data-nav="collapsed"). *@
     <nav class="flex-column" aria-label="Primary">
-        @* UX-14: leadership-only "Overview" cluster — the surfaces for looking *across* the team. Both are
-           gated ViewAllCases (the dashboard is also the landing for these roles; others land on My Work).
-           The whole group — label included — is inside the gate so analysts, who see neither entry, never
-           get an empty heading. Team workload lives here, beside the Dashboard, because it is oversight,
-           not personal work; it used to be a tab on the Work page, which read as a category error. *@
-        <AuthorizeView Policy="@Policies.ViewAllCases">
-            <div class="nav-group-label">Overview</div>
-            <div class="nav-item">
-                <NavLink class="nav-link" href="" Match="NavLinkMatch.All" title="Dashboard">
-                    <span class="bi bi-speedometer2" aria-hidden="true"></span><span class="nav-text">Dashboard</span>
-                </NavLink>
-            </div>
-            <div class="nav-item">
-                <NavLink class="nav-link" href="team" Match="NavLinkMatch.All" title="Team workload">
-                    <span class="bi bi-people-fill" aria-hidden="true"></span><span class="nav-text">Team workload</span>
-                </NavLink>
-            </div>
-        </AuthorizeView>
-
         <div class="nav-group-label">Workspace</div>
         <div class="nav-item">
             <NavLink class="nav-link" href="desk" Match="NavLinkMatch.All" title="Desk">
                 <span class="bi bi-person-workspace" aria-hidden="true"></span><span class="nav-text">Desk</span>
-            </NavLink>
-        </div>
-        <div class="nav-item">
-            <NavLink class="nav-link" href="agenda" Match="NavLinkMatch.All" title="Agenda">
-                <span class="bi bi-calendar-week" aria-hidden="true"></span><span class="nav-text">Agenda</span>
             </NavLink>
         </div>
         <div class="nav-item">
@@ -82,11 +58,21 @@
                 <span class="bi bi-grid-3x3-gap" aria-hidden="true"></span><span class="nav-text">ATT&amp;CK coverage</span>
             </NavLink>
         </div>
-        @* E-26/PROD-41: the cross-case register of follow-up work from post-incident reviews. *@
+        @* RD-17: Program, the cross-case view (overview, team, due work, improvement actions, the legal register and
+           the program report). Roles that see every case open it on its overview; others on improvement actions. *@
         <div class="nav-item">
-            <NavLink class="nav-link" href="improvement-actions" Match="NavLinkMatch.All" title="Improvement actions">
-                <span class="bi bi-arrow-up-right-circle" aria-hidden="true"></span><span class="nav-text">Improvement actions</span>
-            </NavLink>
+            <AuthorizeView Policy="@Policies.ViewAllCases">
+                <Authorized>
+                    <NavLink class="nav-link" href="program" Match="NavLinkMatch.Prefix" title="Program">
+                        <span class="bi bi-speedometer2" aria-hidden="true"></span><span class="nav-text">Program</span>
+                    </NavLink>
+                </Authorized>
+                <NotAuthorized>
+                    <NavLink class="nav-link" href="program/improvement-actions" Match="NavLinkMatch.Prefix" title="Program">
+                        <span class="bi bi-speedometer2" aria-hidden="true"></span><span class="nav-text">Program</span>
+                    </NavLink>
+                </NotAuthorized>
+            </AuthorizeView>
         </div>
         <AuthorizeView Policy="@Policies.EditCases">
             <div class="nav-item">
@@ -116,12 +102,6 @@
         <div class="nav-item">
             <NavLink class="nav-link" href="exports" Match="NavLinkMatch.All" title="Exports">
                 <span class="bi bi-download" aria-hidden="true"></span><span class="nav-text">Exports</span>
-            </NavLink>
-        </div>
-        @* E-31: quarterly program-metrics roll-up for leadership / board / exam packs. *@
-        <div class="nav-item">
-            <NavLink class="nav-link" href="program-report" Match="NavLinkMatch.All" title="Program report">
-                <span class="bi bi-clipboard-data" aria-hidden="true"></span><span class="nav-text">Program report</span>
             </NavLink>
         </div>
 

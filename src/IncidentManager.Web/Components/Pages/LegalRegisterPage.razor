@@ -1,0 +1,86 @@
+@page "/program/legal"
+@* RD-17: the legal and regulatory obligations register (PROD-12) on screen, beside its CSV. Legal doesn't use the
+   app; this is the SOC's view of what it hands over. Each row opens the case's Briefing. Need-to-know scoped by
+   LegalRegisterService; read only. *@
+@attribute [Authorize(Policy = Policies.ViewCases)]
+@inject IncidentManager.Application.Compliance.LegalRegisterService Register
+@inject IClock Clock
+@inject TimeDisplay TimeDisp
+@inject ISeverityLabels SevLabels
+
+<PageTitle>Legal register</PageTitle>
+
+<PageHeader Title="Program" Subtitle="Cases carrying a legal or regulatory obligation: a referral, a hold, a breach, or a materiality call.">
+    <Actions>
+        <a class="btn btn-sm btn-outline-secondary" href="export/legal-register.csv" download>
+            <span class="bi bi-download" aria-hidden="true"></span> Download (CSV)
+        </a>
+    </Actions>
+</PageHeader>
+<ProgramNav />
+
+@if (_rows is null)
+{
+    <LoadingBlock />
+}
+else if (_rows.Count == 0)
+{
+    <p class="text-muted">No case you can see carries a legal or regulatory obligation.</p>
+}
+else
+{
+    var now = Clock.UtcNow;
+    <div class="table-responsive">
+        <table class="table table-sm align-middle im-table">
+            <thead>
+                <tr><th>Case</th><th>State</th><th>Legal</th><th>Materiality</th><th>Affected</th><th>Notification</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td>
+                            <a href="cases/@Uri.EscapeDataString(r.CaseNumber)?tab=Briefing" class="text-decoration-none"><code>@r.CaseNumber</code></a>
+                            <div class="small text-muted im-clamp-2" title="@r.Title">@r.Title</div>
+                        </td>
+                        <td class="text-nowrap small"><RungMark Value="r.Classification" /> <SeverityMark Value="r.Severity" /><div class="text-muted">@Ui.Label(r.Phase)</div></td>
+                        <td class="small">
+                            @if (r.ReferredAtUtc is { } refd) { <div>Referred @TimeDisp.DateOnly(refd)</div> }
+                            @if (!string.IsNullOrWhiteSpace(r.LegalContact)) { <div class="text-muted">@r.LegalContact</div> }
+                            @if (r.LegalHold) { <div><span class="bi bi-lock" aria-hidden="true"></span> Legal hold</div> }
+                            @if (r.ReferredAtUtc is null && !r.LegalHold) { <span class="text-muted">—</span> }
+                        </td>
+                        <td class="small">
+                            @Ui.Label(r.Materiality)
+                            @if (!string.IsNullOrWhiteSpace(r.MaterialityDecisionMaker)) { <div class="text-muted">@r.MaterialityDecisionMaker@(r.MaterialityDecidedOnUtc is { } md ? $", {TimeDisp.DateOnly(md)}" : "")</div> }
+                        </td>
+                        <td class="small">
+                            @if (r.AffectedIndividuals is { } n) { <div>@n.ToString("N0") individuals</div> }
+                            @if (!string.IsNullOrWhiteSpace(r.AffectedJurisdictions)) { <div class="text-muted">@r.AffectedJurisdictions</div> }
+                            @if (r.AffectedIndividuals is null && string.IsNullOrWhiteSpace(r.AffectedJurisdictions)) { <span class="text-muted">—</span> }
+                        </td>
+                        <td class="small">
+                            @if (r.ReportedAtUtc is { } rep) { <div>Reported @TimeDisp.DateOnly(rep)</div> }
+                            else if (r.DeadlineDueAtUtc is { } due)
+                            {
+                                <div class="@(due < now ? "text-danger" : "")">@r.DeadlineJurisdiction · due @TimeDisp.Brief(due, now)</div>
+                                @if (!string.IsNullOrWhiteSpace(r.DeadlineState)) { <div class="text-muted">@Spaced(r.DeadlineState)</div> }
+                            }
+                            else { <span class="text-muted">—</span> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<IncidentManager.Application.Compliance.LegalRegisterRow>? _rows;
+
+    protected override async Task OnInitializedAsync() => _rows = await Register.BuildAsync();
+
+    // "OnTrack" reads "On track".
+    private static string Spaced(string? s) => string.IsNullOrEmpty(s) ? "" :
+        s[0] + string.Concat(s[1..].Select(ch => char.IsUpper(ch) ? " " + char.ToLowerInvariant(ch) : ch.ToString()));
+}

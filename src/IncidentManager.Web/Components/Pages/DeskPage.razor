@@ -24,15 +24,12 @@
         <Actions>
             @if (_hasDashboard)
             {
-                <a class="btn btn-sm btn-outline-secondary" href="" title="Go to the leadership dashboard">
-                    <span class="bi bi-speedometer2" aria-hidden="true"></span> Dashboard
+                <a class="btn btn-sm btn-outline-secondary" href="program" title="Program: the cross-case view">
+                    <span class="bi bi-speedometer2" aria-hidden="true"></span> Program
                 </a>
             }
             <a class="btn btn-sm btn-outline-secondary" href="cases?scope=mine">
                 <span class="bi bi-inbox" aria-hidden="true"></span> Full queue
-            </a>
-            <a class="btn btn-sm btn-outline-secondary" href="agenda" title="Due work across the team, and your calendar feed">
-                <span class="bi bi-calendar3" aria-hidden="true"></span> Agenda
             </a>
         </Actions>
     </PageHeader>
@@ -141,7 +138,7 @@
                 <section class="im-desk-sec" aria-labelledby="desk-next">
                     <div class="im-desk-head">
                         <h2 id="desk-next">Your next</h2>
-                        <span class="im-desk-note">@_desk.Next.Count open · <a href="agenda">calendar feed</a></span>
+                        <span class="im-desk-note">@_desk.Next.Count open · <a href="account/notifications#calendar">in your calendar</a></span>
                     </div>
                     @* PROD-21: add one of your own tasks without opening its case. *@
                     <AuthorizeView Policy="@Policies.EditCases">

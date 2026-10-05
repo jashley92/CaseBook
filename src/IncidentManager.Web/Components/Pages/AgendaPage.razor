@@ -1,20 +1,20 @@
-@page "/agenda"
-@attribute [Authorize(Policy = Policies.ViewCases)]
+@page "/program/due"
+@* RD-17: Program › Due work: open tasks across the cases you can see, by when they're due, for any owner.
+   Your own are on the Desk; your calendar feed is in your notification settings. *@
+@attribute [Authorize(Policy = Policies.ViewAllCases)]
 @inject AgendaService Svc
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Abstractions.ICurrentUser Me
-@inject AgendaFeedService Feeds
 @inject IncidentManager.Web.Services.ToastService Toasts
 @inject ISeverityLabels SevLabels
 @inject NavigationManager Nav
-@inject IJSRuntime JS
 
-<PageTitle>Agenda</PageTitle>
+<PageTitle>Due work</PageTitle>
 
 <div class="agenda">
-    <PageHeader Title="Agenda">
+    <PageHeader Title="Program" Subtitle="Open tasks across the team, by when they're due.">
         <Actions>
             <div class="agenda-owner">
                 <label class="form-label mb-0 me-1 small text-muted" for="agenda-owner">Owner</label>
@@ -31,11 +31,9 @@
                     }
                 </select>
             </div>
-            <a class="btn btn-sm btn-outline-secondary ms-2" href="agenda/agenda.ics" title="Download an .ics file of your due tasks">
-                <span class="bi bi-calendar-plus" aria-hidden="true"></span> Add to calendar
-            </a>
         </Actions>
     </PageHeader>
+    <ProgramNav />
 
     @if (_board is null)
     {
@@ -113,40 +111,6 @@
             }
         }
 
-        <section class="im-card agenda-subscribe">
-            <div class="im-section-head">
-                <span><span class="bi bi-calendar-week" aria-hidden="true"></span> Calendar subscription</span>
-            </div>
-            @if (Feeds.Enabled && _feedUrl is not null)
-            {
-                <p class="text-muted small mb-2">
-                    Subscribe to this private URL in your calendar (Outlook: <em>Add calendar → Subscribe from web</em>) to keep
-                    your due tasks in sync. The link is personal to you, so treat it like a password.
-                </p>
-                <div class="input-group input-group-sm agenda-feed">
-                    <input class="form-control" readonly value="@_feedUrl" id="agenda-feed-url" aria-label="Calendar feed URL" />
-                    <button class="btn btn-outline-secondary" type="button" @onclick="CopyFeed">
-                        <span class="bi @(_copied ? "bi-check2" : "bi-clipboard")" aria-hidden="true"></span>
-                        @(_copied ? "Copied" : "Copy")
-                    </button>
-                </div>
-                @* S-12: the link lasts a year and can be voided without affecting anyone else's. *@
-                <p class="text-muted small mt-2 mb-0">
-                    Works until @TimeDisp.DateOnly(_feedExpires). If the link may have been shared or exposed,
-                    <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ConfirmResetFeed">reset it</button>.
-                </p>
-                <ConfirmDialog @ref="_confirm" />
-            }
-            else
-            {
-                <p class="text-muted small mb-0">
-                    Syncing calendar subscriptions aren't turned on. Use <strong>Add to calendar</strong> above for a one-time import.
-                    <AuthorizeView Policy="@Policies.Administer">
-                        To turn them on, set <code>Agenda:FeedKey</code> in the server configuration.
-                    </AuthorizeView>
-                </p>
-            }
-        </section>
     }
 </div>
 
@@ -162,10 +126,6 @@
 
     private AgendaBoard? _board;
     private string _owner = "";      // "" = everyone, "@me" = mine, else a specific owner id
-    private string? _feedUrl;
-    private DateTimeOffset _feedExpires;
-    private bool _copied;
-    private ConfirmDialog _confirm = null!;
 
     [SupplyParameterFromQuery(Name = "owner")] private string? OwnerQuery { get; set; }
 
@@ -177,21 +137,8 @@
     protected override async Task OnInitializedAsync()
     {
         if (!string.IsNullOrWhiteSpace(OwnerQuery)) _owner = OwnerQuery!;
-        SetFeed(await Feeds.GetMyLinkAsync());
         await Load();
     }
-
-    private void SetFeed(AgendaFeedLink? link)
-    {
-        _feedUrl = link is null ? null : Nav.ToAbsoluteUri($"agenda/feed.ics?token={Uri.EscapeDataString(link.Token)}").ToString();
-        _feedExpires = link?.ExpiresAtUtc ?? default;
-        _copied = false;
-    }
-
-    private void ConfirmResetFeed() => _confirm.Ask(this, "Reset calendar link",
-        "Your current link stops working immediately, and any calendar subscribed to it stops updating. " +
-        "You'll need to subscribe again with the new link.",
-        "Reset link", async () => { SetFeed(await Feeds.ResetMyLinkAsync()); Toasts.Success("New calendar link ready. Re-subscribe with it."); });
 
     // Today / this week follow the zone the viewer's timestamps are shown in (UTC, or their local zone), so the
     // groups agree with the times on each row.
@@ -207,13 +154,6 @@
         // Keep the choice in the address so Back, a refresh or a shared link returns to the same view.
         Nav.NavigateTo(Nav.GetUriWithQueryParameter("owner", string.IsNullOrEmpty(owner) ? null : owner), replace: true);
         await Load();
-    }
-
-    private async Task CopyFeed()
-    {
-        if (_feedUrl is null) return;
-        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _feedUrl); _copied = true; }
-        catch { /* clipboard blocked; the field stays selectable as a fallback */ }
     }
 
     private sealed record BucketMeta(string Label, string Icon, string Badge);

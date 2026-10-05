@@ -1,4 +1,4 @@
-@page "/program-report"
+@page "/program/report"
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @* E-31: the quarterly program-metrics report for leadership, board and exam packs (the CISO's 500.4 report):
    volumes, response timing, SLA attainment, regulatory reporting, post-incident follow-through and the ATT&CK
@@ -15,8 +15,9 @@
 <PageTitle>Program report</PageTitle>
 
 <div class="no-print">
-    <PageHeader Title="Program report"
+    <PageHeader Title="Program"
                 Subtitle="Quarterly case volumes, response times, SLA attainment and follow-through, compared with the previous quarter." />
+    <ProgramNav />
 </div>
 
 @if (_report is not { } r)

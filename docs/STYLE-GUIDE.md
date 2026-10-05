@@ -285,7 +285,7 @@ for an analyst mid-investigation, not a marketing page.
 <PageHeader Title="Dashboard" Subtitle="Your incidents at a glance, updated live" />
 
 @* Prefer: factual, no em-dash *@
-<PageHeader Title="Leadership dashboard" Subtitle="@(_asOf is null ? null : $"As of {_asOf}")" />
+<PageHeader Title="Program" Subtitle="@(_asOf is null ? null : $"As of {_asOf}")" />
 ```
 
 ### Buttons and toggles

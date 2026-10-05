@@ -11,7 +11,8 @@ public class PagePoliciesTests
     [Theory]
     [InlineData("/admin/roles", Permission.Administer)]
     [InlineData("admin", Permission.Administer)]
-    [InlineData("/team", Permission.ViewAllCases)]
+    [InlineData("/program/team", Permission.ViewAllCases)]
+    [InlineData("/program/legal", Permission.ViewCases)]
     [InlineData("/cases/new", Permission.EditCases)]
     [InlineData("/cases/6a339aaf-3c92-4130-a26c-46681ec9ccfd?tab=Audit", Permission.ViewCases)]
     public void Knows_what_a_page_requires(string path, Permission expected) =>

@@ -1,4 +1,4 @@
-@page "/improvement-actions"
+@page "/program/improvement-actions"
 @attribute [Authorize(Policy = Policies.ViewCases)]
 @* PROD-41: the cross-case improvement-action register. Every action logged by a post-incident review, across
    the cases the viewer can see, tracked to closure — program evidence for the CISO's 500.04 report and the
@@ -11,8 +11,9 @@
 
 <PageTitle>Improvement actions</PageTitle>
 
-<PageHeader Title="Improvement actions"
+<PageHeader Title="Program"
             Subtitle="Follow-up work identified by post-incident reviews, tracked to closure across cases." />
+<ProgramNav />
 
 @if (_register is null)
 {

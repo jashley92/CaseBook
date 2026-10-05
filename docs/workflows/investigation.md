@@ -168,13 +168,14 @@ Team changes appear on the timeline ("X is incident commander, taking over from 
 
 Links to cases you can't see are hidden.
 
-## Desk, Agenda and Team workload
+## Desk, Due work and Team
 
 | Page | Shows | Who |
 |---|---|---|
 | **Desk** (`/desk`) | Since you last looked: how many changes others made to your cases, and who. **Needs you**, most consequential first: a running notification deadline, your overdue tasks, notes mentioning you, being added to a case, tasks due within a day. **Your cases**: state, phase and how long, your part, the next thing for you, changes since you looked. **Your next**: your tasks by when (overdue, today, tomorrow, this week, later, no date), each with why it exists; quick-add and *Done*. Beside them: the clocks running on your cases, quiet changes by others, pinned cases and recent escalations. "Since you looked" counts audit entries by others after you last opened the case (or the last 14 days). | everyone |
-| **Agenda** (`/agenda`) | Open tasks across cases you can see, bucketed Overdue / Today / This week / Later / Undated, filterable by owner; your personal calendar feed URL (needs `Agenda:FeedKey`) | everyone |
-| **Team workload** (`/team`) | Open cases per person by severity, SLA and stale pressure, and the unassigned queue | `ViewAllCases` |
+| **Program › Due work** (`/program/due`) | Open tasks across the cases you can see, bucketed Overdue / Today / This week / Later / Undated, filterable by owner | `ViewAllCases` |
+| **Program › Team** (`/program/team`) | Open cases per person by severity, SLA and stale pressure, and the unassigned queue | `ViewAllCases` |
+| **Calendar** (Notification settings) | Your personal calendar feed URL (needs `Agenda:FeedKey`) and a one-time `.ics` of your due tasks | everyone |
 
 Exercise cases are excluded from all three.
 

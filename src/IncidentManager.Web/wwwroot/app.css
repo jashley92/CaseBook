@@ -3034,3 +3034,8 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-desk-clock:last-child { border-bottom: 0; }
 .im-desk-quiet { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; font-size: var(--im-text-sm); }
 .im-desk-quiet li { display: grid; gap: .05rem; }
+
+/* RD-17: Program's parts, under its header (same look as a view's parts). */
+.im-program-nav { display: flex; flex-wrap: wrap; gap: .25rem; margin: -.25rem 0 1.25rem; padding-bottom: .55rem; border-bottom: 1px solid var(--im-border); }
+.im-program-nav .im-part { text-decoration: none; }
+@media print { .im-program-nav { display: none; } }

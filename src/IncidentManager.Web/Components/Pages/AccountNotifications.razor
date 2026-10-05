@@ -4,6 +4,10 @@
 @inject UserNotificationPreferenceService Prefs
 @inject IConfiguration Config
 @inject ToastService Toasts
+@inject IncidentManager.Application.Work.AgendaFeedService Feeds
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject TimeDisplay TimeDisp
 
 <PageTitle>Notification settings</PageTitle>
 
@@ -65,6 +69,44 @@ else
         Emails go out only once an administrator turns on the feature for this deployment. Your choices are
         saved and apply from then.
     </p>
+
+    @* RD-17: your due tasks in your own calendar (it was on the Agenda page). *@
+    <div class="im-card nc-card mt-4" style="max-width:44rem" id="calendar">
+        <div class="fw-semibold mb-1"><span class="bi bi-calendar-week me-1" aria-hidden="true"></span>Calendar</div>
+        @if (Feeds.Enabled && _feedUrl is not null)
+        {
+            <p class="text-muted small mb-2">
+                Subscribe to this private URL in your calendar (Outlook: <em>Add calendar → Subscribe from web</em>) to keep
+                your due tasks in sync. The link is personal to you, so treat it like a password.
+            </p>
+            <div class="input-group input-group-sm">
+                <input class="form-control" readonly value="@_feedUrl" aria-label="Calendar feed URL" />
+                <button class="btn btn-outline-secondary" type="button" @onclick="CopyFeed">
+                    <span class="bi @(_copied ? "bi-check2" : "bi-clipboard")" aria-hidden="true"></span>
+                    @(_copied ? "Copied" : "Copy")
+                </button>
+            </div>
+            @* S-12: the link lasts a year and can be voided without affecting anyone else's. *@
+            <p class="text-muted small mt-2 mb-2">
+                Works until @TimeDisp.DateOnly(_feedExpires). If the link may have been shared or exposed,
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="ConfirmResetFeed">reset it</button>.
+            </p>
+            <ConfirmDialog @ref="_confirm" />
+        }
+        else
+        {
+            <p class="text-muted small mb-2">
+                Syncing calendar subscriptions aren't turned on; download a one-time file instead.
+                <AuthorizeView Policy="@Policies.Administer">
+                    To turn them on, set <code>Agenda:FeedKey</code> in the server configuration.
+                </AuthorizeView>
+            </p>
+        }
+        <a class="btn btn-sm btn-outline-secondary" href="agenda/agenda.ics" title="Download an .ics file of your due tasks">
+            <span class="bi bi-calendar-plus" aria-hidden="true"></span> Download your due tasks (.ics)
+        </a>
+    </div>
+
 }
 
 @code {
@@ -73,9 +115,33 @@ else
     private bool _mandAssignment, _mandOverdue, _mandDueSoon;
     private bool _loaded;
     private bool _saving;
+    private string? _feedUrl;
+    private DateTimeOffset _feedExpires;
+    private bool _copied;
+    private ConfirmDialog _confirm = null!;
+
+    private void SetFeed(IncidentManager.Application.Work.AgendaFeedLink? link)
+    {
+        _feedUrl = link is null ? null : Nav.ToAbsoluteUri($"agenda/feed.ics?token={Uri.EscapeDataString(link.Token)}").ToString();
+        _feedExpires = link?.ExpiresAtUtc ?? default;
+        _copied = false;
+    }
+
+    private void ConfirmResetFeed() => _confirm.Ask(this, "Reset calendar link",
+        "Your current link stops working immediately, and any calendar subscribed to it stops updating. " +
+        "You'll need to subscribe again with the new link.",
+        "Reset link", async () => { SetFeed(await Feeds.ResetMyLinkAsync()); Toasts.Success("New calendar link ready. Re-subscribe with it."); });
+
+    private async Task CopyFeed()
+    {
+        if (_feedUrl is null) return;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _feedUrl); _copied = true; }
+        catch { /* clipboard blocked; the field stays selectable as a fallback */ }
+    }
 
     protected override async Task OnInitializedAsync()
     {
+        SetFeed(await Feeds.GetMyLinkAsync());
         _mandAssignment = Config.GetValue<bool>("Notifications:Mandatory:Assignment");
         _mandOverdue = Config.GetValue<bool>("Notifications:Mandatory:Overdue");
         _mandDueSoon = Config.GetValue<bool>("Notifications:Mandatory:DueSoon");

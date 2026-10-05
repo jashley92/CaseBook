@@ -1,0 +1,13 @@
+@* RD-17 (Casefile): Program, the cross-case view for leadership, in one place. The overview (dashboard), team
+   workload and due work are for roles that see every case; improvement actions, the legal register and the
+   program report are open to anyone with case access (need-to-know scoped by their services). *@
+<nav class="im-program-nav" aria-label="Program">
+    <AuthorizeView Policy="@Policies.ViewAllCases">
+        <NavLink class="im-part" href="program" Match="NavLinkMatch.All">Overview</NavLink>
+        <NavLink class="im-part" href="program/team" Match="NavLinkMatch.All">Team</NavLink>
+        <NavLink class="im-part" href="program/due" Match="NavLinkMatch.All">Due work</NavLink>
+    </AuthorizeView>
+    <NavLink class="im-part" href="program/improvement-actions" Match="NavLinkMatch.All">Improvement actions</NavLink>
+    <NavLink class="im-part" href="program/legal" Match="NavLinkMatch.All">Legal register</NavLink>
+    <NavLink class="im-part" href="program/report" Match="NavLinkMatch.All">Program report</NavLink>
+</nav>

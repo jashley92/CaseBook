@@ -27,10 +27,12 @@ caught by the server and redirected to `/access-denied?from=…`; an unknown pag
 
 | Route | Page | Policy | Purpose |
 |---|---|---|---|
-| `/` | `Home` | ViewCases | Leadership dashboard. Users without `ViewAllCases` are sent to `/desk` |
-| `/team` | `TeamWorkloadPage` | ViewAllCases | Open caseload per analyst, unassigned queue |
+| `/` | `Home` | ViewCases | Sends roles with `ViewAllCases` to `/program`, everyone else to `/desk` |
+| `/program` | `ProgramOverviewPage` | ViewAllCases | Program › Overview, the leadership dashboard. Every Program page carries `Shared/ProgramNav` |
+| `/program/team` | `TeamWorkloadPage` | ViewAllCases | Program › Team: open caseload per analyst, unassigned queue |
+| `/program/legal` | `LegalRegisterPage` | ViewCases | Program › Legal register: the obligations register on screen (rows open the case's Briefing), beside its CSV |
 | `/desk` | `DeskPage` | ViewCases | The Desk (`DeskService`, on `MyWorkService`): since you last looked, what needs you, your cases with your part, your tasks with why, clocks, quiet changes, pinned, recent escalations |
-| `/agenda` | `AgendaPage` | ViewCases | Open tasks by due date; calendar feed link. `?owner=` |
+| `/program/due` | `AgendaPage` | ViewAllCases | Program › Due work: open tasks by due date. `?owner=` |
 | `/cases`, `/cases/mine` | `Cases` | ViewCases | Case list ([query parameters](#lists-filters-and-url-state)) |
 | `/cases/new` | `CreateCase` | EditCases | New case form |
 | `/cases/import` | `CaseImport` | EditCases | Structured import; pending-import queue. `?into=` (existing case), `?pending=` |
@@ -39,11 +41,11 @@ caught by the server and redirected to `/access-denied?from=…`; an unknown pag
 | `/campaigns`, `/campaigns/{Id}` | `CampaignsPage`, `CampaignPage` | ViewCases | Campaign list and rollup |
 | `/indicators` | `IndicatorsPage` | ViewCases | Cross-case indicators. `?entity=` |
 | `/attack-coverage` | `AttackCoveragePage` | ViewCases | ATT&CK heatmap |
-| `/improvement-actions` | `ImprovementActionsPage` | ViewCases | Improvement-action register |
+| `/program/improvement-actions` | `ImprovementActionsPage` | ViewCases | Program › Improvement actions |
 | `/integrity` | `Integrity` | ViewCases | Verify chain, seals, audit trail, compliance bundle |
 | `/access-log` | `AccessLogPage` | Administer | Read and download log |
 | `/exports` | `Exports` | ViewCases | Download CSVs and bundles |
-| `/program-report` | `ProgramReportPage` | ViewCases | Quarterly program metrics |
+| `/program/report` | `ProgramReportPage` | ViewCases | Program › Program report: quarterly program metrics |
 | `/account/access`, `/account/api-tokens`, `/account/notifications` | `Account*` | signed in | My access; personal tokens; notification preferences |
 | `/admin`, `/admin/settings/{Section?}` | `Admin` | Administer | Settings sections (below) |
 | `/admin/templates`, `/admin/gates`, `/admin/taxonomy`, `/admin/data-elements`, `/admin/outcomes`, `/admin/roles`, `/admin/api-tokens`, `/admin/email-templates`, `/admin/config-bundle`, `/admin/style` | `Admin*`, `StyleGuide` | Administer | Case templates, stage gates, labels, data elements, roles and AD mappings, system tokens, email wording, configuration bundle, live style guide |

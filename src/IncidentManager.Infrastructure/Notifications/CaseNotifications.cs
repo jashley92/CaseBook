@@ -356,7 +356,7 @@ public sealed class CaseNotifications : ICaseNotifications
                     $"<th align=\"right\">{WebUtility.HtmlEncode(report.Period.Label)}</th><th align=\"right\">{WebUtility.HtmlEncode(report.Period.Previous.Label)}</th></tr>" +
                     string.Join("", rows.Select(r => $"<tr><td>{WebUtility.HtmlEncode(r.Label)}</td><td align=\"right\">{WebUtility.HtmlEncode(r.Cur)}</td><td align=\"right\">{WebUtility.HtmlEncode(r.Prev)}</td></tr>")) +
                     "</table>";
-        var reportUrl = BaseUrl.Length == 0 ? null : $"{BaseUrl}/program-report";
+        var reportUrl = BaseUrl.Length == 0 ? null : $"{BaseUrl}/program/report";
         var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["Quarter"] = report.Period.Label,

@@ -14,11 +14,12 @@ browser's local zone because the profile menu was set to *Local*; stored times a
 
 ![Navigation](../screenshots/doc-navigation.png)
 
-1. **Overview**: the leadership dashboard and team workload. Shown only to roles with `ViewAllCases`. Anyone
-   else opening `/` is sent to the *Desk*.
-2. **Workspace**: Desk, Agenda (tasks by due date, with a calendar feed), Cases, Campaigns, Indicators,
-   ATT&CK coverage, Improvement actions, and New case (with `EditCases`).
-3. **Audit & exports**: Integrity & audit (everyone), Access log (administrators), Exports, Program report.
+1. **Workspace**: Desk, Cases, Campaigns, Indicators, ATT&CK coverage, **Program**, and New case (with
+   `EditCases`). Opening `/` goes to Program for roles with `ViewAllCases`, and to the Desk for everyone else.
+   **Program** gathers the cross-case views under one bar: Overview (the leadership dashboard), Team, Due work
+   (open tasks across the team by when they're due), Improvement actions, the Legal register and the Program
+   report. The first three need `ViewAllCases`. Your calendar feed is in *Notification settings*.
+3. **Audit & exports**: Integrity & audit (everyone), Access log (administrators), Exports.
 4. **Administration**: settings hub, administrators only.
 5. **Command palette** (`Ctrl+K` or `/`): jump to a page or a case by number, title or IOC, or run an action
    on the open case. `?` lists the keyboard shortcuts. `g` then `d`/`m`/`c`/`n`/`i` goes to the dashboard, my
