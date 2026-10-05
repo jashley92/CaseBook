@@ -155,8 +155,11 @@ doesn't change the incident commander; that's a separate assignment.
 
 ![Timeline](../screenshots/doc-timeline.png)
 
-1. **Lenses**: All, Event (Disclosure on third-party cases), Investigation, Milestones, Decisions, Working notes.
-2. **Filter**: tactic or type, source, entity, and *key entries only*.
+1. **Lenses**: Story (the turning points, oldest first), Everything, Attack chain (Disclosure on third-party
+   cases), Response, Decisions, Working notes. Story and Everything read in **two lanes**, the adversary left of
+   the time spine and the response right of it, with the phase as a band on the spine, quiet stretches marked,
+   and a minimap of the whole case above.
+2. **Filter**: tactic or type, source, entity, and whether milestones show.
 3. **Clock / T+**: show times as clock times or as time since detection.
 4. **Add** opens the composer (below).
 5. **Attack chain**: event steps as a one-line tactic strip; *Show* expands it.
@@ -166,7 +169,7 @@ doesn't change the incident commander; that's a separate assignment.
 8. **An investigation entry**: type, text, who logged it, and here *recorded …* because it was written more
    than an hour after it happened. Actions: Edit (saves a new version), Cite evidence, raise a Task.
 9. **Correct time**: re-date a classification, severity or phase change with a reason.
-10. **A decision**: what was decided, why, options considered, and who decided.
+10. **A decision**: what was decided, why, options considered, who decided, and the tasks carrying it out.
 
 ### Adding to the timeline
 

@@ -24,15 +24,14 @@
 @{
     // Only current versions are shown; superseded Investigation edits live in history (below) and the audit trail.
     // INV-30: the Decisions lens is Investigation narrowed to decisions; "key entries" keeps the turning points.
-    var tlAll = _msOnly ? new List<TimelineEntry>()
-        : Case.TimelineEntries.Where(x => (_tlLens is null || x.Kind == _tlLens) && x.IsCurrent
+    var tlAll = Case.TimelineEntries.Where(x => (_tlLens is null || x.Kind == _tlLens) && x.IsCurrent
                                           && (!_decOnly || x.Type == TimelineEntryType.Decision)
                                           && (!KeyOnlyApplies || IsKeyEntry(x))).ToList();
     var tlView = FilteredTimeline(tlAll)
         .Where(e => ChangedSinceUtc is not { } since || (e.ModifiedAtUtc ?? e.CreatedAtUtc) > since).ToList();
     // INV-01: response milestones, derived from the case record. Shown in All (unless hidden) and their own lens;
     // an entry filter (type / tactic / source) doesn't apply to them, so they step aside while one is active.
-    var msAll = _msOnly || (_tlLens is null && _showMilestones)
+    var msAll = _tlLens is null && _showMilestones
         ? Milestones().Where(m => !KeyOnlyApplies || IsKeyMilestone(m)).ToList() : [];
     // HR-07: a closed case reads as a story; team changes are record-keeping, folded until asked for.
     var teamHidden = Case.Phase == CasePhase.Closed && !_showTeamChanges ? msAll.Count(m => m.Kind == MilestoneKind.Command) : 0;
@@ -47,19 +46,21 @@
 }
 
 <div class="tl-toolbar">
-    <div class="im-seg" role="group" aria-label="Timeline lens">
-        <button class="btn btn-sm @(_tlLens is null && !_msOnly && !_notesOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens is null && !_msOnly && !_notesOnly)"
-                title="The full chronology: what happened, what the team did, and the response milestones, interleaved."
-                @onclick="() => SwitchLens(null)">All <span class="tl-count">@(CurrentEntries.Count() + Milestones().Count)</span></button>
+    @* RD-13: the Record's lenses. Story and Everything read in two lanes (the adversary, the response) either side
+       of the time spine; the others are one lane. *@
+    <div class="im-seg" role="group" aria-label="Record lens">
+        <button class="btn btn-sm @(StoryLens ? "active" : "")" aria-pressed="@Ui.Aria(StoryLens)"
+                title="The turning points, oldest first: adversary steps, decisions, handoffs, and the phase, classification, severity, materiality, gate and reporting milestones."
+                @onclick="SwitchToStory">Story <span class="tl-count">@(CurrentEntries.Count(IsKeyEntry) + Milestones().Count(IsKeyMilestone))</span></button>
+        <button class="btn btn-sm @(_tlLens is null && !_keyOnly && !_notesOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens is null && !_keyOnly && !_notesOnly)"
+                title="The full chronology: what happened, what the team did, and the response milestones."
+                @onclick="() => SwitchLens(null)">Everything <span class="tl-count">@(CurrentEntries.Count() + Milestones().Count)</span></button>
         <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Event)"
-                title="@(IsThirdParty ? "The vendor-disclosure narrative: what the vendor reported and what we confirmed about our data." : "The attack narrative: facts and timing of what happened.")"
-                @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Disclosure" : "Event") <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Event)</span></button>
+                title="@(IsThirdParty ? "The vendor-disclosure narrative: what the vendor reported and what we confirmed about our data." : "The attack narrative: facts and timing of what the adversary did.")"
+                @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Disclosure" : "Attack chain") <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Event)</span></button>
         <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation && !_decOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Investigation && !_decOnly)"
-                title="Analyst and team actions during the investigation."
-                @onclick="() => SwitchLens(TimelineKind.Investigation)">Investigation <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Investigation)</span></button>
-        <button class="btn btn-sm @(_msOnly ? "active" : "")" aria-pressed="@Ui.Aria(_msOnly)"
-                title="Response milestones from the case record: classification, severity and phase changes, stage gates, materiality, reporting, completed tasks and evidence."
-                @onclick="SwitchToMilestones">Milestones <span class="tl-count">@Milestones().Count</span></button>
+                title="What the team did: findings, actions, decisions and handoffs."
+                @onclick="() => SwitchLens(TimelineKind.Investigation)">Response <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Investigation)</span></button>
         @* INV-30: "what did we decide, and why?" — the examiner's first question, one click away. *@
         <button class="btn btn-sm @(_decOnly ? "active" : "")" aria-pressed="@Ui.Aria(_decOnly)"
                 title="Decisions, each with why it was made, what else was considered and who decided."
@@ -71,13 +72,10 @@
     </div>
     @if (totalAll > 0 && !_notesOnly)
     {
-        @if (!_msOnly)
-        {
-            <button type="button" class="btn btn-sm @(FiltersActive ? "btn-secondary" : "btn-outline-secondary")" aria-expanded="@Ui.Aria(FiltersShown)"
-                    aria-controls="tl-filter-row" @onclick="() => _showFilters = !_showFilters">
-                <span class="bi bi-funnel" aria-hidden="true"></span> Filter@(FilterCount > 0 ? $" ({FilterCount})" : "")
-            </button>
-        }
+        <button type="button" class="btn btn-sm @(FiltersActive ? "btn-secondary" : "btn-outline-secondary")" aria-expanded="@Ui.Aria(FiltersShown)"
+                aria-controls="tl-filter-row" @onclick="() => _showFilters = !_showFilters">
+            <span class="bi bi-funnel" aria-hidden="true"></span> Filter@(FilterCount > 0 ? $" ({FilterCount})" : "")
+        </button>
         @if (Case.DetectedAtUtc is not null)
         {
             @* INV-03: responders talk in time since detection ("T+26h we had the session"). *@
@@ -103,7 +101,7 @@
             </span>
         }
     }
-    @if (!_msOnly && _tlEditId is null)
+    @if (_tlEditId is null)
     {
         <AuthorizeView Policy="@Policies.EditCases">
             @if (!ComposerVisible)
@@ -122,15 +120,11 @@
         </AuthorizeView>
     }
 </div>
-@if (totalAll > 0 && !_msOnly && !_notesOnly && FiltersShown)
+@if (totalAll > 0 && !_notesOnly && FiltersShown)
 {
     <div class="tl-filters" id="tl-filter-row">
         @if (_tlLens is null)
         {
-            <div class="form-check form-switch mb-0 small" title="Only the turning points: event steps, decisions, handoffs, and phase, classification, severity, materiality, gate and reporting milestones">
-                <input class="form-check-input" type="checkbox" role="switch" id="tl-key-only" @bind="_keyOnly" />
-                <label class="form-check-label" for="tl-key-only">Key entries only</label>
-            </div>
             <div class="form-check form-switch mb-0 small" title="Show classification, phase, gate and other response milestones in the chronology">
                 <input class="form-check-input" type="checkbox" role="switch" id="tl-show-ms" @bind="_showMilestones" />
                 <label class="form-check-label" for="tl-show-ms">Milestones</label>
@@ -179,8 +173,6 @@
     </div>
 }
 
-@if (!_msOnly)
-{
 <AuthorizeView Policy="@Policies.EditCases">
     @* Design review P5 / INV-26: the composer stays folded (opened from the toolbar's Add) so the history starts at
        the top of the tab. It opens for a new case with no entries yet, when editing, and when a screenshot is pasted. *@
@@ -464,11 +456,10 @@
         </div>
     </div>
 </AuthorizeView>
-}
 
 
 @* The attack chain is a first-party kill-chain view; a third-party/vendor case (E-32) has none. *@
-@if (_tlLens != TimelineKind.Investigation && !_msOnly && !_notesOnly && tlChain.Count > 0 && !IsThirdParty)
+@if (_tlLens != TimelineKind.Investigation && !_notesOnly && tlChain.Count > 0 && !IsThirdParty)
 {
     <div class="killchain-wrap mb-3 @(_showKillChain ? "" : "killchain-collapsed")">
         @* INV-26: folded, it's one line — the tactics in order — so the history below stays in view. *@
@@ -578,10 +569,21 @@ else
             <button type="button" class="btn btn-link btn-sm p-0 ms-1" @onclick="() => _showTeamChanges = true">Show</button>
         </div>
     }
-    <ol class="tl">
-        @{ DateOnly? lastDay = null; }
+    @if (Lanes) { @MiniMap() }
+    <ol class="tl @(Lanes ? "tl-lanes" : "")">
+        @{ DateOnly? lastDay = null; DateTimeOffset? lastAt = null; }
+        @if (Lanes)
+        {
+            <li class="tl-lanehead" aria-hidden="true"><span>@(IsThirdParty ? "Vendor and disclosure" : "Adversary")</span><span></span><span>Response</span></li>
+        }
         @foreach (var row in rows)
         {
+            @* RD-13: a long quiet stretch is shown as one, so silence reads as silence. *@
+            if (lastAt is { } prevAt && Math.Abs((row.At - prevAt).TotalHours) >= GapHours)
+            {
+                <li class="tl-gap" @key="@($"gap-{row.At.UtcTicks}")"><span>@Ui.Hours(Math.Abs((row.At - prevAt).TotalHours)) with nothing recorded</span></li>
+            }
+            lastAt = row.At;
             var day = LocalDay(row.At);
             if (day != lastDay)
             {
@@ -592,7 +594,7 @@ else
             if (row.Milestone is { } m)
             {
                 @* INV-01: a milestone derived from the case record. Read-only; its source record is the thing to change. *@
-                <li class="tl-item tl-kind-ms @(m.Flagged ? "tl-ms-flagged" : "")" id="tl-@m.Key" @key="m.Key">
+                <li class="tl-item @BandClass(row.At) tl-kind-ms @(m.Flagged ? "tl-ms-flagged" : "")" id="tl-@m.Key" @key="m.Key">
                     <span class="tl-dot" aria-hidden="true"><span class="bi @MilestoneGlyph(m.Kind)"></span></span>
                     <div class="tl-body">
                         <div class="tl-head">
@@ -661,7 +663,7 @@ else
                 // FR-24: a third-party case can carry attack (ATT&CK) steps alongside disclosure milestones —
                 // render each Event entry by what it actually holds, not just the case's third-party flag.
                 var asAttack = !IsThirdParty || IsAttackStep(e);
-                <li class="tl-item tl-kind-event im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" id="tl-@e.Id" @key="e.Id">
+                <li class="tl-item @BandClass(row.At) tl-kind-event im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" id="tl-@e.Id" @key="e.Id">
                     <span class="tl-dot" style="--tl-color:@(asAttack ? Ui.TacticColor(PrimaryTactic(e)) : Ui.TimelineColor(e.Type))" aria-hidden="true">
                         <span class="bi @(asAttack ? Ui.TacticGlyph(PrimaryTactic(e)) : Ui.TimelineGlyph(e.Type))"></span>
                     </span>
@@ -749,7 +751,7 @@ else
             else
             {
                 var isDecision = e.Type == TimelineEntryType.Decision;
-                <li class="tl-item tl-kind-inv @(isDecision ? "tl-kind-dec" : "") @(e.Type == TimelineEntryType.Handoff ? "tl-kind-handoff" : "") im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" id="tl-@e.Id" @key="e.Id">
+                <li class="tl-item @BandClass(row.At) tl-kind-inv @(isDecision ? "tl-kind-dec" : "") @(e.Type == TimelineEntryType.Handoff ? "tl-kind-handoff" : "") im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" id="tl-@e.Id" @key="e.Id">
                     <span class="tl-dot" style="--tl-color:@Ui.TimelineColor(e.Type)" aria-hidden="true">
                         <span class="bi @Ui.TimelineGlyph(e.Type)"></span>
                     </span>
@@ -1010,10 +1012,9 @@ else
     private bool _showKillChain;    // INV-26: folded by default; the user's choice is remembered (display preferences)
     private bool _showFilters;
     // Open while a filter is set, or while milestones are hidden or only key entries show, so none is invisible.
-    private bool FiltersShown => _showFilters || FiltersActive || (_tlLens is null && (!_showMilestones || _keyOnly));
+    private bool FiltersShown => _showFilters || FiltersActive || (_tlLens is null && !_showMilestones);
     private int FilterCount => (_tlFilterType is not null ? 1 : 0) + (_tlFilterTactic is not null ? 1 : 0)
-                               + (string.IsNullOrWhiteSpace(_tlFilterSource) ? 0 : 1) + (_tlFilterEntity is not null ? 1 : 0)
-                               + (KeyOnlyApplies ? 1 : 0);
+                               + (string.IsNullOrWhiteSpace(_tlFilterSource) ? 0 : 1) + (_tlFilterEntity is not null ? 1 : 0);
 
     protected override async Task OnInitializedAsync()
     {
@@ -1151,6 +1152,11 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await ReconcileEditor();
+        if (_jumpTo is { } jump)
+        {
+            _jumpTo = null;
+            try { await JS.InvokeVoidAsync("imMotion.scrollToId", jump); } catch (JSException) { /* cosmetic */ }
+        }
         if (_autofocusPending && _mdEditors.Contains(InvEditorId))
         {
             _autofocusPending = false;
@@ -1593,7 +1599,6 @@ else
     private async Task SwitchLens(TimelineKind? lens)
     {
         if (_tlEditId is not null) await CancelTimelineEdit();
-        _msOnly = false;
         _decOnly = false;
         _keyOnly = false;
         _notesOnly = false;
@@ -1794,7 +1799,9 @@ else
         }
         @if (tasks.Count > 0)
         {
-            <div class="tl-tasks" aria-label="Tasks about this entry">
+            <div class="tl-tasks" aria-label="@(e.Type == TimelineEntryType.Decision ? "Tasks carrying out this decision" : "Tasks about this entry")">
+                @* RD-13: a decision says what carried it out. *@
+                @if (e.Type == TimelineEntryType.Decision) { <span class="tl-tasks-h">Carried out by</span> }
                 @foreach (var t in tasks)
                 {
                     <span class="tl-task @(t.IsOpen ? "" : "tl-task-done")" title="@(t.IsOpen ? "Open task" : "Done")">
@@ -1945,11 +1952,11 @@ else
         {
             _orderSetFor = Case.Id;
             _tlOldestFirst = Case.Phase == CasePhase.Closed;
+            _keyOnly = Case.Phase == CasePhase.Closed;   // RD-13: a closed case's Record opens on its Story
         }
         if (AutofocusComposer && !_autofocusPending && CanEdit && _tlEditId is null)
         {
             _autofocusPending = true;
-            _msOnly = false;
             _decOnly = false;
             if (_tlLens == TimelineKind.Event) _tlLens = null;
             _tlAddKind = TimelineKind.Investigation;
@@ -1962,7 +1969,7 @@ else
         if (PresetEntityFilter != _appliedPreset)
         {
             _appliedPreset = PresetEntityFilter;
-            if (PresetEntityFilter is { } en) { _msOnly = false; _decOnly = false; _keyOnly = false; _tlLens = null; _tlFilterEntity = en; }
+            if (PresetEntityFilter is { } en) { _decOnly = false; _keyOnly = false; _tlLens = null; _tlFilterEntity = en; }
         }
     }
 
@@ -2053,10 +2060,19 @@ else
     }
 
     // --- INV-01: response milestones ---
-    private bool _msOnly;                 // the Milestones lens: milestones alone
     private bool _decOnly;                // INV-30: the Decisions lens (Investigation, decisions only)
-    private bool _keyOnly;                // INV-30: All lens, key entries only
-    private bool KeyOnlyApplies => _keyOnly && _tlLens is null && !_msOnly;
+    private bool _keyOnly;                // INV-30 / RD-13: the Story lens (key entries only)
+    private bool KeyOnlyApplies => _keyOnly && _tlLens is null;
+    private bool StoryLens => _tlLens is null && _keyOnly && !_notesOnly;
+    // RD-13: Story and Everything read in two lanes.
+    private bool Lanes => _tlLens is null && !_notesOnly && !_decOnly;
+
+    private async Task SwitchToStory()
+    {
+        await SwitchLens(null);
+        _keyOnly = true;
+        _tlOldestFirst = true;
+    }
 
     // INV-30: the turning points — what happened (event steps), what was decided and handed over, and the response
     // milestones that change the case's standing (not routine work such as completed tasks or evidence uploads).
@@ -2146,14 +2162,93 @@ else
         return $"{sign}{a.Minutes}m";
     }
 
-    private async Task SwitchToMilestones()
+    // --- RD-13: two lanes, phase bands, gaps and the minimap ---
+    private const double GapHours = 8;
+
+    private CasePhase PhaseAt(DateTimeOffset at)
     {
-        if (_tlEditId is not null) await CancelTimelineEdit();
-        _tlLens = null;
-        _decOnly = false;
-        _keyOnly = false;
-        _msOnly = true;
-        ClearTimelineFilters();
+        var changes = Case.StatusChanges.OrderBy(s => s.EffectiveAt).ToList();
+        var phase = changes.FirstOrDefault()?.From ?? CasePhase.New;
+        foreach (var s in changes)
+        {
+            if (s.EffectiveAt > at) break;
+            phase = s.To;
+        }
+        return phase;
+    }
+
+    private static string BandOf(CasePhase p) => p switch
+    {
+        CasePhase.New => "new", CasePhase.Triage => "triage", CasePhase.Containment => "contain", CasePhase.Eradication => "eradicate",
+        CasePhase.Recovery => "recover", CasePhase.PostIncident => "post", _ => "closed"
+    };
+
+    private string BandClass(DateTimeOffset at) => Lanes ? "tl-band-" + BandOf(PhaseAt(at)) : "";
+
+    private string? _jumpTo;
+
+    // A minimap mark brings its entry into view on Everything (so a lens or filter can't hide it).
+    private async Task JumpTo(string key)
+    {
+        if (!(_tlLens is null && !_keyOnly) || FiltersActive || ChangedSinceUtc is not null)
+        {
+            await SwitchLens(null);
+            if (ChangedSinceUtc is not null) await OnClearSince.InvokeAsync();
+        }
+        _showMilestones = true;
+        _jumpTo = "tl-" + key;
+    }
+
+    private sealed record MiniPoint(string Key, DateTimeOffset At, string Kind, string Title);
+
+    // The whole case on one line: phase bands behind the adversary's steps (above) and the response (below).
+    private RenderFragment MiniMap() => __builder =>
+    {
+        var pts = Case.TimelineEntries.Where(x => x.IsCurrent)
+            .Select(x => new MiniPoint(x.Id.ToString(), x.OccurredAtUtc,
+                x.Kind == TimelineKind.Event ? "adv" : x.Type == TimelineEntryType.Decision ? "dec" : "resp",
+                $"{TimeDisp.Short(x.OccurredAtUtc)} · {OneLine(x.Description)}"))
+            .Concat(Milestones().Select(m => new MiniPoint(m.Key, m.AtUtc, "ms", $"{TimeDisp.Short(m.AtUtc)} · {m.Title}")))
+            .OrderBy(p => p.At).ToList();
+        if (pts.Count < 3) return;
+        var start = pts[0].At;
+        var end = pts[^1].At;
+        var span = (end - start).TotalSeconds;
+        if (span < 3600) return;
+        // Inset a little so the first and last marks aren't cut by the track's edge.
+        double Pos(DateTimeOffset t) => 1 + Math.Clamp((t - start).TotalSeconds / span, 0, 1) * 98;
+        var changes = Case.StatusChanges.Where(s => s.EffectiveAt < end).OrderBy(s => s.EffectiveAt).ToList();
+        var bands = new List<(double From, double To, CasePhase Phase)>();
+        var cur = PhaseAt(start);
+        var from = 0d;
+        foreach (var s in changes.Where(s => s.EffectiveAt > start))
+        {
+            bands.Add((from, Pos(s.EffectiveAt), cur));
+            from = Pos(s.EffectiveAt);
+            cur = s.To;
+        }
+        bands.Add((from, 100, cur));
+        <div class="tl-mini" role="group" aria-label="The whole case at a glance">
+            <div class="tl-mini-track">
+                @foreach (var b in bands.Where(b => b.To > b.From))
+                {
+                    <span class="tl-mini-band tl-band-@BandOf(b.Phase)" style="left:@Pct(b.From);width:@Pct(b.To - b.From)" title="@Ui.Label(b.Phase)"></span>
+                }
+                @foreach (var p in pts)
+                {
+                    <button type="button" class="tl-mini-mark is-@p.Kind" style="left:@Pct(Pos(p.At))" title="@p.Title" aria-label="@p.Title" @onclick="() => JumpTo(p.Key)"></button>
+                }
+            </div>
+            <div class="tl-mini-scale"><span>@TimeDisp.Short(start)</span><span class="tl-mini-legend"><i class="is-adv"></i> adversary <i class="is-resp"></i> response <i class="is-dec"></i> decision</span><span>@TimeDisp.Short(end)</span></div>
+        </div>
+    };
+
+    private static string Pct(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    private static string OneLine(string? text)
+    {
+        var t = (text ?? "").Replace('\n', ' ').Trim();
+        return t.Length <= 90 ? t : t[..87] + "…";
     }
 
     private IReadOnlyList<CaseMilestone> Milestones() => CaseMilestones.Project(Case, new MilestoneLabels(

@@ -134,16 +134,24 @@ same kind. The opening state can't be re-dated. Re-dating a classification chang
 
 | Control | Effect |
 |---|---|
-| **All** | Entries and milestones together. |
-| **Event** (**Disclosure** on third-party cases) | Event steps only; with the attack chain strip. |
-| **Investigation** | Investigation entries only. |
-| **Milestones** | Derived milestones only. |
+| **Story** | The key entries, oldest first: event steps, decisions, handoffs and milestones, except task-done and evidence-added. A closed case's Record opens here. |
+| **Everything** | Entries and milestones together. |
+| **Attack chain** (**Disclosure** on third-party cases) | Event steps only; with the attack chain strip. |
+| **Response** | Investigation entries only. |
 | **Decisions** | Decision entries only; the composer defaults to Decision. |
-| **Key entries only** (in All) | Event steps, decisions, handoffs and milestones, except task-done and evidence-added. |
+| **Working notes** | The case's working notes (off the record). |
 | **Filter** | Tactic (event lens) or type, source text, and entity (as actor or target, or tagged with `[[…]]` in the text). Any active filter hides milestones. |
 | **Changed since** | Opened from "N changes since you last viewed" or the brief: only entries and milestones recorded after that time. |
 
 Only current versions appear. Edits by others appear live with a highlight and a "N new entries" pill.
+
+**Two lanes** (Story and Everything, where the panel is at least 620 px wide, a container query): event steps on
+the left of the time spine, investigation entries and milestones on the right. The spine carries the phase in force
+at each row (from the status changes' effective times). Eight hours or more between consecutive rows shows as
+"N h with nothing recorded". Above the lanes, a **minimap** of the whole case: phase bands, the adversary's steps
+above the line, the response below, decisions as diamonds and milestones as ticks; a mark brings its row into view
+(switching to Everything if a lens or filter hid it). A decision's tasks (those *about* it) are listed under it as
+"Carried out by".
 
 ## The attack chain
 

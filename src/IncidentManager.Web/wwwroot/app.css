@@ -2922,3 +2922,47 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-bf-dl dd { margin: 0; overflow-wrap: anywhere; }
 .im-bf-team { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; font-size: var(--im-text-sm); }
 .im-bf-team li { display: flex; justify-content: space-between; gap: .5rem; }
+
+/* RD-13: the Record in two lanes either side of the time spine (Story and Everything), where the panel has room;
+   phase bands on the spine, quiet stretches shown as gaps, and a minimap of the whole case. */
+.tl-panel { container-type: inline-size; }
+.tl-band-new { --band: var(--im-band-new); } .tl-band-triage { --band: var(--im-band-triage); }
+.tl-band-contain { --band: var(--im-band-contain); } .tl-band-eradicate { --band: var(--im-band-eradicate); }
+.tl-band-recover { --band: var(--im-band-recover); } .tl-band-post { --band: var(--im-band-post); }
+.tl-band-closed { --band: var(--im-band-closed); }
+.tl-lanehead { display: none; list-style: none; }
+.tl-gap { list-style: none; display: flex; align-items: center; gap: .6rem; margin: .1rem 0 .8rem 2.6rem; font-size: var(--im-text-xs); font-style: italic; color: var(--im-text-muted); }
+.tl-gap::before, .tl-gap::after { content: ""; flex: 1; border-top: 1px dashed var(--im-border-strong); }
+.tl-gap::before { flex: 0 0 1rem; }
+@container (min-width: 620px) {
+    .tl.tl-lanes { padding-left: 0; }
+    .tl.tl-lanes::before { content: ""; position: absolute; left: 50%; top: 1.5rem; bottom: 0; width: 2px; margin-left: -1px; background: var(--im-border); }
+    .tl.tl-lanes .tl-lanehead { display: grid; grid-template-columns: minmax(0, 1fr) 1.75rem minmax(0, 1fr); column-gap: .85rem; margin-bottom: .5rem;
+        font-size: var(--im-text-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--im-text-muted); }
+    .tl.tl-lanes .tl-lanehead span:first-child { text-align: right; color: var(--im-adversary); }
+    .tl.tl-lanes .tl-item { grid-template-columns: minmax(0, 1fr) 1.75rem minmax(0, 1fr); }
+    .tl.tl-lanes .tl-item::before, .tl.tl-lanes .tl-item:last-child::before { display: block; left: 50%; top: 0; bottom: 0; width: 4px; margin-left: -2px;
+        background: var(--band, transparent); opacity: .6; }
+    .tl.tl-lanes .tl-dot { grid-column: 2; grid-row: 1; justify-self: center; }
+    .tl.tl-lanes .tl-kind-event .tl-body { grid-column: 1; grid-row: 1; }
+    .tl.tl-lanes .tl-kind-inv .tl-body, .tl.tl-lanes .tl-kind-ms .tl-body { grid-column: 3; grid-row: 1; }
+    .tl.tl-lanes .tl-day, .tl.tl-lanes .tl-gap { position: relative; z-index: 1; background: var(--bs-body-bg); }
+    .tl.tl-lanes .tl-gap { margin-left: 0; justify-content: center; }
+    .tl.tl-lanes .tl-gap::before { flex: 1; }
+}
+.tl-mini { margin: 0 0 1rem; }
+.tl-mini-track { position: relative; height: 34px; border-radius: var(--im-radius); background: var(--im-surface-2); border: 1px solid var(--im-border); overflow: hidden; }
+.tl-mini-track::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--im-border-strong); }
+.tl-mini-band { position: absolute; top: 0; bottom: 0; background: var(--band); opacity: .2; }
+.tl-mini-mark { position: absolute; z-index: 1; width: 7px; height: 7px; margin-left: -3.5px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; }
+.tl-mini-mark.is-adv { top: 5px; background: var(--im-adversary); }
+.tl-mini-mark.is-resp { bottom: 5px; background: #2fb8c9; }
+.tl-mini-mark.is-dec { bottom: 4px; width: 8px; height: 8px; margin-left: -4px; border-radius: 1px; transform: rotate(45deg); background: var(--im-accent-strong); }
+.tl-mini-mark.is-ms { top: 50%; width: 2px; height: 10px; margin: -5px 0 0 -1px; border-radius: 0; background: var(--im-text-muted); }
+.tl-mini-mark:hover, .tl-mini-mark:focus-visible { outline: 2px solid var(--im-focus); outline-offset: 1px; z-index: 2; }
+.tl-mini-scale { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem .75rem; margin-top: .3rem; font-size: var(--im-text-xs); color: var(--im-text-muted); font-variant-numeric: tabular-nums; }
+.tl-mini-legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 .25rem 0 .6rem; vertical-align: .05em; }
+.tl-mini-legend i.is-adv { background: var(--im-adversary); }
+.tl-mini-legend i.is-resp { background: #2fb8c9; }
+.tl-mini-legend i.is-dec { background: var(--im-accent-strong); border-radius: 1px; transform: rotate(45deg); }
+.tl-tasks-h { flex: 0 0 100%; font-size: var(--im-text-xs); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--im-text-muted); }
