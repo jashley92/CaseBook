@@ -273,7 +273,7 @@ else
                                 @(t.DueAtUtc is null ? "Undated;" : "After") the @notice.JurisdictionCode deadline, @TimeDisp.Brief(notice.DueAtUtc!.Value, Clock.UtcNow)
                                 @if (CanEdit)
                                 {
-                                    <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => DueByNotice(t)">Due by then</button>
+                                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" @onclick="() => DueByNotice(t)">Due by then</button>
                                 }
                             </div>
                         }
