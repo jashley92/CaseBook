@@ -1,0 +1,9 @@
+@* RD-02: severity as a word plus a bar count (Informational 0 … Critical 4), so it never rests on colour alone. *@
+@inject ISeverityLabels SevLabels
+<span class="im-sevmark im-sevmark-@((int)Value)" title="@Title"><span class="im-sevmark-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>@if (ShowLabel) {<span>@SevLabels.For(Value)</span>} else {<span class="visually-hidden">@SevLabels.For(Value)</span>}</span>
+
+@code {
+    [Parameter, EditorRequired] public Severity Value { get; set; }
+    [Parameter] public bool ShowLabel { get; set; } = true;
+    [Parameter] public string? Title { get; set; }
+}

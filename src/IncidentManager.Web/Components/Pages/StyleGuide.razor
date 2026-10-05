@@ -37,6 +37,53 @@
     }
 </div>
 
+@* RD-02 state marks *@
+<div class="im-card mb-3">
+    <div class="im-section-head"><span>State marks</span><span class="im-section-note">RD-02 · never colour alone</span></div>
+    <p class="text-muted small">Every state has a word and a form that isn't colour: bars for severity, rungs for the ladder, shapes for
+        verdicts, ring fill for clocks, position for the phase. Use these components rather than coloured badges for new work.</p>
+    <div class="sg-tok-group">
+        <div class="sg-tok-label"><code>&lt;SeverityMark&gt;</code></div>
+        <div class="d-flex flex-wrap gap-3">@foreach (var s in Enum.GetValues<Severity>().Reverse()) { <SeverityMark Value="s" /> }</div>
+    </div>
+    <div class="sg-tok-group">
+        <div class="sg-tok-label"><code>&lt;RungMark&gt;</code></div>
+        <div class="d-flex flex-wrap gap-3"><RungMark Value="null" />@foreach (var c in Enum.GetValues<Classification>()) { <RungMark Value="c" /> }</div>
+    </div>
+    <div class="sg-tok-group">
+        <div class="sg-tok-label"><code>&lt;VerdictMark&gt;</code></div>
+        <div class="d-flex flex-wrap gap-3">@foreach (var d in new[] { EntityDisposition.Malicious, EntityDisposition.Compromised, EntityDisposition.Suspicious, EntityDisposition.Benign, EntityDisposition.Unknown }) { <VerdictMark Value="d" /> }</div>
+    </div>
+    <div class="sg-tok-group">
+        <div class="sg-tok-label"><code>&lt;ClockMark&gt;</code></div>
+        <div class="d-flex flex-wrap gap-3">
+            <ClockMark State="SlaState.OnTrack" Label="Contain" Detail="2d 23h left" />
+            <ClockMark State="SlaState.AtRisk" Label="NY 72 h" Detail="1d 23h left" />
+            <ClockMark State="SlaState.Breached" Label="Resolve" Detail="5d over" />
+            <ClockMark State="SlaState.Missed" Label="Contain" Detail="took 24h" />
+            <ClockMark State="SlaState.Met" Label="NY 72 h" Detail="reported in time" />
+        </div>
+    </div>
+    <div class="sg-tok-group">
+        <div class="sg-tok-label"><code>&lt;PhaseSteps&gt;</code> · <code>&lt;WhyChip&gt;</code></div>
+        <div class="d-flex flex-wrap gap-3 align-items-center">
+            <PhaseSteps Value="CasePhase.New" />
+            <PhaseSteps Value="CasePhase.Containment" Detail="5d" />
+            <PhaseSteps Value="CasePhase.PostIncident" />
+            <WhyChip Icon="bi-question-circle" Text="Answers a question" />
+            <WhyChip Icon="bi-signpost" Text="Carries out a decision" />
+            <WhyChip Icon="bi-flag" Text="Containment" />
+            <WhyChip Icon="bi-alarm" Text="Feeds NY 72 h" />
+        </div>
+    </div>
+    <div class="sg-tok-group">
+        <div class="sg-tok-label">Type roles <code>.im-rec</code> · <code>.im-data</code> · <code>.im-cap</code></div>
+        <div class="im-cap mb-1">Known</div>
+        <p class="im-rec mb-1">Session from a foreign ASN the day after the click.</p>
+        <span class="im-data">203.0.113.66</span>
+    </div>
+</div>
+
 @* Scale tokens *@
 <div class="im-card mb-3">
     <div class="im-section-head"><span>📐 Scale tokens</span><span class="im-section-note">spacing · radius · elevation · type</span></div>

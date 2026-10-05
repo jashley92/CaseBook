@@ -1,0 +1,18 @@
+@* RD-02: an entity's verdict as a shape plus the word: Malicious a square, Compromised a diamond, Suspicious a
+   triangle, Benign a circle, Unknown a dashed ring. *@
+<span class="im-verdict im-verdict-@Key" title="@Title"><span class="im-verdict-shape" aria-hidden="true"></span>@if (ShowLabel) {<span>@Ui.Label(Value)</span>} else {<span class="visually-hidden">@Ui.Label(Value)</span>}</span>
+
+@code {
+    [Parameter, EditorRequired] public EntityDisposition Value { get; set; }
+    [Parameter] public bool ShowLabel { get; set; } = true;
+    [Parameter] public string? Title { get; set; }
+
+    private string Key => Value switch
+    {
+        EntityDisposition.Malicious => "mal",
+        EntityDisposition.Compromised => "comp",
+        EntityDisposition.Suspicious => "sus",
+        EntityDisposition.Benign => "ben",
+        _ => "unk"
+    };
+}

@@ -194,7 +194,7 @@ h1:focus {
     /* RD-01 (Casefile). Type roles: the interface in Segoe UI, what people wrote into the record in a serif, machine
        values (case numbers, indicators, hashes, times) in Cascadia Mono. All ship with Windows, so nothing is
        downloaded (design review P7); other platforms fall back to their own serif. */
-    --im-font-record: "Sitka Text", "Sitka Small", Cambria, "Iowan Old Style", Georgia, serif;
+    --im-font-record: Cambria, "Sitka Text", "Iowan Old Style", Georgia, serif;
     --im-text-record: 1.02rem;
     /* State hues, never used alone: each sits beside a shape (verdict), a bar count (severity), a ring fill
        (clock) or a position (phase) and a word. */
@@ -2683,3 +2683,54 @@ button.im-phase-seg { cursor: pointer; }
                    background: var(--im-sev-info-bg); color: var(--im-sev-info-fg); border: 1px solid var(--im-sev-info-bd); }
 a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im-text); }
 .im-brief-cite { font-size: var(--im-text-xs); padding-block: .1rem; }
+
+/* ============================================================================
+   RD-02 (Casefile) state marks. Each state carries a word plus a form that isn't colour: bars for severity,
+   rungs for the ladder, shapes for verdicts, ring fill for clocks, position for the phase.
+   ============================================================================ */
+.im-sevmark, .im-rungmark, .im-verdict, .im-clock, .im-phasesteps { display: inline-flex; align-items: center; gap: .4rem; white-space: nowrap; font-size: .85rem; font-weight: 600; vertical-align: middle; }
+.im-sevmark-bars { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 11px; }
+.im-sevmark-bars i { display: block; width: 3px; border-radius: 1px; background: var(--im-border-strong); }
+.im-sevmark-bars i:nth-child(1) { height: 4px; } .im-sevmark-bars i:nth-child(2) { height: 6px; }
+.im-sevmark-bars i:nth-child(3) { height: 8.5px; } .im-sevmark-bars i:nth-child(4) { height: 11px; }
+.im-sevmark-4 { color: var(--im-sev-bar-4); } .im-sevmark-4 .im-sevmark-bars i { background: currentColor; }
+.im-sevmark-3 { color: var(--im-sev-bar-3); } .im-sevmark-3 .im-sevmark-bars i:nth-child(-n+3) { background: currentColor; }
+.im-sevmark-2 { color: var(--im-sev-bar-2); } .im-sevmark-2 .im-sevmark-bars i:nth-child(-n+2) { background: currentColor; }
+.im-sevmark-1 { color: var(--im-sev-bar-1); } .im-sevmark-1 .im-sevmark-bars i:nth-child(1) { background: currentColor; }
+.im-sevmark-0 { color: var(--im-sev-bar-0); }
+
+.im-rungmark { color: var(--im-text); }
+.im-rungmark-lad { display: inline-flex; flex-direction: column-reverse; gap: 1.5px; width: 12px; }
+.im-rungmark-lad i { display: block; height: 2.5px; border-radius: 1px; background: var(--im-border-strong); }
+.im-rungmark-1 .im-rungmark-lad i:nth-child(-n+1), .im-rungmark-2 .im-rungmark-lad i:nth-child(-n+2) { background: currentColor; }
+.im-rungmark-3 { color: var(--im-v-mal); }
+.im-rungmark-3 .im-rungmark-lad i { background: currentColor; }
+.im-rungmark-0 .im-rungmark-lad i { background: transparent; border: 1px dashed var(--im-text-muted); height: 3px; }
+
+.im-verdict { font-size: .8rem; }
+.im-verdict-shape { display: inline-block; width: 9px; height: 9px; flex: none; }
+.im-verdict-mal { color: var(--im-v-mal); } .im-verdict-mal .im-verdict-shape { background: currentColor; }
+.im-verdict-comp { color: var(--im-v-comp); } .im-verdict-comp .im-verdict-shape { background: currentColor; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.im-verdict-sus { color: var(--im-v-sus); } .im-verdict-sus .im-verdict-shape { background: currentColor; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.im-verdict-ben { color: var(--im-v-ben); } .im-verdict-ben .im-verdict-shape { background: currentColor; border-radius: 50%; }
+.im-verdict-unk { color: var(--im-v-unk); } .im-verdict-unk .im-verdict-shape { border: 1.5px dashed currentColor; border-radius: 50%; }
+
+.im-clock { font-weight: 400; }
+.im-clock b { font-weight: 600; }
+.im-clock-detail { color: var(--im-text-muted); }
+.im-clock-ring { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; flex: none; }
+.im-clock-ok { color: var(--im-ok); } .im-clock-ok .im-clock-ring { border-left-color: transparent; border-bottom-color: transparent; }
+.im-clock-risk { color: var(--im-warn); } .im-clock-risk .im-clock-ring { border-right-color: transparent; }
+.im-clock-bad { color: var(--im-danger); } .im-clock-bad .im-clock-ring { background: currentColor; }
+.im-clock-met { color: var(--im-ok); } .im-clock-met .im-clock-ring { background: currentColor; }
+.im-clock-none { color: var(--im-text-muted); } .im-clock-none .im-clock-ring { border-style: dashed; }
+
+.im-phasesteps b { font-weight: 600; }
+.im-phasesteps-bar { display: inline-flex; gap: 2px; align-items: center; }
+.im-phasesteps-bar i { display: block; width: 16px; height: 5px; border-radius: 1.5px; background: var(--im-border-strong); }
+.im-phasesteps-bar i.d { background: var(--im-text-muted); }
+.im-phasesteps-bar i.c { background: var(--im-accent); height: 7px; }
+.im-phasesteps-detail { font-weight: 400; color: var(--im-text-muted); }
+
+.im-why { display: inline-flex; align-items: center; gap: .25rem; height: 1.15rem; padding: 0 .35rem; border: 1px solid var(--im-border); border-radius: .3rem; font-size: .7rem; color: var(--im-text-muted); background: var(--im-surface); white-space: nowrap; }
+.im-why .bi { font-size: .7rem; }

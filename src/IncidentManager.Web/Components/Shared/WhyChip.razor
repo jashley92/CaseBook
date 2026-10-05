@@ -1,0 +1,9 @@
+@* RD-02: why a piece of work exists (it answers a question, carries out a decision, belongs to a phase, feeds an
+   obligation, came from a playbook), shown beside the work. *@
+<span class="im-why" title="@Title"><span class="bi @Icon" aria-hidden="true"></span>@Text</span>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    [Parameter] public string Icon { get; set; } = "bi-dot";
+    [Parameter] public string? Title { get; set; }
+}

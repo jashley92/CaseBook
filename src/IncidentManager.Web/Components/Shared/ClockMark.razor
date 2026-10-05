@@ -1,0 +1,19 @@
+@* RD-02: a clock (an SLA target or a notification deadline) as a ring whose fill says its state, plus words:
+   running and on track (a quarter), at risk (open ring), overdue or missed (filled red), met (filled green). *@
+<span class="im-clock im-clock-@Key" title="@Title"><span class="im-clock-ring" aria-hidden="true"></span>@if (!string.IsNullOrEmpty(Label)) {<b>@Label</b>}@if (!string.IsNullOrEmpty(Detail)) {<span class="im-clock-detail">@Detail</span>}<span class="visually-hidden"> (@Ui.SlaLabel(State))</span></span>
+
+@code {
+    [Parameter, EditorRequired] public SlaState State { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Detail { get; set; }
+    [Parameter] public string? Title { get; set; }
+
+    private string Key => State switch
+    {
+        SlaState.OnTrack => "ok",
+        SlaState.AtRisk => "risk",
+        SlaState.Breached or SlaState.Missed => "bad",
+        SlaState.Met => "met",
+        _ => "none"
+    };
+}

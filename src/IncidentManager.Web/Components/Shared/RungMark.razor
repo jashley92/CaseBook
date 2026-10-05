@@ -1,0 +1,17 @@
+@* RD-02: where a case sits on the incident response plan's ladder, as filled rungs plus the word. A Complex Event
+   (not yet classified) shows empty, dashed rungs. *@
+<span class="im-rungmark im-rungmark-@Level" title="@Title"><span class="im-rungmark-lad" aria-hidden="true"><i></i><i></i><i></i></span>@if (ShowLabel) {<span>@Ui.Label(Value)</span>} else {<span class="visually-hidden">@Ui.Label(Value)</span>}</span>
+
+@code {
+    [Parameter] public Classification? Value { get; set; }
+    [Parameter] public bool ShowLabel { get; set; } = true;
+    [Parameter] public string? Title { get; set; }
+
+    private int Level => Value switch
+    {
+        Classification.AdverseEvent => 1,
+        Classification.Incident => 2,
+        Classification.Breach => 3,
+        _ => 0
+    };
+}

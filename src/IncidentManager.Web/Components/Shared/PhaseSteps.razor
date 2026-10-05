@@ -1,0 +1,10 @@
+@* RD-02: the case's phase as its position on the seven NIST phases plus the word. Earlier phases are filled, the
+   current one is brass and taller. *@
+<span class="im-phasesteps" title="@Title"><span class="im-phasesteps-bar" aria-hidden="true">@foreach (var p in Enum.GetValues<CasePhase>()) {<i class="@(p < Value ? "d" : p == Value ? "c" : "")"></i>}</span>@if (ShowLabel) {<b>@Ui.Label(Value)</b>} else {<span class="visually-hidden">@Ui.Label(Value)</span>}@if (!string.IsNullOrEmpty(Detail)) {<span class="im-phasesteps-detail">@Detail</span>}</span>
+
+@code {
+    [Parameter, EditorRequired] public CasePhase Value { get; set; }
+    [Parameter] public bool ShowLabel { get; set; } = true;
+    [Parameter] public string? Detail { get; set; }
+    [Parameter] public string? Title { get; set; }
+}
