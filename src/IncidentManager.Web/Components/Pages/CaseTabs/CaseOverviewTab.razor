@@ -83,13 +83,16 @@
 
 @* INV-09 / INV-36: the brief leads, with the case summary as its first part. *@
 @* RD-04: where the Now/Next pane is beside the tab, the brief lives there and isn't repeated here. *@
-@if (Section == "Briefing" && !BriefInPane)
+@* RD-12: the Briefing's five questions, with the brief itself a click away. *@
+@if (Section == "Briefing")
 {
-    <CaseBriefCard @ref="_brief" Case="Case" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
+    <CaseBriefing @ref="_briefing" Case="Case" TaskResults="TaskResults" Notify="_deadlines" Readiness="ReadinessEval" DataElementLabels="_dataElementLabels"
+                  CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
 }
 
 <div class="im-ov">
-    @if (Section == "Briefing")
+    @* RD-12: a closed case's story; an open case's recent decisions are the Briefing's "Why". *@
+    @if (Section == "Briefing" && Case.Phase == CasePhase.Closed)
     {
     var recent = RecentOnTimeline();
     <section class="im-ov-sec" id="ov-recent" aria-labelledby="ov-recent-h">
@@ -635,7 +638,7 @@
     /// <summary>Bumped by the parent on a collaborator change, to re-pull related cases.</summary>
     [Parameter] public int RefreshToken { get; set; }
 
-    private CaseBriefCard? _brief;
+    private CaseBriefing? _briefing;
     private readonly HashSet<string> _mdEditors = new();
     private readonly HashSet<Guid> _readinessAttested = new(); // always empty — the card is read-only
     private int _loadedToken = int.MinValue;
@@ -819,7 +822,7 @@
             case GateCheckKeys.SummaryPresent:
                 // INV-36: the summary is the brief's first part.
                 if (BriefInPane) { await OnEditBrief.InvokeAsync(); return; }
-                _brief?.BeginEdit();
+                _briefing?.BeginBriefEdit();
                 _scrollTo = "ov-brief";
                 break;
             case GateCheckKeys.DetectionCaseIdSet:

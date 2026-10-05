@@ -1,0 +1,429 @@
+@* RD-12 (Casefile): the Briefing, one page for a commander or a manager, assembled from the record. Five questions
+   (what is happening, what we know, what we are doing, what remains, why) beside the obligations, governance and
+   team. It writes nothing: the brief is edited in its card ("Open the brief"), the rest where it's recorded. *@
+@inject IClock Clock
+@inject TimeDisplay TimeDisp
+@inject IJSRuntime JS
+@inject ToastService Toasts
+@inject ISeverityLabels SevLabels
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
+@using IncidentManager.Application.Compliance
+
+@{
+    var now = Clock.UtcNow;
+    var b = Case.Briefs.FirstOrDefault(x => x.IsCurrent);
+    var closed = Case.Phase == CasePhase.Closed;
+}
+
+<div class="im-bf">
+    <div class="im-bf-bar">
+        <span class="im-bf-asof">
+            @if (b is null) { <text>As of now · from the record (no brief yet)</text> }
+            else
+            {
+                <text>As of now · from brief v@(b.Version) (@TimeDisp.Brief(b.CurrentAsOfUtc, now)) and the record</text>
+            }
+        </span>
+        <span class="ms-auto"></span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" aria-expanded="@Ui.Aria(_showBrief)" @onclick="() => _showBrief = !_showBrief">
+            <span class="bi bi-journal-text" aria-hidden="true"></span> @(_showBrief ? "Hide the brief" : CanEdit ? "Open the brief to update it" : "Open the brief")
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CopyAsText">
+            <span class="bi @(_copied ? "bi-check2" : "bi-clipboard")" aria-hidden="true"></span> Copy briefing as text
+        </button>
+    </div>
+
+    @if (_showBrief)
+    {
+        <CaseBriefCard @ref="_brief" Case="Case" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
+    }
+
+    <div class="im-bf-grid">
+        <div class="im-bf-main">
+            @* 1. What is happening *@
+            <section class="im-bf-q" aria-labelledby="bf-happening">
+                <h2 id="bf-happening">What is happening</h2>
+                @if (Summary() is { Length: > 0 } summary)
+                {
+                    <div class="md-body im-rec im-bf-lead">@((MarkupString)Md.ToHtml(summary, Case.Id))</div>
+                }
+                else
+                {
+                    <p class="im-bf-none">No summary yet.</p>
+                }
+                @{ var chain = Chain(); }
+                @if (chain.Count > 0)
+                {
+                    <div class="im-bf-chain">
+                        <span class="im-cap">Attack chain</span>
+                        @foreach (var t in chain)
+                        {
+                            <span class="im-chip im-chip-tac" style="--tac:@Ui.TacticColor(t)">@Ui.Label(t)</span>
+                        }
+                    </div>
+                }
+                @if (Began() is { } began)
+                {
+                    <p class="im-bf-meta">@began</p>
+                }
+            </section>
+
+            @* 2. What we know *@
+            <section class="im-bf-q" aria-labelledby="bf-know">
+                <h2 id="bf-know">What we know</h2>
+                @if (b?.WorkingAssessment is { Length: > 0 } wa)
+                {
+                    @if (closed && Case.OutcomeKey is not null) { <span class="im-cap">Conclusion</span> }
+                    <div class="md-body im-rec">@((MarkupString)Md.ToHtml(wa, Case.Id))</div>
+                }
+                @if (b?.Known is { Length: > 0 } known)
+                {
+                    <div class="md-body im-rec im-bf-known">@((MarkupString)Md.ToHtml(known, Case.Id))</div>
+                }
+                @if (b?.WorkingAssessment is not { Length: > 0 } && b?.Known is not { Length: > 0 })
+                {
+                    <p class="im-bf-none">Nothing recorded in the brief as known yet.</p>
+                }
+                @if (Case.Entities.Count > 0)
+                {
+                    <button type="button" class="im-bf-tally" @onclick='() => OnGoToTab.InvokeAsync("Entities")'>
+                        @foreach (var g in Case.Entities.GroupBy(e => e.Disposition).Where(g => g.Key != EntityDisposition.Unknown).OrderBy(g => VerdictOrder(g.Key)))
+                        {
+                            <span><VerdictMark Value="g.Key" ShowLabel="false" /> @g.Count() @Ui.Label(g.Key)</span>
+                        }
+                        @{ var unknown = Case.Entities.Count(e => e.Disposition == EntityDisposition.Unknown); }
+                        <span class="im-bf-sub">@(unknown == 0 ? "none unassessed" : $"{unknown} unassessed")</span>
+                    </button>
+                }
+                @if (Impact() is { } impact)
+                {
+                    <p class="im-bf-meta"><span class="bi bi-people" aria-hidden="true"></span> @impact</p>
+                }
+            </section>
+
+            @* 3. What we are doing *@
+            <section class="im-bf-q" aria-labelledby="bf-doing">
+                <h2 id="bf-doing">What we are doing</h2>
+                @{ var open = CaseNext.Open(Case, now); var done = RecentlyDone(now); }
+                @if (open.Count == 0 && done.Count == 0)
+                {
+                    <p class="im-bf-none">No open tasks.</p>
+                }
+                else
+                {
+                    <ul class="im-bf-list">
+                        @foreach (var t in open.Take(TasksShown))
+                        {
+                            <li>
+                                <span>@t.Title</span>
+                                <span class="im-bf-sub">
+                                    @(string.IsNullOrWhiteSpace(t.Owner) ? "Unassigned" : Users.DisplayFor(t.Owner))@if (t.DueAtUtc is { } due)
+                                    {
+                                        <text> · </text><span class="@(t.IsOverdue(now) ? "im-bf-late" : "")" title="@TimeDisp.Long(due)">@(t.IsOverdue(now) ? "overdue, was due " : "")@TimeDisp.Brief(due, now)</span>@if (LateForNotice(t) is { } late) { <text> · </text><span class="im-bf-late">@late</span> }
+                                    }
+                                </span>
+                            </li>
+                        }
+                        @foreach (var t in done)
+                        {
+                            <li class="is-done">
+                                <span><span class="bi bi-check2" aria-hidden="true"></span> @t.Title</span>
+                                <span class="im-bf-sub">done @TimeDisp.Brief(t.CompletedAtUtc!.Value, now)@(t.CompletedBy is { } by ? $" by {Users.DisplayFor(by)}" : "")</span>
+                            </li>
+                        }
+                    </ul>
+                    @if (open.Count > TasksShown)
+                    {
+                        <button type="button" class="btn btn-link btn-sm p-0" @onclick='() => OnGoToTab.InvokeAsync("Tasks")'>@(open.Count - TasksShown) more open tasks</button>
+                    }
+                }
+            </section>
+
+            @* 4. What remains *@
+            <section class="im-bf-q" aria-labelledby="bf-remains">
+                <h2 id="bf-remains">What remains</h2>
+                @{ var questions = CaseNext.Questions(b?.OpenQuestions) ?? []; var gate = GateLine(); var notice = NoticeLine(now); }
+                @if (questions.Count == 0 && gate is null && notice is null)
+                {
+                    <p class="im-bf-none">No open questions or outstanding obligations.</p>
+                }
+                <ul class="im-bf-list">
+                    @foreach (var q in questions)
+                    {
+                        var task = QuestionTask(q);
+                        <li>
+                            <span class="md-body im-rec"><span class="im-bf-qmark" aria-hidden="true">?</span>@((MarkupString)Md.ToHtml(q, Case.Id))</span>
+                            <span class="im-bf-sub">
+                                @if (task is null) { <text>not followed up</text> }
+                                else if (task.IsOpen) { <text>being answered@(string.IsNullOrWhiteSpace(task.Owner) ? "" : $" by {Users.DisplayFor(task.Owner)}")</text> }
+                                else if (task.Status == ActionItemStatus.Done && TaskResults.TryGetValue(task.Id, out var answer)) { <text>answered: @answer.Text</text> }
+                                else { <text>followed up, @(task.Status == ActionItemStatus.Done ? "done without an answer" : "canceled")</text> }
+                            </span>
+                        </li>
+                    }
+                    @if (notice is not null)
+                    {
+                        <li><span><span class="bi bi-alarm" aria-hidden="true"></span> @notice</span></li>
+                    }
+                    @if (gate is not null)
+                    {
+                        <li><span><span class="bi bi-shield-check" aria-hidden="true"></span> @gate</span></li>
+                    }
+                </ul>
+            </section>
+
+            @* 5. Why *@
+            <section class="im-bf-q" aria-labelledby="bf-why">
+                <h2 id="bf-why">Why</h2>
+                @{ var decisions = Decisions(); var rung = RungChange(); }
+                @if (decisions.Count == 0 && rung is null && !Case.Materiality.IsDetermined)
+                {
+                    <p class="im-bf-none">No decisions recorded yet.</p>
+                }
+                @foreach (var d in decisions)
+                {
+                    <div class="im-bf-decision">
+                        <div class="im-bf-sub">Decision, @TimeDisp.Brief(d.OccurredAtUtc, now)@(string.IsNullOrWhiteSpace(d.DecidedBy) ? "" : $" · {d.DecidedBy}")</div>
+                        <div class="md-body im-rec">@((MarkupString)Md.ToHtml(d.Description, Case.Id))</div>
+                        @if (!string.IsNullOrWhiteSpace(d.Rationale)) { <div class="im-bf-because"><b>Why:</b> @d.Rationale</div> }
+                        @if (!string.IsNullOrWhiteSpace(d.OptionsConsidered)) { <div class="im-bf-because"><b>Considered:</b> @d.OptionsConsidered</div> }
+                    </div>
+                }
+                @if (rung is not null || Case.Materiality.IsDetermined)
+                {
+                    <p class="im-bf-meta">
+                        @if (rung is { } r)
+                        {
+                            <text>@(r.From is null ? "Promoted to" : r.To > r.From ? "Escalated to" : "Moved to") @Ui.Label(r.To) @TimeDisp.Brief(r.EffectiveAt, now)</text>@if (!string.IsNullOrWhiteSpace(r.Reason)) { <text>: “@r.Reason”</text> }<text>. </text>
+                        }
+                        @if (Case.Materiality.IsDetermined)
+                        {
+                            <text>@Ui.Label(Case.Materiality.Status)@(string.IsNullOrWhiteSpace(Case.Materiality.DecisionMaker) ? "" : $" per {Case.Materiality.DecisionMaker}")@(Case.Materiality.DecidedOnUtc is { } md ? $", {TimeDisp.DateOnly(md)}" : "").</text>
+                        }
+                    </p>
+                }
+            </section>
+        </div>
+
+        <aside class="im-bf-side" aria-label="Obligations, governance and team">
+            <section aria-labelledby="bf-ob">
+                <h3 id="bf-ob" class="im-cap">Obligations</h3>
+                @{
+                    var (contain, resolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
+                        Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification);
+                    var slas = new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget).ToList();
+                }
+                @if (Notify is { HasClock: true } n)
+                {
+                    @foreach (var s in n.Statuses)
+                    {
+                        <div class="im-bf-ob">
+                            <ClockMark State="s.State" Label="@($"Notify {s.JurisdictionLabel}")" />
+                            <div class="im-bf-sub">
+                                @($"{s.WindowHours} h")@if (s.DueAtUtc is { } due) { <text> · due @TimeDisp.Brief(due, now)</text> }@if (n.ReportedAtUtc is { } rep) { <text> · reported @TimeDisp.Brief(rep, now)</text> }
+                            </div>
+                        </div>
+                    }
+                }
+                else if (Notify is { AwaitingTrigger: true } wait)
+                {
+                    <div class="im-bf-sub mb-2">@(wait.StartBasis == NotificationStartBasis.Determination ? "Notification clocks start once the case is determined material." : "Notification clocks start once the case is a Breach.")</div>
+                }
+                @foreach (var st in slas)
+                {
+                    <div class="im-bf-ob">
+                        <ClockMark State="st.State" Label="@(st.Clock is { } k ? Ui.SlaClockLabel(k) : "SLA")" Detail="@Ui.SlaShort(st)" />
+                    </div>
+                }
+                @if (Notify is not { HasClock: true } && slas.Count == 0) { <div class="im-bf-sub">None running.</div> }
+            </section>
+
+            <section aria-labelledby="bf-gov">
+                <h3 id="bf-gov" class="im-cap">Governance</h3>
+                <dl class="im-bf-dl">
+                    <dt>Materiality</dt>
+                    <dd>@Ui.Label(Case.Materiality.Status)@(string.IsNullOrWhiteSpace(Case.Materiality.DecisionMaker) ? "" : $" · {Case.Materiality.DecisionMaker}")@(Case.Materiality.DecidedOnUtc is { } d1 ? $", {TimeDisp.DateOnly(d1)}" : "")</dd>
+                    <dt>Legal</dt>
+                    <dd>@(Case.LegalReferral.IsReferred ? $"Referred{(Case.LegalReferral.ReferredAtUtc is { } d2 ? " " + TimeDisp.DateOnly(d2) : "")}{(string.IsNullOrWhiteSpace(Case.LegalReferral.ReferredToContact) ? "" : " · " + Case.LegalReferral.ReferredToContact)}" : "Not referred")</dd>
+                    <dt>Legal hold</dt>
+                    <dd>@(Case.LegalHold ? Case.LegalHoldReleasePending ? "On (release requested)" : "On" : "None")</dd>
+                    <dt>Access</dt>
+                    <dd>@(Case.IsRestricted ? "Restricted to need-to-know" : "Not restricted")</dd>
+                </dl>
+            </section>
+
+            <section aria-labelledby="bf-team">
+                <h3 id="bf-team" class="im-cap">Team</h3>
+                @if (Case.Assignments.Count == 0) { <div class="im-bf-sub">No one is assigned.</div> }
+                <ul class="im-bf-team">
+                    @foreach (var a in Case.Assignments.OrderBy(a => a.Role))
+                    {
+                        <li><span>@Users.DisplayFor(a.UserId)</span> <span class="im-bf-sub">@Ui.Label(a.Role)</span></li>
+                    }
+                </ul>
+                @if (!CanEdit) { <div class="im-bf-sub mt-2">Read-only for your role.</div> }
+            </section>
+        </aside>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter] public IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> TaskResults { get; set; } = new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
+    [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
+    [Parameter] public GateEvaluation? Readiness { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, string> DataElementLabels { get; set; } = new Dictionary<string, string>();
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public EventCallback<string> OnGoToTab { get; set; }
+    [Parameter] public EventCallback<DateTimeOffset> OnShowSince { get; set; }
+
+    private const int TasksShown = 6;
+    private CaseBriefCard? _brief;
+    private bool _showBrief, _editPending, _copied;
+
+    /// <summary>Opens the brief's card in edit mode (the close gate's "Fix" for a missing summary).</summary>
+    public void BeginBriefEdit()
+    {
+        _showBrief = true;
+        _editPending = true;
+        StateHasChanged();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (_editPending && _brief is not null)
+        {
+            _editPending = false;
+            _brief.BeginEdit();
+        }
+    }
+
+    private string? Summary() => Case.Briefs.FirstOrDefault(x => x.IsCurrent)?.Summary is { Length: > 0 } s ? s : Case.Summary;
+
+    // The adversary's tactics in the order the attack chain records them, without immediate repeats.
+    private List<MitreTactic> Chain()
+    {
+        var list = new List<MitreTactic>();
+        foreach (var step in Case.TimelineEntries.Where(e => e.IsCurrent && e.Kind == TimelineKind.Event).OrderBy(e => e.OccurredAtUtc))
+            foreach (var t in step.Tactics.Select(t => t.Tactic).Where(t => t != MitreTactic.Unspecified))
+                if (list.Count == 0 || list[^1] != t) list.Add(t);
+        return list;
+    }
+
+    private string? Began()
+    {
+        var began = Case.OccurredAtUtc;
+        var detected = Case.DetectedAtUtc;
+        if (began is null && detected is null) return null;
+        if (began is { } b && detected is { } d)
+        {
+            var gap = d - b;
+            return $"Activity began {TimeDisp.Short(b)} and was detected " + (gap < TimeSpan.FromHours(1) ? "at once." : $"{Ui.Hours(gap.TotalHours)} later.");
+        }
+        return began is { } b2 ? $"Activity began {TimeDisp.Short(b2)}." : $"Detected {TimeDisp.Short(detected!.Value)}.";
+    }
+
+    private string? Impact()
+    {
+        var parts = new List<string>();
+        if (Case.AffectedIndividualsCount is { } n) parts.Add($"{n:N0} {(n == 1 ? "individual" : "individuals")}");
+        if (Case.DataElements.Count > 0)
+            parts.Add(string.Join(", ", Case.DataElements.Select(e => DataElementLabels.GetValueOrDefault(e.ElementKey) ?? e.ElementKey)));
+        if (!string.IsNullOrWhiteSpace(Case.AffectedStates)) parts.Add(Case.AffectedStates!);
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
+    }
+
+    private static int VerdictOrder(EntityDisposition d) => d switch
+    {
+        EntityDisposition.Malicious => 0, EntityDisposition.Compromised => 1, EntityDisposition.Suspicious => 2, EntityDisposition.Benign => 3, _ => 4
+    };
+
+    private List<ActionItem> RecentlyDone(DateTimeOffset now) => Case.ActionItems
+        .Where(t => t.Status == ActionItemStatus.Done && t.CompletedAtUtc is { } c && now - c < TimeSpan.FromDays(7))
+        .OrderByDescending(t => t.CompletedAtUtc).Take(3).ToList();
+
+    // A notification task due after the running notification deadline (RD-19 adds the fix where tasks are worked).
+    private string? LateForNotice(ActionItem t) =>
+        t.Kind == TaskKind.Notify && t.DueAtUtc is { } due && Notify?.Headline is { IsActive: true, DueAtUtc: { } deadline } && due > deadline
+            ? "after the deadline" : null;
+
+    private ActionItem? QuestionTask(string q)
+    {
+        var title = Md.ToPlainText(q).Replace('\n', ' ').Trim();
+        return Case.ActionItems.Where(t => t.RaisedFromBriefId is not null && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(t => t.IsOpen).ThenByDescending(t => t.CreatedAtUtc).FirstOrDefault();
+    }
+
+    private string? NoticeLine(DateTimeOffset now) =>
+        Notify?.Headline is { IsActive: true, DueAtUtc: { } due } h && Notify.ReportedAtUtc is null
+            ? $"Notify {h.JurisdictionLabel} by {TimeDisp.Brief(due, now)}" + (due < now ? " (overdue)" : "") + "." : null;
+
+    // What the next gate still needs, blocking first; advisory items are named as such.
+    private string? GateLine()
+    {
+        if (Readiness is not { GateExists: true } rg) return null;
+        var missing = rg.Requirements.Where(i => i.Kind == GateRequirementKind.MachineCheck && !i.MachineSatisfied).ToList();
+        if (missing.Count == 0) return null;
+        var blocking = missing.Where(m => m.IsBlocking).Select(m => m.Label).ToList();
+        var advisory = missing.Where(m => !m.IsBlocking).Select(m => m.Label).ToList();
+        var line = $"To {StageGateTriggers.Label(rg.Trigger).ToLowerInvariant()}: ";
+        if (blocking.Count > 0) line += string.Join("; ", blocking);
+        if (advisory.Count > 0) line += (blocking.Count > 0 ? ". Advisory: " : "advisory: ") + string.Join("; ", advisory);
+        return line + ".";
+    }
+
+    private List<TimelineEntry> Decisions() => Case.TimelineEntries
+        .Where(e => e.IsCurrent && e.Type == TimelineEntryType.Decision)
+        .OrderByDescending(e => e.OccurredAtUtc).Take(3).ToList();
+
+    private ClassificationChange? RungChange() => Case.ClassificationChanges.OrderByDescending(x => x.EffectiveAt).FirstOrDefault();
+
+    // --- Copy briefing as text ---
+    private async Task CopyAsText()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", AsText());
+            _copied = true;
+            Toasts.Success("Briefing copied");
+        }
+        catch (JSException) { Toasts.Error("Couldn't copy. Your browser blocked the clipboard."); }
+    }
+
+    private string Plain(string? md) => string.IsNullOrWhiteSpace(md) ? "" : Md.ToPlainText(md).Trim();
+
+    private string AsText()
+    {
+        var now = Clock.UtcNow;
+        var b = Case.Briefs.FirstOrDefault(x => x.IsCurrent);
+        var sb = new System.Text.StringBuilder();
+        sb.Append(Case.CaseNumber).Append(" · ").Append(Case.Title).Append('\n')
+          .Append(Ui.Label(Case.Classification)).Append(" · ").Append(SevLabels.For(Case.Severity)).Append(" · ").Append(Ui.Label(Case.Phase))
+          .Append("\nBriefing as of ").Append(TimeDisp.Long(now)).Append(b is null ? "" : $", from brief v{b.Version}").Append("\n\n");
+        void Part(string head, IEnumerable<string> lines)
+        {
+            var l = lines.Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+            if (l.Count == 0) return;
+            sb.Append(head.ToUpperInvariant()).Append('\n');
+            foreach (var x in l) sb.Append(x.TrimEnd()).Append('\n');
+            sb.Append('\n');
+        }
+        var chain = Chain();
+        Part("What is happening", [Plain(Summary()), chain.Count > 0 ? "Attack chain: " + string.Join(" → ", chain.Select(Ui.Label)) : "", Began() ?? ""]);
+        Part("What we know", [Plain(b?.WorkingAssessment), Plain(b?.Known), Impact() is { } i ? "Impact: " + i : ""]);
+        Part("What we are doing", CaseNext.Open(Case, now).Select(t => "- " + t.Title
+            + (string.IsNullOrWhiteSpace(t.Owner) ? "" : $" ({Users.DisplayFor(t.Owner)})")
+            + (t.DueAtUtc is { } d ? $", due {TimeDisp.Short(d)}" : "")));
+        Part("What remains", (CaseNext.Questions(b?.OpenQuestions) ?? []).Select(q => "? " + Plain(q))
+            .Append(NoticeLine(now) ?? "").Append(GateLine() ?? ""));
+        Part("Why", Decisions().Select(d => $"Decision, {TimeDisp.Short(d.OccurredAtUtc)}: {Plain(d.Description)}"
+            + (string.IsNullOrWhiteSpace(d.Rationale) ? "" : $" Why: {d.Rationale}")));
+        Part("Obligations", (Notify is { HasClock: true } n ? n.Statuses.Select(s => $"Notify {s.JurisdictionLabel}: {s.WindowHours} h"
+            + (s.DueAtUtc is { } due ? $", due {TimeDisp.Short(due)}" : "") + (n.ReportedAtUtc is { } r ? $", reported {TimeDisp.Short(r)}" : "")) : []));
+        Part("Team", Case.Assignments.OrderBy(a => a.Role).Select(a => $"{Users.DisplayFor(a.UserId)}, {Ui.Label(a.Role)}"));
+        return sb.ToString().TrimEnd() + "\n";
+    }
+}

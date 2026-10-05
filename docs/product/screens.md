@@ -95,16 +95,26 @@ A single page, not a wizard.
    obligations first (a notification deadline with *Mark reported…*, then the SLA clocks), the open tasks each
    with why it exists (answers a question, carries out a decision, about an entity or file, feeds a notification,
    phase work), and the next gate's readiness as a meter that opens its checklist. The team and key entities
-   follow. Below 1200 px the brief is on the Briefing, with a context strip above it.
+   follow. The pane steps aside on the Briefing, which carries the same things in its own form. Below 1200 px
+   the brief is opened from the Briefing.
 
-The **Briefing** holds recent timeline items, the notification deadline table with *Mark reported*, readiness for
-the next stage gate, the case record and access (restriction). Scope and impact (affected individuals, data
+The **Briefing** is one page for a commander or a manager, assembled from the record and writing nothing. Five
+questions: **What is happening** (the summary, the attack chain's tactics in order, when the activity began and how
+soon it was detected), **What we know** (the working assessment or conclusion, Known, the entity verdicts as a
+tally, the impact), **What we are doing** (open tasks with owner and due, a Notify task due after the notification
+deadline marked, and what was done this week), **What remains** (each open question and who is answering it, the
+running notification deadline, what the next gate still needs) and **Why** (the latest decisions with why and what
+was considered, the last classification change with its reason, the materiality call). Beside them: obligations
+(each jurisdiction's clock and the SLA clocks), governance (materiality, legal referral, legal hold, access) and the
+team. *Open the brief* shows the brief's card (where it's revised or confirmed); *Copy briefing as text* puts the
+same briefing on the clipboard as plain text. Below: the notification deadline table with *Mark reported*,
+readiness for the next stage gate with each check's *Fix*, the case record and access (restriction). Scope and impact (affected individuals, data
 elements, jurisdictions) is **Things › Impact**; ATT&CK techniques are **Things › ATT&CK**; related cases are
 **Things › Connections**. Change history is in the audit trail (**Paper › Audit trail**).
 
 A **closed** case's Briefing leads with the record instead: an outcome strip (the outcome, when the activity
 began, detected → contained and recovery → closed with how long each took, and the improvement actions still
-open), then the closing brief, then "How it unfolded": the key moments oldest first (the first eight and the last
+open), then the five questions from the closing brief, then "How it unfolded": the key moments oldest first (the first eight and the last
 four, with the rest a click away on the timeline). An unrecorded scope reads "Not recorded" rather than "Not
 assessed yet".
 

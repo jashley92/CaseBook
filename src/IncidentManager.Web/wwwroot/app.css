@@ -2877,3 +2877,48 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-part.is-quiet:not(.active) { font-size: var(--im-text-xs); }
 .im-part-n { font-variant-numeric: tabular-nums; font-weight: 400; color: var(--im-text-muted); }
 .im-part .im-tab-why { margin-left: 0; }
+
+/* RD-12: the Briefing. Five questions in the record's voice, with obligations, governance and team beside them. */
+.im-bf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+.im-bf-asof { font-size: var(--im-text-sm); color: var(--im-text-muted); }
+.im-bf-bar + .im-brief { margin-bottom: 1.25rem; }
+.im-bf-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; margin-bottom: 1.5rem; }
+@media (min-width: 1100px) { .im-bf-grid { grid-template-columns: minmax(0, 1fr) 18rem; gap: 2rem; } }
+.im-bf-main { min-width: 0; }
+.im-bf-q { padding-block: .9rem 1.1rem; border-bottom: 1px solid var(--im-border); max-width: 46rem; }
+.im-bf-q:first-child { padding-top: 0; }
+.im-bf-q:last-child { border-bottom: 0; }
+.im-bf-q h2 { font-size: var(--im-text-md); font-weight: 600; margin: 0 0 .5rem; color: var(--im-text); }
+.im-bf-q .im-rec { font-size: 1.03rem; line-height: 1.55; }
+.im-bf-q .im-rec p:last-child { margin-bottom: 0; }
+.im-bf-lead.im-rec { font-size: 1.1rem; }
+.im-bf-known { margin-top: .5rem; }
+.im-bf-none { color: var(--im-text-muted); font-size: var(--im-text-sm); margin: 0; }
+.im-bf-meta { color: var(--im-text-muted); font-size: var(--im-text-sm); margin: .55rem 0 0; }
+.im-bf-sub { color: var(--im-text-muted); font-size: var(--im-text-sm); }
+.im-bf-late { color: var(--im-danger); }
+.im-bf-chain { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .6rem; }
+.im-bf-chain .im-cap { margin-right: .25rem; }
+.im-bf-tally { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .9rem; margin-top: .6rem; padding: .35rem .6rem;
+    border: 1px solid var(--im-border); border-radius: var(--im-radius); background: var(--im-surface); color: var(--im-text); font-size: var(--im-text-sm); text-align: left; }
+.im-bf-tally:hover { border-color: var(--im-border-strong); }
+.im-bf-tally > span { display: inline-flex; align-items: center; gap: .3rem; }
+.im-bf-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .55rem; }
+.im-bf-list li { display: grid; gap: .1rem; }
+.im-bf-list li.is-done > span:first-child { color: var(--im-text-muted); }
+.im-bf-list .bi-check2 { color: var(--im-ok); }
+.im-bf-list .md-body p { display: inline; margin: 0; }
+.im-bf-qmark { display: inline-grid; place-items: center; width: 1.15rem; height: 1.15rem; margin-right: .4rem; border-radius: 50%;
+    border: 1px solid var(--im-border-strong); font: 600 .7rem var(--im-font-ui); color: var(--im-text-muted); vertical-align: .1em; }
+.im-bf-decision { border-left: 3px solid var(--im-border-strong); padding: .1rem 0 .1rem .75rem; margin-bottom: .75rem; }
+.im-bf-because { font-size: var(--im-text-sm); margin-top: .25rem; }
+.im-bf-side { display: grid; gap: 1rem; align-content: start; }
+.im-bf-side > section { background: var(--im-surface); border: 1px solid var(--im-border); border-radius: var(--im-radius-lg); padding: .8rem .9rem; }
+.im-bf-side h3.im-cap { margin: 0 0 .55rem; }
+.im-bf-ob { padding-block: .3rem; border-bottom: 1px solid var(--im-border); }
+.im-bf-ob:last-child { border-bottom: 0; }
+.im-bf-dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .3rem .75rem; margin: 0; font-size: var(--im-text-sm); }
+.im-bf-dl dt { font-weight: 400; color: var(--im-text-muted); }
+.im-bf-dl dd { margin: 0; overflow-wrap: anywhere; }
+.im-bf-team { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; font-size: var(--im-text-sm); }
+.im-bf-team li { display: flex; justify-content: space-between; gap: .5rem; }

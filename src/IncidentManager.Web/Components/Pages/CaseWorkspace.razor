@@ -304,7 +304,7 @@ else
                 </button>
             </li>
         }
-        <li class="nav-item ms-auto im-rail-toggle">
+        <li class="nav-item ms-auto im-rail-toggle" hidden="@(_activeTab == "Briefing")">
             <button type="button" class="nav-link" aria-pressed="@Ui.Aria(_railOpen)" @onclick="() => _railOpen = !_railOpen"
                     title="@(_railOpen ? "Hide Now and Next" : "Show Now and Next")">
                 <span class="bi @(_railOpen ? "bi-layout-sidebar-inset-reverse" : "bi-layout-sidebar-reverse")" aria-hidden="true"></span>
@@ -422,12 +422,6 @@ else
         @* UX-13 / RD-11: CaseOverviewTab renders the Briefing view, or the Impact, ATT&CK or Connections part of
            Things; the parent threads the retention alert, the readiness gate, the shared confirm dialog, the
            assign modal (OnOpenModal), and hotkey dispatch. *@
-        @* INV-29: where the panel isn't beside the view (narrow screens, or hidden), its content is a strip here. *@
-        @if (!PaneShown && _activeTab == "Briefing")
-        {
-            <CaseContextRail Strip="true" AlwaysStrip="true" Case="_case" Notify="_notifyDeadlines" CanEdit="_canEdit"
-                             OnOpenEntity="OpenEntity" OnGoToTab="SetTab" OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
-        }
         <CaseOverviewTab @ref="_overviewTab" Section="@_activeTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" OutcomeLabels="_outcomeLabels" CanEdit="_canEdit" CanLiftRestriction="@(_canEdit && CanLiftRestriction)"
                          RetentionMessage="@_retentionMsg" ReadinessEval="_readinessEval" BriefInPane="PaneShown" OnEditBrief="() => _nowNext?.BeginBriefEdit()"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" OnOpenModal="OpenModal"
@@ -2309,7 +2303,8 @@ else
     private bool _railOpen = true;
     // Whether the viewport is wide enough for the pane (reported by imMedia; assumed until it says otherwise).
     private bool _wide = true;
-    private bool PaneShown => _railOpen && _wide;
+    // RD-12: the Briefing has the brief and its own obligations, governance and team, so the pane steps aside there.
+    private bool PaneShown => _railOpen && _wide && _activeTab != "Briefing";
     private CaseNowNext? _nowNext;
 
     /// <summary>RD-04: imMedia reports whether the pane fits (min-width 1200px).</summary>
