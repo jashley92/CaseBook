@@ -2480,10 +2480,17 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<bool>("DarkTheme")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("KeyBindings")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("LocalTime")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("NavCollapsed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("SingleKeyShortcutsOff")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("TwelveHourClock")

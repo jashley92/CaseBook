@@ -3119,3 +3119,11 @@ a.im-find-quote:hover { text-decoration: underline; }
     border: 1px solid var(--im-border); border-radius: var(--im-radius); background: var(--im-surface-2); font-size: var(--im-text-sm); }
 .im-reportjob-bar { flex: 1 1 10rem; height: .4rem; min-width: 6rem; }
 .im-reportjob.is-failed { border-color: var(--im-danger); color: var(--im-danger); }
+
+/* RD-24: keyboard shortcuts (help list and the settings page). */
+.cmdk-binding { display: inline-flex; gap: .15rem; }
+.cmdk-binding + .cmdk-binding::before { content: "or"; margin: 0 .3rem; font-size: var(--im-text-xs); color: var(--im-text-muted); }
+.cmdk-help-foot { padding: .55rem 1rem; border-top: 1px solid var(--im-border); font-size: var(--im-text-sm); color: var(--im-text-muted); display: flex; flex-wrap: wrap; gap: .25rem .75rem; }
+.im-keys-group th { padding-top: .9rem; font-size: var(--im-text-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--im-text-muted); font-weight: 600; }
+.im-keys-input { font-family: var(--im-font-data); }
+.im-keys-input.is-off { text-decoration: line-through; color: var(--im-text-muted); }

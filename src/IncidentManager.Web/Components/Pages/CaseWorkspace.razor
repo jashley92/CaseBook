@@ -754,7 +754,7 @@ else
     private CaseEntitiesTab? _entitiesTab;
 
     private bool _canEdit;
-    // Case-local keyboard shortcuts (imCaseHotkeys → OnCaseHotkey); the entity graph has its own ref in its tab.
+    // Case-local keyboard shortcuts (imKeymap → OnCaseHotkey); the entity graph has its own ref in its tab.
     private DotNetObjectReference<CaseWorkspace>? _dotNetRef;
 
     // Notes: the tab is extracted to CaseNotesTab (UX-13), which owns its editors + note state. The parent
@@ -2965,7 +2965,7 @@ else
             catch (JSException) { /* progressive enhancement — the manual picker still works */ }
 
             // U-14: case-local keyboard shortcuts (digit 1..9 / 0 = tab, n = new note).
-            try { await JS.InvokeVoidAsync("imCaseHotkeys.register", _dotNetRef); }
+            try { await JS.InvokeVoidAsync("imKeymap.registerCase", _dotNetRef); }
             catch (JSException) { /* shortcuts are a progressive enhancement */ }
 
             // RD-04: whether the Now/Next pane fits beside the tab.
@@ -3004,7 +3004,7 @@ else
         // the 'n' shortcut's caret focus is handled inside CaseNotesTab (via AutofocusComposer).
     }
 
-    /// <summary>U-14: a case-local keyboard shortcut fired by the imCaseHotkeys dispatcher.</summary>
+    /// <summary>U-14: a case-local keyboard shortcut fired by the keymap dispatcher (RD-24, keymap.js).</summary>
     [JSInvokable]
     public async Task OnCaseHotkey(string cmd)
     {
@@ -3077,7 +3077,7 @@ else
         PaletteActions.Clear(this); // PROD-19: stop offering this case's actions (only if we're still the owner)
         if (_relativeTimeTicker is not null) await _relativeTimeTicker.DisposeAsync();
         // EasyMDE editors and the entity graph are torn down by their own tab components (UX-13).
-        try { await JS.InvokeVoidAsync("imCaseHotkeys.unregister"); }   // U-14: stop forwarding keys to this circuit
+        try { await JS.InvokeVoidAsync("imKeymap.unregisterCase"); }   // U-14: stop forwarding keys to this circuit
         catch { /* circuit may already be gone during teardown */ }
         _dotNetRef?.Dispose();
     }

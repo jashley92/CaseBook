@@ -33,5 +33,11 @@ public class UserDisplayPreference : Entity
     /// <summary>INV-26: the timeline's attack chain is shown opened rather than as its one-line strip.</summary>
     public bool AttackChainOpen { get; set; }
 
+    /// <summary>RD-24: single-key shortcuts (letters, digits, punctuation, and g sequences) are switched off (WCAG 2.1.4).</summary>
+    public bool SingleKeyShortcutsOff { get; set; }
+
+    /// <summary>RD-24: the user's own keys for shortcuts they changed ("id=keys;id=keys"); null when all are the defaults.</summary>
+    public string? KeyBindings { get; set; }
+
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }

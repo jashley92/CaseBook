@@ -63,6 +63,39 @@ public sealed class UserDisplayPreferenceService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>RD-24: the current user's keyboard settings (the defaults when they've changed nothing).</summary>
+    public async Task<KeymapSettings> GetKeymapAsync(CancellationToken ct = default)
+    {
+        if (!_user.IsAuthenticated) return KeymapSettings.Default;
+        using var db = _factory.CreateDbContext();
+        var row = await db.UserDisplayPreferences.AsNoTracking().Where(p => p.UserId == _user.UserId)
+            .Select(p => new { p.SingleKeyShortcutsOff, p.KeyBindings }).FirstOrDefaultAsync(ct);
+        return row is null ? KeymapSettings.Default : new KeymapSettings(row.SingleKeyShortcutsOff, Keymap.Deserialize(row.KeyBindings));
+    }
+
+    /// <summary>RD-24: saves the current user's keyboard settings after <see cref="Keymap.Validate"/>; throws
+    /// <see cref="ArgumentException"/> with every problem when they don't validate.</summary>
+    public async Task<KeymapSettings> SaveKeymapAsync(bool singleKeysOff, IReadOnlyDictionary<string, string> keys, CancellationToken ct = default)
+    {
+        if (!_user.IsAuthenticated) throw new InvalidOperationException("Sign in to save keyboard settings.");
+        var (settings, problems) = Keymap.Validate(singleKeysOff, keys);
+        if (settings is null) throw new ArgumentException(string.Join(" ", problems));
+        var stored = Keymap.Serialize(settings.Keys);
+        if (stored is { Length: > 2000 }) throw new ArgumentException("That's more key bindings than CaseBook can store.");
+        using var db = _factory.CreateDbContext();
+        var row = await db.UserDisplayPreferences.FirstOrDefaultAsync(p => p.UserId == _user.UserId, ct);
+        if (row is null)
+        {
+            row = new UserDisplayPreference { UserId = _user.UserId };
+            db.UserDisplayPreferences.Add(row);
+        }
+        row.SingleKeyShortcutsOff = settings.SingleKeysOff;
+        row.KeyBindings = stored;
+        row.UpdatedAtUtc = _clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return settings;
+    }
+
     /// <summary>Saves the current user's preferences, upserting their single row. A no-op when nothing changed.</summary>
     public async Task SaveMineAsync(DisplayPrefs prefs, CancellationToken ct = default)
     {

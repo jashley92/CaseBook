@@ -47,7 +47,7 @@ caught by the server and redirected to `/access-denied?from=…`; an unknown pag
 | `/access-log` | `AccessLogPage` | Administer | Read and download log |
 | `/exports` | `Exports` | ViewCases | Download CSVs and bundles |
 | `/program/report` | `ProgramReportPage` | ViewCases | Program › Program report: quarterly program metrics |
-| `/account/access`, `/account/api-tokens`, `/account/notifications` | `Account*` | signed in | My access; personal tokens; notification preferences |
+| `/account/access`, `/account/api-tokens`, `/account/notifications`, `/account/keyboard` | `Account*` | signed in | My access; personal tokens; notification preferences; keyboard shortcuts (RD-24) |
 | `/admin`, `/admin/settings/{Section?}` | `Admin` | Administer | Settings sections (below) |
 | `/admin/templates`, `/admin/gates`, `/admin/taxonomy`, `/admin/data-elements`, `/admin/outcomes`, `/admin/roles`, `/admin/api-tokens`, `/admin/email-templates`, `/admin/config-bundle`, `/admin/style` | `Admin*`, `StyleGuide` | Administer | Case templates, stage gates, labels, data elements, roles and AD mappings, system tokens, email wording, configuration bundle, live style guide |
 | `/access-denied`, `/not-found` | `NoAccess`, `NotFoundPage` | signed in | Friendly 403 and 404 |
@@ -189,8 +189,7 @@ Scripts are plain files in `wwwroot/js` (the content-security policy forbids inl
 | `time.js` | Display time zone and clock preference | `TimeDisplay`, account menu |
 | `markdown-editor.js` | Wraps EasyMDE: value sync, `@` mentions, `[[` entity tags, dirty tracking | Notes, timeline, review, overview editors |
 | `entity-graph.js` | vis-network relationship graph; reports dragged positions | Entities tab |
-| `hotkeys.js` | Global shortcuts: `Ctrl+K`/`/` palette, `?` help, `g`+key go-to | `CommandPalette` |
-| `case-hotkeys.js` | Workspace shortcuts (tabs, composers, `Ctrl+Enter`) | `CaseWorkspace` |
+| `keymap.js` | The one keyboard dispatcher (RD-24): the user's keymap from `Application/Preferences/Keymap.cs` (`imKeymap.configure`), global commands to `CommandPalette`, case commands to `CaseWorkspace` (`registerCase`). Single keys never fire while typing and can all be switched off; `Ctrl+K`, `Esc` and `Ctrl+Enter` are fixed | `CommandPalette`, `CaseWorkspace` |
 | `modal-a11y.js` | Focus trap and focus return for dialogs | Workspace and admin dialogs |
 | `paste-drop.js` | Paste a screenshot, drag and drop files | Evidence and timeline tabs |
 | `idle-timeout.js` | Inactivity detection for the idle lock | `IdleGuard` |

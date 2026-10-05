@@ -691,6 +691,7 @@ public sealed class UserDisplayPreferenceConfiguration : IEntityTypeConfiguratio
     {
         b.ToTable("UserDisplayPreferences");
         b.Property(x => x.UserId).HasMaxLength(200).IsRequired();
+        b.Property(x => x.KeyBindings).HasMaxLength(2000);   // RD-24
         b.HasIndex(x => x.UserId).IsUnique(); // one preference row per user
     }
 }
