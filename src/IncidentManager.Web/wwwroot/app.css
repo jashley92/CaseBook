@@ -3163,3 +3163,5 @@ a.im-find-quote:hover { text-decoration: underline; }
 .im-desk-main > *, .im-desk-side > *, .im-find-main > *, .im-find-side > * { min-width: 0; }
 .im-desk-need-body { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 767.98px) { .btn-group { flex-wrap: wrap; } }
+/* RD-26: a case number in the Desk's case table stays on one line (the table scrolls on a phone). */
+.im-desk table td code { white-space: nowrap; }

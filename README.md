@@ -12,37 +12,77 @@ screens, architecture, data model, workflows, developer guide, configuration, op
 
 ## Screenshots
 
-### Leadership dashboard
-Headline open-items tile with classification mix, attention stats, an open-items-by-phase pipeline,
-response times against SLA targets, a **regulatory-notification** compliance block (detected→reported
-mean, awaiting-report, and at-risk/overdue deadlines), and a **12-month case-activity bar chart** (opened
-vs. closed) plus an open-items sparkline — all derived from case timestamps — with one-click metrics CSV
-export (incl. monthly & quarterly rollups) for board / regulatory packs.
+### Desk
+Where an analyst starts: **what changed on your cases since you last looked**, then **what needs you** in order of
+consequence (a running notification deadline, an overdue task, a mention, a case you were just added to, work due
+soon), **your cases** with your part in each and the next thing for you, and **your tasks** by when they're due,
+each with why it exists. The clocks on your cases and the quiet changes sit beside it.
 
-![Leadership dashboard](docs/screenshots/dashboard.png)
+![Desk](docs/screenshots/desk.png)
+
+### Program
+The cross-case views in one place for leadership: the **dashboard** (classification mix, attention items, an
+open-items-by-phase pipeline, response times against SLA targets, a **regulatory-notification** compliance block
+and a **12-month case-activity chart**, all derived from case timestamps, with a metrics CSV for board and
+regulatory packs), the team's workload, due work across the team, improvement actions, the **legal register** and
+the quarterly program report.
+
+![Program overview](docs/screenshots/dashboard.png)
 
 ### Case workspace
-The analyst's hub. The Overview reads top to bottom as one column: **where the case stands** (the case
-summary the report prints, then the team's working assessment, what's known, open questions and next steps;
-the next steps are the case's open tasks, and an open question can be followed up as a task in one click),
-the latest decisions and milestones from the timeline, scope and impact, the **regulatory notification**
-deadlines, readiness for the next stage gate, and the case record (origin, detection reference, true
-**detected / occurred** times, ATT&CK, related cases and need-to-know **restriction**). Every revision of the
-brief is a new version, the summary included, so what the team believed and reported at any point stays
-readable (each version records the open tasks as they stood), and the brief says when the record has moved on since it was written. A **context panel** beside every tab carries
-the clocks with their dates, the same **Next** list of open tasks (with what's left before the next phase), the team and the key entities (pin the ones that matter; an Unknown entity the case keeps referring to is flagged for a disposition review); on narrower screens it folds into a strip at the top
-of the Overview. Tabs: **Overview / Timeline / IOCs & entities / Evidence / Notes / Tasks /
-Lessons learned / Report / Audit**. A compact header carries the case number and title, then one state line that reads as a sentence:
-classification and severity, the NIST SP 800-61 phase as a slim bar (hover a segment for its name and when it was
-reached; click to move there), and quiet flags such as **materiality**, a Legal/committee decision the tool records
-but does not make. The clocks live in the context panel; an alert chip stands in for an overdue one where the
-panel isn't showing. **Advance** and **Hand off** are one click away. Report and Lessons learned keep their places
-in the tabs but stay quiet until they matter (Report on a breach or a running notification deadline, or from
-Recovery; Lessons learned at Post-Incident). Opening a
-case you've seen before says **what changed since you last viewed it**. Clicking any entity opens it in a side
-panel: where the case refers to it, its relationships and the other cases it appears on.
+One workspace per matter, whichever rung of the ladder it's on. A compact header carries the case number and
+title, then one state line that reads as a sentence: the rung, severity as bars, the NIST SP 800-61 phase as a bar
+with how long it's been there, the flags that matter (materiality, legal referral, restriction, legal hold), the
+commander and the **most urgent clock**. The one act the state calls for (*Advance*, *Promote*, *Close*) sits
+beside **Hand off** and the actions menu; a change of phase, rung or severity opens as a sheet under the header.
+
+The case reads as five views: **Record** (the timeline), **Things** (IOCs & entities, evidence, ATT&CK,
+connections, impact), **Tasks**, **Briefing** and **Paper** (report, lessons learned, audit trail). Beside every
+view, **Now and Next**: Now is the brief (what the team believes, what's known, each open question and who is
+answering it, and a prompt when the record has moved on since it was written); Next is what must happen, in order of
+consequence: running obligations, then the open tasks with why each exists (and *Done…* to record a result), then
+how ready the case is for its next gate. Any entity or evidence chip opens a panel in place: the verdict here and
+on every other case, where it appears, the chain of custody. Opening a case you've seen before says **what changed
+since you last looked**.
 
 ![Case workspace](docs/screenshots/case-workspace.png)
+
+### Briefing
+One page for a commander or a manager, assembled from the record and writing nothing: **what is happening, what we
+know, what we are doing, what remains, and why**, beside the obligations, governance and team. It copies out as
+plain text, and a closed case opens on it.
+
+![Briefing](docs/screenshots/briefing.png)
+
+### Closing a case
+Closing is a view of its own: the outcome (each with what it means), what happened and what the team concluded
+(which become the brief's closing version and the report's summary), the open questions, and beside them the close
+gate's readiness, when it closed, and what closing won't stop. Bring-your-own-AI help drafts the closing brief from
+a copy-paste prompt; nothing is saved until a person closes the case.
+
+![Close-out](docs/screenshots/closeout.png)
+
+### Find
+One search across every case you can see, with **typed results**: entities (with each one's verdict on every case),
+cases (a closed one with how it ended), record entries including closing briefs, tasks, evidence names and, if you
+ask, working notes. Find says how it read the query (a case number, an indicator, a person, words) and takes plain
+filters you can see and edit (`type:decision reset after:2026-01-01`, `class:breach state:NY`). Matching is exact; a
+restricted case you can't see never appears. The command bar (`Ctrl+K`) shows the same typed results as you type.
+
+![Find](docs/screenshots/find.png)
+
+### Open-case tabs and Open beside
+The cases you're on sit as tabs in the top bar, kept on your account and back when you sign in; pinned cases stay.
+**Open beside** puts another case's Briefing next to the page you're on, to read two matters side by side.
+
+![A case open beside another](docs/screenshots/beside.png)
+
+### On a phone
+A case opens on **Now**, with Now · Record · Next · Things along the bottom: read the brief, log what you found,
+answer a question, finish a task with its result. Phase changes, gates, closing and reports say they're done at a
+desk.
+
+<img src="docs/screenshots/doc-mobile-workspace.png" alt="A case on a phone, open on Now" width="260"> <img src="docs/screenshots/doc-mobile-next.png" alt="Next on a phone" width="260">
 
 ### Case creation
 A single form captures origin (internal vs. third-party/vendor), classification, severity, an optional
@@ -76,14 +116,16 @@ it happened: phase and classification changes take a "when it happened" time and
 reason, while the time it was entered is kept and shown. A task's result, a note or a task comment goes
 onto the timeline in one step, entries (and the brief's "Known") cite the evidence behind them, and the report's investigation timeline
 is this same record. A task can be started from a timeline entry, an entity or an evidence file, and remembers
-what it's about; playbook steps set the kind of work their tasks are. One toolbar row holds the lens (including **Decisions**, each with its why), the reading controls and **Add**; filters open on
-demand (with a **key entries only** switch), and the attack chain folds to a one-line strip of its tactics (it stays open for anyone who opens it),
-so the history starts near the top of the tab.
+what it's about; playbook steps set the kind of work their tasks are. The lenses (**Story**, Everything, Attack chain, Response, **Decisions**, Working notes) sit in one row
+with the reading controls and **Add**. Story and Everything read in **two lanes**, the adversary left of the time
+spine and the response right of it, with the phase as a band on the spine and long quiet stretches marked, under a
+minimap of the whole case. One composer logs a finding, a decision, an adversary step, a question or a working note,
+and adds its follow-ups (tasks, a question, a line for Known, a case link) in the same save.
 
 ![Timeline](docs/screenshots/timeline.png)
 
 ### Notes &amp; @mentions
-Working notes per case, in Markdown and versioned on every edit, that can be put on the timeline once they
+Working notes per case (the Record's *Working notes* lens), in Markdown and versioned on every edit, that can be put on the timeline once they
 become a finding. A note can **@mention** teammates to point them at it: they're emailed a link straight to
 the note, and an edit only notifies people it newly mentions. Only people who can see the case can be
 mentioned. There's no chat thread in the record: the team talks in its own chat, and the case keeps the
@@ -120,7 +162,7 @@ asked for.
 
 ### Campaign rollup
 When several cases are worked as one attack wave, linking them **"Same campaign as"** (E-14) makes them
-roll up into a single cross-case view — reached from the **Campaigns** sidebar entry or the **View
+roll up into a single cross-case view — reached from **Intel › Campaigns** or the **View
 campaign** shortcut on any linked case. One page shows the member cases, the **indicators shared across
 more than one case** (the pivots that tie the wave together, strongest verdict wins), the combined
 **MITRE ATT&amp;CK** coverage, a **merged event timeline**, and the aggregate posture (highest severity /

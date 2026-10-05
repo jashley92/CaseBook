@@ -636,6 +636,14 @@ public static class DevDataSeeder
             Kind = TaskKind.Investigate, DueAtUtc = now.AddDays(2), CreatedBy = alex, CreatedAtUtc = now.AddDays(-5),
             AboutRef = $"{ActionItem.AboutEntity}:{acct.Id}"   // INV-42: started from Jane Doe's entity panel
         });
+        // RD-16/RD-26: the dev sign-in user works this case too, so the Desk has something on it in a fresh database.
+        c1.Assign("S-1-5-21-DEV-1001", "Dev Analyst", CaseAssignmentRole.Analyst, ivy, now.AddDays(-2));
+        c1.ActionItems.Add(new ActionItem
+        {
+            CaseId = c1.Id, Title = "Check whether 203.0.113.66 reached any other mailbox", Owner = "S-1-5-21-DEV-1001",
+            Kind = TaskKind.Investigate, DueAtUtc = now.AddHours(20), CreatedBy = ivy, CreatedAtUtc = now.AddDays(-2),
+            AboutRef = $"{ActionItem.AboutEntity}:{ip.Id}"
+        });
         c1.ActionItems.Add(new ActionItem
         {
             CaseId = c1.Id, Title = "Confirm the NY and federal notification drafts", Owner = "legal1",

@@ -39,14 +39,30 @@ const PORT = 9222 + Math.floor(Math.random() * 500);
 // before: optional JS evaluated in the page just before capture (e.g. open a panel).
 // settle: extra ms to wait after load/ready (animations, async renders). fullPage: capture whole document.
 const SHOTS = [
-  { name: 'dashboard',          path: '/',                              settle: 1400, fullPage: true },
+  { name: 'dashboard',          path: '/program',                       settle: 1400, fullPage: true },
+  // RD-16..RD-21 (Casefile): the Desk, Find, the Briefing, the Close-out view, and a case open beside another.
+  { name: 'desk',               path: '/desk',                          settle: 1400 },
+  { name: 'find',               path: '/find?q=203.0.113.66',           settle: 1400, viewport: { width: 1440, height: 1250 } },
+  { name: 'briefing',           path: '/cases/{caseId}?tab=Briefing',   settle: 1400, viewport: { width: 1440, height: 1250 } },
+  { name: 'closeout',           path: '/cases/{caseId}',                settle: 1600, viewport: { width: 1440, height: 1300 },
+    before: `(async () => {
+      [...document.querySelectorAll('#ws-head button')].find(b => b.textContent.trim().startsWith('Actions'))?.click();
+      await new Promise(r => setTimeout(r, 500));
+      [...document.querySelectorAll('.dropdown-menu.show button')].find(b => b.textContent.includes('Change phase'))?.click();
+      await new Promise(r => setTimeout(r, 900));
+      const s = document.getElementById('ws-status');
+      if (s) { s.value = 'Closed'; s.dispatchEvent(new Event('change', { bubbles: true })); }
+      await new Promise(r => setTimeout(r, 1200));
+      document.querySelector('.im-co-outcome')?.click();
+      window.scrollTo(0, 0);
+    })()` },
   { name: 'case-workspace',     path: '/cases/{caseId}',                settle: 1000 },
   { name: 'create-case',        path: '/cases/new',                     settle: 900 },
   { name: 'case-import',        path: '/cases/import',                  settle: 900,
     before: `(() => { const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Show'); if (b) b.click(); })()` },
   { name: 'timeline',           path: '/cases/{caseId}?tab=Timeline',   settle: 1200 },
   { name: 'relationship-graph', path: '/cases/{caseId}?tab=Entities',   ready: '.tabbody .vis-network canvas', settle: 2000 },
-  { name: 'campaign-rollup',    path: '/campaigns/{campaignId}',        settle: 1200 },
+  { name: 'campaign-rollup',    path: '/intel/campaigns/{campaignId}',  settle: 1200 },
   { name: 'report',             path: '/cases/{caseId}?tab=Report',     settle: 1500,
     before: `(() => { const b=[...document.querySelectorAll('.tabbody button')].find(x=>x.textContent.trim()==='Preview'); if (b) b.click(); })()` },
   { name: 'integrity-audit',    path: '/integrity',                     settle: 1100 },
@@ -83,64 +99,97 @@ const SHOTS = [
   { name: 'cases-filtered',     path: '/cases?classification=Breach',   settle: 1000 },
   // 2026-09-24 additions: post-incident review, the cross-case pages, and the quarterly program report.
   { name: 'lessons-learned',    path: '/cases/{vendorCaseId}?tab=Review', settle: 1200 },
-  { name: 'improvement-actions', path: '/improvement-actions',          settle: 1000,
+  { name: 'improvement-actions', path: '/program/improvement-actions',  settle: 1000,
     before: `(() => { const s=document.getElementById('ia-scope'); if (s) { s.value='All'; s.dispatchEvent(new Event('change',{bubbles:true})); } })()` },
-  { name: 'indicators',         path: '/indicators',                    settle: 1200,
+  { name: 'indicators',         path: '/intel/indicators',              settle: 1200,
     before: `(() => { const s=document.getElementById('ind-type'); if (s) { s.value='all'; s.dispatchEvent(new Event('change',{bubbles:true})); } })()` },
-  { name: 'attack-coverage',    path: '/attack-coverage',               settle: 1200,
+  { name: 'attack-coverage',    path: '/intel/attack',                  settle: 1200,
     before: `(() => { const s=document.getElementById('atk-period'); if (s) { s.value='all'; s.dispatchEvent(new Event('change',{bubbles:true})); }
                       setTimeout(() => document.querySelector('.atkh-cell')?.click(), 600); })()` },
-  { name: 'program-report',     path: '/program-report',                settle: 1200 },
+  { name: 'program-report',     path: '/program/report',                settle: 1200 },
   // S-24: what the signed-in user's roles let them do.
   { name: 'my-access',          path: '/account/access',                settle: 900 },
+  // After the vendor case's shot, so it's an open tab to put beside the phishing case.
+  { name: 'beside',             path: '/cases/{caseId}?tab=Timeline',   settle: 1600, viewport: { width: 1680, height: 1000 },
+    before: `(async () => {
+      // Make the second demo case a tab, then open it beside this one.
+      const other = [...document.querySelectorAll('.im-casetab')].find(t => !t.classList.contains('is-active'));
+      other?.querySelector('.im-casetab-split')?.click();
+      await new Promise(r => setTimeout(r, 2200));
+    })()` },
 
   // --- Annotated shots for docs/ (numbered callouts; each doc carries the legend) -------------------
   // Selector-driven, so a UI change that moves or renames an element shows up as an "annotation target
   // not found" warning here rather than as a silently wrong picture.
-  { name: 'doc-navigation', path: '/', settle: 1400,
-    annotate: [['.nav-group-label', 1, 0], ['.nav-group-label', 2, 1], ['.nav-group-label', 3, 2], ['.nav-group-label', 4, 3],
-               ['.palette-trigger', 5], ['.top-row button', 6, 1], ['.top-row button', 7, 2]] },
+  { name: 'doc-navigation', path: '/desk', settle: 1400,
+    annotate: [['.nav-group-label', 1, 0], ['.nav-group-label', 2, 1], ['.nav-group-label', 3, 2],
+               ['.palette-trigger', 4], ['.im-casetabs', 5], ['.notif-btn', 6], ['.profile-btn', 7]] },
   { name: 'doc-workspace', path: '/cases/{caseId}', settle: 1600,
-    annotate: [['#ws-head .im-casehead-line', 1], ['.im-casehead-state', 2], ['#ws-head .ms-auto', 3],
-               ['.im-workspace-tabs', 4], ['#ov-brief', 5], ['.im-rail', 6]] },
+    annotate: [['#ws-head .im-casehead-line', 1], ['.im-casehead-state', 2], ['.im-ch-acts', 3],
+               ['.im-workspace-tabs', 4], ['.im-nownext', 5]] },
   { name: 'doc-workspace-actions', path: '/cases/{caseId}', settle: 1600, crop: '.dropdown-menu.show',
     before: `(() => { [...document.querySelectorAll('#ws-head button')].find(b => b.textContent.trim().startsWith('Actions'))?.click(); })()` },
-  { name: 'doc-timeline', path: '/cases/{caseId}?tab=Timeline', settle: 1800, viewport: { width: 1440, height: 1300 },
+  { name: 'doc-timeline', path: '/cases/{caseId}?tab=Timeline', settle: 1800, viewport: { width: 1440, height: 1250 },
+    // Oldest first, so the opening adversary steps, the response and the decision are in view.
+    before: `(async () => {
+      [...document.querySelectorAll('.tl-toolbar button')].find(b => b.textContent.trim() === 'Newest')?.click();
+      await new Promise(r => setTimeout(r, 900));
+    })()`,
     annotate: [['.tl-toolbar .im-seg', 1, 0], ['.tl-toolbar .btn-outline-secondary', 2, 0], ['.tl-toolbar .im-seg', 3, 1],
-               ['.tl-toolbar .btn-primary', 4], ['.killchain-strip', 5], ['.tl-day', 6], ['li.tl-kind-ms', 7],
-               ['li.tl-kind-inv', 8], ['.tl-edit', 9], ['li.tl-kind-dec', 10]] },
+               ['.tl-toolbar .btn-primary', 4], ['.killchain-strip', 5], ['.tl-mini', 6], ['.tl-day', 7],
+               ['li.tl-kind-event', 8], ['li.tl-kind-ms', 9]] },
   { name: 'doc-timeline-add', path: '/cases/{caseId}?tab=Timeline', settle: 1800, crop: '#timeline-dropzone',
-    before: `(() => { document.querySelector('.tl-toolbar .btn-primary')?.click(); })()`,
-    annotate: [['#timeline-dropzone .im-seg', 1], ['#tl-atk-when', 2], ['#tl-atk-actor', 3], ['.atk-field', 4]] },
+    viewport: { width: 1440, height: 1200 },
+    before: `(async () => {
+      document.querySelector('.tl-toolbar .btn-primary')?.click();
+      await new Promise(r => setTimeout(r, 700));
+      [...document.querySelectorAll('.im-modes button')].find(b => b.textContent.includes('Adversary'))?.click();
+      await new Promise(r => setTimeout(r, 900));
+    })()`,
+    annotate: [['.im-modes', 1], ['#tl-atk-when', 2], ['#tl-atk-actor', 3], ['.atk-field', 4], ['.im-then', 5]] },
   { name: 'doc-tasks', path: '/cases/{caseId}?tab=Tasks', settle: 1800,
     annotate: [['.tabbody .btn-outline-primary', 1], ['#task-add-form', 2], ['tr.im-task-group', 3], ['.im-about-chip', 4],
                ['.tabbody tbody td.text-end', 5]] },
   { name: 'doc-evidence', path: '/cases/{caseId}?tab=Evidence', settle: 1800,
     annotate: [['#evidence-dropzone .card', 1], ['#evidence-dropzone tbody tr', 2]] },
-  { name: 'doc-notes', path: '/cases/{caseId}?tab=Notes', settle: 1800,
-    annotate: [['.EasyMDEContainer .editor-toolbar', 1], ['.tabbody .card.im-enter .im-badge', 2], ['.tabbody .card.im-enter .btn-link', 3, 1]] },
   { name: 'doc-entities', path: '/cases/{caseId}?tab=Entities', settle: 2400, viewport: { width: 1440, height: 2000 },
     annotate: [['.tabbody > .card.border-info', 1], ['.tabbody > .card', 2, 1], ['.tabbody > .card', 3, 2],
                ['.tabbody .vis-network', 4], ['.tabbody > .card', 5, 4]] },
-  { name: 'doc-phase-dialog', path: '/cases/{caseId}', settle: 1600, viewport: { width: 1440, height: 1100 }, crop: '.modal-content',
+  // RD-15: a phase change is a sheet under the header (choosing Closed opens the Close-out view instead).
+  { name: 'doc-phase-dialog', path: '/cases/{caseId}', settle: 1600, viewport: { width: 1440, height: 1100 }, crop: '#ws-sheet',
     before: `(async () => {
       document.querySelector('#ws-head .btn-primary')?.click();
-      await new Promise(r => setTimeout(r, 900));
-      const s = document.getElementById('ws-status');
-      if (s) { s.value = 'Closed'; s.dispatchEvent(new Event('change', { bubbles: true })); }
+      await new Promise(r => setTimeout(r, 1200));
     })()`,
-    annotate: [['#ws-status', 1], ['#ws-when', 2], ['.modal-body .alert-danger', 3], ['.modal-body .alert-warning', 4], ['.gate-panel', 5]] },
-  { name: 'doc-handoff', path: '/cases/{caseId}', settle: 1600, crop: '.modal-content',
+    annotate: [['#ws-status', 1], ['#ws-when', 2], ['#ws-sheet .alert-warning', 3]] },
+  { name: 'doc-closeout', path: '/cases/{caseId}', settle: 1600, viewport: { width: 1440, height: 1400 },
     before: `(async () => {
       [...document.querySelectorAll('#ws-head button')].find(b => b.textContent.trim().startsWith('Actions'))?.click();
       await new Promise(r => setTimeout(r, 500));
-      [...document.querySelectorAll('.dropdown-menu.show button')].find(b => b.textContent.includes('Hand off'))?.click();
+      [...document.querySelectorAll('.dropdown-menu.show button')].find(b => b.textContent.includes('Change phase'))?.click();
+      await new Promise(r => setTimeout(r, 900));
+      const s = document.getElementById('ws-status');
+      if (s) { s.value = 'Closed'; s.dispatchEvent(new Event('change', { bubbles: true })); }
+      await new Promise(r => setTimeout(r, 1200));
+      window.scrollTo(0, 0);
+    })()`,
+    annotate: [['.im-co-outcomes', 1], ['#ws-close-summary', 2], ['#ws-close-conclusion', 3], ['.im-co-side', 4]] },
+  { name: 'doc-handoff', path: '/cases/{caseId}', settle: 1600, crop: '.modal-content',
+    before: `(async () => {
+      document.querySelector('#ws-head button[aria-label="Hand off"]')?.click();
+      await new Promise(r => setTimeout(r, 900));
     })()` },
   { name: 'doc-create-case', path: '/cases/new', settle: 1200, fullPage: true,
     annotate: [['#nc-template', 1], ['#cc-classification', 2], ['#isRestricted', 3], ['#nc-detected', 4], ['#nc-indicators', 5]] },
   { name: 'doc-cases-list', path: '/cases', settle: 1400,
     annotate: [['.im-page-actions .im-seg', 1], ['.im-counts', 2], ['.im-filter-row', 3], ['.im-case-list tbody tr', 4]] },
+  // RD-25: a case on a phone opens on Now, with its tabs along the bottom; Next shows the obligations and tasks.
   { name: 'doc-mobile-workspace', path: '/cases/{caseId}', settle: 1800, viewport: { width: 390, height: 844, mobile: true } },
+  { name: 'doc-mobile-next', path: '/cases/{caseId}', settle: 1800, viewport: { width: 390, height: 844, mobile: true },
+    before: `(async () => {
+      [...document.querySelectorAll('.im-phone-casetabs button')].find(b => b.textContent.trim().endsWith('Next'))?.click();
+      await new Promise(r => setTimeout(r, 900));
+    })()` },
 ];
 
 // Resolve {caseId} to the rich hand-authored demo case (the phishing wave) and {campaignId} to the first
@@ -155,8 +204,8 @@ const RESOLVERS = {
     eval: `(() => { const a=document.querySelector('table tbody tr a[href^="cases/"]'); return a ? a.getAttribute('href').split('/')[1].split('?')[0] : null; })()`,
   },
   campaignId: {
-    url: '/campaigns',
-    eval: `(() => { const a=document.querySelector('a[href^="campaigns/"]'); return a ? a.getAttribute('href').split('/')[1].split('?')[0] : null; })()`,
+    url: '/intel/campaigns',
+    eval: `(() => { const a=document.querySelector('a[href^="intel/campaigns/"]'); return a ? a.getAttribute('href').split('/')[2].split('?')[0] : null; })()`,
   },
 };
 

@@ -133,9 +133,12 @@ open), then the five questions from the closing brief, then "How it unfolded": t
 four, with the rest a click away on the timeline). An unrecorded scope reads "Not recorded" rather than "Not
 assessed yet".
 
-On a phone the same page stacks, with the context folded into a strip:
+On a phone a case opens on **Now** (the brief), with Now · Record · Next · Things along the bottom and *More*
+for Tasks, Briefing and Paper. **Next** lists the running obligations and the open tasks, each with *Done…* to
+record its result:
 
-<img src="../screenshots/doc-mobile-workspace.png" alt="Case workspace at phone width" width="300">
+<img src="../screenshots/doc-mobile-workspace.png" alt="A case on a phone, open on Now" width="280">
+<img src="../screenshots/doc-mobile-next.png" alt="The same case's Next on a phone" width="280">
 
 ### The Actions menu
 
@@ -145,18 +148,32 @@ Each item opens a dialog. Items you lack permission for aren't shown. Reclassify
 legal referral and legal hold need `ManageLegal`; archive needs `Administer`; everything else needs `EditCases`.
 *Record materiality determination* appears only on Incidents and Breaches.
 
-### Changing phase (and the close gate)
+### Changing phase
 
-![Change phase dialog closing a case](../screenshots/doc-phase-dialog.png)
+![Change phase sheet](../screenshots/doc-phase-dialog.png)
 
-1. **Target phase.** Any phase can be chosen; only *Closed* runs a gate.
+A change of phase, rung or severity opens as a sheet under the header, so the case stays in view.
+
+1. **Target phase.** Any phase can be chosen. Choosing *Closed* opens the Close-out view (below) instead.
 2. **When it happened**, defaulting to now, with quick nudges. More than an hour back requires a reason. The
    time it was entered is kept as well.
-3. A **regulatory notification** with no reported time recorded. Closing doesn't stop that clock.
-4. **Open tasks** for the phases being left behind. A warning only.
-5. **Closure readiness**: the administrator-defined gate. Machine checks show met (green), advisory (amber) or
-   unmet (red); attestations are ticked here. Unmet required items need an **override justification**, which
-   is recorded on the gate passage and shown on the timeline.
+3. **Open tasks** for the phases being left behind. A warning only.
+
+### Closing a case
+
+![Close-out view](../screenshots/doc-closeout.png)
+
+Closing is a view of its own (a *Close-out* tab appears beside the views while you work on it; the draft is kept
+while you look at the rest of the case).
+
+1. **Outcome**, each with what it means.
+2. **What happened**: the case summary, printed in the report.
+3. **Conclusion**: what the team concluded and on what basis. Together with what happened, it becomes the brief's
+   closing version. Open questions are listed underneath, and *Draft these with your own AI tool* gives a
+   copy-paste prompt.
+4. **Readiness** (the close gate: machine checks met, advisory or unmet, attestations to tick, and an override
+   justification for anything required that's unmet, recorded on the gate passage), **when it closed**, a
+   running notification clock that closing won't stop, and the tasks still open.
 
 ### Handing off
 
@@ -171,20 +188,24 @@ doesn't change the incident commander; that's a separate assignment.
 ![Timeline](../screenshots/doc-timeline.png)
 
 1. **Lenses**: Story (the turning points, oldest first), Everything, Attack chain (Disclosure on third-party
-   cases), Response, Decisions, Working notes. Story and Everything read in **two lanes**, the adversary left of
-   the time spine and the response right of it, with the phase as a band on the spine, quiet stretches marked,
-   and a minimap of the whole case above.
+   cases), Response, Decisions, Working notes.
 2. **Filter**: tactic or type, source, entity, and whether milestones show.
-3. **Clock / T+**: show times as clock times or as time since detection.
+3. **Clock / T+**: show times as clock times or as time since detection. Next to it, newest or oldest first.
 4. **Add** opens the composer (below).
 5. **Attack chain**: event steps as a one-line tactic strip; *Show* expands it.
-6. **Day header**: date and day number counted from detection.
-7. **A derived milestone**, labelled with where it comes from ("from materiality record"). Milestones aren't
-   stored timeline rows; they're read from the case record.
-8. **An investigation entry**: type, text, who logged it, and here *recorded …* because it was written more
-   than an hour after it happened. Actions: Edit (saves a new version), Cite evidence, raise a Task.
-9. **Correct time**: re-date a classification, severity or phase change with a reason.
-10. **A decision**: what was decided, why, options considered, who decided, and the tasks carrying it out.
+6. **Minimap**: the whole case on one line, the phases as bands, the adversary's steps above and the response
+   below; click a mark to bring its entry into view.
+7. **Day header**: date and day number counted from detection.
+8. **An adversary step**, in the left lane: tactics, technique, actor → target, source, who logged it. Story and
+   Everything read in **two lanes**, the adversary left of the time spine and the response right of it, with the
+   phase as a band on the spine and quiet stretches marked.
+9. **A derived milestone**, in the right lane, labelled with where it comes from ("from case creation").
+   Milestones aren't stored timeline rows; they're read from the case record. A milestone for a classification,
+   severity or phase change has **Correct time** (re-date it, with a reason).
+
+**Investigation entries** show their type, text, who logged it, and *recorded …* when written more than an hour
+after it happened, with Edit (saves a new version), Cite evidence and Task. **Decisions** show what was decided,
+why, the options considered, who decided, and the tasks carrying them out.
 
 ### Adding to the timeline
 
@@ -197,6 +218,7 @@ doesn't change the incident commander; that's a separate assignment.
 3. **Actor and target** from the case's entities. *New IOC…* in the list creates one without leaving the
    composer. Each step becomes an edge on the relationship graph.
 4. **ATT&CK** technique or tactic search, or the matrix picker.
+5. **Then**: follow-ups saved in the same act (below).
 
 Paste a screenshot anywhere in the composer to attach it as hashed evidence.
 
