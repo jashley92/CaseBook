@@ -2815,3 +2815,21 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-now .im-brief-nudge { margin: 0 0 .6rem; font-size: .8rem; }
 .im-now textarea { font-size: .85rem; }
 .im-now .im-brief-report { text-transform: none; letter-spacing: 0; }
+
+/* RD-05 (Casefile) the entity dossier drawer. */
+.im-dossier-glyph { font-size: 1.05rem; color: var(--im-text-muted); }
+.im-dossier-value { font-size: 1rem; min-width: 0; overflow-wrap: anywhere; }
+.im-dossier-value .im-data { font-size: .95rem; white-space: normal; color: var(--im-text); }
+.im-dossier-copy { color: var(--im-text-muted); }
+.im-dossier-copy:hover { color: var(--im-accent-text); }
+.im-dossier-label { font-size: .95rem; margin-top: .15rem; }
+.im-verdict-seg { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--im-border-strong); border-radius: var(--im-radius); overflow: hidden; }
+.im-verdict-seg button { border: 0; border-right: 1px solid var(--im-border); background: var(--im-surface); padding: .35rem .2rem; }
+.im-verdict-seg .im-verdict { flex-direction: column; gap: .2rem; font-size: .72rem; }
+.im-verdict-seg button:last-child { border-right: 0; }
+.im-verdict-seg button:hover { background: var(--im-surface-2); }
+.im-verdict-seg button.on { background: var(--im-surface-2); box-shadow: inset 0 -2px 0 var(--im-accent); }
+.im-verdict-seg button:focus-visible { outline: 2px solid var(--im-accent); outline-offset: -2px; }
+.im-dossier-reason { padding: .55rem .65rem; border: 1px solid var(--im-accent); border-radius: var(--im-radius); background: var(--im-surface-2); }
+.im-seen { padding: .4rem 0; border-bottom: 1px solid var(--im-border); }
+.im-entity-panel-head .im-data { white-space: normal; overflow-wrap: anywhere; }

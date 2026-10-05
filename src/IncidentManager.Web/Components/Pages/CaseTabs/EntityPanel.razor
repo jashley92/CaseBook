@@ -2,7 +2,10 @@
    is, where this case refers to it, how it relates to other entities, and which other cases it appears on — so
    checking an entity doesn't mean leaving the work. Opened from a "[[" tag, a timeline actor/target, or an entity
    row. Read-only; changes are made where they always are (the IOCs & entities tab).
-   INV-28: lists the tasks about the entity, and a task can be started from here. *@
+   INV-28: lists the tasks about the entity, and a task can be started from here.
+   RD-05 (Casefile dossier): the verdict is set here, as a segmented control with its reason inline; "Seen before" is
+   one block (open cases, then closed ones with how they ended), each with the verdict reached there; the value can be
+   copied defanged; deep-linked as ?entity=<id>. *@
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject CaseService Cases
 @inject ActionItemCommentService TaskComments
@@ -10,6 +13,8 @@
 @inject ToastService Toasts
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject TimeDisplay TimeDisp
+@inject IJSRuntime JS
+@inject IConfiguration Config
 
 @if (Entity is { } en)
 {
@@ -18,30 +23,78 @@
            @onkeydown="OnKey">
         <div class="im-entity-panel-head">
             <div class="d-flex align-items-center gap-2">
-                <span class="im-badge im-b-neutral">@Ui.EntityGlyph(en.Type) @Ui.Label(en.Type)</span>
-                <span class="@Ui.DispositionBadge(en.Disposition)">@Ui.Label(en.Disposition)</span>
-                <button type="button" class="btn-close ms-auto" aria-label="Close" @onclick="OnClose"></button>
+                <span class="im-dossier-glyph" aria-hidden="true">@Ui.EntityGlyph(en.Type)</span>
+                <h2 class="im-dossier-value mb-0" id="entity-panel-title"><span class="im-data">@en.Value</span></h2>
+                <button type="button" class="btn btn-sm btn-link p-0 im-dossier-copy" title="Copy the defanged value (safe to paste into email or chat)"
+                        aria-label="Copy the defanged value" @onclick="() => CopyDefanged(en)">
+                    <span class="bi @(_copied ? "bi-check2" : "bi-copy")" aria-hidden="true"></span>
+                </button>
+                @if (CanEdit)
+                {
+                    @* INV-32: key to the case whatever its disposition. *@
+                    <button type="button" class="btn btn-sm btn-link p-0 ms-auto im-dossier-copy" aria-pressed="@Ui.Aria(en.IsPinned)"
+                            title="@(en.IsPinned ? "Unpin: remove it from Key entities" : "Pin: show it first in Key entities")" @onclick="() => TogglePin(en)">
+                        <span class="bi @(en.IsPinned ? "bi-pin-fill" : "bi-pin")" aria-hidden="true"></span><span class="visually-hidden">@(en.IsPinned ? "Unpin" : "Pin")</span>
+                    </button>
+                }
+                <button type="button" class="btn-close @(CanEdit ? "" : "ms-auto")" aria-label="Close" @onclick="OnClose"></button>
             </div>
-            <h2 class="h6 mb-0 mt-2" id="entity-panel-title"><code class="im-entity-panel-value">@en.Value</code></h2>
-            @if (!string.IsNullOrWhiteSpace(en.Label)) { <div class="small">@en.Label</div> }
+            @if (!string.IsNullOrWhiteSpace(en.Label)) { <div class="im-dossier-label">@en.Label</div> }
             <div class="small text-muted">
-                @(string.IsNullOrWhiteSpace(en.Source) ? "" : $"Source {en.Source} · ")Added @TimeDisp.Short(en.CreatedAtUtc)
+                @Ui.Label(en.Type)@(string.IsNullOrWhiteSpace(en.Source) ? "" : $" · from {en.Source}") · added @TimeDisp.Brief(en.CreatedAtUtc, Clock.UtcNow)@(en.Tlp is { } tlp ? $" · TLP:{tlp.ToString().ToUpperInvariant().Replace("AMBERSTRICT", "AMBER+STRICT")}" : "")
+                @if (Defanged(en) is { } df && df != en.Value) { <text> · shared as </text><span class="im-data">@df</span> }
             </div>
             @if (!string.IsNullOrWhiteSpace(en.Description)) { <div class="small mt-1">@en.Description</div> }
+
+            @* RD-05: the verdict on this case, set here. Changing it asks why (required for Malicious or Compromised);
+               the change is a verdict milestone on the timeline. *@
+            <div class="im-dossier-verdict mt-2">
+                <div class="small text-muted mb-1">Verdict on this case</div>
+                @if (CanEdit)
+                {
+                    <div class="im-verdict-seg" role="radiogroup" aria-label="Verdict on this case">
+                        @foreach (var d in VerdictOrder)
+                        {
+                            var on = (_pendingVerdict ?? en.Disposition) == d;
+                            <button type="button" role="radio" aria-checked="@Ui.Aria(on)" class="@(on ? "on" : "")" @onclick="() => PickVerdict(en, d)">
+                                <VerdictMark Value="d" />
+                            </button>
+                        }
+                    </div>
+                    @if (_pendingVerdict is { } pv && pv != en.Disposition)
+                    {
+                        var required = pv is EntityDisposition.Malicious or EntityDisposition.Compromised;
+                        <div class="im-dossier-reason mt-2">
+                            <label class="form-label small mb-1" for="dossier-reason">Why @Ui.Label(pv).ToLowerInvariant()? <span class="text-muted">@(required ? "(required)" : "(optional)")</span></label>
+                            <textarea id="dossier-reason" class="form-control form-control-sm im-rec" rows="2" maxlength="2000"
+                                      @bind="_verdictReason" @bind:event="oninput"
+                                      placeholder="@(required ? "What shows it, in a line. The reason is kept with the verdict." : "What you checked, in a line.")"></textarea>
+                            @if (_verdictError is not null) { <div class="text-danger small mt-1" role="alert">@_verdictError</div> }
+                            <div class="d-flex gap-2 justify-content-end align-items-center mt-2">
+                                <span class="small text-muted me-auto">Shown on the timeline.</span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => { _pendingVerdict = null; _verdictError = null; }">Cancel</button>
+                                <button type="button" class="btn btn-sm btn-primary text-nowrap" disabled="@(_savingVerdict || (required && string.IsNullOrWhiteSpace(_verdictReason)))"
+                                        @onclick="() => SaveVerdict(en)">Save verdict</button>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <VerdictMark Value="en.Disposition" />
+                }
+            </div>
+
             <div class="d-flex flex-wrap gap-2 mt-2">
                 <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => OnShowOnTimeline.InvokeAsync(en.Id)">
                     <span class="bi bi-clock-history" aria-hidden="true"></span> Show on the timeline
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" @onclick='() => OnGoToTab.InvokeAsync("Entities")'>
-                    <span class="bi bi-pencil" aria-hidden="true"></span> Edit in IOCs &amp; entities
+                    <span class="bi bi-pencil" aria-hidden="true"></span> Edit details
                 </button>
-                @if (CanEdit)
+                @if (VirusTotalUrl(en) is { } vt)
                 {
-                    @* INV-32: key to the case whatever its disposition. *@
-                    <button type="button" class="btn btn-sm @(en.IsPinned ? "btn-secondary" : "btn-outline-secondary")" aria-pressed="@Ui.Aria(en.IsPinned)"
-                            title="@(en.IsPinned ? "Remove it from the case panel's key entities" : "Show it in the case panel's key entities")" @onclick="() => TogglePin(en)">
-                        <span class="bi @(en.IsPinned ? "bi-pin-fill" : "bi-pin")" aria-hidden="true"></span> @(en.IsPinned ? "Pinned" : "Pin")
-                    </button>
+                    <a class="btn btn-sm btn-outline-secondary" href="@vt" target="_blank" rel="noopener noreferrer">VirusTotal <span class="bi bi-box-arrow-up-right" aria-hidden="true"></span></a>
                 }
             </div>
             @if (en.Disposition == EntityDisposition.Unknown && EntityMentions.Count(Case, en.Id) is var refs && refs >= EntityMentions.ReviewThreshold)
@@ -140,43 +193,37 @@
                 </section>
             }
 
-            @* HR-03: closed cases first, with how they ended ("seen before"), then open ones. *@
-            @if (_otherCases is { } others && others.Any(o => o.IsClosed))
-            {
-                <section>
-                    <h3 class="im-entity-panel-h">Seen before · @others.Count(o => o.IsClosed)</h3>
-                    @foreach (var o in others.Where(o => o.IsClosed).OrderByDescending(o => o.ClosedAtUtc))
+            @* RD-05: "have we seen this before?" in one place: open cases (still live), then closed ones with how they
+               ended (HR-03), each with the verdict reached there. Exact values only, on cases you can see. *@
+            <section>
+                <h3 class="im-entity-panel-h">Seen before@(_otherCases is null ? "" : $" · {_otherCases.Count}")</h3>
+                @if (_otherCases is null)
+                {
+                    <p class="small text-muted mb-0">Checking…</p>
+                }
+                else if (_otherCases.Count == 0)
+                {
+                    <p class="small text-muted mb-0">Not on any other case you can see. Matching is on the exact value.</p>
+                }
+                else
+                {
+                    @foreach (var o in _otherCases.Where(o => !o.IsClosed))
+                    {
+                        <div class="im-seen">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <VerdictMark Value="o.DispositionThere" />
+                                <a href="cases/@o.OtherCaseId" class="im-data small">@o.OtherCaseNumber</a>
+                                <span class="small text-muted ms-auto">open · @Ui.Label(o.OtherPhase)</span>
+                            </div>
+                            <div class="small">@o.OtherTitle</div>
+                        </div>
+                    }
+                    @foreach (var o in _otherCases.Where(o => o.IsClosed).OrderByDescending(o => o.ClosedAtUtc))
                     {
                         <CaseHistoryItem CaseId="o.OtherCaseId" CaseNumber="@o.OtherCaseNumber" Title="@o.OtherTitle" Classification="o.OtherClassification"
                                          ClosedAtUtc="o.ClosedAtUtc" OutcomeLabel="@OutcomeLabel(o.OutcomeKey)" ClosingLine="@o.ClosingLine"
                                          Verdicts="@($"{Ui.Label(o.DispositionThere)} there")" />
                     }
-                </section>
-            }
-            <section>
-                <h3 class="im-entity-panel-h">Open cases you can see@(_otherCases is null ? "" : $" · {_otherCases.Count(o => !o.IsClosed)}")</h3>
-                @if (_otherCases is null)
-                {
-                    <p class="small text-muted mb-0">Checking…</p>
-                }
-                else if (_otherCases.All(o => o.IsClosed))
-                {
-                    <p class="small text-muted mb-0">It isn't on any other open case you can see.</p>
-                }
-                else
-                {
-                    <ul class="list-unstyled mb-1 small">
-                        @foreach (var o in _otherCases.Where(o => !o.IsClosed))
-                        {
-                            <li>
-                                <a href="cases/@o.OtherCaseId" class="im-data">@o.OtherCaseNumber</a>
-                                <span class="text-muted">@o.OtherTitle · @Ui.Label(o.OtherPhase) · @Ui.Label(o.DispositionThere) there</span>
-                            </li>
-                        }
-                    </ul>
-                }
-                @if (_otherCases is { Count: > 0 })
-                {
                     <a class="small" href="indicators?entity=@en.Id">Compare verdicts across cases</a>
                 }
             </section>
@@ -196,6 +243,67 @@
     [Parameter] public EventCallback OnChanged { get; set; }
 
     private bool _addingTask;
+
+    // RD-05: the verdict picker, in the order of the shapes legend.
+    private static readonly EntityDisposition[] VerdictOrder =
+        [EntityDisposition.Unknown, EntityDisposition.Benign, EntityDisposition.Suspicious, EntityDisposition.Malicious, EntityDisposition.Compromised];
+    private EntityDisposition? _pendingVerdict;
+    private string? _verdictReason;
+    private string? _verdictError;
+    private bool _savingVerdict;
+    private bool _copied;
+
+    [Inject] private IClock Clock { get; set; } = null!;
+
+    private void PickVerdict(CaseEntity en, EntityDisposition d)
+    {
+        _verdictError = null;
+        _pendingVerdict = d == en.Disposition ? null : d;
+    }
+
+    private async Task SaveVerdict(CaseEntity en)
+    {
+        if (_pendingVerdict is not { } d) return;
+        _savingVerdict = true;
+        _verdictError = null;
+        try
+        {
+            await Cases.EditEntityAsync(Case.Id, en.Id, en.Type, en.Value, en.Label, d, en.Description, en.Source,
+                string.IsNullOrWhiteSpace(_verdictReason) ? null : _verdictReason.Trim());
+            _pendingVerdict = null;
+            _verdictReason = null;
+            Toasts.Success($"Verdict recorded: {Ui.Label(d)}");
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _verdictError = ex.Message;
+        }
+        finally { _savingVerdict = false; }
+    }
+
+    // The value as it's shared outside CaseBook (network types defanged, others as they are).
+    private static string? Defanged(CaseEntity en) =>
+        en.Type is EntityType.IpAddress or EntityType.Domain or EntityType.Url or EntityType.EmailAddress
+            ? IncidentManager.Domain.Observables.IocObservable.Defang(en.Value) : null;
+
+    private async Task CopyDefanged(CaseEntity en)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", Defanged(en) ?? en.Value);
+            _copied = true;
+            Toasts.Success("Copied");
+        }
+        catch (JSException) { Toasts.Error("Couldn't copy. Select the value and copy it instead."); }
+    }
+
+    private string? VirusTotalUrl(CaseEntity e)
+    {
+        if (!Ui.IsIocLike(e.Type) || string.IsNullOrWhiteSpace(e.Value)) return null;
+        var template = Config["ExternalLinks:VirusTotalUrlTemplate"];
+        return string.IsNullOrWhiteSpace(template) ? null : string.Format(template, Uri.EscapeDataString(e.Value));
+    }
 
     private async Task TogglePin(CaseEntity en)
     {
@@ -227,6 +335,10 @@
         if (EntityId == _loadedFor) return;
         _loadedFor = EntityId;
         _addingTask = false;
+        _pendingVerdict = null;
+        _verdictReason = null;
+        _verdictError = null;
+        _copied = false;
         _otherCases = null;
         if (EntityId is { } id)
         {
