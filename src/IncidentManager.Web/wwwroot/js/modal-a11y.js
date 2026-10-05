@@ -36,6 +36,16 @@ window.imModal = (function () {
     }
 
     return {
+        // RD-15: bring a non-modal sheet into view and focus its first field (no trap).
+        focusIn: function (sel) {
+            var el = document.querySelector(sel);
+            if (!el) return;
+            // The sheet sits just under the case header, at the top of the page.
+            try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) { window.scrollTo(0, 0); }
+            var body = el.querySelector('.modal-body');
+            var target = (body && focusables(body)[0]) || focusables(el)[0];
+            if (target) { try { target.focus({ preventScroll: true }); } catch (_) {} }
+        },
         // Move focus into the visible trap modal and start cycling Tab within it.
         arm: function () {
             var el = document.querySelector('.modal.d-block.im-trap');

@@ -322,6 +322,13 @@ else
     </ul>
     </div>
 
+    @if (_activeModal is not null && IsSheet)
+    {
+        <section id="ws-sheet" class="im-sheet" role="region" aria-labelledby="im-action-title" @onkeydown="OnModalEscape">
+            @ActionForm()
+        </section>
+    }
+
     @* INV-11: an entity in context, over whatever tab is open. *@
     <EvidencePanel Case="_case" EvidenceId="_panelEvidence" CanEdit="_canEdit" OnClose="CloseEvidencePanel" OnChanged="Reload"
                    OnPreviewImage="OpenShot" OnShowCitation="ShowCitation" />
@@ -524,241 +531,16 @@ else
     }
     </div>@* /.ws-body *@
 
-    @* Action modal — rendered outside the tab blocks so Actions works on every tab, not just Overview. *@
-    @if (_activeModal is not null)
+    @* Action modal — rendered outside the tab blocks so Actions works on every tab. RD-15: a change of rung, severity
+       or phase is a sheet under the header instead (below). *@
+    @if (_activeModal is not null && !IsSheet)
     {
         <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true"
              aria-labelledby="im-action-title" data-return-focus="#case-actions-btn"
              style="background:var(--im-scrim)" @onclick="CloseModal" @onkeydown="OnModalEscape">
             <div class="modal-dialog" @onclick:stopPropagation="true">
                 <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="im-action-title">@ModalTitle()</h5>
-                        <button type="button" class="btn-close" aria-label="Close" @onclick="CloseModal"></button>
-                    </div>
-                    <div class="modal-body">
-                        @if (_activeModal == "reclass")
-                        {
-                            @if (_case?.Classification is null)
-                            {
-                                <p class="small text-muted mb-2">This <strong>Complex Event</strong> hasn't been triaged yet. Promoting it gives it its first formal classification.</p>
-                            }
-                            <label class="form-label small" for="ws-reclass-to">@(_case?.Classification is null ? "Promote to" : "New classification")</label>
-                            <select id="ws-reclass-to" class="form-select mb-2" @bind="_newClass" @bind:after="OnReclassTargetChanged">@foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }</select>
-                            <label class="form-label small" for="ws-reclass-reason">Reason <span class="text-muted">(required)</span></label>
-                            <input id="ws-reclass-reason" class="form-control" placeholder="e.g. new evidence confirms data was exfiltrated" @bind="_reclassReason" @bind:event="oninput" />
-                            @RationaleHint(_reclassReason)
-                            @WhenItHappened()
-                            @GateModalSection()
-                        }
-                        else if (_activeModal == "handoff")
-                        {
-                            @* INV-15: a structured handoff, prefilled from the record; edit freely. *@
-                            <label class="form-label small mb-0" for="ws-ho-to">Hand the case to</label>
-                            <select id="ws-ho-to" class="form-select form-select-sm mb-2" @bind="_hoTo">
-                                <option value="">Choose a person…</option>
-                                @* INV-37: only people who can see the case (on a restricted one: its IC, team and cleared roles). *@
-                                @foreach (var u in _hoPeople.OrderBy(u => u.DisplayName))
-                                {
-                                    <option value="@u.UserId">@u.DisplayName</option>
-                                }
-                            </select>
-                            <label class="form-label small mb-0" for="ws-ho-state">Where it stands</label>
-                            <textarea id="ws-ho-state" class="form-control form-control-sm mb-2" rows="3" @bind="_hoState" @bind:event="oninput"></textarea>
-                            <label class="form-label small mb-0" for="ws-ho-done">Done since the last handoff</label>
-                            <textarea id="ws-ho-done" class="form-control form-control-sm mb-2" rows="3" @bind="_hoDone" @bind:event="oninput"></textarea>
-                            <label class="form-label small mb-0" for="ws-ho-open">Still open</label>
-                            <textarea id="ws-ho-open" class="form-control form-control-sm mb-2" rows="3" @bind="_hoOpen" @bind:event="oninput"></textarea>
-                            <label class="form-label small mb-0" for="ws-ho-watch">Watch for <span class="text-muted">(optional)</span></label>
-                            <textarea id="ws-ho-watch" class="form-control form-control-sm mb-2" rows="2" @bind="_hoWatch" @bind:event="oninput"
-                                      placeholder="e.g. if the other two users' sign-ins show new locations, re-open the scope with Privacy"></textarea>
-                            <div class="form-check small">
-                                <input class="form-check-input" type="checkbox" id="ws-ho-post" @bind="_hoPost" />
-                                <label class="form-check-label" for="ws-ho-post">Email it to them</label>
-                            </div>
-                            <div class="form-check small">
-                                <input class="form-check-input" type="checkbox" id="ws-ho-tasks" @bind="_hoTasks" />
-                                <label class="form-check-label" for="ws-ho-tasks">Give them my open tasks on this case (@MyOpenTaskCount)</label>
-                            </div>
-                            <p class="small text-muted mt-2 mb-0">Recorded on the timeline as a handoff.</p>
-                        }
-                        else if (_activeModal == "severity")
-                        {
-                            <label class="form-label small" for="ws-severity">New severity</label>
-                            <select id="ws-severity" class="form-select mb-2" @bind="_newSeverity">@foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@SevLabels.For(s)</option> }</select>
-                            var raising = _case is { } sc && _newSeverity > sc.Severity;
-                            <input class="form-control" maxlength="500" placeholder="@(raising ? "Why is it going up? (required)" : Backdated ? "Reason (required when recording later)" : "Reason (optional)")" aria-label="Reason" @bind="_severityReason" @bind:event="oninput" />
-                            @WhenItHappened()
-                        }
-                        else if (_activeModal == "status")
-                        {
-                            <label class="form-label small" for="ws-status">New status</label>
-                            <select id="ws-status" class="form-select mb-2" @bind="_newPhase" @bind:after="OnStatusTargetChanged">@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
-                            <label class="form-label small" for="ws-status-reason">@(_case is { } cs && _newPhase > cs.Phase ? "What was achieved" : "Reason") <span class="text-muted">@(_gateEval is { RequiresCommentary: true } || Backdated ? "(required)" : "(optional)")</span></label>
-                            <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
-                            @RationaleHint(_phaseReason)
-                            @WhenItHappened()
-                            @NotificationWarning()
-                            @OpenTasksWarning()
-                            @GateModalSection()
-                        }
-                        else if (_activeModal == "supersede")
-                        {
-                            <p class="small text-muted mb-2">Marks this case as a duplicate of the one work continues on, links the two and adds a
-                                note to both. You then close this case as usual.</p>
-                            <label class="form-label small mb-1" for="ws-supersede-query">Case to keep</label>
-                            @if (_supersedeTargetId is not null)
-                            {
-                                <div class="alert alert-info py-1 px-2 small d-flex align-items-center gap-2 mb-2">
-                                    <span>Keeping <code>@_supersedeTargetNumber</code></span>
-                                    <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick="() => _supersedeTargetId = null">Change</button>
-                                </div>
-                            }
-                            else
-                            {
-                                @foreach (var l in _supersedeLinked)
-                                {
-                                    <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" @onclick="() => PickSupersedeTarget(l.OtherCaseId, l.OtherCaseNumber)">
-                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> @l.OtherCaseNumber <span class="text-muted">(@Ui.CaseLinkLabel(l.Type, l.Outgoing))</span>
-                                    </button>
-                                }
-                                <div class="input-group input-group-sm mb-1">
-                                    <input id="ws-supersede-query" class="form-control" placeholder="Search by case number or title" @bind="_supersedeQuery" @bind:event="oninput"
-                                           @onkeydown="@(async e => { if (e.Key == "Enter") await SearchSupersede(); })" />
-                                    <button type="button" class="btn btn-outline-secondary" @onclick="SearchSupersede">Search</button>
-                                </div>
-                                @foreach (var r in _supersedeResults)
-                                {
-                                    <button type="button" class="btn btn-sm btn-link d-block text-start p-0 mb-1" @onclick="() => PickSupersedeTarget(r.Id, r.CaseNumber)">
-                                        <code>@r.CaseNumber</code> <span class="text-muted">@r.Title</span>
-                                    </button>
-                                }
-                            }
-                            <div class="form-check mt-2">
-                                <input class="form-check-input" type="checkbox" id="supersede-copy" @bind="_supersedeCopy" />
-                                <label class="form-check-label small" for="supersede-copy">Copy this case's indicators to the kept case (ones already there are skipped)</label>
-                            </div>
-                            <label class="form-label small mt-2" for="supersede-reason">Why it's a duplicate</label>
-                            <textarea id="supersede-reason" class="form-control" rows="2" @bind="_supersedeReason" @bind:event="oninput"
-                                      placeholder="e.g. Same phishing wave; the user report and the SIEM alert were filed separately"></textarea>
-                        }
-                        else if (_activeModal == "restrict")
-                        {
-                            <p class="small mb-2">Restricting limits who can see this case. Once restricted:</p>
-                            <ul class="small mb-2">
-                                <li>@_clearanceNote</li>
-                                <li>It disappears for everyone else: case lists, search, My Work, dashboards, the indicator and ATT&amp;CK
-                                    views, and exports.</li>
-                                <li>Assigning someone later gives them access, and removing them takes it away.</li>
-                                <li>Opening it, or downloading its evidence or reports, is flagged at a higher severity in the SIEM stream.</li>
-                            </ul>
-                            @if (!RestrictKeepsMe)
-                            {
-                                <div class="alert alert-info py-1 px-2 small mb-2">You'll be added to the case team as an analyst so you keep access.</div>
-                            }
-                            <label class="form-label small" for="restrict-reason">Reason <span class="text-muted">(optional, recorded in the audit trail)</span></label>
-                            <textarea id="restrict-reason" class="form-control" rows="2" maxlength="1000" @bind="_restrictReason" @bind:event="oninput"
-                                      placeholder="e.g. Insider investigation involving a named employee; HR and counsel only"></textarea>
-                        }
-                        else if (_activeModal == "unrestrict")
-                        {
-                            <p class="small mb-2">Lifting the restriction opens this case to <strong>everyone with case access</strong>. It will show up in
-                                their case lists, search, dashboards and exports.</p>
-                            <label class="form-label small" for="unrestrict-reason">Reason</label>
-                            <textarea id="unrestrict-reason" class="form-control" rows="2" maxlength="1000" @bind="_restrictReason" @bind:event="oninput"
-                                      placeholder="e.g. Counsel confirmed the case no longer needs to be restricted"></textarea>
-                        }
-                        else if (_activeModal == "holdrelease")
-                        {
-                            @if (Cases.LegalHoldReleaseNeedsSecondApprover)
-                            {
-                                <p class="small text-muted mb-2">Two-person control is on, so this sends a release request. The hold stays in force
-                                    until someone else with Manage Legal approves it from the case.</p>
-                            }
-                            else
-                            {
-                                <p class="small mb-2">Once released, the case is no longer exempt from your retention policy and an administrator
-                                    can archive it. Release it only after counsel confirms preservation is no longer required.</p>
-                            }
-                            <label class="form-label small" for="hold-release-reason">Reason</label>
-                            <textarea id="hold-release-reason" class="form-control" rows="3" maxlength="1000" @bind="_holdReleaseReason" @bind:event="oninput"
-                                      placeholder="e.g. Litigation settled; counsel confirmed preservation is no longer required"></textarea>
-                        }
-                        else if (_activeModal == "legal")
-                        {
-                            <label class="form-label small" for="legal-contact">Legal contact <span class="text-muted">(optional)</span></label>
-                            <input id="legal-contact" class="form-control mb-2" placeholder="Name or team" @bind="_legalContact" />
-                            <label class="form-label small" for="legal-note">Regulatory relevance <span class="text-muted">(optional)</span></label>
-                            <input id="legal-note" class="form-control" placeholder="e.g. NY NPI" @bind="_legalNote" />
-                        }
-                        else if (_activeModal == "materiality")
-                        {
-                            <p class="small text-muted mb-2">Record <strong>who</strong> made the call (the SOC, Legal / Privacy or a disclosure committee), when, and why.
-                                A final determination needs all three. An Incident or Breach can't close while this is open.</p>
-                            <WhyThisMatters Class="mb-2">
-                                A determination can start disclosure clocks (for SEC registrants, a Form 8-K is due within four business days),
-                                and your notification deadlines may count from it. The record shows the call was made deliberately and on time.
-                            </WhyThisMatters>
-                            <label class="form-label small" for="ws-mat-status">Determination</label>
-                            <select id="ws-mat-status" class="form-select mb-2" @bind="_materialityStatus">
-                                <option value="@MaterialityStatus.UnderReview">Under review (with Legal / committee)</option>
-                                <option value="@MaterialityStatus.Material">Material</option>
-                                <option value="@MaterialityStatus.NotMaterial">Not material</option>
-                            </select>
-                            <label class="form-label small" for="ws-mat-maker">Decision-maker <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-                            <input id="ws-mat-maker" class="form-control mb-2" placeholder="e.g. Disclosure Committee, General Counsel" @bind="_materialityDecisionMaker" />
-                            <label class="form-label small" for="ws-mat-date">Decision date <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-                            <input id="ws-mat-date" type="date" class="form-control mb-2" @bind="_materialityDecidedOn" />
-                            <label class="form-label small" for="ws-mat-rationale">Rationale <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-                            <textarea id="ws-mat-rationale" class="form-control" rows="2" placeholder="Why the case is or isn't material" @bind="_materialityRationale"></textarea>
-                        }
-                        else if (_activeModal == "archive")
-                        {
-                            <p class="mb-0">Archive <code>@_case.CaseNumber</code>? It's hidden from active queues and can be restored later.</p>
-                        }
-                        else if (_activeModal == "reopen")
-                        {
-                            <p class="small text-muted mb-2">Reopen <code>@_case.CaseNumber</code>? It returns to the phase it was in before closing and the closure time is cleared. Closing it again re-runs the close gate.</p>
-                            <label class="form-label small" for="ws-reopen-reason">Reason <span class="text-muted">(required)</span></label>
-                            <input id="ws-reopen-reason" class="form-control" placeholder="Why is this case being reopened?" @bind="_reopenReason" @bind:event="oninput" />
-                        }
-                        else if (_activeModal == "assign")
-                        {
-                            @if (AssignableUsers() is { Count: 0 })
-                            {
-                                <p class="text-muted small mb-0">There's no one in the directory to assign.</p>
-                            }
-                            else
-                            {
-                                <label class="form-label small" for="ws-assign-user">Person</label>
-                                <select id="ws-assign-user" class="form-select mb-2" @bind="_assignUserId" @bind:after="OnAssignUserChanged">
-                                    <option value="">Select a person…</option>
-                                    @foreach (var u in AssignableUsers())
-                                    {
-                                        var current = CurrentRole(u.UserId);
-                                        <option value="@u.UserId">@u.DisplayName@(current is { } r ? $" (now {Ui.Label(r)})" : "")</option>
-                                    }
-                                </select>
-                                @if (_case.IsRestricted)
-                                {
-                                    <p class="small text-muted mb-2"><span class="bi bi-lock-fill" aria-hidden="true"></span> This case is restricted:
-                                        assigning someone gives them access to it.</p>
-                                }
-                                <label class="form-label small" for="ws-assign-role">Role on this case</label>
-                                <select id="ws-assign-role" class="form-select" @bind="_assignRole">
-                                    @foreach (var r in Enum.GetValues<CaseAssignmentRole>())
-                                    {
-                                        <option value="@r">@Ui.Label(r)</option>
-                                    }
-                                </select>
-                            }
-                        }
-                        @if (_modalError is not null) { <p class="text-danger small mt-2 mb-0">@_modalError</p> }
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-outline-secondary" @onclick="CloseModal">Cancel</button>
-                        <button class="@(_activeModal == "archive" ? "btn btn-danger" : "btn btn-primary")" @onclick="ApplyModal" disabled="@ModalPrimaryDisabled()">@ModalPrimaryLabel()</button>
-                    </div>
+                    @ActionForm()
                 </div>
             </div>
         </div>
@@ -1928,7 +1710,7 @@ else
     }
 
     // UX-01: whether any of the three trap modals is currently open (drives arm/release in OnAfterRenderAsync).
-    private bool AnyTrapModalOpen => _confirm is not null || _previewShotId is not null || _activeModal is not null || _confirmLeaveOpen
+    private bool AnyTrapModalOpen => _confirm is not null || _previewShotId is not null || (_activeModal is not null && !IsSheet) || _confirmLeaveOpen
         || _panelEntity is not null || _panelEvidence is not null;
     private bool _modalTrapArmed;
     private string? _revealedTab;
@@ -1946,6 +1728,242 @@ else
             Toasts.Error(ex.Message);
         }
     }
+
+    // The action form (header, fields, Cancel/apply), shown in the dialog or, for RD-15's transitions, the sheet.
+    private RenderFragment ActionForm() => @<text>
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="im-action-title">@ModalTitle()</h5>
+                        <button type="button" class="btn-close" aria-label="Close" @onclick="CloseModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        @if (_activeModal == "reclass")
+                        {
+                            @if (_case?.Classification is null)
+                            {
+                                <p class="small text-muted mb-2">This <strong>Complex Event</strong> hasn't been triaged yet. Promoting it gives it its first formal classification.</p>
+                            }
+                            <label class="form-label small" for="ws-reclass-to">@(_case?.Classification is null ? "Promote to" : "New classification")</label>
+                            <select id="ws-reclass-to" class="form-select mb-2" @bind="_newClass" @bind:after="OnReclassTargetChanged">@foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }</select>
+                            <label class="form-label small" for="ws-reclass-reason">Reason <span class="text-muted">(required)</span></label>
+                            <input id="ws-reclass-reason" class="form-control" placeholder="e.g. new evidence confirms data was exfiltrated" @bind="_reclassReason" @bind:event="oninput" />
+                            @RationaleHint(_reclassReason)
+                            @WhenItHappened()
+                            @GateModalSection()
+                        }
+                        else if (_activeModal == "handoff")
+                        {
+                            @* INV-15: a structured handoff, prefilled from the record; edit freely. *@
+                            <label class="form-label small mb-0" for="ws-ho-to">Hand the case to</label>
+                            <select id="ws-ho-to" class="form-select form-select-sm mb-2" @bind="_hoTo">
+                                <option value="">Choose a person…</option>
+                                @* INV-37: only people who can see the case (on a restricted one: its IC, team and cleared roles). *@
+                                @foreach (var u in _hoPeople.OrderBy(u => u.DisplayName))
+                                {
+                                    <option value="@u.UserId">@u.DisplayName</option>
+                                }
+                            </select>
+                            <label class="form-label small mb-0" for="ws-ho-state">Where it stands</label>
+                            <textarea id="ws-ho-state" class="form-control form-control-sm mb-2" rows="3" @bind="_hoState" @bind:event="oninput"></textarea>
+                            <label class="form-label small mb-0" for="ws-ho-done">Done since the last handoff</label>
+                            <textarea id="ws-ho-done" class="form-control form-control-sm mb-2" rows="3" @bind="_hoDone" @bind:event="oninput"></textarea>
+                            <label class="form-label small mb-0" for="ws-ho-open">Still open</label>
+                            <textarea id="ws-ho-open" class="form-control form-control-sm mb-2" rows="3" @bind="_hoOpen" @bind:event="oninput"></textarea>
+                            <label class="form-label small mb-0" for="ws-ho-watch">Watch for <span class="text-muted">(optional)</span></label>
+                            <textarea id="ws-ho-watch" class="form-control form-control-sm mb-2" rows="2" @bind="_hoWatch" @bind:event="oninput"
+                                      placeholder="e.g. if the other two users' sign-ins show new locations, re-open the scope with Privacy"></textarea>
+                            <div class="form-check small">
+                                <input class="form-check-input" type="checkbox" id="ws-ho-post" @bind="_hoPost" />
+                                <label class="form-check-label" for="ws-ho-post">Email it to them</label>
+                            </div>
+                            <div class="form-check small">
+                                <input class="form-check-input" type="checkbox" id="ws-ho-tasks" @bind="_hoTasks" />
+                                <label class="form-check-label" for="ws-ho-tasks">Give them my open tasks on this case (@MyOpenTaskCount)</label>
+                            </div>
+                            <p class="small text-muted mt-2 mb-0">Recorded on the timeline as a handoff.</p>
+                        }
+                        else if (_activeModal == "severity")
+                        {
+                            <label class="form-label small" for="ws-severity">New severity</label>
+                            <select id="ws-severity" class="form-select mb-2" @bind="_newSeverity">@foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@SevLabels.For(s)</option> }</select>
+                            var raising = _case is { } sc && _newSeverity > sc.Severity;
+                            <input class="form-control" maxlength="500" placeholder="@(raising ? "Why is it going up? (required)" : Backdated ? "Reason (required when recording later)" : "Reason (optional)")" aria-label="Reason" @bind="_severityReason" @bind:event="oninput" />
+                            @WhenItHappened()
+                        }
+                        else if (_activeModal == "status")
+                        {
+                            <label class="form-label small" for="ws-status">New status</label>
+                            <select id="ws-status" class="form-select mb-2" @bind="_newPhase" @bind:after="OnStatusTargetChanged">@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
+                            <label class="form-label small" for="ws-status-reason">@(_case is { } cs && _newPhase > cs.Phase ? "What was achieved" : "Reason") <span class="text-muted">@(_gateEval is { RequiresCommentary: true } || Backdated ? "(required)" : "(optional)")</span></label>
+                            <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
+                            @RationaleHint(_phaseReason)
+                            @WhenItHappened()
+                            @NotificationWarning()
+                            @OpenTasksWarning()
+                            @GateModalSection()
+                        }
+                        else if (_activeModal == "supersede")
+                        {
+                            <p class="small text-muted mb-2">Marks this case as a duplicate of the one work continues on, links the two and adds a
+                                note to both. You then close this case as usual.</p>
+                            <label class="form-label small mb-1" for="ws-supersede-query">Case to keep</label>
+                            @if (_supersedeTargetId is not null)
+                            {
+                                <div class="alert alert-info py-1 px-2 small d-flex align-items-center gap-2 mb-2">
+                                    <span>Keeping <code>@_supersedeTargetNumber</code></span>
+                                    <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick="() => _supersedeTargetId = null">Change</button>
+                                </div>
+                            }
+                            else
+                            {
+                                @foreach (var l in _supersedeLinked)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" @onclick="() => PickSupersedeTarget(l.OtherCaseId, l.OtherCaseNumber)">
+                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> @l.OtherCaseNumber <span class="text-muted">(@Ui.CaseLinkLabel(l.Type, l.Outgoing))</span>
+                                    </button>
+                                }
+                                <div class="input-group input-group-sm mb-1">
+                                    <input id="ws-supersede-query" class="form-control" placeholder="Search by case number or title" @bind="_supersedeQuery" @bind:event="oninput"
+                                           @onkeydown="@(async e => { if (e.Key == "Enter") await SearchSupersede(); })" />
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="SearchSupersede">Search</button>
+                                </div>
+                                @foreach (var r in _supersedeResults)
+                                {
+                                    <button type="button" class="btn btn-sm btn-link d-block text-start p-0 mb-1" @onclick="() => PickSupersedeTarget(r.Id, r.CaseNumber)">
+                                        <code>@r.CaseNumber</code> <span class="text-muted">@r.Title</span>
+                                    </button>
+                                }
+                            }
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="supersede-copy" @bind="_supersedeCopy" />
+                                <label class="form-check-label small" for="supersede-copy">Copy this case's indicators to the kept case (ones already there are skipped)</label>
+                            </div>
+                            <label class="form-label small mt-2" for="supersede-reason">Why it's a duplicate</label>
+                            <textarea id="supersede-reason" class="form-control" rows="2" @bind="_supersedeReason" @bind:event="oninput"
+                                      placeholder="e.g. Same phishing wave; the user report and the SIEM alert were filed separately"></textarea>
+                        }
+                        else if (_activeModal == "restrict")
+                        {
+                            <p class="small mb-2">Restricting limits who can see this case. Once restricted:</p>
+                            <ul class="small mb-2">
+                                <li>@_clearanceNote</li>
+                                <li>It disappears for everyone else: case lists, search, My Work, dashboards, the indicator and ATT&amp;CK
+                                    views, and exports.</li>
+                                <li>Assigning someone later gives them access, and removing them takes it away.</li>
+                                <li>Opening it, or downloading its evidence or reports, is flagged at a higher severity in the SIEM stream.</li>
+                            </ul>
+                            @if (!RestrictKeepsMe)
+                            {
+                                <div class="alert alert-info py-1 px-2 small mb-2">You'll be added to the case team as an analyst so you keep access.</div>
+                            }
+                            <label class="form-label small" for="restrict-reason">Reason <span class="text-muted">(optional, recorded in the audit trail)</span></label>
+                            <textarea id="restrict-reason" class="form-control" rows="2" maxlength="1000" @bind="_restrictReason" @bind:event="oninput"
+                                      placeholder="e.g. Insider investigation involving a named employee; HR and counsel only"></textarea>
+                        }
+                        else if (_activeModal == "unrestrict")
+                        {
+                            <p class="small mb-2">Lifting the restriction opens this case to <strong>everyone with case access</strong>. It will show up in
+                                their case lists, search, dashboards and exports.</p>
+                            <label class="form-label small" for="unrestrict-reason">Reason</label>
+                            <textarea id="unrestrict-reason" class="form-control" rows="2" maxlength="1000" @bind="_restrictReason" @bind:event="oninput"
+                                      placeholder="e.g. Counsel confirmed the case no longer needs to be restricted"></textarea>
+                        }
+                        else if (_activeModal == "holdrelease")
+                        {
+                            @if (Cases.LegalHoldReleaseNeedsSecondApprover)
+                            {
+                                <p class="small text-muted mb-2">Two-person control is on, so this sends a release request. The hold stays in force
+                                    until someone else with Manage Legal approves it from the case.</p>
+                            }
+                            else
+                            {
+                                <p class="small mb-2">Once released, the case is no longer exempt from your retention policy and an administrator
+                                    can archive it. Release it only after counsel confirms preservation is no longer required.</p>
+                            }
+                            <label class="form-label small" for="hold-release-reason">Reason</label>
+                            <textarea id="hold-release-reason" class="form-control" rows="3" maxlength="1000" @bind="_holdReleaseReason" @bind:event="oninput"
+                                      placeholder="e.g. Litigation settled; counsel confirmed preservation is no longer required"></textarea>
+                        }
+                        else if (_activeModal == "legal")
+                        {
+                            <label class="form-label small" for="legal-contact">Legal contact <span class="text-muted">(optional)</span></label>
+                            <input id="legal-contact" class="form-control mb-2" placeholder="Name or team" @bind="_legalContact" />
+                            <label class="form-label small" for="legal-note">Regulatory relevance <span class="text-muted">(optional)</span></label>
+                            <input id="legal-note" class="form-control" placeholder="e.g. NY NPI" @bind="_legalNote" />
+                        }
+                        else if (_activeModal == "materiality")
+                        {
+                            <p class="small text-muted mb-2">Record <strong>who</strong> made the call (the SOC, Legal / Privacy or a disclosure committee), when, and why.
+                                A final determination needs all three. An Incident or Breach can't close while this is open.</p>
+                            <WhyThisMatters Class="mb-2">
+                                A determination can start disclosure clocks (for SEC registrants, a Form 8-K is due within four business days),
+                                and your notification deadlines may count from it. The record shows the call was made deliberately and on time.
+                            </WhyThisMatters>
+                            <label class="form-label small" for="ws-mat-status">Determination</label>
+                            <select id="ws-mat-status" class="form-select mb-2" @bind="_materialityStatus">
+                                <option value="@MaterialityStatus.UnderReview">Under review (with Legal / committee)</option>
+                                <option value="@MaterialityStatus.Material">Material</option>
+                                <option value="@MaterialityStatus.NotMaterial">Not material</option>
+                            </select>
+                            <label class="form-label small" for="ws-mat-maker">Decision-maker <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
+                            <input id="ws-mat-maker" class="form-control mb-2" placeholder="e.g. Disclosure Committee, General Counsel" @bind="_materialityDecisionMaker" />
+                            <label class="form-label small" for="ws-mat-date">Decision date <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
+                            <input id="ws-mat-date" type="date" class="form-control mb-2" @bind="_materialityDecidedOn" />
+                            <label class="form-label small" for="ws-mat-rationale">Rationale <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
+                            <textarea id="ws-mat-rationale" class="form-control" rows="2" placeholder="Why the case is or isn't material" @bind="_materialityRationale"></textarea>
+                        }
+                        else if (_activeModal == "archive")
+                        {
+                            <p class="mb-0">Archive <code>@_case.CaseNumber</code>? It's hidden from active queues and can be restored later.</p>
+                        }
+                        else if (_activeModal == "reopen")
+                        {
+                            <p class="small text-muted mb-2">Reopen <code>@_case.CaseNumber</code>? It returns to the phase it was in before closing and the closure time is cleared. Closing it again re-runs the close gate.</p>
+                            <label class="form-label small" for="ws-reopen-reason">Reason <span class="text-muted">(required)</span></label>
+                            <input id="ws-reopen-reason" class="form-control" placeholder="Why is this case being reopened?" @bind="_reopenReason" @bind:event="oninput" />
+                        }
+                        else if (_activeModal == "assign")
+                        {
+                            @if (AssignableUsers() is { Count: 0 })
+                            {
+                                <p class="text-muted small mb-0">There's no one in the directory to assign.</p>
+                            }
+                            else
+                            {
+                                <label class="form-label small" for="ws-assign-user">Person</label>
+                                <select id="ws-assign-user" class="form-select mb-2" @bind="_assignUserId" @bind:after="OnAssignUserChanged">
+                                    <option value="">Select a person…</option>
+                                    @foreach (var u in AssignableUsers())
+                                    {
+                                        var current = CurrentRole(u.UserId);
+                                        <option value="@u.UserId">@u.DisplayName@(current is { } r ? $" (now {Ui.Label(r)})" : "")</option>
+                                    }
+                                </select>
+                                @if (_case.IsRestricted)
+                                {
+                                    <p class="small text-muted mb-2"><span class="bi bi-lock-fill" aria-hidden="true"></span> This case is restricted:
+                                        assigning someone gives them access to it.</p>
+                                }
+                                <label class="form-label small" for="ws-assign-role">Role on this case</label>
+                                <select id="ws-assign-role" class="form-select" @bind="_assignRole">
+                                    @foreach (var r in Enum.GetValues<CaseAssignmentRole>())
+                                    {
+                                        <option value="@r">@Ui.Label(r)</option>
+                                    }
+                                </select>
+                            }
+                        }
+                        @if (_modalError is not null) { <p class="text-danger small mt-2 mb-0">@_modalError</p> }
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-outline-secondary" @onclick="CloseModal">Cancel</button>
+                        <button class="@(_activeModal == "archive" ? "btn btn-danger" : "btn btn-primary")" @onclick="ApplyModal" disabled="@ModalPrimaryDisabled()">@ModalPrimaryLabel()</button>
+                    </div>
+    </text>;
+
+    // RD-15: promoting, reclassifying and changing severity or phase open as a sheet under the header, so the case
+    // (its record, its readiness in Next) stays in view while the change is made. Not a modal: nothing is blocked.
+    private bool IsSheet => _activeModal is "reclass" or "severity" or "status";
+    private bool _sheetShown;
 
     private string ModalTitle() => _activeModal switch
     {
@@ -2910,6 +2928,17 @@ else
             _revealedTab = _activeTab;
             try { await JS.InvokeVoidAsync("imMotion.revealActiveTab", ".im-workspace-tabs"); }
             catch (JSException) { /* cosmetic */ }
+        }
+
+        // RD-15: a sheet opening brings itself into view and takes focus (it doesn't trap it).
+        if ((_activeModal is not null && IsSheet) != _sheetShown)
+        {
+            _sheetShown = !_sheetShown;
+            if (_sheetShown)
+            {
+                try { await JS.InvokeVoidAsync("imModal.focusIn", "#ws-sheet"); }
+                catch (JSException) { /* focus is a progressive enhancement */ }
+            }
         }
 
         // UX-01: move focus into a modal when it opens and back to the trigger when it closes.

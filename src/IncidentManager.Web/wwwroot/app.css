@@ -2988,3 +2988,11 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-co-card h3.im-cap { margin: 0 0 .5rem; }
 .im-co-card > .mt-3:first-of-type { margin-top: 0 !important; }
 .im-tab-closeout .bi { color: var(--im-accent-strong); }
+
+/* RD-15: promoting, reclassifying and changing severity or phase happen in a sheet under the header, not a dialog. */
+.im-sheet { max-width: 46rem; margin: 0 0 1rem; border: 1px solid var(--im-border-strong); border-left: 3px solid var(--im-accent);
+    border-radius: var(--im-radius-lg); background: var(--im-surface); box-shadow: var(--im-shadow-sm); }
+.im-sheet .modal-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .7rem 1rem; border-bottom: 1px solid var(--im-border); }
+.im-sheet .modal-title { margin: 0; font-size: var(--im-text-md); font-weight: 600; }
+.im-sheet .modal-body { padding: .9rem 1rem; }
+.im-sheet .modal-footer { display: flex; justify-content: flex-end; gap: .5rem; padding: .7rem 1rem; border-top: 1px solid var(--im-border); }
