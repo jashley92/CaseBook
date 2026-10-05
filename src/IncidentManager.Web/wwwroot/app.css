@@ -149,19 +149,19 @@ h1:focus {
     --im-ink: #232a33;
     --im-ink-hover: #313a45;
 
-    /* Surfaces & text (light) */
-    --im-bg: #f5f6f8;
+    /* Surfaces & text (light). RD-01 (Casefile): warm paper neutrals, so the brass accent reads as deliberate. */
+    --im-bg: #f3f2ee;
     --im-surface: #ffffff;
-    --im-surface-2: #fafbfc;
-    --im-border: #e4e7ec;
-    --im-border-strong: #d3d8df;
-    --im-text: #1f2733;
-    --im-text-muted: #66717f;
+    --im-surface-2: #faf9f6;
+    --im-border: #dedbd2;
+    --im-border-strong: #ccc8bd;
+    --im-text: #1a1d21;
+    --im-text-muted: #59616c;
 
     /* Accent roles */
     --im-accent: #ffcf31;          /* brand fill / active indicator */
     --im-accent-strong: #e0af12;   /* deeper gold for data-ink, borders, hover */
-    --im-accent-text: #8a6a00;     /* AA-legible gold for links / emphasis on light */
+    --im-accent-text: #855c00;     /* AA-legible brass for links / emphasis on light */
     --im-accent-bg: rgba(224, 175, 18, .12);
     --im-focus: rgba(224, 175, 18, 0.45);
 
@@ -190,6 +190,20 @@ h1:focus {
     --im-phase-active-bg: #eef1f5; --im-phase-active-fg: #3f4b5a; --im-phase-active-bd: #dde2e9;
     --im-phase-recovery-bg: #d7f1ec; --im-phase-recovery-fg: #0e6b64; --im-phase-recovery-bd: #b3e4dc;
     --im-phase-closed-bg: #e4f3e7; --im-phase-closed-fg: #1f7a37; --im-phase-closed-bd: #c6e6cd;
+
+    /* RD-01 (Casefile). Type roles: the interface in Segoe UI, what people wrote into the record in a serif, machine
+       values (case numbers, indicators, hashes, times) in Cascadia Mono. All ship with Windows, so nothing is
+       downloaded (design review P7); other platforms fall back to their own serif. */
+    --im-font-record: "Sitka Text", "Sitka Small", Cambria, "Iowan Old Style", Georgia, serif;
+    --im-text-record: 1.02rem;
+    /* State hues, never used alone: each sits beside a shape (verdict), a bar count (severity), a ring fill
+       (clock) or a position (phase) and a word. */
+    --im-v-mal: #c42d3b; --im-v-comp: #7445c2; --im-v-sus: #8a6800; --im-v-ben: #1d7a4f; --im-v-unk: #6a727e;
+    --im-sev-bar-4: #c42d3b; --im-sev-bar-3: #b4520f; --im-sev-bar-2: #8a6800; --im-sev-bar-1: #3d6a99; --im-sev-bar-0: #6a727e;
+    --im-band-new: #9aa3af; --im-band-triage: #5e7fa6; --im-band-contain: #c07a2c; --im-band-eradicate: #a8603f;
+    --im-band-recover: #3e8a6b; --im-band-post: #6e68a8; --im-band-closed: #59616c;
+    --im-adversary: #c42d3b; --im-adversary-bg: rgba(196, 45, 59, .05);
+    --im-pane-bg: #ffffff;
 
     /* Scale tokens (UX-03) — spacing / radius / elevation / type. Values equal the literals already
        in use (12px = 0.75rem, etc.), so adopting them is a no-visual-change refactor. New work should
@@ -240,25 +254,50 @@ h1:focus {
     --bs-link-color: var(--im-accent-text);
     --bs-link-hover-color: #6e5500;
     --bs-border-radius: var(--im-radius);
+
+    /* RD-01: Bootstrap's own surface variables follow the Casefile neutrals, so every existing page and
+       component picks up the palette without being repainted one by one. */
+    --bs-body-bg: var(--im-bg);
+    --bs-body-color: var(--im-text);
+    --bs-secondary-color: var(--im-text-muted);
+    --bs-tertiary-bg: var(--im-surface-2);
+    --bs-secondary-bg: #ece9e2;
+    --bs-border-color: var(--im-border);
+    --bs-emphasis-color: #000000;
 }
 
 [data-bs-theme="dark"] {
     --im-action-bg: #e6edf5;
     --im-action-hover: #c9d3de;
     --im-action-fg: #12171e;
-    --im-bg: #12171e;
-    --im-surface: #1a212a;
-    --im-surface-2: #202a34;
-    --im-border: #2a333f;
-    --im-border-strong: #384250;
-    --im-text: #e6edf5;
-    --im-text-muted: #93a1b2;
+    --im-bg: #0e1115;
+    --im-surface: #13171c;
+    --im-surface-2: #1a1f26;
+    --im-border: #232a33;
+    --im-border-strong: #303844;
+    --im-text: #e4e7eb;
+    --im-text-muted: #9aa4b0;
 
-    --im-accent: #ffcf31;
-    --im-accent-strong: #ffd94f;
-    --im-accent-text: #f2cf5a;
-    --im-accent-bg: rgba(255, 207, 49, .14);
-    --im-focus: rgba(255, 207, 49, 0.5);
+    --im-accent: #d9a93f;
+    --im-accent-strong: #e6b955;
+    --im-accent-text: #e0b04a;
+    --im-accent-bg: rgba(217, 169, 63, .14);
+    --im-focus: rgba(242, 193, 78, 0.5);
+
+    --im-v-mal: #f06a76; --im-v-comp: #b990f2; --im-v-sus: #e2b53e; --im-v-ben: #55b98b; --im-v-unk: #8c96a3;
+    --im-sev-bar-4: #f06a76; --im-sev-bar-3: #f0904f; --im-sev-bar-2: #e2b53e; --im-sev-bar-1: #7da2c9; --im-sev-bar-0: #8c96a3;
+    --im-band-new: #4a5563; --im-band-triage: #5e7fa6; --im-band-contain: #c9853a; --im-band-eradicate: #b9704f;
+    --im-band-recover: #4f9c7c; --im-band-post: #7e78b8; --im-band-closed: #6b7684;
+    --im-adversary: #f06a76; --im-adversary-bg: rgba(240, 106, 118, .07);
+    --im-pane-bg: #13171c;
+
+    --bs-body-bg: var(--im-bg);
+    --bs-body-color: var(--im-text);
+    --bs-secondary-color: var(--im-text-muted);
+    --bs-tertiary-bg: var(--im-surface-2);
+    --bs-secondary-bg: #1f252d;
+    --bs-border-color: var(--im-border);
+    --bs-emphasis-color: #ffffff;
 
     --im-danger: #f6735f; --im-danger-bg: rgba(244, 97, 78, .14);
     --im-warn:   #e0a83b; --im-warn-bg:   rgba(224, 168, 59, .16);
@@ -277,8 +316,15 @@ h1:focus {
     --im-phase-closed-bg: #16301c; --im-phase-closed-fg: #6cc281; --im-phase-closed-bd: #23492c;
 
     --bs-link-color: var(--im-accent-text);
-    --bs-link-hover-color: #ffd94f;
+    --bs-link-hover-color: #f2c14e;
 }
+
+/* RD-01: what a person wrote into the record (the brief, entries, decisions, answers, conclusions) is set in the
+   record serif, so it reads apart from the interface around it. Machine values stay in .im-data. */
+.im-rec { font-family: var(--im-font-record); font-size: var(--im-text-record); line-height: 1.5; }
+.im-rec.md-body p:last-child { margin-bottom: 0; }
+/* A small uppercase label for a pane or section ("NOW", "NEXT", "KNOWN"). */
+.im-cap { font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; color: var(--im-text-muted); }
 
 /* Skip-to-content link (UX-02): off-screen until it receives keyboard focus, then it slides into
    the top-left so a keyboard/AT user can jump past the sidebar straight to the page content. */

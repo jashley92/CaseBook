@@ -12,7 +12,7 @@ main {
 }
 
 .sidebar {
-    background: linear-gradient(180deg, #0f1b30 0%, #0b1220 100%);
+    background: #0b0e12;   /* RD-01: flat ink in both themes; the content area carries the theme */
     border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
