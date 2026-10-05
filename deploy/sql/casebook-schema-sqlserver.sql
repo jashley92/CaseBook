@@ -2780,3 +2780,47 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261005051639_AddOpenCaseTabs'
+)
+BEGIN
+    CREATE TABLE [OpenCaseTabs] (
+        [Id] uniqueidentifier NOT NULL,
+        [UserId] nvarchar(200) NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [OpenedAtUtc] datetimeoffset NOT NULL,
+        [LastSeenAtUtc] datetimeoffset NOT NULL,
+        CONSTRAINT [PK_OpenCaseTabs] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261005051639_AddOpenCaseTabs'
+)
+BEGIN
+    CREATE INDEX [IX_OpenCaseTabs_UserId] ON [OpenCaseTabs] ([UserId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261005051639_AddOpenCaseTabs'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_OpenCaseTabs_UserId_CaseId] ON [OpenCaseTabs] ([UserId], [CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261005051639_AddOpenCaseTabs'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261005051639_AddOpenCaseTabs', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

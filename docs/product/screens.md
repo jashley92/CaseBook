@@ -20,11 +20,17 @@ browser's local zone because the profile menu was set to *Local*; stored times a
    **Program** gathers the cross-case views under one bar: Overview (the leadership dashboard), Team, Due work
    (open tasks across the team by when they're due), Improvement actions, the Legal register and the Program
    report. The first three need `ViewAllCases`. Your calendar feed is in *Notification settings*.
-3. **Audit & exports**: Integrity & audit (everyone), Access log (administrators), Exports.
-4. **Administration**: settings hub, administrators only.
-5. **Command bar** (`Ctrl+K` or `/`): Find's typed results as you type (entities, cases, record entries,
+2. **Audit & exports**: Integrity & audit (everyone), Access log (administrators), Exports.
+3. **Administration**: settings hub, administrators only.
+4. **Command bar** (`Ctrl+K` or `/`): Find's typed results as you type (entities, cases, record entries,
    tasks, evidence), jump to a page, or run an action on the open case. `?` lists the keyboard shortcuts. `g`
    then `d`/`m`/`c`/`n`/`i` goes to Program, your Desk, cases, a new case or integrity.
+5. **Open-case tabs**: the cases you're on, beside the command bar, kept on your account so they're back
+   when you sign in. Opening a case adds its tab; pinned cases come first and stay; up to 8 others are kept,
+   and opening another lets go of the one you looked at least recently. A tab shows the case's number, severity
+   and a dot when a clock is at risk or breached, and goes back to the view you left. **Open beside** (the split
+   icon on a tab) shows that case's Briefing next to the page you're on, docked as a column on wide screens and
+   over the page on narrower ones; *Open* or *Swap* puts it in front.
 6. **Recent activity**: changes others made to cases you can see. Unread is tracked per browser.
 7. **Account menu**: notification preferences, personal API tokens, *My access*, *Lock now*, theme, row
    density, UTC or local times, and 24- or 12-hour clock. These preferences are saved to your account.

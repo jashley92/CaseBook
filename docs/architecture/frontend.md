@@ -67,6 +67,10 @@ appears under `/admin/settings/other`. Each section has one Save bar; leaving wi
 - **`Layout/NavMenu.razor`**: groups and items as in [the screen tour](../product/screens.md#navigation-shell),
   each gated with `AuthorizeView`. Collapses to icons on desktop (state saved per user); below 641 px it becomes
   a top bar with a CSS-only menu toggle.
+- **Open-case tabs** (`Shared/CaseTabStrip.razor`, `Services/CaseTabsState`): the user's open cases from
+  `CaseTabsService` (stored per user), each tab holding only header state and the URL last used in the case.
+  **Open beside** (`Shared/CaseBeside.razor`, hosted by `MainLayout`) shows another case's `CaseBriefing` read only
+  beside the page; `.page.has-beside` docks it at 1400 px and up.
 - **Command palette** (`Shared/CommandPalette.razor`): `Ctrl+K`, `⌘K` or `/`. Shows pinned and recent cases,
   navigation, the open case's actions (published by the workspace through `Services/CaseCommandRegistry`), "go
   to tab" for the open case, and Find's typed results as you type (`FindService`, a few of each kind, then *See all

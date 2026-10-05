@@ -1,0 +1,116 @@
+@* RD-21 (Casefile): Open beside. A second case's Briefing next to the page you're on (another case, Find, the Desk), so
+   two matters can be read side by side. Read only: acting on that case happens in its own workspace ("Open" or "Swap").
+   It docks as a column on wide screens and sits over the page as a drawer on narrower ones. Showing it is recorded in
+   the access log like opening the case. *@
+@inject IncidentManager.Web.Services.CaseTabsState State
+@inject CaseService Cases
+@inject IncidentManager.Application.Compliance.NotificationDeadlineService Deadlines
+@inject IncidentManager.Application.Access.IAccessLogService AccessLog
+@inject NavigationManager Nav
+@inject ISeverityLabels SevLabels
+
+<aside class="im-beside" aria-label="Case beside this page" @onkeydown="OnKey">
+    <div class="im-beside-head">
+        @if (_case is { } c)
+        {
+            <div class="im-beside-id">
+                <code>@c.CaseNumber</code>
+                <span class="im-beside-title" title="@c.Title">@c.Title</span>
+                <span class="im-beside-marks"><RungMark Value="c.Classification" /> <SeverityMark Value="c.Severity" /> <span>@Ui.Label(c.Phase)</span></span>
+            </div>
+        }
+        else
+        {
+            <span class="text-muted small">Beside</span>
+        }
+        <div class="im-beside-acts">
+            @if (_case is not null)
+            {
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Open" title="Open this case in front">Open</button>
+                @if (CurrentCaseId() is { } cur && cur != CaseId)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => Swap(cur)" title="Put this case in front and the current one beside">
+                        <span class="bi bi-arrow-left-right" aria-hidden="true"></span> Swap
+                    </button>
+                }
+            }
+            <button type="button" class="btn-close" aria-label="Close the case beside" @onclick="() => State.SetBeside(null)"></button>
+        </div>
+    </div>
+    <div class="im-beside-body">
+        @if (_loading)
+        {
+            <LoadingBlock Rows="6" Columns="1" Label="Loading the case…" />
+        }
+        else if (_case is null)
+        {
+            <p class="text-muted small">This case isn't available. It may have been archived or restricted.</p>
+        }
+        else
+        {
+            <CaseBriefing Case="_case" TaskResults="_taskResults" Notify="_notify" CanEdit="false" Beside="true" IdPrefix="bs-bf-"
+                          OnGoToTab="GoToTab" />
+        }
+    </div>
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+
+    private Case? _case;
+    private IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> _taskResults =
+        new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
+    private IncidentManager.Application.Compliance.CaseNotificationDeadlines? _notify;
+    private bool _loading = true;
+    private Guid _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == CaseId) return;
+        _loadedFor = CaseId;
+        _loading = true;
+        var id = CaseId;
+        var c = await Cases.GetDetailAsync(id);
+        if (id != CaseId) return;
+        _case = c;
+        if (c is not null)
+        {
+            _taskResults = await Cases.GetTaskResultsAsync(c.Id);
+            _notify = await Deadlines.EvaluateAsync(c.Id);
+            await AccessLog.RecordCaseOpenAsync(c.Id, c.CaseNumber, c.IsRestricted);
+        }
+        _loading = false;
+    }
+
+    private Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") State.SetBeside(null);
+        return Task.CompletedTask;
+    }
+
+    private void Open()
+    {
+        var url = State.UrlFor(CaseId);
+        State.SetBeside(null);
+        Nav.NavigateTo(url);
+    }
+
+    private void Swap(Guid current)
+    {
+        var url = State.UrlFor(CaseId);
+        State.SetBeside(current);
+        Nav.NavigateTo(url);
+    }
+
+    private void GoToTab(string tab)
+    {
+        State.SetBeside(null);
+        Nav.NavigateTo($"cases/{CaseId}?tab={Uri.EscapeDataString(tab)}");
+    }
+
+    private Guid? CurrentCaseId()
+    {
+        var parts = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/').Split('/');
+        return parts.Length == 2 && parts[0].Equals("cases", StringComparison.OrdinalIgnoreCase) && Guid.TryParse(parts[1], out var g) ? g : null;
+    }
+}

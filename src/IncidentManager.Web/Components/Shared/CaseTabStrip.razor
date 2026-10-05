@@ -1,0 +1,81 @@
+@* RD-21 (Casefile): the cases you're on, as tabs in the top bar, restored when you sign in. Pinned cases come first and
+   stay; the others close with their ×. A tab holds only the case's header state (number, severity, the clock if it
+   needs attention); the case loads when you go to it, on the view you left it on. "Beside" opens a case next to the
+   current page (CaseBeside). *@
+@implements IDisposable
+@inject IncidentManager.Web.Services.CaseTabsState State
+@inject NavigationManager Nav
+@inject ISeverityLabels SevLabels
+
+@if (State.Tabs.Count > 0)
+{
+    var active = ActiveCaseId();
+    <nav class="im-casetabs" aria-label="Open cases">
+        @foreach (var t in State.Tabs)
+        {
+            var tab = t;
+            var isActive = t.CaseId == active;
+            var urgent = t.Clock is SlaState.Breached or SlaState.AtRisk;
+            <div class="im-casetab @(isActive ? "is-active" : "") @(State.Beside == t.CaseId ? "is-beside" : "")" @key="t.CaseId">
+                <a href="@State.UrlFor(t.CaseId)" aria-current="@(isActive ? "page" : null)"
+                   title="@($"{t.CaseNumber}: {t.Title} · {Ui.Label(t.Classification)}, {SevLabels.For(t.Severity)}, {Ui.Label(t.Phase)}{(urgent ? ", clock " + (t.Clock == SlaState.Breached ? "breached" : "at risk") : "")}")">
+                    @if (t.IsPinned) { <span class="bi bi-pin-angle-fill im-casetab-pin" aria-label="Pinned"></span> }
+                    <SeverityMark Value="t.Severity" ShowLabel="false" />
+                    <span class="im-casetab-num">@Short(t.CaseNumber)</span>
+                    @if (urgent) { <span class="im-casetab-clock @(t.Clock == SlaState.Breached ? "is-breached" : "")" aria-hidden="true"></span> }
+                </a>
+                @if (!isActive)
+                {
+                    <button type="button" class="im-casetab-x im-casetab-split" title="Open beside this page" aria-label="Open @t.CaseNumber beside this page"
+                            @onclick="() => State.SetBeside(State.Beside == tab.CaseId ? null : tab.CaseId)">
+                        <span class="bi bi-layout-split" aria-hidden="true"></span>
+                    </button>
+                }
+                @if (!t.IsPinned)
+                {
+                    <button type="button" class="im-casetab-x" title="Close tab" aria-label="Close @t.CaseNumber" @onclick="() => Close(tab.CaseId, isActive)">
+                        <span class="bi bi-x" aria-hidden="true"></span>
+                    </button>
+                }
+            </div>
+        }
+    </nav>
+}
+else
+{
+    <span class="im-casetabs-none"></span>
+}
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        State.Changed += OnChanged;
+        Nav.LocationChanged += OnLocation;
+        await State.EnsureLoadedAsync();
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+    private void OnLocation(object? s, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+
+    private Guid? ActiveCaseId()
+    {
+        var parts = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/').Split('/');
+        return parts.Length == 2 && parts[0].Equals("cases", StringComparison.OrdinalIgnoreCase) && Guid.TryParse(parts[1], out var g) ? g : null;
+    }
+
+    // "2026-01_Phishing_Wave" reads "2026-01 Phishing Wave"; the strip trims the rest.
+    private static string Short(string number) => number.Replace('_', ' ');
+
+    private async Task Close(Guid id, bool wasActive)
+    {
+        var next = wasActive ? State.Tabs.Where(t => t.CaseId != id).Select(t => (Guid?)t.CaseId).LastOrDefault() : null;
+        await State.CloseAsync(id);
+        if (wasActive) Nav.NavigateTo(next is { } n ? State.UrlFor(n) : "desk");
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnChanged;
+        Nav.LocationChanged -= OnLocation;
+    }
+}

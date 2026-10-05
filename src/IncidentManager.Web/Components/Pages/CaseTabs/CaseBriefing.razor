@@ -43,8 +43,8 @@
     <div class="im-bf-grid">
         <div class="im-bf-main">
             @* 1. What is happening *@
-            <section class="im-bf-q" aria-labelledby="bf-happening">
-                <h2 id="bf-happening">What is happening</h2>
+            <section class="im-bf-q" aria-labelledby="@(IdPrefix)happening">
+                <h2 id="@(IdPrefix)happening">What is happening</h2>
                 @if (Summary() is { Length: > 0 } summary)
                 {
                     <div class="md-body im-rec im-bf-lead">@((MarkupString)Md.ToHtml(summary, Case.Id))</div>
@@ -71,8 +71,8 @@
             </section>
 
             @* 2. What we know *@
-            <section class="im-bf-q" aria-labelledby="bf-know">
-                <h2 id="bf-know">What we know</h2>
+            <section class="im-bf-q" aria-labelledby="@(IdPrefix)know">
+                <h2 id="@(IdPrefix)know">What we know</h2>
                 @if (b?.WorkingAssessment is { Length: > 0 } wa)
                 {
                     @if (closed && Case.OutcomeKey is not null) { <span class="im-cap">Conclusion</span> }
@@ -104,8 +104,8 @@
             </section>
 
             @* 3. What we are doing *@
-            <section class="im-bf-q" aria-labelledby="bf-doing">
-                <h2 id="bf-doing">What we are doing</h2>
+            <section class="im-bf-q" aria-labelledby="@(IdPrefix)doing">
+                <h2 id="@(IdPrefix)doing">What we are doing</h2>
                 @{ var open = CaseNext.Open(Case, now); var done = RecentlyDone(now); }
                 @if (open.Count == 0 && done.Count == 0)
                 {
@@ -142,8 +142,8 @@
             </section>
 
             @* 4. What remains *@
-            <section class="im-bf-q" aria-labelledby="bf-remains">
-                <h2 id="bf-remains">What remains</h2>
+            <section class="im-bf-q" aria-labelledby="@(IdPrefix)remains">
+                <h2 id="@(IdPrefix)remains">What remains</h2>
                 @{ var questions = CaseNext.Questions(b?.OpenQuestions) ?? []; var gate = GateLine(); var notice = NoticeLine(now); }
                 @if (questions.Count == 0 && gate is null && notice is null)
                 {
@@ -175,8 +175,8 @@
             </section>
 
             @* 5. Why *@
-            <section class="im-bf-q" aria-labelledby="bf-why">
-                <h2 id="bf-why">Why</h2>
+            <section class="im-bf-q" aria-labelledby="@(IdPrefix)why">
+                <h2 id="@(IdPrefix)why">Why</h2>
                 @{ var decisions = Decisions(); var rung = RungChange(); }
                 @if (decisions.Count == 0 && rung is null && !Case.Materiality.IsDetermined)
                 {
@@ -208,8 +208,8 @@
         </div>
 
         <aside class="im-bf-side" aria-label="Obligations, governance and team">
-            <section aria-labelledby="bf-ob">
-                <h3 id="bf-ob" class="im-cap">Obligations</h3>
+            <section aria-labelledby="@(IdPrefix)ob">
+                <h3 id="@(IdPrefix)ob" class="im-cap">Obligations</h3>
                 @{
                     var (contain, resolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
                         Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification);
@@ -240,8 +240,8 @@
                 @if (Notify is not { HasClock: true } && slas.Count == 0) { <div class="im-bf-sub">None running.</div> }
             </section>
 
-            <section aria-labelledby="bf-gov">
-                <h3 id="bf-gov" class="im-cap">Governance</h3>
+            <section aria-labelledby="@(IdPrefix)gov">
+                <h3 id="@(IdPrefix)gov" class="im-cap">Governance</h3>
                 <dl class="im-bf-dl">
                     <dt>Materiality</dt>
                     <dd>@Ui.Label(Case.Materiality.Status)@(string.IsNullOrWhiteSpace(Case.Materiality.DecisionMaker) ? "" : $" · {Case.Materiality.DecisionMaker}")@(Case.Materiality.DecidedOnUtc is { } d1 ? $", {TimeDisp.DateOnly(d1)}" : "")</dd>
@@ -254,8 +254,8 @@
                 </dl>
             </section>
 
-            <section aria-labelledby="bf-team">
-                <h3 id="bf-team" class="im-cap">Team</h3>
+            <section aria-labelledby="@(IdPrefix)team">
+                <h3 id="@(IdPrefix)team" class="im-cap">Team</h3>
                 @if (Case.Assignments.Count == 0) { <div class="im-bf-sub">No one is assigned.</div> }
                 <ul class="im-bf-team">
                     @foreach (var a in Case.Assignments.OrderBy(a => a.Role))
@@ -263,7 +263,7 @@
                         <li><span>@Users.DisplayFor(a.UserId)</span> <span class="im-bf-sub">@Ui.Label(a.Role)</span></li>
                     }
                 </ul>
-                @if (!CanEdit) { <div class="im-bf-sub mt-2">Read-only for your role.</div> }
+                @if (!CanEdit && !Beside) { <div class="im-bf-sub mt-2">Read-only for your role.</div> }
             </section>
         </aside>
     </div>
@@ -279,6 +279,10 @@
     [Parameter] public EventCallback OnChanged { get; set; }
     [Parameter] public EventCallback<string> OnGoToTab { get; set; }
     [Parameter] public EventCallback<DateTimeOffset> OnShowSince { get; set; }
+    /// <summary>RD-21: element ids' prefix, so a second briefing beside the page doesn't share the first one's ids.</summary>
+    [Parameter] public string IdPrefix { get; set; } = "bf-";
+    /// <summary>RD-21: shown beside another page (read only because of where it is, not the role).</summary>
+    [Parameter] public bool Beside { get; set; }
 
     private const int TasksShown = 6;
     private CaseBriefCard? _brief;

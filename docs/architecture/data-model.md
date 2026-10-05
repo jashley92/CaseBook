@@ -355,6 +355,7 @@ All are row-hashed and audited, and are edited in Administration by the `Adminis
 |---|---|---|
 | `SavedViews` | `OwnerUserId`, `Name` (unique per owner), `Query` (a `/cases` query string), `IsShared`, `IsDefault` | One default per user (in code). |
 | `PinnedCases` | `UserId`, `CaseId` (unique pair) | Re-filtered by need-to-know when read. |
+| `OpenCaseTabs` | `UserId`, `CaseId` (unique pair), `OpenedAtUtc`, `LastSeenAtUtc` | RD-21 open-case tabs. Re-filtered by need-to-know when read; at most 8 unpinned per user. |
 | `UserDisplayPreferences` | `UserId` (unique), `DarkTheme`, `NavCollapsed`, `CompactRows`, `LocalTime`, `TwelveHourClock`, `AttackChainOpen` | Rendered onto the page so the theme applies before first paint. |
 | `UserNotificationPreferences` | `UserId` (unique), `DigestCadence` (off, daily, weekly), `SuppressAssignment`, `SuppressOverdue`, `SuppressDueSoon` | Opt-outs never suppress the breach notice to Legal or alarm mail. |
 | `PendingImports` | `Status` (0 pending, 1 applied, 2 rejected), `RawJson`, `Origin`, `Summary`, `SubmittedBy/At`, `TargetCaseId`, `DecidedBy/At`, `DecisionNote`, `ResolvedCaseId`, `ResolvedCaseNumber` | API submissions waiting for review. The case writes made when it's applied are audited normally. |

@@ -663,6 +663,18 @@ public sealed class PinnedCaseConfiguration : IEntityTypeConfiguration<PinnedCas
     }
 }
 
+public sealed class OpenCaseTabConfiguration : IEntityTypeConfiguration<OpenCaseTab>
+{
+    public void Configure(EntityTypeBuilder<OpenCaseTab> b)
+    {
+        b.ToTable("OpenCaseTabs");
+        b.Property(x => x.UserId).HasMaxLength(200).IsRequired();
+        b.HasIndex(x => x.UserId);
+        // A case is open at most once per user.
+        b.HasIndex(x => new { x.UserId, x.CaseId }).IsUnique();
+    }
+}
+
 public sealed class UserNotificationPreferenceConfiguration : IEntityTypeConfiguration<UserNotificationPreference>
 {
     public void Configure(EntityTypeBuilder<UserNotificationPreference> b)

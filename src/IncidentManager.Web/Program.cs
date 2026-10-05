@@ -165,6 +165,8 @@ builder.Services.AddScoped<IncidentManager.Web.Services.ToastService>();
 builder.Services.AddScoped<IncidentManager.Web.Services.TimeDisplay>();
 // Lets the top-bar search pill open the hosted command palette (see CommandPaletteController).
 builder.Services.AddScoped<IncidentManager.Web.Services.CommandPaletteController>();
+// RD-21: the circuit's open-case tabs and the case open beside the page.
+builder.Services.AddScoped<IncidentManager.Web.Services.CaseTabsState>();
 // Remembers the case list's filters so the case workspace's "Cases" breadcrumb returns to them.
 builder.Services.AddScoped<IncidentManager.Web.Services.CaseListMemory>();
 // PROD-19: lets the open CaseWorkspace publish its action verbs to the hosted command palette.

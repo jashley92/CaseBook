@@ -25,6 +25,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         typeof(CaseAccessEvent), // C-05 read/access telemetry — high-volume, out of the tamper-evident chain
         typeof(SavedView), // PROD-09 personal/shared case-queue filter sets — user convenience state, not case data
         typeof(PinnedCase), // PROD-20 per-user pinned favourites — convenience state, not case data
+        typeof(OpenCaseTab), // RD-21 per-user open workspace tabs — convenience state, not case data
         typeof(PendingImport), // PROD-33 inbound import staging queue — the apply writes are audited, not the draft
         typeof(ApiToken), // PROD-34 API tokens — create/revoke are audited explicitly; per-call last-used isn't chained
         typeof(UserNotificationPreference), // PROD-39 per-user digest cadence — personal preference, not case data

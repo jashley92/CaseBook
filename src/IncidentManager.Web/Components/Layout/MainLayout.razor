@@ -3,12 +3,13 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject IncidentManager.Application.Preferences.UserDisplayPreferenceService DisplayPrefs
+@inject IncidentManager.Web.Services.CaseTabsState Tabs
 @implements IDisposable
 
 @* UX-02: first focusable element on the page, so a keyboard/AT user can skip the sidebar. *@
 <a class="im-skip-link" href="#main-content">Skip to content</a>
 
-<div class="page">
+<div class="page @(Tabs.Beside is not null ? "has-beside" : "")">
     <div class="sidebar">
         <NavMenu />
     </div>
@@ -22,6 +23,8 @@
             <AuthorizeView>
                 <Authorized>
                     <PaletteSearchButton />
+                    @* RD-21: the cases you're on, as tabs. *@
+                    <CaseTabStrip />
                 </Authorized>
                 <NotAuthorized>
                     <span></span>
@@ -56,6 +59,15 @@
                 </ErrorContent>
             </ErrorBoundary>
         </article>
+        @* RD-21: a second case's Briefing beside the page. *@
+        <AuthorizeView>
+            <Authorized>
+                @if (Tabs.Beside is { } beside)
+                {
+                    <CaseBeside CaseId="beside" @key="beside" />
+                }
+            </Authorized>
+        </AuthorizeView>
     </main>
 </div>
 
@@ -92,6 +104,16 @@
     {
         TimeDisp.Changed += OnTimeChanged;
         Nav.LocationChanged += OnLocationChanged;
+        Tabs.Changed += OnTabsChanged;
+    }
+
+    private Guid? _shownBeside;
+    // Only the beside pane changes the layout; tab-list changes re-render the strip itself.
+    private void OnTabsChanged()
+    {
+        if (_shownBeside == Tabs.Beside) return;
+        _shownBeside = Tabs.Beside;
+        InvokeAsync(StateHasChanged);
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
@@ -162,6 +184,7 @@
     {
         TimeDisp.Changed -= OnTimeChanged;
         Nav.LocationChanged -= OnLocationChanged;
+        Tabs.Changed -= OnTabsChanged;
         _prefsRef?.Dispose();
     }
 }

@@ -47,6 +47,7 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     DbSet<CaseAccessEvent> CaseAccessEvents { get; }
     DbSet<SavedView> SavedViews { get; }
     DbSet<PinnedCase> PinnedCases { get; }
+    DbSet<OpenCaseTab> OpenCaseTabs { get; }
     DbSet<UserNotificationPreference> UserNotificationPreferences { get; }
     DbSet<UserDisplayPreference> UserDisplayPreferences { get; }
     DbSet<TransitionTimeCorrection> TransitionTimeCorrections { get; }

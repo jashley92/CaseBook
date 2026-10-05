@@ -25,6 +25,7 @@
 @inject IncidentManager.Application.Cases.CaseShortcutService Shortcuts
 @inject IncidentManager.Application.Evidence.EvidenceService EvidenceSvc
 @inject IncidentManager.Application.Admin.CaseOutcomeService Outcomes
+@inject IncidentManager.Web.Services.CaseTabsState OpenTabs
 
 <PageTitle>@(_case?.CaseNumber ?? "Case")</PageTitle>
 
@@ -1011,6 +1012,7 @@ else
     }
 
     private async Task Reload() => await ReloadWith(await Cases.GetDetailAsync(Id));
+    private Guid _tabOpenedFor;
 
     // REL-07: reload from an already-fetched detail, so the live-collab path can peek at accessibility
     // before deciding whether to swap the view away (see OnCaseChangedAsync).
@@ -1040,6 +1042,12 @@ else
             }
             // HR-15: a closed case says openly what changed after it closed (it isn't locked).
             _afterClosure = _case.Phase == CasePhase.Closed ? await Feed.ChangesAfterClosureAsync(_case.Id) : null;
+            if (_tabOpenedFor != _case.Id)
+            {
+                _tabOpenedFor = _case.Id;
+                try { await OpenTabs.OpenedAsync(_case.Id); }   // RD-21: the case becomes (or comes forward as) a tab
+                catch (Exception ex) when (ex is InvalidOperationException or Microsoft.EntityFrameworkCore.DbUpdateException) { /* tabs are a convenience */ }
+            }
             await AccessLog.RecordCaseOpenAsync(_case.Id, _case.CaseNumber, _case.IsRestricted);
             _isPinned = await Shortcuts.IsPinnedAsync(_case.Id); // PROD-20: header star + palette action state
         }
@@ -1120,6 +1128,7 @@ else
                 ["entity"] = null,
             });
             await JS.InvokeVoidAsync("history.replaceState", null, "", url);
+            OpenTabs.Remember(Id, Nav.ToBaseRelativePath(url));   // RD-21: the tab comes back to this view
         }
         catch (JSException) { /* circuit/JS not ready */ }
         catch (InvalidOperationException) { /* prerendering — JS interop unavailable */ }
@@ -2843,6 +2852,7 @@ else
         try
         {
             _isPinned = await Shortcuts.TogglePinAsync(Id);
+            await OpenTabs.RefreshAsync();   // RD-21: a pinned case is a tab that stays
             Toasts.Success(_isPinned ? "Pinned for quick access." : "Unpinned.");
         }
         catch (InvalidOperationException ex)

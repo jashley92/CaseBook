@@ -53,6 +53,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<AdGroupRoleMapping> RoleMappings => Set<AdGroupRoleMapping>();
     public DbSet<SavedView> SavedViews => Set<SavedView>();
     public DbSet<PinnedCase> PinnedCases => Set<PinnedCase>();
+    public DbSet<OpenCaseTab> OpenCaseTabs => Set<OpenCaseTab>();
     public DbSet<UserNotificationPreference> UserNotificationPreferences => Set<UserNotificationPreference>();
     public DbSet<UserDisplayPreference> UserDisplayPreferences => Set<UserDisplayPreference>();
     public DbSet<TransitionTimeCorrection> TransitionTimeCorrections => Set<TransitionTimeCorrection>();
