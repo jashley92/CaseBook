@@ -43,7 +43,7 @@ flowchart LR
 | CyberArk CCP | out | off | `Secrets:CyberArk:*` | `Infrastructure/Secrets/` |
 | Calendar feed | pulled | off | `Agenda:FeedKey` | `Application/Work/AgendaFeedService.cs`, `Infrastructure/Agenda/` |
 | Backup status | read from file | off | `BackupStatus:*` | `Web/Ops/BackupHealthReader.cs` |
-| Detection platform, VirusTotal | links in the UI only | — | `ExternalLinks:*` | Overview and Entities tabs |
+| Detection platform, VirusTotal | links in the UI only | — | `ExternalLinks:*` | Briefing (case record) and Things › IOCs & entities |
 | MITRE ATT&CK | embedded data | — | — | `Application/Mitre/` |
 | STIX export | file download | — | — | `Application/Export/StixExportService.cs` |
 

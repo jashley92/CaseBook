@@ -87,7 +87,7 @@
             <li><span class="cmdk-keys"><kbd>j</kbd><kbd>k</kbd></span><span>Case list: move the row cursor</span></li>
             <li><span class="cmdk-keys"><kbd>p</kbd></span><span>Case list: preview the cursor row</span></li>
             <li><span class="cmdk-keys"><kbd>Enter</kbd></span><span>Case list: open the cursor row</span></li>
-            <li><span class="cmdk-keys"><kbd>1</kbd>&ndash;<kbd>0</kbd></span><span>In a case: switch tabs</span></li>
+            <li><span class="cmdk-keys"><kbd>1</kbd>&ndash;<kbd>5</kbd></span><span>In a case: switch views</span></li>
             @if (CurrentUser.Has(Permission.EditCases))
             {
                 <li><span class="cmdk-keys"><kbd>l</kbd></span><span>In a case: log to the timeline</span></li>
@@ -102,8 +102,9 @@
 }
 
 @code {
+    // RD-11: the case's views and the parts worth jumping to directly.
     private static readonly string[] CaseTabs =
-        ["Overview", "Timeline", "Entities", "Evidence", "Tasks", "Review", "Report", "Audit"];
+        ["Timeline", "Entities", "Evidence", "Tasks", "Briefing", "Report", "Review", "Audit"];
 
     private bool _open;
     private bool _help;
@@ -362,11 +363,14 @@
     }
 
     // Display label for a tab key; matches the case workspace tab bar.
-    private static string TabLabel(string tab) => tab switch { "Entities" => "IOCs & entities", "Review" => "Lessons learned", _ => tab };
+    private static string TabLabel(string tab) => tab switch
+    {
+        "Timeline" => "Record", "Entities" => "IOCs & entities", "Review" => "Lessons learned", "Audit" => "Audit trail", _ => tab
+    };
 
     private static string TabIcon(string tab) => tab switch
     {
-        "Overview" => "bi-clipboard-data",
+        "Briefing" => "bi-clipboard-data",
         "Timeline" => "bi-clock-history",
         "Entities" => "bi-diagram-3",
         "Evidence" => "bi-paperclip",

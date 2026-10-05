@@ -2866,3 +2866,14 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-then-row input[aria-label="Task"] { flex: 1 1 12rem; }
 .im-then-row input[type="date"] { width: 9.5rem; }
 .im-now .im-brief-q-text { flex: 1 1 0; min-width: 0; }
+
+/* RD-11: the parts of a view (Things, Paper), under the view bar. */
+.im-parts { display: flex; flex-wrap: wrap; gap: .25rem; margin: 0 0 1rem; padding-bottom: .55rem; border-bottom: 1px solid var(--im-border); }
+.im-part { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid transparent; background: none; color: var(--im-text-muted);
+    font-size: var(--im-text-sm); padding: .2rem .65rem; border-radius: var(--im-radius-pill); }
+.im-part:hover { color: var(--im-text); background: var(--im-surface-2); }
+.im-part:focus-visible { outline: 2px solid var(--im-focus); outline-offset: 1px; }
+.im-part.active { color: var(--im-text); font-weight: 600; background: var(--im-surface); border-color: var(--im-border-strong); }
+.im-part.is-quiet:not(.active) { font-size: var(--im-text-xs); }
+.im-part-n { font-variant-numeric: tabular-nums; font-weight: 400; color: var(--im-text-muted); }
+.im-part .im-tab-why { margin-left: 0; }

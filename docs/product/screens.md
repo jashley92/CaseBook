@@ -81,10 +81,13 @@ A single page, not a wizard.
 3. **Pin**, **Hand off**, the **Actions** menu (below), and the one **primary act** the state calls for:
    *Promote onto the ladder…* for an unclassified event, *Advance to* the next phase, *Close the case…* from
    Post-Incident, or *Reopen case…* on a closed case.
-4. **Tabs**: Overview, Timeline, IOCs & entities, Evidence, Tasks, Lessons learned, Report, Audit.
-   Number keys `1`–`9` switch tabs. The tab is in the URL (`?tab=Timeline`). Report and Lessons learned stay
-   dimmed until they're relevant (Report: a breach, a running notification clock, or Recovery and later;
-   Lessons learned: Post-Incident and later). A dot marks a tab where someone else just added something.
+4. **Views**: **Record** (the timeline, with its lenses), **Things** (IOCs & entities, Evidence, ATT&CK,
+   Connections, and Impact from Incident up or once impact is recorded), **Tasks**, **Briefing** and **Paper**
+   (Report, Lessons learned, Audit trail). A view with several parts lists them under the bar, and reopens on the
+   part last used. Number keys `1`–`5` switch views. The part is in the URL (`?tab=Entities`; a view's name opens
+   its last part). An open case opens on its Record, a closed one on its Briefing. Paper stays dimmed until the
+   report or lessons matter (a breach, a running notification clock, Recovery and later, or Post-Incident). A dot
+   marks a view where someone else just added something.
 5. **Now and Next**, beside every tab from 1200 px wide (the button at the end of the tab bar hides it). **Now**
    is the brief, "where it stands": the versioned summary (in a serif, as written into the record), working
    assessment, known, and each open question with whoever is answering it. It tells you when the record has
@@ -92,13 +95,14 @@ A single page, not a wizard.
    obligations first (a notification deadline with *Mark reported…*, then the SLA clocks), the open tasks each
    with why it exists (answers a question, carries out a decision, about an entity or file, feeds a notification,
    phase work), and the next gate's readiness as a meter that opens its checklist. The team and key entities
-   follow. Below 1200 px the brief stays on the Overview with a context strip above it.
+   follow. Below 1200 px the brief is on the Briefing, with a context strip above it.
 
-Further down the Overview: recent timeline items, scope and impact (affected individuals, data elements,
-jurisdictions), the notification deadline table with *Mark reported*, readiness for the next stage gate, the
-case record, access (restriction), ATT&CK techniques, related cases and change history.
+The **Briefing** holds recent timeline items, the notification deadline table with *Mark reported*, readiness for
+the next stage gate, the case record and access (restriction). Scope and impact (affected individuals, data
+elements, jurisdictions) is **Things › Impact**; ATT&CK techniques are **Things › ATT&CK**; related cases are
+**Things › Connections**. Change history is in the audit trail (**Paper › Audit trail**).
 
-A **closed** case's Overview leads with the record instead: an outcome strip (the outcome, when the activity
+A **closed** case's Briefing leads with the record instead: an outcome strip (the outcome, when the activity
 began, detected → contained and recovery → closed with how long each took, and the improvement actions still
 open), then the closing brief, then "How it unfolded": the key moments oldest first (the first eight and the last
 four, with the rest a click away on the timeline). An unrecorded scope reads "Not recorded" rather than "Not

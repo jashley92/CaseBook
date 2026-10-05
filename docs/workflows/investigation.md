@@ -9,7 +9,7 @@ relationships, case links, ATT&CK tags and assignments.
 
 | | |
 |---|---|
-| **Where** | Top of the Overview tab |
+| **Where** | *Now*, in the Now/Next pane (from 1200 px wide); otherwise the top of the Briefing |
 | **What it holds** | **Summary** (what the case report prints), **Working assessment**, **Known**, **Open questions**, **Next steps** (not typed: the live list of open tasks, snapshotted into each saved version) |
 | **Saving** | *Revise* → `CaseService.ReviseBriefAsync` → `Case.ReviseBrief` creates a new version and marks the old one superseded. Saving with no written part changed makes no version ("No changes; the brief is unchanged."; the next-steps snapshot doesn't count). When things have been recorded since, **Still accurate** (beside "N changes since", and in the update nudge) records who confirmed the current version and when, without a new one (`ConfirmBriefAsync`; the header then reads "confirmed … by …"), and "changes since" counts from the confirmation. "Show N earlier versions" shows history. At least one part must be filled ("Write at least one part of the brief."); each part up to 8000 characters. The parts are plain text boxes: entity tags and evidence citations show as `[[name]]` and are saved back as links; typing `[[label or value]]` of one of the case's entities tags it (the close dialog's *What happened* and *Conclusion* work the same way). |
 | **Concurrency** | If someone saved a newer version while you edited: "Someone else saved a newer version of the brief while you were editing. Your text is still here; review theirs, then save again to replace it." |
@@ -148,10 +148,10 @@ Team changes appear on the timeline ("X is incident commander, taking over from 
 
 ## ATT&CK
 
-- **Case techniques**: Overview → ATT&CK matrix picker. Added and removed one by one (a partial failure leaves
+- **Case techniques**: Things › ATT&CK → matrix picker. Added and removed one by one (a partial failure leaves
   what was already saved).
 - **Event steps** carry tactics and a technique.
-- The Overview card and the report's ATT&CK appendix show **both**: the tags, plus each technique recorded on an
+- Things › ATT&CK and the report's ATT&CK appendix show **both**: the tags, plus each technique recorded on an
   attack-chain step (one per technique and tactic, named from the catalog). A technique only on the chain has a
   dashed chip with a link mark and no ×; remove it by editing its step. The report's table has a Source column
   ("Tagged", "Attack chain (2 steps)" or both; template field `technique.source`). A third-party case's event steps are
@@ -162,7 +162,7 @@ Team changes appear on the timeline ("X is incident commander, taking over from 
 
 | Action | How | Rules |
 |---|---|---|
-| Link | Overview → *Related cases* → *Link a case*; from the new-case duplicate check; from *Possibly related open cases*; from Supersede | Types: Related to, Duplicate of (directional), Part of campaign. **One link per pair of cases.** No self-links ("A case can't be linked to itself."). You must be able to see both. |
+| Link | Things › Connections → *Link a case*; *Then* in the composer; from the new-case duplicate check; from *Possibly related open cases*; from Supersede | Types: Related to, Duplicate of (directional), Part of campaign. **One link per pair of cases.** No self-links ("A case can't be linked to itself."). You must be able to see both. |
 | Remove | × on the link | |
 | Campaign | Any connected group of "Part of campaign" links | Not a record. `/campaigns/{id}` rolls up members, shared indicators (strongest verdict wins), combined ATT&CK, merged event timeline and overall posture. Only links where you can see both cases are followed, so a restricted case can't connect two groups for you. JSON export at `/campaigns/{id}/rollup.json`. |
 

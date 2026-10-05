@@ -1,4 +1,7 @@
-@* Case workspace — Overview tab (UX-13, the last tab). The workspace "hub": the vitals/SLA strip, case
+@* RD-11: there is no Overview tab any more. This component renders one part of the case at a time (Section):
+   the Briefing view's sections (outcome, brief on narrow screens, story, notification, gate, case record, access),
+   or one of the Things view's parts: Impact, ATT&CK ("Attack") or Connections (related cases).
+   Case workspace — Overview tab (UX-13, the last tab). The workspace "hub": the vitals/SLA strip, case
    details, the structured impact assessment (E-12), stage-readiness,
    assignments, MITRE ATT&CK techniques (with the matrix picker), related cases (E-14), and the change log.
    It owns its Summary EasyMDE editor (own reconcile + teardown) — the last such editor, so the parent's
@@ -31,7 +34,7 @@
    brief), what just happened, how bad it is and who must be told, whether it can move on, then the reference facts.
    The clocks, dates and team live in the case context panel (or its strip), not here. The open tasks are the
    brief's Next steps here, so beside the Overview the panel's Next shrinks to its summary line (INV-40). *@
-@if (Case.Phase == CasePhase.Closed)
+@if (Section == "Briefing" && Case.Phase == CasePhase.Closed)
 {
     @* HR-14: a closed case is read, months later, for what it was and how it went: the outcome and the response's
        shape first, then the closing brief, then the story. *@
@@ -80,13 +83,15 @@
 
 @* INV-09 / INV-36: the brief leads, with the case summary as its first part. *@
 @* RD-04: where the Now/Next pane is beside the tab, the brief lives there and isn't repeated here. *@
-@if (!BriefInPane)
+@if (Section == "Briefing" && !BriefInPane)
 {
     <CaseBriefCard @ref="_brief" Case="Case" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
 }
 
 <div class="im-ov">
-    @{ var recent = RecentOnTimeline(); }
+    @if (Section == "Briefing")
+    {
+    var recent = RecentOnTimeline();
     <section class="im-ov-sec" id="ov-recent" aria-labelledby="ov-recent-h">
         <div class="im-ov-head">
             @if (Case.Phase == CasePhase.Closed)
@@ -125,7 +130,10 @@
             </ul>
         }
     </section>
+    }
 
+    @if (Section == "Impact")
+    {
     <section class="im-ov-sec" id="ov-impact" aria-labelledby="ov-impact-h">
         <div class="im-ov-head">
             <h2 class="im-ov-h" id="ov-impact-h">Scope and impact</h2>
@@ -202,7 +210,10 @@
                     </dl>
                 }
     </section>
+    }
 
+    @if (Section == "Briefing")
+    {
         @if (_deadlines is { Enabled: true })
         {
             <section class="im-ov-sec" id="ov-notify" aria-labelledby="ov-notify-h">
@@ -438,6 +449,12 @@
                 }
             </div>
             </div>
+        </div>
+    </section>
+    }
+
+    @if (Section == "Attack")
+    {
             <div class="im-sec">
             <div class="im-sec-head"><h3>MITRE ATT&CK</h3></div>
             @{ var techniques = IncidentManager.Application.Mitre.CaseTechniques.For(Case); }
@@ -475,6 +492,10 @@
                 </AuthorizeView>
             </div>
         </div>
+    }
+
+    @if (Section == "Connections")
+    {
             <div class="im-sec">
             <div class="im-sec-head">
                 <h3>Related cases</h3>
@@ -569,40 +590,7 @@
                 </ul>
             }
         </div>
-
-        </div>
-    </section>
-
-        <div class="im-sec">
-            <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => _showHistory = !_showHistory">
-                <span class="bi @(_showHistory ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></span>
-                Change history (@History().Count())
-            </button>
-            @if (_showHistory)
-            {
-                @if (!History().Any())
-                {
-                    <p class="text-muted small mt-2 mb-0">No changes recorded.</p>
-                }
-                else
-                {
-                    <table class="table table-sm mt-2 mb-0">
-                        <thead><tr><th>When (@TimeDisp.Label)</th><th>Attribute</th><th>Change</th><th>By</th></tr></thead>
-                        <tbody>
-                            @foreach (var h in History().OrderByDescending(x => x.At))
-                            {
-                                <tr>
-                                    <td class="small im-data">@TimeDisp.Long(h.At)</td>
-                                    <td class="small">@h.Attribute</td>
-                                    <td class="small">@h.Change</td>
-                                    <td class="small">@Users.DisplayFor(h.By)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                }
-            }
-        </div>
+    }
 </div>
 
 @* MITRE ATT&CK matrix picker (self-contained overlay) — tag techniques from the tactic grid. *@
@@ -627,6 +615,8 @@
     [Parameter] public GateEvaluation? ReadinessEval { get; set; }
     /// <summary>RD-04: the brief is in the Now/Next pane beside this tab, so the Overview doesn't show it.</summary>
     [Parameter] public bool BriefInPane { get; set; }
+    /// <summary>RD-11: which part to show: "Briefing", "Impact", "Attack" or "Connections".</summary>
+    [Parameter] public string Section { get; set; } = "Briefing";
     /// <summary>RD-04: open the brief editor in the pane (the summary gate check's Fix).</summary>
     [Parameter] public EventCallback OnEditBrief { get; set; }
     /// <summary>Reload the case after a write so the rest of the workspace refreshes.</summary>
@@ -690,7 +680,6 @@
 
     // Techniques matrix + change-history toggle
     private bool _techMatrixOpen;
-    private bool _showHistory;
     private bool _showReadiness;   // INV-29: one collapsed row until asked for
 
     private string DetectionLabel
@@ -839,6 +828,8 @@
                 break;
             case GateCheckKeys.AffectedIndividualsCountSet or GateCheckKeys.MinAffectedIndividuals
                 or GateCheckKeys.DataElementsSet or GateCheckKeys.AffectedStatesSet:
+                // RD-11: the impact editor is in Things › Impact; the workspace opens it there.
+                if (Section != "Impact") { await OnFix.InvokeAsync(checkKey); return; }
                 if (!_editingImpact) BeginEditImpact();
                 _scrollTo = "ov-impact";
                 break;
@@ -1052,33 +1043,6 @@
         _impactError = null;
         await OnChanged.InvokeAsync();
         Toasts.Success("Impact assessment saved");
-    }
-
-    // --- Change history ---
-    private sealed record HistoryRow(DateTimeOffset At, string Attribute, string Change, string? Reason, string By);
-
-    private IEnumerable<HistoryRow> History()
-    {
-        foreach (var x in Case.ClassificationChanges)
-            yield return new HistoryRow(x.EffectiveAt, "Classification",
-                $"{(x.From is { } f ? Ui.Label(f) : "—")} → {Ui.Label(x.To)}", x.Reason, x.ChangedBy);
-
-        foreach (var x in Case.SeverityChanges)
-            yield return new HistoryRow(x.EffectiveAt, "Severity",
-                $"{(x.From is { } sf ? SevLabels.For(sf) : "—")} → {SevLabels.For(x.To)}", x.Reason, x.ChangedBy);
-
-        foreach (var x in Case.StatusChanges)
-            yield return new HistoryRow(x.EffectiveAt, "Phase",
-                $"{(x.From is { } f ? Ui.Label(f) : "—")} → {Ui.Label(x.To)}", x.Reason, x.ChangedBy);
-
-        // Materiality is a significant, decision-maker-attributed case-level transition and belongs in the
-        // curated progression alongside classification/severity/phase. The rationale is the "reason"; the
-        // off-app decision-maker (when recorded) is appended so the curated view names who made the call.
-        foreach (var x in Case.MaterialityChanges)
-            yield return new HistoryRow(x.ChangedAtUtc, "Materiality",
-                $"{Ui.Label(x.From)} → {Ui.Label(x.To)}"
-                    + (string.IsNullOrWhiteSpace(x.DecisionMaker) ? "" : $" (by {x.DecisionMaker})"),
-                x.Rationale, x.ChangedBy);
     }
 
     // --- Assignments / techniques ---

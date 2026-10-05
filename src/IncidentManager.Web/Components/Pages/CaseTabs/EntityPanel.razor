@@ -390,7 +390,7 @@
             var brief = Case.Briefs.FirstOrDefault(b => b.IsCurrent);
             if (new[] { Case.Summary, brief?.WorkingAssessment, brief?.Known, brief?.OpenQuestions, brief?.NextSteps }
                     .Any(p => p?.Contains(Tag, StringComparison.OrdinalIgnoreCase) == true))
-                list.Add(new("Brief", "Case brief", "tagged", brief?.CreatedAtUtc ?? Case.CreatedAtUtc, "Overview"));
+                list.Add(new("Brief", "Case brief", "tagged", brief?.CreatedAtUtc ?? Case.CreatedAtUtc, "Briefing"));
             return list.OrderByDescending(r => r.At).ToList();
         }
     }

@@ -287,19 +287,20 @@ else
             @PrimaryAct(slim: true)
         </div>
     <ul class="nav nav-tabs im-workspace-tabs">
-        @foreach (var tab in _tabs)
+        @* RD-11: the case's views. The record and the things in it, the work, the briefing built from them, then
+           the paper (report, lessons, audit trail). *@
+        @for (var _vi = 0; _vi < _views.Length; _vi++)
         {
-            var _tabNo = (Array.IndexOf(_tabs, tab) + 1) % 10;   // U-14: the digit shortcut for this tab (the 10th is 0)
-            @if (tab is "Tasks" or "Review" or "Audit")
+            var view = _views[_vi].View;
+            var _tabNo = _vi + 1;   // U-14: the digit shortcut for this view
+            @if (view == "Paper")
             {
-                @* INV-02: the record tabs, then the work (tasks), then what's built from them (lessons, report),
-                   then the audit trail. *@
                 <li class="im-tab-sep" aria-hidden="true"></li>
             }
             <li class="nav-item">
-                <button class="nav-link @(_activeTab == tab ? "active" : "") @(TabQuiet(tab) ? "im-tab-quiet" : "")" @onclick="() => SetTab(tab)"
-                        title="@($"Shortcut: {_tabNo}")">
-                    @TabLabel(tab)@{ var _tc = TabCount(tab); }@if (_tc is { } cnt) { <span class="im-badge im-b-neutral ms-1 im-bump" @key="@($"{tab}:{cnt}")">@cnt</span> }@if (TabHasNew(tab)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }@if (TabWhy(tab) is { } why) { <span class="im-tab-why">@why</span> }
+                <button class="nav-link @(ActiveView == view ? "active" : "") @(ViewQuiet(view) ? "im-tab-quiet" : "")" @onclick="() => SetView(view)"
+                        aria-current="@(ActiveView == view ? "page" : null)" title="@($"Shortcut: {_tabNo}")">
+                    @view@{ var _tc = ViewCount(view); }@if (_tc is { } cnt) { <span class="im-badge im-b-neutral ms-1 im-bump" @key="@($"{view}:{cnt}")">@cnt</span> }@if (ViewHasNew(view)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }@if (ViewWhy(view) is { } why) { <span class="im-tab-why">@why</span> }
                 </button>
             </li>
         }
@@ -401,20 +402,33 @@ else
        a fresh boundary — so a tab that throws shows a contained "this tab couldn't load" fallback (the case
        header, tab bar and other tabs stay usable) and recovers when you switch away and back, with no manual
        reset wiring. This sits inside the layout's page-level boundary, which catches anything outside a tab. *@
+    @* RD-11: a view with more than one part lists them here. *@
+    @if (PartsShown(ActiveView) is { Count: > 1 } parts)
+    {
+        <nav class="im-parts" aria-label="@ActiveView">
+            @foreach (var part in parts)
+            {
+                <button type="button" class="im-part @(part == _activeTab ? "active" : "") @(TabQuiet(part) ? "is-quiet" : "")"
+                        aria-current="@(part == _activeTab ? "page" : null)" @onclick="() => SetTab(part)">
+                    @TabLabel(part)@if (TabCount(part) is { } pc) { <span class="im-part-n">@pc</span> }@if (TabHasNew(part)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }@if (TabWhy(part) is { } pw) { <span class="im-tab-why">@pw</span> }
+                </button>
+            }
+        </nav>
+    }
     <ErrorBoundary>
     <ChildContent>
-    @if (_activeTab == "Overview")
+    @if (_activeTab is "Briefing" or "Impact" or "Attack" or "Connections")
     {
-        @* UX-13: extracted to CaseOverviewTab. It owns the Summary EasyMDE editor (so the central reconcile
-           retires) + details/impact/techniques/links/history; the parent threads the retention alert, the
-           readiness gate, the shared confirm dialog, the assign modal (OnOpenModal), and hotkey dispatch. *@
-        @* INV-29: where the panel isn't beside the tab (narrow screens, or hidden), its content is a strip here. *@
-        @if (!PaneShown)
+        @* UX-13 / RD-11: CaseOverviewTab renders the Briefing view, or the Impact, ATT&CK or Connections part of
+           Things; the parent threads the retention alert, the readiness gate, the shared confirm dialog, the
+           assign modal (OnOpenModal), and hotkey dispatch. *@
+        @* INV-29: where the panel isn't beside the view (narrow screens, or hidden), its content is a strip here. *@
+        @if (!PaneShown && _activeTab == "Briefing")
         {
             <CaseContextRail Strip="true" AlwaysStrip="true" Case="_case" Notify="_notifyDeadlines" CanEdit="_canEdit"
                              OnOpenEntity="OpenEntity" OnGoToTab="SetTab" OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
         }
-        <CaseOverviewTab @ref="_overviewTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" OutcomeLabels="_outcomeLabels" CanEdit="_canEdit" CanLiftRestriction="@(_canEdit && CanLiftRestriction)"
+        <CaseOverviewTab @ref="_overviewTab" Section="@_activeTab" Case="_case" CaseId="_case.Id" TaskResults="_taskResults" OutcomeLabels="_outcomeLabels" CanEdit="_canEdit" CanLiftRestriction="@(_canEdit && CanLiftRestriction)"
                          RetentionMessage="@_retentionMsg" ReadinessEval="_readinessEval" BriefInPane="PaneShown" OnEditBrief="() => _nowNext?.BeginBriefEdit()"
                          OnChanged="Reload" RequestConfirm="OnChildRequestConfirm" OnOpenModal="OpenModal"
                          OnFix="FixGateItem" OnGoToTab="SetTab" OnShowSince="ShowSinceAt" RefreshToken="_liveRefresh" />
@@ -768,18 +782,56 @@ else
     /// <summary>INV-37: deep-link one note (a mention email's link): <c>?tab=Notes&amp;note={guid}</c> brings it into view.</summary>
     [SupplyParameterFromQuery(Name = "note")] public Guid? QNote { get; set; }
 
-    // RD-08: the Notes tab is gone; working notes are the Timeline's "Working notes" lens (?tab=Notes still opens it).
-    private readonly string[] _tabs = ["Overview", "Timeline", "Entities", "Evidence", "Tasks", "Review", "Report", "Audit"];
+    // RD-11: views replace the nine tabs. Each view holds one or more parts, and a part's key is the stable routing
+    // key (?tab=, chips, counts, flashes, the feed), so a link to "Entities" or "Report" lands on that part. A view's
+    // name in ?tab= opens the part last used there. RD-08: working notes are the Record's "Working notes" lens
+    // (?tab=Notes opens it).
+    private static readonly (string View, string[] Parts)[] _views =
+    [
+        ("Record", ["Timeline"]),
+        ("Things", ["Entities", "Evidence", "Attack", "Connections", "Impact"]),
+        ("Tasks", ["Tasks"]),
+        ("Briefing", ["Briefing"]),
+        ("Paper", ["Report", "Review", "Audit"]),
+    ];
     private bool _openNotes;
-    private string _activeTab = "Overview";
+    private string _activeTab = "Timeline";
+    private Guid _partsFor;   // the case the active part was chosen for (a different case starts on its default)
+    private readonly Dictionary<string, string> _lastPart = new(StringComparer.Ordinal);
 
-    // UX-19: each tab string is the stable routing key (?tab=, inline entity-chip deep-links, TabCount /
-    // SubmitAsync / feed keys), so it stays "Entities"; this maps a key to its display label so the bar can
-    // read in SOC vocabulary without touching any of that wiring.
+    private static string ViewOf(string part) => _views.FirstOrDefault(v => v.Parts.Contains(part)).View ?? "Record";
+    private string ActiveView => ViewOf(_activeTab);
+
+    // Impact is a Things part from Incident up, or wherever impact has been recorded.
+    private bool ImpactMatters => _case is { } c && (c.Classification is Classification.Incident or Classification.Breach
+        || c.AffectedIndividualsCount is not null || c.DataElements.Count > 0 || !string.IsNullOrWhiteSpace(c.AffectedStates));
+
+    private List<string> PartsShown(string view) =>
+        _views.First(v => v.View == view).Parts.Where(p => p != "Impact" || ImpactMatters || _activeTab == "Impact").ToList();
+
+    // A closed case opens on its Briefing (the outcome leads); an open one on its Record.
+    private string DefaultPart() => _case?.Phase == CasePhase.Closed ? "Briefing" : "Timeline";
+
+    private string? ResolvePart(string? q)
+    {
+        if (string.IsNullOrWhiteSpace(q)) return null;
+        if (string.Equals(q, "Notes", StringComparison.OrdinalIgnoreCase)) return "Notes";
+        foreach (var (view, parts) in _views)
+        {
+            if (parts.FirstOrDefault(p => string.Equals(p, q, StringComparison.OrdinalIgnoreCase)) is { } part) return part;
+            if (string.Equals(view, q, StringComparison.OrdinalIgnoreCase)) return _lastPart.GetValueOrDefault(view) ?? parts[0];
+        }
+        return null;
+    }
+
+    // UX-19: a part's key stays the routing key; this is what the bar and the palette show for it.
     private static string TabLabel(string tab) => tab switch
     {
+        "Timeline" => "Record",
         "Entities" => "IOCs & entities",
+        "Attack" => "ATT&CK",
         "Review" => "Lessons learned",
+        "Audit" => "Audit trail",
         _ => tab,
     };
 
@@ -1155,8 +1207,9 @@ else
         // Honor an explicit ?tab=, otherwise refresh whatever tab is already active. The Id can change
         // under a reused component (e.g. following an "also in" cross-case link) while the active tab
         // stays the same, so always reload the active tab's data rather than only on a tab-name change.
-        var tab = string.Equals(QTab, "Notes", StringComparison.OrdinalIgnoreCase) ? "Notes"
-            : _tabs.FirstOrDefault(t => string.Equals(t, QTab, StringComparison.OrdinalIgnoreCase)) ?? _activeTab;
+        // RD-11: a different case opens on its default view.
+        var tab = ResolvePart(QTab) ?? (_partsFor != Id ? DefaultPart() : _activeTab);
+        _partsFor = Id;
         await SetTab(tab);
         // U-30: a fresh case view starts with a clean slate — nothing is "new" until a collaborator acts.
         _flash.Clear();
@@ -1245,6 +1298,7 @@ else
         // RD-08: working notes live in the Timeline's lens.
         if (string.Equals(tab, "Notes", StringComparison.OrdinalIgnoreCase)) { _openNotes = true; tab = "Timeline"; }
         _activeTab = tab;
+        _lastPart[ViewOf(tab)] = tab;   // RD-11: a view reopens on the part last used there
         // U-30: viewing a tab clears its "new" pulse; any items flashing there fade a moment after they're seen.
         _newOnTab.Remove(tab);
         var seen = _flash.Where(kv => string.Equals(kv.Value.Tab, tab, StringComparison.OrdinalIgnoreCase))
@@ -1257,6 +1311,10 @@ else
         await SyncTabUrl(tab);
         // Overview, Audit, Report, Entities, and Tasks self-load in their extracted tab components (UX-13).
     }
+
+    // RD-11: a view opens on the part last used there.
+    private Task SetView(string view) =>
+        SetTab(_lastPart.TryGetValue(view, out var last) && PartsShown(view).Contains(last) ? last : PartsShown(view)[0]);
 
     private async Task SyncTabUrl(string tab)
     {
@@ -2164,6 +2222,18 @@ else
         && (c.Classification == Classification.Breach || _notifyDeadlines?.Headline is { IsActive: true } || c.Phase >= CasePhase.Recovery);
     private bool LessonsMatter => _case is { Phase: >= CasePhase.PostIncident };
 
+    // RD-11: a view's count, "new" dot, quiet and why come from its parts.
+    private int? ViewCount(string view) => view switch
+    {
+        "Record" => TabCount("Timeline"),
+        "Things" => (TabCount("Entities") ?? 0) + (TabCount("Evidence") ?? 0) is > 0 and var n ? n : null,
+        "Tasks" => TabCount("Tasks"),
+        _ => null
+    };
+    private bool ViewHasNew(string view) => view != ActiveView && _views.First(v => v.View == view).Parts.Any(TabHasNew);
+    private bool ViewQuiet(string view) => view == "Paper" && ActiveView != view && !ReportMatters && !LessonsMatter;
+    private string? ViewWhy(string view) => view == "Paper" ? TabWhy("Report") ?? TabWhy("Review") : null;
+
     private bool TabQuiet(string tab) => _activeTab != tab && tab switch
     {
         "Report" => !ReportMatters,
@@ -2257,10 +2327,10 @@ else
         await SetTab("Tasks");
     }
 
-    // The gate meter in Next opens the Overview's readiness section, where each check has its Fix.
+    // The gate meter in Next opens the Briefing's readiness section, where each check has its Fix.
     private async Task ShowReadiness()
     {
-        await SetTab("Overview");
+        await SetTab("Briefing");
         _scrollToId = "ov-gate";
     }
 
@@ -2299,12 +2369,12 @@ else
         catch (JSException) { /* cosmetic */ }
     }
 
-    // A citing entry opens on the timeline, flashed; the brief is in the Now pane (or on the Overview).
+    // A citing entry opens on the timeline, flashed; the brief is in the Now pane (or on the Briefing).
     private async Task ShowCitation(Guid? entryId)
     {
         await CloseEvidencePanel();
         if (entryId is { } id) await FocusItem(("Timeline", id));
-        else if (!PaneShown) await SetTab("Overview");
+        else if (!PaneShown) await SetTab("Briefing");
     }
 
     private async Task CloseEntityPanel()
@@ -2372,15 +2442,21 @@ else
                 _assignRole = CaseAssignmentRole.IncidentCommander;
                 break;
             case GateCheckKeys.MaterialityDetermined: await OpenModal("materiality"); break;
-            default:
-                // Details and impact fields live on the Overview tab, which opens the editor.
+            case GateCheckKeys.AffectedIndividualsCountSet or GateCheckKeys.MinAffectedIndividuals
+                or GateCheckKeys.DataElementsSet or GateCheckKeys.AffectedStatesSet:
+                // RD-11: the impact editor is in Things › Impact.
                 _pendingOverviewFix = checkKey;
-                await SetTab("Overview");
+                await SetTab("Impact");
+                break;
+            default:
+                // The summary and the case record's details are on the Briefing, which opens the editor.
+                _pendingOverviewFix = checkKey;
+                await SetTab("Briefing");
                 break;
         }
     }
 
-    // A details/impact fix raised from a gate dialog on another tab: handed to the Overview tab once it renders.
+    // A details/impact fix raised from a gate dialog elsewhere: handed to the Briefing or Impact part once it renders.
     private string? _pendingOverviewFix;
 
     private int? TabCount(string tab)
@@ -2755,17 +2831,17 @@ else
                 case "Entities": if (_entitiesTab is not null) await _entitiesTab.SubmitAsync(); break;
                 case "Tasks": if (_tasksTab is not null) await _tasksTab.SubmitAsync(); break;
                 case "Review": if (_reviewTab is not null) await _reviewTab.SubmitAsync(); break;
-                case "Overview": if (_overviewTab is not null) await _overviewTab.SubmitAsync(); break;
+                case "Briefing" or "Impact" or "Attack" or "Connections": if (_overviewTab is not null) await _overviewTab.SubmitAsync(); break;
             }
             return;
         }
 
-        // Digits 1–9 pick tabs 1–9; 0 picks the 10th.
+        // RD-11: digits pick the views in order.
         if (cmd.StartsWith("tab:", StringComparison.Ordinal)
             && int.TryParse(cmd.AsSpan(4), out var digit) && (digit == 0 ? 10 : digit) is var n
-            && n >= 1 && n <= _tabs.Length)
+            && n >= 1 && n <= _views.Length)
         {
-            await SetTab(_tabs[n - 1]);
+            await SetView(_views[n - 1].View);
             StateHasChanged();
             return;
         }

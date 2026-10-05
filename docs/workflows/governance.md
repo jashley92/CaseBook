@@ -105,7 +105,7 @@ flowchart LR
     J --> R["Each jurisdiction's window<br/>(Administration → Regulatory deadlines;<br/>else the default window, 72 h)"]
     S["Start: materiality 'Material' decision date<br/>(or detection, by setting)"] --> D["Deadline per jurisdiction"]
     R --> D
-    D --> UI["Overview table · header badge · rail clock ·<br/>dashboard · reminder emails"]
+    D --> UI["Briefing table · header clock · Next ·<br/>dashboard · reminder emails"]
     MR["Mark reported to regulators"] --> Stop["All clocks stop"]
 ```
 
@@ -114,7 +114,7 @@ flowchart LR
   seeded) or the default window.
 - **When the clock starts**: the materiality decision date (`Determination`, the default) or detection
   (`Detection`, for Breach cases).
-- **Mark reported**: Overview → *Mark reported to regulators*, with the time it was done (can be backdated; not
+- **Mark reported**: Next → *Mark reported…*, or Briefing → *Mark reported to regulators*, with the time it was done (can be backdated; not
   future, not before detection). `CaseService.MarkReportedAsync`. One reported time **stops every
   jurisdiction's clock**; there's no per-jurisdiction reporting. *Clear reported milestone* undoes it.
   Milestone "Reported to regulators".

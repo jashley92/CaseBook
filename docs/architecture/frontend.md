@@ -79,13 +79,13 @@ appears under `/admin/settings/other`. Each section has one Save bar; leaving wi
 | Concern | How it works |
 |---|---|
 | Loading | `CaseService.GetDetailAsync(id)` loads the whole case with its children. Each load records a case open in the access log. A missing or hidden case shows "Case not found". |
-| Tabs | Keys `Overview, Timeline, Entities, Evidence, Tasks, Review, Report, Audit` (shown as "IOCs & entities" and "Lessons learned"); `?tab=Notes` opens the Timeline's Working notes lens. `?tab=` selects one; switching uses `history.replaceState`, so the case isn't reloaded. Each tab is wrapped in its own `ErrorBoundary`. |
+| Views | `_views` in the workspace: Record (`Timeline`), Things (`Entities`, `Evidence`, `Attack`, `Connections`, `Impact`), Tasks, Briefing, Paper (`Report`, `Review`, `Audit`). The part keys are the routing keys (`?tab=`, counts, flashes); a view's name in `?tab=` opens its last-used part; `?tab=Notes` opens the Record's Working notes lens. `?tab=` selects one; switching uses `history.replaceState`, so the case isn't reloaded. Each tab is wrapped in its own `ErrorBoundary`. |
 | Dialogs | All case dialogs (reclassify, phase, severity, handoff, assign, restrict, legal, materiality, supersede, archive, reopen, legal-hold release) live in the shell, so they work from any tab. One generic confirm dialog is offered to tabs through a `RequestConfirm` callback. Shared fragments: the gate checklist with override justification, "when it happened" with nudges, open-task and notification warnings. Apply buttons are disabled exactly when the server would reject the input. |
 | Live updates | The shell subscribes to `ICaseChangeNotifier`. When someone else saves, it reloads, flashes the new items in that person's color, puts a dot on other tabs, shows a toast, and shows a "N new entries" pill on the timeline. Your own changes don't flash. Presence avatars (`Shared/CasePresence.razor`) show who else is viewing. All of this is in-process (one server only). |
 | Unsaved text | Composer drafts survive tab switches (kept in server memory). Leaving the case with unsaved editor text asks first. |
 | Permissions | Checked when the case loads and again when they change mid-session; editing controls are hidden for view-only users, with a "View only" note. |
-| Keyboard | `1`–`9` switch tabs; `l` opens the composer, `n` in Working note mode, `t` the task form; `Ctrl+Enter` submits the active composer. |
-| Now/Next pane | `CaseNowNext.razor`: the brief (`CaseBriefCard` with `Pane`), obligations, open tasks with their why (`WhyChip`), next-gate readiness, team, key entities. Shown beside every tab when the viewport is at least 1200 px wide, which `js/media.js` (`imMedia.watch`) reports to the workspace (`OnMediaChanged`). Narrower, the Overview keeps the brief and `CaseContextRail` as a strip. |
+| Keyboard | `1`–`5` switch views; `l` opens the composer, `n` in Working note mode, `t` the task form; `Ctrl+Enter` submits the active composer. |
+| Now/Next pane | `CaseNowNext.razor`: the brief (`CaseBriefCard` with `Pane`), obligations, open tasks with their why (`WhyChip`), next-gate readiness, team, key entities. Shown beside every tab when the viewport is at least 1200 px wide, which `js/media.js` (`imMedia.watch`) reports to the workspace (`OnMediaChanged`). Narrower, the Briefing keeps the brief and `CaseContextRail` as a strip. |
 | Entity panel | `EntityPanel.razor`: a side panel opened from any entity chip, tag or `?entity=`; the verdict picker with its reason, where the case refers to it, tasks, relationships and Seen before. |
 | Evidence panel | `EvidencePanel.razor`: opened from an evidence row, a cited-file chip or `?evidence=`; preview on request (`EvidenceService.PreviewTextAsync` for text), integrity, custody, cited by, transfer. |
 | State marks | `Shared/SeverityMark`, `RungMark`, `VerdictMark`, `ClockMark`, `PhaseSteps`, `WhyChip`: a word plus a form that isn't colour. Shown on the style guide. |
@@ -93,7 +93,7 @@ appears under `/admin/settings/other`. Each section has one Save bar; leaving wi
 
 | Tab | Component | Main actions |
 |---|---|---|
-| Overview | `CaseOverviewTab` | Brief, recent timeline, scope and impact, notification deadlines and *Mark reported*, next-gate readiness, case details, restriction, ATT&CK techniques, related cases |
+| Briefing; Things › Impact, ATT&CK, Connections | `CaseOverviewTab` (its `Section` picks the part) | Briefing: brief on narrow screens, recent timeline, notification deadlines and *Mark reported*, next-gate readiness, case details, restriction. Impact: scope and impact. ATT&CK: techniques. Connections: related cases |
 | Timeline | `CaseTimelineTab` | Lenses (including Working notes, which hosts `CaseNotesTab`), filters, the five-mode composer with follow-ups, edit, versions, cite evidence, raise task, correct time, screenshot paste |
 | IOCs & entities | `CaseEntitiesTab` | Add, paste, edit, remove; relationships; graph; also-in; related-case suggestions; defang view; STIX |
 | Evidence | `CaseEvidenceTab` | Upload, paste, drag and drop; custody; transfer; preview; raise task |
