@@ -137,11 +137,11 @@ export SQLCMD='docker exec casebook-sql /opt/mssql-tools18/bin/sqlcmd -C -S loca
 tools/upgrade-test/upgrade-path.sh v1.0.0          # v1.0.0 -> your working tree
 ```
 
-The same `CASEBOOK_TEST_SQL` also runs the integration tests that need SQL Server itself (`[SqlServerFact]`;
-skipped in a plain `dotnet test`). Each creates and drops its own database:
+The same `CASEBOOK_TEST_SQL` also runs the integration tests that need SQL Server itself (`[SqlServerFact]` tests
+and the SQL Server rows of tests that run on both engines; skipped in a plain `dotnet test`). Each creates and drops its own database:
 
 ```bash
-dotnet test tests/IncidentManager.IntegrationTests --filter "FullyQualifiedName~SqlServerTests"
+dotnet test tests/IncidentManager.IntegrationTests --filter "DisplayName~SqlServer"
 ```
 
 ---
@@ -161,19 +161,52 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ## Notes
 
+### The next release (after v1.2.4)
+
+The upgrade itself is the usual one: seven migrations, applied at startup. People will notice more. Cases, the
+home page and the cross-case pages are redesigned, and several pages have moved.
+
+- **Schema: seven migrations, all additive.** They add the `CaseOutcomes`, `EntityVerdictChanges` and
+  `OpenCaseTabs` tables, plus columns for a closed case's outcome, who completed a task, a brief confirmed as
+  still accurate, and keyboard-shortcut preferences. Nothing is dropped and no existing record is rewritten. The
+  only data changes are the seeded outcomes and the close-gate wording below. None of the seven touches a ledger
+  table. In `DbaApplies` mode, `deploy/sql/casebook-schema-sqlserver.sql` in the bundle already includes them.
+- **History starts at the upgrade.** Tasks completed before it show no "completed by". Verdict changes are
+  recorded from the upgrade on, so an entity's earlier verdicts aren't in its history.
+- **Closing asks for an outcome.** Closing a case needs an outcome and the closing brief (what happened and the
+  conclusion). Six outcomes are seeded on upgrade and can be changed under Administration → Case outcomes. Cases
+  closed before the upgrade keep their records unchanged and have no outcome. A task raised from a brief question
+  now needs an answer to be marked done. Configuration bundles become schema v4 (they carry the outcomes); older
+  bundles still import.
+- **The close gate's checks change.** The shipped "Post-incident review complete" attestation becomes the
+  "Post-incident review recorded" check (Incidents & Breaches; it was tickable with no review). An advisory
+  "Every entity / IOC has a verdict" check is added. A close-gate attestation you worded yourself is left as it
+  is; change either under Administration → Stage gates.
+- **Pages have moved, with no redirects.** Bookmarks to the old addresses and links in emails sent before the
+  upgrade open a "page not found". The sidebar is now Desk, Cases, Find, Intel and Program.
+
+  | Was | Now |
+  |---|---|
+  | `/my`, `/work` (My work) | `/desk` (the Desk) |
+  | `/agenda` | `/program/due` (Due work); your calendar feed link is under Account → Notifications |
+  | `/team` | `/program/team` |
+  | `/improvement-actions` | `/program/improvement-actions` |
+  | `/program-report` | `/program/report` |
+  | `/indicators` | `/intel/indicators` |
+  | `/campaigns`, `/campaigns/{id}` | `/intel/campaigns`, `/intel/campaigns/{id}` |
+  | `/attack-coverage` | `/intel/attack` |
+
+  `/` now opens Program (the leadership dashboard) for roles that see every case, and the Desk for everyone else.
+  New pages: `/find`, `/program/legal` (the legal register), `/account/keyboard`. Case addresses (`/cases/{id}`),
+  the API and the calendar feed's own URL are unchanged, so integrations and calendar subscriptions keep working.
+- **Tell your team before it lands.** A case has five views (Record, Things, Tasks, Briefing and Paper) instead
+  of nine tabs. Working notes are a lens on the record, not a tab. Closing is a view of its own. Recently
+  opened cases stay as tabs in the top bar. Reports generate in the background with a notice when ready. Single-key
+  shortcuts can be changed or turned off under Account → Keyboard shortcuts.
+
 - **Use the upgrade script from the bundle you're installing.** v1.2.1's script reported a false *MIGRATION
   MISMATCH* on every database (fixed in v1.2.2); before v1.2.3 the ASP.NET Core Module check could fail from a
   32-bit PowerShell even when the module was installed. v1.2.4's script adds missing storage settings (below).
-
-- **The next release asks for an outcome when closing.** Closing a case needs an outcome and the closing brief
-  (what happened and the conclusion); six outcomes are seeded on upgrade and can be changed under Administration →
-  Case outcomes. Cases closed before the upgrade keep their records unchanged and have no outcome. A task raised from
-  a brief question now needs an answer to be marked done. Configuration bundles become schema v4 (they carry the
-  outcomes); older bundles still import.
-  The close gate's shipped "Post-incident review complete" attestation becomes the "Post-incident review recorded"
-  check (Incidents & Breaches; it was tickable with no review), and an advisory "Every entity / IOC has a verdict"
-  check is added. A close-gate attestation you worded yourself is left as it is; change either under
-  Administration → Stage gates.
 
 - **After v1.2.4, a missing seal-signing key stops startup.** Outside Development the app no longer generates a
   key when `Integrity:SigningKeyPath` points at a missing file; it refuses to start. An existing install already
