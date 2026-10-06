@@ -25,6 +25,13 @@ public enum FindReadAs { Nothing, Words, CaseNumber, Indicator, Person }
 /// </summary>
 public sealed partial record FindQuery
 {
+    /// <summary>
+    /// The most words (and phrases) Find matches; the rest are left out and it says so. Each word is one more condition
+    /// in every query Find sends, and a few hundred overflow the query translator's stack, which ends the server
+    /// process for everyone. Nobody searches with more than a handful.
+    /// </summary>
+    public const int MaxTerms = 12;
+
     public string Raw { get; init; } = "";
     /// <summary>The words left after the filters; every one must appear (quoted phrases count as one).</summary>
     public IReadOnlyList<string> Terms { get; init; } = [];
@@ -44,6 +51,8 @@ public sealed partial record FindQuery
     public bool Exercises { get; init; }
     /// <summary>Filters it couldn't use, said back to the user rather than silently dropped.</summary>
     public IReadOnlyList<string> Unread { get; init; } = [];
+    /// <summary>How many words were left out past <see cref="MaxTerms"/>, also said back.</summary>
+    public int DroppedTerms { get; init; }
 
     /// <summary>The words as one string (for reading them as a number, an indicator or a person).</summary>
     public string Text => string.Join(' ', Terms);
@@ -113,7 +122,8 @@ public sealed partial record FindQuery
                     break;
             }
         }
-        return q with { Terms = terms, Unread = unread };
+        var dropped = Math.Max(0, terms.Count - MaxTerms);
+        return q with { Terms = dropped > 0 ? terms[..MaxTerms] : terms, Unread = unread, DroppedTerms = dropped };
     }
 
     /// <summary>

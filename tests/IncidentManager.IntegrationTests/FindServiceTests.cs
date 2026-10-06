@@ -212,6 +212,24 @@ public sealed class FindServiceTests : IDisposable
         (await NewFind().FindAsync("[o]ps")).Tasks.Should().BeEmpty();
     }
 
+    // Each word is a condition in every query; a few hundred once overflowed the query translator's stack and ended the
+    // server process. Past the limit the rest are left out, and Find says so.
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_very_long_query_uses_the_first_words_and_says_so(string provider)
+    {
+        Use(provider);
+        var words = string.Join(' ', Enumerable.Range(0, 2500).Select(i => "w" + i));
+
+        var r = await NewFind().FindAsync("203.0.113.66 " + words);
+
+        r.Query.Terms.Should().HaveCount(FindQuery.MaxTerms);
+        r.Filters.Should().Contain($"only the first {FindQuery.MaxTerms} words used");
+        r.Cases.Should().BeEmpty();   // every word must appear, and w0..w10 don't
+
+        var shortOne = await NewFind().FindAsync("password reset");
+        shortOne.Filters.Should().NotContain(f => f.StartsWith("only the first"));
+    }
+
     public void Dispose() => _db?.Dispose();
 
     /// <summary>Records the SQL text and parameter values of every command sent.</summary>

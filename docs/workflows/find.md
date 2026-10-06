@@ -25,6 +25,8 @@ Above the results Find says how it read what you typed:
 - **a person** (a display name, a sign-in name, or a first name only one person has): the cases they lead or are
   assigned to, the entries they recorded and the tasks they own.
 - **words in the record**: everything else. Every word must appear, ignoring case; quote a phrase to keep it together.
+  Find uses the first 12 words or phrases and says *only the first 12 words used* when there were more.
+  Characters like `%`, `_` and `[` match themselves.
 
 ## Filters
 

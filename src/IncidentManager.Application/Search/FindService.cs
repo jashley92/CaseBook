@@ -137,6 +137,7 @@ public sealed class FindService
         if (q.Before is { } bf) filters.Add($"before {bf:d MMM yyyy}");
         if (q.Notes) filters.Add("working notes included");
         filters.AddRange(unread.Select(u => $"not understood: {u}"));
+        if (q.DroppedTerms > 0) filters.Add($"only the first {FindQuery.MaxTerms} words used");
 
         // How the words read.
         var text = q.Text;
