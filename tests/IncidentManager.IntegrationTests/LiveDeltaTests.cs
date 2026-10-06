@@ -8,7 +8,6 @@ using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Infrastructure.Persistence.Interceptors;
 using IncidentManager.Infrastructure.Realtime;
 using IncidentManager.Infrastructure.Security;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -17,32 +16,22 @@ namespace IncidentManager.IntegrationTests;
 /// <summary>
 /// RD-22: delta live updates. A committed save's change event says what changed (type, id, added/modified/deleted); the
 /// workspace maps it to the parts of the case to re-read, and re-reads only those, in place, need-to-know scoped.
+/// Runs on SQLite and, when a server is configured, on SQL Server (<see cref="TestDatabase"/>).
 /// </summary>
 public sealed class LiveDeltaTests : IDisposable
 {
-    private readonly SqliteConnection _connection;
+    private TestDatabase? _db;
     private readonly HashChainService _hasher = new();
     private readonly FixedClock _clock = new(new DateTimeOffset(2026, 10, 5, 9, 0, 0, TimeSpan.Zero));
     private readonly TestCurrentUser _user = new() { RoleSet = [AppRole.SysAdmin] };
     private readonly CaseChangeNotifier _notifier = new();
 
-    public LiveDeltaTests()
-    {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-    }
-
-    private DbContextOptions<AppDbContext> Options() => new DbContextOptionsBuilder<AppDbContext>()
-        .UseSqlite(_connection)
+    // The audit interceptor publishes the change events, as in production.
+    private DbContextOptions<AppDbContext> Options() => new DbContextOptionsBuilder<AppDbContext>(_db!.Options)
         .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, _notifier))
         .Options;
 
-    private AppDbContext NewContext()
-    {
-        var db = new AppDbContext(Options());
-        db.Database.EnsureCreated();
-        return db;
-    }
+    private AppDbContext NewContext() => new(Options());
 
     private CaseService NewService(AppDbContext db) =>
         new(new TestDbContextFactory(Options()), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
@@ -58,9 +47,10 @@ public sealed class LiveDeltaTests : IDisposable
         throw new TimeoutException("No change event arrived.");
     }
 
-    [Fact]
-    public async Task A_change_says_what_changed_and_the_workspace_re_reads_only_that_part()
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_change_says_what_changed_and_the_workspace_re_reads_only_that_part(string provider)
     {
+        _db = TestDatabase.Open(provider);
         await using var db = NewContext();
         var svc = NewService(db);
         var c = await svc.CreateAsync(new CreateCaseRequest
@@ -94,9 +84,10 @@ public sealed class LiveDeltaTests : IDisposable
         (await svc.RefreshPartsAsync(snapshot, CaseRegionMap.Of(sev))).Should().BeFalse();
     }
 
-    [Fact]
-    public async Task A_case_the_viewer_can_no_longer_see_is_not_re_read_in_parts()
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_case_the_viewer_can_no_longer_see_is_not_re_read_in_parts(string provider)
     {
+        _db = TestDatabase.Open(provider);
         await using var db = NewContext();
         var svc = NewService(db);
         var c = await svc.CreateAsync(new CreateCaseRequest
@@ -105,7 +96,7 @@ public sealed class LiveDeltaTests : IDisposable
             Severity = Severity.Medium, Origin = CaseOrigin.InternalDetection
         });
         var snapshot = (await svc.GetDetailAsync(c.Id))!;
-        await using (var raw = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options))
+        await using (var raw = _db!.NewContext())
         {
             var row = await raw.Cases.FirstAsync(x => x.Id == c.Id);
             row.IsRestricted = true;
@@ -131,5 +122,5 @@ public sealed class LiveDeltaTests : IDisposable
         ])).Should().Be(CaseRegions.Things | CaseRegions.Notes);
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose() => _db?.Dispose();
 }

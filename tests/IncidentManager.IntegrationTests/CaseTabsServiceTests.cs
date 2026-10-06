@@ -3,7 +3,6 @@ using IncidentManager.Application.Cases;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -13,28 +12,17 @@ namespace IncidentManager.IntegrationTests;
 /// RD-21: open-case tabs. Opening a case makes it a tab (kept per user, so it's there at the next sign-in); pinned cases
 /// are tabs that stay, first; at most <see cref="CaseTabsService.MaxOpen"/> others, letting go of the least recently
 /// seen; need-to-know scoped at read time.
+/// Runs on SQLite and, when a server is configured, on SQL Server (<see cref="TestDatabase"/>).
 /// </summary>
 public sealed class CaseTabsServiceTests : IDisposable
 {
-    private readonly SqliteConnection _connection;
+    private TestDatabase? _db;
     private readonly FixedClock _clock = new(new DateTimeOffset(2026, 10, 5, 9, 0, 0, TimeSpan.Zero));
     private readonly TestCurrentUser _me = new() { UserId = "analyst1", RoleSet = [AppRole.Analyst] };
 
-    public CaseTabsServiceTests()
-    {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-    }
+    private AppDbContext NewContext() => _db!.NewContext();
 
-    private AppDbContext NewContext()
-    {
-        var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
-        db.Database.EnsureCreated();
-        return db;
-    }
-
-    private CaseTabsService NewTabs() =>
-        new(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options), _me, _clock, new TestSlaTargets());
+    private CaseTabsService NewTabs() => new(_db!.Factory(), _me, _clock, new TestSlaTargets());
 
     private List<Guid> Seed(int n, out Guid restricted)
     {
@@ -54,9 +42,10 @@ public sealed class CaseTabsServiceTests : IDisposable
         return ids;
     }
 
-    [Fact]
-    public async Task Opened_cases_become_tabs_pinned_ones_stay_first_and_the_least_recent_is_let_go()
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Opened_cases_become_tabs_pinned_ones_stay_first_and_the_least_recent_is_let_go(string provider)
     {
+        _db = TestDatabase.Open(provider);
         var ids = Seed(11, out var restricted);
         await using (var db = NewContext())
         {
@@ -84,9 +73,10 @@ public sealed class CaseTabsServiceTests : IDisposable
         (await tabs.ListAsync()).Select(t => t.CaseId).Should().NotContain(ids[0]);
     }
 
-    [Fact]
-    public async Task A_case_that_becomes_restricted_drops_out_of_the_tabs()
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_case_that_becomes_restricted_drops_out_of_the_tabs(string provider)
     {
+        _db = TestDatabase.Open(provider);
         var ids = Seed(2, out _);
         var tabs = NewTabs();
         await tabs.OpenAsync(ids[0]);
@@ -100,5 +90,5 @@ public sealed class CaseTabsServiceTests : IDisposable
         (await tabs.ListAsync()).Select(t => t.CaseId).Should().Equal(ids[0]);
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose() => _db?.Dispose();
 }

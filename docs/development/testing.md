@@ -7,7 +7,7 @@ What's tested, how to run it, what isn't covered, and what to check by hand befo
 | Project | Tests | References | Runs against |
 |---|---|---|---|
 | `tests/IncidentManager.UnitTests` | ~490 test methods (plus ~160 `InlineData` rows) | Domain, Application, Infrastructure | Plain objects |
-| `tests/IncidentManager.IntegrationTests` | ~495 test methods | Application, Infrastructure, Web | In-memory SQLite per test class; 4 tests on SQL Server; one boots the real host |
+| `tests/IncidentManager.IntegrationTests` | ~495 test methods | Application, Infrastructure, Web | In-memory SQLite per test class; 14 tests also on SQL Server; one boots the real host |
 
 Packages: xUnit 2.9, FluentAssertions 8, coverlet (coverage isn't collected in CI), and
 `Microsoft.AspNetCore.Mvc.Testing` for the host test. There's no mocking library; fakes are hand-written. There
@@ -44,10 +44,16 @@ There are no `[Trait]` categories.
 ```bash
 docker run -d --name casebook-sql -e ACCEPT_EULA=Y -e 'MSSQL_SA_PASSWORD=Local!Test2026' -p 14333:1433 mcr.microsoft.com/mssql/server:2022-latest
 export CASEBOOK_TEST_SQL='Server=localhost,14333;User Id=sa;Password=Local!Test2026;TrustServerCertificate=True;Encrypt=False'
-dotnet test tests/IncidentManager.IntegrationTests --filter "FullyQualifiedName~SqlServerTests"
+dotnet test tests/IncidentManager.IntegrationTests --filter "DisplayName~SqlServer"
 ```
 
-Each test creates and drops its own database.
+Each test creates and drops its own database. There are two kinds:
+
+- `[SqlServerFact]` tests in a SQL Server class (the dashboard parity tests).
+- Theories over `TestDatabase.Providers` (Find, open-case tabs, live updates, the Desk). They run once on SQLite, and
+  again on SQL Server when `CASEBOOK_TEST_SQL` is set, as a row named `provider: "SqlServer"`. Without a server the row
+  doesn't exist rather than passing as a skip. To put a test on both engines, take `string provider`, start with
+  `TestDatabase.Open(provider)` and build contexts from it.
 
 ### Upgrade-path test
 
@@ -117,7 +123,7 @@ tag commits that went through CI on `main`.
   headers and the 403/404 redirects have no request-level tests; their services do.
 - **Windows authentication** and real AD group resolution (CI runs on Linux).
 - **Background-service wrappers** (the scanners they call are tested).
-- **SQL Server** beyond four tests and the upgrade test; most tests use SQLite with `EnsureCreated`, not the SQL
+- **SQL Server** beyond the tests above and the upgrade test; most tests use SQLite with `EnsureCreated`, not the SQL
   Server migrations.
 - **PowerShell deploy scripts** (no Pester tests).
 

@@ -4,7 +4,6 @@ using IncidentManager.Application.Search;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -13,30 +12,24 @@ namespace IncidentManager.IntegrationTests;
 /// <summary>
 /// RD-20: Find. Typed results across entities, cases, record entries (closing briefs included), tasks, evidence names and,
 /// on request, working notes; it says how it read the query; the grammar is literal; need-to-know scoped throughout.
+/// Each runs on SQLite and, when a server is configured, on SQL Server (<see cref="TestDatabase"/>).
 /// </summary>
 public sealed class FindServiceTests : IDisposable
 {
-    private readonly SqliteConnection _connection;
+    private TestDatabase? _db;
     private static readonly DateTimeOffset Now = new(2026, 10, 4, 12, 0, 0, TimeSpan.Zero);
     private readonly TestCurrentUser _me = new() { UserId = "analyst1", DisplayName = "Analyst One", RoleSet = [AppRole.Analyst] };
     private Guid _alpha, _beta, _decisionId;
 
-    public FindServiceTests()
+    private void Use(string provider, params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] interceptors)
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
+        _db = TestDatabase.Open(provider, interceptors);
         Seed();
     }
 
-    private AppDbContext NewContext()
-    {
-        var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
-        db.Database.EnsureCreated();
-        return db;
-    }
+    private AppDbContext NewContext() => _db!.NewContext();
 
-    private FindService NewFind() =>
-        new(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options), _me, new Directory());
+    private FindService NewFind() => new(_db!.Factory(), _me, new Directory());
 
     private static DateTimeOffset H(int hoursFromNow) => Now.AddHours(hoursFromNow);
 
@@ -80,9 +73,10 @@ public sealed class FindServiceTests : IDisposable
         db.SaveChanges();
     }
 
-    [Fact]
-    public async Task An_indicator_is_read_as_one_and_found_across_every_kind_on_cases_you_can_see()
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task An_indicator_is_read_as_one_and_found_across_every_kind_on_cases_you_can_see(string provider)
     {
+        Use(provider);
         var r = await NewFind().FindAsync("203.0.113[.]66");
 
         r.ReadAs.Should().Be(FindReadAs.Indicator);
@@ -114,9 +108,10 @@ public sealed class FindServiceTests : IDisposable
         (await NewFind().FindAsync("203.0.113.66 exercises:yes")).Entities[0].Cases.Should().HaveCount(3);
     }
 
-    [Fact]
-    public async Task Plain_question_filters_narrow_the_record_and_are_said_back()
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Plain_question_filters_narrow_the_record_and_are_said_back(string provider)
     {
+        Use(provider);
         var r = await NewFind().FindAsync("type:decision \"password reset\" after:2026-01-01");
 
         r.ReadAs.Should().Be(FindReadAs.Words);
@@ -137,9 +132,10 @@ public sealed class FindServiceTests : IDisposable
         odd.Filters.Should().ContainSingle(f => f.StartsWith("not understood: status:pending"));
     }
 
-    [Fact]
-    public async Task A_person_or_a_case_number_reads_as_one()
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_person_or_a_case_number_reads_as_one(string provider)
     {
+        Use(provider);
         var robin = await NewFind().FindAsync("robin");
         robin.ReadAs.Should().Be(FindReadAs.Person);
         robin.Reading.Should().Be("a person: Robin Reyes");
@@ -166,7 +162,85 @@ public sealed class FindServiceTests : IDisposable
         FindQuery.WithFilter("reset jurisdiction:NY", "state", "NJ").Should().Be("reset state:NJ");
     }
 
-    public void Dispose() => _connection.Dispose();
+    // What a person types goes to the database only as a parameter value, never as SQL text, and the LIKE wildcards
+    // (% _ [) match themselves. Every command Find sends is recorded to prove it on the provider it runs on.
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task What_is_typed_is_sent_as_a_value_never_as_SQL_and_wildcards_match_literally(string provider)
+    {
+        var sent = new CommandRecorder();
+        Use(provider, sent);
+        using (var db = NewContext())
+        {
+            var c = db.Cases.Single(x => x.Id == _alpha);
+            db.ActionItems.Add(new ActionItem { CaseId = c.Id, Title = "Rotate 100% of the tokens", CreatedBy = "robin", CreatedAtUtc = H(-10) });
+            db.ActionItems.Add(new ActionItem { CaseId = c.Id, Title = "Check the [ops] mailbox", CreatedBy = "robin", CreatedAtUtc = H(-10) });
+            db.SaveChanges();
+        }
+        sent.Clear();
+
+        string[] hostile =
+        [
+            "x'; DROP TABLE Cases; --",
+            "\" OR 1=1 --",
+            "') OR ('1'='1",
+            "reset' UNION SELECT Body FROM Notes --",
+            "type:decision by:robin' OR '1'='1",
+        ];
+        foreach (var q in hostile)
+        {
+            var r = await NewFind().FindAsync(q + " in:notes exercises:yes");
+            (r.Entities.Count + r.Cases.Count + r.Entries.Count + r.Tasks.Count + r.Evidence.Count + r.Notes.Count)
+                .Should().Be(0, $"nothing in the record contains {q}");
+        }
+
+        sent.Commands.Should().NotBeEmpty();
+        foreach (var sql in sent.Commands)
+        {
+            sql.Should().NotContain("DROP TABLE").And.NotContain("UNION SELECT").And.NotContain("1=1").And.NotContain("'1'='1");
+        }
+        sent.Values.Should().Contain(v => v.Contains("x';"), "the words travel as parameter values");
+
+        // The schema is untouched and the restricted case still never surfaces.
+        using (var db = NewContext()) db.Cases.Count().Should().Be(4);
+
+        // LIKE wildcards are matched as the characters they are.
+        (await NewFind().FindAsync("%")).Tasks.Should().ContainSingle(t => t.Title.StartsWith("Rotate"), "not every task");
+        (await NewFind().FindAsync("_")).Tasks.Should().BeEmpty();
+        (await NewFind().FindAsync("100%")).Tasks.Should().ContainSingle(t => t.Title.StartsWith("Rotate"));
+        (await NewFind().FindAsync("0%_")).Tasks.Should().BeEmpty();
+        (await NewFind().FindAsync("[ops]")).Tasks.Should().ContainSingle(t => t.Title.Contains("[ops]"));
+        (await NewFind().FindAsync("[o]ps")).Tasks.Should().BeEmpty();
+    }
+
+    public void Dispose() => _db?.Dispose();
+
+    /// <summary>Records the SQL text and parameter values of every command sent.</summary>
+    private sealed class CommandRecorder : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        private readonly List<string> _commands = [], _values = [];
+        private readonly Lock _gate = new();
+
+        public IReadOnlyList<string> Commands { get { lock (_gate) return [.. _commands]; } }
+        public IReadOnlyList<string> Values { get { lock (_gate) return [.. _values]; } }
+        public void Clear() { lock (_gate) { _commands.Clear(); _values.Clear(); } }
+
+        private void Record(System.Data.Common.DbCommand c)
+        {
+            lock (_gate)
+            {
+                _commands.Add(c.CommandText);
+                foreach (System.Data.Common.DbParameter p in c.Parameters) _values.Add(Convert.ToString(p.Value) ?? "");
+            }
+        }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(
+            System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Record(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
 
     private sealed class Directory : IUserDirectory
     {

@@ -6,7 +6,6 @@ using IncidentManager.Application.Work;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -16,29 +15,18 @@ namespace IncidentManager.IntegrationTests;
 /// RD-16: the Desk. On top of My work's cases and tasks (tested in <see cref="MyWorkServiceTests"/>), it says the
 /// caller's part in each case, what others changed since the caller last opened it, why each of the caller's tasks
 /// exists, and what needs the caller in order of consequence. Need-to-know scoped throughout.
+/// Runs on SQLite and, when a server is configured, on SQL Server (<see cref="TestDatabase"/>).
 /// </summary>
 public sealed class DeskServiceTests : IDisposable
 {
-    private readonly SqliteConnection _connection;
+    private TestDatabase? _db;
     private static readonly DateTimeOffset Now = new(2026, 10, 4, 12, 0, 0, TimeSpan.Zero);
     private readonly FixedClock _clock = new(Now);
     private readonly TestCurrentUser _me = new() { UserId = "analyst1", DisplayName = "Analyst One", RoleSet = [AppRole.Analyst] };
 
-    public DeskServiceTests()
-    {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-    }
+    private AppDbContext NewContext() => _db!.NewContext();
 
-    private AppDbContext NewContext()
-    {
-        var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
-        db.Database.EnsureCreated();
-        return db;
-    }
-
-    private IAppDbContextFactory NewFactory() =>
-        new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options);
+    private IAppDbContextFactory NewFactory() => _db!.Factory();
 
     private DeskService NewDesk() => new(NewFactory(), _me, _clock, new MyWorkService(NewFactory(), _me, _clock),
         new NotificationDeadlineService(NewFactory(), new OffSettings(), new NotificationRuleService(NewFactory(), _me, _clock), _clock),
@@ -46,9 +34,10 @@ public sealed class DeskServiceTests : IDisposable
 
     private static DateTimeOffset H(int hoursFromNow) => Now.AddHours(hoursFromNow);
 
-    [Fact]
-    public async Task The_desk_says_your_part_what_changed_why_each_task_exists_and_what_needs_you()
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task The_desk_says_your_part_what_changed_why_each_task_exists_and_what_needs_you(string provider)
     {
+        _db = TestDatabase.Open(provider);
         Guid alpha, decisionId;
         await using (var db = NewContext())
         {
@@ -113,5 +102,5 @@ public sealed class DeskServiceTests : IDisposable
         public NotificationDeadlineSettings Current { get; set; } = NotificationDeadlineSettings.Off;
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose() => _db?.Dispose();
 }
