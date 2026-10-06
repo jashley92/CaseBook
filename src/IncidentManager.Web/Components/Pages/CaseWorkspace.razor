@@ -161,7 +161,7 @@ else
                 </button>
             </li>
         }
-        @if (_closeOutOpen && _case.Phase != CasePhase.Closed)
+        @if (_closeOut.Open && _case.Phase != CasePhase.Closed)
         {
             <li class="nav-item">
                 <button class="nav-link im-tab-closeout @(_activeTab == "Closeout" ? "active" : "")" aria-current="@(_activeTab == "Closeout" ? "page" : null)" @onclick="OpenCloseOut">
@@ -179,10 +179,10 @@ else
     </ul>
     </div>
 
-    @if (_activeModal is not null && IsSheet)
+    @if (_action.Name is not null && _action.IsSheet)
     {
         <section id="ws-sheet" class="im-sheet" role="region" aria-labelledby="im-action-title" @onkeydown="OnModalEscape">
-            @ActionForm()
+            @ActionDialog()
         </section>
     }
 
@@ -314,7 +314,8 @@ else
     }
     else if (_activeTab == "Closeout")
     {
-        @CloseOutView()
+        <CaseCloseOut Case="_case" Draft="_closeOut" TaskResults="_taskResults" Notify="_notifyDeadlines"
+                      OnLeave="LeaveCloseOut" OnClosed="ClosedFromView" OnForbidden="Forbidden" OnFix="FixGateItem" />
     }
     else if (_activeTab == "Timeline")
     {
@@ -409,14 +410,14 @@ else
 
     @* Action modal — rendered outside the tab blocks so Actions works on every tab. RD-15: a change of rung, severity
        or phase is a sheet under the header instead (below). *@
-    @if (_activeModal is not null && !IsSheet)
+    @if (_action.Name is not null && !_action.IsSheet)
     {
         <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true"
              aria-labelledby="im-action-title" data-return-focus="#case-actions-btn"
              style="background:var(--im-scrim)" @onclick="CloseModal" @onkeydown="OnModalEscape">
             <div class="modal-dialog" @onclick:stopPropagation="true">
                 <div class="modal-content">
-                    @ActionForm()
+                    @ActionDialog()
                 </div>
             </div>
         </div>
@@ -504,23 +505,10 @@ else
     // + the Summary editor. The parent keeps a ref for hotkey dispatch (Ctrl+Enter save).
     private CaseOverviewTab? _overviewTab;
 
-    // Action-modal edit buffers (reclass / severity / status / legal / assign) — parent-owned modals.
-    private Classification _newClass = Classification.Incident;
-    private string _reclassReason = "";
-    private CasePhase _newPhase = CasePhase.Triage;
-    private string? _phaseReason;
-
-    // INV-05: when a transition actually happened (wall clock, display zone). Defaults to the moment the dialog
-    // opened; left untouched it means "now", so an ordinary change is stored exactly as before.
-    private DateTime? _when;
-    private DateTime? _whenDefault;
-    private string? _reopenReason;
-    private Severity _newSeverity = Severity.Medium;
-    private string? _severityReason;
-    private string _assignUserId = "";
-    private CaseAssignmentRole _assignRole = CaseAssignmentRole.Analyst;
-    private string? _legalContact;
-    private string? _holdReleaseReason;   // F-12
+    // RD-27: the open action dialog and what's been typed into it (one for the page's life, so a cancelled dialog's
+    // text is still there when it's reopened), and a close-out in progress.
+    private readonly CaseActionDraft _action = new();
+    private readonly CloseOutDraft _closeOut = new();
 
     // S-21: the view-only note — which role(s) the user has, what they can still do here, and who can change the case.
     private string ViewOnlyText
@@ -536,47 +524,13 @@ else
     }
 
     // S-08: need-to-know restriction.
-    private string? _restrictReason;
     private bool _canViewRestricted;
-    private string _clearanceNote = "";
 
     /// <summary>The IC or a cleared role may lift a restriction (mirrors CaseRestrictionPolicy.CanLift).</summary>
     private bool CanLiftRestriction => _canViewAll || _canViewRestricted
         || (_case is not null && string.Equals(_case.IncidentCommander, _myId, StringComparison.Ordinal));
 
-    /// <summary>Whether the current user would still see the case once restricted (else the service adds them).</summary>
-    private bool RestrictKeepsMe => CanLiftRestriction
-        || (_case?.Assignments.Any(a => string.Equals(a.UserId, _myId, StringComparison.Ordinal)) ?? false);
 
-    // PROD-11: supersede-as-duplicate modal state.
-    private Guid? _supersedeTargetId;
-    private string? _supersedeTargetNumber;
-    private string? _supersedeQuery;
-    private string? _supersedeReason;
-    private bool _supersedeCopy = true;
-    private IReadOnlyList<LinkableCase> _supersedeResults = [];
-    private IReadOnlyList<CaseLinkView> _supersedeLinked = [];
-    private string? _closeAfterSupersede;
-
-    private void PickSupersedeTarget(Guid id, string number)
-    {
-        _supersedeTargetId = id;
-        _supersedeTargetNumber = number;
-    }
-
-    private async Task SearchSupersede() =>
-        _supersedeResults = await Cases.SearchLinkableCasesAsync(Id, _supersedeQuery, take: 8);
-    private string? _legalNote;
-    // REL-02: optimistic-concurrency baselines captured when the Legal-referral / materiality modal opens,
-    // sent back on apply so a concurrent edit surfaces a StaleEditException instead of silently clobbering.
-    private string? _legalBaseline;
-    private string? _materialityBaseline;
-    // Materiality determination (PROD-18). Recorded by any case editor (FR-07); the decision itself may be
-    // the SOC's or an external Legal/committee call, captured in the decision-maker field either way.
-    private MaterialityStatus _materialityStatus = MaterialityStatus.UnderReview;
-    private string? _materialityDecisionMaker;
-    private DateTime? _materialityDecidedOn;
-    private string? _materialityRationale;
 
     // Timeline: the tab is extracted to CaseTimelineTab (UX-13), which owns its composer/edit state + its
     // Investigation EasyMDE editor. The parent keeps a ref for hotkey dispatch (Ctrl+Enter submit).
@@ -607,9 +561,7 @@ else
     // Retention guard message for legal-hold / archive actions (not notes).
     private string? _retentionMsg;
 
-    // Workspace chrome: action modals and per-action permissions.
-    private string? _activeModal;
-    private string? _modalError;
+    // Workspace chrome: per-action permissions.
     private bool _canReclassify;
     private bool _canManageLegal;
     private bool _canAdmin;
@@ -867,7 +819,7 @@ else
         // under a reused component (e.g. following an "also in" cross-case link) while the active tab
         // stays the same, so always reload the active tab's data rather than only on a tab-name change.
         // RD-11: a different case opens on its default view.
-        if (_partsFor != Id) _closeOutOpen = false;   // RD-14: a close-out draft belongs to its case
+        if (_partsFor != Id) _closeOut.Discard();   // RD-14: a close-out draft belongs to its case
         var tab = ResolvePart(QTab) ?? (_partsFor != Id ? DefaultPart() : _activeTab);
         _partsFor = Id;
         await SetTab(tab);
@@ -926,9 +878,9 @@ else
             await AccessLog.RecordCaseOpenAsync(_case.Id, _case.CaseNumber, _case.IsRestricted);
             _isPinned = await Shortcuts.IsPinnedAsync(_case.Id); // PROD-20: header star + palette action state
         }
-        _newClass = _case?.Classification ?? Classification.Incident;
-        _newPhase = _case?.Phase ?? CasePhase.Triage;
-        _newSeverity = _case?.Severity ?? Severity.Medium;
+        _action.NewClass = _case?.Classification ?? Classification.Incident;
+        _action.NewPhase = _case?.Phase ?? CasePhase.Triage;
+        _action.NewSeverity = _case?.Severity ?? Severity.Medium;
         // PROD-07: headline regulatory-notification deadline for the header badge (null when the feature is off).
         _notifyDeadlines = _case is null ? null : await Deadlines.EvaluateAsync(Id);
         // Readiness is computed here and passed to CaseOverviewTab for the stage-readiness card.
@@ -1012,56 +964,57 @@ else
     private async Task OpenModal(string name)
     {
         if (_case is null) return;
-        _activeModal = name;
-        _modalError = null;
+        var a = _action;
+        a.Name = name;
+        a.Error = null;
         // Reclassifying is almost always an escalation, so the picker starts on the next rung up (the first rung
         // for a Complex Event); a Breach, the top, starts on itself. Picking a lower rung is still one change.
-        _newClass = _case.Classification switch
+        a.NewClass = _case.Classification switch
         {
             null => Classification.AdverseEvent,
             Classification.AdverseEvent => Classification.Incident,
             Classification.Incident => Classification.Breach,
             var c => c.Value,
         };
-        _newSeverity = _case.Severity;
-        _newPhase = _case.Phase;
-        _when = _whenDefault = UtcToWall(Clock.UtcNow);
+        a.NewSeverity = _case.Severity;
+        a.NewPhase = _case.Phase;
+        a.Transition.Reset(WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone));
 
-        if (name == "holdrelease") _holdReleaseReason = null;   // don't carry a cancelled attempt's text over
+        if (name == "holdrelease") a.HoldReleaseReason = null;   // don't carry a cancelled attempt's text over
         if (name == "handoff")
         {
-            _hoPeople = await Cases.MentionableAsync(Id);
+            a.HandoffPeople = await Cases.MentionableAsync(Id);
             PrefillHandoff();
         }
 
         if (name is "restrict" or "unrestrict")
         {
-            _restrictReason = null;
+            a.RestrictReason = null;
             var roles = await Cases.GetRestrictedClearanceRolesAsync();
-            _clearanceNote = roles.Count > 0
+            a.ClearanceNote = roles.Count > 0
                 ? $"Only its incident commander, the people assigned to it and anyone with {Ui.RolePhrase(roles)} can open it."
                 : "Only its incident commander and the people assigned to it can open it.";
         }
 
         if (name == "supersede")
         {
-            _supersedeTargetId = null; _supersedeTargetNumber = null; _supersedeQuery = null; _supersedeReason = null;
-            _supersedeCopy = true; _supersedeResults = [];
+            a.SupersedeTargetId = null; a.SupersedeTargetNumber = null; a.SupersedeQuery = null; a.SupersedeReason = null;
+            a.SupersedeCopy = true; a.SupersedeResults = [];
             // Cases already linked to this one are the likely "keep" candidates (a DuplicateOf link first).
-            _supersedeLinked = (await Cases.GetCaseLinksAsync(Id))
+            a.SupersedeLinked = (await Cases.GetCaseLinksAsync(Id))
                 .OrderByDescending(l => l.Type == CaseLinkType.DuplicateOf && l.Outgoing).ToList();
         }
 
         // Open the assign form clean (a prior cancelled attempt may have left a stale selection).
-        if (name == "assign") { _assignUserId = ""; _assignRole = CaseAssignmentRole.Analyst; }
+        if (name == "assign") { a.AssignUserId = ""; a.AssignRole = CaseAssignmentRole.Analyst; }
 
         // REL-02: prefill the Legal-referral form from the current referral (edit-in-place) and capture the
         // optimistic-concurrency baseline, so a concurrent referral edit isn't silently overwritten.
         if (name == "legal")
         {
-            _legalContact = _case.LegalReferral.ReferredToContact;
-            _legalNote = _case.LegalReferral.RegulatoryRelevanceNote;
-            _legalBaseline = _case.LegalReferralConcurrencyStamp();
+            a.LegalContact = _case.LegalReferral.ReferredToContact;
+            a.LegalNote = _case.LegalReferral.RegulatoryRelevanceNote;
+            a.LegalBaseline = _case.LegalReferralConcurrencyStamp();
         }
 
         // Prefill the materiality form from the current determination (edit-in-place); default a fresh one
@@ -1069,37 +1022,20 @@ else
         if (name == "materiality")
         {
             var m = _case.Materiality;
-            _materialityStatus = m.Status == MaterialityStatus.Undetermined ? MaterialityStatus.UnderReview : m.Status;
-            _materialityDecisionMaker = m.DecisionMaker;
-            _materialityDecidedOn = m.DecidedOnUtc?.UtcDateTime.Date;
-            _materialityRationale = m.Rationale;
-            _materialityBaseline = _case.MaterialityConcurrencyStamp(); // REL-02: optimistic-concurrency baseline
+            a.MaterialityStatus = m.Status == MaterialityStatus.Undetermined ? MaterialityStatus.UnderReview : m.Status;
+            a.MaterialityDecisionMaker = m.DecisionMaker;
+            a.MaterialityDecidedOn = m.DecidedOnUtc?.UtcDateTime.Date;
+            a.MaterialityRationale = m.Rationale;
+            a.MaterialityBaseline = _case.MaterialityConcurrencyStamp(); // REL-02: optimistic-concurrency baseline
         }
 
-        _attested.Clear();
-        _gateOverride = null;
-        _gateEval = name switch
+        a.Transition.UseGate(name switch
         {
-            "reclass" => await LoadGateAsync(ReclassTrigger()),
-            "status" => await LoadGateAsync(StatusTrigger()),
+            "reclass" => await LoadGateAsync(CaseFlowGates.Reclassify(_case, a.NewClass)),
+            "status" => await LoadGateAsync(CaseFlowGates.Phase(_case, a.NewPhase)),
             _ => null
-        };
+        });
     }
-
-    // --- Stage gates (C-07) ---
-    private GateEvaluation? _gateEval;
-    private readonly HashSet<Guid> _attested = new();
-    private string? _gateOverride;
-
-    /// <summary>The gate governing the reclassify modal's currently-selected target (escalations only).</summary>
-    private StageGateTrigger? ReclassTrigger() =>
-        _case is not null && (_case.Classification is null || _newClass > _case.Classification)
-            ? StageGateTriggers.ForClassification(_newClass) : null;
-
-    /// <summary>The Close gate when the status modal's selected phase is Closed.</summary>
-    private StageGateTrigger? StatusTrigger() =>
-        _case is { Phase: not CasePhase.Closed } && _newPhase == CasePhase.Closed
-            ? StageGateTrigger.CloseCase : null;
 
     private async Task<GateEvaluation?> LoadGateAsync(StageGateTrigger? trigger)
     {
@@ -1109,439 +1045,53 @@ else
         return eval.GateExists ? eval : null;
     }
 
-    private async Task OnReclassTargetChanged()
+    // The reclassify or phase dialog's target changed: its gate applies (RD-14: closing has a view of its own).
+    private async Task TargetChanged(string which)
     {
-        _attested.Clear();
-        _gateOverride = null;
-        _gateEval = await LoadGateAsync(ReclassTrigger());
-    }
-
-    private async Task OnStatusTargetChanged()
-    {
-        // RD-14: closing has a view of its own.
-        if (_activeModal == "status" && _newPhase == CasePhase.Closed && _case is { Phase: not CasePhase.Closed })
+        if (_case is null) return;
+        if (which == "status" && _action.Name == "status" && _action.NewPhase == CasePhase.Closed && _case.Phase != CasePhase.Closed)
         {
             await OpenCloseOut();
             return;
         }
-        _attested.Clear();
-        _gateOverride = null;
-        _gateEval = await LoadGateAsync(StatusTrigger());
-        if (Closing) await PrepareClosingAsync();
+        _action.Transition.UseGate(await LoadGateAsync(which == "reclass"
+            ? CaseFlowGates.Reclassify(_case, _action.NewClass)
+            : CaseFlowGates.Phase(_case, _action.NewPhase)));
     }
 
-    // --- HR-01: closing records an outcome and the closing brief ---
-    private bool Closing => _activeTab == "Closeout" && _newPhase == CasePhase.Closed && _case is { Phase: not CasePhase.Closed };
-
-    // --- RD-14: the close-out view ---
-    private bool _closeOutOpen;   // a close-out draft exists (its tab stays in the bar until it's closed or discarded)
-
+    // --- RD-14: the close-out view (CaseCloseOut); its draft lives here so it survives looking elsewhere ---
     private async Task OpenCloseOut()
     {
         if (_case is null || _case.Phase == CasePhase.Closed || !_canEdit) return;
-        _activeModal = null;
-        _modalError = null;
-        if (!_closeOutOpen)
-        {
-            _when = _whenDefault = UtcToWall(Clock.UtcNow);
-            _attested.Clear();
-            _gateOverride = null;
-            _closeOutOpen = true;
-        }
-        _newPhase = CasePhase.Closed;
-        _gateEval = await LoadGateAsync(StageGateTrigger.CloseCase);
-        await PrepareClosingAsync();
+        _action.Name = null;
+        _action.Error = null;
+        _closeOut.Begin(WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone));
+        _closeOut.Transition.Gate = await LoadGateAsync(StageGateTrigger.CloseCase);   // ticks and override stay
+        _closeOut.Outcomes = await Outcomes.ListActiveAsync();
+        _closeOut.Prefill(_case);
         await SetTab("Closeout");
     }
 
     private async Task LeaveCloseOut(bool discard)
     {
-        if (discard)
-        {
-            _closeOutOpen = false;
-            _closePrefilledFor = null;
-            _closeAiReply = null;
-        }
-        _modalError = null;
+        if (discard) _closeOut.Discard();
+        _closeOut.Error = null;
         await SetTab(DefaultPart());
     }
 
-    private async Task CloseFromView()
+    private async Task ClosedFromView(string done)
     {
-        _modalError = null;
-        _newPhase = CasePhase.Closed;   // a dialog opened meanwhile may have moved it
-        try
-        {
-            if (await ApplyStatusAsync() is not { } done) return;
-            _closeOutOpen = false;
-            await Reload();
-            Toasts.Success(done);
-            await SetTab("Briefing");
-        }
-        catch (ForbiddenException)
-        {
-            OnForbidden();
-            Toasts.Error(PermissionLostMessage);
-        }
-        catch (GateNotSatisfiedException ex) { _modalError = ex.Message; }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { _modalError = ex.Message; }
+        await Reload();
+        Toasts.Success(done);
+        await SetTab("Briefing");
     }
 
-    // A phase change from the dialog, or the close from the close-out view. Null when the input is refused.
-    private async Task<string?> ApplyStatusAsync()
-    {
-        if (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
-        { _modalError = "Enter an override justification for the unmet requirements."; return null; }
-        if (GateRationaleError(Closing ? _closeConclusion : _phaseReason) is { } m2) { _modalError = m2; return null; }
-        var closing = Closing ? new CaseService.CaseClosing(_closeOutcome ?? "", Linked(_closeSummary) ?? "", Linked(_closeConclusion) ?? "") : null;
-        await Cases.ChangePhaseAsync(Id, _newPhase, closing is null ? _phaseReason : null,
-            _attested.Count > 0 ? _attested : null, _gateOverride, EffectiveUtc(), closing: closing);
-        _phaseReason = null;
-        if (closing is not null) _closePrefilledFor = null;
-        return closing is null ? $"Phase changed to {Ui.Label(_newPhase)}"
-            : $"Case closed: {_outcomes.FirstOrDefault(o => o.Key == closing.OutcomeKey)?.Label ?? closing.OutcomeKey}";
-    }
-
-    private bool StatusApplyDisabled => (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
-        || GateRationaleError(Closing ? _closeConclusion : _phaseReason) is not null
-        || _when is null || (Backdated && !Closing && string.IsNullOrWhiteSpace(_phaseReason))
-        || (Closing && (string.IsNullOrWhiteSpace(_closeOutcome) || string.IsNullOrWhiteSpace(_closeSummary)
-                        || string.IsNullOrWhiteSpace(_closeConclusion)));
-    private List<IncidentManager.Application.Admin.CaseOutcomeView> _outcomes = [];
-    private string? _closeOutcome, _closeSummary, _closeConclusion;
-    private readonly Dictionary<string, string> _closeRefs = new(StringComparer.Ordinal);
-
-    private string? Linked(string? text) => _case is null ? text
-        : IncidentManager.Application.Content.TagText.FromEditable(text, _closeRefs, _case.Entities.Select(e => (e.Id, e.Label, e.Value)));
-    private Guid? _closePrefilledFor;
     private IReadOnlyDictionary<string, string> _outcomeLabels = new Dictionary<string, string>();
-    private string OutcomeLabel(string key) =>
-        _outcomeLabels.GetValueOrDefault(key) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(key);
-
-    private async Task PrepareClosingAsync()
-    {
-        _outcomes = await Outcomes.ListActiveAsync();
-        if (_case is null || _closePrefilledFor == _case.Id) return;
-        // Start from the current brief, so the analyst edits what's there into the conclusion instead of retyping it.
-        var brief = _case.Briefs.FirstOrDefault(b => b.IsCurrent);
-        // Entity tags and evidence citations show as [[name]] in the plain boxes, and turn back into links on save.
-        _closeRefs.Clear();
-        _closeSummary = IncidentManager.Application.Content.TagText.ToEditable(brief?.Summary ?? _case.Summary, _closeRefs);
-        _closeConclusion = IncidentManager.Application.Content.TagText.ToEditable(brief?.WorkingAssessment, _closeRefs);
-        _closeOutcome = null;
-        _closePrefilledFor = _case.Id;
-    }
-
-    // RD-14: the close-out view. The closing brief and the outcome on the left; readiness, when, warnings and the
-    // act on the right. Its draft stays while you look at the rest of the case (the "Close-out" tab returns to it).
-    private RenderFragment CloseOutView() => @<text>
-        <div class="im-co">
-            <div class="im-co-head">
-                <div>
-                    <h2 class="im-co-h">Close the case</h2>
-                    <p class="im-co-lede">The outcome, what happened and the conclusion become the closing version of the brief and the
-                        report's summary. Nothing is saved until you close.</p>
-                </div>
-                <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="() => LeaveCloseOut(false)">Keep the draft and go back</button>
-            </div>
-            <div class="im-co-grid">
-                <div class="im-co-main">
-                    <fieldset class="im-co-outcomes">
-                        <legend class="form-label small">Outcome <span class="text-muted">(required)</span></legend>
-                        @foreach (var o in _outcomes)
-                        {
-                            <label class="im-co-outcome @(_closeOutcome == o.Key ? "is-on" : "")">
-                                <input type="radio" name="co-outcome" value="@o.Key" checked="@(_closeOutcome == o.Key)" @onchange="() => _closeOutcome = o.Key" />
-                                <span class="im-co-outcome-label">@o.Label</span>
-                                @if (o.Description is { Length: > 0 } d) { <span class="im-co-outcome-desc">@d</span> }
-                            </label>
-                        }
-                    </fieldset>
-                    <label class="form-label small mt-3" for="ws-close-summary">What happened <span class="text-muted">(required · the case summary, printed in the report)</span></label>
-                    <textarea id="ws-close-summary" class="form-control im-rec mb-2" rows="5" maxlength="@CaseBrief.MaxPartLength"
-                              @bind="_closeSummary" @bind:event="oninput"></textarea>
-                    <label class="form-label small" for="ws-close-conclusion">Conclusion <span class="text-muted">(required · what the team concluded, and on what basis; was the working assessment)</span></label>
-                    <textarea id="ws-close-conclusion" class="form-control im-rec mb-1" rows="4" maxlength="@CaseBrief.MaxPartLength"
-                              placeholder="e.g. Account takeover with preparation for payment fraud. No other user affected; no payment made."
-                              @bind="_closeConclusion" @bind:event="oninput"></textarea>
-                    @RationaleHint(_closeConclusion)
-                    <div class="small text-muted mb-3">Saved as the brief's closing version. Known and the open questions carry over. <code>[[name]]</code> tags an entity.</div>
-                    @ClosingQuestions()
-                    @* HR-18: bring-your-own AI. CaseBook only builds the prompt and reads the reply back; the analyst runs it in
-                       their organisation's approved tool and edits what it fills in. Nothing is saved until the case closes. *@
-                    <details class="im-ai-draft mt-3">
-                        <summary class="small">Draft these with your own AI tool</summary>
-                        <div class="small text-muted mt-1">
-                            Copies a prompt holding this case's record (the brief, the timeline, verdicts and task results) for your
-                            organisation's approved AI tool. CaseBook sends nothing anywhere. Paste the reply below and it fills in
-                            <em>What happened</em>, <em>Conclusion</em> and the outcome, for you to check and edit.
-                        </div>
-                        @if (_case?.IsRestricted == true)
-                        {
-                            <div class="small text-warning mt-1"><span class="bi bi-lock-fill" aria-hidden="true"></span> This case is restricted to need-to-know. Use a tool approved for that, or write the brief yourself.</div>
-                        }
-                        <button type="button" class="btn btn-sm btn-outline-secondary mt-2" @onclick="CopyClosingPrompt"><span class="bi bi-clipboard me-1" aria-hidden="true"></span>Copy closing-brief prompt</button>
-                        <label class="form-label small mt-2 mb-0" for="ws-close-ai">The AI's reply</label>
-                        <textarea id="ws-close-ai" class="form-control form-control-sm" rows="3" @bind="_closeAiReply" @bind:event="oninput"
-                                  placeholder="WHAT HAPPENED: … CONCLUSION: … OUTCOME: …"></textarea>
-                        <button type="button" class="btn btn-sm btn-outline-primary mt-1" disabled="@string.IsNullOrWhiteSpace(_closeAiReply)" @onclick="UseClosingDraft">Fill in from this reply</button>
-                    </details>
-                </div>
-                <aside class="im-co-side" aria-label="Readiness and closing">
-                    <section class="im-co-card">
-                        <h3 class="im-cap">Readiness</h3>
-                        @if (_gateEval is null)
-                        {
-                            <p class="small text-muted mb-0">No checks are set for closing a case at this rung.</p>
-                        }
-                        @GateModalSection()
-                    </section>
-                    <section class="im-co-card">
-                        <h3 class="im-cap">When it closed</h3>
-                        @WhenItHappened()
-                        @NotificationWarning()
-                        @OpenTasksWarning()
-                    </section>
-                    <section class="im-co-card">
-                        <h3 class="im-cap">After closing</h3>
-                        <p class="small mb-0">Closing doesn't lock the case. Anything recorded afterwards is kept, marked as after closure, and
-                            shown on the case and in its audit trail. Reopen it if the work resumes.</p>
-                    </section>
-                    @if (_modalError is { } coErr)
-                    {
-                        <div class="alert alert-danger small py-2 mb-0" role="alert">@coErr</div>
-                    }
-                    <button type="button" class="btn btn-primary" disabled="@StatusApplyDisabled" @onclick="CloseFromView">Close the case</button>
-                    <button type="button" class="btn btn-link btn-sm text-danger p-0" @onclick="() => LeaveCloseOut(true)">Discard the draft</button>
-                </aside>
-            </div>
-        </div>
-    </text>;
-
-    // --- HR-18: the closing-brief prompt for the analyst's own AI tool ---
-    private string? _closeAiReply;
-
-    private async Task CopyClosingPrompt()
-    {
-        if (_case is null) return;
-        var labels = _case.Entities.ToDictionary(e => e.Id, e => string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!);
-        var narrative = IncidentManager.Application.Lessons.CaseNarrative.Draft(_case, id => labels.GetValueOrDefault(id), s => SevLabels.For(s), Clock.UtcNow);
-        var prompt = IncidentManager.Application.Cases.ClosingBriefPrompt.Build(_case, narrative,
-            _outcomes.Select(o => new IncidentManager.Application.Cases.ClosingOutcomeOption(o.Key, o.Label, o.Description)).ToList(),
-            _taskResults, id => Users.DisplayFor(id));
-        try
-        {
-            await JS.InvokeVoidAsync("navigator.clipboard.writeText", prompt);
-            Toasts.Success("Prompt copied. Paste it into your approved AI tool, then paste its reply here.");
-        }
-        catch (JSException)
-        {
-            Toasts.Error("Couldn't copy the prompt to the clipboard.");
-        }
-    }
-
-    private void UseClosingDraft()
-    {
-        var draft = IncidentManager.Application.Cases.ClosingBriefPrompt.Parse(_closeAiReply, _outcomes.Select(o => o.Key));
-        if (draft.WhatHappened is null && draft.Conclusion is null)
-        {
-            _modalError = "That reply has no \"WHAT HAPPENED:\" or \"CONCLUSION:\" part. Paste the AI's whole reply.";
-            return;
-        }
-        _modalError = null;
-        if (draft.WhatHappened is { } what) _closeSummary = what;
-        if (draft.Conclusion is { } conclusion) _closeConclusion = conclusion;
-        if (draft.OutcomeKey is { } key && string.IsNullOrEmpty(_closeOutcome)) _closeOutcome = key;
-        _closeAiReply = null;
-        Toasts.Success("Filled in from the reply. Check and edit it before closing.");
-    }
-
-    // The brief's open questions and whether each has an answer (HR-02), so a conclusion that rests on an unanswered
-    // question is visible before closing. Advisory: the analyst can answer it on the Tasks tab or close anyway.
-    private RenderFragment ClosingQuestions() => @<text>
-        @{
-            var brief = _case?.Briefs.FirstOrDefault(b => b.IsCurrent);
-            var questions = brief is null ? null : IncidentManager.Application.Cases.CaseNext.Questions(brief.OpenQuestions);
-        }
-        @if (questions is { Count: > 0 })
-        {
-            <div class="small fw-semibold mb-1">Open questions</div>
-            <ul class="im-close-q">
-                @foreach (var q in questions)
-                {
-                    var title = Md.ToPlainText(q).Replace('\n', ' ').Trim();
-                    var task = _case!.ActionItems.Where(t => t.RaisedFromBriefId is not null && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase))
-                        .OrderByDescending(t => t.Status == ActionItemStatus.Done).ThenByDescending(t => t.CreatedAtUtc).FirstOrDefault();
-                    var answered = task is { Status: ActionItemStatus.Done } && _taskResults.ContainsKey(task.Id);
-                    <li class="@(answered ? "im-close-q-ok" : "im-close-q-open")">
-                        <span>@title</span>
-                        @if (answered)
-                        {
-                            <span class="d-block text-muted">@IncidentManager.Application.Cases.TaskResults.Excerpt(_taskResults[task!.Id].Text)</span>
-                        }
-                        else
-                        {
-                            <span class="d-block">No answer recorded. Answer it on the Tasks tab, or say in the conclusion why it doesn't matter.</span>
-                        }
-                    </li>
-                }
-            </ul>
-        }
-    </text>;
-
-    private void ToggleAttest(Guid id, bool on)
-    {
-        if (on) _attested.Add(id); else _attested.Remove(id);
-    }
-
-    private IReadOnlyList<GateRequirementResult> UnmetBlocking =>
-        _gateEval?.UnmetBlocking(_attested) ?? Array.Empty<GateRequirementResult>();
-
-    private bool NeedsOverride => UnmetBlocking.Count > 0;
-
-    // A gate may require a minimum-length rationale — enforced on the transition reason, and on the
-    // override justification when the move is being forced through. Returns an error message, or null.
-    private string? GateRationaleError(string? reason)
-    {
-        if (_gateEval is not { RequiresCommentary: true } g) return null;
-        var min = g.CommentaryMinLength;
-        if ((reason?.Trim().Length ?? 0) < min)
-            return $"Record a reason of at least {min} characters to pass this gate.";
-        if (NeedsOverride && (_gateOverride?.Trim().Length ?? 0) < min)
-            return $"The override justification needs at least {min} characters.";
-        return null;
-    }
-
-    // The gate readiness + override block shared by the reclassify and close-status modals.
-    private RenderFragment GateModalSection() => @<text>
-        @if (_gateEval is { } g)
-        {
-            <div class="mt-3">
-                <GateChecklist Eval="g" Attested="_attested" OnChanged="StateHasChanged" OnFix="FixGateItem" />
-                @if (NeedsOverride)
-                {
-                    <div class="alert alert-warning small mt-2 mb-1 py-2">
-                        <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
-                        @{ var toTick = UnmetBlocking.Count(r => r.Kind == GateRequirementKind.Attestation); var toFix = UnmetBlocking.Count - toTick; }
-                        @UnmetBlocking.Count required item@(UnmetBlocking.Count == 1 ? "" : "s") not met.
-                        @if (toFix == 0)
-                        {
-                            <span>Tick @(toTick == 1 ? "it" : "them") above if @(toTick == 1 ? "it's" : "they're") true, or enter an override justification to proceed anyway.</span>
-                        }
-                        else if (toTick > 0)
-                        {
-                            <span>Tick the statements above that are true. To proceed with anything still unmet, enter an override justification.</span>
-                        }
-                        else
-                        {
-                            <span>To proceed anyway, enter an override justification.</span>
-                        }
-                    </div>
-                    <input class="form-control form-control-sm" placeholder="Override justification (required)" aria-label="Override justification" @bind="_gateOverride" @bind:event="oninput" />
-                    @if (g.RequiresCommentary)
-                    {
-                        <div class="form-text @((_gateOverride?.Trim().Length ?? 0) < g.CommentaryMinLength ? "text-danger" : "text-success")">
-                            @(_gateOverride?.Trim().Length ?? 0) / @g.CommentaryMinLength characters
-                        </div>
-                    }
-                }
-            </div>
-        }
-    </text>;
-
-    // Live character counter shown under the transition reason when the active gate requires a
-    // minimum-length rationale (the reason is what gets recorded on the gate passage).
-    private RenderFragment RationaleHint(string? text) => @<text>
-        @if (_gateEval is { RequiresCommentary: true } g)
-        {
-            <div class="form-text @((text?.Trim().Length ?? 0) < g.CommentaryMinLength ? "text-danger" : "text-success")">
-                @(text?.Trim().Length ?? 0) / @g.CommentaryMinLength characters (saved with the gate record)
-            </div>
-        }
-    </text>;
-
-    // --- INV-05: when a transition happened ---
-    private RenderFragment WhenItHappened() => @<text>
-        <div class="mt-2">
-            <label class="form-label small mb-0" for="ws-when">When it happened (@TimeDisp.Label)</label>
-            <input id="ws-when" type="datetime-local" class="form-control form-control-sm" @bind="_when" @bind:event="oninput" />
-            <TimeNudges @bind-Value="_when" Now="@UtcToWall(Clock.UtcNow)" />
-            @if (_when is { } w && Math.Abs((w - UtcToWall(Clock.UtcNow)).TotalMinutes) >= 1)
-            {
-                @* INV-24: both times, side by side, before saving. *@
-                <div class="small text-muted">Recorded: now, @TimeDisp.Short(Clock.UtcNow)</div>
-            }
-            <div class="form-text @(Backdated ? "text-warning-emphasis" : "")">
-                @(Backdated
-                    ? "More than an hour ago, so give a reason. The record keeps both times: when it happened and when you entered it."
-                    : "Leave as now, or set the time it actually happened if you're recording it later.")
-            </div>
-        </div>
-    </text>;
-
-    // INV-43: closing with a notification clock still running. Stated whatever the close gate requires: closing
-    // doesn't answer the notification (the dashboard and reminders keep watching), but it should never be a surprise.
-    private RenderFragment NotificationWarning() => @<text>
-        @if (_newPhase == CasePhase.Closed && _case?.Phase != CasePhase.Closed
-             && _notifyDeadlines?.Headline is { IsActive: true } nh)
-        {
-            <div class="alert alert-danger py-2 px-3 small mt-2 mb-0" role="status">
-                <div class="fw-semibold">No notification recorded for @nh.JurisdictionLabel</div>
-                <div>It's due @(nh.DueAtUtc is { } due ? TimeDisp.Short(due) : "now"). Closing the case doesn't stop the clock:
-                    the dashboard and the reminders keep tracking it until the reported time is recorded.</div>
-            </div>
-        }
-    </text>;
-
-    // INV-13: moving forward, list the tasks still open for the phases being left behind (or every open task when
-    // closing). A warning only: the analyst can advance anyway, and the tasks stay open.
-    private RenderFragment OpenTasksWarning() => @<text>
-        @{ var open = OpenTasksBehind(); }
-        @if (open.Count > 0)
-        {
-            <div class="alert alert-warning py-2 px-3 small mt-2 mb-0" role="status">
-                <div class="fw-semibold mb-1">@IncidentManager.Application.Common.Plural.Of(open.Count, "task") still open</div>
-                <ul class="mb-1 ps-3">
-                    @foreach (var t in open.Take(5))
-                    {
-                        <li>@t.Title <span class="text-muted">· @CaseTabs.CaseTasksTab.KindLabel(t.Kind)@(string.IsNullOrWhiteSpace(t.Owner) ? "" : $" · {Users.DisplayFor(t.Owner)}")</span></li>
-                    }
-                </ul>
-                @if (open.Count > 5) { <div class="text-muted">…and @(open.Count - 5) more.</div> }
-                <div class="text-muted">You can continue anyway. They stay open.</div>
-            </div>
-        }
-    </text>;
-
-    private List<ActionItem> OpenTasksBehind()
-    {
-        if (_case is null || _newPhase <= _case.Phase) return [];
-        return _case.ActionItems
-            .Where(t => t.IsOpen && (_newPhase == CasePhase.Closed || (t.Kind.Phase() is { } p && p < _newPhase)))
-            .OrderBy(t => t.Kind).ThenBy(t => t.DueAtUtc)
-            .ToList();
-    }
-
-    /// <summary>The chosen time as UTC, or null when the analyst left it at the default (it happened now).</summary>
-    private DateTimeOffset? EffectiveUtc() =>
-        _when is { } w && w != _whenDefault ? WallToUtc(w) : null;
-
-    private bool Backdated => CaseService.IsBackdated(EffectiveUtc(), Clock.UtcNow);
-
-    private DateTimeOffset WallToUtc(DateTime wall)
-    {
-        var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
-        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, TimeDisp.Zone), TimeSpan.Zero); }
-        catch { return new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
-    }
-
-    private DateTime UtcToWall(DateTimeOffset utc)
-        => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
 
     private void CloseModal()
     {
-        _activeModal = null;
-        _modalError = null;
+        _action.Name = null;
+        _action.Error = null;
     }
 
     // Generic confirm for destructive removes: capture a message + the action to run on confirm.
@@ -1601,11 +1151,11 @@ else
         if (_confirm is not null) CancelConfirm();
         else if (_confirmLeaveOpen) CancelLeave();
         else if (_previewShotId is not null) CloseShot();
-        else if (_activeModal is not null) CloseModal();
+        else if (_action.Name is not null) CloseModal();
     }
 
     // UX-01: whether any of the three trap modals is currently open (drives arm/release in OnAfterRenderAsync).
-    private bool AnyTrapModalOpen => _confirm is not null || _previewShotId is not null || (_activeModal is not null && !IsSheet) || _confirmLeaveOpen
+    private bool AnyTrapModalOpen => _confirm is not null || _previewShotId is not null || (_action.Name is not null && !_action.IsSheet) || _confirmLeaveOpen
         || _panelEntity is not null || _panelEvidence is not null;
     private bool _modalTrapArmed;
     private string? _revealedTab;
@@ -1624,438 +1174,35 @@ else
         }
     }
 
-    // The action form (header, fields, Cancel/apply), shown in the dialog or, for RD-15's transitions, the sheet.
-    private RenderFragment ActionForm() => @<text>
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="im-action-title">@ModalTitle()</h5>
-                        <button type="button" class="btn-close" aria-label="Close" @onclick="CloseModal"></button>
-                    </div>
-                    <div class="modal-body">
-                        @if (_activeModal == "reclass")
-                        {
-                            @if (_case?.Classification is null)
-                            {
-                                <p class="small text-muted mb-2">This <strong>Complex Event</strong> hasn't been triaged yet. Promoting it gives it its first formal classification.</p>
-                            }
-                            <label class="form-label small" for="ws-reclass-to">@(_case?.Classification is null ? "Promote to" : "New classification")</label>
-                            <select id="ws-reclass-to" class="form-select mb-2" @bind="_newClass" @bind:after="OnReclassTargetChanged">@foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }</select>
-                            <label class="form-label small" for="ws-reclass-reason">Reason <span class="text-muted">(required)</span></label>
-                            <input id="ws-reclass-reason" class="form-control" placeholder="e.g. new evidence confirms data was exfiltrated" @bind="_reclassReason" @bind:event="oninput" />
-                            @RationaleHint(_reclassReason)
-                            @WhenItHappened()
-                            @GateModalSection()
-                        }
-                        else if (_activeModal == "handoff")
-                        {
-                            @* INV-15: a structured handoff, prefilled from the record; edit freely. *@
-                            <label class="form-label small mb-0" for="ws-ho-to">Hand the case to</label>
-                            <select id="ws-ho-to" class="form-select form-select-sm mb-2" @bind="_hoTo">
-                                <option value="">Choose a person…</option>
-                                @* INV-37: only people who can see the case (on a restricted one: its IC, team and cleared roles). *@
-                                @foreach (var u in _hoPeople.OrderBy(u => u.DisplayName))
-                                {
-                                    <option value="@u.UserId">@u.DisplayName</option>
-                                }
-                            </select>
-                            <label class="form-label small mb-0" for="ws-ho-state">Where it stands</label>
-                            <textarea id="ws-ho-state" class="form-control form-control-sm mb-2" rows="3" @bind="_hoState" @bind:event="oninput"></textarea>
-                            <label class="form-label small mb-0" for="ws-ho-done">Done since the last handoff</label>
-                            <textarea id="ws-ho-done" class="form-control form-control-sm mb-2" rows="3" @bind="_hoDone" @bind:event="oninput"></textarea>
-                            <label class="form-label small mb-0" for="ws-ho-open">Still open</label>
-                            <textarea id="ws-ho-open" class="form-control form-control-sm mb-2" rows="3" @bind="_hoOpen" @bind:event="oninput"></textarea>
-                            <label class="form-label small mb-0" for="ws-ho-watch">Watch for <span class="text-muted">(optional)</span></label>
-                            <textarea id="ws-ho-watch" class="form-control form-control-sm mb-2" rows="2" @bind="_hoWatch" @bind:event="oninput"
-                                      placeholder="e.g. if the other two users' sign-ins show new locations, re-open the scope with Privacy"></textarea>
-                            <div class="form-check small">
-                                <input class="form-check-input" type="checkbox" id="ws-ho-post" @bind="_hoPost" />
-                                <label class="form-check-label" for="ws-ho-post">Email it to them</label>
-                            </div>
-                            <div class="form-check small">
-                                <input class="form-check-input" type="checkbox" id="ws-ho-tasks" @bind="_hoTasks" />
-                                <label class="form-check-label" for="ws-ho-tasks">Give them my open tasks on this case (@MyOpenTaskCount)</label>
-                            </div>
-                            <p class="small text-muted mt-2 mb-0">Recorded on the timeline as a handoff.</p>
-                        }
-                        else if (_activeModal == "severity")
-                        {
-                            <label class="form-label small" for="ws-severity">New severity</label>
-                            <select id="ws-severity" class="form-select mb-2" @bind="_newSeverity">@foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@SevLabels.For(s)</option> }</select>
-                            var raising = _case is { } sc && _newSeverity > sc.Severity;
-                            <input class="form-control" maxlength="500" placeholder="@(raising ? "Why is it going up? (required)" : Backdated ? "Reason (required when recording later)" : "Reason (optional)")" aria-label="Reason" @bind="_severityReason" @bind:event="oninput" />
-                            @WhenItHappened()
-                        }
-                        else if (_activeModal == "status")
-                        {
-                            <label class="form-label small" for="ws-status">New status</label>
-                            <select id="ws-status" class="form-select mb-2" @bind="_newPhase" @bind:after="OnStatusTargetChanged">@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
-                            <label class="form-label small" for="ws-status-reason">@(_case is { } cs && _newPhase > cs.Phase ? "What was achieved" : "Reason") <span class="text-muted">@(_gateEval is { RequiresCommentary: true } || Backdated ? "(required)" : "(optional)")</span></label>
-                            <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="_phaseReason" @bind:event="oninput" />
-                            @RationaleHint(_phaseReason)
-                            @WhenItHappened()
-                            @NotificationWarning()
-                            @OpenTasksWarning()
-                            @GateModalSection()
-                        }
-                        else if (_activeModal == "supersede")
-                        {
-                            <p class="small text-muted mb-2">Marks this case as a duplicate of the one work continues on, links the two and adds a
-                                note to both. You then close this case as usual.</p>
-                            <label class="form-label small mb-1" for="ws-supersede-query">Case to keep</label>
-                            @if (_supersedeTargetId is not null)
-                            {
-                                <div class="alert alert-info py-1 px-2 small d-flex align-items-center gap-2 mb-2">
-                                    <span>Keeping <code>@_supersedeTargetNumber</code></span>
-                                    <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick="() => _supersedeTargetId = null">Change</button>
-                                </div>
-                            }
-                            else
-                            {
-                                @foreach (var l in _supersedeLinked)
-                                {
-                                    <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" @onclick="() => PickSupersedeTarget(l.OtherCaseId, l.OtherCaseNumber)">
-                                        <span class="bi bi-link-45deg" aria-hidden="true"></span> @l.OtherCaseNumber <span class="text-muted">(@Ui.CaseLinkLabel(l.Type, l.Outgoing))</span>
-                                    </button>
-                                }
-                                <div class="input-group input-group-sm mb-1">
-                                    <input id="ws-supersede-query" class="form-control" placeholder="Search by case number or title" @bind="_supersedeQuery" @bind:event="oninput"
-                                           @onkeydown="@(async e => { if (e.Key == "Enter") await SearchSupersede(); })" />
-                                    <button type="button" class="btn btn-outline-secondary" @onclick="SearchSupersede">Search</button>
-                                </div>
-                                @foreach (var r in _supersedeResults)
-                                {
-                                    <button type="button" class="btn btn-sm btn-link d-block text-start p-0 mb-1" @onclick="() => PickSupersedeTarget(r.Id, r.CaseNumber)">
-                                        <code>@r.CaseNumber</code> <span class="text-muted">@r.Title</span>
-                                    </button>
-                                }
-                            }
-                            <div class="form-check mt-2">
-                                <input class="form-check-input" type="checkbox" id="supersede-copy" @bind="_supersedeCopy" />
-                                <label class="form-check-label small" for="supersede-copy">Copy this case's indicators to the kept case (ones already there are skipped)</label>
-                            </div>
-                            <label class="form-label small mt-2" for="supersede-reason">Why it's a duplicate</label>
-                            <textarea id="supersede-reason" class="form-control" rows="2" @bind="_supersedeReason" @bind:event="oninput"
-                                      placeholder="e.g. Same phishing wave; the user report and the SIEM alert were filed separately"></textarea>
-                        }
-                        else if (_activeModal == "restrict")
-                        {
-                            <p class="small mb-2">Restricting limits who can see this case. Once restricted:</p>
-                            <ul class="small mb-2">
-                                <li>@_clearanceNote</li>
-                                <li>It disappears for everyone else: case lists, search, My Work, dashboards, the indicator and ATT&amp;CK
-                                    views, and exports.</li>
-                                <li>Assigning someone later gives them access, and removing them takes it away.</li>
-                                <li>Opening it, or downloading its evidence or reports, is flagged at a higher severity in the SIEM stream.</li>
-                            </ul>
-                            @if (!RestrictKeepsMe)
-                            {
-                                <div class="alert alert-info py-1 px-2 small mb-2">You'll be added to the case team as an analyst so you keep access.</div>
-                            }
-                            <label class="form-label small" for="restrict-reason">Reason <span class="text-muted">(optional, recorded in the audit trail)</span></label>
-                            <textarea id="restrict-reason" class="form-control" rows="2" maxlength="1000" @bind="_restrictReason" @bind:event="oninput"
-                                      placeholder="e.g. Insider investigation involving a named employee; HR and counsel only"></textarea>
-                        }
-                        else if (_activeModal == "unrestrict")
-                        {
-                            <p class="small mb-2">Lifting the restriction opens this case to <strong>everyone with case access</strong>. It will show up in
-                                their case lists, search, dashboards and exports.</p>
-                            <label class="form-label small" for="unrestrict-reason">Reason</label>
-                            <textarea id="unrestrict-reason" class="form-control" rows="2" maxlength="1000" @bind="_restrictReason" @bind:event="oninput"
-                                      placeholder="e.g. Counsel confirmed the case no longer needs to be restricted"></textarea>
-                        }
-                        else if (_activeModal == "holdrelease")
-                        {
-                            @if (Cases.LegalHoldReleaseNeedsSecondApprover)
-                            {
-                                <p class="small text-muted mb-2">Two-person control is on, so this sends a release request. The hold stays in force
-                                    until someone else with Manage Legal approves it from the case.</p>
-                            }
-                            else
-                            {
-                                <p class="small mb-2">Once released, the case is no longer exempt from your retention policy and an administrator
-                                    can archive it. Release it only after counsel confirms preservation is no longer required.</p>
-                            }
-                            <label class="form-label small" for="hold-release-reason">Reason</label>
-                            <textarea id="hold-release-reason" class="form-control" rows="3" maxlength="1000" @bind="_holdReleaseReason" @bind:event="oninput"
-                                      placeholder="e.g. Litigation settled; counsel confirmed preservation is no longer required"></textarea>
-                        }
-                        else if (_activeModal == "legal")
-                        {
-                            <label class="form-label small" for="legal-contact">Legal contact <span class="text-muted">(optional)</span></label>
-                            <input id="legal-contact" class="form-control mb-2" placeholder="Name or team" @bind="_legalContact" />
-                            <label class="form-label small" for="legal-note">Regulatory relevance <span class="text-muted">(optional)</span></label>
-                            <input id="legal-note" class="form-control" placeholder="e.g. NY NPI" @bind="_legalNote" />
-                        }
-                        else if (_activeModal == "materiality")
-                        {
-                            <p class="small text-muted mb-2">Record <strong>who</strong> made the call (the SOC, Legal / Privacy or a disclosure committee), when, and why.
-                                A final determination needs all three. An Incident or Breach can't close while this is open.</p>
-                            <WhyThisMatters Class="mb-2">
-                                A determination can start disclosure clocks (for SEC registrants, a Form 8-K is due within four business days),
-                                and your notification deadlines may count from it. The record shows the call was made deliberately and on time.
-                            </WhyThisMatters>
-                            <label class="form-label small" for="ws-mat-status">Determination</label>
-                            <select id="ws-mat-status" class="form-select mb-2" @bind="_materialityStatus">
-                                <option value="@MaterialityStatus.UnderReview">Under review (with Legal / committee)</option>
-                                <option value="@MaterialityStatus.Material">Material</option>
-                                <option value="@MaterialityStatus.NotMaterial">Not material</option>
-                            </select>
-                            <label class="form-label small" for="ws-mat-maker">Decision-maker <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-                            <input id="ws-mat-maker" class="form-control mb-2" placeholder="e.g. Disclosure Committee, General Counsel" @bind="_materialityDecisionMaker" />
-                            <label class="form-label small" for="ws-mat-date">Decision date <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-                            <input id="ws-mat-date" type="date" class="form-control mb-2" @bind="_materialityDecidedOn" />
-                            <label class="form-label small" for="ws-mat-rationale">Rationale <span class="text-muted">@(MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-                            <textarea id="ws-mat-rationale" class="form-control" rows="2" placeholder="Why the case is or isn't material" @bind="_materialityRationale"></textarea>
-                        }
-                        else if (_activeModal == "archive")
-                        {
-                            <p class="mb-0">Archive <code>@_case.CaseNumber</code>? It's hidden from active queues and can be restored later.</p>
-                        }
-                        else if (_activeModal == "reopen")
-                        {
-                            <p class="small text-muted mb-2">Reopen <code>@_case.CaseNumber</code>? It returns to the phase it was in before closing and the closure time is cleared. Closing it again re-runs the close gate.</p>
-                            <label class="form-label small" for="ws-reopen-reason">Reason <span class="text-muted">(required)</span></label>
-                            <input id="ws-reopen-reason" class="form-control" placeholder="Why is this case being reopened?" @bind="_reopenReason" @bind:event="oninput" />
-                        }
-                        else if (_activeModal == "assign")
-                        {
-                            @if (AssignableUsers() is { Count: 0 })
-                            {
-                                <p class="text-muted small mb-0">There's no one in the directory to assign.</p>
-                            }
-                            else
-                            {
-                                <label class="form-label small" for="ws-assign-user">Person</label>
-                                <select id="ws-assign-user" class="form-select mb-2" @bind="_assignUserId" @bind:after="OnAssignUserChanged">
-                                    <option value="">Select a person…</option>
-                                    @foreach (var u in AssignableUsers())
-                                    {
-                                        var current = CurrentRole(u.UserId);
-                                        <option value="@u.UserId">@u.DisplayName@(current is { } r ? $" (now {Ui.Label(r)})" : "")</option>
-                                    }
-                                </select>
-                                @if (_case.IsRestricted)
-                                {
-                                    <p class="small text-muted mb-2"><span class="bi bi-lock-fill" aria-hidden="true"></span> This case is restricted:
-                                        assigning someone gives them access to it.</p>
-                                }
-                                <label class="form-label small" for="ws-assign-role">Role on this case</label>
-                                <select id="ws-assign-role" class="form-select" @bind="_assignRole">
-                                    @foreach (var r in Enum.GetValues<CaseAssignmentRole>())
-                                    {
-                                        <option value="@r">@Ui.Label(r)</option>
-                                    }
-                                </select>
-                            }
-                        }
-                        @if (_modalError is not null) { <p class="text-danger small mt-2 mb-0">@_modalError</p> }
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-outline-secondary" @onclick="CloseModal">Cancel</button>
-                        <button class="@(_activeModal == "archive" ? "btn btn-danger" : "btn btn-primary")" @onclick="ApplyModal" disabled="@ModalPrimaryDisabled()">@ModalPrimaryLabel()</button>
-                    </div>
-    </text>;
+    // The action dialog (CaseActionForm), shown in the modal or, for RD-15's transitions, the sheet.
+    private RenderFragment ActionDialog() => __builder =>
+    {
+        <CaseActionForm Case="_case!" D="_action" Access="Access" Notify="_notifyDeadlines" OnClose="CloseModal"
+                        OnTargetChanged="TargetChanged" OnApplied="ActionApplied" OnForbidden="ActionForbidden" OnStale="Reload" OnFix="FixGateItem" />
+    };
 
-    // RD-15: promoting, reclassifying and changing severity or phase open as a sheet under the header, so the case
-    // (its record, its readiness in Next) stays in view while the change is made. Not a modal: nothing is blocked.
-    private bool IsSheet => _activeModal is "reclass" or "severity" or "status";
     private bool _sheetShown;
 
-    private string ModalTitle() => _activeModal switch
+    private async Task ActionApplied((string Done, string? CloseReason) result)
     {
-        "reclass" => _case?.Classification is null ? "Promote onto the ladder" : "Reclassify case",
-        "severity" => "Change severity",
-        "handoff" => "Hand off the case",
-        "status" => "Change phase",
-        "legal" => "Refer to Legal / Privacy",
-        "holdrelease" => Cases.LegalHoldReleaseNeedsSecondApprover ? "Request legal hold release" : "Release legal hold",
-        "supersede" => "Supersede as a duplicate",
-        "restrict" => "Restrict to need-to-know",
-        "unrestrict" => "Lift restriction",
-        "materiality" => "Record materiality determination",
-        "archive" => "Archive case",
-        "assign" => "Assign someone to this case",
-        "reopen" => "Reopen case",
-        _ => ""
-    };
+        _action.Name = null;
+        await Reload();
+        if (result.Done.Length > 0) Toasts.Success(result.Done);
+        // PROD-11: after superseding, hand straight to the close-out, closing as a duplicate with the reason as its conclusion.
+        if (result.CloseReason is { } closeReason)
+        {
+            await AdvanceTo(CasePhase.Closed);
+            if (_closeOut.Outcomes.Any(o => o.Key == IncidentManager.Application.Admin.CaseOutcomeCatalog.Duplicate))
+                _closeOut.Outcome = IncidentManager.Application.Admin.CaseOutcomeCatalog.Duplicate;
+            _closeOut.Conclusion = closeReason;
+        }
+    }
 
-    /// <summary>Whether the materiality picker's current selection is a final call (needs full provenance).</summary>
-    private bool MaterialityIsFinal => _materialityStatus is MaterialityStatus.Material or MaterialityStatus.NotMaterial;
-
-    private string ModalPrimaryLabel() => _activeModal switch
+    // REL-08: access was revoked since the case loaded: close the dialog, demote the UI and explain.
+    private void ActionForbidden()
     {
-        "archive" => "Archive",
-        "assign" => CurrentRole(_assignUserId) is null ? "Assign" : "Change role",
-        "reopen" => "Reopen",
-        "holdrelease" => Cases.LegalHoldReleaseNeedsSecondApprover ? "Request release" : "Release hold",
-        "supersede" => "Supersede",
-        "handoff" => "Hand off",
-        "restrict" => "Restrict",
-        "unrestrict" => "Lift restriction",
-        _ => "Apply"
-    };
-
-    // Keep the primary disabled until required input is present. FR-14: the predicate mirrors the on-click
-    // validation in ApplyModal exactly, so the button is disabled precisely when a submit would be rejected
-    // — no modal leaves "Apply" enabled only to error on click. (The on-click checks stay as a safety net.)
-    private bool ModalPrimaryDisabled() => _activeModal switch
-    {
-        "assign" => string.IsNullOrEmpty(_assignUserId) || CurrentRole(_assignUserId) == _assignRole,
-        "reopen" => string.IsNullOrWhiteSpace(_reopenReason),
-        "holdrelease" => string.IsNullOrWhiteSpace(_holdReleaseReason),
-        "supersede" => _supersedeTargetId is null || string.IsNullOrWhiteSpace(_supersedeReason),
-        "unrestrict" => string.IsNullOrWhiteSpace(_restrictReason),
-        // A final call needs decision-maker, date and rationale; "Under review" needs none of them.
-        "materiality" => _materialityStatus is MaterialityStatus.Material or MaterialityStatus.NotMaterial
-            && (string.IsNullOrWhiteSpace(_materialityDecisionMaker) || _materialityDecidedOn is null
-                || string.IsNullOrWhiteSpace(_materialityRationale)),
-        // Reclass always needs a reason; both gated modals need an override justification when a blocking
-        // requirement is unmet, and a long-enough rationale when the gate requires commentary.
-        "reclass" => string.IsNullOrWhiteSpace(_reclassReason) || _when is null
-            || (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
-            || GateRationaleError(_reclassReason) is not null,
-        "status" => StatusApplyDisabled,
-        "severity" => _when is null || ((Backdated || (_case is { } sv && _newSeverity > sv.Severity)) && string.IsNullOrWhiteSpace(_severityReason)),   // HR-11
-        "handoff" => string.IsNullOrWhiteSpace(_hoTo) || string.IsNullOrWhiteSpace(_hoState),
-        _ => false
-    };
-
-    private async Task ApplyModal()
-    {
-        _modalError = null;
-        try
-        {
-            string done;
-            switch (_activeModal)
-            {
-                case "reclass":
-                    if (string.IsNullOrWhiteSpace(_reclassReason)) { _modalError = "Enter a reason."; return; }
-                    if (NeedsOverride && string.IsNullOrWhiteSpace(_gateOverride))
-                    { _modalError = "Enter an override justification for the unmet requirements."; return; }
-                    if (GateRationaleError(_reclassReason) is { } m1) { _modalError = m1; return; }
-                    await Cases.ReclassifyAsync(Id, _newClass, _reclassReason,
-                        _attested.Count > 0 ? _attested : null, _gateOverride, EffectiveUtc());
-                    _reclassReason = "";
-                    done = $"Reclassified to {Ui.Label(_newClass)}";
-                    break;
-                case "handoff":
-                {
-                    var body = HandoffBody();
-                    var moved = await Cases.HandOffAsync(Id, _hoTo!, body, _hoTasks, notify: _hoPost);
-                    var toName = Users.DisplayFor(_hoTo);
-                    done = $"Handed off to {toName}" + (moved > 0 ? $" · {IncidentManager.Application.Common.Plural.Of(moved, "task")} reassigned" : "");
-                    break;
-                }
-                case "severity":
-                    await Cases.ChangeSeverityAsync(Id, _newSeverity, _severityReason, EffectiveUtc());
-                    _severityReason = null;
-                    done = $"Severity changed to {SevLabels.For(_newSeverity)}";
-                    break;
-                case "status":
-                    if (await ApplyStatusAsync() is not { } changed) return;
-                    done = changed;
-                    break;
-                case "supersede":
-                {
-                    var res = await Cases.SupersedeAsync(Id, _supersedeTargetId!.Value, _supersedeCopy, _supersedeReason ?? "");
-                    _closeAfterSupersede = $"Duplicate of {res.PrimaryCaseNumber}: {_supersedeReason?.Trim()}";
-                    done = $"Superseded by {res.PrimaryCaseNumber}" + (_supersedeCopy ? $" · {IncidentManager.Application.Common.Plural.Of(res.IndicatorsCopied, "indicator")} copied" : "")
-                           + ". Close this case to finish.";
-                    break;
-                }
-                case "restrict":
-                    await Cases.SetRestrictedAsync(Id, true, _restrictReason);
-                    _restrictReason = null;
-                    done = "Case restricted to need-to-know";
-                    break;
-                case "unrestrict":
-                    if (string.IsNullOrWhiteSpace(_restrictReason)) { _modalError = "Enter a reason for lifting the restriction."; return; }
-                    await Cases.SetRestrictedAsync(Id, false, _restrictReason);
-                    _restrictReason = null;
-                    done = "Restriction lifted";
-                    break;
-                case "holdrelease" when Cases.LegalHoldReleaseNeedsSecondApprover:
-                    await Cases.RequestLegalHoldReleaseAsync(Id, _holdReleaseReason ?? "");
-                    _holdReleaseReason = null;
-                    done = "Release requested. Someone else with Manage Legal must approve it.";
-                    break;
-                case "holdrelease":
-                    await Cases.SetLegalHoldAsync(Id, false, _holdReleaseReason);
-                    _holdReleaseReason = null;
-                    done = "Legal hold released";
-                    break;
-                case "legal":
-                    await Cases.ReferToLegalAsync(Id, _legalContact, _legalNote, _legalBaseline);
-                    done = "Referred to Legal / Privacy";
-                    break;
-                case "materiality":
-                    DateTimeOffset? decidedOn = _materialityDecidedOn is { } d
-                        ? new DateTimeOffset(DateTime.SpecifyKind(d.Date, DateTimeKind.Utc)) : null;
-                    await Cases.RecordMaterialityAsync(Id, _materialityStatus, _materialityDecisionMaker, decidedOn,
-                        _materialityRationale, _materialityBaseline);
-                    done = $"Materiality recorded: {Ui.Label(_materialityStatus)}";
-                    break;
-                case "archive":
-                    await Cases.SetArchivedAsync(Id, true);
-                    done = "Case archived";
-                    break;
-                case "reopen":
-                    if (string.IsNullOrWhiteSpace(_reopenReason)) { _modalError = "Enter a reason."; return; }
-                    await Cases.ReopenAsync(Id, _reopenReason);
-                    _reopenReason = "";
-                    done = "Case reopened";
-                    break;
-                case "assign":
-                    if (string.IsNullOrWhiteSpace(_assignUserId)) { _modalError = "Select a person to assign."; return; }
-                    var assignName = Users.Resolve(_assignUserId)?.DisplayName ?? _assignUserId;
-                    var wasOn = CurrentRole(_assignUserId) is not null;
-                    await Cases.AssignAsync(Id, _assignUserId, assignName, _assignRole);
-                    done = wasOn ? $"{assignName} is now {Ui.Label(_assignRole)}" : $"Assigned {assignName}";
-                    _assignUserId = "";
-                    _assignRole = CaseAssignmentRole.Analyst;
-                    break;
-                default:
-                    done = "";
-                    break;
-            }
-            _activeModal = null;
-            await Reload();
-            if (done.Length > 0) Toasts.Success(done);
-            // PROD-11: after superseding, hand straight to the gated close step with the reason filled in.
-            if (_closeAfterSupersede is { } closeReason)
-            {
-                _closeAfterSupersede = null;
-                await AdvanceTo(CasePhase.Closed);
-                // HR-01: a superseded case closes as a duplicate, with the reason as its conclusion.
-                if (_outcomes.Any(o => o.Key == IncidentManager.Application.Admin.CaseOutcomeCatalog.Duplicate))
-                    _closeOutcome = IncidentManager.Application.Admin.CaseOutcomeCatalog.Duplicate;
-                _closeConclusion = closeReason;
-            }
-        }
-        catch (ForbiddenException)
-        {
-            // REL-08: access was revoked since the case loaded — close the modal, demote the UI, and explain.
-            _activeModal = null;
-            OnForbidden();
-            Toasts.Error(PermissionLostMessage);
-        }
-        catch (GateNotSatisfiedException ex)
-        {
-            _modalError = ex.Message;
-        }
-        catch (StaleEditException ex)
-        {
-            // REL-02: another author changed the referral / materiality while this modal was open. Keep the
-            // modal open with the user's entries intact, refresh the rest of the workspace to the newer values,
-            // and re-baseline so a deliberate re-apply overwrites (mirrors the details/impact editors, FR-06).
-            if (_activeModal == "legal") _legalBaseline = ex.CurrentStamp;
-            else if (_activeModal == "materiality") _materialityBaseline = ex.CurrentStamp;
-            _modalError = ex.Message + " Your entries weren't saved. Review the current values, then select Apply again to overwrite them, or Cancel to discard yours.";
-            await Reload();
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-        {
-            _modalError = ex.Message;
-        }
+        _action.Name = null;
+        Forbidden();
     }
 
     private CasePhase? NextPhase() => CaseFlow.NextPhase(_case);
@@ -2065,8 +1212,8 @@ else
         // Every advance goes through the status dialog (FR-01 for Close's gate; INV-05 for the rest), so the
         // analyst records what was achieved and, when entering it after the fact, when it actually happened.
         await OpenModal("status");
-        _newPhase = phase;
-        await OnStatusTargetChanged(); // load the gate (if any) for the selected target
+        _action.NewPhase = phase;
+        await TargetChanged("status"); // load the gate (if any) for the selected target
     }
 
     // HR-10: a finished Contain/Eradicate/Recover task's result becomes what was achieved; the analyst still reviews and
@@ -2074,8 +1221,8 @@ else
     private async Task AdvanceWithResult((CasePhase Phase, string Achieved, DateTimeOffset? At) offer)
     {
         await AdvanceTo(offer.Phase);
-        _phaseReason = offer.Achieved;
-        if (offer.At is { } at) _when = UtcToWall(at);
+        _action.PhaseReason = offer.Achieved;
+        if (offer.At is { } at) _action.Transition.When = WallClock.ToWall(at, TimeDisp.Zone);
     }
 
 
@@ -2113,60 +1260,31 @@ else
         _ => null
     };
 
-    // --- INV-15: structured handoff ---
-    private string? _hoTo;
-    private string? _hoState;
-    private string? _hoDone;
-    private string? _hoOpen;
-    private string? _hoWatch;
-    private bool _hoPost = true;
-    private IReadOnlyList<IncidentManager.Application.Abstractions.UserSummary> _hoPeople = [];
-    private bool _hoTasks = true;
-
-    private int MyOpenTaskCount => _case?.ActionItems.Count(t => t.IsOpen
-        && string.Equals(t.Owner, _myId, StringComparison.OrdinalIgnoreCase)) ?? 0;
-
-    // Prefilled from the record: the brief's situation (or the summary), what was logged since the last handoff,
-    // and the open tasks. The analyst edits it before handing off.
+    // --- INV-15: structured handoff, prefilled from the record: the brief's situation (or the summary), what was logged
+    // since the last handoff, and the open tasks. The analyst edits it before handing off.
     private void PrefillHandoff()
     {
         if (_case is null) return;
-        _hoTo = null;
-        _hoWatch = null;
-        _hoPost = true;
-        _hoTasks = true;
-        _hoState = _case.Summary;   // INV-36: the summary is the brief's first part
+        var a = _action;
+        a.HandoffTo = null;
+        a.HandoffWatch = null;
+        a.HandoffEmail = true;
+        a.HandoffTasks = true;
+        a.HandoffState = _case.Summary;   // INV-36: the summary is the brief's first part
         // INV-21: the team's work and response milestones, not the adversary's steps.
-        _hoDone = HandoffDraft.DoneSince(_case, new MilestoneLabels(
+        a.HandoffDone = HandoffDraft.DoneSince(_case, new MilestoneLabels(
             c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m)), OneLine);
         // INV-25: the same "next" list the brief and the context panel show.
         var open = CaseNext.Open(_case, Clock.UtcNow)
             .Select(t => $"- {t.Title}" + (string.IsNullOrWhiteSpace(t.Owner) ? "" : $" ({Users.DisplayFor(t.Owner)})"))
             .ToList();
-        _hoOpen = open.Count > 0 ? string.Join("\n", open) : null;
+        a.HandoffOpen = open.Count > 0 ? string.Join("\n", open) : null;
     }
 
     private string OneLine(string markdown)
     {
         var text = Md.ToPlainText(markdown).Replace('\n', ' ').Trim();
         return text.Length <= 140 ? text : text[..137] + "…";
-    }
-
-    // The handoff as Markdown: the same text goes on the timeline and, if chosen, in the email to the recipient.
-    private string HandoffBody()
-    {
-        var sb = new System.Text.StringBuilder();
-        sb.Append("**Handed to ").Append(Users.DisplayFor(_hoTo)).Append("**\n\n");
-        void Part(string label, string? text)
-        {
-            if (string.IsNullOrWhiteSpace(text)) return;
-            sb.Append("**").Append(label).Append("**\n\n").Append(text.Trim()).Append("\n\n");
-        }
-        Part("Where it stands", _hoState);
-        Part("Done since the last handoff", _hoDone);
-        Part("Still open", _hoOpen);
-        Part("Watch for", _hoWatch);
-        return sb.ToString().TrimEnd();
     }
 
     // --- INV-12 / RD-04: the Now/Next pane beside the tabs (wide screens) ---
@@ -2353,7 +1471,7 @@ else
     // what satisfies the check.
     private async Task FixGateItem(string checkKey)
     {
-        _activeModal = null;
+        _action.Name = null;
         switch (checkKey)
         {
             case GateCheckKeys.AtLeastOneEntity or GateCheckKeys.AtLeastOneMaliciousEntity or GateCheckKeys.EntitiesAssessed: await SetTab("Entities"); break;
@@ -2362,7 +1480,7 @@ else
             case GateCheckKeys.LessonsCaptured: await SetTab("Review"); break;
             case GateCheckKeys.IncidentCommanderAssigned:
                 await OpenModal("assign");
-                _assignRole = CaseAssignmentRole.IncidentCommander;
+                _action.AssignRole = CaseAssignmentRole.IncidentCommander;
                 break;
             case GateCheckKeys.MaterialityDetermined: await OpenModal("materiality"); break;
             case GateCheckKeys.AffectedIndividualsCountSet or GateCheckKeys.MinAffectedIndividuals
@@ -2419,20 +1537,6 @@ else
         }
     }
 
-    // Everyone in the directory: picking someone already on the case changes their role (e.g. an analyst
-    // taking over as incident commander), so the list marks their current role.
-    private List<UserSummary> AssignableUsers() => _case is null ? new List<UserSummary>() : Users.All().ToList();
-
-    private CaseAssignmentRole? CurrentRole(string userId) =>
-        _case?.Assignments.FirstOrDefault(a => string.Equals(a.UserId, userId, StringComparison.OrdinalIgnoreCase))?.Role;
-
-    // Picking someone already on the case starts from the role they'd most likely move to: the commander seat if
-    // it's what the dialog was opened for, otherwise their next step up.
-    private void OnAssignUserChanged()
-    {
-        if (CurrentRole(_assignUserId) is { } now && now == _assignRole)
-            _assignRole = now == CaseAssignmentRole.IncidentCommander ? CaseAssignmentRole.Analyst : CaseAssignmentRole.IncidentCommander;
-    }
 
     private async Task OpenShot(Guid evidenceId)
     {
@@ -2681,7 +1785,7 @@ else
         }
 
         // RD-15: a sheet opening brings itself into view and takes focus (it doesn't trap it).
-        if ((_activeModal is not null && IsSheet) != _sheetShown)
+        if ((_action.Name is not null && _action.IsSheet) != _sheetShown)
         {
             _sheetShown = !_sheetShown;
             if (_sheetShown)

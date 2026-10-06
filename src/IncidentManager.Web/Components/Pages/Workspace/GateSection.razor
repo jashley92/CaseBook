@@ -1,0 +1,46 @@
+@* The stage gate's readiness and, when something required is unmet, the override justification (C-07; RD-27:
+   extracted from CaseWorkspace). Shared by the reclassify and phase dialogs and the close-out view. *@
+
+@if (Draft.Gate is { } g)
+{
+    <div class="mt-3">
+        <GateChecklist Eval="g" Attested="Draft.Attested" OnChanged="() => OnChanged.InvokeAsync()" OnFix="OnFix" />
+        @if (Draft.NeedsOverride)
+        {
+            var unmet = Draft.UnmetBlocking;
+            <div class="alert alert-warning small mt-2 mb-1 py-2">
+                <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>
+                @{ var toTick = unmet.Count(r => r.Kind == GateRequirementKind.Attestation); var toFix = unmet.Count - toTick; }
+                @unmet.Count required item@(unmet.Count == 1 ? "" : "s") not met.
+                @if (toFix == 0)
+                {
+                    <span>Tick @(toTick == 1 ? "it" : "them") above if @(toTick == 1 ? "it's" : "they're") true, or enter an override justification to proceed anyway.</span>
+                }
+                else if (toTick > 0)
+                {
+                    <span>Tick the statements above that are true. To proceed with anything still unmet, enter an override justification.</span>
+                }
+                else
+                {
+                    <span>To proceed anyway, enter an override justification.</span>
+                }
+            </div>
+            <input class="form-control form-control-sm" placeholder="Override justification (required)" aria-label="Override justification"
+                   @bind="Draft.Override" @bind:event="oninput" @bind:after="() => OnChanged.InvokeAsync()" />
+            @if (g.RequiresCommentary)
+            {
+                <div class="form-text @((Draft.Override?.Trim().Length ?? 0) < g.CommentaryMinLength ? "text-danger" : "text-success")">
+                    @(Draft.Override?.Trim().Length ?? 0) / @g.CommentaryMinLength characters
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public TransitionDraft Draft { get; set; } = null!;
+    /// <summary>A tick or the justification changed (the parent's apply button depends on them).</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>A check's "Fix": go to what satisfies it.</summary>
+    [Parameter] public EventCallback<string> OnFix { get; set; }
+}

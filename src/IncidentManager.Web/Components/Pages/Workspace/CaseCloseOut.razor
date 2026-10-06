@@ -1,0 +1,196 @@
+@* RD-14 (RD-27: extracted from CaseWorkspace): the close-out view. The closing brief and the outcome on the left;
+   readiness, when, warnings and the act on the right. Its draft (CloseOutDraft) belongs to the workspace, so it stays
+   while you look at the rest of the case: the "Close-out" tab returns to it. *@
+@inject CaseService Cases
+@inject IClock Clock
+@inject TimeDisplay TimeDisp
+@inject IJSRuntime JS
+@inject ToastService Toasts
+@inject ISeverityLabels SevLabels
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Content.IMarkdownService Md
+
+<div class="im-co">
+    <div class="im-co-head">
+        <div>
+            <h2 class="im-co-h">Close the case</h2>
+            <p class="im-co-lede">The outcome, what happened and the conclusion become the closing version of the brief and the
+                report's summary. Nothing is saved until you close.</p>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" @onclick="() => OnLeave.InvokeAsync(false)">Keep the draft and go back</button>
+    </div>
+    <div class="im-co-grid">
+        <div class="im-co-main">
+            <fieldset class="im-co-outcomes">
+                <legend class="form-label small">Outcome <span class="text-muted">(required)</span></legend>
+                @foreach (var o in Draft.Outcomes)
+                {
+                    <label class="im-co-outcome @(Draft.Outcome == o.Key ? "is-on" : "")">
+                        <input type="radio" name="co-outcome" value="@o.Key" checked="@(Draft.Outcome == o.Key)" @onchange="() => Draft.Outcome = o.Key" />
+                        <span class="im-co-outcome-label">@o.Label</span>
+                        @if (o.Description is { Length: > 0 } d) { <span class="im-co-outcome-desc">@d</span> }
+                    </label>
+                }
+            </fieldset>
+            <label class="form-label small mt-3" for="ws-close-summary">What happened <span class="text-muted">(required · the case summary, printed in the report)</span></label>
+            <textarea id="ws-close-summary" class="form-control im-rec mb-2" rows="5" maxlength="@CaseBrief.MaxPartLength"
+                      @bind="Draft.Summary" @bind:event="oninput"></textarea>
+            <label class="form-label small" for="ws-close-conclusion">Conclusion <span class="text-muted">(required · what the team concluded, and on what basis; was the working assessment)</span></label>
+            <textarea id="ws-close-conclusion" class="form-control im-rec mb-1" rows="4" maxlength="@CaseBrief.MaxPartLength"
+                      placeholder="e.g. Account takeover with preparation for payment fraud. No other user affected; no payment made."
+                      @bind="Draft.Conclusion" @bind:event="oninput"></textarea>
+            <RationaleHint Gate="Draft.Transition.Gate" Text="@Draft.Conclusion" />
+            <div class="small text-muted mb-3">Saved as the brief's closing version. Known and the open questions carry over. <code>[[name]]</code> tags an entity.</div>
+            @ClosingQuestions()
+            @* HR-18: bring-your-own AI. CaseBook only builds the prompt and reads the reply back; the analyst runs it in
+               their organisation's approved tool and edits what it fills in. Nothing is saved until the case closes. *@
+            <details class="im-ai-draft mt-3">
+                <summary class="small">Draft these with your own AI tool</summary>
+                <div class="small text-muted mt-1">
+                    Copies a prompt holding this case's record (the brief, the timeline, verdicts and task results) for your
+                    organisation's approved AI tool. CaseBook sends nothing anywhere. Paste the reply below and it fills in
+                    <em>What happened</em>, <em>Conclusion</em> and the outcome, for you to check and edit.
+                </div>
+                @if (Case.IsRestricted)
+                {
+                    <div class="small text-warning mt-1"><span class="bi bi-lock-fill" aria-hidden="true"></span> This case is restricted to need-to-know. Use a tool approved for that, or write the brief yourself.</div>
+                }
+                <button type="button" class="btn btn-sm btn-outline-secondary mt-2" @onclick="CopyClosingPrompt"><span class="bi bi-clipboard me-1" aria-hidden="true"></span>Copy closing-brief prompt</button>
+                <label class="form-label small mt-2 mb-0" for="ws-close-ai">The AI's reply</label>
+                <textarea id="ws-close-ai" class="form-control form-control-sm" rows="3" @bind="Draft.AiReply" @bind:event="oninput"
+                          placeholder="WHAT HAPPENED: … CONCLUSION: … OUTCOME: …"></textarea>
+                <button type="button" class="btn btn-sm btn-outline-primary mt-1" disabled="@string.IsNullOrWhiteSpace(Draft.AiReply)" @onclick="UseClosingDraft">Fill in from this reply</button>
+            </details>
+        </div>
+        <aside class="im-co-side" aria-label="Readiness and closing">
+            <section class="im-co-card">
+                <h3 class="im-cap">Readiness</h3>
+                @if (Draft.Transition.Gate is null)
+                {
+                    <p class="small text-muted mb-0">No checks are set for closing a case at this rung.</p>
+                }
+                <GateSection Draft="Draft.Transition" OnFix="OnFix" OnChanged="Changed" />
+            </section>
+            <section class="im-co-card">
+                <h3 class="im-cap">When it closed</h3>
+                <WhenItHappened Draft="Draft.Transition" OnChanged="Changed" />
+                <TransitionWarnings Case="Case" To="CasePhase.Closed" Notify="Notify" />
+            </section>
+            <section class="im-co-card">
+                <h3 class="im-cap">After closing</h3>
+                <p class="small mb-0">Closing doesn't lock the case. Anything recorded afterwards is kept, marked as after closure, and
+                    shown on the case and in its audit trail. Reopen it if the work resumes.</p>
+            </section>
+            @if (Draft.Error is { } coErr)
+            {
+                <div class="alert alert-danger small py-2 mb-0" role="alert">@coErr</div>
+            }
+            <button type="button" class="btn btn-primary" disabled="@Draft.CloseDisabled" @onclick="Close">Close the case</button>
+            <button type="button" class="btn btn-link btn-sm text-danger p-0" @onclick="() => OnLeave.InvokeAsync(true)">Discard the draft</button>
+        </aside>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter, EditorRequired] public CloseOutDraft Draft { get; set; } = null!;
+    [Parameter] public IReadOnlyDictionary<Guid, TaskResult> TaskResults { get; set; } = new Dictionary<Guid, TaskResult>();
+    [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
+    /// <summary>Back to the case: true discards the draft, false keeps it.</summary>
+    [Parameter] public EventCallback<bool> OnLeave { get; set; }
+    /// <summary>The case closed; the message says how.</summary>
+    [Parameter] public EventCallback<string> OnClosed { get; set; }
+    [Parameter] public EventCallback OnForbidden { get; set; }
+    [Parameter] public EventCallback<string> OnFix { get; set; }
+
+    // A child changed the draft (a tick, the justification, the time): re-render so Close reflects it.
+    private void Changed() { }
+
+    private async Task Close()
+    {
+        Draft.Error = null;
+        var t = Draft.Transition;
+        if (t.NeedsOverride && string.IsNullOrWhiteSpace(t.Override))
+        { Draft.Error = "Enter an override justification for the unmet requirements."; return; }
+        if (t.RationaleError(Draft.Conclusion) is { } m) { Draft.Error = m; return; }
+        var closing = new CaseService.CaseClosing(Draft.Outcome ?? "", Draft.Linked(Case, Draft.Summary) ?? "", Draft.Linked(Case, Draft.Conclusion) ?? "");
+        try
+        {
+            await Cases.ChangePhaseAsync(Case.Id, CasePhase.Closed, null,
+                t.Attested.Count > 0 ? t.Attested : null, t.Override, t.EffectiveUtc(TimeDisp.Zone), closing: closing);
+            var label = Draft.Outcomes.FirstOrDefault(o => o.Key == closing.OutcomeKey)?.Label ?? closing.OutcomeKey;
+            Draft.Discard();
+            await OnClosed.InvokeAsync($"Case closed: {label}");
+        }
+        catch (ForbiddenException) { await OnForbidden.InvokeAsync(); }
+        catch (GateNotSatisfiedException ex) { Draft.Error = ex.Message; }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Draft.Error = ex.Message; }
+    }
+
+    // --- HR-18: the closing-brief prompt for the analyst's own AI tool ---
+    private async Task CopyClosingPrompt()
+    {
+        var labels = Case.Entities.ToDictionary(e => e.Id, e => string.IsNullOrWhiteSpace(e.Label) ? e.Value : e.Label!);
+        var narrative = IncidentManager.Application.Lessons.CaseNarrative.Draft(Case, id => labels.GetValueOrDefault(id), s => SevLabels.For(s), Clock.UtcNow);
+        var prompt = ClosingBriefPrompt.Build(Case, narrative,
+            Draft.Outcomes.Select(o => new ClosingOutcomeOption(o.Key, o.Label, o.Description)).ToList(),
+            TaskResults, id => Users.DisplayFor(id));
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", prompt);
+            Toasts.Success("Prompt copied. Paste it into your approved AI tool, then paste its reply here.");
+        }
+        catch (JSException)
+        {
+            Toasts.Error("Couldn't copy the prompt to the clipboard.");
+        }
+    }
+
+    private void UseClosingDraft()
+    {
+        var draft = ClosingBriefPrompt.Parse(Draft.AiReply, Draft.Outcomes.Select(o => o.Key));
+        if (draft.WhatHappened is null && draft.Conclusion is null)
+        {
+            Draft.Error = "That reply has no \"WHAT HAPPENED:\" or \"CONCLUSION:\" part. Paste the AI's whole reply.";
+            return;
+        }
+        Draft.Error = null;
+        if (draft.WhatHappened is { } what) Draft.Summary = what;
+        if (draft.Conclusion is { } conclusion) Draft.Conclusion = conclusion;
+        if (draft.OutcomeKey is { } key && string.IsNullOrEmpty(Draft.Outcome)) Draft.Outcome = key;
+        Draft.AiReply = null;
+        Toasts.Success("Filled in from the reply. Check and edit it before closing.");
+    }
+
+    // The brief's open questions and whether each has an answer (HR-02), so a conclusion that rests on an unanswered
+    // question is visible before closing. Advisory: the analyst can answer it on the Tasks tab or close anyway.
+    private RenderFragment ClosingQuestions() => __builder =>
+    {
+        var brief = Case.Briefs.FirstOrDefault(b => b.IsCurrent);
+        var questions = brief is null ? null : CaseNext.Questions(brief.OpenQuestions);
+        if (questions is { Count: > 0 })
+        {
+            <div class="small fw-semibold mb-1">Open questions</div>
+            <ul class="im-close-q">
+                @foreach (var q in questions)
+                {
+                    var title = Md.ToPlainText(q).Replace('\n', ' ').Trim();
+                    var task = Case.ActionItems.Where(t => t.RaisedFromBriefId is not null && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(t => t.Status == ActionItemStatus.Done).ThenByDescending(t => t.CreatedAtUtc).FirstOrDefault();
+                    var answered = task is { Status: ActionItemStatus.Done } && TaskResults.ContainsKey(task.Id);
+                    <li class="@(answered ? "im-close-q-ok" : "im-close-q-open")">
+                        <span>@title</span>
+                        @if (answered)
+                        {
+                            <span class="d-block text-muted">@IncidentManager.Application.Cases.TaskResults.Excerpt(TaskResults[task!.Id].Text)</span>
+                        }
+                        else
+                        {
+                            <span class="d-block">No answer recorded. Answer it on the Tasks tab, or say in the conclusion why it doesn't matter.</span>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    };
+}

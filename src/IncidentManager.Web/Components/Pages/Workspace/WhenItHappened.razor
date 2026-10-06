@@ -1,0 +1,32 @@
+@* INV-05: when a transition happened, defaulting to now (RD-27: extracted from CaseWorkspace). INV-24: both times are
+   shown side by side before saving, and more than an hour back asks for a reason. *@
+@inject IClock Clock
+@inject TimeDisplay TimeDisp
+
+@{ var now = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone); var backdated = Draft.Backdated(TimeDisp.Zone, Clock.UtcNow); }
+<div class="mt-2">
+    <label class="form-label small mb-0" for="ws-when">When it happened (@TimeDisp.Label)</label>
+    <input id="ws-when" type="datetime-local" class="form-control form-control-sm" @bind="Draft.When" @bind:event="oninput" @bind:after="() => OnChanged.InvokeAsync()" />
+    <TimeNudges Value="Draft.When" ValueChanged="Nudged" Now="@now" />
+    @if (Draft.When is { } w && Math.Abs((w - now).TotalMinutes) >= 1)
+    {
+        <div class="small text-muted">Recorded: now, @TimeDisp.Short(Clock.UtcNow)</div>
+    }
+    <div class="form-text @(backdated ? "text-warning-emphasis" : "")">
+        @(backdated
+            ? "More than an hour ago, so give a reason. The record keeps both times: when it happened and when you entered it."
+            : "Leave as now, or set the time it actually happened if you're recording it later.")
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public TransitionDraft Draft { get; set; } = null!;
+    /// <summary>The time changed (the parent's reason requirement and apply button depend on it).</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private Task Nudged(DateTime? value)
+    {
+        Draft.When = value;
+        return OnChanged.InvokeAsync();
+    }
+}

@@ -1,0 +1,14 @@
+@* A live character count under a transition's reason when its gate requires a minimum-length rationale (the reason
+   is what's recorded on the gate passage). RD-27: extracted from CaseWorkspace. *@
+
+@if (Gate is { RequiresCommentary: true } g)
+{
+    <div class="form-text @((Text?.Trim().Length ?? 0) < g.CommentaryMinLength ? "text-danger" : "text-success")">
+        @(Text?.Trim().Length ?? 0) / @g.CommentaryMinLength characters (saved with the gate record)
+    </div>
+}
+
+@code {
+    [Parameter] public GateEvaluation? Gate { get; set; }
+    [Parameter] public string? Text { get; set; }
+}
