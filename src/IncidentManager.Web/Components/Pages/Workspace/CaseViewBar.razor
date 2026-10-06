@@ -1,0 +1,45 @@
+@* RD-11 (RD-27: extracted from CaseWorkspace): the case's views. The record and the things in it, the work, the
+   briefing built from them, then the paper (report, lessons, audit trail); a Close-out tab while a close-out draft
+   exists; and the button that hides or shows Now and Next. *@
+
+<ul class="nav nav-tabs im-workspace-tabs">
+    @for (var vi = 0; vi < CaseViews.All.Length; vi++)
+    {
+        var view = CaseViews.All[vi].View;
+        var digit = vi + 1;   // U-14: the digit shortcut for this view
+        @if (view == "Paper")
+        {
+            <li class="im-tab-sep" aria-hidden="true"></li>
+        }
+        <li class="nav-item">
+            <button class="nav-link @(Facts.ActiveView == view ? "active" : "") @(Facts.ViewQuiet(view) ? "im-tab-quiet" : "")" @onclick="() => OnSetView.InvokeAsync(view)"
+                    aria-current="@(Facts.ActiveView == view ? "page" : null)" title="@($"Shortcut: {digit}")">
+                @view@{ var tc = Facts.ViewCount(view); }@if (tc is { } cnt) { <span class="im-badge im-b-neutral ms-1 im-bump" @key="@($"{view}:{cnt}")">@cnt</span> }@if (Facts.ViewHasNew(view)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }@if (Facts.ViewWhy(view) is { } why) { <span class="im-tab-why">@why</span> }
+            </button>
+        </li>
+    }
+    @if (CloseOutOpen && Facts.Case.Phase != CasePhase.Closed)
+    {
+        <li class="nav-item">
+            <button class="nav-link im-tab-closeout @(Facts.ActiveTab == "Closeout" ? "active" : "")" aria-current="@(Facts.ActiveTab == "Closeout" ? "page" : null)" @onclick="() => OnOpenCloseOut.InvokeAsync()">
+                <span class="bi bi-check2-circle" aria-hidden="true"></span> Close-out
+            </button>
+        </li>
+    }
+    <li class="nav-item ms-auto im-rail-toggle" hidden="@(Facts.ActiveTab is "Briefing" or "Closeout")">
+        <button type="button" class="nav-link" aria-pressed="@Ui.Aria(RailOpen)" @onclick="() => OnToggleRail.InvokeAsync()"
+                title="@(RailOpen ? "Hide Now and Next" : "Show Now and Next")">
+            <span class="bi @(RailOpen ? "bi-layout-sidebar-inset-reverse" : "bi-layout-sidebar-reverse")" aria-hidden="true"></span>
+            <span class="visually-hidden">@(RailOpen ? "Hide" : "Show") Now and Next</span>
+        </button>
+    </li>
+</ul>
+
+@code {
+    [Parameter, EditorRequired] public CaseViewFacts Facts { get; set; } = null!;
+    [Parameter] public bool CloseOutOpen { get; set; }
+    [Parameter] public bool RailOpen { get; set; }
+    [Parameter] public EventCallback<string> OnSetView { get; set; }
+    [Parameter] public EventCallback OnOpenCloseOut { get; set; }
+    [Parameter] public EventCallback OnToggleRail { get; set; }
+}

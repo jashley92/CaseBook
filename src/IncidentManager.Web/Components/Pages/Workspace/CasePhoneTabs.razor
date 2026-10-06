@@ -1,0 +1,43 @@
+@* RD-25 (RD-27: extracted from CaseWorkspace): a case on a phone. Now · Record · Next · Things along the bottom, with
+   More for Tasks, Briefing and Paper. *@
+
+@{ var active = PhoneTab ?? (ActiveView is "Record" or "Things" ? ActiveView : "More"); }
+<nav class="im-phone-casetabs" aria-label="Case">
+    @if (_more)
+    {
+        <div class="im-phone-more" role="menu">
+            @foreach (var v in new[] { "Tasks", "Briefing", "Paper" })
+            {
+                var view = v;
+                <button type="button" role="menuitem" class="@(PhoneTab is null && ActiveView == v ? "active" : "")" @onclick="() => Go(view)">@v</button>
+            }
+        </div>
+    }
+    @foreach (var (tab, icon) in new[] { ("Now", "bi-lightbulb"), ("Record", "bi-clock-history"), ("Next", "bi-list-check"), ("Things", "bi-diagram-3") })
+    {
+        var t = tab;
+        <button type="button" class="@(active == t ? "active" : "")" aria-current="@(active == t ? "page" : null)" @onclick="() => Go(t)">
+            <span class="bi @icon" aria-hidden="true"></span><span>@t</span>
+        </button>
+    }
+    <button type="button" class="@(active == "More" ? "active" : "")" aria-expanded="@Ui.Aria(_more)" @onclick="() => _more = !_more">
+        <span class="bi bi-three-dots" aria-hidden="true"></span><span>More</span>
+    </button>
+</nav>
+
+@code {
+    /// <summary>The case's active view (Record, Things, Tasks, Briefing or Paper).</summary>
+    [Parameter] public string ActiveView { get; set; } = "Record";
+    /// <summary>"Now" or "Next" while one of those is showing; null when a view is.</summary>
+    [Parameter] public string? PhoneTab { get; set; }
+    /// <summary>Now, Next, or a view's name.</summary>
+    [Parameter] public EventCallback<string> OnGo { get; set; }
+
+    private bool _more;
+
+    private Task Go(string tab)
+    {
+        _more = false;
+        return OnGo.InvokeAsync(tab);
+    }
+}

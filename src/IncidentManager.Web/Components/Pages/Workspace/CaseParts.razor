@@ -1,0 +1,19 @@
+@* RD-11 (RD-27: extracted from CaseWorkspace): a view with more than one part lists them under the bar. *@
+
+@if (Facts.PartsShown(Facts.ActiveView) is { Count: > 1 } parts)
+{
+    <nav class="im-parts" aria-label="@Facts.ActiveView">
+        @foreach (var part in parts)
+        {
+            <button type="button" class="im-part @(part == Facts.ActiveTab ? "active" : "") @(Facts.TabQuiet(part) ? "is-quiet" : "")"
+                    aria-current="@(part == Facts.ActiveTab ? "page" : null)" @onclick="() => OnSetTab.InvokeAsync(part)">
+                @CaseViews.Label(part)@if (Facts.TabCount(part) is { } pc) { <span class="im-part-n">@pc</span> }@if (Facts.TabHasNew(part)) { <span class="tab-newdot" title="New activity from a collaborator" aria-label="New activity"></span> }@if (Facts.TabWhy(part) is { } pw) { <span class="im-tab-why">@pw</span> }
+            </button>
+        }
+    </nav>
+}
+
+@code {
+    [Parameter, EditorRequired] public CaseViewFacts Facts { get; set; } = null!;
+    [Parameter] public EventCallback<string> OnSetTab { get; set; }
+}
