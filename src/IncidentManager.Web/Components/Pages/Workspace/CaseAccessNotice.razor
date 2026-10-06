@@ -1,0 +1,54 @@
+@* RD-27 (extracted from CaseWorkspace): what the viewer can do on this case, said above the header when it isn't
+   everything. REL-07: the case was archived or restricted out from under a viewer holding unsaved text, so the
+   workspace is held for a copy-out. REL-08: their permission changed since it loaded. S-21: a view-only role. *@
+@inject NavigationManager Nav
+@inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
+
+@if (AccessLost)
+{
+    <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+        <span class="bi bi-exclamation-triangle-fill mt-1" aria-hidden="true"></span>
+        <div>
+            <div class="fw-semibold">This case was archived or your access to it changed while you had it open.</div>
+            <div class="small mb-0">Your unsaved text is still on screen. Copy anything you need now, because changes can no longer be saved to this case. <a href="cases">Back to cases</a>.</div>
+        </div>
+    </div>
+}
+else if (PermissionLost)
+{
+    <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+        <span class="bi bi-shield-lock mt-1" aria-hidden="true"></span>
+        <div>
+            <div class="fw-semibold">Your access to this case has changed.</div>
+            <div class="small mb-0">Some actions are no longer available to you.
+                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="() => Nav.NavigateTo(Nav.Uri, forceLoad: true)">Reload the page</button>
+                to refresh your view.</div>
+        </div>
+    </div>
+}
+else if (!Access.CanEdit)
+{
+    <div class="im-viewonly small mb-2" role="note">
+        <span class="bi bi-eye" aria-hidden="true"></span>
+        <span><strong>View only.</strong> @ViewOnlyText</span>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CaseAccess Access { get; set; } = CaseAccess.None;
+    [Parameter] public bool AccessLost { get; set; }
+    [Parameter] public bool PermissionLost { get; set; }
+
+    // S-21: which role(s) the user has, what they can still do here, and who can change the case.
+    private string ViewOnlyText
+    {
+        get
+        {
+            var roles = Ui.OrderRoles(CurrentUser.RoleNames).Select(Ui.RoleLabel).ToList();
+            var who = roles.Count switch { 0 => "Your access", 1 => $"Your role ({roles[0]})", _ => $"Your roles ({string.Join(", ", roles)})" };
+            var legal = Access.CanManageLegal ? " Legal actions (referral, legal hold) are in the Actions menu." : "";
+            return $"{who} can read this case and comment on its tasks, but can't edit it.{legal} " +
+                   "Ask the incident commander or an administrator if you need edit access.";
+        }
+    }
+}

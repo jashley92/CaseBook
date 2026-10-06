@@ -1,0 +1,77 @@
+@* RD-27 (extracted from CaseWorkspace): notices under the header. INV-04: what other people changed since this viewer
+   last had the case open, with a one-click view of it. F-12: a pending two-person legal-hold release; anyone can see it,
+   Manage Legal can approve (not the requester) or withdraw it. *@
+@inject CaseService Cases
+@inject ToastService Toasts
+@inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+
+@if (SinceCount > 0 && !SinceDismissed && LastViewed is { } lastViewed)
+{
+    <div class="im-since small mb-2" role="status">
+        <span class="bi bi-clock-history" aria-hidden="true"></span>
+        <span>
+            <strong>@IncidentManager.Application.Common.Plural.Of(SinceCount, "change")</strong>
+            since you last viewed this case (@TimeDisp.Short(lastViewed))@(SincePeople.Count > 0 ? $", by {string.Join(", ", SincePeople)}" : "").
+        </span>
+        <button type="button" class="btn btn-sm btn-link p-0" @onclick="() => OnShowSince.InvokeAsync()">Show on the timeline</button>
+        <button type="button" class="btn-close ms-auto" aria-label="Dismiss" @onclick="() => OnDismissSince.InvokeAsync()"></button>
+    </div>
+}
+
+@if (Case.LegalHold && Case.LegalHoldReleasePending)
+{
+    <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 py-2" role="status">
+        <span class="bi bi-unlock" aria-hidden="true"></span>
+        <span>
+            <strong>Legal hold release requested</strong> by @Users.DisplayFor(Case.LegalHoldReleaseRequestedBy)
+            @if (Case.LegalHoldReleaseRequestedAtUtc is { } at) { <span>&nbsp;· @TimeDisp.Short(at)</span> }
+            <span class="d-block small">Reason: @Case.LegalHoldReleaseReason</span>
+        </span>
+        @if (Access.CanManageLegal)
+        {
+            var own = string.Equals(Case.LegalHoldReleaseRequestedBy, Access.MyId, StringComparison.OrdinalIgnoreCase);
+            <span class="ms-auto d-flex gap-2">
+                <button class="btn btn-sm btn-dark" @onclick="ApproveHoldRelease" disabled="@own"
+                        title="@(own ? "Two-person control: someone else must approve your request" : "Release the legal hold")">Approve release</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="CancelHoldRelease">Withdraw request</button>
+            </span>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter, EditorRequired] public CaseAccess Access { get; set; } = CaseAccess.None;
+    [Parameter] public int SinceCount { get; set; }
+    [Parameter] public IReadOnlyList<string> SincePeople { get; set; } = [];
+    [Parameter] public DateTimeOffset? LastViewed { get; set; }
+    [Parameter] public bool SinceDismissed { get; set; }
+    [Parameter] public EventCallback OnShowSince { get; set; }
+    [Parameter] public EventCallback OnDismissSince { get; set; }
+    /// <summary>The hold release was approved or withdrawn: the workspace reloads the case.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    // F-12: approve / withdraw a pending two-person hold release (the service enforces approver ≠ requester).
+    private async Task ApproveHoldRelease()
+    {
+        try
+        {
+            await Cases.ApproveLegalHoldReleaseAsync(Case.Id);
+            await OnChanged.InvokeAsync();
+            Toasts.Success("Legal hold released");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
+    }
+
+    private async Task CancelHoldRelease()
+    {
+        try
+        {
+            await Cases.CancelLegalHoldReleaseAsync(Case.Id);
+            await OnChanged.InvokeAsync();
+            Toasts.Success("Release request withdrawn. The hold stays in force.");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
+    }
+}

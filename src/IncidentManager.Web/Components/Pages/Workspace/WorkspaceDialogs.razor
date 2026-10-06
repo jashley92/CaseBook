@@ -1,0 +1,93 @@
+@* RD-27 (extracted from CaseWorkspace): the workspace's own small dialogs: the confirm for a destructive remove (or
+   clearing a reported milestone), FR-05's "discard unsaved text?" before leaving the case, and U-40's screenshot
+   lightbox. Presentational: the workspace decides which is open and holds the focus trap (UX-01), so a dialog over an
+   entity or evidence panel still traps focus correctly. *@
+
+@if (Confirm is { } c)
+{
+    <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true"
+         aria-labelledby="im-confirm-title" style="background:var(--im-scrim)"
+         @onclick="() => OnCancelConfirm.InvokeAsync()" @onkeydown="Escape">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="im-confirm-title">@(c.Verb == "Clear" ? "Clear reported milestone" : "Remove from case")</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="() => OnCancelConfirm.InvokeAsync()"></button>
+                </div>
+                <div class="modal-body"><p class="mb-0">@c.Message</p></div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" @onclick="() => OnCancelConfirm.InvokeAsync()">Cancel</button>
+                    <button class="btn btn-danger" @onclick="() => OnRunConfirm.InvokeAsync()">@c.Verb</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (LeaveOpen)
+{
+    <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true"
+         aria-labelledby="im-leave-title" style="background:var(--im-scrim)"
+         @onclick="() => OnStay.InvokeAsync()" @onkeydown="Escape">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="im-leave-title">Discard unsaved text?</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="() => OnStay.InvokeAsync()"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0">You have text on this case that hasn't been saved. If you leave now, it's lost.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" @onclick="() => OnStay.InvokeAsync()">Stay on this page</button>
+                    <button class="btn btn-danger" @onclick="() => OnLeave.InvokeAsync()">Leave &amp; discard</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShotId is { } previewId)
+{
+    <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true"
+         aria-labelledby="im-shot-title" style="background:var(--im-scrim)"
+         @onclick="() => OnCloseShot.InvokeAsync()" @onkeydown="Escape">
+        <div class="modal-dialog modal-xl modal-dialog-centered" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header py-2">
+                    <h5 class="modal-title" id="im-shot-title"><span class="bi bi-image me-2" aria-hidden="true"></span>Screenshot</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="() => OnCloseShot.InvokeAsync()"></button>
+                </div>
+                <div class="modal-body text-center bg-body-tertiary" style="max-height:75vh;overflow:auto">
+                    <img src="evidence/@previewId/inline" alt="Attached screenshot"
+                         style="max-width:100%;height:auto;border-radius:.375rem" />
+                </div>
+                <div class="modal-footer py-2">
+                    <a class="btn btn-outline-primary" href="evidence/@previewId" target="_blank" rel="noopener noreferrer">
+                        <span class="bi bi-download me-1" aria-hidden="true"></span>Download
+                    </a>
+                    <button class="btn btn-outline-secondary" @onclick="() => OnCloseShot.InvokeAsync()">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>A confirm waiting for an answer: what will happen, and the verb on its button.</summary>
+    [Parameter] public (string Message, string Verb)? Confirm { get; set; }
+    [Parameter] public EventCallback OnCancelConfirm { get; set; }
+    [Parameter] public EventCallback OnRunConfirm { get; set; }
+
+    [Parameter] public bool LeaveOpen { get; set; }
+    [Parameter] public EventCallback OnStay { get; set; }
+    [Parameter] public EventCallback OnLeave { get; set; }
+
+    [Parameter] public Guid? ShotId { get; set; }
+    [Parameter] public EventCallback OnCloseShot { get; set; }
+
+    /// <summary>UX-01: Esc closes whichever dialog is open (focus is trapped inside it).</summary>
+    [Parameter] public EventCallback<KeyboardEventArgs> OnEscape { get; set; }
+
+    private Task Escape(KeyboardEventArgs e) => OnEscape.InvokeAsync(e);
+}

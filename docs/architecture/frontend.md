@@ -84,13 +84,21 @@ appears under `/admin/settings/other`. Each section has one Save bar; leaving wi
 
 ## The case workspace
 
-`Pages/CaseWorkspace.razor` (about 2,500 lines) is the shell; each tab is a component in `Pages/CaseTabs/`.
+`Pages/CaseWorkspace.razor` is the shell: it loads the case, routes between views, holds the drafts that must
+outlive a tab switch, and composes the regions. Its code is split by concern into partial files beside it
+(`CaseWorkspace.Live.cs` live updates, `.Dialogs.cs` opening dialogs and the close-out, `.Panels.cs` the Now/Next pane,
+phone layout and panels, `.Acts.cs` one-click acts and palette actions, `.Keyboard.cs` shortcuts). Its regions are in
+`Pages/Workspace/`: `CaseHeader` (with `CaseStateLine` and `CasePrimaryAct`), `CaseAccessNotice`, `CaseNotices`,
+`CaseViewBar`, `CaseParts`, `CasePhoneTabs`, `CaseActionForm`, `CaseCloseOut` and `WorkspaceDialogs`. Each takes the
+case, a `CaseAccess` permissions record and callbacks; draft state that has to survive a tab switch is in plain
+classes the shell owns (`CaseActionDraft`, `CloseOutDraft`, each with a `TransitionDraft` for the gate and "when it
+happened"). Each part of a view is a component in `Pages/CaseTabs/`.
 
 | Concern | How it works |
 |---|---|
 | Loading | `CaseService.GetDetailAsync(id)` loads the whole case with its children. Each load records a case open in the access log. A missing or hidden case shows "Case not found". |
-| Views | `_views` in the workspace: Record (`Timeline`), Things (`Entities`, `Evidence`, `Attack`, `Connections`, `Impact`), Tasks, Briefing, Paper (`Report`, `Review`, `Audit`). The part keys are the routing keys (`?tab=`, counts, flashes); a view's name in `?tab=` opens its last-used part; `?tab=Notes` opens the Record's Working notes lens. `?tab=` selects one; switching uses `history.replaceState`, so the case isn't reloaded. Each tab is wrapped in its own `ErrorBoundary`. |
-| Dialogs | All case dialogs (reclassify, phase, severity, handoff, assign, restrict, legal, materiality, supersede, archive, reopen, legal-hold release) live in the shell, so they work from any view. The transitions (promote or reclassify, severity, phase) open as a **sheet** under the header instead (`IsSheet`, the same `ActionForm()` fragment): not modal, focus moves into it (`imModal.focusIn`), Esc or Cancel closes it. Choosing Closed opens the close-out view. One generic confirm dialog is offered to tabs through a `RequestConfirm` callback. Shared fragments: the gate checklist with override justification, "when it happened" with nudges, open-task and notification warnings. Apply buttons are disabled exactly when the server would reject the input. |
+| Views | `Workspace/CaseViews`: Record (`Timeline`), Things (`Entities`, `Evidence`, `Attack`, `Connections`, `Impact`), Tasks, Briefing, Paper (`Report`, `Review`, `Audit`). The part keys are the routing keys (`?tab=`, counts, flashes); a view's name in `?tab=` opens its last-used part; `?tab=Notes` opens the Record's Working notes lens. `?tab=` selects one; switching uses `history.replaceState`, so the case isn't reloaded. Each tab is wrapped in its own `ErrorBoundary`. |
+| Dialogs | All case dialogs (reclassify, phase, severity, handoff, assign, restrict, legal, materiality, supersede, archive, reopen, legal-hold release) live in the shell, so they work from any view. The transitions (promote or reclassify, severity, phase) open as a **sheet** under the header instead (`CaseActionDraft.IsSheet`, the same `CaseActionForm`): not modal, focus moves into it (`imModal.focusIn`), Esc or Cancel closes it. Choosing Closed opens the close-out view. One generic confirm dialog is offered to tabs through a `RequestConfirm` callback. Shared components: `GateSection` (the gate checklist with override justification), `WhenItHappened` (with nudges), `RationaleHint` and `TransitionWarnings` (open-task and notification warnings). Apply buttons are disabled exactly when the server would reject the input. |
 | Live updates | The shell subscribes to `ICaseChangeNotifier`. When someone else saves, it re-reads only the changed parts of the case when the change is to the record, notes, tasks, things, evidence, the brief or the paperwork (anything touching the case itself reloads it whole), flashes the new items in that person's color, puts a dot on other tabs, shows a toast, and shows a "N new entries" pill on the timeline. Your own changes don't flash. Presence avatars (`Shared/CasePresence.razor`) show who else is viewing. All of this is in-process (one server only). |
 | Unsaved text | Composer drafts survive tab switches (kept in server memory). Leaving the case with unsaved editor text asks first. |
 | Permissions | Checked when the case loads and again when they change mid-session; editing controls are hidden for view-only users, with a "View only" note. |
