@@ -1,0 +1,294 @@
+@* RD-03 (RD-27: extracted from CaseWorkspace): the two-line case header. Line 1 is identity and the acts (presence,
+   pin, hand off, the Actions menu and the one primary act the state calls for); line 2 is the state line. Renaming the
+   case number happens here; every other act is raised to the workspace, which owns the dialogs. *@
+@implements IAsyncDisposable
+@inject CaseService Cases
+@inject ToastService Toasts
+
+@* FR-17: wrap so the action group (Advance / Actions) drops below the title on a phone instead of
+   overflowing the row and forcing whole-page horizontal scroll. *@
+<div id="ws-head" class="im-ch d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div class="im-casehead-main">
+        @* INV-02: the case number and its title share one line, and the state (badges, phase, next step)
+           shares the next, so the tabs start about half as far down the page. *@
+        <div class="im-casehead-line">
+        <h1 class="mb-0">
+            <code class="im-casehead-num">@Case.CaseNumber</code>
+            @if (Access.CanEdit && !_renumbering)
+            {
+                <button class="btn btn-sm btn-link p-0 ms-1 align-baseline" title="Change case number" aria-label="Change case number" @onclick="StartRenumber">
+                    <span class="bi bi-pencil" aria-hidden="true"></span>
+                </button>
+            }
+        </h1>
+        @if (_renumbering)
+        {
+            <div class="d-flex align-items-center gap-2 mb-2" style="max-width:32rem">
+                <input class="form-control form-control-sm font-monospace" @bind="_editNumber" @bind:event="oninput" @bind:after="CheckRenumberAvailable"
+                       placeholder="Case number" aria-label="Case number" />
+                <button class="btn btn-sm btn-primary" @onclick="SaveRenumber" disabled="@(_savingNumber || _renumberAvailable == false)">Save</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="CancelRenumber">Cancel</button>
+            </div>
+            @* FR-22: flag a collision as the analyst types, not only when they click Save. *@
+            @if (_renumberAvailable == false)
+            {
+                <div class="text-danger small mb-2"><span class="bi bi-x-circle me-1" aria-hidden="true"></span>“@_editNumber?.Trim()” is already in use.</div>
+            }
+            else if (_renumberAvailable == true)
+            {
+                <div class="text-success small mb-2"><span class="bi bi-check-circle me-1" aria-hidden="true"></span>Available.</div>
+            }
+        }
+        @if (_renumberError is not null)
+        {
+            <div class="text-danger small mb-2">@_renumberError</div>
+        }
+        @* A pasted-in, very long title would push the tabs off screen: show one line, click for the rest. *@
+        <div class="im-casehead-title @(_titleExpanded ? "" : "im-clamp-1")" title="@(_titleExpanded ? null : Case.Title)"
+             @onclick="() => _titleExpanded = !_titleExpanded">@Case.Title</div>
+        </div>
+    </div>
+    @* ms-auto: when a long case number pushes these onto their own line they stay at the right edge, so the
+       right-anchored Actions menu opens into view instead of off the left of the screen. *@
+    <div class="im-ch-acts d-flex align-items-center gap-2 ms-auto">
+        <CasePresence CaseId="Case.Id" />
+        <button type="button" class="btn btn-sm @(IsPinned ? "btn-warning" : "btn-outline-secondary")"
+                title="@(IsPinned ? "Unpin this case" : "Pin this case for quick access")"
+                aria-pressed="@Ui.Aria(IsPinned)" aria-label="@(IsPinned ? "Unpin this case" : "Pin this case")"
+                @onclick="() => OnTogglePin.InvokeAsync()">
+            <span class="bi @(IsPinned ? "bi-pin-angle-fill" : "bi-pin-angle")" aria-hidden="true"></span>
+        </button>
+        @if (Access.CanEdit)
+        {
+            <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Hand off" title="Hand off the case" @onclick='() => Open("handoff")'>
+                <span class="bi bi-arrow-left-right" aria-hidden="true"></span><span class="im-ch-label ms-1">Hand off</span>
+            </button>
+        }
+        @if (Access.CanAnyAction)
+        {
+            <div class="dropdown">
+                @* FR-19: transparent full-viewport backdrop (behind the menu, above the page) so a click
+                   anywhere outside closes the custom dropdown — it has no Bootstrap Popper/blur to do it. *@
+                @if (_actionsOpen)
+                {
+                    <div style="position:fixed;inset:0;z-index:999" @onclick="() => _actionsOpen = false"></div>
+                }
+                <button id="case-actions-btn" class="btn btn-sm btn-outline-primary dropdown-toggle" @onclick="() => _actionsOpen = !_actionsOpen">Actions</button>
+                <div class="dropdown-menu dropdown-menu-end @(_actionsOpen ? "show" : "")">
+                    @if (Access.CanReclassify) { <button class="dropdown-item" @onclick='() => Open("reclass")'>@(Case.Classification is null ? "Promote onto the ladder…" : "Reclassify…")</button> }
+                    @if (Access.CanEdit)
+                    {
+                        @if (!Access.IsOnCase(Case))
+                        {
+                            <button class="dropdown-item" @onclick="() => Run(OnAssignToMe)">Assign to me</button>
+                        }
+                        <button class="dropdown-item" @onclick='() => Open("severity")'>Change severity…</button>
+                        <button class="dropdown-item" @onclick='() => Open("status")'>Change phase…</button>
+                        <button class="dropdown-item" @onclick='() => Open("legal")'>Refer to Legal / Privacy…</button>
+                        @* FR-07: the materiality determination gates closing an Incident/Breach, and the
+                           analyst who owns the case's timeline/data is the one who records it — so it needs
+                           EditCases, not ManageLegal (which only Legal/Privacy hold, and Legal doesn't use the
+                           app). The determination stays hash-chained/audited, so who made the call is on record. *@
+                        @if (Case.Classification is Classification.Incident or Classification.Breach)
+                        {
+                            <button class="dropdown-item" @onclick='() => Open("materiality")'>Record materiality determination…</button>
+                        }
+                    }
+                    @if (Access.CanEdit && Case.Phase != CasePhase.Closed)
+                    {
+                        @* PROD-11: supersede this case by the one work continues on (link + optional IOC copy + notes). *@
+                        <button class="dropdown-item" @onclick='() => Open("supersede")'>Supersede as a duplicate…</button>
+                    }
+                    @* S-08: need-to-know. Anyone who can edit may restrict; only the IC or a cleared role may lift it. *@
+                    @if (Access.CanEdit && !Case.IsRestricted)
+                    {
+                        <button class="dropdown-item" @onclick='() => Open("restrict")'>Restrict to need-to-know…</button>
+                    }
+                    else if (Access.CanEdit && Access.CanLiftRestriction(Case))
+                    {
+                        <button class="dropdown-item" @onclick='() => Open("unrestrict")'>Lift restriction…</button>
+                    }
+                    @if (Access.CanManageLegal)
+                    {
+                        @if (Case.LegalHold && Cases.LegalHoldReleaseNeedsSecondApprover)
+                        {
+                            @* F-12: two-person release — request it; a second person approves from the banner. *@
+                            @if (!Case.LegalHoldReleasePending)
+                            {
+                                <button class="dropdown-item" @onclick='() => Open("holdrelease")'>Request legal hold release…</button>
+                            }
+                        }
+                        else
+                        {
+                            @* S-15: releasing asks first and needs a reason; placing a hold (protective) stays one click. *@
+                            @if (Case.LegalHold)
+                            {
+                                <button class="dropdown-item" @onclick='() => Open("holdrelease")'>Release legal hold…</button>
+                            }
+                            else
+                            {
+                                <button class="dropdown-item" @onclick="() => Run(() => OnSetLegalHold.InvokeAsync(true))">Place legal hold</button>
+                            }
+                        }
+                    }
+                    @if (Access.CanAdmin)
+                    {
+                        <div class="dropdown-divider"></div>
+                        @if (Case.IsArchived)
+                        {
+                            <button class="dropdown-item" @onclick="() => Run(() => OnSetArchived.InvokeAsync(false))">Restore from archive</button>
+                        }
+                        else
+                        {
+                            <button class="dropdown-item text-danger" @onclick='() => Open("archive")'>Archive case…</button>
+                        }
+                    }
+                </div>
+            </div>
+        }
+        <CasePrimaryAct Case="Case" Access="Access" OnOpenModal="OnOpenModal" OnAdvanceTo="OnAdvanceTo" />
+    </div>
+    @* RD-25: on a phone the acts that need room are left to a desk, and it says so. *@
+    <p class="im-phone-deskonly">On a phone you can read, log, answer questions and finish tasks. Phase changes, gates,
+        closing and reports are done at a desk.</p>
+</div>
+
+@* INV-38 / RD-03: the case's state as one line: rung, severity, phase and how long, outcome, the flags that
+   matter, the commander, and the most urgent clock at the end. *@
+<div class="im-casehead-state">
+    <CaseStateLine Case="Case" CanEdit="Access.CanEdit" Notify="Notify" AfterClosure="AfterClosure" OutcomeLabels="OutcomeLabels"
+                   OnAdvanceTo="OnAdvanceTo" OnGoToTab="OnGoToTab" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter, EditorRequired] public CaseAccess Access { get; set; } = CaseAccess.None;
+    [Parameter] public bool IsPinned { get; set; }
+    [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
+    [Parameter] public (AfterClosureChanges Changes, IReadOnlyList<string> People)? AfterClosure { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, string> OutcomeLabels { get; set; } = new Dictionary<string, string>();
+
+    [Parameter] public EventCallback OnTogglePin { get; set; }
+    [Parameter] public EventCallback<string> OnOpenModal { get; set; }
+    [Parameter] public EventCallback<CasePhase> OnAdvanceTo { get; set; }
+    [Parameter] public EventCallback OnAssignToMe { get; set; }
+    [Parameter] public EventCallback<bool> OnSetLegalHold { get; set; }
+    [Parameter] public EventCallback<bool> OnSetArchived { get; set; }
+    [Parameter] public EventCallback<string> OnGoToTab { get; set; }
+    /// <summary>The case changed here (its number): the workspace reloads it.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>The server refused an act for lack of permission (REL-08).</summary>
+    [Parameter] public EventCallback OnForbidden { get; set; }
+
+    private bool _actionsOpen;
+    private bool _titleExpanded;
+
+    private Task Open(string modal)
+    {
+        _actionsOpen = false;
+        return OnOpenModal.InvokeAsync(modal);
+    }
+
+    private Task Run(EventCallback act)
+    {
+        _actionsOpen = false;
+        return act.InvokeAsync();
+    }
+
+    private Task Run(Func<Task> act)
+    {
+        _actionsOpen = false;
+        return act();
+    }
+
+    // --- Case-number rename (inline) ---
+    private bool _renumbering;
+    private bool _savingNumber;
+    private string _editNumber = "";
+    private string? _renumberError;
+    // FR-22: inline availability of the typed number (debounced), null when blank / unchanged / unchecked.
+    private bool? _renumberAvailable;
+    private CancellationTokenSource? _renumberCheckCts;
+
+    private void StartRenumber()
+    {
+        _editNumber = Case.CaseNumber;
+        _renumberError = null;
+        _renumberAvailable = null;
+        _renumbering = true;
+    }
+
+    private void CancelRenumber()
+    {
+        _renumbering = false;
+        _renumberError = null;
+        _renumberCheckCts?.Cancel();
+        _renumberAvailable = null;
+    }
+
+    private async Task CheckRenumberAvailable()
+    {
+        // Retire the previous keystroke's check (cancel + dispose its source) before starting a new one, so
+        // a burst of typing doesn't leak a CancellationTokenSource per keystroke (S2930). The token below is
+        // captured into a local so this method never touches a source a later call may have disposed.
+        if (_renumberCheckCts is not null)
+        {
+            await _renumberCheckCts.CancelAsync();   // S6966: async cancel (schedules callbacks off-thread)
+            _renumberCheckCts.Dispose();
+            _renumberCheckCts = null;
+        }
+
+        var v = _editNumber?.Trim();
+        if (string.IsNullOrEmpty(v) || string.Equals(v, Case.CaseNumber, StringComparison.Ordinal))
+        {
+            _renumberAvailable = null;
+            return;
+        }
+
+        var cts = _renumberCheckCts = new CancellationTokenSource();
+        var token = cts.Token;
+        try
+        {
+            await Task.Delay(350, token); // debounce keystrokes
+            var ok = await Cases.IsCaseNumberAvailableAsync(v, Case.Id, token);
+            if (!token.IsCancellationRequested) { _renumberAvailable = ok; StateHasChanged(); }
+        }
+        catch (OperationCanceledException) { /* superseded by a newer keystroke */ }
+    }
+
+    private async Task SaveRenumber()
+    {
+        _savingNumber = true;
+        _renumberError = null;
+        try
+        {
+            await Cases.RenumberAsync(Case.Id, _editNumber);
+            _renumbering = false;
+            await OnChanged.InvokeAsync();
+            Toasts.Success("Case number updated");
+        }
+        catch (ForbiddenException)
+        {
+            _renumbering = false;
+            await OnForbidden.InvokeAsync(); // REL-08
+        }
+        catch (Exception ex)
+        {
+            _renumberError = ex.Message;
+        }
+        finally
+        {
+            _savingNumber = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // S2930/S6966: cancel + dispose the last in-flight renumber-availability check.
+        if (_renumberCheckCts is not null)
+        {
+            await _renumberCheckCts.CancelAsync();
+            _renumberCheckCts.Dispose();
+        }
+    }
+}

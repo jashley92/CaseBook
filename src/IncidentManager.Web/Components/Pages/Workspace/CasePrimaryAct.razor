@@ -1,0 +1,30 @@
+@* RD-03 (RD-27: extracted from CaseWorkspace): the one act the case's state calls for. An unclassified event is
+   promoted (or closed); a closed case is reopened; otherwise the next phase, with "Close the case" once it reaches
+   Post-Incident. Slim is the copy in the one-line bar (out of the tab order; the header's is the one to reach). *@
+
+@{
+    var c = Case;
+    var tab = Slim ? "-1" : null;
+}
+@if (c.Classification is null && Access.CanReclassify && c.Phase != CasePhase.Closed)
+{
+    <button class="btn btn-sm btn-primary" tabindex="@tab" @onclick='() => OnOpenModal.InvokeAsync("reclass")'>Promote onto the ladder…</button>
+}
+else if (Access.CanEdit && c.Phase == CasePhase.Closed)
+{
+    <button class="btn btn-sm btn-primary" tabindex="@tab" @onclick='() => OnOpenModal.InvokeAsync("reopen")'>
+        <span class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></span>Reopen case…
+    </button>
+}
+else if (Access.CanEdit && CaseFlow.NextPhase(c) is { } np)
+{
+    <button class="btn btn-sm btn-primary" tabindex="@tab" @onclick="() => OnAdvanceTo.InvokeAsync(np)">@(np == CasePhase.Closed ? "Close the case…" : $"Advance to {Ui.Label(np)} →")</button>
+}
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter, EditorRequired] public CaseAccess Access { get; set; } = CaseAccess.None;
+    [Parameter] public bool Slim { get; set; }
+    [Parameter] public EventCallback<string> OnOpenModal { get; set; }
+    [Parameter] public EventCallback<CasePhase> OnAdvanceTo { get; set; }
+}

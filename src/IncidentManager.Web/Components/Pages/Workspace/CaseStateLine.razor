@@ -1,0 +1,146 @@
+@* INV-38 / RD-03 (RD-27: extracted from CaseWorkspace): the case's state as one line: rung, severity, phase and how
+   long, outcome, the flags that matter, the commander, and the most urgent clock at the end. Slim is the one-line bar
+   that stays in view once the header has scrolled away. *@
+@inject IClock Clock
+@inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Sla.ISlaTargetsProvider SlaProvider
+
+@{
+    var c = Case;
+    var phases = Enum.GetValues<CasePhase>();
+    var cur = Array.IndexOf(phases, c.Phase);
+}
+<span class="im-state-words">
+    <RungMark Value="c.Classification" Title="@(c.Classification is null ? "Complex Event: not yet classified" : "Classification")" />
+    <SeverityMark Value="c.Severity" Title="Severity" />
+</span>
+<span class="im-phasebar">
+    @if (CanEdit && !Slim)
+    {
+        @* The phase dialog, for any phase (on a phone, where the bar folds away, this is the way in). *@
+        <button type="button" class="im-phasebar-name" title="Change the phase" @onclick="() => OnAdvanceTo.InvokeAsync(c.Phase)">@Ui.Label(c.Phase)</button>
+    }
+    else
+    {
+        <strong>@Ui.Label(c.Phase)</strong>
+    }
+    @if (!Slim)
+    {
+        <span class="im-phasebar-segs" role="list" aria-label="Phases">
+            @for (var i = 0; i < phases.Length; i++)
+            {
+                var ph = phases[i];
+                var state = i < cur ? "done" : i == cur ? "cur" : "";
+                var tip = PhaseTip(ph, i, cur);
+                @if (CanEdit && i != cur)
+                {
+                    <button type="button" role="listitem" class="im-phase-seg @state" title="@tip" aria-label="@tip" @onclick="() => OnAdvanceTo.InvokeAsync(ph)">@Ui.Label(ph)</button>
+                }
+                else
+                {
+                    <span tabindex="0" role="listitem" class="im-phase-seg @state" title="@tip" aria-label="@tip">@Ui.Label(ph)</span>
+                }
+            }
+        </span>
+        <span class="im-phasebar-step">@PhaseSince(c)</span>
+    }
+</span>
+@* HR-01: what a closed case concluded, beside its phase. *@
+@if (c.Phase == CasePhase.Closed && c.OutcomeKey is { } outcome)
+{
+    <span class="im-outcome" title="Outcome recorded when the case closed">@OutcomeLabel(outcome)</span>
+}
+@* HR-15: changes after closure are marked, not prevented. *@
+@if (c.Phase == CasePhase.Closed && AfterClosure is { Changes.Count: > 0 } ac)
+{
+    <button type="button" class="im-after-closure" @onclick='() => OnGoToTab.InvokeAsync("Audit")'
+            title="@($"Changed after the case closed on {TimeDisp.Short(ac.Changes.ClosedRecordedAtUtc)}, by {string.Join(", ", ac.People)}. Latest {TimeDisp.Short(ac.Changes.LastAtUtc ?? ac.Changes.ClosedRecordedAtUtc)}. See the audit trail.")">
+        <span class="bi bi-pencil-square" aria-hidden="true"></span> @ac.Changes.Count @(ac.Changes.Count == 1 ? "change" : "changes") after closure
+    </button>
+}
+@if (!Slim)
+{
+    <span class="im-flags">
+        @if (c.Materiality.Status != MaterialityStatus.Undetermined)
+        {
+            <span class="@(c.Materiality.Status == MaterialityStatus.Material ? "im-flag-hot" : "")" title="Materiality determination"><span class="bi bi-flag" aria-hidden="true"></span>@Ui.Label(c.Materiality.Status)</span>
+        }
+        @if (c.LegalReferral.IsReferred) { <span title="@(c.LegalReferral.ReferredAtUtc is { } ra ? $"Referred {TimeDisp.Short(ra)}" : "Referred to Legal / Privacy")"><span class="bi bi-bank" aria-hidden="true"></span>Referred to Legal</span> }
+        @if (c.LegalHold) { <span class="im-flag-hot"><span class="bi bi-lock" aria-hidden="true"></span>Legal hold</span> }
+        @if (c.IsRestricted) { <span><span class="bi bi-eye-slash" aria-hidden="true"></span>Restricted</span> }
+        @if (c.IsExercise) { <span title="Tabletop exercise or drill"><span class="bi bi-mortarboard" aria-hidden="true"></span>Exercise</span> }
+        @if (c.IsArchived) { <span><span class="bi bi-archive" aria-hidden="true"></span>Archived</span> }
+        @if (!string.IsNullOrWhiteSpace(c.IncidentCommander))
+        {
+            <span title="Incident commander"><span class="bi bi-person" aria-hidden="true"></span>@Users.DisplayFor(c.IncidentCommander), commander</span>
+        }
+    </span>
+}
+@if (UrgentClock() is { } uc)
+{
+    <span class="im-ch-clock"><ClockMark State="uc.State" Label="@uc.Label" Detail="@(Slim ? uc.Short : uc.Detail)" Title="@uc.Title" /></span>
+}
+
+@code {
+    [Parameter, EditorRequired] public Case Case { get; set; } = null!;
+    [Parameter] public bool Slim { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
+    [Parameter] public (AfterClosureChanges Changes, IReadOnlyList<string> People)? AfterClosure { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, string> OutcomeLabels { get; set; } = new Dictionary<string, string>();
+    [Parameter] public EventCallback<CasePhase> OnAdvanceTo { get; set; }
+    [Parameter] public EventCallback<string> OnGoToTab { get; set; }
+
+    private string OutcomeLabel(string key) =>
+        OutcomeLabels.GetValueOrDefault(key) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(key);
+
+    // A phase's tooltip: when it was reached (the effective time of the latest change into it), or that it's ahead.
+    private string PhaseTip(CasePhase ph, int index, int current)
+    {
+        var name = Ui.Label(ph);
+        if (index > current) return CanEdit ? $"{name}: not reached. Click to move the case here." : $"{name}: not reached";
+        DateTimeOffset? at = index == 0 ? Case.CreatedAtUtc
+            : Case.StatusChanges.Where(x => x.To == ph).OrderByDescending(x => x.EffectiveAt).Select(x => (DateTimeOffset?)x.EffectiveAt).FirstOrDefault();
+        var when = at is { } t ? $", reached {TimeDisp.Short(t)}" : "";
+        return index == current ? $"{name}: current phase{when}"
+            : CanEdit ? $"{name}{when}. Click to move the case back here." : $"{name}{when}";
+    }
+
+    // RD-03: how long the case has been in its phase ("since Tue 29 Sep"), from the effective time it entered it.
+    private string PhaseSince(Case c)
+    {
+        DateTimeOffset? at = c.Phase == CasePhase.New ? c.CreatedAtUtc
+            : c.StatusChanges.Where(x => x.To == c.Phase).OrderByDescending(x => x.EffectiveAt).Select(x => (DateTimeOffset?)x.EffectiveAt).FirstOrDefault();
+        return at is { } t ? $"since {TimeDisp.Brief(t, Clock.UtcNow)}" : "";
+    }
+
+    private sealed record UrgentClockInfo(SlaState State, string Label, string Detail, string Short, string Title);
+
+    // RD-03: the one clock that matters most right now, at the end of the state line: a running notification deadline
+    // first (it's a legal obligation), else the running SLA clock. Stopped clocks stay in the Next pane.
+    private UrgentClockInfo? UrgentClock()
+    {
+        var now = Clock.UtcNow;
+        if (Notify?.Headline is { IsActive: true } nh)
+        {
+            var label = $"Notify {nh.JurisdictionCode}";
+            var timing = nh.Remaining is { } r ? (r >= TimeSpan.Zero ? $"{Ui.Hours(r.TotalHours)} left" : $"{Ui.Hours(-r.TotalHours)} over") : Ui.SlaLabel(nh.State);
+            var due = nh.DueAtUtc is { } d ? TimeDisp.Brief(d, now) : null;
+            return new(nh.State, label, due is null ? timing : $"{timing} · {due}", timing,
+                $"Notification to {nh.JurisdictionLabel} ({nh.WindowHours} h)" + (nh.DueAtUtc is { } dd ? $", due {TimeDisp.Short(dd)}" : ""));
+        }
+        var sla = SlaPolicy.Evaluate(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
+            Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification);
+        if (sla.State is SlaState.OnTrack or SlaState.AtRisk or SlaState.Breached)
+        {
+            var label = sla.Clock switch { SlaClock.Containment => "Contain", SlaClock.Resolution => "Resolve", SlaClock.Detection => "Detect", _ => "SLA" };
+            var timing = Ui.SlaTiming(sla);
+            var due = sla.DueAtUtc is { } d && sla.State != SlaState.Breached ? TimeDisp.Brief(d, now) : null;
+            return new(sla.State, label, due is null ? timing : $"{timing} · {due}", timing,
+                (sla.Clock is { } k ? Ui.SlaClockLabel(k) : "SLA") + (sla.DueAtUtc is { } dd ? $", due {TimeDisp.Short(dd)}" : "")
+                + (sla.TargetHours is { } h ? $" (target {h} h)" : ""));
+        }
+        return null;
+    }
+}

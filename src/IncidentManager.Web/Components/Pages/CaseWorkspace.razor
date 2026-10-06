@@ -89,159 +89,11 @@ else
             <span><strong>View only.</strong> @ViewOnlyText</span>
         </div>
     }
-    @* FR-17: wrap so the action group (Advance / Actions) drops below the title on a phone instead of
-       overflowing the row and forcing whole-page horizontal scroll. *@
-    @* RD-03: a two-line header. Line 1 is identity and the acts (presence, pin, hand off, the overflow menu and the one
-       primary act the state calls for); line 2 is state, ending with the most urgent clock. *@
-    <div id="ws-head" class="im-ch d-flex justify-content-between align-items-start flex-wrap gap-2">
-        <div class="im-casehead-main">
-            @* INV-02: the case number and its title share one line, and the state (badges, phase, next step)
-               shares the next, so the tabs start about half as far down the page. *@
-            <div class="im-casehead-line">
-            <h1 class="mb-0">
-                <code class="im-casehead-num">@_case.CaseNumber</code>
-                @if (_canEdit && !_renumbering)
-                {
-                    <button class="btn btn-sm btn-link p-0 ms-1 align-baseline" title="Change case number" aria-label="Change case number" @onclick="StartRenumber">
-                        <span class="bi bi-pencil" aria-hidden="true"></span>
-                    </button>
-                }
-            </h1>
-            @if (_renumbering)
-            {
-                <div class="d-flex align-items-center gap-2 mb-2" style="max-width:32rem">
-                    <input class="form-control form-control-sm font-monospace" @bind="_editNumber" @bind:event="oninput" @bind:after="CheckRenumberAvailable"
-                           placeholder="Case number" aria-label="Case number" />
-                    <button class="btn btn-sm btn-primary" @onclick="SaveRenumber" disabled="@(_savingNumber || _renumberAvailable == false)">Save</button>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="CancelRenumber">Cancel</button>
-                </div>
-                @* FR-22: flag a collision as the analyst types, not only when they click Save. *@
-                @if (_renumberAvailable == false)
-                {
-                    <div class="text-danger small mb-2"><span class="bi bi-x-circle me-1" aria-hidden="true"></span>“@_editNumber?.Trim()” is already in use.</div>
-                }
-                else if (_renumberAvailable == true)
-                {
-                    <div class="text-success small mb-2"><span class="bi bi-check-circle me-1" aria-hidden="true"></span>Available.</div>
-                }
-            }
-            @if (_renumberError is not null)
-            {
-                <div class="text-danger small mb-2">@_renumberError</div>
-            }
-            @* A pasted-in, very long title would push the tabs off screen: show one line, click for the rest. *@
-            <div class="im-casehead-title @(_titleExpanded ? "" : "im-clamp-1")" title="@(_titleExpanded ? null : _case.Title)"
-                 @onclick="() => _titleExpanded = !_titleExpanded">@_case.Title</div>
-            </div>
-        </div>
-        @* ms-auto: when a long case number pushes these onto their own line they stay at the right edge, so the
-           right-anchored Actions menu opens into view instead of off the left of the screen. *@
-        <div class="im-ch-acts d-flex align-items-center gap-2 ms-auto">
-            <CasePresence CaseId="_case.Id" />
-            <button type="button" class="btn btn-sm @(_isPinned ? "btn-warning" : "btn-outline-secondary")"
-                    title="@(_isPinned ? "Unpin this case" : "Pin this case for quick access")"
-                    aria-pressed="@Ui.Aria(_isPinned)" aria-label="@(_isPinned ? "Unpin this case" : "Pin this case")"
-                    @onclick="TogglePin">
-                <span class="bi @(_isPinned ? "bi-pin-angle-fill" : "bi-pin-angle")" aria-hidden="true"></span>
-            </button>
-            @if (_canEdit)
-            {
-                <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Hand off" title="Hand off the case" @onclick='() => OpenModal("handoff")'>
-                    <span class="bi bi-arrow-left-right" aria-hidden="true"></span><span class="im-ch-label ms-1">Hand off</span>
-                </button>
-            }
-            @if (_canAnyAction)
-            {
-                <div class="dropdown">
-                    @* FR-19: transparent full-viewport backdrop (behind the menu, above the page) so a click
-                       anywhere outside closes the custom dropdown — it has no Bootstrap Popper/blur to do it. *@
-                    @if (_actionsOpen)
-                    {
-                        <div style="position:fixed;inset:0;z-index:999" @onclick="() => _actionsOpen = false"></div>
-                    }
-                    <button id="case-actions-btn" class="btn btn-sm btn-outline-primary dropdown-toggle" @onclick="() => _actionsOpen = !_actionsOpen">Actions</button>
-                    <div class="dropdown-menu dropdown-menu-end @(_actionsOpen ? "show" : "")">
-                        @if (_canReclassify) { <button class="dropdown-item" @onclick='() => OpenModal("reclass")'>@(_case.Classification is null ? "Promote onto the ladder…" : "Reclassify…")</button> }
-                        @if (_canEdit)
-                        {
-                            @if (!_case.Assignments.Any(a => string.Equals(a.UserId, _myId, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                <button class="dropdown-item" @onclick="AssignToMe">Assign to me</button>
-                            }
-                            <button class="dropdown-item" @onclick='() => OpenModal("severity")'>Change severity…</button>
-                            <button class="dropdown-item" @onclick='() => OpenModal("status")'>Change phase…</button>
-                            <button class="dropdown-item" @onclick='() => OpenModal("legal")'>Refer to Legal / Privacy…</button>
-                            @* FR-07: the materiality determination gates closing an Incident/Breach, and the
-                               analyst who owns the case's timeline/data is the one who records it — so it needs
-                               EditCases, not ManageLegal (which only Legal/Privacy hold, and Legal doesn't use the
-                               app). The determination stays hash-chained/audited, so who made the call is on record. *@
-                            @if (_case.Classification is Classification.Incident or Classification.Breach)
-                            {
-                                <button class="dropdown-item" @onclick='() => OpenModal("materiality")'>Record materiality determination…</button>
-                            }
-                        }
-                        @if (_canEdit && _case.Phase != CasePhase.Closed)
-                        {
-                            @* PROD-11: supersede this case by the one work continues on (link + optional IOC copy + notes). *@
-                            <button class="dropdown-item" @onclick='() => OpenModal("supersede")'>Supersede as a duplicate…</button>
-                        }
-                        @* S-08: need-to-know. Anyone who can edit may restrict; only the IC or a cleared role may lift it. *@
-                        @if (_canEdit && !_case.IsRestricted)
-                        {
-                            <button class="dropdown-item" @onclick='() => OpenModal("restrict")'>Restrict to need-to-know…</button>
-                        }
-                        else if (_canEdit && CanLiftRestriction)
-                        {
-                            <button class="dropdown-item" @onclick='() => OpenModal("unrestrict")'>Lift restriction…</button>
-                        }
-                        @if (_canManageLegal)
-                        {
-                            @if (_case.LegalHold && Cases.LegalHoldReleaseNeedsSecondApprover)
-                            {
-                                @* F-12: two-person release — request it; a second person approves from the banner. *@
-                                @if (!_case.LegalHoldReleasePending)
-                                {
-                                    <button class="dropdown-item" @onclick='() => OpenModal("holdrelease")'>Request legal hold release…</button>
-                                }
-                            }
-                            else
-                            {
-                                @* S-15: releasing asks first and needs a reason; placing a hold (protective) stays one click. *@
-                                @if (_case.LegalHold)
-                                {
-                                    <button class="dropdown-item" @onclick='() => OpenModal("holdrelease")'>Release legal hold…</button>
-                                }
-                                else
-                                {
-                                    <button class="dropdown-item" @onclick="() => SetLegalHold(true)">Place legal hold</button>
-                                }
-                            }
-                        }
-                        @if (_canAdmin)
-                        {
-                            <div class="dropdown-divider"></div>
-                            @if (_case.IsArchived)
-                            {
-                                <button class="dropdown-item" @onclick="() => SetArchived(false)">Restore from archive</button>
-                            }
-                            else
-                            {
-                                <button class="dropdown-item text-danger" @onclick='() => OpenModal("archive")'>Archive case…</button>
-                            }
-                        }
-                    </div>
-                </div>
-            }
-            @PrimaryAct(slim: false)
-        </div>
-        @* RD-25: on a phone the acts that need room are left to a desk, and it says so. *@
-        <p class="im-phone-deskonly">On a phone you can read, log, answer questions and finish tasks. Phase changes, gates,
-            closing and reports are done at a desk.</p>
-    </div>
-
-    @* INV-38 / RD-03: the case's state as one line: rung, severity, phase and how long, outcome, the flags that
-       matter, the commander, and the most urgent clock at the end. *@
-    <div class="im-casehead-state">@StateLine(slim: false)</div>
+    @* RD-03 / RD-27: the two-line header (identity, acts, the state line) is CaseHeader. *@
+    <CaseHeader Case="_case" Access="Access" IsPinned="_isPinned" Notify="_notifyDeadlines" AfterClosure="_afterClosure"
+                OutcomeLabels="_outcomeLabels" OnTogglePin="TogglePin" OnOpenModal="OpenModal" OnAdvanceTo="AdvanceTo"
+                OnAssignToMe="AssignToMe" OnSetLegalHold="SetLegalHold" OnSetArchived="SetArchived" OnGoToTab="SetTab"
+                OnChanged="Reload" OnForbidden="Forbidden" />
 
     @* INV-04: what other people changed since this viewer last had the case open, with a one-click view of it. *@
     @if (_sinceCount > 0 && !_sinceDismissed && _lastViewed is { } lastViewed)
@@ -285,10 +137,11 @@ else
     <div id="ws-sticky" class="ws-sticky mb-3">
         <div class="ws-slim" aria-hidden="true">
             <code class="im-casehead-num">@_case.CaseNumber</code>
-            @StateLine(slim: true)
+            <CaseStateLine Case="_case" Slim="true" CanEdit="_canEdit" Notify="_notifyDeadlines" AfterClosure="_afterClosure"
+                           OutcomeLabels="_outcomeLabels" OnAdvanceTo="AdvanceTo" OnGoToTab="SetTab" />
             <span class="ws-slim-title text-muted">@_case.Title</span>
             <span class="ms-auto"></span>
-            @PrimaryAct(slim: true)
+            <CasePrimaryAct Case="_case" Access="Access" Slim="true" OnOpenModal="OpenModal" OnAdvanceTo="AdvanceTo" />
         </div>
     <ul class="nav nav-tabs im-workspace-tabs">
         @* RD-11: the case's views. The record and the things in it, the work, the briefing built from them, then
@@ -646,44 +499,6 @@ else
     private IReadOnlyDictionary<Guid, IncidentManager.Application.Cases.TaskResult> _taskResults = new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>();
     private bool _notFound;
 
-    // Case-number rename (inline in the header)
-    private bool _renumbering;
-    private bool _savingNumber;
-    private string _editNumber = "";
-    private string? _renumberError;
-    // FR-22: inline availability of the typed number (debounced), null when blank / unchanged / unchecked.
-    private bool? _renumberAvailable;
-    private CancellationTokenSource? _renumberCheckCts;
-
-    private async Task CheckRenumberAvailable()
-    {
-        // Retire the previous keystroke's check (cancel + dispose its source) before starting a new one, so
-        // a burst of typing doesn't leak a CancellationTokenSource per keystroke (S2930). The token below is
-        // captured into a local so this method never touches a source a later call may have disposed.
-        if (_renumberCheckCts is not null)
-        {
-            await _renumberCheckCts.CancelAsync();   // S6966: async cancel (schedules callbacks off-thread)
-            _renumberCheckCts.Dispose();
-            _renumberCheckCts = null;
-        }
-
-        var v = _editNumber?.Trim();
-        if (string.IsNullOrEmpty(v) || string.Equals(v, _case.CaseNumber, StringComparison.Ordinal))
-        {
-            _renumberAvailable = null;
-            return;
-        }
-
-        var cts = _renumberCheckCts = new CancellationTokenSource();
-        var token = cts.Token;
-        try
-        {
-            await Task.Delay(350, token); // debounce keystrokes
-            var ok = await Cases.IsCaseNumberAvailableAsync(v, _case.Id, token);
-            if (!token.IsCancellationRequested) { _renumberAvailable = ok; StateHasChanged(); }
-        }
-        catch (OperationCanceledException) { /* superseded by a newer keystroke */ }
-    }
 
     // Overview: the tab is extracted to CaseOverviewTab (UX-13), which owns details/impact/techniques/links
     // + the Summary editor. The parent keeps a ref for hotkey dispatch (Ctrl+Enter save).
@@ -792,8 +607,7 @@ else
     // Retention guard message for legal-hold / archive actions (not notes).
     private string? _retentionMsg;
 
-    // Workspace chrome: actions menu, action modals, collapsible history, and per-action permissions.
-    private bool _actionsOpen;
+    // Workspace chrome: action modals and per-action permissions.
     private string? _activeModal;
     private string? _modalError;
     private bool _canReclassify;
@@ -854,6 +668,16 @@ else
         _canViewAll = (await AuthZ.AuthorizeAsync(user, Policies.ViewAllCases)).Succeeded;
         _canViewRestricted = (await AuthZ.AuthorizeAsync(user, Policies.ViewRestricted)).Succeeded;
         if (couldEdit && !_canEdit) _permissionLost = true;
+    }
+
+    // RD-27: the same permissions as one record, for the workspace's regions.
+    private CaseAccess Access => new(_canEdit, _canReclassify, _canManageLegal, _canAdmin, _canViewAll, _canViewRestricted, _myId ?? "");
+
+    // A region was refused an act for lack of permission (REL-08).
+    private void Forbidden()
+    {
+        OnForbidden();
+        Toasts.Error(PermissionLostMessage);
     }
 
     // REL-08: the server refused an action for lack of permission — the authoritative signal that this user's
@@ -1190,7 +1014,6 @@ else
         if (_case is null) return;
         _activeModal = name;
         _modalError = null;
-        _actionsOpen = false;
         // Reclassifying is almost always an escalation, so the picker starts on the next rung up (the first rung
         // for a Complex Event); a Breach, the top, starts on itself. Picking a lower rung is still one change.
         _newClass = _case.Classification switch
@@ -2235,13 +2058,7 @@ else
         }
     }
 
-    private CasePhase? NextPhase()
-    {
-        if (_case is null) return null;
-        var phases = Enum.GetValues<CasePhase>();
-        var i = Array.IndexOf(phases, _case.Phase);
-        return (i >= 0 && i < phases.Length - 1) ? phases[i + 1] : null;
-    }
+    private CasePhase? NextPhase() => CaseFlow.NextPhase(_case);
 
     private async Task AdvanceTo(CasePhase phase)
     {
@@ -2261,160 +2078,6 @@ else
         if (offer.At is { } at) _when = UtcToWall(at);
     }
 
-    private bool _titleExpanded;
-
-    // --- INV-38: the state line ---
-
-    private RenderFragment StateLine(bool slim) => @<text>
-        @{
-            var c = _case!;
-            var phases = Enum.GetValues<CasePhase>();
-            var cur = Array.IndexOf(phases, c.Phase);
-        }
-        <span class="im-state-words">
-            <RungMark Value="c.Classification" Title="@(c.Classification is null ? "Complex Event: not yet classified" : "Classification")" />
-            <SeverityMark Value="c.Severity" Title="Severity" />
-        </span>
-        <span class="im-phasebar">
-            @if (_canEdit && !slim)
-            {
-                @* The phase dialog, for any phase (on a phone, where the bar folds away, this is the way in). *@
-                <button type="button" class="im-phasebar-name" title="Change the phase" @onclick="() => AdvanceTo(c.Phase)">@Ui.Label(c.Phase)</button>
-            }
-            else
-            {
-                <strong>@Ui.Label(c.Phase)</strong>
-            }
-            @if (!slim)
-            {
-                <span class="im-phasebar-segs" role="list" aria-label="Phases">
-                    @for (var i = 0; i < phases.Length; i++)
-                    {
-                        var ph = phases[i];
-                        var state = i < cur ? "done" : i == cur ? "cur" : "";
-                        var tip = PhaseTip(ph, i, cur);
-                        @if (_canEdit && i != cur)
-                        {
-                            <button type="button" role="listitem" class="im-phase-seg @state" title="@tip" aria-label="@tip" @onclick="() => AdvanceTo(ph)">@Ui.Label(ph)</button>
-                        }
-                        else
-                        {
-                            <span tabindex="0" role="listitem" class="im-phase-seg @state" title="@tip" aria-label="@tip">@Ui.Label(ph)</span>
-                        }
-                    }
-                </span>
-                <span class="im-phasebar-step">@PhaseSince(c)</span>
-            }
-        </span>
-        @* HR-01: what a closed case concluded, beside its phase. *@
-        @if (c.Phase == CasePhase.Closed && c.OutcomeKey is { } outcome)
-        {
-            <span class="im-outcome" title="Outcome recorded when the case closed">@OutcomeLabel(outcome)</span>
-        }
-        @* HR-15: changes after closure are marked, not prevented. *@
-        @if (c.Phase == CasePhase.Closed && _afterClosure is { Changes.Count: > 0 } ac)
-        {
-            <button type="button" class="im-after-closure" @onclick='() => SetTab("Audit")'
-                    title="@($"Changed after the case closed on {TimeDisp.Short(ac.Changes.ClosedRecordedAtUtc)}, by {string.Join(", ", ac.People)}. Latest {TimeDisp.Short(ac.Changes.LastAtUtc ?? ac.Changes.ClosedRecordedAtUtc)}. See the audit trail.")">
-                <span class="bi bi-pencil-square" aria-hidden="true"></span> @ac.Changes.Count @(ac.Changes.Count == 1 ? "change" : "changes") after closure
-            </button>
-        }
-        @if (!slim)
-        {
-            <span class="im-flags">
-                @if (c.Materiality.Status != MaterialityStatus.Undetermined)
-                {
-                    <span class="@(c.Materiality.Status == MaterialityStatus.Material ? "im-flag-hot" : "")" title="Materiality determination"><span class="bi bi-flag" aria-hidden="true"></span>@Ui.Label(c.Materiality.Status)</span>
-                }
-                @if (c.LegalReferral.IsReferred) { <span title="@(c.LegalReferral.ReferredAtUtc is { } ra ? $"Referred {TimeDisp.Short(ra)}" : "Referred to Legal / Privacy")"><span class="bi bi-bank" aria-hidden="true"></span>Referred to Legal</span> }
-                @if (c.LegalHold) { <span class="im-flag-hot"><span class="bi bi-lock" aria-hidden="true"></span>Legal hold</span> }
-                @if (c.IsRestricted) { <span><span class="bi bi-eye-slash" aria-hidden="true"></span>Restricted</span> }
-                @if (c.IsExercise) { <span title="Tabletop exercise or drill"><span class="bi bi-mortarboard" aria-hidden="true"></span>Exercise</span> }
-                @if (c.IsArchived) { <span><span class="bi bi-archive" aria-hidden="true"></span>Archived</span> }
-                @if (!string.IsNullOrWhiteSpace(c.IncidentCommander))
-                {
-                    <span title="Incident commander"><span class="bi bi-person" aria-hidden="true"></span>@Users.DisplayFor(c.IncidentCommander), commander</span>
-                }
-            </span>
-        }
-        @if (UrgentClock() is { } uc)
-        {
-            <span class="im-ch-clock"><ClockMark State="uc.State" Label="@uc.Label" Detail="@(slim ? uc.Short : uc.Detail)" Title="@uc.Title" /></span>
-        }
-    </text>;
-
-    // A phase's tooltip: when it was reached (the effective time of the latest change into it), or that it's ahead.
-    private string PhaseTip(CasePhase ph, int index, int current)
-    {
-        var name = Ui.Label(ph);
-        if (index > current) return _canEdit ? $"{name}: not reached. Click to move the case here." : $"{name}: not reached";
-        DateTimeOffset? at = index == 0 ? _case!.CreatedAtUtc
-            : _case!.StatusChanges.Where(x => x.To == ph).OrderByDescending(x => x.EffectiveAt).Select(x => (DateTimeOffset?)x.EffectiveAt).FirstOrDefault();
-        var when = at is { } t ? $", reached {TimeDisp.Short(t)}" : "";
-        return index == current ? $"{name}: current phase{when}"
-            : _canEdit ? $"{name}{when}. Click to move the case back here." : $"{name}{when}";
-    }
-
-    private sealed record UrgentClockInfo(SlaState State, string Label, string Detail, string Short, string Title);
-
-    // RD-03: the one clock that matters most right now, at the end of the state line: a running notification deadline
-    // first (it's a legal obligation), else the running SLA clock. Stopped clocks stay in the Next pane.
-    private UrgentClockInfo? UrgentClock()
-    {
-        if (_case is null) return null;
-        var now = Clock.UtcNow;
-        if (_notifyDeadlines?.Headline is { IsActive: true } nh)
-        {
-            var label = $"Notify {nh.JurisdictionCode}";
-            var timing = nh.Remaining is { } r ? (r >= TimeSpan.Zero ? $"{Ui.Hours(r.TotalHours)} left" : $"{Ui.Hours(-r.TotalHours)} over") : Ui.SlaLabel(nh.State);
-            var due = nh.DueAtUtc is { } d ? TimeDisp.Brief(d, now) : null;
-            return new(nh.State, label, due is null ? timing : $"{timing} · {due}", timing,
-                $"Notification to {nh.JurisdictionLabel} ({nh.WindowHours} h)" + (nh.DueAtUtc is { } dd ? $", due {TimeDisp.Short(dd)}" : ""));
-        }
-        var sla = SlaPolicy.Evaluate(_case.Severity, _case.Phase, _case.DetectedAtUtc, _case.ContainedAtUtc,
-            _case.ResolvedAtUtc, SlaProvider.Current, now, _case.Classification);
-        if (sla.State is SlaState.OnTrack or SlaState.AtRisk or SlaState.Breached)
-        {
-            var label = sla.Clock switch { SlaClock.Containment => "Contain", SlaClock.Resolution => "Resolve", SlaClock.Detection => "Detect", _ => "SLA" };
-            var timing = Ui.SlaTiming(sla);
-            var due = sla.DueAtUtc is { } d && sla.State != SlaState.Breached ? TimeDisp.Brief(d, now) : null;
-            return new(sla.State, label, due is null ? timing : $"{timing} · {due}", timing,
-                (sla.Clock is { } k ? Ui.SlaClockLabel(k) : "SLA") + (sla.DueAtUtc is { } dd ? $", due {TimeDisp.Short(dd)}" : "")
-                + (sla.TargetHours is { } h ? $" (target {h} h)" : ""));
-        }
-        return null;
-    }
-
-    // RD-03: the one act the case's state calls for. An unclassified event is promoted (or closed); a closed case is
-    // reopened; otherwise the next phase, with "Close the case" once it reaches Post-Incident.
-    private RenderFragment PrimaryAct(bool slim) => @<text>
-        @if (_case is { } c)
-        {
-            var tab = slim ? "-1" : null;
-            @if (c.Classification is null && _canReclassify && c.Phase != CasePhase.Closed)
-            {
-                <button class="btn btn-sm btn-primary" tabindex="@tab" @onclick='() => OpenModal("reclass")'>Promote onto the ladder…</button>
-            }
-            else if (_canEdit && c.Phase == CasePhase.Closed)
-            {
-                <button class="btn btn-sm btn-primary" tabindex="@tab" @onclick='() => OpenModal("reopen")'>
-                    <span class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></span>Reopen case…
-                </button>
-            }
-            else if (_canEdit && NextPhase() is { } np)
-            {
-                <button class="btn btn-sm btn-primary" tabindex="@tab" @onclick="() => AdvanceTo(np)">@(np == CasePhase.Closed ? "Close the case…" : $"Advance to {Ui.Label(np)} →")</button>
-            }
-        }
-    </text>;
-
-    // RD-03: how long the case has been in its phase ("since Tue 29 Sep"), from the effective time it entered it.
-    private string PhaseSince(Case c)
-    {
-        DateTimeOffset? at = c.Phase == CasePhase.New ? c.CreatedAtUtc
-            : c.StatusChanges.Where(x => x.To == c.Phase).OrderByDescending(x => x.EffectiveAt).Select(x => (DateTimeOffset?)x.EffectiveAt).FirstOrDefault();
-        return at is { } t ? $"since {TimeDisp.Brief(t, Clock.UtcNow)}" : "";
-    }
 
     // INV-38: tabs keep their places; the ones built at the end (lessons, report) stay quiet until they matter, and
     // the audit trail always does. Report matters on a breach, while a notification deadline runs, or from Recovery;
@@ -2733,57 +2396,12 @@ else
         return n <= 0 ? null : n;
     }
 
-    private void StartRenumber()
-    {
-        if (_case is null) return;
-        _editNumber = _case.CaseNumber;
-        _renumberError = null;
-        _renumberAvailable = null;
-        _renumbering = true;
-    }
-
-    private void CancelRenumber()
-    {
-        _renumbering = false;
-        _renumberError = null;
-        _renumberCheckCts?.Cancel();
-        _renumberAvailable = null;
-    }
-
-    private async Task SaveRenumber()
-    {
-        if (_case is null) return;
-        _savingNumber = true;
-        _renumberError = null;
-        try
-        {
-            await Cases.RenumberAsync(_case.Id, _editNumber);
-            _renumbering = false;
-            await Reload();
-            Toasts.Success("Case number updated");
-        }
-        catch (ForbiddenException)
-        {
-            _renumbering = false;
-            OnForbidden(); // REL-08
-            Toasts.Error(PermissionLostMessage);
-        }
-        catch (Exception ex)
-        {
-            _renumberError = ex.Message;
-        }
-        finally
-        {
-            _savingNumber = false;
-        }
-    }
 
 
     // Quick self-assign from the Actions menu — picks the case up as an Analyst without opening the modal.
     // Self-assignments never notify (the notifier skips assignee == assigner).
     private async Task AssignToMe()
     {
-        _actionsOpen = false;
         try
         {
             await Cases.AssignAsync(Id, _myId, CurrentUser.DisplayName, CaseAssignmentRole.Analyst);
@@ -2852,7 +2470,6 @@ else
 
     private async Task SetLegalHold(bool held)
     {
-        _actionsOpen = false;
         _retentionMsg = null;
         try
         {
@@ -2868,7 +2485,6 @@ else
 
     private async Task SetArchived(bool archived)
     {
-        _actionsOpen = false;
         _retentionMsg = null;
         try
         {
@@ -3151,12 +2767,6 @@ else
     {
         AuthState.AuthenticationStateChanged -= OnAuthStateChanged;
         _caseSub?.Dispose();
-        // S2930/S6966: cancel + dispose the last in-flight renumber-availability check.
-        if (_renumberCheckCts is not null)
-        {
-            await _renumberCheckCts.CancelAsync();
-            _renumberCheckCts.Dispose();
-        }
         PaletteActions.Clear(this); // PROD-19: stop offering this case's actions (only if we're still the owner)
         if (_relativeTimeTicker is not null) await _relativeTimeTicker.DisposeAsync();
         // EasyMDE editors and the entity graph are torn down by their own tab components (UX-13).
