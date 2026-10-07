@@ -55,8 +55,12 @@ public static class CaseNarrative
 
         // Sequence of events: the attack chain (at the vendor, on a third-party case), then the disclosure milestones.
         var events = c.TimelineEntries.Where(e => e.Kind == TimelineKind.Event).OrderBy(e => e.OccurredAtUtc).ToList();
-        Sequence(events.Where(e => Cases.EventSteps.IsAttack(c, e)).ToList(),
-            c.Origin == CaseOrigin.ThirdParty ? "### Attack at the vendor\n" : "### Sequence of events\n", milestones: false);
+        var attack = events.Where(e => Cases.EventSteps.IsAttack(c, e)).ToList();
+        // A third-party case whose attacker pivoted into our network: one sequence, each step saying where.
+        var pivoted = c.Origin == CaseOrigin.ThirdParty && attack.Any(e => Cases.EventSteps.Where(c, e) == StepEnvironment.Ours);
+        Sequence(attack,
+            c.Origin != CaseOrigin.ThirdParty ? "### Sequence of events\n"
+            : pivoted ? "### Attack sequence (at the vendor, then in our environment)\n" : "### Attack at the vendor\n", milestones: false);
         Sequence(events.Where(e => Cases.EventSteps.IsDisclosure(c, e)).ToList(), "### Disclosure sequence\n", milestones: true);
 
         void Sequence(List<Domain.Entities.TimelineEntry> steps, string heading, bool milestones)
@@ -69,6 +73,7 @@ public static class CaseNarrative
                 var tag = tactics.Count > 0 ? string.Join(", ", tactics.Select(TacticWord))
                     : milestones ? TypeWord(e.Type) : null;
                 sb.Append(CultureInfo.InvariantCulture, $"- {Stamp(e.OccurredAtUtc)}");
+                if (pivoted && !milestones && Cases.EventSteps.WhereLabel(c, e) is { } place) sb.Append(" ").Append(place);
                 if (tag is not null) sb.Append(CultureInfo.InvariantCulture, $" ({tag}{(e.TechniqueId is { Length: > 0 } tid ? $", {tid}" : "")})");
                 sb.Append(": ").Append(Sentence(e.Description));
                 var actor = e.ActorEntityId is { } a ? entityLabel(a) : null;

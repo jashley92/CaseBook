@@ -137,6 +137,15 @@ public sealed class EventTimelinePersistenceTests : IDisposable
             step.Type.Should().Be(TimelineEntryType.Recovery);
             step.Description.Should().Be("Vendor **restored** service from backups", "a step is one line of inline Markdown");
 
+            // The attacker pivots from the vendor into our network: a step in our environment, kept and editable.
+            await svc.AddEventStepAsync(id, _clock.UtcNow.AddHours(2), [MitreTactic.LateralMovement], "T1021", null, null,
+                "Came in over the vendor's VPN tunnel", "EDR", environment: StepEnvironment.Ours);
+            var pivot = (await svc.GetDetailAsync(id))!.TimelineEntries.Single(t => t.Description.StartsWith("Came in"));
+            pivot.Environment.Should().Be(StepEnvironment.Ours);
+            await svc.EditEventStepAsync(id, pivot.Id, pivot.OccurredAtUtc, [MitreTactic.LateralMovement], "T1021", null, null,
+                pivot.Description, pivot.Source, environment: StepEnvironment.Vendor);
+            (await svc.GetDetailAsync(id))!.TimelineEntries.Single(t => t.Id == pivot.Id).Environment.Should().Be(StepEnvironment.Vendor);
+
             var chain = await db.AuditLog.OrderBy(a => a.Sequence).ToListAsync();
             _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
         }

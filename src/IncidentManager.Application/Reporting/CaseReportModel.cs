@@ -73,8 +73,9 @@ public sealed record ReportIocRow(string Type, string Value, string Verdict, str
     string? Source, string? Description);
 
 /// <summary>One ordered step of the reconstructed attack narrative (Event timeline), for the report.</summary>
+/// <param name="Where">On a third-party case, "Vendor" or "Our environment" (after a pivot); null on an internal case.</param>
 public sealed record ReportAttackStep(int Order, DateTimeOffset OccurredAtUtc, string Tactics, string Actor,
-    string Target, string? TechniqueId, string Description);
+    string Target, string? TechniqueId, string Description, string? Where = null);
 
 /// <summary>Flat, presentation-ready projection of a case for the report generator and Word templates. A record, so
 /// a template can be filled from the case model with the review added (<c>with</c>).</summary>

@@ -1169,7 +1169,7 @@ public sealed class CaseService
     public async Task AddEventStepAsync(Guid id, DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
         Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other, EntryFollowUps? followUps = null,
-        CancellationToken ct = default)
+        StepEnvironment? environment = null, CancellationToken ct = default)
     {
         Require();
         followUps?.Validate();
@@ -1177,7 +1177,7 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, id, ct);
         // One-line field: inline Markdown only, so the step reads as one line in tables and the attack-chain diagram.
         var step = c.AddEventStep(occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, Content.MarkdownService.OneLine(description), source,
-            _user.UserId, _clock.UtcNow, evidenceId, type);
+            _user.UserId, _clock.UtcNow, evidenceId, type, environment);
         if (followUps is not null) await ApplyFollowUpsAsync(db, c, step, followUps, ct);
         await db.SaveChangesAsync(ct);
     }
@@ -1189,13 +1189,13 @@ public sealed class CaseService
     public async Task EditEventStepAsync(Guid id, Guid entryId, DateTimeOffset occurredAtUtc,
         IEnumerable<MitreTactic> tactics, string? techniqueId, Guid? actorEntityId, Guid? targetEntityId,
         string description, string? source, string? reason = null,
-        TimelineEntryType type = TimelineEntryType.Other, CancellationToken ct = default)
+        TimelineEntryType type = TimelineEntryType.Other, StepEnvironment? environment = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.EditEventStep(entryId, occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, Content.MarkdownService.OneLine(description),
-            source, _user.UserId, _clock.UtcNow, type);
+            source, _user.UserId, _clock.UtcNow, type, environment);
         db.PendingChangeReason = reason;
         await db.SaveChangesAsync(ct);
     }

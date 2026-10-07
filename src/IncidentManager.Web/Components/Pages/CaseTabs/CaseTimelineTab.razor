@@ -56,8 +56,8 @@
                 title="The full chronology: what happened, what the team did, and the response milestones."
                 @onclick="() => SwitchLens(null)">Everything <span class="tl-count">@(CurrentEntries.Count() + Milestones().Count)</span></button>
         <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Event)"
-                title="@(IsThirdParty ? "The vendor's incident: the attacker's steps in the vendor's environment, and the disclosure milestones (what the vendor told us and what we confirmed)." : "The attack narrative: facts and timing of what the adversary did.")"
-                @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Vendor incident" : "Attack chain") <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Event)</span></button>
+                title="@(IsThirdParty ? "The attacker's steps (at the vendor, and in our environment if they pivoted in) and the disclosure milestones (what the vendor told us and what we confirmed)." : "The attack narrative: facts and timing of what the adversary did.")"
+                @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Attack & disclosure" : "Attack chain") <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Event)</span></button>
         <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation && !_decOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Investigation && !_decOnly)"
                 title="What the team did: findings, actions, decisions and handoffs."
                 @onclick="() => SwitchLens(TimelineKind.Investigation)">Response <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Investigation)</span></button>
@@ -107,7 +107,7 @@
             @if (!ComposerVisible)
             {
                 <button type="button" class="btn btn-sm btn-primary ms-auto" aria-expanded="false" aria-controls="timeline-dropzone"
-                        title="Add @(IsThirdParty ? "an attack step at the vendor, a disclosure milestone" : "an adversary step") or an investigation entry. You can also paste a screenshot."
+                        title="Add @(IsThirdParty ? "an attack step, a disclosure milestone" : "an adversary step") or an investigation entry. You can also paste a screenshot."
                         @onclick="() => _composerOpen = true">
                     <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
                 </button>
@@ -242,13 +242,27 @@
             }
             else if (_tlAddKind == TimelineKind.Event)
             {
-                @if (IsThirdParty)
+                @if (IsThirdParty && _evtAttackMode)
                 {
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <span class="small fw-semibold" id="tl-where-label">Where did it happen?</span>
+                        <div class="im-seg" role="group" aria-labelledby="tl-where-label">
+                            <button type="button" class="btn btn-sm @(!_evtOurs ? "active" : "")" aria-pressed="@Ui.Aria(!_evtOurs)"
+                                    @onclick="() => _evtOurs = false">The vendor's environment</button>
+                            <button type="button" class="btn btn-sm @(_evtOurs ? "active" : "")" aria-pressed="@Ui.Aria(_evtOurs)"
+                                    @onclick="() => _evtOurs = true">Our environment</button>
+                        </div>
+                    </div>
                     <p class="small text-muted mb-2">
-                        @(_evtAttackMode
-                            ? "What the attacker did in the vendor's environment, as the vendor reported it. It counts in the case's techniques, the report's attack chain and ATT&CK coverage."
-                            : "A point in the disclosure: when the vendor told us something, or we confirmed something about our data.")
+                        @(_evtOurs
+                            ? "What the attacker did in our network after pivoting from the vendor. The first step here is the pivot: its actor can be the vendor-side host and its target ours."
+                            : "What the attacker did in the vendor's environment, as the vendor reported it.")
+                        It counts in the case's techniques, the report's attack chain and ATT&amp;CK coverage@(_evtOurs ? " (as ours)" : " (marked as at a vendor)").
                     </p>
+                }
+                else if (IsThirdParty)
+                {
+                    <p class="small text-muted mb-2">A point in the disclosure: when the vendor told us something, or we confirmed something about our data.</p>
                 }
                 @if (!IsThirdParty || _evtAttackMode)
                 {
@@ -288,7 +302,7 @@
                         <AttackStepPicker @bind-TechniqueId="_evtTechnique" @bind-Tactic="_evtTactic" />
                     </div>
                     <div class="mt-2">
-                        <label class="form-label small mb-1" for="tl-atk-desc">What the @(IsThirdParty ? "attacker did at the vendor" : "adversary did")</label>
+                        <label class="form-label small mb-1" for="tl-atk-desc">What the @(!IsThirdParty ? "adversary did" : _evtOurs ? "attacker did in our environment" : "attacker did at the vendor")</label>
                         <textarea id="tl-atk-desc" class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
                                   aria-describedby="tl-oneline-hint" placeholder="e.g. Authenticated to the VPN from 203.0.113.66 with valid credentials"></textarea>
                         @OneLineHint("the report's tables and the attack-chain diagram")
@@ -464,7 +478,7 @@
     <div class="killchain-wrap mb-3 @(_showKillChain ? "" : "killchain-collapsed")">
         @* INV-26: folded, it's one line — the tactics in order — so the history below stays in view. *@
         <button type="button" class="killchain-strip" aria-expanded="@Ui.Aria(_showKillChain)" @onclick="ToggleKillChain">
-            <span class="fw-semibold small text-nowrap"><span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>@(IsThirdParty ? "Attack chain at the vendor" : "Attack chain")</span>
+            <span class="fw-semibold small text-nowrap"><span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>@ChainTitle(tlChain)</span>
             <span class="text-muted small text-nowrap">@IncidentManager.Application.Common.Plural.Of(tlChain.Count, "step")</span>
             @if (!_showKillChain)
             {
@@ -487,13 +501,21 @@
                     var step = tlChain[i];
                     if (i > 0)
                     {
-                        <div class="killchain-arrow" aria-hidden="true"><span class="bi bi-arrow-right"></span></div>
+                        var pivot = IsPivot(tlChain[i - 1], step);
+                        <div class="killchain-arrow @(pivot ? "killchain-pivot" : "")" aria-hidden="@Ui.Aria(!pivot)">
+                            <span class="bi bi-arrow-right" aria-hidden="true"></span>
+                            @if (pivot) { <span class="killchain-pivot-label">Pivot into our network</span> }
+                        </div>
                     }
                     <div class="killchain-node" style="--tl-color:@Ui.TacticColor(PrimaryTactic(step))">
                         <div class="killchain-node-head">
                             <span class="killchain-idx">@(i + 1)</span>
                             <span class="bi @Ui.TacticGlyph(PrimaryTactic(step))" aria-hidden="true"></span>
                             <time class="killchain-time" title="@TimeDisp.Long(step.OccurredAtUtc)">@TimeDisp.Short(step.OccurredAtUtc)</time>
+                            @if (IncidentManager.Application.Cases.EventSteps.WhereLabel(Case, step) is { } where)
+                            {
+                                <span class="im-badge im-b-neutral killchain-where">@where</span>
+                            }
                         </div>
                         <div class="killchain-tactics">
                             @foreach (var tt in step.Tactics.Select(x => x.Tactic).OrderBy(x => (int)x))
@@ -519,7 +541,7 @@
                                 }
                             </div>
                         }
-                        <div class="killchain-desc">@step.Description</div>
+                        <div class="killchain-desc md-body">@((MarkupString)Md.ToInlineHtml(step.Description, CaseId))</div>
                     </div>
                 }
             </div>
@@ -574,7 +596,7 @@ else
         @{ DateOnly? lastDay = null; DateTimeOffset? lastAt = null; }
         @if (Lanes)
         {
-            <li class="tl-lanehead" aria-hidden="true"><span>@(IsThirdParty ? "Vendor incident" : "Adversary")</span><span></span><span>Response</span></li>
+            <li class="tl-lanehead" aria-hidden="true"><span>@(IsThirdParty ? "Attack & disclosure" : "Adversary")</span><span></span><span>Response</span></li>
         }
         @foreach (var row in rows)
         {
@@ -669,7 +691,7 @@ else
                     </span>
                     <div class="tl-body">
                         <div class="tl-head">
-                            <span class="tl-kind-label"><span class="bi @(asAttack ? "bi-lightning-charge" : "bi-megaphone")" aria-hidden="true"></span> @(asAttack ? (IsThirdParty ? "Attack at the vendor" : "Event") : "Disclosure milestone")</span>
+                            <span class="tl-kind-label"><span class="bi @(asAttack ? "bi-lightning-charge" : "bi-megaphone")" aria-hidden="true"></span> @(asAttack ? (IsThirdParty ? $"Attack {IncidentManager.Application.Cases.EventSteps.WhereLabel(Case, e)}" : "Event") : "Disclosure milestone")</span>
                             @if (asAttack)
                             {
                                 <span class="tl-tactics">
@@ -1090,10 +1112,17 @@ else
     private bool _evtAttackMode;
     private static bool IsAttackStep(TimelineEntry e) => IncidentManager.Application.Cases.EventSteps.HasAttackContent(e);
 
-    // A vendor attack step keeps its kind with nothing ATT&CK picked: stored under the Unspecified tactic.
-    private IReadOnlySet<MitreTactic> StepTactics(Guid? actor, Guid? target, string? technique) =>
-        IsThirdParty && EvtTacticSet().Count == 0 && actor is null && target is null && technique is null
-            ? new HashSet<MitreTactic> { MitreTactic.Unspecified } : EvtTacticSet();
+    // Where a third-party case's attack step happened: the vendor's environment, or ours after a pivot.
+    private bool _evtOurs;
+    private StepEnvironment? StepWhere => IsThirdParty ? (_evtOurs ? StepEnvironment.Ours : StepEnvironment.Vendor) : null;
+
+    private static bool IsPivot(TimelineEntry before, TimelineEntry after) =>
+        before.Environment != StepEnvironment.Ours && after.Environment == StepEnvironment.Ours;
+
+    private string ChainTitle(List<TimelineEntry> chain) =>
+        !IsThirdParty ? "Attack chain"
+        : chain.Any(x => x.Environment == StepEnvironment.Ours) ? "Attack chain: the vendor, then our network"
+        : "Attack chain at the vendor";
 
     // FR-23: the Disclosure timeline (third-party) uses a scoped milestone set, not the generic IR list. The
     // shared values (Communication / Evidence / Other) appear in both; DisclosureOnly are Disclosure-only.
@@ -1410,7 +1439,7 @@ else
     {
         yield return (ComposerMode.Finding, "bi-search", "Finding");
         yield return (ComposerMode.Decision, "bi-signpost-split", "Decision");
-        yield return (ComposerMode.Adversary, "bi-lightning", IsThirdParty ? "Attack at the vendor" : "Adversary step");
+        yield return (ComposerMode.Adversary, "bi-lightning", IsThirdParty ? "Attack step" : "Adversary step");
         if (IsThirdParty) yield return (ComposerMode.Disclosure, "bi-megaphone", "Disclosure milestone");
         yield return (ComposerMode.Question, "bi-question-circle", "Question");
         yield return (ComposerMode.Note, "bi-journal-text", "Working note");
@@ -1600,7 +1629,8 @@ else
                 Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
                 Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
-                await Cases.AddEventStepAsync(CaseId, whenUtc, StepTactics(actor, target, technique), technique, actor, target, Tagged(_tlDesc)!, _tlSource, evidenceId: shotId, followUps: FollowUps());
+                await Cases.AddEventStepAsync(CaseId, whenUtc, EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, evidenceId: shotId,
+                    followUps: FollowUps(), environment: StepWhere);
             }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
@@ -1614,7 +1644,7 @@ else
         await OnChanged.InvokeAsync();
         var savedStep = SaveSummary();
         ResetFollowUps();
-        var what = disclosure ? "Disclosure milestone" : IsThirdParty ? "Attack step" : "Event step";
+        var what = disclosure ? "Disclosure milestone" : IsThirdParty ? (_evtOurs ? "Attack step in our environment" : "Attack step at the vendor") : "Event step";
         Toasts.Success(savedStep ?? (shotId is null ? $"{what} added" : $"{what} added with screenshot"));
     }
 
@@ -1640,6 +1670,7 @@ else
         _special = null;
         _tlAddKind = TimelineKind.Event;
         _evtAttackMode = IsThirdParty && IsAttackStep(e); // edit a vendor attack step as one, a milestone as one
+        _evtOurs = e.Environment == StepEnvironment.Ours;
         _tlEditId = e.Id;
         _tlReason = null;
         _tlWhen = UtcToWall(e.OccurredAtUtc);
@@ -1672,7 +1703,8 @@ else
                 Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
                 Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
-                await Cases.EditEventStepAsync(CaseId, id, whenUtc, StepTactics(actor, target, technique), technique, actor, target, Tagged(_tlDesc)!, _tlSource, _tlReason);
+                await Cases.EditEventStepAsync(CaseId, id, whenUtc, EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, _tlReason,
+                    environment: StepWhere);
             }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)

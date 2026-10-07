@@ -101,6 +101,9 @@ public sealed class AttackCoverageTests : IDisposable
                 CaseOrigin.ThirdParty, "ic1", now.AddDays(-2));
             v.AddEventStep(now.AddDays(-2), [MitreTactic.InitialAccess], "T1566.002", null, null, "Phished the vendor's admin", "Acme", "ic1", now);
             v.AddEventStep(now.AddDays(-1), [], null, null, null, "Vendor notified us", "Acme", "ic1", now, type: TimelineEntryType.Notified);
+            // The attacker pivoted into our network: that technique is ours.
+            v.AddEventStep(now.AddDays(-1), [MitreTactic.LateralMovement], "T1021", null, null, "Into our network", "EDR", "ic1", now,
+                environment: StepEnvironment.Ours);
             db.Cases.Add(v);
             await db.SaveChangesAsync();
         }
@@ -111,7 +114,9 @@ public sealed class AttackCoverageTests : IDisposable
         phishing.CaseCount.Should().Be(4, "two recent cases, the restricted one the commander can see, and the vendor's");
         phishing.ThirdPartyCount.Should().Be(1);
         phishing.Cases.Single(c => c.CaseNumber.StartsWith("2026-06")).ThirdParty.Should().BeTrue();
-        cov.Tactics.SelectMany(t => t.Cases).Where(c => c.ThirdParty).Should().OnlyContain(c => c.CaseNumber.StartsWith("2026-06"));
+        var lateral = cov.Tactics.Single(t => t.Tactic == MitreTactic.LateralMovement).Techniques.Single(t => t.TechniqueId == "T1021");
+        lateral.ThirdPartyCount.Should().Be(0, "seen in our network after the pivot");
+        lateral.Cases.Should().ContainSingle(c => c.CaseNumber.StartsWith("2026-06"));
     }
 
     [Fact]

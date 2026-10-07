@@ -9,6 +9,22 @@ namespace IncidentManager.UnitTests;
 /// <summary>PROD-27: the deterministic "What happened" draft built from the case record.</summary>
 public class CaseNarrativeTests
 {
+    [Fact]
+    public void A_steps_environment_is_in_its_row_hash_only_when_set()
+    {
+        var c = Case.Open(2026, 9, "Vendor", "Vendor breach", null, Severity.High, CaseOrigin.ThirdParty, "ic1", T0);
+        var step = c.AddEventStep(T0, [MitreTactic.InitialAccess], null, null, null, "Step", null, "ic1", T0);
+        var before = step.BuildCanonicalContent();
+        before.Should().NotContain("|env|", "existing rows keep their exact hash");
+
+        step.Environment = StepEnvironment.Ours;
+        step.BuildCanonicalContent().Should().Be(before + "|env|2");
+
+        var inside = Case.Open(2026, 10, "Ours", "Internal", null, Severity.High, CaseOrigin.InternalDetection, "ic1", T0);
+        inside.AddEventStep(T0, [], null, null, null, "Step", null, "ic1", T0, environment: StepEnvironment.Vendor)
+            .Environment.Should().BeNull("only a third-party case says where a step happened");
+    }
+
     private static readonly DateTimeOffset T0 = new(2026, 9, 1, 8, 0, 0, TimeSpan.Zero);
 
     private static string Sev(Severity s) => s == Severity.Critical ? "SEV-1" : s.ToString();
@@ -40,6 +56,24 @@ public class CaseNarrativeTests
 
         // The opening classification/severity/phase are the starting point, not decisions.
         md.Should().NotContain("Initial classification").And.NotContain("Initial severity");
+    }
+
+    [Fact]
+    public void A_vendor_attack_that_pivoted_into_our_network_reads_as_one_sequence_saying_where()
+    {
+        var c = Case.Open(2026, 9, "Vendor", "Vendor breach reached us", null, Severity.High, CaseOrigin.ThirdParty, "ic1", T0);
+        c.AddEventStep(T0, [MitreTactic.InitialAccess], "T1190", null, null, "Exploited the vendor's appliance", null, "ic1", T0,
+            environment: StepEnvironment.Vendor);
+        c.AddEventStep(T0.AddHours(2), [MitreTactic.LateralMovement], "T1021", null, null, "Used the vendor's VPN tunnel into our network", null, "ic1", T0,
+            environment: StepEnvironment.Ours);
+        c.AddEventStep(T0.AddHours(5), [], null, null, null, "Vendor notified us", null, "ic1", T0, type: TimelineEntryType.Notified);
+
+        var md = CaseNarrative.Draft(c, _ => null, Sev, T0.AddDays(1));
+
+        md.Should().Contain("### Attack sequence (at the vendor, then in our environment)");
+        md.Should().Contain("- 2026-09-01 08:00 UTC at the vendor (Initial Access, T1190): Exploited the vendor's appliance.");
+        md.Should().Contain("- 2026-09-01 10:00 UTC in our environment (Lateral Movement, T1021): Used the vendor's VPN tunnel into our network.");
+        md.Should().Contain("### Disclosure sequence");
     }
 
     [Fact]

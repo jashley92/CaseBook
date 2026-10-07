@@ -3,8 +3,10 @@ using IncidentManager.Domain.Enums;
 namespace IncidentManager.Application.Reporting;
 
 /// <summary>PROD-46: one attack-chain step as the diagram needs it (values already defanged when reports defang).</summary>
+/// <param name="InOurEnvironment">On a third-party case, true for a step after the attacker pivoted into our network,
+/// false for one at the vendor; null on an internal case.</param>
 public sealed record DiagramStep(int Order, DateTimeOffset OccurredAtUtc, IReadOnlyList<MitreTactic> Tactics,
-    string? TechniqueId, string Actor, string Target);
+    string? TechniqueId, string Actor, string Target, bool? InOurEnvironment = null);
 
 /// <summary>PROD-46: one entity in the relationship picture; X/Y are the analyst's saved graph layout, if any.</summary>
 public sealed record DiagramNode(Guid Id, string Label, EntityType Type, EntityDisposition Disposition, double? X, double? Y);

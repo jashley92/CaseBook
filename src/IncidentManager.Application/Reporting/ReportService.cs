@@ -498,7 +498,8 @@ public sealed class ReportService
             .Where(x => EventSteps.IsAttack(c, x))
             .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
             .Select((x, i) => new DiagramStep(i + 1, x.OccurredAtUtc, x.Tactics.Select(t => t.Tactic).ToList(), x.TechniqueId,
-                d.Text(EntityName(c, x.ActorEntityId)), d.Text(EntityName(c, x.TargetEntityId))))
+                d.Text(EntityName(c, x.ActorEntityId)), d.Text(EntityName(c, x.TargetEntityId)),
+                c.Origin == CaseOrigin.ThirdParty ? EventSteps.Where(c, x) == StepEnvironment.Ours : null))
             .ToList();
         // Nothing mapped to ATT&CK means one "Unmapped" lane — the table already says that better.
         return steps.Any(s => s.Tactics.Any(t => t != MitreTactic.Unspecified)) ? _diagrams.AttackChain(steps) : [];
@@ -817,7 +818,9 @@ public sealed class ReportService
                     d.Text(EntityName(c, x.ActorEntityId)),
                     d.Text(EntityName(c, x.TargetEntityId)),
                     x.TechniqueId,
-                    d.Text(Content.MarkdownService.PlainLine(x.Description))))
+                    d.Text(Content.MarkdownService.PlainLine(x.Description)),
+                    EventSteps.Where(c, x) is { } env && c.Origin == CaseOrigin.ThirdParty
+                        ? (env == StepEnvironment.Ours ? "Our environment" : "Vendor") : null))
                 .ToList(),
             InvestigationTimeline = InvestigationTimeline(c, d, opts, extras),
             Brief = c.Briefs.FirstOrDefault(b => b.IsCurrent) is { } brief

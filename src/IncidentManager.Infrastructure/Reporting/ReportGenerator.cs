@@ -107,22 +107,29 @@ public sealed partial class ReportGenerator : IReportGenerator
                 body.AppendChild(Heading("Event Timeline"));
                 if (m.AttackChain.Count > 0 || !vendorCase)
                 {
-                    body.AppendChild(P(vendorCase
-                        ? $"The attacker's activity in {(string.IsNullOrWhiteSpace(m.VendorName) ? "the vendor" : m.VendorName)}'s environment, as the vendor reported it: MITRE ATT&CK tactic(s), actor → target, and technique."
-                        : "Reconstructed adversary activity in order: MITRE ATT&CK tactic(s), actor → target, and technique.", italic: true, size: 18));
+                    var vendor = string.IsNullOrWhiteSpace(m.VendorName) ? "the vendor" : m.VendorName;
+                    var pivoted = m.AttackChain.Any(x => x.Where == "Our environment");
+                    body.AppendChild(P(!vendorCase
+                        ? "Reconstructed adversary activity in order: MITRE ATT&CK tactic(s), actor → target, and technique."
+                        : pivoted
+                            ? $"The attacker's activity in order: in {vendor}'s environment as the vendor reported it, then in our environment after the pivot. MITRE ATT&CK tactic(s), actor → target, and technique."
+                            : $"The attacker's activity in {vendor}'s environment, as the vendor reported it: MITRE ATT&CK tactic(s), actor → target, and technique.", italic: true, size: 18));
                     foreach (var png in m.AttackChainImages)
                         body.AppendChild(BodyPicture(main, png, "Attack chain", CaseReportModel.AttackChainAlt));
-                    body.AppendChild(WordTable(
-                        ["#", "When (UTC)", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
-                        m.AttackChain.Select(x => new[]
-                        {
-                            x.Order.ToString(CultureInfo.InvariantCulture),
-                            x.OccurredAtUtc.ToString("u"),
-                            x.Tactics,
-                            string.IsNullOrEmpty(x.Actor) && string.IsNullOrEmpty(x.Target) ? "" : $"{x.Actor} → {x.Target}",
-                            x.TechniqueId ?? "",
-                            x.Description
-                        })));
+                    string[] Row(ReportAttackStep x) =>
+                    [
+                        x.Order.ToString(CultureInfo.InvariantCulture),
+                        x.OccurredAtUtc.ToString("u"),
+                        x.Tactics,
+                        string.IsNullOrEmpty(x.Actor) && string.IsNullOrEmpty(x.Target) ? "" : $"{x.Actor} → {x.Target}",
+                        x.TechniqueId ?? "",
+                        x.Description
+                    ];
+                    body.AppendChild(vendorCase
+                        ? WordTable(["#", "When (UTC)", "Where", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
+                            m.AttackChain.Select(x => Row(x).Take(2).Append(x.Where ?? "").Concat(Row(x).Skip(2)).ToArray()))
+                        : WordTable(["#", "When (UTC)", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
+                            m.AttackChain.Select(Row)));
                 }
                 if (m.DisclosureMilestones.Count > 0)
                 {

@@ -161,6 +161,16 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ## Notes
 
+### The next release (after v1.3.0)
+
+- **One additive migration** (`AddStepEnvironment`): a nullable `Environment` column on `TimelineEntries`, for where a
+  third-party case's attack step happened. Existing rows keep their exact row hash. In `DbaApplies` mode the bundle's
+  `deploy/sql/casebook-schema-sqlserver.sql` includes it.
+- **Third-party cases** separate the attacker's steps from the disclosure milestones, and an attack step can be in
+  our environment after a pivot. Reports of vendor cases now print the disclosure milestones, which earlier releases
+  built but left out.
+- **Event steps and open questions are one line of inline Markdown**; the box says so under it.
+
 ### v1.3.0
 
 The upgrade itself is the usual one: seven migrations, applied at startup. People will notice more. Cases, the

@@ -75,8 +75,24 @@ public sealed class SkiaReportDiagrams : IReportDiagrams
             {
                 var s = steps[i];
                 var x = labelW + i * colW;
+                // A third-party case's steps in our network sit on a light red tint, so the crossing reads at a glance.
+                if (s.InOurEnvironment == true)
+                {
+                    using var ours = Fill("#dc3545", alpha: 16);
+                    canvas.DrawRect(x, top, colW, lanes.Count * laneH, ours);
+                }
                 using var muted = Fill("#6c757d");
-                canvas.DrawText($"#{s.Order} · {s.OccurredAtUtc:MM-dd HH:mm}", x + colW / 2, top - 12, SKTextAlign.Center, small, muted);
+                var where = s.InOurEnvironment switch { true => " · our network", false => " · vendor", null => "" };
+                canvas.DrawText(Fit($"#{s.Order} · {s.OccurredAtUtc:MM-dd HH:mm}{where}", colW - 4, small), x + colW / 2, top - 12, SKTextAlign.Center, small, muted);
+                // The pivot: where a third-party case's chain crosses from the vendor into our network.
+                if (i > 0 && steps[i - 1].InOurEnvironment == false && s.InOurEnvironment == true)
+                {
+                    using var pivot = Stroke("#dc3545", 1.6f);
+                    pivot.PathEffect = SKPathEffect.CreateDash([6f, 4f], 0);
+                    canvas.DrawLine(x, top - 4, x, height - 6, pivot);
+                    using var red = Fill("#dc3545");
+                    canvas.DrawText("pivot", x + 4, height - 10, SKTextAlign.Left, small, red);
+                }
 
                 var lane = lanes.IndexOf(primary[s.Order]);
                 var rect = new SKRect(x + pad, top + lane * laneH + 7, x + colW - pad, top + (lane + 1) * laneH - 7);

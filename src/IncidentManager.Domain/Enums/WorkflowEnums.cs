@@ -206,6 +206,17 @@ public enum EntityRelationshipType
 /// How one case relates to another (E-14 case linking / campaign grouping). <see cref="DuplicateOf"/>
 /// is directional (the filing case is a duplicate of the other); the rest are symmetric.
 /// </summary>
+/// <summary>
+/// Where an attack step on a third-party case happened: in the vendor's environment, or in ours (the attacker pivoted
+/// from the vendor into our network). Null on an internal case, where every step is ours, and on a third-party case
+/// means the vendor's environment.
+/// </summary>
+public enum StepEnvironment
+{
+    Vendor = 1,
+    Ours = 2
+}
+
 public enum CaseLinkType
 {
     /// <summary>Symmetric: generally related (shared indicators, actor, or context).</summary>

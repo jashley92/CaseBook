@@ -719,7 +719,7 @@ public class Case : AuditableEntity, IHashableEntity
     /// </summary>
     public TimelineEntry EditEventStep(Guid entryId, DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
-        string actor, DateTimeOffset nowUtc, TimelineEntryType type = TimelineEntryType.Other)
+        string actor, DateTimeOffset nowUtc, TimelineEntryType type = TimelineEntryType.Other, StepEnvironment? environment = null)
     {
         if (string.IsNullOrWhiteSpace(description))
             throw new ArgumentException("A description is required.");
@@ -741,6 +741,7 @@ public class Case : AuditableEntity, IHashableEntity
         entry.TechniqueId = normalisedTechnique;
         entry.ActorEntityId = actorEntityId;
         entry.TargetEntityId = targetEntityId;
+        entry.Environment = Origin == CaseOrigin.ThirdParty ? environment : null;
         entry.ModifiedBy = actor;
         entry.ModifiedAtUtc = nowUtc;
 
@@ -826,7 +827,8 @@ public class Case : AuditableEntity, IHashableEntity
     /// </summary>
     public TimelineEntry AddEventStep(DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
-        string actor, DateTimeOffset nowUtc, Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other)
+        string actor, DateTimeOffset nowUtc, Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other,
+        StepEnvironment? environment = null)
     {
         if (string.IsNullOrWhiteSpace(description))
             throw new ArgumentException("A description is required.");
@@ -852,6 +854,8 @@ public class Case : AuditableEntity, IHashableEntity
             TechniqueId = normalisedTechnique,
             ActorEntityId = actorEntityId,
             TargetEntityId = targetEntityId,
+            // Only a third-party case says where a step happened; an internal case's steps are all ours.
+            Environment = Origin == CaseOrigin.ThirdParty ? environment : null,
             EvidenceId = evidenceId,
             CreatedBy = actor,
             CreatedAtUtc = nowUtc

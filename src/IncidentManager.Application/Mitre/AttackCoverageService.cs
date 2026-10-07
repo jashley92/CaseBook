@@ -5,8 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace IncidentManager.Application.Mitre;
 
-/// <summary>A case counted in the heatmap (the drill-down behind a cell). <paramref name="ThirdParty"/>: the technique
-/// was seen at a vendor (the attacker's steps in the vendor's environment), not in our own estate.</summary>
+/// <summary>A case counted in the heatmap (the drill-down behind a cell). <paramref name="ThirdParty"/>: in this cell the
+/// case saw it only at a vendor (the attacker's steps in the vendor's environment), not in our own estate. A step after
+/// the attacker pivoted from the vendor into our network counts as ours.</summary>
 public sealed record CoverageCase(Guid CaseId, string CaseNumber, string Title, bool ThirdParty = false);
 
 /// <summary>
@@ -67,11 +68,12 @@ public sealed class AttackCoverageService
         if (!includeExercises) q = q.ExcludingExercises();
 
         var caseRows = await q.Select(c => new { c.Id, c.CaseNumber, c.Title, c.DetectedAtUtc, c.CreatedAtUtc, c.Origin }).ToListAsync(ct);
+        var thirdParty = caseRows.Where(c => c.Origin == CaseOrigin.ThirdParty).Select(c => c.Id).ToHashSet();
         // Window filter in memory: DateTimeOffset comparison stays off SQLite (F-08).
         var inPeriod = caseRows
             .Where(c => (since is null || (c.DetectedAtUtc ?? c.CreatedAtUtc) >= since)
                         && (until is null || (c.DetectedAtUtc ?? c.CreatedAtUtc) < until))
-            .ToDictionary(c => c.Id, c => new CoverageCase(c.Id, c.CaseNumber, c.Title, c.Origin == CaseOrigin.ThirdParty));
+            .ToDictionary(c => c.Id, c => new CoverageCase(c.Id, c.CaseNumber, c.Title));
         // Tags come back for every visible case (a subquery, not a list of ids) and are narrowed to the window here.
         var ids = q.Select(c => c.Id);
 
@@ -81,23 +83,24 @@ public sealed class AttackCoverageService
             .ToListAsync(ct)).Where(t => inPeriod.ContainsKey(t.CaseId)).ToList();
         var steps = (await db.TimelineEntries.AsNoTracking()
             .Where(e => ids.Contains(e.CaseId) && e.Kind == TimelineKind.Event)
-            .Select(e => new { e.CaseId, e.TechniqueId, Tactics = e.Tactics.Select(x => x.Tactic).ToList() })
+            .Select(e => new { e.CaseId, e.TechniqueId, e.Environment, Tactics = e.Tactics.Select(x => x.Tactic).ToList() })
             .ToListAsync(ct)).Where(e => inPeriod.ContainsKey(e.CaseId)).ToList();
 
-        // Flatten every observation to (case, tactic, technique?) — a tactic-only step still lights its column.
-        var obs = new List<(Guid CaseId, MitreTactic Tactic, string? Technique)>();
+        // Flatten every observation to (case, tactic, technique?, at a vendor?) — a tactic-only step still lights its
+        // column. On a third-party case a tag, or a step not marked as in our environment, was seen at the vendor.
+        var obs = new List<(Guid CaseId, MitreTactic Tactic, string? Technique, bool Vendor)>();
         foreach (var t in tags)
             foreach (var tac in TacticsFor(t.TechniqueId, [t.Tactic]))
-                obs.Add((t.CaseId, tac, t.TechniqueId));
+                obs.Add((t.CaseId, tac, t.TechniqueId, thirdParty.Contains(t.CaseId)));
         foreach (var s in steps)
             foreach (var tac in TacticsFor(s.TechniqueId, s.Tactics))
-                obs.Add((s.CaseId, tac, s.TechniqueId));
+                obs.Add((s.CaseId, tac, s.TechniqueId, thirdParty.Contains(s.CaseId) && s.Environment != StepEnvironment.Ours));
 
         var tactics = obs
             .GroupBy(o => o.Tactic)
             .Select(g => new CoverageTactic(
                 g.Key,
-                Distinct(g.Select(o => o.CaseId), inPeriod),
+                Distinct(g.Select(o => (o.CaseId, o.Vendor)), inPeriod),
                 g.Where(o => !string.IsNullOrWhiteSpace(o.Technique))
                     .GroupBy(o => ParentId(o.Technique!), StringComparer.OrdinalIgnoreCase)
                     .Select(tg => new CoverageTechnique(
@@ -106,7 +109,7 @@ public sealed class AttackCoverageService
                         tg.Select(o => o.Technique!.Trim().ToUpperInvariant())
                             .Where(x => !string.Equals(x, tg.Key, StringComparison.OrdinalIgnoreCase))
                             .Distinct().OrderBy(x => x, StringComparer.Ordinal).ToList(),
-                        Distinct(tg.Select(o => o.CaseId), inPeriod)))
+                        Distinct(tg.Select(o => (o.CaseId, o.Vendor)), inPeriod)))
                     .OrderByDescending(t => t.CaseCount)
                     .ThenBy(t => t.TechniqueId, StringComparer.Ordinal)
                     .ToList()))
@@ -140,6 +143,9 @@ public sealed class AttackCoverageService
         return dot < 0 ? id : id[..dot];
     }
 
-    private static IReadOnlyList<CoverageCase> Distinct(IEnumerable<Guid> ids, IReadOnlyDictionary<Guid, CoverageCase> cases) =>
-        ids.Distinct().Select(id => cases[id]).OrderBy(c => c.CaseNumber, StringComparer.Ordinal).ToList();
+    // Each case once; marked at a vendor only when every one of its observations here was at the vendor.
+    private static IReadOnlyList<CoverageCase> Distinct(IEnumerable<(Guid CaseId, bool Vendor)> obs, IReadOnlyDictionary<Guid, CoverageCase> cases) =>
+        obs.GroupBy(o => o.CaseId)
+            .Select(g => cases[g.Key] with { ThirdParty = g.All(o => o.Vendor) })
+            .OrderBy(c => c.CaseNumber, StringComparer.Ordinal).ToList();
 }

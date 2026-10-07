@@ -579,13 +579,18 @@ public sealed class ReportingIntegrationTests : IDisposable
             "Exploited the vendor's file-transfer appliance", "Acme SaaS", "ic", _clock.UtcNow);
         c.AddEventStep(_clock.UtcNow.AddHours(2), [MitreTactic.Unspecified], null, null, null,
             "Copied the customer share", "Acme SaaS", "ic", _clock.UtcNow);
+        // Then pivoted into our network.
+        c.AddEventStep(_clock.UtcNow.AddHours(4), [MitreTactic.LateralMovement], "T1021", null, null,
+            "Came in over the vendor's VPN tunnel", "EDR", "ic", _clock.UtcNow, environment: StepEnvironment.Ours);
         db.Cases.Add(c);
         await db.SaveChangesAsync();
 
         var svc = NewReportService(db);
         var model = await svc.BuildPreviewModelAsync(c.Id, null);
 
-        model.AttackChain.Select(x => x.Description).Should().Equal("Exploited the vendor's file-transfer appliance", "Copied the customer share");
+        model.AttackChain.Select(x => (x.Description, x.Where)).Should().Equal(
+            ("Exploited the vendor's file-transfer appliance", "Vendor"), ("Copied the customer share", "Vendor"),
+            ("Came in over the vendor's VPN tunnel", "Our environment"));
         model.DisclosureMilestones.Should().ContainSingle().Which.Description.Should().Be("Vendor confirmed our records were exposed");
         IncidentManager.Application.Mitre.CaseTechniques.For(c).Should().ContainSingle(t => t.TechniqueId == "T1190" && t.ChainSteps == 1);
 
@@ -599,7 +604,8 @@ public sealed class ReportingIntegrationTests : IDisposable
             await using var docStream = zip.GetEntry("word/document.xml")!.Open();
             documentXml = await new StreamReader(docStream).ReadToEndAsync();
         }
-        documentXml.Should().Contain("environment, as the vendor reported it").And.Contain("Exploited the vendor");
+        documentXml.Should().Contain("then in our environment after the pivot").And.Contain("Exploited the vendor")
+            .And.Contain(">Where<").And.Contain(">Our environment<");
         documentXml.Should().Contain("Disclosure milestones").And.Contain("Vendor confirmed our records were exposed",
             "the milestones were built for the report but never printed before");
     }

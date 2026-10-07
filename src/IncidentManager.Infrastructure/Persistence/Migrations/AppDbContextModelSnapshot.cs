@@ -2347,6 +2347,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(16000)
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("Environment")
+                        .HasColumnType("INTEGER");
+
                     b.Property<Guid?>("EvidenceId")
                         .HasColumnType("TEXT");
 

@@ -37,6 +37,9 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
     /// <summary>MITRE ATT&amp;CK tactics attributed to this step (an Event step may span several).</summary>
     public List<EventStepTactic> Tactics { get; set; } = new();
 
+    /// <summary>On a third-party case, where the attack step happened (the vendor's environment or ours); null otherwise.</summary>
+    public StepEnvironment? Environment { get; set; }
+
     /// <summary>
     /// Optional screenshot attached to this entry (U-40): the id of an <see cref="Evidence"/> item the
     /// image was stored as — so a pasted screenshot stays hashed and in the chain of custody like any other
@@ -135,6 +138,9 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
         // INV-06: a decision's rationale / options / decider, folded in only when present (no re-baseline).
         if (Rationale is not null || OptionsConsidered is not null || DecidedBy is not null)
             content = string.Join('|', content, "dec", Rationale, OptionsConsidered, DecidedBy);
+
+        // Where a third-party case's attack step happened, folded in only when present (no re-baseline).
+        if (Environment is { } env) content = string.Join('|', content, "env", (int)env);
         return content;
     }
 }

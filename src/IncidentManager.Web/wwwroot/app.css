@@ -1723,6 +1723,11 @@ h1:focus {
     font-size: 1.1rem;
     padding: 0 0.35rem;
 }
+/* A third-party case's chain: where the attacker crossed from the vendor into our network. */
+.killchain-pivot { display: flex; flex-direction: column; align-items: center; gap: .15rem; color: var(--im-danger);
+    border-left: 2px dashed var(--im-danger); border-right: 2px dashed var(--im-danger); padding: 0 .5rem; }
+.killchain-pivot-label { font-size: .7rem; font-weight: 600; white-space: nowrap; }
+.killchain-where { margin-left: auto; font-size: .65rem; }
 
 /* ============================================================================
    Command palette + keyboard-first layer (U-22 / U-14 light chords)

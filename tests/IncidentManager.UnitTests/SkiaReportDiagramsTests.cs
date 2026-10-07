@@ -30,6 +30,20 @@ public class SkiaReportDiagramsTests
     }
 
     [Fact]
+    public void A_third_party_chain_marks_where_each_step_was_and_the_pivot()
+    {
+        DiagramStep At(int n, bool ours, MitreTactic t) => Step(n, t) with { InOurEnvironment = ours };
+        var pivoted = _diagrams.AttackChain([At(1, false, MitreTactic.InitialAccess), At(2, false, MitreTactic.Collection),
+            At(3, true, MitreTactic.LateralMovement), At(4, true, MitreTactic.Exfiltration)]);
+        var plain = _diagrams.AttackChain([Step(1, MitreTactic.InitialAccess), Step(2, MitreTactic.Collection),
+            Step(3, MitreTactic.LateralMovement), Step(4, MitreTactic.Exfiltration)]);
+
+        pivoted.Should().ContainSingle();
+        IsPng(pivoted[0]).Should().BeTrue();
+        pivoted[0].Should().NotEqual(plain[0], "the steps say where they were and the pivot is drawn");
+    }
+
+    [Fact]
     public void A_long_chain_wraps_into_several_images()
     {
         var steps = Enumerable.Range(1, 13).Select(i => Step(i, MitreTactic.Execution)).ToList();

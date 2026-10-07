@@ -55,19 +55,27 @@ Same composer, *Adversary step*: when, one or more ATT&CK tactics and an optiona
 optional screenshot. `CaseService.AddEventStepAsync` → `Case.AddEventStep`. Errors: "The actor is not an entity
 on this case." (and the same for the target), technique ids must look like `T1566` or `T1566.001`.
 
-On **third-party** cases the lens and lane are *Vendor incident*, and the composer has two modes instead of
+On **third-party** cases the lens and lane are *Attack & disclosure*, and the composer has two modes instead of
 *Adversary step*:
 
-- **Attack at the vendor**: what the attacker did in the vendor's environment, as the vendor reported it. The same
-  fields as an adversary step. It counts like one: in the case's techniques, the report's attack chain and diagram,
-  the lessons narrative ("Attack at the vendor") and ATT&CK coverage, where the case is marked *At a vendor*. A step
-  saved with no tactic, technique, actor or target is stored under the Unspecified tactic so it stays an attack step.
+- **Attack step**, with *Where did it happen?*: **the vendor's environment** (what the attacker did there, as the
+  vendor reported it) or **our environment** (what they did in our network after pivoting from the vendor; the first
+  such step is the pivot, and its actor can be the vendor-side host and its target ours). The same fields as an
+  adversary step, and it counts like one: in the case's techniques, the report's attack chain and diagram, the lessons
+  narrative and ATT&CK coverage. Steps at the vendor are marked *At a vendor* in coverage; steps in our environment
+  count as ours. The Record labels each "Attack at the vendor" / "Attack in our environment", the chain strip reads
+  "Attack chain: the vendor, then our network" once there's a pivot, and the expanded chain marks *Pivot into our
+  network*. The report's attack chain gets a *Where* column (template field `step.where`), its diagram tints the
+  steps in our network and draws a dashed *pivot* line, and the narrative becomes one "Attack sequence (at the vendor,
+  then in our environment)". Stored as `TimelineEntry.Environment` (null on an internal case, and on older vendor
+  steps, which read as the vendor's).
 - **Disclosure milestone**: when the vendor told us something or we confirmed something, typed by stage (Notified,
   Scope confirmed, Data confirmed, Remediation, Regulatory notification, Communication, Evidence, Other), without
   ATT&CK. The report prints these as *Disclosure milestones* (template collection `milestone`).
 
 `EventSteps.IsAttack` / `IsDisclosure` decide which a step is: on a third-party case, a step with ATT&CK content
-(tactics, a technique, an actor or target) is an attack step; on an internal case every step is.
+(tactics, a technique, an actor or target) or a stated environment is an attack step; on an internal case every step
+is. `EventSteps.Where` says where an attack step happened.
 
 ### Editing
 
