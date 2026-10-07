@@ -19,7 +19,7 @@ public static class CaseTechniques
     /// <summary>
     /// HR-13: the case's techniques as a reader expects them: the manual tags plus every technique recorded on an
     /// attack-chain step (one row per technique and tactic), so a two-step chain doesn't sit beside "No techniques
-    /// tagged". A third-party case's event steps are disclosure milestones, not an attack chain, so they add nothing.
+    /// tagged". On a third-party case that's the attacker's steps at the vendor; disclosure milestones add nothing.
     /// </summary>
     public static IReadOnlyList<CaseTechniqueRow> For(Case c)
     {
@@ -27,8 +27,7 @@ public static class CaseTechniques
         foreach (var t in c.Techniques)
             rows[(t.TechniqueId.ToUpperInvariant(), t.Tactic)] = new(t.TechniqueId, t.Name, t.Tactic, t.Id, 0);
 
-        if (c.Origin != CaseOrigin.ThirdParty)
-            foreach (var step in c.TimelineEntries.Where(e => e.Kind == TimelineKind.Event && !string.IsNullOrWhiteSpace(e.TechniqueId)))
+        foreach (var step in c.TimelineEntries.Where(e => Cases.EventSteps.IsAttack(c, e) && !string.IsNullOrWhiteSpace(e.TechniqueId)))
             {
                 var id = step.TechniqueId!.Trim().ToUpperInvariant();
                 var tactics = step.Tactics.Select(x => x.Tactic).Where(x => x != MitreTactic.Unspecified).Distinct().ToList();

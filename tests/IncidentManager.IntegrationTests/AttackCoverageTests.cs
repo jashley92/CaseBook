@@ -91,6 +91,30 @@ public sealed class AttackCoverageTests : IDisposable
     }
 
     [Fact]
+    public async Task A_vendor_attack_counts_and_is_marked_and_its_disclosure_milestones_add_nothing()
+    {
+        await SeedAsync();
+        await using (var db = new AppDbContext(Options()))
+        {
+            var now = _clock.UtcNow;
+            var v = Case.Open(2026, 6, "Vendor", "Vendor breach", Classification.Breach, Severity.High,
+                CaseOrigin.ThirdParty, "ic1", now.AddDays(-2));
+            v.AddEventStep(now.AddDays(-2), [MitreTactic.InitialAccess], "T1566.002", null, null, "Phished the vendor's admin", "Acme", "ic1", now);
+            v.AddEventStep(now.AddDays(-1), [], null, null, null, "Vendor notified us", "Acme", "ic1", now, type: TimelineEntryType.Notified);
+            db.Cases.Add(v);
+            await db.SaveChangesAsync();
+        }
+
+        var cov = await Service().GetAsync(months: 12);
+
+        var phishing = cov.Tactics.Single(t => t.Tactic == MitreTactic.InitialAccess).Techniques.Single(t => t.TechniqueId == "T1566");
+        phishing.CaseCount.Should().Be(4, "two recent cases, the restricted one the commander can see, and the vendor's");
+        phishing.ThirdPartyCount.Should().Be(1);
+        phishing.Cases.Single(c => c.CaseNumber.StartsWith("2026-06")).ThirdParty.Should().BeTrue();
+        cov.Tactics.SelectMany(t => t.Cases).Where(c => c.ThirdParty).Should().OnlyContain(c => c.CaseNumber.StartsWith("2026-06"));
+    }
+
+    [Fact]
     public async Task All_time_and_exercises_widen_the_view()
     {
         await SeedAsync();

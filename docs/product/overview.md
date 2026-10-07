@@ -79,7 +79,7 @@ flowchart LR
 | **Classification** | Where the case sits on the incident response plan's ladder: **Complex Event** (not yet classified) → **Adverse Event** → **Incident** → **Breach**. Moving up runs a stage gate; moving down doesn't. |
 | **Phase** | NIST SP 800-61 lifecycle: New → Triage → Containment → Eradication → Recovery → Post-Incident → Closed. Any phase can follow any other; only closing is gated. |
 | **Severity** | Informational, Low, Medium, High, Critical. Drives SLA targets and stale-case thresholds. |
-| **Origin** | Internal detection, or third-party (a vendor tells you about their breach). Third-party cases use a "Disclosure" timeline instead of an attack chain. |
+| **Origin** | Internal detection, or third-party (a vendor tells you about their breach). Third-party cases record the vendor's incident: the attacker's steps in the vendor's environment and the disclosure milestones. |
 | **Timeline** | Event steps (what the adversary or vendor did), investigation entries (what the team did), decisions, handoffs, and derived milestones. |
 | **Entity / IOC** | An account, host, IP, domain, URL, file hash, file name, email address, process or registry key, with a disposition (Unknown, Benign, Suspicious, Malicious, Compromised). |
 | **Evidence** | A file attached to a case, hashed, with its own custody log. |

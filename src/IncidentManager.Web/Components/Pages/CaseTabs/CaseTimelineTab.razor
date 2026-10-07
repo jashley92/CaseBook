@@ -41,7 +41,7 @@
     var rows = MergeRows(tlView, msView);
     var totalAll = tlAll.Count + msAll.Count;
     // The attack chain is always event-only, regardless of lens (shown under All and Event).
-    var tlChain = Case.TimelineEntries.Where(x => x.Kind == TimelineKind.Event && x.IsCurrent)
+    var tlChain = Case.TimelineEntries.Where(x => x.IsCurrent && IncidentManager.Application.Cases.EventSteps.IsAttack(Case, x))
         .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc).ToList();
 }
 
@@ -56,8 +56,8 @@
                 title="The full chronology: what happened, what the team did, and the response milestones."
                 @onclick="() => SwitchLens(null)">Everything <span class="tl-count">@(CurrentEntries.Count() + Milestones().Count)</span></button>
         <button class="btn btn-sm @(_tlLens == TimelineKind.Event ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Event)"
-                title="@(IsThirdParty ? "The vendor-disclosure narrative: what the vendor reported and what we confirmed about our data." : "The attack narrative: facts and timing of what the adversary did.")"
-                @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Disclosure" : "Attack chain") <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Event)</span></button>
+                title="@(IsThirdParty ? "The vendor's incident: the attacker's steps in the vendor's environment, and the disclosure milestones (what the vendor told us and what we confirmed)." : "The attack narrative: facts and timing of what the adversary did.")"
+                @onclick="() => SwitchLens(TimelineKind.Event)">@(IsThirdParty ? "Vendor incident" : "Attack chain") <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Event)</span></button>
         <button class="btn btn-sm @(_tlLens == TimelineKind.Investigation && !_decOnly ? "active" : "")" aria-pressed="@Ui.Aria(_tlLens == TimelineKind.Investigation && !_decOnly)"
                 title="What the team did: findings, actions, decisions and handoffs."
                 @onclick="() => SwitchLens(TimelineKind.Investigation)">Response <span class="tl-count">@CurrentEntries.Count(x => x.Kind == TimelineKind.Investigation)</span></button>
@@ -107,7 +107,7 @@
             @if (!ComposerVisible)
             {
                 <button type="button" class="btn btn-sm btn-primary ms-auto" aria-expanded="false" aria-controls="timeline-dropzone"
-                        title="Add @(IsThirdParty ? "a disclosure" : "an event") step or an investigation entry. You can also paste a screenshot."
+                        title="Add @(IsThirdParty ? "an attack step at the vendor, a disclosure milestone" : "an adversary step") or an investigation entry. You can also paste a screenshot."
                         @onclick="() => _composerOpen = true">
                     <span class="bi bi-plus-lg" aria-hidden="true"></span> Add
                 </button>
@@ -200,8 +200,8 @@
                     <span>
                         <span class="bi bi-pencil-square" aria-hidden="true"></span>
                         @(_tlAddKind == TimelineKind.Event
-                            ? (IsThirdParty ? "Editing this disclosure step. The audit trail records the change."
-                                            : "Editing this event step. The audit trail records the change.")
+                            ? (IsThirdParty && !_evtAttackMode ? "Editing this disclosure milestone. The audit trail records the change."
+                                            : "Editing this attack step. The audit trail records the change.")
                             : "Editing this entry. Saving creates a new version and keeps the old one.")
                     </span>
                     <button type="button" class="btn btn-sm btn-link text-decoration-none p-0"
@@ -244,14 +244,11 @@
             {
                 @if (IsThirdParty)
                 {
-                    @* FR-24: optionally switch this third-party Event composer between a disclosure milestone and
-                       a vendor-provided attack (ATT&CK) step. Disclosure is the default. *@
-                    <div class="im-seg mb-2" role="group" aria-label="Event step type">
-                        <button type="button" class="btn @(!_evtAttackMode ? "active" : "")" aria-pressed="@Ui.Aria(!_evtAttackMode)"
-                                @onclick="() => _evtAttackMode = false">Disclosure milestone</button>
-                        <button type="button" class="btn @(_evtAttackMode ? "active" : "")" aria-pressed="@Ui.Aria(_evtAttackMode)"
-                                @onclick="() => _evtAttackMode = true" title="Record the vendor's attack breakdown (MITRE ATT&CK)">Attack step (ATT&amp;CK)</button>
-                    </div>
+                    <p class="small text-muted mb-2">
+                        @(_evtAttackMode
+                            ? "What the attacker did in the vendor's environment, as the vendor reported it. It counts in the case's techniques, the report's attack chain and ATT&CK coverage."
+                            : "A point in the disclosure: when the vendor told us something, or we confirmed something about our data.")
+                    </p>
                 }
                 @if (!IsThirdParty || _evtAttackMode)
                 {
@@ -291,7 +288,7 @@
                         <AttackStepPicker @bind-TechniqueId="_evtTechnique" @bind-Tactic="_evtTactic" />
                     </div>
                     <div class="mt-2">
-                        <label class="form-label small mb-1" for="tl-atk-desc">What the adversary did</label>
+                        <label class="form-label small mb-1" for="tl-atk-desc">What the @(IsThirdParty ? "attacker did at the vendor" : "adversary did")</label>
                         <textarea id="tl-atk-desc" class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
                                   aria-describedby="tl-oneline-hint" placeholder="e.g. Authenticated to the VPN from 203.0.113.66 with valid credentials"></textarea>
                         @OneLineHint("the report's tables and the attack-chain diagram")
@@ -322,7 +319,7 @@
                         <label class="form-label small mb-1" for="tl-disc-desc">What the vendor reported / what we confirmed</label>
                         <textarea id="tl-disc-desc" class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
                                   aria-describedby="tl-oneline-hint" placeholder="e.g. Vendor confirmed our policyholder records were in the exposed dataset"></textarea>
-                        @OneLineHint("the report's tables and the attack-chain diagram")
+                        @OneLineHint("the report's disclosure milestones table")
                     </div>
                 }
                 @if (_tlEditId is null) { @ThenSection() }
@@ -461,13 +458,13 @@
 </AuthorizeView>
 
 
-@* The attack chain is a first-party kill-chain view; a third-party/vendor case (E-32) has none. *@
-@if (_tlLens != TimelineKind.Investigation && !_notesOnly && tlChain.Count > 0 && !IsThirdParty)
+@* The attack chain: the adversary's steps (on a third-party case, the attacker's steps at the vendor). *@
+@if (_tlLens != TimelineKind.Investigation && !_notesOnly && tlChain.Count > 0)
 {
     <div class="killchain-wrap mb-3 @(_showKillChain ? "" : "killchain-collapsed")">
         @* INV-26: folded, it's one line — the tactics in order — so the history below stays in view. *@
         <button type="button" class="killchain-strip" aria-expanded="@Ui.Aria(_showKillChain)" @onclick="ToggleKillChain">
-            <span class="fw-semibold small text-nowrap"><span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>Attack chain</span>
+            <span class="fw-semibold small text-nowrap"><span class="bi bi-diagram-3 me-1" aria-hidden="true"></span>@(IsThirdParty ? "Attack chain at the vendor" : "Attack chain")</span>
             <span class="text-muted small text-nowrap">@IncidentManager.Application.Common.Plural.Of(tlChain.Count, "step")</span>
             @if (!_showKillChain)
             {
@@ -544,7 +541,7 @@ else if (totalAll == 0)
             @(_decOnly ? "No decisions yet. Record one as a Decision entry, with why it was made, so the record answers \"what did we decide, and why?\"" : _tlLens switch
             {
                 TimelineKind.Event => IsThirdParty
-                    ? "Record the vendor-disclosure milestones: what the vendor reported and what we confirmed."
+                    ? "Record the vendor's incident: the attacker's steps in their environment, and the disclosure milestones."
                     : "Record the facts and timing of what happened.",
                 TimelineKind.Investigation => "Log the actions you and the team take as the investigation unfolds.",
                 _ => "Record what happened and log the team's actions as the investigation unfolds."
@@ -577,7 +574,7 @@ else
         @{ DateOnly? lastDay = null; DateTimeOffset? lastAt = null; }
         @if (Lanes)
         {
-            <li class="tl-lanehead" aria-hidden="true"><span>@(IsThirdParty ? "Vendor and disclosure" : "Adversary")</span><span></span><span>Response</span></li>
+            <li class="tl-lanehead" aria-hidden="true"><span>@(IsThirdParty ? "Vendor incident" : "Adversary")</span><span></span><span>Response</span></li>
         }
         @foreach (var row in rows)
         {
@@ -665,14 +662,14 @@ else
             {
                 // FR-24: a third-party case can carry attack (ATT&CK) steps alongside disclosure milestones —
                 // render each Event entry by what it actually holds, not just the case's third-party flag.
-                var asAttack = !IsThirdParty || IsAttackStep(e);
+                var asAttack = IncidentManager.Application.Cases.EventSteps.IsAttack(Case, e);
                 <li class="tl-item @BandClass(row.At) tl-kind-event im-enter @FlashClass?.Invoke(e.Id)" style="@FlashStyle?.Invoke(e.Id)" id="tl-@e.Id" @key="e.Id">
                     <span class="tl-dot" style="--tl-color:@(asAttack ? Ui.TacticColor(PrimaryTactic(e)) : Ui.TimelineColor(e.Type))" aria-hidden="true">
                         <span class="bi @(asAttack ? Ui.TacticGlyph(PrimaryTactic(e)) : Ui.TimelineGlyph(e.Type))"></span>
                     </span>
                     <div class="tl-body">
                         <div class="tl-head">
-                            <span class="tl-kind-label"><span class="bi @(asAttack ? "bi-lightning-charge" : "bi-megaphone")" aria-hidden="true"></span> @(asAttack ? (IsThirdParty ? "Attack" : "Event") : "Disclosure")</span>
+                            <span class="tl-kind-label"><span class="bi @(asAttack ? "bi-lightning-charge" : "bi-megaphone")" aria-hidden="true"></span> @(asAttack ? (IsThirdParty ? "Attack at the vendor" : "Event") : "Disclosure milestone")</span>
                             @if (asAttack)
                             {
                                 <span class="tl-tactics">
@@ -1091,9 +1088,12 @@ else
     // Event timeline, alongside the disclosure milestones. Off by default (disclosure), so a bare disclosure
     // stays simple. An Event entry is an attack step (vs a disclosure step) when it carries ATT&CK content.
     private bool _evtAttackMode;
-    private static bool IsAttackStep(TimelineEntry e) =>
-        e.Tactics.Count > 0 || !string.IsNullOrWhiteSpace(e.TechniqueId)
-        || e.ActorEntityId is not null || e.TargetEntityId is not null;
+    private static bool IsAttackStep(TimelineEntry e) => IncidentManager.Application.Cases.EventSteps.HasAttackContent(e);
+
+    // A vendor attack step keeps its kind with nothing ATT&CK picked: stored under the Unspecified tactic.
+    private IReadOnlySet<MitreTactic> StepTactics(Guid? actor, Guid? target, string? technique) =>
+        IsThirdParty && EvtTacticSet().Count == 0 && actor is null && target is null && technique is null
+            ? new HashSet<MitreTactic> { MitreTactic.Unspecified } : EvtTacticSet();
 
     // FR-23: the Disclosure timeline (third-party) uses a scoped milestone set, not the generic IR list. The
     // shared values (Communication / Evidence / Other) appear in both; DisclosureOnly are Disclosure-only.
@@ -1264,7 +1264,8 @@ else
         var what = CurrentMode switch
         {
             ComposerMode.Decision => "1 decision",
-            ComposerMode.Adversary => IsThirdParty && !_evtAttackMode ? "1 disclosure step" : "1 adversary step",
+            ComposerMode.Disclosure => "1 disclosure milestone",
+            ComposerMode.Adversary => IsThirdParty ? "1 attack step" : "1 adversary step",
             _ => "1 entry"
         };
         var parts = new List<string> { what };
@@ -1290,7 +1291,7 @@ else
             <span class="small fw-semibold">Then</span>
             <span class="small text-muted">saved with it, in the same save</span>
             <span class="ms-auto d-flex gap-1 flex-wrap">
-                <button type="button" class="btn btn-sm btn-link p-0 me-2" @onclick="() => _fuTasks.Add(new FuTask { Kind = CurrentMode == ComposerMode.Adversary ? TaskKind.Investigate : TaskKind.General })">
+                <button type="button" class="btn btn-sm btn-link p-0 me-2" @onclick="() => _fuTasks.Add(new FuTask { Kind = CurrentMode is ComposerMode.Adversary or ComposerMode.Disclosure ? TaskKind.Investigate : TaskKind.General })">
                     <span class="bi bi-plus-lg" aria-hidden="true"></span> Task</button>
                 @if (!_fuQuestionOpen) { <button type="button" class="btn btn-sm btn-link p-0 me-2" @onclick="() => _fuQuestionOpen = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> Question</button> }
                 @if (!_fuKnownOpen) { <button type="button" class="btn btn-sm btn-link p-0 me-2" @onclick="() => _fuKnownOpen = true"><span class="bi bi-plus-lg" aria-hidden="true"></span> Line for Known</button> }
@@ -1376,11 +1377,13 @@ else
     </div>;
 
     // --- RD-07: the composer's five modes ---
-    private enum ComposerMode { Finding, Decision, Adversary, Question, Note }
-    // Question and Note aren't timeline entries; the other three map onto the entry kind and type.
+    private enum ComposerMode { Finding, Decision, Adversary, Disclosure, Question, Note }
+    // Question and Note aren't timeline entries; the others map onto the entry kind and type. Disclosure (third-party
+    // cases only) is an event step without ATT&CK; Adversary on a third-party case is the attacker at the vendor.
     private ComposerMode? _special;
     private ComposerMode CurrentMode => _special
-        ?? (_tlAddKind == TimelineKind.Event ? ComposerMode.Adversary : _tlType == TimelineEntryType.Decision ? ComposerMode.Decision : ComposerMode.Finding);
+        ?? (_tlAddKind == TimelineKind.Event ? (IsThirdParty && !_evtAttackMode ? ComposerMode.Disclosure : ComposerMode.Adversary)
+            : _tlType == TimelineEntryType.Decision ? ComposerMode.Decision : ComposerMode.Finding);
     private bool _editorMentions;
     private IReadOnlyList<IncidentManager.Application.Abstractions.UserSummary> _mentionable = [];
     private Guid _mentionsFor;
@@ -1407,7 +1410,8 @@ else
     {
         yield return (ComposerMode.Finding, "bi-search", "Finding");
         yield return (ComposerMode.Decision, "bi-signpost-split", "Decision");
-        yield return (ComposerMode.Adversary, "bi-lightning", IsThirdParty ? "Disclosure step" : "Adversary step");
+        yield return (ComposerMode.Adversary, "bi-lightning", IsThirdParty ? "Attack at the vendor" : "Adversary step");
+        if (IsThirdParty) yield return (ComposerMode.Disclosure, "bi-megaphone", "Disclosure milestone");
         yield return (ComposerMode.Question, "bi-question-circle", "Question");
         yield return (ComposerMode.Note, "bi-journal-text", "Working note");
     }
@@ -1418,7 +1422,9 @@ else
         switch (m)
         {
             case ComposerMode.Adversary:
+            case ComposerMode.Disclosure:
                 _tlAddKind = TimelineKind.Event;
+                _evtAttackMode = m == ComposerMode.Adversary;
                 break;
             case ComposerMode.Decision:
                 _tlAddKind = TimelineKind.Investigation;
@@ -1594,7 +1600,7 @@ else
                 Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
                 Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
-                await Cases.AddEventStepAsync(CaseId, whenUtc, EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, evidenceId: shotId, followUps: FollowUps());
+                await Cases.AddEventStepAsync(CaseId, whenUtc, StepTactics(actor, target, technique), technique, actor, target, Tagged(_tlDesc)!, _tlSource, evidenceId: shotId, followUps: FollowUps());
             }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
@@ -1608,7 +1614,7 @@ else
         await OnChanged.InvokeAsync();
         var savedStep = SaveSummary();
         ResetFollowUps();
-        var what = disclosure ? "Disclosure step" : IsThirdParty ? "Attack step" : "Event step";
+        var what = disclosure ? "Disclosure milestone" : IsThirdParty ? "Attack step" : "Event step";
         Toasts.Success(savedStep ?? (shotId is null ? $"{what} added" : $"{what} added with screenshot"));
     }
 
@@ -1633,7 +1639,7 @@ else
     {
         _special = null;
         _tlAddKind = TimelineKind.Event;
-        _evtAttackMode = IsThirdParty && IsAttackStep(e); // FR-24: edit an attack step in attack mode
+        _evtAttackMode = IsThirdParty && IsAttackStep(e); // edit a vendor attack step as one, a milestone as one
         _tlEditId = e.Id;
         _tlReason = null;
         _tlWhen = UtcToWall(e.OccurredAtUtc);
@@ -1653,7 +1659,7 @@ else
         if (_tlEditId is not { } id || string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = WallToUtc(_tlWhen);
         // Captured before CancelTimelineEdit resets the composer mode, so the toast names what was edited.
-        var savedLabel = IsThirdParty && !_evtAttackMode ? "Disclosure step updated" : IsThirdParty ? "Attack step updated" : "Event step updated";
+        var savedLabel = IsThirdParty && !_evtAttackMode ? "Disclosure milestone updated" : IsThirdParty ? "Attack step updated" : "Event step updated";
         try
         {
             if (IsThirdParty && !_evtAttackMode)
@@ -1666,7 +1672,7 @@ else
                 Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
                 Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
-                await Cases.EditEventStepAsync(CaseId, id, whenUtc, EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, _tlReason);
+                await Cases.EditEventStepAsync(CaseId, id, whenUtc, StepTactics(actor, target, technique), technique, actor, target, Tagged(_tlDesc)!, _tlSource, _tlReason);
             }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)

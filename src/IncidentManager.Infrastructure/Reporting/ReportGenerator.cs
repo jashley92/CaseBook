@@ -100,22 +100,40 @@ public sealed partial class ReportGenerator : IReportGenerator
                 break;
 
             case ReportSection.EventTimeline:
+            {
+                // A third-party case has two parts: the attacker's steps at the vendor (if the vendor reported them)
+                // and the disclosure milestones. An internal case has the attack chain only.
+                var vendorCase = m.DisclosureMilestones.Count > 0 || !string.IsNullOrWhiteSpace(m.VendorName);
                 body.AppendChild(Heading("Event Timeline"));
-                body.AppendChild(P("Reconstructed adversary activity in order: MITRE ATT&CK tactic(s), actor → target, and technique.", italic: true, size: 18));
-                foreach (var png in m.AttackChainImages)
-                    body.AppendChild(BodyPicture(main, png, "Attack chain", CaseReportModel.AttackChainAlt));
-                body.AppendChild(WordTable(
-                    ["#", "When (UTC)", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
-                    m.AttackChain.Select(x => new[]
-                    {
-                        x.Order.ToString(CultureInfo.InvariantCulture),
-                        x.OccurredAtUtc.ToString("u"),
-                        x.Tactics,
-                        string.IsNullOrEmpty(x.Actor) && string.IsNullOrEmpty(x.Target) ? "" : $"{x.Actor} → {x.Target}",
-                        x.TechniqueId ?? "",
-                        x.Description
-                    })));
+                if (m.AttackChain.Count > 0 || !vendorCase)
+                {
+                    body.AppendChild(P(vendorCase
+                        ? $"The attacker's activity in {(string.IsNullOrWhiteSpace(m.VendorName) ? "the vendor" : m.VendorName)}'s environment, as the vendor reported it: MITRE ATT&CK tactic(s), actor → target, and technique."
+                        : "Reconstructed adversary activity in order: MITRE ATT&CK tactic(s), actor → target, and technique.", italic: true, size: 18));
+                    foreach (var png in m.AttackChainImages)
+                        body.AppendChild(BodyPicture(main, png, "Attack chain", CaseReportModel.AttackChainAlt));
+                    body.AppendChild(WordTable(
+                        ["#", "When (UTC)", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
+                        m.AttackChain.Select(x => new[]
+                        {
+                            x.Order.ToString(CultureInfo.InvariantCulture),
+                            x.OccurredAtUtc.ToString("u"),
+                            x.Tactics,
+                            string.IsNullOrEmpty(x.Actor) && string.IsNullOrEmpty(x.Target) ? "" : $"{x.Actor} → {x.Target}",
+                            x.TechniqueId ?? "",
+                            x.Description
+                        })));
+                }
+                if (m.DisclosureMilestones.Count > 0)
+                {
+                    body.AppendChild(SubHeading("Disclosure milestones"));
+                    body.AppendChild(P("What the vendor reported to us and what we confirmed, in order.", italic: true, size: 18));
+                    body.AppendChild(WordTable(
+                        ["When (UTC)", "Milestone", "What happened", "Source"],
+                        m.DisclosureMilestones.Select(x => new[] { x.OccurredAtUtc.ToString("u"), x.Type, x.Description, x.Source ?? "" })));
+                }
                 break;
+            }
 
             case ReportSection.InvestigationTimeline:
                 body.AppendChild(Heading("Investigation Timeline"));

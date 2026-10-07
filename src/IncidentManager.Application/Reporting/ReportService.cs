@@ -493,9 +493,9 @@ public sealed class ReportService
     /// <summary>PROD-46: the attack chain drawn across tactic lanes — first-party cases with at least one mapped tactic.</summary>
     private IReadOnlyList<byte[]> AttackChainImages(Case c, ReportDefanger d)
     {
-        if (_diagrams is null || c.Origin == CaseOrigin.ThirdParty) return [];
+        if (_diagrams is null) return [];
         var steps = c.TimelineEntries
-            .Where(x => x.Kind == TimelineKind.Event)
+            .Where(x => EventSteps.IsAttack(c, x))
             .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
             .Select((x, i) => new DiagramStep(i + 1, x.OccurredAtUtc, x.Tactics.Select(t => t.Tactic).ToList(), x.TechniqueId,
                 d.Text(EntityName(c, x.ActorEntityId)), d.Text(EntityName(c, x.TargetEntityId))))
@@ -800,16 +800,15 @@ public sealed class ReportService
                 .OrderBy(x => x.EffectiveAt)
                 .Select(x => new ReportClassificationItem(x.EffectiveAt, x.From is { } f ? _severityLabels.For(f) : "—", _severityLabels.For(x.To), x.Reason ?? "", _users.DisplayFor(x.ChangedBy)))
                 .ToList(),
-            EventTimeline = c.TimelineEntries
-                .Where(x => x.Kind == TimelineKind.Event)
+            // A third-party case's disclosure milestones: when the vendor told us what, and what we confirmed.
+            DisclosureMilestones = c.TimelineEntries
+                .Where(x => EventSteps.IsDisclosure(c, x))
                 .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
                 .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), d.Text(Content.MarkdownService.PlainLine(x.Description)), x.Source))
                 .ToList(),
-            // The attack chain (ATT&CK tactics + actor→target in our estate) only applies to a first-party
-            // case. A third-party/vendor case (E-32) has no adversary kill-chain here — its event steps are
-            // vendor-disclosure milestones, carried by the Event timeline above — so the chain is empty.
-            AttackChain = c.Origin == CaseOrigin.ThirdParty ? new List<ReportAttackStep>() : c.TimelineEntries
-                .Where(x => x.Kind == TimelineKind.Event)
+            // The attack chain: the adversary's steps, in our estate or, on a third-party case, in the vendor's.
+            AttackChain = c.TimelineEntries
+                .Where(x => EventSteps.IsAttack(c, x))
                 .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
                 .Select((x, i) => new ReportAttackStep(
                     i + 1,

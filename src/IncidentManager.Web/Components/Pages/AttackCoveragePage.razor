@@ -10,7 +10,7 @@
 <PageTitle>ATT&amp;CK coverage</PageTitle>
 
 <PageHeader Title="Intel"
-            Subtitle="ATT&CK coverage: the tactics and techniques your cases have recorded, shaded by how many cases saw each." />
+            Subtitle="ATT&CK coverage: the tactics and techniques your cases have recorded, shaded by how many cases saw each. Techniques seen at a vendor count too and are marked." />
 <IntelNav />
 
 @if (_data is null)
@@ -82,10 +82,10 @@
                                 var sel = _selected is { } s && s.Tactic == tac && s.Id == t.TechniqueId;
                                 <button type="button" class="atkh-cell @(sel ? "atkh-sel" : "")" style="--heat:@Heat(t.CaseCount)%"
                                         @onclick="() => Select(tac, t)" aria-pressed="@(sel ? "true" : "false")"
-                                        title="@($"{t.TechniqueId} {t.Name}: {t.CaseCount} case{(t.CaseCount == 1 ? "" : "s")}")">
+                                        title="@($"{t.TechniqueId} {t.Name}: {t.CaseCount} case{(t.CaseCount == 1 ? "" : "s")}{(t.ThirdPartyCount > 0 ? $", {t.ThirdPartyCount} at a vendor" : "")}")">
                                     <code class="atkh-tid">@t.TechniqueId</code>
                                     <span class="atkh-tname">@t.Name</span>
-                                    <span class="atkh-n">@t.CaseCount</span>
+                                    <span class="atkh-n">@t.CaseCount@if (t.ThirdPartyCount > 0) {<span class="atkh-vendor" aria-hidden="true" title="Includes techniques seen at a vendor"><span class="bi bi-building"></span></span>}</span>
                                 </button>
                             }
                         }
@@ -108,7 +108,10 @@
                 <ul class="list-unstyled mb-0">
                     @foreach (var c in st.Cases)
                     {
-                        <li><a href="@($"cases/{c.CaseId}")"><code class="small">@c.CaseNumber</code></a> <span class="small text-muted">@c.Title</span></li>
+                        <li>
+                            <a href="@($"cases/{c.CaseId}")"><code class="small">@c.CaseNumber</code></a> <span class="small text-muted">@c.Title</span>
+                            @if (c.ThirdParty) { <span class="im-badge im-b-neutral ms-1" title="Seen in the vendor's environment, as the vendor reported it">At a vendor</span> }
+                        </li>
                     }
                 </ul>
             </div>

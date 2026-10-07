@@ -170,7 +170,8 @@ public sealed record CaseReportModel
 
     public IReadOnlyList<ReportClassificationItem> ClassificationHistory { get; init; } = [];
     public IReadOnlyList<ReportClassificationItem> SeverityHistory { get; init; } = [];
-    public IReadOnlyList<ReportTimelineItem> EventTimeline { get; init; } = [];
+    /// <summary>A third-party case's disclosure milestones (empty on an internal case).</summary>
+    public IReadOnlyList<ReportTimelineItem> DisclosureMilestones { get; init; } = [];
     public IReadOnlyList<ReportAttackStep> AttackChain { get; init; } = [];
     public IReadOnlyList<ReportTimelineItem> InvestigationTimeline { get; init; } = [];
     public IReadOnlyList<ReportEvidenceItem> Evidence { get; init; } = [];

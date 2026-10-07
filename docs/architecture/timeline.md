@@ -136,7 +136,7 @@ same kind. The opening state can't be re-dated. Re-dating a classification chang
 |---|---|
 | **Story** | The key entries, oldest first: event steps, decisions, handoffs and milestones, except task-done and evidence-added. A closed case's Record opens here. |
 | **Everything** | Entries and milestones together. |
-| **Attack chain** (**Disclosure** on third-party cases) | Event steps only; with the attack chain strip. |
+| **Attack chain** (**Vendor incident** on third-party cases) | Event steps only; with the attack chain strip (on a third-party case, "Attack chain at the vendor", from its attack steps). |
 | **Response** | Investigation entries only. |
 | **Decisions** | Decision entries only; the composer defaults to Decision. |
 | **Working notes** | The case's working notes (off the record). |
@@ -157,8 +157,8 @@ above the line, the response below, decisions as diamonds and milestones as tick
 
 The attack chain *is* the event steps, in order; there's no separate table. Each step's actor → target also
 becomes an edge on the relationship graph, its tactics feed ATT&CK coverage, and campaign rollups merge member
-cases' event steps into one timeline. Third-party cases don't show an attack chain unless "attack mode" is used
-in the composer.
+cases' event steps into one timeline. On a third-party case only the attack steps at the vendor make the chain;
+its disclosure milestones don't (`EventSteps`).
 
 ## Evidence on the timeline
 

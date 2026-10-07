@@ -54,11 +54,13 @@ public class CaseTechniquesTests
     }
 
     [Fact]
-    public void A_third_party_cases_event_steps_add_no_techniques()
+    public void A_third_party_cases_attack_steps_at_the_vendor_add_techniques_and_its_milestones_none()
     {
         var c = NewCase(CaseOrigin.ThirdParty);
         Step(c, "T1078", MitreTactic.InitialAccess);
+        c.AddEventStep(DateTimeOffset.UtcNow, [], null, null, null, "Vendor notified us", "Acme", "ic", DateTimeOffset.UtcNow,
+            type: TimelineEntryType.Notified);
 
-        CaseTechniques.For(c).Should().BeEmpty();
+        CaseTechniques.For(c).Should().ContainSingle(t => t.TechniqueId == "T1078" && t.ChainSteps == 1);
     }
 }

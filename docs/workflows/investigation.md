@@ -55,9 +55,19 @@ Same composer, *Adversary step*: when, one or more ATT&CK tactics and an optiona
 optional screenshot. `CaseService.AddEventStepAsync` → `Case.AddEventStep`. Errors: "The actor is not an entity
 on this case." (and the same for the target), technique ids must look like `T1566` or `T1566.001`.
 
-On **third-party** cases the lens is *Disclosure* and steps are typed by disclosure stage (Notified, Scope
-confirmed, Data confirmed, Remediation, Regulatory notification) without tactics. An "attack mode" toggle still
-allows attack steps.
+On **third-party** cases the lens and lane are *Vendor incident*, and the composer has two modes instead of
+*Adversary step*:
+
+- **Attack at the vendor**: what the attacker did in the vendor's environment, as the vendor reported it. The same
+  fields as an adversary step. It counts like one: in the case's techniques, the report's attack chain and diagram,
+  the lessons narrative ("Attack at the vendor") and ATT&CK coverage, where the case is marked *At a vendor*. A step
+  saved with no tactic, technique, actor or target is stored under the Unspecified tactic so it stays an attack step.
+- **Disclosure milestone**: when the vendor told us something or we confirmed something, typed by stage (Notified,
+  Scope confirmed, Data confirmed, Remediation, Regulatory notification, Communication, Evidence, Other), without
+  ATT&CK. The report prints these as *Disclosure milestones* (template collection `milestone`).
+
+`EventSteps.IsAttack` / `IsDisclosure` decide which a step is: on a third-party case, a step with ATT&CK content
+(tactics, a technique, an actor or target) is an attack step; on an internal case every step is.
 
 ### Editing
 
@@ -162,8 +172,8 @@ Team changes appear on the timeline ("X is incident commander, taking over from 
 - Things › ATT&CK and the report's ATT&CK appendix show **both**: the tags, plus each technique recorded on an
   attack-chain step (one per technique and tactic, named from the catalog). A technique only on the chain has a
   dashed chip with a link mark and no ×; remove it by editing its step. The report's table has a Source column
-  ("Tagged", "Attack chain (2 steps)" or both; template field `technique.source`). A third-party case's event steps are
-  disclosure milestones and add nothing.
+  ("Tagged", "Attack chain (2 steps)" or both; template field `technique.source`). On a third-party case the attack
+  steps at the vendor count; disclosure milestones add nothing.
 - Intel › ATT&CK coverage (`/intel/attack`) combines both across cases you can see.
 
 ## Case links and campaigns

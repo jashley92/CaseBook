@@ -33,7 +33,9 @@ them. Notable behavior:
   discoverable); the post-incident review is **never** in the case report.
 - The investigation timeline includes milestones (except report approvals and team changes), a **By** column,
   and "(Recorded …)" notes for late entries ([timeline.md](../architecture/timeline.md#in-the-case-report)).
-- The attack chain is drawn across ATT&CK tactic lanes; the entity graph is drawn as an image.
+- The attack chain is drawn across ATT&CK tactic lanes; the entity graph is drawn as an image. On a third-party
+  case the attack chain is the attacker's steps at the vendor, and the Event Timeline adds a *Disclosure milestones*
+  table (template collection `milestone`: `when`, `type`, `description`, `source`).
 - Indicators are listed apart from everything examined and **defanged** (`Reporting:DefangIndicators`).
 - A TLP 2.0 marking is printed on every page.
 - People appear by display name and enums by their labels; no raw ids or code names.

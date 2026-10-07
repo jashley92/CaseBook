@@ -579,6 +579,7 @@ h1:focus {
 .atkh-tid { flex: 0 0 auto; font-size: .7rem; color: inherit; }
 .atkh-tname { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .atkh-n { flex: 0 0 auto; font-weight: 700; font-size: .7rem; }
+.atkh-vendor { margin-left: .2rem; font-weight: 400; opacity: .75; }
 .atkm-summary { flex: 0 0 auto; }
 
 /* Stage-gate readiness checklist (C-07) — shown in the reclassify/close modals and the Overview card. */

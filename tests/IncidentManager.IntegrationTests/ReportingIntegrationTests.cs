@@ -562,7 +562,7 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task A_third_party_case_report_suppresses_the_attack_chain_and_keeps_the_disclosure_timeline(/* E-32 */)
+    public async Task A_third_party_case_reports_the_attack_at_the_vendor_and_the_disclosure_milestones_apart()
     {
         await using var db = NewContext();
         _user.UserId = "ic";
@@ -570,20 +570,38 @@ public sealed class ReportingIntegrationTests : IDisposable
 
         var c = Case.Open(2026, 1, "Vendor", "Vendor disclosed a data breach", Classification.Breach,
             Severity.High, CaseOrigin.ThirdParty, "ic", _clock.UtcNow);
-        // A vendor-disclosure milestone: no ATT&CK tactics / actor→target, stage carried in Type.
-        c.AddEventStep(_clock.UtcNow.AddHours(1), Array.Empty<MitreTactic>(), null, null, null,
+        // A disclosure milestone: no ATT&CK, the milestone carried in Type.
+        c.AddEventStep(_clock.UtcNow.AddHours(3), Array.Empty<MitreTactic>(), null, null, null,
             "Vendor confirmed our records were exposed", "Acme SaaS", "ic", _clock.UtcNow,
-            type: TimelineEntryType.Analysis);
+            type: TimelineEntryType.DataConfirmed);
+        // The attacker's steps in the vendor's environment: one mapped, one with nothing ATT&CK picked.
+        c.AddEventStep(_clock.UtcNow.AddHours(1), [MitreTactic.InitialAccess], "T1190", null, null,
+            "Exploited the vendor's file-transfer appliance", "Acme SaaS", "ic", _clock.UtcNow);
+        c.AddEventStep(_clock.UtcNow.AddHours(2), [MitreTactic.Unspecified], null, null, null,
+            "Copied the customer share", "Acme SaaS", "ic", _clock.UtcNow);
         db.Cases.Add(c);
         await db.SaveChangesAsync();
 
-        var model = await NewReportService(db).BuildPreviewModelAsync(c.Id, null);
+        var svc = NewReportService(db);
+        var model = await svc.BuildPreviewModelAsync(c.Id, null);
 
-        // No adversary kill-chain for a third-party case…
-        model.AttackChain.Should().BeEmpty();
-        // …but the disclosure milestone still appears on the event timeline.
-        model.EventTimeline.Should().ContainSingle()
-            .Which.Description.Should().Be("Vendor confirmed our records were exposed");
+        model.AttackChain.Select(x => x.Description).Should().Equal("Exploited the vendor's file-transfer appliance", "Copied the customer share");
+        model.DisclosureMilestones.Should().ContainSingle().Which.Description.Should().Be("Vendor confirmed our records were exposed");
+        IncidentManager.Application.Mitre.CaseTechniques.For(c).Should().ContainSingle(t => t.TechniqueId == "T1190" && t.ChainSteps == 1);
+
+        _user.RoleSet = [AppRole.IncidentCommander];
+        var report = await svc.GenerateAsync(c.Id);
+        var (_, stream) = await svc.OpenAsync(report.Id);
+        string documentXml;
+        await using (stream)
+        {
+            using var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read);
+            await using var docStream = zip.GetEntry("word/document.xml")!.Open();
+            documentXml = await new StreamReader(docStream).ReadToEndAsync();
+        }
+        documentXml.Should().Contain("environment, as the vendor reported it").And.Contain("Exploited the vendor");
+        documentXml.Should().Contain("Disclosure milestones").And.Contain("Vendor confirmed our records were exposed",
+            "the milestones were built for the report but never printed before");
     }
 
     [Fact]

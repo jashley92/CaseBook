@@ -97,7 +97,7 @@ public static partial class ReportTemplateFields
 
     private static readonly CollectionDef[] CollectionDefs =
     [
-        Coll("step", "Attack chain (event timeline) steps", m => m.AttackChain,
+        Coll("step", "Attack chain steps (on a third-party case, the attacker's steps at the vendor)", m => m.AttackChain,
             ("number", "Step number", s => s.Order.ToString(CultureInfo.InvariantCulture)),
             ("when", "When (UTC)", s => D(s.OccurredAtUtc)),
             ("tactics", "ATT&CK tactic(s)", s => s.Tactics),
@@ -105,6 +105,11 @@ public static partial class ReportTemplateFields
             ("target", "Target", s => s.Target),
             ("technique", "Technique id", s => s.TechniqueId ?? ""),
             ("description", "What happened", s => s.Description)),
+        Coll("milestone", "Disclosure milestones (third-party cases)", m => m.DisclosureMilestones,
+            ("when", "When (UTC)", x => D(x.OccurredAtUtc)),
+            ("type", "Milestone", x => x.Type),
+            ("description", "What the vendor reported or we confirmed", x => x.Description),
+            ("source", "Source", x => x.Source ?? "")),
         Coll("activity", "Investigation timeline entries", m => m.InvestigationTimeline,
             ("when", "When (UTC)", x => D(x.OccurredAtUtc)),
             ("type", "Entry type", x => x.Type),

@@ -5,8 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace IncidentManager.Application.Mitre;
 
-/// <summary>A case counted in the heatmap (the drill-down behind a cell).</summary>
-public sealed record CoverageCase(Guid CaseId, string CaseNumber, string Title);
+/// <summary>A case counted in the heatmap (the drill-down behind a cell). <paramref name="ThirdParty"/>: the technique
+/// was seen at a vendor (the attacker's steps in the vendor's environment), not in our own estate.</summary>
+public sealed record CoverageCase(Guid CaseId, string CaseNumber, string Title, bool ThirdParty = false);
 
 /// <summary>
 /// One parent technique under one tactic: how many visible cases exercised it (the parent itself or any of its
@@ -16,6 +17,7 @@ public sealed record CoverageTechnique(string TechniqueId, string Name, IReadOnl
     IReadOnlyList<CoverageCase> Cases)
 {
     public int CaseCount => Cases.Count;
+    public int ThirdPartyCount => Cases.Count(c => c.ThirdParty);
 }
 
 /// <summary>A tactic column: distinct cases touching the tactic at all, and its techniques (most-seen first).</summary>
@@ -35,7 +37,9 @@ public sealed record AttackCoverage(int CasesInPeriod, int CasesWithAttackData, 
 /// can see. Aggregates the case technique tags (<c>CaseTechnique</c>) and the event-timeline steps (their
 /// technique and tactics) into tactic columns, rolling sub-techniques up to their parent so the matrix stays
 /// readable. A case counts once per cell however many times it was tagged. Need-to-know scoped like the
-/// campaign walk; exercise cases excluded unless asked for. Read-only presentation, no new data.
+/// campaign walk; exercise cases excluded unless asked for. Read-only presentation, no new data. A third-party
+/// case's attack steps (the attacker at the vendor) count too, marked <see cref="CoverageCase.ThirdParty"/>; its
+/// disclosure milestones carry no ATT&amp;CK data and add nothing.
 /// </summary>
 public sealed class AttackCoverageService
 {
@@ -62,12 +66,12 @@ public sealed class AttackCoverageService
         var q = db.Cases.AsNoTracking().ForUser(_user);
         if (!includeExercises) q = q.ExcludingExercises();
 
-        var caseRows = await q.Select(c => new { c.Id, c.CaseNumber, c.Title, c.DetectedAtUtc, c.CreatedAtUtc }).ToListAsync(ct);
+        var caseRows = await q.Select(c => new { c.Id, c.CaseNumber, c.Title, c.DetectedAtUtc, c.CreatedAtUtc, c.Origin }).ToListAsync(ct);
         // Window filter in memory: DateTimeOffset comparison stays off SQLite (F-08).
         var inPeriod = caseRows
             .Where(c => (since is null || (c.DetectedAtUtc ?? c.CreatedAtUtc) >= since)
                         && (until is null || (c.DetectedAtUtc ?? c.CreatedAtUtc) < until))
-            .ToDictionary(c => c.Id, c => new CoverageCase(c.Id, c.CaseNumber, c.Title));
+            .ToDictionary(c => c.Id, c => new CoverageCase(c.Id, c.CaseNumber, c.Title, c.Origin == CaseOrigin.ThirdParty));
         // Tags come back for every visible case (a subquery, not a list of ids) and are narrowed to the window here.
         var ids = q.Select(c => c.Id);
 
