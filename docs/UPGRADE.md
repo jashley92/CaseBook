@@ -161,7 +161,7 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ## Notes
 
-### The next release (after v1.2.4)
+### v1.3.0
 
 The upgrade itself is the usual one: seven migrations, applied at startup. People will notice more. Cases, the
 home page and the cross-case pages are redesigned, and several pages have moved.
@@ -171,6 +171,9 @@ home page and the cross-case pages are redesigned, and several pages have moved.
   still accurate, and keyboard-shortcut preferences. Nothing is dropped and no existing record is rewritten. The
   only data changes are the seeded outcomes and the close-gate wording below. None of the seven touches a ledger
   table. In `DbaApplies` mode, `deploy/sql/casebook-schema-sqlserver.sql` in the bundle already includes them.
+- **Dev sign-in stops outside Development.** A staging or QA site that runs without `Auth:Mode=Windows`
+  signed everyone in with every role; it now refuses to start. Use Windows authentication there, or set
+  `Auth:AllowDevSignInOutsideDevelopment=true` on a non-Production test site. Production never allows dev sign-in.
 - **History starts at the upgrade.** Tasks completed before it show no "completed by". Verdict changes are
   recorded from the upgrade on, so an entity's earlier verdicts aren't in its history.
 - **Closing asks for an outcome.** Closing a case needs an outcome and the closing brief (what happened and the
