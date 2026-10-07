@@ -154,7 +154,7 @@
                     {
                         var task = QuestionTask(q);
                         <li>
-                            <span class="md-body im-rec"><span class="im-bf-qmark" aria-hidden="true">?</span>@((MarkupString)Md.ToHtml(q, Case.Id))</span>
+                            <span class="md-body im-rec"><span class="im-bf-qmark" aria-hidden="true">?</span>@((MarkupString)Md.ToInlineHtml(q, Case.Id))</span>
                             <span class="im-bf-sub">
                                 @if (task is null) { <text>not followed up</text> }
                                 else if (task.IsOpen) { <text>being answered@(string.IsNullOrWhiteSpace(task.Owner) ? "" : $" by {Users.DisplayFor(task.Owner)}")</text> }
@@ -356,7 +356,7 @@
 
     private ActionItem? QuestionTask(string q)
     {
-        var title = Md.ToPlainText(q).Replace('\n', ' ').Trim();
+        var title = IncidentManager.Application.Content.MarkdownService.PlainLine(q);
         return Case.ActionItems.Where(t => t.RaisedFromBriefId is not null && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(t => t.IsOpen).ThenByDescending(t => t.CreatedAtUtc).FirstOrDefault();
     }

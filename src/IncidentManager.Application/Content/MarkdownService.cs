@@ -19,6 +19,13 @@ public interface IMarkdownService
     /// that case's Entities tab; without it they render as non-navigating chips.</summary>
     string ToHtml(string? markdown, Guid? caseId = null);
 
+    /// <summary>
+    /// Renders one line of Markdown to sanitised inline HTML, with no wrapping paragraph: bold, italics, code, links and
+    /// entity tags. Block syntax (lists, headings, quotes, code blocks) isn't parsed and shows as typed. For the
+    /// one-line fields (event steps, open questions) that also sit in tables, diagrams and task titles.
+    /// </summary>
+    string ToInlineHtml(string? markdown, Guid? caseId = null);
+
     /// <summary>Renders Markdown to readable plain text (formatting stripped) for Word/PDF reports.</summary>
     string ToPlainText(string? markdown);
 }
@@ -34,6 +41,24 @@ public sealed class MarkdownService : IMarkdownService
 
     // Only these URL schemes are allowed on links; everything else (javascript:, data:, vbscript:, file:)
     // is rewritten to an inert anchor so stored Markdown cannot carry an executable payload.
+    // One-line fields: inline syntax only. A paragraph is the only block, so "- x" or "# x" stays literal text.
+    private static readonly MarkdownPipeline InlinePipeline = BuildInline();
+
+    private static MarkdownPipeline BuildInline()
+    {
+        var b = new MarkdownPipelineBuilder().DisableHtml().UseAutoLinks();
+        b.BlockParsers.RemoveAll(p => p is not Markdig.Parsers.ParagraphBlockParser);
+        return b.Build();
+    }
+
+    /// <summary>A one-line field's text as stored: line breaks and runs of spaces become single spaces.</summary>
+    public static string OneLine(string? text) =>
+        string.Join(' ', (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    /// <summary>A one-line field as plain text (formatting and link targets dropped), e.g. for a task title.</summary>
+    public static string PlainLine(string? markdown) =>
+        string.IsNullOrWhiteSpace(markdown) ? "" : OneLine(Markdown.ToPlainText(OneLine(markdown), InlinePipeline));
+
     private static readonly string[] AllowedSchemes = { "http://", "https://", "mailto:", "ftp://" };
 
     /// <summary>The link scheme our entity-tag references use (e.g. <c>[FIN-WKS-07](entity:&lt;guid&gt;)</c>);
@@ -44,11 +69,19 @@ public sealed class MarkdownService : IMarkdownService
     /// rendered as a file chip that opens the case's Evidence tab.</summary>
     public const string EvidenceScheme = "evidence:";
 
-    public string ToHtml(string? markdown, Guid? caseId = null)
+    public string ToHtml(string? markdown, Guid? caseId = null) =>
+        string.IsNullOrWhiteSpace(markdown) ? string.Empty : Render(markdown, Pipeline, caseId);
+
+    public string ToInlineHtml(string? markdown, Guid? caseId = null)
     {
         if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+        var html = Render(OneLine(markdown), InlinePipeline, caseId).Trim();
+        return html.StartsWith("<p>", StringComparison.Ordinal) && html.EndsWith("</p>", StringComparison.Ordinal) ? html[3..^4] : html;
+    }
 
-        var document = Markdown.Parse(markdown, Pipeline);
+    private static string Render(string markdown, MarkdownPipeline pipeline, Guid? caseId)
+    {
+        var document = Markdown.Parse(markdown, pipeline);
         foreach (var link in document.Descendants<LinkInline>())
         {
             // Entity-tag links are rendered as chips (see EntityTagLinkRenderer), so they skip the
@@ -62,7 +95,7 @@ public sealed class MarkdownService : IMarkdownService
 
         using var writer = new StringWriter();
         var renderer = new HtmlRenderer(writer);
-        Pipeline.Setup(renderer);
+        pipeline.Setup(renderer);
         renderer.ObjectRenderers.Replace<LinkInlineRenderer>(new EntityTagLinkRenderer(caseId));
         renderer.Render(document);
         writer.Flush();

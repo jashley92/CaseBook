@@ -127,7 +127,7 @@ public sealed class EventTimelinePersistenceTests : IDisposable
 
             // Editing to a later stage updates the milestone type in place.
             await svc.EditEventStepAsync(id, step.Id, step.OccurredAtUtc, Array.Empty<MitreTactic>(),
-                null, null, null, step.Description, step.Source, type: TimelineEntryType.Recovery);
+                null, null, null, "Vendor **restored** service\n  from backups", step.Source, type: TimelineEntryType.Recovery);
         }
 
         await using (var db = NewContext())
@@ -135,6 +135,7 @@ public sealed class EventTimelinePersistenceTests : IDisposable
             var svc = NewService(db);
             var step = (await svc.GetDetailAsync(id))!.TimelineEntries.Single(t => t.Kind == TimelineKind.Event);
             step.Type.Should().Be(TimelineEntryType.Recovery);
+            step.Description.Should().Be("Vendor **restored** service from backups", "a step is one line of inline Markdown");
 
             var chain = await db.AuditLog.OrderBy(a => a.Sequence).ToListAsync();
             _hasher.VerifyChain(chain).IsValid.Should().BeTrue();

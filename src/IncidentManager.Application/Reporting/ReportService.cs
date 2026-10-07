@@ -803,7 +803,7 @@ public sealed class ReportService
             EventTimeline = c.TimelineEntries
                 .Where(x => x.Kind == TimelineKind.Event)
                 .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
-                .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), d.Text(x.Description), x.Source))
+                .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), d.Text(Content.MarkdownService.PlainLine(x.Description)), x.Source))
                 .ToList(),
             // The attack chain (ATT&CK tactics + actor→target in our estate) only applies to a first-party
             // case. A third-party/vendor case (E-32) has no adversary kill-chain here — its event steps are
@@ -818,7 +818,7 @@ public sealed class ReportService
                     d.Text(EntityName(c, x.ActorEntityId)),
                     d.Text(EntityName(c, x.TargetEntityId)),
                     x.TechniqueId,
-                    d.Text(x.Description)))
+                    d.Text(Content.MarkdownService.PlainLine(x.Description))))
                 .ToList(),
             InvestigationTimeline = InvestigationTimeline(c, d, opts, extras),
             Brief = c.Briefs.FirstOrDefault(b => b.IsCurrent) is { } brief

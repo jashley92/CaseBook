@@ -174,12 +174,12 @@
             <ul class="im-close-q">
                 @foreach (var q in questions)
                 {
-                    var title = Md.ToPlainText(q).Replace('\n', ' ').Trim();
+                    var title = IncidentManager.Application.Content.MarkdownService.PlainLine(q);
                     var task = Case.ActionItems.Where(t => t.RaisedFromBriefId is not null && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase))
                         .OrderByDescending(t => t.Status == ActionItemStatus.Done).ThenByDescending(t => t.CreatedAtUtc).FirstOrDefault();
                     var answered = task is { Status: ActionItemStatus.Done } && TaskResults.ContainsKey(task.Id);
                     <li class="@(answered ? "im-close-q-ok" : "im-close-q-open")">
-                        <span>@title</span>
+                        <span class="md-body">@((MarkupString)Md.ToInlineHtml(q, Case.Id))</span>
                         @if (answered)
                         {
                             <span class="d-block text-muted">@IncidentManager.Application.Cases.TaskResults.Excerpt(TaskResults[task!.Id].Text)</span>

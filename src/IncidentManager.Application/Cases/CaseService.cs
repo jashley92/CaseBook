@@ -1175,7 +1175,8 @@ public sealed class CaseService
         followUps?.Validate();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
-        var step = c.AddEventStep(occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, description, source,
+        // One-line field: inline Markdown only, so the step reads as one line in tables and the attack-chain diagram.
+        var step = c.AddEventStep(occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, Content.MarkdownService.OneLine(description), source,
             _user.UserId, _clock.UtcNow, evidenceId, type);
         if (followUps is not null) await ApplyFollowUpsAsync(db, c, step, followUps, ct);
         await db.SaveChangesAsync(ct);
@@ -1193,7 +1194,7 @@ public sealed class CaseService
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
-        c.EditEventStep(entryId, occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, description,
+        c.EditEventStep(entryId, occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, Content.MarkdownService.OneLine(description),
             source, _user.UserId, _clock.UtcNow, type);
         db.PendingChangeReason = reason;
         await db.SaveChangesAsync(ct);
@@ -2186,7 +2187,7 @@ public sealed class CaseService
     public async Task AddOpenQuestionAsync(Guid caseId, string question, bool followUp, CancellationToken ct = default)
     {
         Require();
-        var q = string.Join(' ', (question ?? "").Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+        var q = Content.MarkdownService.OneLine(question);
         if (q.StartsWith("- ")) q = q[2..].Trim();
         if (q.Length == 0) throw new ArgumentException("Write the question.");
         if (q.Length > ActionItem.MaxTitleLength) throw new ArgumentException($"Keep the question to {ActionItem.MaxTitleLength} characters or fewer.");
@@ -2199,7 +2200,8 @@ public sealed class CaseService
         var open = string.IsNullOrWhiteSpace(cur?.OpenQuestions) ? $"- {q}" : $"{cur!.OpenQuestions!.TrimEnd()}\n- {q}";
         var nextSteps = CaseNext.Snapshot(c, _clock.UtcNow, u => _users?.DisplayFor(u) ?? u);
         c.ReviseBrief(c.Summary, cur?.WorkingAssessment, cur?.Known, open, nextSteps, _user.UserId, _clock.UtcNow);
-        if (followUp) c.RaiseTaskFromQuestion(q, _user.UserId, _clock.UtcNow);
+        // The task's title is the question as plain text, which is how the brief pairs each question with its task.
+        if (followUp) c.RaiseTaskFromQuestion(Content.MarkdownService.PlainLine(q), _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
 

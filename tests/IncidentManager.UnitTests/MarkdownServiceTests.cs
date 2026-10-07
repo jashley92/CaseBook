@@ -115,6 +115,32 @@ public class MarkdownServiceTests
         text.Should().NotContain("#").And.NotContain("**");
     }
 
+    // Event steps and open questions are one-line fields: inline formatting and tags, no blocks, no wrapping paragraph.
+    [Fact]
+    public void One_line_fields_render_inline_only()
+    {
+        var caseId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
+
+        var html = _md.ToInlineHtml($"Logged in as **[Jane Doe](entity:{entityId})** via `vpn-gw`", caseId);
+        html.Should().StartWith("Logged in as <strong>").And.NotContain("<p>")
+            .And.Contain("class=\"im-entity-tag\"").And.Contain("<code>vpn-gw</code>");
+
+        _md.ToInlineHtml("- not a list").Should().Be("- not a list");
+        _md.ToInlineHtml("# not a heading").Should().Be("# not a heading");
+        _md.ToInlineHtml("first line\n\nsecond").Should().Be("first line second");
+        _md.ToInlineHtml("<script>x</script> [y](javascript:alert(1))").Should().NotContain("<script>").And.NotContain("javascript:");
+        _md.ToInlineHtml(null).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void One_line_text_is_stored_on_one_line_and_titled_as_plain_text()
+    {
+        MarkdownService.OneLine("  Did the\r\n  other   users\n log in? ").Should().Be("Did the other users log in?");
+        MarkdownService.PlainLine($"Did **[Jane](entity:{Guid.NewGuid()})** reuse `P@ss`?").Should().Be("Did Jane reuse P@ss?");
+        MarkdownService.PlainLine(null).Should().BeEmpty();
+    }
+
     [Fact]
     public void Empty_input_is_empty_output()
     {

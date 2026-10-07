@@ -402,7 +402,7 @@
             var task = Case.ActionItems.Where(t => t.RaisedFromBriefId is not null && string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(t => t.IsOpen).ThenByDescending(t => t.CreatedAtUtc).FirstOrDefault();
             <li>
-                <span class="md-body im-brief-q-text">@((MarkupString)Md.ToHtml(q, Case.Id))</span>
+                <span class="md-body im-brief-q-text">@((MarkupString)Md.ToInlineHtml(q, Case.Id))</span>
                 @if (task is not null)
                 {
                     <button type="button" class="im-badge @(task.IsOpen ? "im-b-info" : "im-b-neutral") im-brief-q-task" title="Followed up as a task"
@@ -436,7 +436,7 @@
         }
     </ul>;
 
-    private string QuestionTitle(string markdown) => Md.ToPlainText(markdown).Replace('\n', ' ').Trim();
+    private static string QuestionTitle(string markdown) => IncidentManager.Application.Content.MarkdownService.PlainLine(markdown);
 
     private async Task RaiseTask(string question)
     {

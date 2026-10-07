@@ -316,6 +316,21 @@ public sealed class TaskCompletionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_question_is_one_line_of_markdown_and_its_task_title_is_plain_text()
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+        await svc.ReviseBriefAsync(caseId, null, "Lure reached Finance", null, null, null);
+
+        await svc.AddOpenQuestionAsync(caseId, "Did **both**\n  users reuse `P@ss`?", followUp: true);
+
+        var c = (await svc.GetDetailAsync(caseId))!;
+        var brief = c.Briefs.Single(b => b.IsCurrent);
+        brief.OpenQuestions.Should().Be("- Did **both** users reuse `P@ss`?");
+        // The brief pairs a question with its task by the question's plain text, so the two must match.
+        c.ActionItems.Single(t => t.RaisedFromBriefId == brief.Id).Title.Should().Be("Did both users reuse P@ss?");
+    }
+
+    [Fact]
     public async Task A_decision_saves_with_its_follow_ups_in_one_go(/* RD-09 */)
     {
         var (svc, caseId, _) = await CaseWithTask();

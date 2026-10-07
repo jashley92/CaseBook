@@ -41,6 +41,13 @@ Composer → *Question*: one line for the brief's open questions, and "Follow it
 asked, the task that follows it up, in one save. Errors: "Write the question." · "That question is already open in
 the brief."
 
+**Questions and event steps are one line of inline Markdown.** Bold, italics, `code`, links and `[[` entity tags
+work; lists, headings and line breaks don't (line breaks become spaces, `- x` stays literal). The box says so
+under it. A question has to stay one line because the brief keeps one question per line and pairs each with its
+task by the question's plain text, which is also the task's title. A step has to stay one line because it's a cell
+in the report's tables and a node in the attack-chain diagram. `IMarkdownService.ToInlineHtml` renders them;
+`MarkdownService.OneLine` stores them; the report and task titles use `MarkdownService.PlainLine`.
+
 ### Adding an event step (the attack chain)
 
 Same composer, *Adversary step*: when, one or more ATT&CK tactics and an optional technique, **actor → target**

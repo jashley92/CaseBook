@@ -227,7 +227,8 @@
                 @* RD-07: a question goes on the brief's open questions (a new brief version), optionally followed up as a task. *@
                 <label class="form-label small mb-1" for="tl-question">What does the team still need to find out?</label>
                 <textarea id="tl-question" class="form-control form-control-sm im-rec" rows="2" maxlength="400" @bind="_question" @bind:event="oninput"
-                          placeholder="e.g. Did the other two users' credentials get used?"></textarea>
+                          aria-describedby="tl-oneline-hint" placeholder="e.g. Did the other two users' credentials get used?"></textarea>
+                @OneLineHint("the brief and as its task's title")
                 <div class="form-check small mt-2">
                     <input class="form-check-input" type="checkbox" id="tl-question-task" @bind="_questionTask" />
                     <label class="form-check-label" for="tl-question-task">Follow it up as a task, so its answer comes back to the brief</label>
@@ -292,7 +293,8 @@
                     <div class="mt-2">
                         <label class="form-label small mb-1" for="tl-atk-desc">What the adversary did</label>
                         <textarea id="tl-atk-desc" class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
-                                  placeholder="e.g. Authenticated to the VPN from 203.0.113.66 with valid credentials"></textarea>
+                                  aria-describedby="tl-oneline-hint" placeholder="e.g. Authenticated to the VPN from 203.0.113.66 with valid credentials"></textarea>
+                        @OneLineHint("the report's tables and the attack-chain diagram")
                     </div>
                 }
                 else
@@ -319,7 +321,8 @@
                     <div class="mt-2">
                         <label class="form-label small mb-1" for="tl-disc-desc">What the vendor reported / what we confirmed</label>
                         <textarea id="tl-disc-desc" class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
-                                  placeholder="e.g. Vendor confirmed our policyholder records were in the exposed dataset"></textarea>
+                                  aria-describedby="tl-oneline-hint" placeholder="e.g. Vendor confirmed our policyholder records were in the exposed dataset"></textarea>
+                        @OneLineHint("the report's tables and the attack-chain diagram")
                     </div>
                 }
                 @if (_tlEditId is null) { @ThenSection() }
@@ -696,7 +699,7 @@ else
                             }
                             @TimeLabel(e.OccurredAtUtc)
                         </div>
-                        <div class="tl-desc">@e.Description</div>
+                        <div class="tl-desc md-body">@((MarkupString)Md.ToInlineHtml(e.Description, CaseId))</div>
                         @if (e.EvidenceId is { } shotId)
                         {
                             @* U-40: attached screenshot — click the thumbnail to preview it in a lightbox. *@
@@ -1383,6 +1386,21 @@ else
     private Guid _mentionsFor;
     private string? _question;
     private bool _questionTask = true;
+
+    // Event steps and questions are one-line fields: inline Markdown, and [[tags]] typed as in the brief.
+    private readonly Dictionary<string, string> _tagRefs = new(StringComparer.Ordinal);
+
+    private string? Tagged(string? text) =>
+        IncidentManager.Application.Content.TagText.FromEditable(text, _tagRefs, Case.Entities.Select(x => (x.Id, x.Label, x.Value)));
+
+    // Says the design where the text is typed: one line, inline formatting only, and why.
+    private static RenderFragment OneLineHint(string where) => __builder =>
+    {
+        <div id="tl-oneline-hint" class="form-text im-oneline-hint">
+            <strong>One line.</strong> <code>**bold**</code>, <code>*italic*</code>, <code>`code`</code>, links and
+            <code>[[</code> to tag an entity work; lists and headings don't, so it reads as one line in @where.
+        </div>
+    };
     private bool _saving;
 
     private IEnumerable<(ComposerMode Mode, string Icon, string Label)> Modes()
@@ -1419,7 +1437,7 @@ else
         _saving = true;
         try
         {
-            await Cases.AddOpenQuestionAsync(CaseId, _question, _questionTask);
+            await Cases.AddOpenQuestionAsync(CaseId, Tagged(_question) ?? "", _questionTask);
             _question = null;
             await OnChanged.InvokeAsync();
             Toasts.Success(_questionTask ? "Question added to the brief, with a task to answer it" : "Question added to the brief");
@@ -1569,14 +1587,14 @@ else
             if (disclosure)
             {
                 await Cases.AddEventStepAsync(CaseId, whenUtc, Array.Empty<MitreTactic>(), null, null, null,
-                    _tlDesc, _tlSource, evidenceId: shotId, type: _evtStage, followUps: FollowUps());
+                    Tagged(_tlDesc)!, _tlSource, evidenceId: shotId, type: _evtStage, followUps: FollowUps());
             }
             else
             {
                 Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
                 Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
-                await Cases.AddEventStepAsync(CaseId, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, evidenceId: shotId, followUps: FollowUps());
+                await Cases.AddEventStepAsync(CaseId, whenUtc, EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, evidenceId: shotId, followUps: FollowUps());
             }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
@@ -1625,7 +1643,8 @@ else
         _evtTechnique = e.TechniqueId ?? "";
         _evtTactic = e.Tactics.Select(t => t.Tactic).FirstOrDefault();
         _evtStage = e.Type;   // E-32: vendor-disclosure stage for a third-party case
-        _tlDesc = e.Description;
+        _tagRefs.Clear();
+        _tlDesc = IncidentManager.Application.Content.TagText.ToEditable(e.Description, _tagRefs) ?? "";
         _tlSource = e.Source;
     }
 
@@ -1640,14 +1659,14 @@ else
             if (IsThirdParty && !_evtAttackMode)
             {
                 await Cases.EditEventStepAsync(CaseId, id, whenUtc, Array.Empty<MitreTactic>(), null, null, null,
-                    _tlDesc, _tlSource, _tlReason, type: _evtStage);
+                    Tagged(_tlDesc)!, _tlSource, _tlReason, type: _evtStage);
             }
             else
             {
                 Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
                 Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
-                await Cases.EditEventStepAsync(CaseId, id, whenUtc, EvtTacticSet(), technique, actor, target, _tlDesc, _tlSource, _tlReason);
+                await Cases.EditEventStepAsync(CaseId, id, whenUtc, EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, _tlReason);
             }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
