@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Application.Compliance;
 using IncidentManager.Application.Mitre;
 using IncidentManager.Application.Sla;
 using IncidentManager.Domain.Enums;
@@ -49,6 +50,12 @@ public sealed record SlaAttainment(SlaClock Clock, int Met, int Missed)
 /// <summary>Mean and median hours for one interval (null when nothing reached it in the period).</summary>
 public sealed record Interval(double? MeanHours, double? MedianHours, int Count);
 
+/// <summary>Met/missed against one severity's target (null when that severity has none).</summary>
+public sealed record SeverityAttainment(Severity Severity, int? TargetHours, int Met, int Missed);
+
+/// <summary>A stretch of time to measure: from <see cref="StartUtc"/> up to (not including) <see cref="EndUtc"/>.</summary>
+public sealed record ProgramWindow(DateTimeOffset StartUtc, DateTimeOffset EndUtc, string Label);
+
 /// <summary>One quarter's program figures.</summary>
 public sealed record ProgramSnapshot(
     int Opened, int Closed, int OpenAtEnd,
@@ -59,7 +66,14 @@ public sealed record ProgramSnapshot(
     int BreachesOpened, int ReportedToRegulators, Interval DetectToReport,
     int ReviewsRecorded, int ActionsOpened, int ActionsCompleted, int ActionsNotPursued,
     int ActionsOpenAtEnd, int ActionsPastTargetAtEnd,
-    IReadOnlyList<CountBy<string>> ActionAreas);
+    IReadOnlyList<CountBy<string>> ActionAreas,
+    // Containment met/missed per severity, and regulatory notices made inside or outside their window.
+    IReadOnlyList<SeverityAttainment>? ContainmentBySeverity = null,
+    int NoticesMet = 0, int NoticesMissed = 0)
+{
+    /// <summary>Percent of notices made inside their window, or null when none were made.</summary>
+    public int? NoticesPercent => NoticesMet + NoticesMissed == 0 ? null : (int)Math.Round(NoticesMet * 100.0 / (NoticesMet + NoticesMissed));
+}
 
 public sealed record ProgramTechnique(string TechniqueId, string Name, int Cases);
 
@@ -97,11 +111,16 @@ public sealed class ProgramReportService
     private readonly ISlaTargetsProvider _sla;
     private readonly AttackCoverageService _attack;
     private readonly IOrganizationTimeZone? _zone;
+    private readonly INotificationDeadlineSettingsProvider? _notify;
+    private readonly Admin.NotificationRuleService? _rules;
 
     public ProgramReportService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
-        ISlaTargetsProvider sla, AttackCoverageService attack, IOrganizationTimeZone? zone = null)
+        ISlaTargetsProvider sla, AttackCoverageService attack, IOrganizationTimeZone? zone = null,
+        INotificationDeadlineSettingsProvider? notify = null, Admin.NotificationRuleService? rules = null)
     {
         _zone = zone;
+        _notify = notify;
+        _rules = rules;
         _factory = factory;
         _user = user;
         _clock = clock;
@@ -112,6 +131,38 @@ public sealed class ProgramReportService
     public async Task<ProgramReport> BuildAsync(ProgramPeriod period, bool includeExercises = false, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
+        var data = await LoadAsync(db, includeExercises, ct);
+
+        // Quarters are cut in the organization's reporting time zone, like the dashboard's months.
+        var zone = _zone?.Current ?? TimeZoneInfo.Utc;
+        var coverage = await _attack.GetForPeriodAsync(period.StartUtc(zone), period.EndUtc(zone), includeExercises, ct);
+        var top = coverage.Tactics.SelectMany(t => t.Techniques)
+            .GroupBy(t => t.TechniqueId)
+            .Select(g => new ProgramTechnique(g.Key, g.First().Name, g.SelectMany(t => t.Cases).Select(c => c.CaseId).Distinct().Count()))
+            .OrderByDescending(t => t.Cases).ThenBy(t => t.TechniqueId, StringComparer.Ordinal)
+            .Take(10).ToList();
+
+        return new ProgramReport(period,
+            Snapshot(period.StartUtc(zone), period.EndUtc(zone), data),
+            Snapshot(period.Previous.StartUtc(zone), period.Previous.EndUtc(zone), data),
+            top, includeExercises, _clock.UtcNow, zone);
+    }
+
+    /// <summary>The same figures for each window, from one read of the cases (the Program overview's period, the
+    /// one before it, and its monthly trend lines).</summary>
+    public async Task<IReadOnlyList<ProgramSnapshot>> SnapshotsAsync(IReadOnlyList<ProgramWindow> windows,
+        bool includeExercises = false, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var data = await LoadAsync(db, includeExercises, ct);
+        return windows.Select(w => Snapshot(w.StartUtc, w.EndUtc, data)).ToList();
+    }
+
+    private sealed record Loaded(List<CaseRow> Rows, Dictionary<Guid, DateTimeOffset> BreachAt, List<DateTimeOffset> Reviews,
+        List<ActionRow> Actions, SlaTargets Targets, Dictionary<Guid, SlaState> Notices);
+
+    private async Task<Loaded> LoadAsync(IAppDbContext db, bool includeExercises, CancellationToken ct)
+    {
         var cases = db.Cases.AsNoTracking().ForUser(_user);
         if (!includeExercises) cases = cases.ExcludingExercises();
 
@@ -130,20 +181,17 @@ public sealed class ProgramReportService
             .Select(a => new ActionRow(a.CreatedAtUtc, a.ClosedAtUtc, a.Status, a.TargetDateUtc, a.RelatedArea))
             .ToListAsync(ct);
 
-        var targets = _sla.Current;
-        // Quarters are cut in the organization's reporting time zone, like the dashboard's months.
-        var zone = _zone?.Current ?? TimeZoneInfo.Utc;
-        var coverage = await _attack.GetForPeriodAsync(period.StartUtc(zone), period.EndUtc(zone), includeExercises, ct);
-        var top = coverage.Tactics.SelectMany(t => t.Techniques)
-            .GroupBy(t => t.TechniqueId)
-            .Select(g => new ProgramTechnique(g.Key, g.First().Name, g.SelectMany(t => t.Cases).Select(c => c.CaseId).Distinct().Count()))
-            .OrderByDescending(t => t.Cases).ThenBy(t => t.TechniqueId, StringComparer.Ordinal)
-            .Take(10).ToList();
+        // Each reported case's notice outcome against its jurisdictions' windows, when deadlines are tracked.
+        var notices = new Dictionary<Guid, SlaState>();
+        if (_notify?.Current is { Enabled: true } nd && _rules is not null)
+        {
+            var ruleSet = await _rules.LoadRuleSetAsync(nd.DefaultWindowHours, ct);
+            foreach (var (id, head) in await NotificationDeadlineService.HeadlinesAsync(db,
+                         cases.Where(c => c.ReportedAtUtc != null), nd, ruleSet, _clock.UtcNow, reported: true, ct))
+                notices[id] = head.State;
+        }
 
-        return new ProgramReport(period,
-            Snapshot(period.StartUtc(zone), period.EndUtc(zone), rows, breachFirstAt, reviews, actions, targets),
-            Snapshot(period.Previous.StartUtc(zone), period.Previous.EndUtc(zone), rows, breachFirstAt, reviews, actions, targets),
-            top, includeExercises, _clock.UtcNow, zone);
+        return new Loaded(rows, breachFirstAt, reviews, actions, _sla.Current, notices);
     }
 
     private sealed record CaseRow(Guid Id, Classification? Classification, Severity Severity, CasePhase Phase,
@@ -154,9 +202,9 @@ public sealed class ProgramReportService
         DateTimeOffset? TargetDateUtc, string? RelatedArea);
 
     // Everything is computed in memory: DateTimeOffset comparison and arithmetic stay off SQLite (F-08).
-    private static ProgramSnapshot Snapshot(DateTimeOffset start, DateTimeOffset end, List<CaseRow> rows,
-        Dictionary<Guid, DateTimeOffset> breachAt, List<DateTimeOffset> reviews, List<ActionRow> actions, SlaTargets targets)
+    private static ProgramSnapshot Snapshot(DateTimeOffset start, DateTimeOffset end, Loaded data)
     {
+        var (rows, breachAt, reviews, actions, targets) = (data.Rows, data.BreachAt, data.Reviews, data.Actions, data.Targets);
         bool In(DateTimeOffset? t) => t is { } v && v >= start && v < end;
 
         var opened = rows.Where(r => In(r.CreatedAtUtc)).ToList();
@@ -172,12 +220,23 @@ public sealed class ProgramReportService
         }
 
         // SLA outcomes for milestones reached in the period (a historical Met/Missed never changes afterwards).
-        int cMet = 0, cMiss = 0, rMet = 0, rMiss = 0, dMet = 0, dMiss = 0;
+        int cMet = 0, cMiss = 0, rMet = 0, rMiss = 0, dMet = 0, dMiss = 0, nMet = 0, nMiss = 0;
+        var bySeverity = new Dictionary<Severity, (int Met, int Missed)>();
         foreach (var r in rows)
         {
             var (cont, res) = SlaPolicy.Breakdown(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc,
                 targets, end, r.Classification);
-            if (In(r.ContainedAtUtc)) { if (cont.State == SlaState.Met) cMet++; else if (cont.State == SlaState.Missed) cMiss++; }
+            if (In(r.ContainedAtUtc) && cont.State is SlaState.Met or SlaState.Missed)
+            {
+                var met = cont.State == SlaState.Met;
+                if (met) cMet++; else cMiss++;
+                var (sm, sx) = bySeverity.GetValueOrDefault(r.Severity);
+                bySeverity[r.Severity] = met ? (sm + 1, sx) : (sm, sx + 1);
+            }
+            if (In(r.ReportedAtUtc) && data.Notices.TryGetValue(r.Id, out var notice))
+            {
+                if (notice == SlaState.Met) nMet++; else if (notice == SlaState.Missed) nMiss++;
+            }
             if (In(r.ResolvedAtUtc)) { if (res.State == SlaState.Met) rMet++; else if (res.State == SlaState.Missed) rMiss++; }
             if (In(r.DetectedAtUtc))
             {
@@ -212,7 +271,11 @@ public sealed class ProgramReportService
             ActionAreas: actions.Where(a => In(a.CreatedAtUtc))
                 .GroupBy(a => string.IsNullOrWhiteSpace(a.RelatedArea) ? "Unspecified" : a.RelatedArea.Trim(), StringComparer.OrdinalIgnoreCase)
                 .Select(g => new CountBy<string>(g.First().RelatedArea?.Trim() is { Length: > 0 } s ? s : "Unspecified", g.Count()))
-                .OrderByDescending(x => x.Count).ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase).Take(8).ToList());
+                .OrderByDescending(x => x.Count).ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase).Take(8).ToList(),
+            ContainmentBySeverity: Enum.GetValues<Severity>().OrderByDescending(v => v)
+                .Select(v => new SeverityAttainment(v, targets.HoursFor(SlaClock.Containment, v),
+                    bySeverity.GetValueOrDefault(v).Met, bySeverity.GetValueOrDefault(v).Missed)).ToList(),
+            NoticesMet: nMet, NoticesMissed: nMiss);
     }
 
     /// <summary>The report as a two-period CSV (metric, this quarter, previous quarter) for exam/board packs.</summary>

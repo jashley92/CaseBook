@@ -67,7 +67,9 @@ public sealed record DashboardMetrics(
     IReadOnlyList<PhaseCount> ByPhase,
     IReadOnlyList<TrendPoint> Trend,
     // The reporting time zone the trend's months were cut in, as Administration names it (e.g. "Eastern (New York)").
-    string? TrendZone = null)
+    string? TrendZone = null,
+    // Open breaches that came from a vendor (third-party origin).
+    int BreachesAtVendor = 0)
 {
     /// <summary>Percent of contained cases that met their per-severity containment target, or null when none had one.</summary>
     public int? ContainmentCompliancePercent => Percent(ContainmentMet, ContainmentMissed);
@@ -106,10 +108,14 @@ public sealed class DashboardService
         _rules = rules;
     }
 
-    public async Task<DashboardMetrics> GetAsync(CancellationToken ct = default)
+    public async Task<DashboardMetrics> GetAsync(CancellationToken ct = default) => await GetAsync(false, ct);
+
+    /// <param name="includeExercises">Count exercise cases too; by default drills stay out of posture metrics (PROD-43).</param>
+    public async Task<DashboardMetrics> GetAsync(bool includeExercises, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var cases = db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises(); // PROD-43: drills stay out of posture metrics
+        var cases = db.Cases.AsNoTracking().ForUser(_user);
+        if (!includeExercises) cases = cases.ExcludingExercises();
 
         var open = cases.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived);
         var now = _clock.UtcNow;
@@ -125,6 +131,7 @@ public sealed class DashboardService
         var adverse = openScan.Count(c => c.Classification == Classification.AdverseEvent);
         var internalOrigin = openScan.Count(c => c.Origin == CaseOrigin.InternalDetection);
         var thirdParty = openScan.Count(c => c.Origin == CaseOrigin.ThirdParty);
+        var breachesAtVendor = openScan.Count(c => c.Classification == Classification.Breach && c.Origin == CaseOrigin.ThirdParty);
 
         // SLA against the administered per-severity targets (Sla:*), via SlaQueries (the SlaPolicy rules as filters):
         //  • open cases → the headline at-risk/breached signal (the earliest running clock);
@@ -200,7 +207,8 @@ public sealed class DashboardService
             ndSettings.Enabled, notifyAwaiting, notifyAtRisk, notifyBreached, meanHoursToReport,
             byPhase.OrderBy(p => p.Phase).ToList(),
             trend,
-            Admin.SettingsCatalog.TimeZoneLabel(_zone?.Current ?? TimeZoneInfo.Utc));
+            Admin.SettingsCatalog.TimeZoneLabel(_zone?.Current ?? TimeZoneInfo.Utc),
+            breachesAtVendor());
     }
 
     /// <summary>

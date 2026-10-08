@@ -48,8 +48,13 @@ at a desk, and so are administration and the import queue.
 
 ![Leadership dashboard](../screenshots/dashboard.png)
 
-Open-case mix, attention strip, response times against SLA targets, open cases by phase, regulatory
-notification status, and **Case activity**: 12 months of new cases above the line (with the cases carried over
+The header picks the **period** the timing and target figures cover (30 days, this quarter to date, or 12 months,
+the default) and whether exercise cases count. The tiles show the open-case mix, then the period's median time to
+detect, contain, resolve and report (detected → reported), each with its mean beneath, its change on the period
+before and a trend line of the monthly medians over the last 12 months: medians lead because one long case pulls a
+mean far off. **Within target** shows detection, containment, resolution and regulatory notices (made inside each
+jurisdiction's window) for the period, with containment broken down by severity. Below them sit open cases by
+phase and **Case activity**: 12 months of new cases above the line (with the cases carried over
 from earlier months hatched beneath them) and closed cases below it. *Color by Classification* splits both by
 breach, incident and adverse event; a closed case counts under the classification it closed with. Hovering over or
 tapping a month says what it held and links to the cases opened in it. Every tile links to the matching filtered

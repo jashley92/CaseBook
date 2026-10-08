@@ -68,7 +68,7 @@ template filled it (name and hash, by value).
 
 | Output | Where | Contents |
 |---|---|---|
-| Leadership dashboard | Program › Overview, `/program` | Open mix, attention items, SLA performance, phases, notification compliance, 12 months of case activity (new, carried over and closed, optionally by classification); every figure links to the filtered list |
+| Leadership dashboard | Program › Overview, `/program` | Open mix, attention items, median timings and targets met for a chosen period (30 days, quarter to date, 12 months), phases, notification compliance, 12 months of case activity (new, carried over and closed, optionally by classification); every figure links to the filtered list |
 | Metrics CSV | `/export/metrics.csv` | Dashboard figures with monthly and quarterly rollups |
 | Program report | Program › Program report (`/program/report`), `/export/program-report.csv` | Quarter against the previous quarter: volumes, time to detect, contain and resolve, SLA attainment, regulatory reporting, post-incident follow-through, top techniques. Optional quarterly email to managers. |
 | Legal register | Program › Legal register (`/program/legal`), `/export/legal-register.csv` | Referrals, holds, materiality, notification deadlines |

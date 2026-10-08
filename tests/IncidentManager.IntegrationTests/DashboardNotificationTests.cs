@@ -77,6 +77,28 @@ public sealed class DashboardNotificationTests : IDisposable
         await db.SaveChangesAsync();
     }
 
+    // The Program overview's "Regulatory notice" row: notices made in the window, inside or outside their window.
+    [Fact]
+    public async Task Notices_made_in_a_window_count_as_inside_or_outside_their_jurisdiction_window()
+    {
+        var now = _clock.UtcNow;
+        await SeedAsync(
+            NewMaterialBreach(MaterialityStatus.Material, now.AddHours(-100), reportedAt: now.AddHours(-90)),   // 10 h: inside 72 h
+            NewMaterialBreach(MaterialityStatus.Material, now.AddHours(-100), reportedAt: now.AddHours(-10)),   // 90 h: outside
+            NewMaterialBreach(MaterialityStatus.Material, now.AddHours(-1)));                                    // not reported yet
+        _settings.Current = new NotificationDeadlineSettings(true, NotificationStartBasis.Determination, 72, 80);
+        var f = NewFactory();
+        var program = new ProgramReportService(f, _user, _clock, new TestSlaTargets(),
+            new IncidentManager.Application.Mitre.AttackCoverageService(f, _user, _clock), null, _settings,
+            new NotificationRuleService(f, _user, _clock));
+
+        var snaps = await program.SnapshotsAsync([new ProgramWindow(now.AddDays(-30), now, "30 days"),
+            new ProgramWindow(now.AddHours(-50), now, "the last 50 hours")]);
+
+        (snaps[0].NoticesMet, snaps[0].NoticesMissed, snaps[0].NoticesPercent).Should().Be((1, 1, 50));
+        (snaps[1].NoticesMet, snaps[1].NoticesMissed).Should().Be((0, 1), "only the late notice was made in the last 50 hours");
+    }
+
     [Fact]
     public async Task When_the_feature_is_off_the_dashboard_reports_no_notification_metrics()
     {

@@ -120,6 +120,51 @@ public sealed class ProgramReportTests : IDisposable
         r.Previous.Opened.Should().Be(1);
         r.Previous.Closed.Should().Be(1);
         r.Period.Previous.Label.Should().Be("Q1 2026");
+
+        // Containment by severity: the High case met its 4 h, the Critical one missed; Medium has no target.
+        q2.ContainmentBySeverity.Should().Contain(new SeverityAttainment(Severity.Critical, 4, 0, 1))
+            .And.Contain(new SeverityAttainment(Severity.High, 4, 1, 0))
+            .And.Contain(new SeverityAttainment(Severity.Medium, null, 0, 0));
+    }
+
+    // The Program overview measures any window the same way, from one read of the cases.
+    [Fact]
+    public async Task Any_window_is_measured_like_a_quarter()
+    {
+        await SeedAsync();
+
+        var snaps = await Service().SnapshotsAsync([
+            new ProgramWindow(Q2.StartUtc(TimeZoneInfo.Utc), Q2.EndUtc(TimeZoneInfo.Utc), "Q2"),
+            new ProgramWindow(Apr(1), Apr(5), "early April"),
+            new ProgramWindow(Feb(1), Feb(28), "February")]);
+
+        snaps.Select(s => s.Opened).Should().Equal(2, 1, 1);
+        snaps[1].TimeToContain.Should().Be(new Interval(2, 2, 1), "only A was contained in early April");
+        snaps[2].Closed.Should().Be(1);
+    }
+
+    [Fact]
+    public void The_overview_periods_compare_with_the_stretch_before_and_trend_over_twelve_months()
+    {
+        var now = new DateTimeOffset(2026, 10, 8, 12, 0, 0, TimeSpan.Zero);
+
+        var quarter = OverviewWindows.For(OverviewPeriod.QuarterToDate, now, TimeZoneInfo.Utc);
+        quarter.Current.Should().Be(new ProgramWindow(new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero), now, "Q4 2026 to date"));
+        quarter.Previous.Label.Should().Be("Q3 2026");
+        quarter.Months.Should().HaveCount(12);
+        quarter.Months[^1].EndUtc.Should().Be(now, "the current month runs to now");
+        quarter.Months[0].StartUtc.Should().Be(new DateTimeOffset(2025, 11, 1, 0, 0, 0, TimeSpan.Zero));
+
+        var days = OverviewWindows.For(OverviewPeriod.Last30Days, now, TimeZoneInfo.Utc);
+        (days.Current.StartUtc, days.Previous.StartUtc, days.Previous.EndUtc).Should().Be((now.AddDays(-30), now.AddDays(-60), now.AddDays(-30)));
+
+        var year = OverviewWindows.For(OverviewPeriod.Last12Months, now, TimeZoneInfo.Utc);
+        year.Current.StartUtc.Should().Be(new DateTimeOffset(2025, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        year.Previous.StartUtc.Should().Be(new DateTimeOffset(2024, 11, 1, 0, 0, 0, TimeSpan.Zero));
+
+        OverviewWindows.Parse(null).Should().Be(OverviewPeriod.Last12Months);
+        OverviewWindows.Parse("quarter").Should().Be(OverviewPeriod.QuarterToDate);
+        OverviewWindows.Key(OverviewPeriod.Last30Days).Should().Be("30d");
     }
 
     [Fact]

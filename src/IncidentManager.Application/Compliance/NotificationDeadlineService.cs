@@ -107,9 +107,19 @@ public sealed class NotificationDeadlineService
     /// list's notification-deadline filter so the two always agree. The caller scopes <paramref name="cases"/>
     /// (not archived, visible to the user; closed cases included — INV-43) and checks that the feature is enabled.
     /// </summary>
-    public static async Task<Dictionary<Guid, NotificationDeadlineStatus>> OpenHeadlinesAsync(
+    public static Task<Dictionary<Guid, NotificationDeadlineStatus>> OpenHeadlinesAsync(
         IAppDbContext db, IQueryable<Case> cases, NotificationDeadlineSettings settings,
         NotificationRuleSet ruleSet, DateTimeOffset now, CancellationToken ct = default)
+        => HeadlinesAsync(db, cases, settings, ruleSet, now, reported: false, ct);
+
+    /// <summary>
+    /// The headline for each case in <paramref name="cases"/> with a triggered obligation and a jurisdiction in play:
+    /// for unreported cases (<paramref name="reported"/> false) the running clock, for reported ones the outcome
+    /// (met or missed). The caller scopes <paramref name="cases"/>.
+    /// </summary>
+    public static async Task<Dictionary<Guid, NotificationDeadlineStatus>> HeadlinesAsync(
+        IAppDbContext db, IQueryable<Case> cases, NotificationDeadlineSettings settings,
+        NotificationRuleSet ruleSet, DateTimeOffset now, bool reported, CancellationToken ct = default)
     {
         var elementJur = await db.DataElements.AsNoTracking()
             .Where(e => e.NotificationJurisdictions != null && e.NotificationJurisdictions != "")
@@ -117,10 +127,10 @@ public sealed class NotificationDeadlineService
             .ToDictionaryAsync(e => e.Key, e => e.NotificationJurisdictions!, ct);
 
         var rows = await cases
-            .Where(c => c.ReportedAtUtc == null) // a recorded report stops the clock
+            .Where(c => reported ? c.ReportedAtUtc != null : c.ReportedAtUtc == null) // a recorded report stops the clock
             .Select(c => new
             {
-                c.Id, c.Classification, c.DetectedAtUtc,
+                c.Id, c.Classification, c.DetectedAtUtc, c.ReportedAtUtc,
                 MatStatus = c.Materiality.Status, MatDecided = c.Materiality.DecidedOnUtc, MatRecorded = c.Materiality.RecordedAtUtc,
                 Keys = c.DataElements.Select(d => d.ElementKey).ToList()
             })
@@ -138,7 +148,7 @@ public sealed class NotificationDeadlineService
             if (jurisdictions.Count == 0) continue;
 
             var head = NotificationDeadlinePolicy.Headline(
-                NotificationDeadlinePolicy.Evaluate(start, null, jurisdictions, ruleSet, settings.AtRiskThresholdPercent, now));
+                NotificationDeadlinePolicy.Evaluate(start, c.ReportedAtUtc, jurisdictions, ruleSet, settings.AtRiskThresholdPercent, now));
             if (head is not null) result[c.Id] = head;
         }
         return result;

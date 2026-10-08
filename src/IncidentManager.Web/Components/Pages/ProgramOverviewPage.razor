@@ -1,15 +1,32 @@
 @page "/program"
 @* RD-17: Program › Overview, the leadership dashboard (it was the landing at /). *@
 @attribute [Authorize(Policy = Policies.ViewAllCases)]
+@using IncidentManager.Application.Sla
 @inject DashboardService Dashboard
+@inject ISeverityLabels SevLabels
+@inject ProgramReportService ProgramFigures
+@inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
+@inject IClock Clock
 @inject TimeDisplay TimeDisp
 
 <PageTitle>Program</PageTitle>
 
 <div class="dash">
 <PageHeader Title="Program"
-           Subtitle="@(_asOf is null ? null : $"As of {_asOf}")">
+           Subtitle="@(_asOf is null ? null : $"As of {_asOf} · exercise cases {(Exercises ? "included" : "excluded")}")">
     <Actions>
+        <span class="btn-group btn-group-sm" role="group" aria-label="Period for the timing and target figures">
+            @foreach (var (key, label) in PeriodChoices)
+            {
+                var on = OverviewWindows.Key(_period) == key;
+                <a class="btn btn-outline-secondary @(on ? "active" : "")" aria-current="@(on ? "true" : null)"
+                   href="@Href(key, Exercises)">@label</a>
+            }
+        </span>
+        <a class="btn btn-sm btn-outline-secondary" href="@Href(OverviewWindows.Key(_period), !Exercises)"
+           title="Exercise cases are left out of these figures unless you include them">
+            <span class="bi @(Exercises ? "bi-check2-square" : "bi-square")" aria-hidden="true"></span> Include exercises
+        </a>
         @* UX-06: quick jump to the caller's own queue (the opposite-view cross-link). *@
         <a class="btn btn-sm btn-outline-secondary" href="desk"
            title="Your cases, tasks and what needs you">
@@ -63,7 +80,7 @@ else
         </div>
     }
 
-    @* ─── KPI strip ─────────────────────────────────────────────────────────── *@
+    @* ─── KPI strip: what's open now, then the period's timings (medians lead, means beneath) ─── *@
     <div class="kpi-strip">
         <div class="kpi kpi-lead">
             <a class="kpi-open dash-link" href="cases" title="View all open cases">
@@ -91,19 +108,18 @@ else
                 }
             </div>
             <div class="legend">
-                <a class="dash-link" href="cases?classification=Breach"><i class="sw danger"></i>@m.Breaches Breaches</a>
-                <a class="dash-link" href="cases?classification=Incident"><i class="sw amber"></i>@m.Incidents Incidents</a>
+                <a class="dash-link" href="cases?classification=Breach"><i class="sw danger"></i>@m.Breaches Breach@(m.Breaches == 1 ? "" : "es")@(m.BreachesAtVendor > 0 ? $" ({m.BreachesAtVendor} at a vendor)" : "")</a>
+                <a class="dash-link" href="cases?classification=Incident"><i class="sw amber"></i>@m.Incidents Incident@(m.Incidents == 1 ? "" : "s")</a>
                 <a class="dash-link" href="cases?classification=AdverseEvent"><i class="sw low"></i>@m.AdverseEvents Adverse</a>
             </div>
         </div>
-
-        <StatTile Icon="bi-shield-exclamation" Value="m.Breaches" Label="Open breaches"
-                  Tone="@(m.Breaches > 0 ? "danger" : "ok")" Href="cases?classification=Breach" />
-        <StatTile Icon="bi-diagram-2" Value="m.ThirdPartyOrigin" Label="Third-party origin" Tone="accent" Href="cases?origin=ThirdParty" />
-        <StatTile Icon="bi-hdd-network" Value="m.InternalOrigin" Label="Internal detection" Tone="accent" Href="cases?origin=InternalDetection" />
-        <StatTile Icon="bi-list-check" Value="m.OverdueActionItems" Label="Overdue tasks"
-                  Tone="@(m.OverdueActionItems > 0 ? "danger" : "ok")"
-                  Href="@(m.OverdueActionItems > 0 ? "cases?overdue=true&closed=true" : null)" />
+        @if (_cur is { } cur && _prev is { } prev)
+        {
+            @TimingTile("Time to detect", cur.TimeToDetect, prev.TimeToDetect, x => x.TimeToDetect)
+            @TimingTile("Time to contain", cur.TimeToContain, prev.TimeToContain, x => x.TimeToContain)
+            @TimingTile("Time to resolve", cur.TimeToResolve, prev.TimeToResolve, x => x.TimeToResolve)
+            @TimingTile("Detect → report", cur.DetectToReport, prev.DetectToReport, x => x.DetectToReport)
+        }
     </div>
 
     @* ─── Case activity: new and carried-over cases above the line, closed below it ─── *@
@@ -199,29 +215,42 @@ else
     @* ─── Secondary row: response & SLA · phase pipeline ────────────────────── *@
     <div class="dash-secondary">
         <div class="dash-card">
-            <div class="c-head"><span class="c-title">Response &amp; SLA <span class="c-note">against targets</span></span></div>
+            <div class="c-head"><span class="c-title">Within target <span class="c-note">@_windows?.Current.Label · per-severity targets</span></span></div>
 
-            <div class="rt-grid">
-                <div class="rt-fig">
-                    <div class="rt-fig-val @(m.MeanHoursToContain is null ? "muted" : "")">
-                        @(m.MeanHoursToContain is { } hc ? $"{hc:0.#}" : "—")<span class="u">@(m.MeanHoursToContain is null ? "" : "h")</span>
-                    </div>
-                    <div class="rt-fig-lab">Mean time to contain</div>
-                </div>
-                <div class="rt-fig">
-                    <div class="rt-fig-val @(m.MeanHoursToResolve is null ? "muted" : "")">
-                        @(m.MeanHoursToResolve is { } hr ? $"{hr:0.#}" : "—")<span class="u">@(m.MeanHoursToResolve is null ? "" : "h")</span>
-                    </div>
-                    <div class="rt-fig-lab">Mean time to resolve</div>
-                </div>
-            </div>
-
-            @ComplianceRow("Containment within target", m.ContainmentCompliancePercent, m.ContainmentMet, m.ContainmentMissed)
-            @ComplianceRow("Resolution within target", m.ResolutionCompliancePercent, m.ResolutionMet, m.ResolutionMissed)
-            @if (m.DetectionMet + m.DetectionMissed > 0)
+            @if (_cur is { } c)
             {
-                @* PROD-08: only once a detection target is set and cases carry an occurred time. *@
-                @ComplianceRow("Detection within target", m.DetectionCompliancePercent, m.DetectionMet, m.DetectionMissed)
+                var det = c.Sla.First(x => x.Clock == SlaClock.Detection);
+                var con = c.Sla.First(x => x.Clock == SlaClock.Containment);
+                var res = c.Sla.First(x => x.Clock == SlaClock.Resolution);
+                @if (det.Met + det.Missed > 0)
+                {
+                    @* PROD-08: only once a detection target is set and cases carry an occurred time. *@
+                    @ComplianceRow("Detection (occurred → detected)", det.Percent, det.Met, det.Missed)
+                }
+                @ComplianceRow("Containment", con.Percent, con.Met, con.Missed)
+                @ComplianceRow("Resolution", res.Percent, res.Met, res.Missed)
+                @if (m.NotifyDeadlinesEnabled)
+                {
+                    @ComplianceRow("Regulatory notice, within each jurisdiction's window", c.NoticesPercent, c.NoticesMet, c.NoticesMissed)
+                }
+
+                @if (c.ContainmentBySeverity is { Count: > 0 } sev && sev.Any(x => x.Met + x.Missed > 0))
+                {
+                    <div class="sev-wrap">
+                        <table class="sev-table">
+                            <caption>Containment by severity</caption>
+                            <thead><tr><th scope="col"></th>@foreach (var x in sev) { <th scope="col">@SevLabels.For(x.Severity)</th> }</tr></thead>
+                            <tbody>
+                                <tr><th scope="row">Target</th>@foreach (var x in sev) { <td>@(x.TargetHours is { } h ? $"{h} h" : "—")</td> }</tr>
+                                <tr><th scope="row">Met</th>@foreach (var x in sev)
+                                {
+                                    var judged = x.Met + x.Missed;
+                                    <td class="@(judged > 0 && x.Met * 100 / judged < 75 ? "sev-bad" : "")">@(judged == 0 ? "—" : $"{x.Met} of {judged}")</td>
+                                }</tr>
+                            </tbody>
+                        </table>
+                    </div>
+                }
             }
 
             @if (m.SlaBreached > 0 || m.SlaAtRisk > 0)
@@ -229,7 +258,7 @@ else
                 <a class="sla-line breached dash-link" href="cases?sla=true"
                    title="Open cases at or past their response-time target">
                     <span class="bi bi-clock-history" aria-hidden="true"></span>
-                    <span><strong>@m.SlaBreached</strong> overdue · <strong>@m.SlaAtRisk</strong> at risk</span>
+                    <span><strong>@m.SlaBreached</strong> overdue · <strong>@m.SlaAtRisk</strong> at risk now</span>
                     <span class="sla-go">View →</span>
                 </a>
             }
@@ -241,41 +270,9 @@ else
                 </div>
             }
 
-            @* PROD-07: regulatory notification-deadline compliance, shown only when the feature is on. *@
-            @if (m.NotifyDeadlinesEnabled)
-            {
-                <div class="rt-foot" style="margin-top:2px; margin-bottom:4px">Regulatory notification (detected → reported)</div>
-                <div class="rt-grid">
-                    <div class="rt-fig">
-                        <div class="rt-fig-val @(m.MeanHoursToReport is null ? "muted" : "")">
-                            @(m.MeanHoursToReport is { } hrep ? $"{hrep:0.#}" : "—")<span class="u">@(m.MeanHoursToReport is null ? "" : "h")</span>
-                        </div>
-                        <div class="rt-fig-lab">Mean time to report</div>
-                    </div>
-                    <div class="rt-fig">
-                        <div class="rt-fig-val @(m.NotifyAwaitingReport == 0 ? "muted" : "")">@m.NotifyAwaitingReport</div>
-                        <div class="rt-fig-lab">Awaiting report</div>
-                    </div>
-                </div>
-                @if (m.NotifyBreached > 0 || m.NotifyAtRisk > 0)
-                {
-                    <div class="sla-line breached" title="Open cases with a regulatory notification deadline at risk or past due">
-                        <span class="bi bi-megaphone" aria-hidden="true"></span>
-                        <span><strong>@m.NotifyBreached</strong> overdue · <strong>@m.NotifyAtRisk</strong> at risk</span>
-                    </div>
-                }
-                else
-                {
-                    <div class="sla-line ok">
-                        <span class="bi bi-check-circle" aria-hidden="true"></span>
-                        <span>@(m.NotifyAwaitingReport > 0 ? "All notification deadlines within window" : "No open notification deadlines")</span>
-                    </div>
-                }
-            }
-
             <div class="rt-foot">Measured against the per-severity targets in
-                <a class="dash-link u-link" href="admin/settings/sla">Administration → Response &amp; SLA</a>.
-                Mean times include every case that reached the milestone.</div>
+                <a class="dash-link u-link" href="admin/settings/sla">Administration → Response &amp; SLA</a>,
+                over the milestones reached in @_windows?.Current.Label.</div>
         </div>
 
         <div class="dash-card">
@@ -298,8 +295,21 @@ else
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "period")] public string? Period { get; set; }
+    [SupplyParameterFromQuery(Name = "exercises")] public bool Exercises { get; set; }
+
     private DashboardMetrics? _metrics;
     private string? _asOf;
+    private OverviewPeriod _period;
+    private OverviewWindows? _windows;
+    private ProgramSnapshot? _cur, _prev;
+    private IReadOnlyList<ProgramSnapshot> _monthly = [];
+
+    private static readonly (string Key, string Label)[] PeriodChoices =
+        [("30d", "30 days"), ("quarter", "This quarter"), ("12m", "12 months")];
+
+    private static string Href(string period, bool exercises) =>
+        $"program?period={period}{(exercises ? "&exercises=true" : "")}";
 
     private IReadOnlyList<BarPoint> _bars = [];
     private int _openDelta, _openedTotal, _closedTotal, _topMax, _downMax;
@@ -315,10 +325,15 @@ else
     private static readonly CasePhase[] OpenPhases =
         Enum.GetValues<CasePhase>().Where(p => p != CasePhase.Closed).ToArray();
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
-        _metrics = await Dashboard.GetAsync();
-        _asOf = TimeDisp.TimeOnly(DateTimeOffset.UtcNow);
+        _period = OverviewWindows.Parse(Period);
+        var now = Clock.UtcNow;
+        _windows = OverviewWindows.For(_period, now, OrgZone.Current);
+        _metrics = await Dashboard.GetAsync(Exercises);
+        var snaps = await ProgramFigures.SnapshotsAsync([_windows.Current, _windows.Previous, .. _windows.Months], Exercises);
+        (_cur, _prev, _monthly) = (snaps[0], snaps[1], snaps.Skip(2).ToList());
+        _asOf = TimeDisp.TimeOnly(now);
 
         var t = _metrics.Trend;
         _openedTotal = t.Sum(x => x.Opened);
@@ -349,6 +364,52 @@ else
         if (c.AdverseEvent > 0) parts.Add($"{c.AdverseEvent} adverse");
         if (c.Other > 0) parts.Add($"{c.Other} not classified");
         return parts.Count == 0 ? "" : $" ({string.Join(", ", parts)})";
+    }
+
+    // A timing tile: the period's median (mean beneath), its change on the period before, and a trend line of
+    // the monthly medians over the last 12 months. Lower is better for every timing here.
+    private RenderFragment TimingTile(string label, Interval cur, Interval prev, Func<ProgramSnapshot, Interval> pick) => __builder =>
+    {
+        var points = _monthly.Select(pick).Select(i => i.MedianHours).ToList();
+        <div class="kpi kpi-time">
+            <span class="k-label">@label</span>
+            <span class="k-row">
+                <span class="k-value k-value-sm">@(cur.MedianHours is { } md ? Num(md) : "—")</span>
+                @if (cur.MedianHours is not null) { <span class="k-unit">h median</span> }
+            </span>
+            @if (Spark(points) is { } line)
+            {
+                <svg class="k-spark" viewBox="0 0 100 24" preserveAspectRatio="none" role="img"
+                     aria-label="@($"{label}, monthly median over the last 12 months")">
+                    <polyline points="@line" fill="none" stroke-width="2" vector-effect="non-scaling-stroke"
+                              stroke-linejoin="round" stroke-linecap="round" style="stroke: var(--accent)" />
+                </svg>
+            }
+            <span class="k-foot">
+                @if (cur.MedianHours is { } c && prev.MedianHours is { } p && Math.Abs(c - p) >= 0.05)
+                {
+                    <span class="k-delta @(c < p ? "down" : "up")">@(c < p ? "▼" : "▲") @Num(Math.Abs(c - p)) h<span class="k-delta-note"> vs @_windows!.Previous.Label</span></span>
+                }
+                else if (cur.MedianHours is null)
+                {
+                    <span class="k-delta-note">none in @_windows!.Current.Label</span>
+                }
+                @if (cur.MeanHours is { } mean) { <span class="k-delta-note">mean @Num(mean) h · @cur.Count case@(cur.Count == 1 ? "" : "s")</span> }
+            </span>
+        </div>
+    };
+
+    private static string Num(double v) => v.ToString(v >= 100 ? "0" : "0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+    // Points for a 0..100 × 0..24 trend line over the months that have a value; null with fewer than two.
+    private static string? Spark(IReadOnlyList<double?> values)
+    {
+        var known = values.Select((v, i) => (v, i)).Where(x => x.v is not null).ToList();
+        if (known.Count < 2) return null;
+        double lo = known.Min(x => x.v!.Value), hi = known.Max(x => x.v!.Value), span = Math.Max(hi - lo, 0.001);
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        return string.Join(" ", known.Select(x =>
+            $"{(x.i * 100.0 / Math.Max(1, values.Count - 1)).ToString("0.#", inv)},{(22 - (x.v!.Value - lo) / span * 20).ToString("0.#", inv)}"));
     }
 
     private static string Flex(int n) => Math.Max(0.0001, n).ToString(System.Globalization.CultureInfo.InvariantCulture);
