@@ -69,7 +69,9 @@ public sealed record ProgramSnapshot(
     IReadOnlyList<CountBy<string>> ActionAreas,
     // Containment met/missed per severity, and regulatory notices made inside or outside their window.
     IReadOnlyList<SeverityAttainment>? ContainmentBySeverity = null,
-    int NoticesMet = 0, int NoticesMissed = 0)
+    int NoticesMet = 0, int NoticesMissed = 0,
+    // Cases closed in the period that have a post-incident review, and the improvement actions open at its end by area.
+    int ClosedWithReview = 0, IReadOnlyList<CountBy<string>>? OpenActionAreas = null)
 {
     /// <summary>Percent of notices made inside their window, or null when none were made.</summary>
     public int? NoticesPercent => NoticesMet + NoticesMissed == 0 ? null : (int)Math.Round(NoticesMet * 100.0 / (NoticesMet + NoticesMissed));
@@ -158,7 +160,7 @@ public sealed class ProgramReportService
         return windows.Select(w => Snapshot(w.StartUtc, w.EndUtc, data)).ToList();
     }
 
-    private sealed record Loaded(List<CaseRow> Rows, Dictionary<Guid, DateTimeOffset> BreachAt, List<DateTimeOffset> Reviews,
+    private sealed record Loaded(List<CaseRow> Rows, Dictionary<Guid, DateTimeOffset> BreachAt, List<(Guid CaseId, DateTimeOffset At)> Reviews,
         List<ActionRow> Actions, SlaTargets Targets, Dictionary<Guid, SlaState> Notices);
 
     private async Task<Loaded> LoadAsync(IAppDbContext db, bool includeExercises, CancellationToken ct)
@@ -175,8 +177,8 @@ public sealed class ProgramReportService
                 .Where(x => ids.Contains(x.CaseId) && x.To == Classification.Breach)
                 .Select(x => new { x.CaseId, x.ChangedAtUtc, x.EffectiveAtUtc }).ToListAsync(ct))
             .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.Min(x => x.EffectiveAtUtc ?? x.ChangedAtUtc));
-        var reviews = await db.PostIncidentReviews.AsNoTracking().Where(r => ids.Contains(r.CaseId))
-            .Select(r => r.CreatedAtUtc).ToListAsync(ct);
+        var reviews = (await db.PostIncidentReviews.AsNoTracking().Where(r => ids.Contains(r.CaseId))
+            .Select(r => new { r.CaseId, r.CreatedAtUtc }).ToListAsync(ct)).Select(r => (r.CaseId, r.CreatedAtUtc)).ToList();
         var actions = await db.ImprovementActions.AsNoTracking().Where(a => ids.Contains(a.CaseId))
             .Select(a => new ActionRow(a.CreatedAtUtc, a.ClosedAtUtc, a.Status, a.TargetDateUtc, a.RelatedArea))
             .ToListAsync(ct);
@@ -246,6 +248,12 @@ public sealed class ProgramReportService
         }
 
         var openAtEnd = actions.Where(a => a.CreatedAtUtc < end && (a.ClosedAtUtc is null || a.ClosedAtUtc >= end)).ToList();
+        var reviewed = reviews.Select(r => r.CaseId).ToHashSet();
+
+        static List<CountBy<string>> Areas(IEnumerable<ActionRow> list) => list
+            .GroupBy(a => string.IsNullOrWhiteSpace(a.RelatedArea) ? "Unspecified" : a.RelatedArea.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new CountBy<string>(g.First().RelatedArea?.Trim() is { Length: > 0 } s ? s : "Unspecified", g.Count()))
+            .OrderByDescending(x => x.Count).ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase).Take(8).ToList();
 
         return new ProgramSnapshot(
             Opened: opened.Count,
@@ -262,20 +270,19 @@ public sealed class ProgramReportService
             BreachesOpened: breachAt.Values.Count(t => In(t)),
             ReportedToRegulators: rows.Count(r => In(r.ReportedAtUtc)),
             DetectToReport: Span(rows.Select(r => (r.DetectedAtUtc, r.ReportedAtUtc))),
-            ReviewsRecorded: reviews.Count(t => In(t)),
+            ReviewsRecorded: reviews.Count(r => In(r.At)),
             ActionsOpened: actions.Count(a => In(a.CreatedAtUtc)),
             ActionsCompleted: actions.Count(a => a.Status == ImprovementActionStatus.Completed && In(a.ClosedAtUtc)),
             ActionsNotPursued: actions.Count(a => a.Status == ImprovementActionStatus.NotPursued && In(a.ClosedAtUtc)),
             ActionsOpenAtEnd: openAtEnd.Count,
             ActionsPastTargetAtEnd: openAtEnd.Count(a => a.TargetDateUtc is { } t && t < end),
-            ActionAreas: actions.Where(a => In(a.CreatedAtUtc))
-                .GroupBy(a => string.IsNullOrWhiteSpace(a.RelatedArea) ? "Unspecified" : a.RelatedArea.Trim(), StringComparer.OrdinalIgnoreCase)
-                .Select(g => new CountBy<string>(g.First().RelatedArea?.Trim() is { Length: > 0 } s ? s : "Unspecified", g.Count()))
-                .OrderByDescending(x => x.Count).ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase).Take(8).ToList(),
+            ActionAreas: Areas(actions.Where(a => In(a.CreatedAtUtc))),
             ContainmentBySeverity: Enum.GetValues<Severity>().OrderByDescending(v => v)
                 .Select(v => new SeverityAttainment(v, targets.HoursFor(SlaClock.Containment, v),
                     bySeverity.GetValueOrDefault(v).Met, bySeverity.GetValueOrDefault(v).Missed)).ToList(),
-            NoticesMet: nMet, NoticesMissed: nMiss);
+            NoticesMet: nMet, NoticesMissed: nMiss,
+            ClosedWithReview: rows.Count(r => In(r.ClosedAtUtc) && reviewed.Contains(r.Id)),
+            OpenActionAreas: Areas(openAtEnd));
     }
 
     /// <summary>The report as a two-period CSV (metric, this quarter, previous quarter) for exam/board packs.</summary>

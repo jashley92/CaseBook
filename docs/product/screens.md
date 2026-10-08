@@ -48,24 +48,32 @@ at a desk, and so are administration and the import queue.
 
 ![Leadership dashboard](../screenshots/dashboard.png)
 
-The header picks the **period** the timing and target figures cover (30 days, this quarter to date, or 12 months,
-the default) and whether exercise cases count. **Needs action** lists what someone should act on: regulatory notices at
-risk of or past their window first, then whatever fell due earliest (cases past or near a response target, briefs
-that predate a decision, handoff, phase, classification or materiality change, overdue tasks, and improvement
-actions past their target date). **Notification clocks** shows every running notice clock with how much of its
-window is used. The tiles show the open-case mix, then the period's median time to
-detect, contain, resolve and report (detected → reported), each with its mean beneath, its change on the period
-before and a trend line of the monthly medians over the last 12 months: medians lead because one long case pulls a
-mean far off. **Within target** shows detection, containment, resolution and regulatory notices (made inside each
-jurisdiction's window) for the period, with containment broken down by severity. **Where open cases are** shows
-each phase's open cases by severity, how long the longest-waiting one has been in it, and how many are past a
-response target. **Vendor cases** counts open vendor cases, the vendors with a case opened in the period, those with
-attack steps in our environment, and the median days from a vendor's first attack step to it telling us, then lists
-the open vendor cases (one with steps in our environment first). Then **Case activity**: 12 months of new cases above the line (with the cases carried over
-from earlier months hatched beneath them) and closed cases below it. *Color by Classification* splits both by
-breach, incident and adverse event; a closed case counts under the classification it closed with. Hovering over or
-tapping a month says what it held and links to the cases opened in it. Every tile links to the matching filtered
-case list. Exercise cases are excluded. **Export metrics (CSV)** downloads the figures.
+From top to bottom:
+
+- **Header**: the **period** the timing, target and panel figures cover (30 days, this quarter to date, or 12
+  months, the default) and **Include exercises** (exercise cases are left out unless included). Both live in the
+  URL (`/program?period=quarter&exercises=true`). **Export metrics (CSV)** downloads the figures.
+- **Needs action**: what someone should act on now. Regulatory notices at risk of or past their window come first,
+  then whatever fell due earliest: cases past or near a response target, briefs that predate a decision, handoff,
+  phase, classification or materiality change, overdue tasks, and improvement actions past their target date.
+  **Notification clocks**, beside it, shows every running notice clock and how much of its window is used.
+- **Tiles**: the open-case mix (breaches at a vendor noted), then the period's median time to detect, contain,
+  resolve and report (detected → reported). Each has its mean beneath, its change on the period before, and a trend
+  line of the monthly medians over the last 12 months. Medians lead because one long case pulls a mean far off.
+- **Case activity**: 12 months of new cases above the line, with the cases carried over from earlier months hatched
+  beneath them, and closed cases below it. *Color by Classification* splits both by breach, incident and adverse
+  event; a closed case counts under the classification it closed with. Hovering over or tapping a month says what it
+  held and links to the cases opened in it.
+- **Within target**: detection, containment, resolution and regulatory notices (made inside each jurisdiction's
+  window) for the period, with containment by severity.
+- **Where open cases are**: each phase's open cases by severity, how long the longest-waiting one has been in it,
+  and how many are past a response target.
+- **Vendor cases**: open vendor cases, the vendors with a case opened in the period, those with attack steps in our
+  environment, and the median days from a vendor's first attack step to it telling us; then the open vendor cases,
+  any with steps in our environment first.
+- **What attackers did**: the period's top ATT&CK techniques, steps at a vendor striped.
+- **Learning loop**: how many cases closed in the period have a post-incident review, and the improvement actions
+  open, past target, completed and not pursued, with the open ones by area.
 
 ## Case list
 

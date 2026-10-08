@@ -7,6 +7,7 @@
 @inject ProgramReportService ProgramFigures
 @inject NeedsActionService NeedsActionSvc
 @inject VendorCasesService Vendors
+@inject IncidentManager.Application.Mitre.AttackCoverageService Coverage
 @inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
@@ -290,7 +291,8 @@ else
                     @ComplianceRow("Regulatory notice, within each jurisdiction's window", c.NoticesPercent, c.NoticesMet, c.NoticesMissed)
                 }
 
-                @if (c.ContainmentBySeverity is { Count: > 0 } sev && sev.Any(x => x.Met + x.Missed > 0))
+                @if (c.ContainmentBySeverity?.Where(x => x.TargetHours is not null || x.Met + x.Missed > 0).ToList() is { Count: > 0 } sev
+                     && sev.Any(x => x.Met + x.Missed > 0))
                 {
                     <div class="sev-wrap">
                         <table class="sev-table">
@@ -378,6 +380,83 @@ else
             }
         </div>
     </div>
+
+    @* ─── What attackers did · the learning loop ──────────────────────────── *@
+    <div class="dash-tertiary">
+        <div class="dash-card">
+            <div class="c-head"><span class="c-title">What attackers did <span class="c-note">top ATT&amp;CK techniques · @_windows?.Current.Label</span></span>
+                <a class="u-link dash-link c-go" href="intel/attack">ATT&amp;CK coverage →</a></div>
+            @if (_techniques.Count == 0)
+            {
+                <div class="pdetail">No ATT&amp;CK techniques recorded on cases detected in @_windows?.Current.Label.</div>
+            }
+            else
+            {
+                var maxTech = Math.Max(1, _techniques.Max(t => t.Cases));
+                <ul class="na-list">
+                    @foreach (var t in _techniques)
+                    {
+                        <li class="tq-row">
+                            <span class="tq-id">@t.Id</span>
+                            <span class="pbar">
+                                <span class="tq-name">@t.Name</span>
+                                <span class="track tq-track">
+                                    <span class="pseg tq-ours" style="width:@((t.Cases - t.AtVendor) * 100.0 / maxTech)%"></span>
+                                    <span class="pseg tq-vendor" style="width:@(t.AtVendor * 100.0 / maxTech)%"></span>
+                                </span>
+                            </span>
+                            <span class="tq-tag">@(t.AtVendor > 0 ? $"at a vendor ×{t.AtVendor}" : "")</span>
+                            <span class="pc">@t.Cases</span>
+                        </li>
+                    }
+                </ul>
+                <div class="bc-legend plegend">
+                    <span><i class="lg tq-ours"></i>Seen in our environment</span>
+                    <span><i class="lg tq-vendor"></i>At a vendor</span>
+                    <span>@_tacticsSeen of @_tacticsAll tactics seen</span>
+                </div>
+            }
+        </div>
+
+        <div class="dash-card">
+            <div class="c-head"><span class="c-title">Learning loop <span class="c-note">post-incident reviews and improvement actions</span></span>
+                <a class="u-link dash-link c-go" href="program/improvement-actions">Improvement actions →</a></div>
+            @if (_cur is { } lc)
+            {
+                var reviewPct = lc.Closed == 0 ? (int?)null : (int)Math.Round(lc.ClosedWithReview * 100.0 / lc.Closed);
+                <div class="cmp @(reviewPct is null ? "cmp-na" : "")">
+                    <div class="cmp-head"><span class="cmp-label">Cases closed in @_windows!.Current.Label with a post-incident review</span>
+                        <span class="cmp-val">@(reviewPct is { } rp ? $"{rp}%" : "—")</span></div>
+                    <div class="cmp-track">@if (reviewPct is { } rpv) { <span class="cmp-fill @ComplianceTone(rpv)" style="width:@rpv%"></span> }</div>
+                    <div class="cmp-note">@(lc.Closed == 0 ? "no cases closed" : $"{lc.ClosedWithReview} of {lc.Closed} · {lc.Closed - lc.ClosedWithReview} without one")</div>
+                </div>
+                <div class="vc-figs ll-figs">
+                    <div class="vc-fig"><b>@lc.ActionsOpenAtEnd</b><span>improvement actions open</span></div>
+                    <div class="vc-fig"><b class="@(lc.ActionsPastTargetAtEnd > 0 ? "ll-warn" : "")">@lc.ActionsPastTargetAtEnd</b><span>past their target date</span></div>
+                    <div class="vc-fig"><b class="@(lc.ActionsCompleted > 0 ? "ll-ok" : "")">@lc.ActionsCompleted</b><span>completed in @_windows.Current.Label</span></div>
+                    <div class="vc-fig"><b>@lc.ActionsNotPursued</b><span>not pursued</span></div>
+                </div>
+                @if (lc.OpenActionAreas is { Count: > 0 } areas)
+                {
+                    var maxArea = Math.Max(1, areas.Max(x => x.Count));
+                    <div class="k-label ll-label">Open actions by area</div>
+                    <div class="pipe">
+                        @foreach (var ar in areas.Take(5))
+                        {
+                            <div class="prow ll-row">
+                                <span class="pl">@ar.Key</span>
+                                <span class="track"><span class="pseg tq-ours" style="width:@(ar.Count * 100.0 / maxArea)%"></span></span>
+                                <span class="pc">@ar.Count</span>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <p class="dash-foot">Medians lead and means sit beneath them, since one long case pulls a mean far off. Every figure
+        covers the cases you can see@(Exercises ? ", exercises included" : "; exercise cases are left out").</p>
 }
 </div>
 
@@ -389,6 +468,9 @@ else
     private NeedsAction? _needs;
     private IReadOnlyList<PhaseAging> _phases = [];
     private VendorCases? _vendor;
+    private sealed record TopTechnique(string Id, string Name, int Cases, int AtVendor);
+    private IReadOnlyList<TopTechnique> _techniques = [];
+    private int _tacticsSeen, _tacticsAll;
     private bool _showAllNeeds;
     private const int NeedsShown = 6;
     private string? _asOf;
@@ -422,6 +504,14 @@ else
         _needs = await NeedsActionSvc.GetAsync(Exercises);
         _phases = await Dashboard.PhaseAgingAsync(Exercises);
         _vendor = await Vendors.GetAsync(_windows.Current, Exercises);
+        var coverage = await Coverage.GetForPeriodAsync(_windows.Current.StartUtc, _windows.Current.EndUtc, Exercises);
+        _techniques = coverage.Tactics.SelectMany(t => t.Techniques).GroupBy(t => t.TechniqueId)
+            .Select(g => new TopTechnique(g.Key, g.First().Name,
+                g.SelectMany(t => t.Cases).Select(c => c.CaseId).Distinct().Count(),
+                g.SelectMany(t => t.Cases).Where(c => c.ThirdParty).Select(c => c.CaseId).Distinct().Count()))
+            .OrderByDescending(t => t.Cases).ThenBy(t => t.Id, StringComparer.Ordinal).Take(6).ToList();
+        _tacticsSeen = coverage.Tactics.Count(t => t.Tactic != MitreTactic.Unspecified && t.CaseCount > 0);
+        _tacticsAll = Enum.GetValues<MitreTactic>().Count(t => t != MitreTactic.Unspecified);
         var snaps = await ProgramFigures.SnapshotsAsync([_windows.Current, _windows.Previous, .. _windows.Months], Exercises);
         (_cur, _prev, _monthly) = (snaps[0], snaps[1], snaps.Skip(2).ToList());
         _asOf = TimeDisp.TimeOnly(now);

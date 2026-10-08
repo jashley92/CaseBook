@@ -121,6 +121,10 @@ public sealed class ProgramReportTests : IDisposable
         r.Previous.Closed.Should().Be(1);
         r.Period.Previous.Label.Should().Be("Q1 2026");
 
+        // The learning loop: B closed without a review (A's review is on a case still open); one action stays open.
+        (q2.Closed, q2.ClosedWithReview).Should().Be((1, 0));
+        q2.OpenActionAreas.Should().Equal(new CountBy<string>("Awareness", 1));
+
         // Containment by severity: the High case met its 4 h, the Critical one missed; Medium has no target.
         q2.ContainmentBySeverity.Should().Contain(new SeverityAttainment(Severity.Critical, 4, 0, 1))
             .And.Contain(new SeverityAttainment(Severity.High, 4, 1, 0))
