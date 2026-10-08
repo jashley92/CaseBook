@@ -242,4 +242,9 @@ a.sla-line:hover { filter: brightness(1.05); }
     .kpi-strip { grid-template-columns: 1fr; }
     .kpi-lead { grid-column: auto; }
 }
-@media (max-width: 520px) { .ca-go { margin-left: 0; } }
+@media (max-width: 520px) {
+    .ca-go { margin-left: 0; }
+    .na-item { grid-template-columns: auto minmax(0, 1fr); row-gap: 4px; }
+    .na-when { justify-self: end; }
+    .na-body { grid-column: 1 / -1; order: 3; }
+}
