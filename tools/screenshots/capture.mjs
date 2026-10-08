@@ -33,16 +33,18 @@ const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',').map(s => s.t
 const VIEWPORT = { width: 1440, height: 900 };
 const PORT = 9222 + Math.floor(Math.random() * 500);
 
+// A selector spliced into evaluated source as a string literal: JSON.stringify quotes it, and these
+// characters are escaped too so it can't end a script or a line early (code-scanning alert 5).
 const JS_UNSAFE_CHAR_MAP = {
   '<': '\\u003C',
   '>': '\\u003E',
   '/': '\\u002F',
-  '\\u2028': '\\u2028',
-  '\\u2029': '\\u2029'
+  '\u2028': '\\u2028',
+  '\u2029': '\\u2029'
 };
 
 function escapeUnsafeForEvalSource(str) {
-  return str.replace(/[<>/\\u2028\\u2029]/g, ch => JS_UNSAFE_CHAR_MAP[ch]);
+  return str.replace(/[<>/\u2028\u2029]/g, ch => JS_UNSAFE_CHAR_MAP[ch]);
 }
 
 function safeJsStringLiteral(value) {
