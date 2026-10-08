@@ -110,7 +110,7 @@ means it has no UI coupling and could back another entry point.
 | `ComplianceBundleService`, `ConfigBundleService`, `LegalRegisterService` | Bundles and register | |
 | `NotificationDeadlineService` | Regulatory deadline evaluation per case, open headlines | Pure policy in `NotificationDeadlinePolicy` |
 | `StageGateEvaluator` + `GateCheckRegistry` | Evaluate a gate against persisted case state | |
-| `DashboardService`, `ProgramReportService`, `NeedsActionService`, `AttackCoverageService`, `IndicatorService`, `IocFeedService`, `StixExportService`, `CampaignService`, `ActivityFeedService` | Read models | Need-to-know scoped; most exclude exercises |
+| `DashboardService`, `ProgramReportService`, `NeedsActionService`, `VendorCasesService`, `AttackCoverageService`, `IndicatorService`, `IocFeedService`, `StixExportService`, `CampaignService`, `ActivityFeedService` | Read models | Need-to-know scoped; most exclude exercises |
 | `MyWorkService`, `AgendaService`, `AgendaFeedService`, `TeamWorkloadService` | Personal and team work views; calendar | |
 | `SavedViewService`, `UserDisplayPreferenceService`, `UserNotificationPreferenceService` | Per-user state | Not audited |
 | `ApiTokenService` | API tokens | |

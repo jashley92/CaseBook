@@ -6,6 +6,7 @@
 @inject ISeverityLabels SevLabels
 @inject ProgramReportService ProgramFigures
 @inject NeedsActionService NeedsActionSvc
+@inject VendorCasesService Vendors
 @inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
@@ -343,6 +344,39 @@ else
                 }
             </div>
         </div>
+
+        <div class="dash-card vc-card">
+            <div class="c-head"><span class="c-title">Vendor cases <span class="c-note">open now · opened in @_windows?.Current.Label</span></span></div>
+            @if (_vendor is { } v)
+            {
+                <div class="vc-figs">
+                    <a class="vc-fig dash-link" href="cases?origin=ThirdParty"><b>@v.Open</b><span>open vendor case@(v.Open == 1 ? "" : "s")</span></a>
+                    <div class="vc-fig"><b>@v.Vendors</b><span>vendor@(v.Vendors == 1 ? "" : "s") with a case opened</span></div>
+                    <div class="vc-fig"><b class="@(v.Pivoted > 0 ? "vc-ours" : "")">@v.Pivoted</b><span>with attack steps in our environment</span></div>
+                    <div class="vc-fig" title="@(v.TellUsBasis > 0 ? $"Over {v.TellUsBasis} case{(v.TellUsBasis == 1 ? "" : "s")} with a first attack step at the vendor and a 'vendor notified us' milestone" : "No case yet has both a first attack step at the vendor and a 'vendor notified us' milestone")">
+                        <b>@(v.MedianDaysToTellUs is { } d ? $"{Num(d)} d" : "—")</b><span>median, first attack step at the vendor → they told us</span></div>
+                </div>
+                @if (v.OpenCases.Count == 0)
+                {
+                    <div class="pdetail">No vendor case is open.</div>
+                }
+                <ul class="na-list vc-list">
+                    @foreach (var vc in v.OpenCases.Take(4))
+                    {
+                        <li class="vc-item">
+                            <span class="vc-top"><a class="na-case" href="cases/@vc.Id">@vc.CaseNumber</a>
+                                @if (vc.StepsInOurs > 0) { <span class="na-kind bad">In our environment</span> }
+                                else if (!vc.Notified) { <span class="na-kind neutral">Not yet notified</span> }</span>
+                            <span class="na-what">@vc.Vendor · @(vc.StepsAtVendor + vc.StepsInOurs == 0 ? "no attack steps recorded yet" : $"{vc.StepsAtVendor} step{(vc.StepsAtVendor == 1 ? "" : "s")} at the vendor{(vc.StepsInOurs > 0 ? $", {vc.StepsInOurs} in ours" : "")}")</span>
+                        </li>
+                    }
+                </ul>
+                @if (v.OpenCases.Count > 4)
+                {
+                    <a class="na-more" href="cases?origin=ThirdParty">All @v.OpenCases.Count open vendor cases →</a>
+                }
+            }
+        </div>
     </div>
 }
 </div>
@@ -354,6 +388,7 @@ else
     private DashboardMetrics? _metrics;
     private NeedsAction? _needs;
     private IReadOnlyList<PhaseAging> _phases = [];
+    private VendorCases? _vendor;
     private bool _showAllNeeds;
     private const int NeedsShown = 6;
     private string? _asOf;
@@ -386,6 +421,7 @@ else
         _metrics = await Dashboard.GetAsync(Exercises);
         _needs = await NeedsActionSvc.GetAsync(Exercises);
         _phases = await Dashboard.PhaseAgingAsync(Exercises);
+        _vendor = await Vendors.GetAsync(_windows.Current, Exercises);
         var snaps = await ProgramFigures.SnapshotsAsync([_windows.Current, _windows.Previous, .. _windows.Months], Exercises);
         (_cur, _prev, _monthly) = (snaps[0], snaps[1], snaps.Skip(2).ToList());
         _asOf = TimeDisp.TimeOnly(now);

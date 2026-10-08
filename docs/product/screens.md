@@ -59,7 +59,9 @@ before and a trend line of the monthly medians over the last 12 months: medians 
 mean far off. **Within target** shows detection, containment, resolution and regulatory notices (made inside each
 jurisdiction's window) for the period, with containment broken down by severity. **Where open cases are** shows
 each phase's open cases by severity, how long the longest-waiting one has been in it, and how many are past a
-response target. Then **Case activity**: 12 months of new cases above the line (with the cases carried over
+response target. **Vendor cases** counts open vendor cases, the vendors with a case opened in the period, those with
+attack steps in our environment, and the median days from a vendor's first attack step to it telling us, then lists
+the open vendor cases (one with steps in our environment first). Then **Case activity**: 12 months of new cases above the line (with the cases carried over
 from earlier months hatched beneath them) and closed cases below it. *Color by Classification* splits both by
 breach, incident and adverse event; a closed case counts under the classification it closed with. Hovering over or
 tapping a month says what it held and links to the cases opened in it. Every tile links to the matching filtered

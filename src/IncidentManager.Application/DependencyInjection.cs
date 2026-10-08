@@ -56,6 +56,7 @@ public static class DependencyInjection
         services.AddScoped<Intel.IndicatorService>();        // PROD-10: cross-case indicator pivot
         services.AddScoped<Mitre.AttackCoverageService>();   // PROD-42: program-wide ATT&CK heatmap
         services.AddScoped<Dashboards.ProgramReportService>();  // E-31: quarterly program-metrics report
+        services.AddScoped<Dashboards.VendorCasesService>();    // the Program overview's vendor-case panel
         services.AddScoped<Dashboards.NeedsActionService>();    // the Program overview's Needs action list and notification clocks
         services.AddScoped<Export.StixExportService>();   // E-07: per-case entity graph → STIX 2.1 bundle
         services.AddScoped<ReportService>();

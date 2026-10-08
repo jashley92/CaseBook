@@ -150,7 +150,17 @@
 .ca-go { margin-left: auto; }
 
 /* ── Secondary row ────────────────────────────────────────────────────────── */
-.dash-secondary { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-bottom: 13px; }
+.dash-secondary { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 13px; margin-bottom: 13px; align-items: start; }
+
+/* Vendor cases */
+.vc-figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.vc-fig { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; background: var(--hover); }
+.vc-fig b { font-size: 1.4rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.vc-fig b.vc-ours { color: var(--im-danger); }
+.vc-fig span { font-size: .72rem; color: var(--im-text-muted); line-height: 1.3; }
+.vc-item { display: flex; flex-direction: column; gap: 3px; padding: 9px 0; border-top: 1px solid var(--im-border); }
+.vc-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+
 
 .rt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
 .rt-fig { background: var(--hover); border-radius: 11px; padding: 12px 14px; }
@@ -184,7 +194,7 @@ a.sla-line:hover { filter: brightness(1.05); }
 .sev-wrap { overflow-x: auto; border-top: 1px solid var(--im-border); padding-top: 10px; margin: 4px 0 10px; }
 .sev-table { width: 100%; border-collapse: collapse; font-size: .78rem; font-variant-numeric: tabular-nums; }
 .sev-table caption { caption-side: top; color: var(--im-text-muted); font-size: .74rem; padding: 0 0 6px; }
-.sev-table th, .sev-table td { padding: 3px 6px; text-align: right; font-weight: 500; }
+.sev-table th, .sev-table td { padding: 3px 6px; text-align: right; font-weight: 500; white-space: nowrap; }
 .sev-table thead th { color: var(--im-text-muted); }
 .sev-table tbody th { text-align: left; color: var(--im-text-muted); }
 .sev-table td.sev-bad { color: var(--im-danger); font-weight: 650; }
@@ -211,7 +221,6 @@ a.sla-line:hover { filter: brightness(1.05); }
     .na-row { grid-template-columns: 1fr; }
     .kpi-strip { grid-template-columns: 1fr 1fr; }
     .kpi-lead { grid-column: span 2; }
-    .dash-secondary { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) {
     .kpi-strip { grid-template-columns: 1fr; }
