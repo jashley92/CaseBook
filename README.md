@@ -124,6 +124,12 @@ and adds its follow-ups (tasks, a question, a line for Known, a case link) in th
 
 ![Timeline](docs/screenshots/timeline.png)
 
+On a **vendor** case the lens is *Attack & disclosure*: each attack step says whether it happened in the vendor's
+environment or in ours, and the chain marks where the attacker pivoted into our network. The vendor's notices and
+containment are disclosure milestones, kept out of the chain.
+
+![A vendor case's attack chain with the pivot into our network](docs/screenshots/vendor-chain.png)
+
 ### Notes &amp; @mentions
 Working notes per case (the Record's *Working notes* lens), in Markdown and versioned on every edit, that can be put on the timeline once they
 become a finding. A note can **@mention** teammates to point them at it: they're emailed a link straight to

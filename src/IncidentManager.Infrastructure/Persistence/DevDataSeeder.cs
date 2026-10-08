@@ -671,6 +671,26 @@ public static class DevDataSeeder
         c2.SetInitialSummary("Vendor notified us of unauthorized access to a claims dataset that may include our policyholders.", actor, now.AddDays(-3));
         c2.DataTypesInvolved = "Policyholder PII; claims history";
         c2.ChangePhase(CasePhase.Triage, "Awaiting vendor scope confirmation", actor, now.AddDays(-3));
+        // The attack as the vendor reported it, the disclosure milestones, and the pivot into our network through
+        // the vendor's integration account, so a vendor case's chain shows both environments.
+        c2.AddEventStep(now.AddDays(-12), [MitreTactic.InitialAccess], "T1078", null, null,
+            "Signed in to ClaimStream's admin portal using an administrator's **reused password**; password-only sign-in.", "Vendor IR report",
+            actor, now.AddDays(-3), environment: StepEnvironment.Vendor);
+        c2.AddEventStep(now.AddDays(-10), [MitreTactic.Exfiltration], "T1567.002", null, null,
+            "Claims dataset exported from the vendor's tenant to cloud storage.", "Vendor IR report",
+            actor, now.AddDays(-3), environment: StepEnvironment.Vendor);
+        c2.AddEventStep(now.AddDays(-9), [MitreTactic.InitialAccess, MitreTactic.LateralMovement], "T1078", null, null,
+            "Used ClaimStream's integration service account to sign in to our claims SFTP gateway.", "SIEM",
+            actor, now.AddDays(-2), environment: StepEnvironment.Ours);
+        c2.AddEventStep(now.AddDays(-9).AddHours(2), [MitreTactic.Discovery], "T1083", null, null,
+            "Listed the inbound claims folders; no downloads seen.", "SFTP logs",
+            actor, now.AddDays(-2), environment: StepEnvironment.Ours);
+        c2.AddEventStep(now.AddDays(-4), [], null, null, null,
+            "ClaimStream detected the export and contained their tenant.", "Vendor", actor, now.AddDays(-3),
+            type: TimelineEntryType.Containment);
+        c2.AddEventStep(now.AddDays(-3), [], null, null, null,
+            "ClaimStream notified us (ref. CS-IR-9931).", "Vendor", actor, now.AddDays(-3),
+            type: TimelineEntryType.Notified);
         db.Cases.Add(c2);
         await db.SaveChangesAsync(ct);
 

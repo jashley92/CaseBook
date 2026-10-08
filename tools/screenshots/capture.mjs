@@ -115,13 +115,24 @@ const SHOTS = [
   { name: 'cases-filtered',     path: '/cases?classification=Breach',   settle: 1000 },
   // 2026-09-24 additions: post-incident review, the cross-case pages, and the quarterly program report.
   { name: 'lessons-learned',    path: '/cases/{vendorCaseId}?tab=Review', settle: 1200 },
+  // A vendor case's attack steps at the vendor and, after the pivot, in our network; then its disclosure milestones.
+  { name: 'vendor-chain',       path: '/cases/{vendorCaseId}?tab=Timeline', settle: 1200, viewport: { width: 1680, height: 1000 },
+    before: `(async () => {
+      [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith('Attack & disclosure'))?.click();
+      await new Promise(r => setTimeout(r, 900));
+      const strip = document.querySelector('button.killchain-strip');
+      if (strip && strip.getAttribute('aria-expanded') !== 'true') strip.click();
+      await new Promise(r => setTimeout(r, 900));
+    })()` },
   { name: 'improvement-actions', path: '/program/improvement-actions',  settle: 1000,
     before: `(() => { const s=document.getElementById('ia-scope'); if (s) { s.value='All'; s.dispatchEvent(new Event('change',{bubbles:true})); } })()` },
   { name: 'indicators',         path: '/intel/indicators',              settle: 1200,
     before: `(() => { const s=document.getElementById('ind-type'); if (s) { s.value='all'; s.dispatchEvent(new Event('change',{bubbles:true})); } })()` },
   { name: 'attack-coverage',    path: '/intel/attack',                  settle: 1200,
     before: `(() => { const s=document.getElementById('atk-period'); if (s) { s.value='all'; s.dispatchEvent(new Event('change',{bubbles:true})); }
-                      setTimeout(() => document.querySelector('.atkh-cell')?.click(), 600); })()` },
+                      // The vendor case's exfiltration, so the detail shows a case marked *At a vendor*.
+                      setTimeout(() => ([...document.querySelectorAll('.atkh-cell')].find(c => c.textContent.includes('T1567'))
+                        ?? document.querySelector('.atkh-cell'))?.click(), 600); })()` },
   { name: 'program-report',     path: '/program/report',                settle: 1200 },
   // S-24: what the signed-in user's roles let them do.
   { name: 'my-access',          path: '/account/access',                settle: 900 },
