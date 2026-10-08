@@ -106,65 +106,94 @@ else
                   Href="@(m.OverdueActionItems > 0 ? "cases?overdue=true&closed=true" : null)" />
     </div>
 
-    @* ─── Centerpiece: interactive 12-month activity chart ──────────────────── *@
+    @* ─── Case activity: new and carried-over cases above the line, closed below it ─── *@
     <div class="dash-card chart-card">
-        <div class="c-head">
+        <div class="c-head ca-head">
             <span class="c-title">Case activity
-                <span class="c-note" title="Months follow the reporting time zone@(_metrics?.TrendZone is { } z ? $": {z}" : "")">last 12 months · @_openedTotal opened · @_closedTotal closed</span></span>
-            <span class="bc-legend">
-                <span><i class="lg accent"></i>Opened</span>
-                <span><i class="lg ok"></i>Closed</span>
-                <span><i class="lg line"></i>Open backlog</span>
+                <span class="c-note" title="Months follow the reporting time zone@(_metrics?.TrendZone is { } z ? $": {z}" : "")">last 12 months · @_openedTotal opened · @_closedTotal closed · @m.OpenCount still open</span></span>
+            <span class="ca-split">
+                <span id="ca-split-label">Color by</span>
+                <span class="btn-group btn-group-sm" role="group" aria-labelledby="ca-split-label">
+                    <button type="button" class="btn btn-outline-secondary @(_byClass ? "" : "active")" aria-pressed="@Ui.Aria(!_byClass)" @onclick="() => _byClass = false">Nothing</button>
+                    <button type="button" class="btn btn-outline-secondary @(_byClass ? "active" : "")" aria-pressed="@Ui.Aria(_byClass)" @onclick="() => _byClass = true">Classification</button>
+                </span>
             </span>
         </div>
+        <div class="bc-legend ca-legend">
+            @if (_byClass)
+            {
+                <span><i class="lg danger"></i>Breach</span>
+                <span><i class="lg amber"></i>Incident</span>
+                <span><i class="lg low"></i>Adverse event</span>
+                @if (_bars.Any(b => b.OpenedBy.Other + b.ClosedBy.Other > 0)) { <span><i class="lg other"></i>Not classified</span> }
+            }
+            else
+            {
+                <span><i class="lg accent"></i>New</span>
+            }
+            <span><i class="lg carry"></i>Carried over, still open</span>
+            <span><i class="lg @(_byClass ? "closed-faded" : "ok")"></i>Closed (below the line@(_byClass ? ", faded" : ""))</span>
+        </div>
 
-        <div class="chart">
-            <div class="chart-y">
-                @foreach (var t in _yTicks)
+        <div class="ca-scroll">
+            <div class="ca-plot">
+                @for (var i = 0; i < _bars.Count; i++)
                 {
-                    <span class="chart-y-lab" style="bottom:@(t.Pct)%">@t.Value</span>
-                }
-            </div>
-            <div class="chart-plot">
-                @foreach (var t in _yTicks)
-                {
-                    <span class="chart-grid" style="bottom:@(t.Pct)%"></span>
-                }
-
-                @* Open-backlog trend line, drawn over the bars (non-interactive visual layer). *@
-                @if (_chartMax > 0 && _bars.Count > 1)
-                {
-                    <svg class="chart-line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                        <polyline points="@_backlogPoints" fill="none" stroke-width="2"
-                                  vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"
-                                  style="stroke: var(--line)" />
-                    </svg>
-                }
-
-                <div class="chart-cols">
-                    @foreach (var b in _bars)
-                    {
-                        <a class="col dash-link@(b.Opened == 0 && b.Closed == 0 ? " col-empty" : "")"
-                           href="cases?opened=@b.Key&closed=true"
-                           aria-label="@b.Label: @b.Opened opened, @b.Closed closed, @b.End open at month end">
-                            <span class="col-bars">
-                                <span class="bar opened" style="height:@BarPct(b.Opened)%"></span>
-                                <span class="bar closed" style="height:@BarPct(b.Closed)%"></span>
+                    var b = _bars[i];
+                    var idx = i;
+                    <button type="button" class="ca-col @(idx == _sel ? "is-sel" : "")"
+                            aria-label="@b.Label: @b.Start carried in, @b.Opened new, @b.Closed closed, @b.End still open at month end"
+                            aria-pressed="@Ui.Aria(idx == _sel)"
+                            @onclick="() => _sel = idx" @onmouseenter="() => _sel = idx" @onfocus="() => _sel = idx">
+                        <span class="ca-up" style="height:@(Px(_topMax))px">
+                            <span class="ca-stack">
+                                @if (_byClass)
+                                {
+                                    <span class="ca-seg danger" style="height:@(Px(b.OpenedBy.Breach))px"></span>
+                                    <span class="ca-seg amber" style="height:@(Px(b.OpenedBy.Incident))px"></span>
+                                    <span class="ca-seg low" style="height:@(Px(b.OpenedBy.AdverseEvent))px"></span>
+                                    <span class="ca-seg other" style="height:@(Px(b.OpenedBy.Other))px"></span>
+                                }
+                                else
+                                {
+                                    <span class="ca-seg accent" style="height:@(Px(b.Opened))px"></span>
+                                }
+                                <span class="ca-seg carry" style="height:@(Px(b.Start))px"></span>
                             </span>
-                            <span class="col-tip" role="tooltip">
-                                <span class="tip-title">@b.Label</span>
-                                <span class="tip-row"><i class="sw accent"></i>Opened<b>@b.Opened</b></span>
-                                <span class="tip-row"><i class="sw ok"></i>Closed<b>@b.Closed</b></span>
-                                <span class="tip-row"><i class="sw line"></i>Open backlog<b>@b.End</b></span>
+                        </span>
+                        <span class="ca-down" style="height:@(Px(_downMax))px">
+                            <span class="ca-stack down">
+                                @if (_byClass)
+                                {
+                                    <span class="ca-seg danger faded" style="height:@(Px(b.ClosedBy.Breach))px"></span>
+                                    <span class="ca-seg amber faded" style="height:@(Px(b.ClosedBy.Incident))px"></span>
+                                    <span class="ca-seg low faded" style="height:@(Px(b.ClosedBy.AdverseEvent))px"></span>
+                                    <span class="ca-seg other faded" style="height:@(Px(b.ClosedBy.Other))px"></span>
+                                }
+                                else
+                                {
+                                    <span class="ca-seg ok" style="height:@(Px(b.Closed))px"></span>
+                                }
                             </span>
-                        </a>
-                    }
-                </div>
-            </div>
-            <div class="chart-x">
-                @foreach (var b in _bars) { <span>@b.Short</span> }
+                        </span>
+                        <span class="ca-x">@b.Short</span>
+                    </button>
+                }
             </div>
         </div>
+
+        @if (_bars.Count > 0)
+        {
+            var sel = _bars[_sel];
+            <div class="ca-detail" aria-live="polite">
+                <strong>@sel.Label</strong>
+                <span><b>@sel.Start</b> carried in</span>
+                <span><b>@sel.Opened</b> new@(_byClass ? ClassText(sel.OpenedBy) : "")</span>
+                <span><b>@sel.Closed</b> closed@(_byClass ? ClassText(sel.ClosedBy) : "")</span>
+                <span><b>@sel.End</b> still open at month end</span>
+                <a class="ca-go" href="cases?opened=@sel.Key&closed=true">Cases opened in @sel.Short →</a>
+            </div>
+        }
     </div>
 
     @* ─── Secondary row: response & SLA · phase pipeline ────────────────────── *@
@@ -273,12 +302,14 @@ else
     private string? _asOf;
 
     private IReadOnlyList<BarPoint> _bars = [];
-    private IReadOnlyList<YTick> _yTicks = [];
-    private int _openDelta, _openedTotal, _closedTotal, _chartMax;
-    private string _backlogPoints = "";
+    private int _openDelta, _openedTotal, _closedTotal, _topMax, _downMax;
+    private double _unit;
+    private bool _byClass;
+    private int _sel;
+    private static readonly ClassificationCounts None = new(0, 0, 0, 0);
 
-    private sealed record BarPoint(string Key, string Label, string Short, int Opened, int Closed, int End);
-    private sealed record YTick(int Value, double Pct);
+    private sealed record BarPoint(string Key, string Label, string Short, int Start, int Opened, int Closed, int End,
+        ClassificationCounts OpenedBy, ClassificationCounts ClosedBy);
 
     // Lifecycle phases shown in the open-items pipeline (everything except Closed).
     private static readonly CasePhase[] OpenPhases =
@@ -294,41 +325,31 @@ else
         _closedTotal = t.Sum(x => x.Closed);
         _openDelta = t.Count >= 2 ? t[^1].OpenAtEnd - t[^2].OpenAtEnd : 0;
 
-        // One honest axis for bars and the backlog line: the tallest of any month's opened/closed/backlog.
-        _chartMax = Math.Max(1, t.Count == 0 ? 1 : t.Max(x => Math.Max(Math.Max(x.Opened, x.Closed), x.OpenAtEnd)));
-
         _bars = t.Select(x =>
         {
             var d = new DateTime(x.Year, x.Month, 1);
-            return new BarPoint(d.ToString("yyyy-MM"), d.ToString("MMM yyyy"), d.ToString("MMM"),
-                x.Opened, x.Closed, x.OpenAtEnd);
+            return new BarPoint(d.ToString("yyyy-MM"), d.ToString("MMMM yyyy"), d.ToString("MMM"),
+                x.OpenAtStart, x.Opened, x.Closed, x.OpenAtEnd, x.OpenedBy ?? None, x.ClosedBy ?? None);
         }).ToList();
+        _sel = Math.Max(0, _bars.Count - 1);   // the latest month until another is picked
 
-        _yTicks = BuildYTicks(_chartMax);
-
-        // Backlog polyline in a 0..100 viewBox: x centred on each column, y inverted (SVG origin top-left).
-        if (_bars.Count > 1)
-        {
-            var n = _bars.Count;
-            _backlogPoints = string.Join(" ", _bars.Select((b, i) =>
-            {
-                var x = (i + 0.5) / n * 100;
-                var y = 100 - (double)b.End / _chartMax * 100;
-                return $"{x.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}," +
-                       $"{y.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}";
-            }));
-        }
+        // One scale above and below the line, so a closed bar as tall as a new one is the same number of cases.
+        _topMax = Math.Max(1, _bars.Count == 0 ? 1 : _bars.Max(b => b.Start + b.Opened));
+        _downMax = Math.Max(1, _bars.Count == 0 ? 1 : _bars.Max(b => b.Closed));
+        _unit = Math.Min(16, 150.0 / _topMax);
     }
 
-    // 0 / mid / max gridlines, rounded to readable values.
-    private static IReadOnlyList<YTick> BuildYTicks(int max) =>
-        new[] { 0, (int)Math.Round(max / 2.0), max }
-            .Distinct()
-            .Select(v => new YTick(v, max == 0 ? 0 : (double)v / max * 100))
-            .ToList();
+    private string Px(int cases) => (cases * _unit).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
 
-    // Non-zero counts get a small minimum height so a value of 1 is still visible against a tall max.
-    private int BarPct(int value) => value == 0 ? 0 : Math.Max(4, value * 100 / _chartMax);
+    private static string ClassText(ClassificationCounts c)
+    {
+        var parts = new List<string>();
+        if (c.Breach > 0) parts.Add($"{c.Breach} breach{(c.Breach == 1 ? "" : "es")}");
+        if (c.Incident > 0) parts.Add($"{c.Incident} incident{(c.Incident == 1 ? "" : "s")}");
+        if (c.AdverseEvent > 0) parts.Add($"{c.AdverseEvent} adverse");
+        if (c.Other > 0) parts.Add($"{c.Other} not classified");
+        return parts.Count == 0 ? "" : $" ({string.Join(", ", parts)})";
+    }
 
     private static string Flex(int n) => Math.Max(0.0001, n).ToString(System.Globalization.CultureInfo.InvariantCulture);
 

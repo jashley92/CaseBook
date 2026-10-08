@@ -328,10 +328,12 @@ public abstract class DashboardSlaParityTests : IDisposable
         var trend = Enumerable.Range(0, 12).Select(i => current.AddMonths(-(11 - i))).Select(month =>
         {
             var (start, end) = (Utc(month), Utc(month.AddMonths(1)));
-            return new TrendPoint(month.Year, month.Month,
-                cases.Count(s => s.CreatedAtUtc >= start && s.CreatedAtUtc < end),
-                cases.Count(s => s.ClosedAtUtc is { } c && c >= start && c < end),
-                cases.Count(s => s.CreatedAtUtc < end && (s.ClosedAtUtc is null || s.ClosedAtUtc >= end)));
+            var opened = cases.Where(s => s.CreatedAtUtc >= start && s.CreatedAtUtc < end).ToList();
+            var closed = cases.Where(s => s.ClosedAtUtc is { } c && c >= start && c < end).ToList();
+            int OpenAt(DateTimeOffset t) => cases.Count(s => s.CreatedAtUtc < t && (s.ClosedAtUtc is null || s.ClosedAtUtc >= t));
+            return new TrendPoint(month.Year, month.Month, opened.Count, closed.Count, OpenAt(end), OpenAt(start),
+                ClassificationCounts.Of(opened.Select(c => c.Classification)),
+                ClassificationCounts.Of(closed.Select(c => c.Classification)));
         }).ToList();
 
         return new Expected(atRisk, breached, cMet, cMissed, rMet, rMissed, dMet, dMissed, meanContain, meanResolve, overdue, trend);

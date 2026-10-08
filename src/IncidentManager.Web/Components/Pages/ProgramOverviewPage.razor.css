@@ -7,7 +7,8 @@
     --amber: #d9982b;
     --warn: #d9982b;
     --low: #3b82f6;
-    --line: #6366f1;                   /* backlog trend line — distinct from bar colours */
+    --carry-a: #9aa3af;                /* carried-over cases: hatched, so they read as "not new" */
+    --carry-b: #e5e7eb;
     --track: rgba(15, 23, 42, .07);
     --hover: rgba(15, 23, 42, .04);
 }
@@ -18,7 +19,8 @@
     --amber: #e0a83b;
     --warn: #e0a83b;
     --low: #5b9bf5;
-    --line: #8b8ff5;
+    --carry-a: #5a6573;
+    --carry-b: #2a313b;
     --track: rgba(255, 255, 255, .08);
     --hover: rgba(255, 255, 255, .05);
 }
@@ -81,66 +83,47 @@
 .sw.low { background: var(--low); }
 .sw.accent { background: var(--accent); }
 .sw.ok { background: var(--im-ok); }
-.sw.line { background: var(--line); }
 
-/* ── Centerpiece activity chart ───────────────────────────────────────────── */
-.chart-card { margin-bottom: 14px; overflow: visible; }
-.bc-legend { display: flex; gap: 15px; font-size: .74rem; color: var(--im-text-muted); font-weight: 500; }
+/* ── Case activity: new and carried-over cases above the line, closed below ── */
+.chart-card { margin-bottom: 14px; }
+.ca-head { flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.ca-split { display: inline-flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--im-text-muted); }
+.bc-legend { display: flex; flex-wrap: wrap; gap: 6px 15px; font-size: .74rem; color: var(--im-text-muted); font-weight: 500; }
+.ca-legend { margin-bottom: 12px; }
 .bc-legend .lg { width: 11px; height: 11px; border-radius: 3px; display: inline-block; margin-right: 5px; vertical-align: middle; }
-.lg.accent { background: var(--accent); }
-.lg.ok { background: var(--im-ok); }
-.lg.line { background: var(--line); border-radius: 11px; height: 3px; }
+.lg.accent, .ca-seg.accent { background: var(--accent); }
+.lg.ok, .ca-seg.ok { background: var(--im-ok); }
+.lg.danger, .ca-seg.danger { background: var(--im-danger); }
+.lg.amber, .ca-seg.amber { background: var(--amber); }
+.lg.low, .ca-seg.low { background: var(--low); }
+.lg.other, .ca-seg.other { background: var(--im-neutral); }
+.lg.carry, .ca-seg.carry { background: repeating-linear-gradient(135deg, var(--carry-a) 0 2px, var(--carry-b) 2px 4px); }
+.lg.closed-faded { background: var(--im-text-muted); opacity: .55; }
+.ca-seg.faded { opacity: .55; }
 
-.chart { position: relative; padding-left: 34px; }
-.chart-y { position: absolute; left: 0; top: 0; bottom: 26px; width: 30px; }
-.chart-y-lab { position: absolute; right: 4px; transform: translateY(50%); font-size: .66rem; color: var(--im-text-muted); font-variant-numeric: tabular-nums; }
-
-.chart-plot { position: relative; height: 224px; overflow: visible; }
-.chart-grid { position: absolute; left: 0; right: 0; height: 1px; background: var(--im-border); opacity: .7; }
-.chart-grid[style*="bottom:0%"] { opacity: 1; }
-
-/* The polyline carries fill/stroke inline (stroke via `var(--line)`, which inherits down the DOM
-   regardless of CSS isolation) because isolation does not reliably tag SVG child elements — a scoped
-   descendant selector on <polyline> can miss. */
-.chart-line { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; opacity: .9; }
-
-.chart-cols { position: absolute; inset: 0; display: flex; gap: 3px; }
-.col {
-    flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
-    position: relative; border-radius: 7px; transition: background .12s ease;
+.ca-scroll { overflow-x: auto; }
+.ca-plot { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 0 6px; min-width: 560px; }
+.ca-col {
+    font: inherit; color: inherit; background: transparent; border: 0; padding: 0; border-radius: 8px;
+    display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: background .12s ease;
 }
-.col:hover { background: var(--hover); }
-.col-bars { display: flex; align-items: flex-end; justify-content: center; gap: 4px; height: 100%; }
-.bar {
-    width: 11px; min-height: 0; border-radius: 3px 3px 0 0;
-    transform-origin: bottom; animation: barGrow .6s cubic-bezier(.2, .8, .2, 1) both;
-}
-.bar.opened { background: var(--accent); }
-.bar.closed { background: var(--im-ok); }
-.col:hover .bar { filter: brightness(1.12); }
-@keyframes barGrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.ca-col:hover, .ca-col:focus-visible, .ca-col.is-sel { background: var(--hover); }
+.ca-col:focus-visible { outline: 2px solid var(--im-focus); outline-offset: 1px; }
+.ca-up { width: 100%; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--im-border-strong); }
+.ca-down { width: 100%; display: flex; justify-content: center; }
+.ca-stack { width: 46%; max-width: 30px; display: flex; flex-direction: column; }
+.ca-stack.down { border-radius: 0 0 3px 3px; overflow: hidden; }
+.ca-seg { display: block; }
+.ca-x { font-size: .7rem; color: var(--im-text-muted); padding: 6px 0 4px; }
+.ca-col.is-sel .ca-x { color: var(--im-text); font-weight: 700; }
 
-/* Hover tooltip (pure CSS — no JS, no server round-trip). */
-.col-tip {
-    position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%) translateY(4px);
-    background: var(--im-surface); border: 1px solid var(--im-border); border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, .16);
-    padding: 9px 11px; min-width: 128px; z-index: 20;
-    opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s ease, transform .12s ease;
+.ca-detail {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 20px; margin-top: 12px;
+    padding: 10px 14px; border-radius: 10px; background: var(--hover); font-size: .82rem; color: var(--im-text-muted);
 }
-.col:hover .col-tip { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
-/* Keep the tooltip on-card at the ends of the axis. */
-.col:first-child .col-tip { left: 0; transform: translateX(0) translateY(4px); }
-.col:first-child:hover .col-tip { transform: translateX(0) translateY(0); }
-.col:last-child .col-tip { left: auto; right: 0; transform: translateX(0) translateY(4px); }
-.col:last-child:hover .col-tip { transform: translateX(0) translateY(0); }
-.tip-title { display: block; font-weight: 650; font-size: .78rem; margin-bottom: 6px; }
-.tip-row { display: flex; align-items: center; font-size: .76rem; color: var(--im-text-muted); margin-top: 3px; }
-.tip-row b { margin-left: auto; color: var(--im-text); font-variant-numeric: tabular-nums; }
-.col-empty .col-bars { opacity: .5; }
-
-.chart-x { display: flex; margin-top: 8px; padding-left: 0; }
-.chart-x span { flex: 1; text-align: center; color: var(--im-text-muted); font-size: .64rem; }
+.ca-detail strong { color: var(--im-text); font-size: .88rem; }
+.ca-detail b { color: var(--im-text); font-variant-numeric: tabular-nums; }
+.ca-go { margin-left: auto; }
 
 /* ── Secondary row ────────────────────────────────────────────────────────── */
 .dash-secondary { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-bottom: 13px; }
@@ -193,5 +176,4 @@ a.sla-line:hover { filter: brightness(1.05); }
     .kpi-lead { grid-column: auto; }
     .rt-grid { grid-template-columns: 1fr; }
 }
-/* RD-25: phones have no hover, and the hidden tooltips at the axis ends widened the page. */
-@media (max-width: 767.98px) { .col-tip { display: none; } .col { min-width: 0; overflow: hidden; } }
+@media (max-width: 520px) { .ca-go { margin-left: 0; } }

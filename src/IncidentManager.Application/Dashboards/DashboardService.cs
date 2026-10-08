@@ -10,7 +10,29 @@ namespace IncidentManager.Application.Dashboards;
 public sealed record PhaseCount(CasePhase Phase, int Count);
 
 /// <summary>Counts for one month, derived from case open/close timestamps (no snapshots required).</summary>
-public sealed record TrendPoint(int Year, int Month, int Opened, int Closed, int OpenAtEnd);
+/// <param name="OpenAtStart">Open when the month began: carried over from earlier months.</param>
+/// <param name="OpenedBy">The month's new cases by their classification.</param>
+/// <param name="ClosedBy">The month's closed cases by the classification they closed with.</param>
+public sealed record TrendPoint(int Year, int Month, int Opened, int Closed, int OpenAtEnd,
+    int OpenAtStart = 0, ClassificationCounts? OpenedBy = null, ClassificationCounts? ClosedBy = null);
+
+/// <summary>Cases split by classification; <see cref="Other"/> is any not yet classified (a complex event).</summary>
+public sealed record ClassificationCounts(int Breach, int Incident, int AdverseEvent, int Other)
+{
+    public static ClassificationCounts Of(IEnumerable<Classification?> classifications)
+    {
+        int b = 0, i = 0, a = 0, o = 0;
+        foreach (var c in classifications)
+            switch (c)
+            {
+                case Classification.Breach: b++; break;
+                case Classification.Incident: i++; break;
+                case Classification.AdverseEvent: a++; break;
+                default: o++; break;
+            }
+        return new(b, i, a, o);
+    }
+}
 
 public sealed record DashboardMetrics(
     int OpenCount,
@@ -198,19 +220,23 @@ public sealed class DashboardService
         var windowStart = bounds[0];
 
         var carriedOpen = await cases.CountAsync(c => c.CreatedAtUtc < windowStart && c.ClosedAtUtc == null, ct);
+        // A closed case's classification is the one it closed with: closing ends reclassification.
         var spans = await cases
             .Where(c => c.CreatedAtUtc >= windowStart || c.ClosedAtUtc >= windowStart)
-            .Select(c => new { c.CreatedAtUtc, c.ClosedAtUtc })
+            .Select(c => new { c.CreatedAtUtc, c.ClosedAtUtc, c.Classification })
             .ToListAsync(ct);
+
+        int OpenAt(DateTimeOffset t) => carriedOpen
+            + spans.Count(s => s.CreatedAtUtc < t && (s.ClosedAtUtc is null || s.ClosedAtUtc >= t));
 
         return Enumerable.Range(0, months).Select(i =>
         {
             var (start, end) = (bounds[i], bounds[i + 1]);
-            var opened = spans.Count(s => s.CreatedAtUtc >= start && s.CreatedAtUtc < end);
-            var closed = spans.Count(s => s.ClosedAtUtc is { } c && c >= start && c < end);
-            var openAtEnd = carriedOpen
-                + spans.Count(s => s.CreatedAtUtc < end && (s.ClosedAtUtc is null || s.ClosedAtUtc >= end));
-            return new TrendPoint(monthStarts[i].Year, monthStarts[i].Month, opened, closed, openAtEnd);
+            var opened = spans.Where(s => s.CreatedAtUtc >= start && s.CreatedAtUtc < end).ToList();
+            var closed = spans.Where(s => s.ClosedAtUtc is { } c && c >= start && c < end).ToList();
+            return new TrendPoint(monthStarts[i].Year, monthStarts[i].Month, opened.Count, closed.Count, OpenAt(end),
+                OpenAt(start), ClassificationCounts.Of(opened.Select(s => s.Classification)),
+                ClassificationCounts.Of(closed.Select(s => s.Classification)));
         }).ToList();
     }
 }

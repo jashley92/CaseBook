@@ -49,8 +49,11 @@ at a desk, and so are administration and the import queue.
 ![Leadership dashboard](../screenshots/dashboard.png)
 
 Open-case mix, attention strip, response times against SLA targets, open cases by phase, regulatory
-notification status, and 12 months of opened and closed cases. Every tile and bar links to the matching
-filtered case list. Exercise cases are excluded. **Export metrics (CSV)** downloads the figures.
+notification status, and **Case activity**: 12 months of new cases above the line (with the cases carried over
+from earlier months hatched beneath them) and closed cases below it. *Color by Classification* splits both by
+breach, incident and adverse event; a closed case counts under the classification it closed with. Hovering over or
+tapping a month says what it held and links to the cases opened in it. Every tile links to the matching filtered
+case list. Exercise cases are excluded. **Export metrics (CSV)** downloads the figures.
 
 ## Case list
 

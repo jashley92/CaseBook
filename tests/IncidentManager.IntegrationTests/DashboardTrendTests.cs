@@ -72,6 +72,42 @@ public sealed class DashboardTrendTests : IDisposable
 
             mar.Opened.Should().Be(1);
             mar.OpenAtEnd.Should().Be(2); // case 1 + case 3 open at end of March
+
+            // Carried over: what was open when each month began.
+            jan.OpenAtStart.Should().Be(0);
+            feb.OpenAtStart.Should().Be(2);
+            mar.OpenAtStart.Should().Be(1);
+            jan.OpenedBy.Should().Be(new ClassificationCounts(0, 2, 0, 0));
+            feb.ClosedBy.Should().Be(new ClassificationCounts(0, 1, 0, 0));
+        }
+    }
+
+    [Fact]
+    public async Task Closed_cases_count_under_the_classification_they_closed_with()
+    {
+        var now = new DateTimeOffset(2026, 3, 15, 0, 0, 0, TimeSpan.Zero);
+        var opened = new DateTimeOffset(2026, 3, 2, 0, 0, 0, TimeSpan.Zero);
+
+        await using (var db = NewContext())
+        {
+            var breach = Case.Open(2026, 1, "C1", "Became a breach", Classification.Incident, Severity.High,
+                CaseOrigin.InternalDetection, "system", opened);
+            breach.Reclassify(Classification.Breach, "Confirmed exposure", "system", opened.AddDays(1));
+            breach.ClosedAtUtc = opened.AddDays(5);
+            var intake = Case.Open(2026, 2, "C2", "Not classified yet", null, Severity.Low,
+                CaseOrigin.InternalDetection, "system", opened);
+            db.Cases.AddRange(breach, intake);
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext())
+        {
+            var mar = (await DashboardService.BuildTrendAsync(db.Cases.AsNoTracking(), now, months: 1, TimeZoneInfo.Utc)).Single();
+
+            mar.OpenedBy.Should().Be(new ClassificationCounts(1, 0, 0, 1));
+            mar.ClosedBy.Should().Be(new ClassificationCounts(1, 0, 0, 0));
+            mar.OpenAtStart.Should().Be(0);
+            mar.OpenAtEnd.Should().Be(1);
         }
     }
 
