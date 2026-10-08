@@ -33,6 +33,22 @@ const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',').map(s => s.t
 const VIEWPORT = { width: 1440, height: 900 };
 const PORT = 9222 + Math.floor(Math.random() * 500);
 
+const JS_UNSAFE_CHAR_MAP = {
+  '<': '\\u003C',
+  '>': '\\u003E',
+  '/': '\\u002F',
+  '\\u2028': '\\u2028',
+  '\\u2029': '\\u2029'
+};
+
+function escapeUnsafeForEvalSource(str) {
+  return str.replace(/[<>/\\u2028\\u2029]/g, ch => JS_UNSAFE_CHAR_MAP[ch]);
+}
+
+function safeJsStringLiteral(value) {
+  return escapeUnsafeForEvalSource(JSON.stringify(value));
+}
+
 // --- The shot manifest -------------------------------------------------------------------------------
 // path may contain {caseId} / {campaignId}, filled from the resolvers below.
 // ready: optional CSS selector to wait for before capturing (in addition to the load event).
@@ -369,7 +385,7 @@ async function main() {
         clip = { x: 0, y: 0, width: vp.width, height: h, scale: 1 };
       } else if (shot.crop) {
         // Crop to one element (a dialog, a panel) plus a margin, in viewport coordinates.
-        const r = await evalJs(`(() => { const e=document.querySelector(${JSON.stringify(shot.crop)}); if (!e) return null;
+        const r = await evalJs(`(() => { const e=document.querySelector(${safeJsStringLiteral(shot.crop)}); if (!e) return null;
           const b=e.getBoundingClientRect(); return { x:b.x, y:b.y, w:b.width, h:b.height }; })()`);
         if (r) {
           const pad = 16, x = Math.max(0, r.x - pad), y = Math.max(0, r.y - pad);
