@@ -21,11 +21,15 @@ each with why it exists. The clocks on your cases and the quiet changes sit besi
 ![Desk](docs/screenshots/desk.png)
 
 ### Program
-The cross-case views in one place for leadership: the **dashboard** (classification mix, attention items, an
-open-items-by-phase pipeline, response times against SLA targets, a **regulatory-notification** compliance block
-and a **12-month case-activity chart**, all derived from case timestamps, with a metrics CSV for board and
-regulatory packs), the team's workload, due work across the team, improvement actions, the **legal register** and
-the quarterly program report.
+The cross-case views in one place for leadership. The **dashboard** opens on what **needs action** (regulatory
+notices first, then response targets, briefs behind the record, overdue tasks and improvement actions past target)
+beside the running **notification clocks**. Below that: median time to detect, contain, resolve and report for a
+chosen period (30 days, quarter to date or 12 months) with trend lines, a **12-month case-activity chart** (new,
+carried-over and closed cases, optionally by classification), targets met, where open cases are by phase and
+severity, **vendor cases** (including attackers who pivoted into our network), the top ATT&CK techniques, and the
+post-incident learning loop. Everything is derived from the case record, with a metrics CSV for board and regulatory
+packs. Program also holds the team's workload, due work across the team, improvement actions, the **legal
+register** and the quarterly program report.
 
 ![Program overview](docs/screenshots/dashboard.png)
 
