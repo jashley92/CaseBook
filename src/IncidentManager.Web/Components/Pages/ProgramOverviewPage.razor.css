@@ -27,6 +27,12 @@
     --hover: rgba(255, 255, 255, .05);
 }
 
+/* ── Custom period ───────────────────────────────────────────────────────── */
+.po-custom { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; margin: -4px 0 14px;
+    padding: 12px 14px; border: 1px solid var(--im-border); border-radius: 12px; background: var(--im-surface); }
+.po-custom-hint { flex: 1 1 260px; font-size: .74rem; color: var(--im-text-muted); }
+.po-custom-err { flex-basis: 100%; font-size: .8rem; color: var(--im-danger); }
+
 /* ── Needs action + notification clocks ─────────────────────────────────── */
 .na-row { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 13px; margin-bottom: 14px; align-items: start; }
 .na-row > :only-child { grid-column: 1 / -1; }

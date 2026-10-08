@@ -171,7 +171,7 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   built but left out.
 - **Event steps and open questions are one line of inline Markdown**; the box says so under it.
 - **The Program overview is rebuilt** around a Needs action list and notification clocks, median timings for a
-  chosen period (`/program?period=30d|quarter|12m`, 12 months by default), a case-activity chart with carry-over and
+  chosen period (`/program?period=30d|quarter|12m`, 12 months by default, or a custom `from`/`to` range), a case-activity chart with carry-over and
   closed cases, targets met by severity, phase aging, vendor cases, top techniques and the learning loop. No schema
   change. The red "Needs attention" banner and the origin tiles are gone; the metrics CSV is unchanged.
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentManager.Application.Abstractions;
 
 namespace IncidentManager.Application.Dashboards;
@@ -7,7 +8,9 @@ public enum OverviewPeriod
 {
     Last30Days,
     QuarterToDate,
-    Last12Months
+    Last12Months,
+    /// <summary>From one date to another, both included, in the reporting time zone.</summary>
+    Custom
 }
 
 /// <summary>The windows behind the Program overview's period figures: the chosen period, the one before it to
@@ -27,8 +30,52 @@ public sealed record OverviewWindows(ProgramWindow Current, ProgramWindow Previo
     {
         OverviewPeriod.Last30Days => "30d",
         OverviewPeriod.QuarterToDate => "quarter",
+        OverviewPeriod.Custom => "custom",
         _ => "12m"
     };
+
+    /// <summary>The longest custom range: five years.</summary>
+    public const int MaxCustomDays = 5 * 366;
+
+    /// <summary>A custom range from two <c>yyyy-MM-dd</c> dates, or null with why not. A range that runs past
+    /// <paramref name="today"/> stops there.</summary>
+    public static (DateOnly From, DateOnly To)? TryRange(string? from, string? to, DateOnly today, out string? error)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(from) && string.IsNullOrWhiteSpace(to)) return null;
+        if (!DateOnly.TryParseExact(from, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var f)
+            || !DateOnly.TryParseExact(to, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var t))
+            error = "Give both dates.";
+        else if (f > t) error = "The start date is after the end date.";
+        else if (f > today) error = "The range starts after today.";
+        else if (t > today ? today.DayNumber - f.DayNumber >= MaxCustomDays : t.DayNumber - f.DayNumber >= MaxCustomDays)
+            error = "Pick a range of five years or less.";
+        else return (f, t > today ? today : t);
+        return null;
+    }
+
+    /// <summary>A custom range, both dates included, compared with the same number of days just before it.</summary>
+    public static OverviewWindows ForRange(DateOnly from, DateOnly to, DateTimeOffset now, TimeZoneInfo zone)
+    {
+        var start = ZonedDays.StartUtc(from, zone);
+        var end = ZonedDays.StartUtc(to.AddDays(1), zone);
+        if (end > now) end = now;
+        var days = to.DayNumber - from.DayNumber + 1;
+        var months = For(OverviewPeriod.Last12Months, now, zone).Months;
+        return new(new(start, end, RangeLabel(from, to)),
+            new(ZonedDays.StartUtc(from.AddDays(-days), zone), start, days == 1 ? "the day before" : $"the {days} days before"),
+            months);
+    }
+
+    /// <summary>"1 Jul – 30 Sep 2026", "3 Mar 2026", or "15 Dec 2025 – 10 Jan 2026".</summary>
+    public static string RangeLabel(DateOnly from, DateOnly to)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        if (from == to) return to.ToString("d MMM yyyy", inv);
+        return from.Year == to.Year
+            ? $"{from.ToString("d MMM", inv)} – {to.ToString("d MMM yyyy", inv)}"
+            : $"{from.ToString("d MMM yyyy", inv)} – {to.ToString("d MMM yyyy", inv)}";
+    }
 
     public static OverviewWindows For(OverviewPeriod period, DateTimeOffset now, TimeZoneInfo zone)
     {

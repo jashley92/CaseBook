@@ -166,6 +166,28 @@ public sealed class ProgramReportTests : IDisposable
         year.Current.StartUtc.Should().Be(new DateTimeOffset(2025, 11, 1, 0, 0, 0, TimeSpan.Zero));
         year.Previous.StartUtc.Should().Be(new DateTimeOffset(2024, 11, 1, 0, 0, 0, TimeSpan.Zero));
 
+        // A custom range: both days included, compared with the same number of days just before it.
+        var custom = OverviewWindows.ForRange(new DateOnly(2026, 7, 1), new DateOnly(2026, 9, 30), now, TimeZoneInfo.Utc);
+        custom.Current.Should().Be(new ProgramWindow(new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero), "1 Jul – 30 Sep 2026"));
+        custom.Previous.Should().Be(new ProgramWindow(new DateTimeOffset(2026, 3, 31, 0, 0, 0, TimeSpan.Zero),
+            custom.Current.StartUtc, "the 92 days before"));
+        OverviewWindows.ForRange(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 8), now, TimeZoneInfo.Utc)
+            .Current.EndUtc.Should().Be(now, "today runs to now");
+        OverviewWindows.RangeLabel(new DateOnly(2025, 12, 15), new DateOnly(2026, 1, 10)).Should().Be("15 Dec 2025 – 10 Jan 2026");
+
+        var today = new DateOnly(2026, 10, 8);
+        OverviewWindows.TryRange("2026-07-01", "2026-09-30", today, out _).Should().Be((new DateOnly(2026, 7, 1), new DateOnly(2026, 9, 30)));
+        OverviewWindows.TryRange("2026-10-01", "2026-12-31", today, out _).Should().Be((new DateOnly(2026, 10, 1), today), "it stops at today");
+        OverviewWindows.TryRange(null, null, today, out var none).Should().BeNull();
+        none.Should().BeNull("no range asked for is not an error");
+        OverviewWindows.TryRange("2026-09-30", "2026-07-01", today, out var backwards).Should().BeNull();
+        backwards.Should().Be("The start date is after the end date.");
+        OverviewWindows.TryRange("2026-07-01", null, today, out var half).Should().BeNull();
+        half.Should().Be("Give both dates.");
+        OverviewWindows.TryRange("2019-01-01", "2026-01-01", today, out var tooLong).Should().BeNull();
+        tooLong.Should().Be("Pick a range of five years or less.");
+
         OverviewWindows.Parse(null).Should().Be(OverviewPeriod.Last12Months);
         OverviewWindows.Parse("quarter").Should().Be(OverviewPeriod.QuarterToDate);
         OverviewWindows.Key(OverviewPeriod.Last30Days).Should().Be("30d");

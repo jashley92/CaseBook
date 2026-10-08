@@ -11,6 +11,7 @@
 @inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
+@inject NavigationManager Nav
 
 <PageTitle>Program</PageTitle>
 
@@ -25,8 +26,14 @@
                 <a class="btn btn-outline-secondary @(on ? "active" : "")" aria-current="@(on ? "true" : null)"
                    href="@Href(key, Exercises)">@label</a>
             }
+            <button type="button" class="btn btn-outline-secondary @(_period == OverviewPeriod.Custom ? "active" : "")"
+                    aria-expanded="@Ui.Aria(_customOpen)" aria-controls="po-custom"
+                    @onclick="() => _customOpen = !_customOpen">
+                @(_period == OverviewPeriod.Custom ? _windows?.Current.Label : "Custom")
+                <span class="bi bi-calendar-range" aria-hidden="true"></span>
+            </button>
         </span>
-        <a class="btn btn-sm btn-outline-secondary" href="@Href(OverviewWindows.Key(_period), !Exercises)"
+        <a class="btn btn-sm btn-outline-secondary" href="@SameRange(!Exercises)"
            title="Exercise cases are left out of these figures unless you include them">
             <span class="bi @(Exercises ? "bi-check2-square" : "bi-square")" aria-hidden="true"></span> Include exercises
         </a>
@@ -41,6 +48,23 @@
         </a>
     </Actions>
 </PageHeader>
+@if (_customOpen)
+{
+    <form id="po-custom" class="po-custom" @onsubmit="ApplyCustom" @onsubmit:preventDefault>
+        <div>
+            <label class="form-label small mb-0" for="po-from">From</label>
+            <input id="po-from" type="date" class="form-control form-control-sm" max="@Today.ToString("yyyy-MM-dd")" @bind="_from" />
+        </div>
+        <div>
+            <label class="form-label small mb-0" for="po-to">To</label>
+            <input id="po-to" type="date" class="form-control form-control-sm" max="@Today.ToString("yyyy-MM-dd")" @bind="_to" />
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Show</button>
+        <span class="po-custom-hint">Both days included, in the reporting time zone. It's compared with the same number of
+            days just before it; the trend lines stay on the last 12 months.</span>
+        @if (_customError is { } err) { <span class="po-custom-err" role="alert">@err</span> }
+    </form>
+}
 <ProgramNav />
 
 @if (_metrics is null)
@@ -463,6 +487,13 @@ else
 @code {
     [SupplyParameterFromQuery(Name = "period")] public string? Period { get; set; }
     [SupplyParameterFromQuery(Name = "exercises")] public bool Exercises { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public string? From { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? To { get; set; }
+
+    private bool _customOpen;
+    private DateTime? _from, _to;
+    private string? _customError;
+    private DateOnly Today => IncidentManager.Application.Abstractions.ZonedDays.Of(Clock.UtcNow, OrgZone.Current);
 
     private DashboardMetrics? _metrics;
     private NeedsAction? _needs;
@@ -485,6 +516,24 @@ else
     private static string Href(string period, bool exercises) =>
         $"program?period={period}{(exercises ? "&exercises=true" : "")}";
 
+    // The current period, with or without exercises: a custom range keeps its dates.
+    private string SameRange(bool exercises) => _period == OverviewPeriod.Custom
+        ? $"program?from={From}&to={To}{(exercises ? "&exercises=true" : "")}"
+        : Href(OverviewWindows.Key(_period), exercises);
+
+    private void ApplyCustom()
+    {
+        var (f, t) = (_from is { } a ? DateOnly.FromDateTime(a).ToString("yyyy-MM-dd") : null,
+                      _to is { } b ? DateOnly.FromDateTime(b).ToString("yyyy-MM-dd") : null);
+        if (OverviewWindows.TryRange(f, t, Today, out var error) is null)
+        {
+            _customError = error ?? "Give both dates.";
+            return;
+        }
+        _customError = null;
+        Nav.NavigateTo($"program?from={f}&to={t}{(Exercises ? "&exercises=true" : "")}");
+    }
+
     private IReadOnlyList<BarPoint> _bars = [];
     private int _openDelta, _openedTotal, _closedTotal, _topMax, _downMax;
     private double _unit;
@@ -497,9 +546,20 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        _period = OverviewWindows.Parse(Period);
         var now = Clock.UtcNow;
-        _windows = OverviewWindows.For(_period, now, OrgZone.Current);
+        if (OverviewWindows.TryRange(From, To, Today, out var rangeError) is { } range)
+        {
+            _period = OverviewPeriod.Custom;
+            _windows = OverviewWindows.ForRange(range.From, range.To, now, OrgZone.Current);
+            (_from, _to, _customOpen, _customError) = (range.From.ToDateTime(TimeOnly.MinValue), range.To.ToDateTime(TimeOnly.MinValue), false, null);
+        }
+        else
+        {
+            // A bad range in the URL opens the form and says why; the figures fall back to the chosen period.
+            _period = OverviewWindows.Parse(Period);
+            _windows = OverviewWindows.For(_period, now, OrgZone.Current);
+            if (rangeError is not null) (_customOpen, _customError) = (true, rangeError);
+        }
         _metrics = await Dashboard.GetAsync(Exercises);
         _needs = await NeedsActionSvc.GetAsync(Exercises);
         _phases = await Dashboard.PhaseAgingAsync(Exercises);

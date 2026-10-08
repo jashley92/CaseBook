@@ -24,7 +24,7 @@ each with why it exists. The clocks on your cases and the quiet changes sit besi
 The cross-case views in one place for leadership. The **dashboard** opens on what **needs action** (regulatory
 notices first, then response targets, briefs behind the record, overdue tasks and improvement actions past target)
 beside the running **notification clocks**. Below that: median time to detect, contain, resolve and report for a
-chosen period (30 days, quarter to date or 12 months) with trend lines, a **12-month case-activity chart** (new,
+chosen period (30 days, quarter to date, 12 months or a custom range) with trend lines, a **12-month case-activity chart** (new,
 carried-over and closed cases, optionally by classification), targets met, where open cases are by phase and
 severity, **vendor cases** (including attackers who pivoted into our network), the top ATT&CK techniques, and the
 post-incident learning loop. Everything is derived from the case record, with a metrics CSV for board and regulatory

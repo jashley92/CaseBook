@@ -50,9 +50,10 @@ at a desk, and so are administration and the import queue.
 
 From top to bottom:
 
-- **Header**: the **period** the timing, target and panel figures cover (30 days, this quarter to date, or 12
-  months, the default) and **Include exercises** (exercise cases are left out unless included). Both live in the
-  URL (`/program?period=quarter&exercises=true`). **Export metrics (CSV)** downloads the figures.
+- **Header**: the **period** the timing, target and panel figures cover (30 days, this quarter to date, 12
+  months, the default, or a **Custom** range of dates, both included, up to five years) and **Include exercises**
+  (exercise cases are left out unless included). A custom range is compared with the same number of days just
+  before it. All of it lives in the URL (`/program?period=quarter&exercises=true`, `/program?from=2026-07-01&to=2026-09-30`). **Export metrics (CSV)** downloads the figures.
 - **Needs action**: what someone should act on now. Regulatory notices at risk of or past their window come first,
   then whatever fell due earliest: cases past or near a response target, briefs that predate a decision, handoff,
   phase, classification or materiality change, overdue tasks, and improvement actions past their target date.
