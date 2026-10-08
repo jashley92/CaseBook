@@ -7,6 +7,7 @@
     --amber: #d9982b;
     --warn: #d9982b;
     --low: #3b82f6;
+    --sev-high: #d9622b;
     --carry-a: #9aa3af;                /* carried-over cases: hatched, so they read as "not new" */
     --carry-b: #e5e7eb;
     --track: rgba(15, 23, 42, .07);
@@ -19,6 +20,7 @@
     --amber: #e0a83b;
     --warn: #e0a83b;
     --low: #5b9bf5;
+    --sev-high: #e8894a;
     --carry-a: #5a6573;
     --carry-b: #2a313b;
     --track: rgba(255, 255, 255, .08);
@@ -187,14 +189,22 @@ a.sla-line:hover { filter: brightness(1.05); }
 .sev-table tbody th { text-align: left; color: var(--im-text-muted); }
 .sev-table td.sev-bad { color: var(--im-danger); font-weight: 650; }
 
-/* Phase pipeline */
-.pipe { display: flex; flex-direction: column; gap: 12px; }
-.prow { display: grid; grid-template-columns: 104px 1fr 22px; align-items: center; gap: 10px; }
+/* Phase pipeline: severity within each phase, how long the longest-waiting case has been there. */
+.pipe { display: flex; flex-direction: column; gap: 10px; }
+.prow { display: grid; grid-template-columns: 104px minmax(0, 1fr) 22px; align-items: center; gap: 10px; }
 .pl { color: var(--im-text); font-size: .82rem; transition: color .12s ease; }
 .prow.off .pl, .prow.off .pc { color: var(--im-text-muted); }
-.track { height: 9px; background: var(--track); border-radius: 5px; position: relative; overflow: hidden; }
-.fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 5px; }
+.pbar { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.track { height: 10px; background: var(--track); border-radius: 5px; overflow: hidden; display: flex; }
+.pseg { display: block; height: 100%; }
+.pdetail { font-size: .72rem; color: var(--im-text-muted); font-variant-numeric: tabular-nums; }
 .pc { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; font-size: .84rem; }
+.plegend { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--im-border); }
+.sev-critical { background: var(--im-danger); }
+.sev-high { background: var(--sev-high); }
+.sev-medium { background: var(--amber); }
+.sev-low { background: var(--low); }
+.sev-informational { background: var(--im-neutral); }
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 820px) {

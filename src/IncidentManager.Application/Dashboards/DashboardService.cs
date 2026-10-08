@@ -9,6 +9,11 @@ namespace IncidentManager.Application.Dashboards;
 
 public sealed record PhaseCount(CasePhase Phase, int Count);
 
+/// <summary>Open cases in one phase: by severity (highest first), the longest any has been in the phase, and how
+/// many are past a response target.</summary>
+public sealed record PhaseAging(CasePhase Phase, int Count, IReadOnlyList<CountBy<Severity>> BySeverity,
+    TimeSpan? LongestInPhase, int OverTarget);
+
 /// <summary>Counts for one month, derived from case open/close timestamps (no snapshots required).</summary>
 /// <param name="OpenAtStart">Open when the month began: carried over from earlier months.</param>
 /// <param name="OpenedBy">The month's new cases by their classification.</param>
@@ -209,6 +214,38 @@ public sealed class DashboardService
             trend,
             Admin.SettingsCatalog.TimeZoneLabel(_zone?.Current ?? TimeZoneInfo.Utc),
             breachesAtVendor());
+    }
+
+    /// <summary>
+    /// Where open cases stand: per phase, the count by severity, how long the longest-waiting case has been in that
+    /// phase (since it entered it, by the effective time of the change), and how many are past a response target.
+    /// </summary>
+    public async Task<IReadOnlyList<PhaseAging>> PhaseAgingAsync(bool includeExercises = false, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var cases = db.Cases.AsNoTracking().ForUser(_user).Where(c => c.Phase != CasePhase.Closed && !c.IsArchived);
+        if (!includeExercises) cases = cases.ExcludingExercises();
+        var now = _clock.UtcNow;
+        var targets = _sla.Current;
+
+        var open = await cases.Select(c => new { c.Id, c.Phase, c.Severity, c.Classification, c.CreatedAtUtc,
+            c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc }).ToListAsync(ct);
+        var ids = cases.Select(c => c.Id);
+        var entered = (await db.StatusChanges.AsNoTracking().Where(s => ids.Contains(s.CaseId))
+                .Select(s => new { s.CaseId, s.To, s.ChangedAtUtc, s.EffectiveAtUtc }).ToListAsync(ct))
+            .GroupBy(s => (s.CaseId, s.To))
+            .ToDictionary(g => g.Key, g => g.Max(s => s.EffectiveAtUtc ?? s.ChangedAtUtc));
+
+        return Enum.GetValues<CasePhase>().Where(p => p != CasePhase.Closed).Select(p =>
+        {
+            var inPhase = open.Where(c => c.Phase == p).ToList();
+            var since = inPhase.Select(c => entered.TryGetValue((c.Id, p), out var t) ? t : c.CreatedAtUtc).ToList();
+            var over = inPhase.Count(c => Sla.SlaPolicy.Evaluate(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc,
+                c.ResolvedAtUtc, targets, now, c.Classification).State == Sla.SlaState.Breached);
+            return new PhaseAging(p, inPhase.Count,
+                Enum.GetValues<Severity>().OrderByDescending(s => s).Select(s => new CountBy<Severity>(s, inPhase.Count(c => c.Severity == s))).ToList(),
+                since.Count == 0 ? null : now - since.Min(), over);
+        }).ToList();
     }
 
     /// <summary>

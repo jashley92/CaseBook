@@ -119,6 +119,30 @@ public sealed class DashboardNotificationTests : IDisposable
         na.Clocks.Select(c => c.CaseId).Should().Equal(atRisk.Id, onTrack.Id);
     }
 
+    // Where open cases are: severity within each phase, and how long the longest-waiting one has been in it.
+    [Fact]
+    public async Task Phase_aging_counts_severity_and_the_longest_time_in_each_phase()
+    {
+        var now = _clock.UtcNow;
+        Case Open(int seq, Severity sev, DateTimeOffset opened) => Case.Open(2026, 100 + seq, $"P{seq}", $"P{seq}",
+            Classification.Incident, sev, CaseOrigin.InternalDetection, "a", opened);
+        var a = Open(1, Severity.High, now.AddDays(-5));
+        a.ChangePhase(CasePhase.Triage, "looking", "a", now.AddDays(-3));
+        var b = Open(2, Severity.Low, now.AddDays(-2));
+        b.ChangePhase(CasePhase.Triage, "looking", "a", now.AddDays(-1));
+        var fresh = Open(3, Severity.Medium, now.AddHours(-6));
+        await SeedAsync(a, b, fresh);
+
+        var phases = await NewDashboard().PhaseAgingAsync();
+
+        var triage = phases.Single(p => p.Phase == CasePhase.Triage);
+        triage.Count.Should().Be(2);
+        triage.BySeverity.Where(x => x.Count > 0).Should().Equal(new CountBy<Severity>(Severity.High, 1), new CountBy<Severity>(Severity.Low, 1));
+        triage.LongestInPhase.Should().Be(TimeSpan.FromDays(3));
+        phases.Single(p => p.Phase == CasePhase.New).LongestInPhase.Should().Be(TimeSpan.FromHours(6), "no change yet: since it was opened");
+        phases.Should().NotContain(p => p.Phase == CasePhase.Closed);
+    }
+
     // The Program overview's "Regulatory notice" row: notices made in the window, inside or outside their window.
     [Fact]
     public async Task Notices_made_in_a_window_count_as_inside_or_outside_their_jurisdiction_window()

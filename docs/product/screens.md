@@ -57,8 +57,9 @@ window is used. The tiles show the open-case mix, then the period's median time 
 detect, contain, resolve and report (detected → reported), each with its mean beneath, its change on the period
 before and a trend line of the monthly medians over the last 12 months: medians lead because one long case pulls a
 mean far off. **Within target** shows detection, containment, resolution and regulatory notices (made inside each
-jurisdiction's window) for the period, with containment broken down by severity. Below them sit open cases by
-phase and **Case activity**: 12 months of new cases above the line (with the cases carried over
+jurisdiction's window) for the period, with containment broken down by severity. **Where open cases are** shows
+each phase's open cases by severity, how long the longest-waiting one has been in it, and how many are past a
+response target. Then **Case activity**: 12 months of new cases above the line (with the cases carried over
 from earlier months hatched beneath them) and closed cases below it. *Color by Classification* splits both by
 breach, incident and adverse event; a closed case counts under the classification it closed with. Hovering over or
 tapping a month says what it held and links to the cases opened in it. Every tile links to the matching filtered

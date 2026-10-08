@@ -314,17 +314,32 @@ else
         </div>
 
         <div class="dash-card">
-            <div class="c-head"><span class="c-title">Open cases by phase</span></div>
-            @{ var maxPhase = Math.Max(1, m.ByPhase.Count == 0 ? 1 : m.ByPhase.Max(p => p.Count)); }
+            <div class="c-head"><span class="c-title">Where open cases are <span class="c-note">by phase · severity · longest in the phase</span></span></div>
+            @{ var maxPhase = Math.Max(1, _phases.Count == 0 ? 1 : _phases.Max(p => p.Count)); }
             <div class="pipe">
-                @foreach (var phase in OpenPhases)
+                @foreach (var ph in _phases)
                 {
-                    var count = m.ByPhase.FirstOrDefault(p => p.Phase == phase)?.Count ?? 0;
-                    <a class="prow dash-link @(count == 0 ? "off" : "")" href="cases?phase=@phase" title="View cases in @Ui.Label(phase)">
-                        <span class="pl">@Ui.Label(phase)</span>
-                        <span class="track">@if (count > 0) { <span class="fill" style="width:@(count * 100 / maxPhase)%"></span> }</span>
-                        <span class="pc">@count</span>
+                    <a class="prow dash-link @(ph.Count == 0 ? "off" : "")" href="cases?phase=@ph.Phase"
+                       aria-label="@($"{Ui.Label(ph.Phase)}: {ph.Count} open{PhaseDetail(ph)}")">
+                        <span class="pl">@Ui.Label(ph.Phase)</span>
+                        <span class="pbar">
+                            <span class="track">
+                                @foreach (var sv in ph.BySeverity.Where(x => x.Count > 0))
+                                {
+                                    <span class="pseg sev-@sv.Key.ToString().ToLowerInvariant()" style="width:@(sv.Count * 100.0 / maxPhase)%"
+                                          title="@($"{SevLabels.For(sv.Key)}: {sv.Count}")"></span>
+                                }
+                            </span>
+                            <span class="pdetail">@(ph.Count == 0 ? "none open" : PhaseDetail(ph).TrimStart(' ', '·'))</span>
+                        </span>
+                        <span class="pc">@ph.Count</span>
                     </a>
+                }
+            </div>
+            <div class="bc-legend plegend">
+                @foreach (var sv in Enum.GetValues<Severity>().OrderByDescending(x => x))
+                {
+                    <span><i class="lg sev-@sv.ToString().ToLowerInvariant()"></i>@SevLabels.For(sv)</span>
                 }
             </div>
         </div>
@@ -338,6 +353,7 @@ else
 
     private DashboardMetrics? _metrics;
     private NeedsAction? _needs;
+    private IReadOnlyList<PhaseAging> _phases = [];
     private bool _showAllNeeds;
     private const int NeedsShown = 6;
     private string? _asOf;
@@ -362,10 +378,6 @@ else
     private sealed record BarPoint(string Key, string Label, string Short, int Start, int Opened, int Closed, int End,
         ClassificationCounts OpenedBy, ClassificationCounts ClosedBy);
 
-    // Lifecycle phases shown in the open-items pipeline (everything except Closed).
-    private static readonly CasePhase[] OpenPhases =
-        Enum.GetValues<CasePhase>().Where(p => p != CasePhase.Closed).ToArray();
-
     protected override async Task OnParametersSetAsync()
     {
         _period = OverviewWindows.Parse(Period);
@@ -373,6 +385,7 @@ else
         _windows = OverviewWindows.For(_period, now, OrgZone.Current);
         _metrics = await Dashboard.GetAsync(Exercises);
         _needs = await NeedsActionSvc.GetAsync(Exercises);
+        _phases = await Dashboard.PhaseAgingAsync(Exercises);
         var snaps = await ProgramFigures.SnapshotsAsync([_windows.Current, _windows.Previous, .. _windows.Months], Exercises);
         (_cur, _prev, _monthly) = (snaps[0], snaps[1], snaps.Skip(2).ToList());
         _asOf = TimeDisp.TimeOnly(now);
@@ -440,6 +453,9 @@ else
             </span>
         </div>
     };
+
+    private static string PhaseDetail(PhaseAging p) =>
+        p.Count == 0 ? "" : $" · longest {Dur(p.LongestInPhase ?? TimeSpan.Zero)}{(p.OverTarget > 0 ? $" · {p.OverTarget} over target" : "")}";
 
     private static string KindLabel(NeedsActionKind k) => k switch
     {
