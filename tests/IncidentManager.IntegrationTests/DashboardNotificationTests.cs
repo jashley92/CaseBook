@@ -77,6 +77,48 @@ public sealed class DashboardNotificationTests : IDisposable
         await db.SaveChangesAsync();
     }
 
+    // The Program overview's Needs action list: notices first, then what fell due earliest; clocks for every running notice.
+    [Fact]
+    public async Task Needs_action_lists_notices_targets_briefs_tasks_and_actions_with_notices_first()
+    {
+        var now = _clock.UtcNow;
+        var atRisk = NewMaterialBreach(MaterialityStatus.Material, now.AddHours(-60));      // 60 of 72 h: at risk
+        var onTrack = NewMaterialBreach(MaterialityStatus.Material, now.AddHours(-2));      // a clock, not an item
+        var late = Case.Open(2026, 50, "Late", "Not contained", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "a", now.AddDays(-3));
+        late.DetectedAtUtc = now.AddHours(-30);                                              // past a 12 h target
+        late.ActionItems.Add(new ActionItem { CaseId = late.Id, Title = "Collect logs", DueAtUtc = now.AddDays(-1),
+            CreatedBy = "a", CreatedAtUtc = now.AddDays(-2) });
+        await SeedAsync(atRisk, onTrack, late);
+        await using (var db = NewContext())
+        {
+            db.CaseBriefs.Add(new CaseBrief { CaseId = late.Id, Summary = "s", CreatedBy = "a", CreatedAtUtc = now.AddDays(-2) });
+            db.TimelineEntries.Add(new TimelineEntry { CaseId = late.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Decision,
+                OccurredAtUtc = now.AddHours(-5), Description = "Isolate the host", CreatedBy = "a", CreatedAtUtc = now.AddHours(-5) });
+            db.ImprovementActions.Add(new ImprovementAction { CaseId = late.Id, Title = "MFA", CreatedBy = "a",
+                CreatedAtUtc = now.AddDays(-20), TargetDateUtc = now.AddDays(-4) });
+            await db.SaveChangesAsync();
+        }
+        _settings.Current = new NotificationDeadlineSettings(true, NotificationStartBasis.Determination, 72, 80);
+        var targets = new IncidentManager.Application.Sla.SlaTargets(new Dictionary<(IncidentManager.Application.Sla.SlaClock, Severity), int>
+        {
+            [(IncidentManager.Application.Sla.SlaClock.Containment, Severity.High)] = 12
+        }, 80);
+        var f = NewFactory();
+
+        var na = await new NeedsActionService(f, _user, _clock, new TestSlaTargets(targets), _settings,
+            new NotificationRuleService(f, _user, _clock)).GetAsync();
+
+        // The two breaches (detected 10 days ago) are long past the 12 h containment target too, so they come first
+        // after the notice; then the action 4 days over, the task 1 day over, the late case 18 h over, and the brief.
+        na.Items.Select(i => i.Kind).Should().Equal(NeedsActionKind.Notify, NeedsActionKind.Sla, NeedsActionKind.Sla,
+            NeedsActionKind.Actions, NeedsActionKind.Tasks, NeedsActionKind.Sla, NeedsActionKind.Brief);
+        na.Items[0].Should().Match<NeedsActionItem>(i => i.CaseId == atRisk.Id && !i.Over && i.What == "Notify New York: 72 h window");
+        na.Items.Single(i => i.Kind == NeedsActionKind.Sla && i.CaseId == late.Id).What.Should().Be("Not contained within its 12 h target");
+        na.Items.Single(i => i.Kind == NeedsActionKind.Brief).What.Should().Be("Brief v1 predates a decision");
+        na.Clocks.Select(c => c.CaseId).Should().Equal(atRisk.Id, onTrack.Id);
+    }
+
     // The Program overview's "Regulatory notice" row: notices made in the window, inside or outside their window.
     [Fact]
     public async Task Notices_made_in_a_window_count_as_inside_or_outside_their_jurisdiction_window()

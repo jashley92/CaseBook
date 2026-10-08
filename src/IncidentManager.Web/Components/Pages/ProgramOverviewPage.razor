@@ -5,6 +5,7 @@
 @inject DashboardService Dashboard
 @inject ISeverityLabels SevLabels
 @inject ProgramReportService ProgramFigures
+@inject NeedsActionService NeedsActionSvc
 @inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
@@ -60,23 +61,77 @@ else
     var m = _metrics;
     var compTotal = m.Breaches + m.Incidents + m.AdverseEvents;
 
-    @if (m.Breaches > 0 || m.OverdueActionItems > 0 || m.SlaBreached > 0 || m.NotifyBreached > 0)
+    @* ─── Needs action, and the running notification clocks ─────────────────── *@
+    @if (_needs is { } na)
     {
-        <div class="dash-attn">
-            <span class="dash-dot danger"></span>
-            <strong>Needs attention:</strong>&nbsp;
-            @{ var bits = new List<(string Text, string Href)>();
-               if (m.Breaches > 0) bits.Add(($"{m.Breaches} open breach{(m.Breaches == 1 ? "" : "es")}", "cases?classification=Breach"));
-               if (m.SlaBreached > 0) bits.Add(($"{m.SlaBreached} SLA breach{(m.SlaBreached == 1 ? "" : "es")}", "cases?sla=true"));
-               if (m.NotifyBreached > 0) bits.Add(($"{m.NotifyBreached} notification deadline{(m.NotifyBreached == 1 ? "" : "s")} overdue", "cases?notify=true"));
-               if (m.OverdueActionItems > 0) bits.Add(($"{m.OverdueActionItems} overdue task{(m.OverdueActionItems == 1 ? "" : "s")}", "cases?overdue=true&closed=true")); }
-            <span>
-                @for (var i = 0; i < bits.Count; i++)
+        <div class="na-row">
+            <section class="dash-card na-card" aria-labelledby="na-title">
+                <div class="c-head"><span class="c-title" id="na-title">Needs action
+                    <span class="c-note">@(na.Items.Count == 0 ? "nothing right now" : $"notices first, then what fell due earliest · {na.Items.Count} item{(na.Items.Count == 1 ? "" : "s")}")</span></span></div>
+                @if (na.Items.Count == 0)
                 {
-                    @if (i > 0) { <span class="dash-attn-sep" aria-hidden="true"> · </span> }
-                    <a class="dash-attn-link" href="@bits[i].Href">@bits[i].Text</a>
+                    <div class="sla-line ok"><span class="bi bi-check-circle" aria-hidden="true"></span>
+                        <span>No notices at risk, no response targets missed, no overdue tasks.</span></div>
                 }
-            </span>
+                else
+                {
+                    <ul class="na-list">
+                        @foreach (var it in _showAllNeeds ? na.Items : na.Items.Take(NeedsShown))
+                        {
+                            <li class="na-item">
+                                <span class="na-kind @KindTone(it)">@KindLabel(it.Kind)</span>
+                                <span class="na-body">
+                                    @if (it.CaseId is { } id)
+                                    {
+                                        <a class="na-case" href="cases/@id">@it.CaseNumber</a>
+                                    }
+                                    else if (it.Href is { } href)
+                                    {
+                                        <a class="na-case" href="@href">Improvement actions</a>
+                                    }
+                                    <span class="na-what">@it.What</span>
+                                </span>
+                                <span class="na-when @(it.Over && it.Kind != NeedsActionKind.Brief ? "over" : it.Kind == NeedsActionKind.Notify ? "soon" : "")">@When(it)</span>
+                            </li>
+                        }
+                    </ul>
+                    @if (na.Items.Count > NeedsShown)
+                    {
+                        <button type="button" class="btn btn-link btn-sm na-more" @onclick="() => _showAllNeeds = !_showAllNeeds">
+                            @(_showAllNeeds ? "Show fewer" : $"Show {na.Items.Count - NeedsShown} more")
+                        </button>
+                    }
+                }
+            </section>
+
+            @if (na.NotifyDeadlinesEnabled)
+            {
+                <section class="dash-card na-clocks" aria-labelledby="nc-title">
+                    <div class="c-head"><span class="c-title" id="nc-title">Notification clocks
+                        <span class="c-note">obligations triggered, not yet reported</span></span></div>
+                    @if (na.Clocks.Count == 0)
+                    {
+                        <div class="sla-line ok"><span class="bi bi-check-circle" aria-hidden="true"></span><span>No notification clock is running.</span></div>
+                    }
+                    @foreach (var nc in na.Clocks)
+                    {
+                        <a class="nc-clock dash-link" href="cases/@nc.CaseId">
+                            <span class="nc-top"><span class="na-case">@nc.CaseNumber</span>
+                                <span class="na-when @(nc.State == SlaState.Breached ? "over" : nc.State == SlaState.AtRisk ? "soon" : "")">@ClockDue(nc)</span></span>
+                            <span class="nc-rule">@nc.Jurisdiction · @nc.WindowHours h window</span>
+                            <span class="cmp-track"><span class="cmp-fill @(nc.State == SlaState.Breached ? "bad" : nc.State == SlaState.AtRisk ? "warn" : "ok")"
+                                                          style="width:@(Math.Min(100, (int)(nc.ElapsedHours * 100 / Math.Max(1, nc.WindowHours))))%"></span></span>
+                            <span class="cmp-note">@Num(Math.Min(nc.ElapsedHours, nc.WindowHours)) of @nc.WindowHours h used</span>
+                        </a>
+                    }
+                    @if (_cur is { } rc)
+                    {
+                        <div class="rt-foot">
+                            @rc.ReportedToRegulators reported in @_windows!.Current.Label@(rc.NoticesMet + rc.NoticesMissed > 0 ? $", {rc.NoticesMet} inside the window" : "")@(rc.DetectToReport.MedianHours is { } dr ? $" · median detect → report {Num(dr)} h" : "").
+                        </div>
+                    }
+                </section>
+            }
         </div>
     }
 
@@ -253,23 +308,6 @@ else
                 }
             }
 
-            @if (m.SlaBreached > 0 || m.SlaAtRisk > 0)
-            {
-                <a class="sla-line breached dash-link" href="cases?sla=true"
-                   title="Open cases at or past their response-time target">
-                    <span class="bi bi-clock-history" aria-hidden="true"></span>
-                    <span><strong>@m.SlaBreached</strong> overdue · <strong>@m.SlaAtRisk</strong> at risk now</span>
-                    <span class="sla-go">View →</span>
-                </a>
-            }
-            else
-            {
-                <div class="sla-line ok">
-                    <span class="bi bi-check-circle" aria-hidden="true"></span>
-                    <span>All open cases within SLA</span>
-                </div>
-            }
-
             <div class="rt-foot">Measured against the per-severity targets in
                 <a class="dash-link u-link" href="admin/settings/sla">Administration → Response &amp; SLA</a>,
                 over the milestones reached in @_windows?.Current.Label.</div>
@@ -299,6 +337,9 @@ else
     [SupplyParameterFromQuery(Name = "exercises")] public bool Exercises { get; set; }
 
     private DashboardMetrics? _metrics;
+    private NeedsAction? _needs;
+    private bool _showAllNeeds;
+    private const int NeedsShown = 6;
     private string? _asOf;
     private OverviewPeriod _period;
     private OverviewWindows? _windows;
@@ -331,6 +372,7 @@ else
         var now = Clock.UtcNow;
         _windows = OverviewWindows.For(_period, now, OrgZone.Current);
         _metrics = await Dashboard.GetAsync(Exercises);
+        _needs = await NeedsActionSvc.GetAsync(Exercises);
         var snaps = await ProgramFigures.SnapshotsAsync([_windows.Current, _windows.Previous, .. _windows.Months], Exercises);
         (_cur, _prev, _monthly) = (snaps[0], snaps[1], snaps.Skip(2).ToList());
         _asOf = TimeDisp.TimeOnly(now);
@@ -398,6 +440,45 @@ else
             </span>
         </div>
     };
+
+    private static string KindLabel(NeedsActionKind k) => k switch
+    {
+        NeedsActionKind.Notify => "Notify",
+        NeedsActionKind.Sla => "Target",
+        NeedsActionKind.Brief => "Brief",
+        NeedsActionKind.Tasks => "Tasks",
+        _ => "Actions"
+    };
+
+    private static string KindTone(NeedsActionItem it) => it.Kind switch
+    {
+        NeedsActionKind.Notify => "warn",
+        NeedsActionKind.Sla => it.Over ? "bad" : "warn",
+        NeedsActionKind.Brief => "info",
+        _ => "neutral"
+    };
+
+    private string When(NeedsActionItem it)
+    {
+        var span = (it.DueAtUtc - Clock.UtcNow).Duration();
+        return it.Kind switch
+        {
+            NeedsActionKind.Brief => $"{Dur(span)} ago",
+            NeedsActionKind.Tasks or NeedsActionKind.Actions => $"oldest {Dur(span)} over",
+            _ => it.Over ? $"{Dur(span)} over" : $"due in {Dur(span)}"
+        };
+    }
+
+    private string ClockDue(NotificationClock c)
+    {
+        var span = (c.DueAtUtc - Clock.UtcNow).Duration();
+        return c.State == SlaState.Breached ? $"{Dur(span)} over" : $"due in {Dur(span)}";
+    }
+
+    private static string Dur(TimeSpan t) =>
+        t.TotalHours < 1 ? $"{Math.Max(1, (int)t.TotalMinutes)} min"
+        : t.TotalHours < 48 ? $"{(int)t.TotalHours} h"
+        : $"{(int)t.TotalDays} d{(t.Hours > 0 ? $" {t.Hours} h" : "")}";
 
     private static string Num(double v) => v.ToString(v >= 100 ? "0" : "0.#", System.Globalization.CultureInfo.InvariantCulture);
 

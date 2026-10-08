@@ -49,7 +49,11 @@ at a desk, and so are administration and the import queue.
 ![Leadership dashboard](../screenshots/dashboard.png)
 
 The header picks the **period** the timing and target figures cover (30 days, this quarter to date, or 12 months,
-the default) and whether exercise cases count. The tiles show the open-case mix, then the period's median time to
+the default) and whether exercise cases count. **Needs action** lists what someone should act on: regulatory notices at
+risk of or past their window first, then whatever fell due earliest (cases past or near a response target, briefs
+that predate a decision, handoff, phase, classification or materiality change, overdue tasks, and improvement
+actions past their target date). **Notification clocks** shows every running notice clock with how much of its
+window is used. The tiles show the open-case mix, then the period's median time to
 detect, contain, resolve and report (detected → reported), each with its mean beneath, its change on the period
 before and a trend line of the monthly medians over the last 12 months: medians lead because one long case pulls a
 mean far off. **Within target** shows detection, containment, resolution and regulatory notices (made inside each
