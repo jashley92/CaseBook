@@ -241,7 +241,7 @@
     private async Task OnSearch(ChangeEventArgs e)
     {
         _search = e.Value?.ToString() ?? "";
-        _searchDebounce?.Cancel();
+        if (_searchDebounce is not null) await _searchDebounce.CancelAsync();
         _searchDebounce?.Dispose();
         _searchDebounce = new CancellationTokenSource();
         var token = _searchDebounce.Token;
