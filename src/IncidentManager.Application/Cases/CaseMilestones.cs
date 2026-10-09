@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 
@@ -52,7 +53,7 @@ public sealed record CaseMilestone(
     string? Note = null);
 
 /// <summary>Display labels the projection needs, supplied by the caller (they're admin-customizable).</summary>
-public sealed record MilestoneLabels(
+public sealed partial record MilestoneLabels(
     Func<Classification?, string> Classification,
     Func<Severity, string> Severity,
     Func<CasePhase, string> Phase,
@@ -70,8 +71,11 @@ public sealed record MilestoneLabels(
     public static string Role(CaseAssignmentRole role) => role switch
     {
         CaseAssignmentRole.IncidentCommander => "incident commander",
-        _ => System.Text.RegularExpressions.Regex.Replace(role.ToString(), "(?<!^)([A-Z])", " $1").ToLowerInvariant()
+        _ => InnerCapitalRx().Replace(role.ToString(), " $1").ToLowerInvariant()
     };
+
+    [GeneratedRegex("(?<!^)([A-Z])")]
+    private static partial Regex InnerCapitalRx();
 }
 
 /// <summary>
