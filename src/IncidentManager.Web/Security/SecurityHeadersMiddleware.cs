@@ -19,8 +19,10 @@ public sealed class SecurityHeadersMiddleware
         headers.ContentSecurityPolicy =
             "default-src 'self'; " +
             "img-src 'self' data:; " +
-            // 'unsafe-inline' is required for the app's inline style attributes (e.g. tactic-colour vars)
-            // and Blazor's injected styles; script has no such allowance (script-src 'self' only).
+            // 'unsafe-inline' is required for the app's inline style attributes (e.g. tactic-colour vars),
+            // Blazor's injected styles, and docx-preview, which renders a Word template's styles as <style>
+            // elements and style attributes. Accepted trade-off (Sonar S7039): script has no such allowance
+            // (script-src 'self' only), so injected markup can restyle a page but can't run code.
             "style-src 'self' 'unsafe-inline'; " +
             "script-src 'self'; " +
             "object-src 'none'; " +
