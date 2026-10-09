@@ -1,7 +1,7 @@
 # Known issues and technical debt
 
 A living list. Each entry says what happens today, why it matters, and what a fix might look like. Move an entry
-out when it's fixed (and mention it in the release notes). Last reviewed: 2026-10-02, at v1.2.4.
+out when it's fixed (and mention it in the release notes). Last reviewed: 2026-10-09, at v1.4.0.
 
 Severity: **High** (security or data-integrity impact), **Medium** (wrong behavior users will hit), **Low**
 (rough edge, misleading text, or debt).
@@ -12,7 +12,7 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 |---|---|---|---|
 | Medium | **Configuration-bundle signatures are checked against the key inside the file.** It proves integrity, not origin. (`ImportAsync` does refuse a bundle whose signature doesn't verify.) | A self-signed bundle from anywhere imports if an admin accepts it. | Pin trusted key ids. |
 | Low | Only `CaseService`, three admin services, the access log and API tokens emit SIEM 5202 on refusal; other services (including the compliance bundle) refuse silently. | Gaps in detection of stale sessions or UI defects. | Emit from the shared `ForbiddenException` path. |
-| Low | The audit chain is unkeyed; seals are the anchor (S-05 partial). | See [integrity.md](../architecture/integrity.md#known-limitation). | HMAC key; off-box seal anchoring (WORM, RFC 3161). |
+| Low | The audit chain is unkeyed; seals are the anchor (S-05 partial). Up to one seal interval (6 h by default) of the newest entries is protected only by database access control. | See [integrity.md](../architecture/integrity.md#known-limitation). | HMAC-key the chain with a key held off the database; point `Integrity:ExportPath` (each seal's out-of-band copy) at WORM storage, or timestamp seals (RFC 3161). Both wait on where the production signing key lives (F-05b). |
 | Low | PII at rest relies on SQL Server TDE; Always Encrypted isn't used. | Column-level protection for the most sensitive fields. | Always Encrypted on selected columns. |
 
 ## Data and behavior
@@ -30,6 +30,7 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 | Low | Uniqueness of entity values, relationships, case links, active gates and others is enforced only in code. | Concurrent writes can create duplicates. | Unique indexes where possible. |
 | Low | Applying a pending import and marking it applied are separate saves. | If the second fails, the case is written but the import stays pending (re-applying is resume-safe). | One unit of work. |
 | Low | Hard deletes are recorded with audit action `SoftDelete`. | Confusing label. | Rename the label (display only; the stored value stays). |
+| Low | The Program overview flags a brief that predates a decision, handoff, phase, classification or materiality change; the case page also counts timeline entries since the brief. | The overview can miss a brief that's behind only on entries. | Share one freshness query with the case page. |
 
 ## Operations
 
@@ -41,7 +42,7 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 | Low | `Upgrade-CaseBook.ps1` uses `robocopy /MIR`, which replaces `web.config` and removes other files in the site folder (and the `/XF VERSION.txt.bak` exclusion looks like a typo for `VERSION.txt`). Warm-up treats 401/403 from the site root as healthy rather than probing `/health`. | Hand edits to `web.config` (stdout logging) are lost; non-bundle upgrades lose the version marker. | Exclude `web.config` tweaks; probe readiness. |
 | Low | Upgrades never add new non-path settings to `appsettings.Production.json`. | New server-side settings take their `appsettings.json` defaults. | List new settings in release notes (done in UPGRADE notes). |
 | Low | Reminder "already sent" trackers are in memory: a restart re-sends one reminder per qualifying item. The executive report marks a quarter sent before sending, so a failed send isn't retried. | Duplicate or missed emails. | Persist trackers. |
-| Low | Seal-export failures are swallowed without logging. | A failing out-of-band export goes unnoticed. | Log a warning; show in Diagnostics. |
+| Low | Seal-export failures are swallowed without logging (`IntegrityService` catches them; the comment says "logged upstream", but nothing logs). | A failing out-of-band export goes unnoticed. | Log a warning; show in Diagnostics. |
 | Low | The 5002 rejected-setting log line has no event id, and the check runs only at startup. | Harder to alert on from the Windows log. | Add the event id; re-check on reload. |
 | Low | Unknown or hidden evidence and report ids return 500 and the error page rather than 404; API errors redirect to an HTML page. | Noise in monitoring; unhelpful for API callers. | Map not-found to 404; JSON errors under `/api`. |
 | Low | SMTP has no authentication or timeout settings. | Needs an anonymous or IP-allowed relay. | Credential support via the secret provider. |
@@ -51,7 +52,7 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 | Item | Notes |
 |---|---|
 | **Single instance only** | In-process audit lock, live refresh, presence, trackers and SIEM queue. Scaling out needs a distributed lock, a backplane, shared trackers and a shared data-protection keyring. |
-| **Large classes** | `CaseService` (~2,000 lines), `Case` (~1,300), `CaseWorkspace.razor` (~2,500). Split by area when adding substantially. |
+| **Large classes** | `CaseService` (~2,400 lines), `Case` (~1,400), `CaseTimelineTab.razor` (~2,400). `CaseWorkspace` is split into partial files. Split by area when adding substantially. |
 | **Integrity check loads the whole chain every 10 minutes** | See [performance.md](performance.md). |
 | **Test gaps** | No browser, component or HTTP-level tests; little SQL Server coverage; deploy scripts untested ([testing.md](../development/testing.md#what-is-not-covered)). |
 | **Release workflow doesn't test** | It relies on CI having passed for the tagged commit. |

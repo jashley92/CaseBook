@@ -161,7 +161,10 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ## Notes
 
-### The next release (after v1.3.0)
+### v1.4.0
+
+A routine upgrade: one additive migration, applied at startup. The visible changes are the rebuilt Program overview
+and how third-party cases record the attack.
 
 - **One additive migration** (`AddStepEnvironment`): a nullable `Environment` column on `TimelineEntries`, for where a
   third-party case's attack step happened. Existing rows keep their exact row hash. In `DbaApplies` mode the bundle's
@@ -174,6 +177,14 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   chosen period (`/program?period=30d|quarter|12m`, 12 months by default, or a custom `from`/`to` range), a case-activity chart with carry-over and
   closed cases, targets met by severity, phase aging, vendor cases, top techniques and the learning loop. No schema
   change. The red "Needs attention" banner and the origin tiles are gone; the metrics CSV is unchanged.
+- **New seals and configuration bundles are signed with RSASSA-PSS** (was RSASSA-PKCS1-v1_5). Nothing to do: the
+  same key signs, and seals and bundles made by earlier releases still verify, each by the algorithm it records.
+  An examiner checking seals by hand uses the OpenSSL command in the compliance bundle's `VERIFY.txt`, which now
+  covers both kinds. A tool that verifies seals outside CaseBook must use PSS (SHA-256, MGF1-SHA256, 32-byte salt)
+  for the new ones.
+- **Configuration-bundle imports over 64 MB are refused** with a message saying so (earlier releases broke
+  the page with an error instead). The import page now states the limit under the file input.
+- **No new settings**, so `appsettings.Production.json` needs no edits.
 
 ### v1.3.0
 
