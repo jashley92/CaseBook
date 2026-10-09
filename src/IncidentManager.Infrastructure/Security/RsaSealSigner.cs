@@ -16,7 +16,7 @@ public sealed class RsaSealSigner : ISealSigner, IDisposable
     private const int KeySizeBits = 3072;
     private readonly RSA _rsa;
 
-    public string Algorithm => "RSASSA-PSS-SHA256";
+    public string Algorithm => SealAlgorithms.Pss;
     public string KeyId { get; }
 
     /// <summary>The public key in PEM (SubjectPublicKeyInfo) form for independent, offline verification.</summary>
@@ -94,14 +94,14 @@ public sealed class RsaSealSigner : ISealSigner, IDisposable
         return Convert.ToBase64String(sig);
     }
 
-    public bool Verify(string content, string signatureBase64)
+    public bool Verify(string content, string signatureBase64, string? algorithm = null)
     {
+        if (SealAlgorithms.PaddingFor(algorithm) is not { } padding) return false;
         byte[] sig;
         try { sig = Convert.FromBase64String(signatureBase64); }
         catch (FormatException) { return false; }
 
-        return _rsa.VerifyData(Encoding.UTF8.GetBytes(content), sig,
-            HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+        return _rsa.VerifyData(Encoding.UTF8.GetBytes(content), sig, HashAlgorithmName.SHA256, padding);
     }
 
     public void Dispose() => _rsa.Dispose();

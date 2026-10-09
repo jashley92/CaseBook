@@ -105,7 +105,7 @@ public sealed class ComplianceBundleService
 
     private SealLine Verify(IntegritySeal seal, IReadOnlyDictionary<long, string> hashBySequence)
     {
-        var signatureValid = _signer.Verify(seal.BuildCanonicalContent(), seal.Signature);
+        var signatureValid = _signer.Verify(seal.BuildCanonicalContent(), seal.Signature, seal.Algorithm);
         var chainMatches = hashBySequence.TryGetValue(seal.UpToSequence, out var h) && h == seal.ChainHeadHash;
         return new SealLine(seal, signatureValid, chainMatches);
     }

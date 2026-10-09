@@ -185,6 +185,9 @@ public static class ComplianceBundlePack
         Line("       openssl dgst -sha256 -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32 \\");
         Line("           -sigopt rsa_mgf1_md:sha256 -verify signing-public-key.pem -signature seal.sig payload.txt");
         Line();
+        Line("   A seal whose Algorithm is RSASSA-PKCS1-v1_5-SHA256 was made before v1.4.0; verify it the");
+        Line("   same way without the three -sigopt options (OpenSSL's default padding is PKCS#1 v1.5).");
+        Line();
         Line("   OpenSSL prints \"Verified OK\" for an authentic seal. Then confirm ChainHeadHash equals");
         Line("   the EntryHash of the audit entry at UpToSequence. A valid signature plus a matching head");
         Line("   proves the history up to that point is unchanged since it was sealed.");

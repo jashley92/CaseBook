@@ -242,7 +242,7 @@ public sealed class IntegrityService
         var seal = await db.IntegritySeals.AsNoTracking().FirstOrDefaultAsync(s => s.Id == sealId, ct);
         if (seal is null) return new SealVerificationResult(false, false, "Seal not found.");
 
-        var signatureValid = _signer.Verify(seal.BuildCanonicalContent(), seal.Signature);
+        var signatureValid = _signer.Verify(seal.BuildCanonicalContent(), seal.Signature, seal.Algorithm);
 
         var entry = await db.AuditLog.AsNoTracking()
             .FirstOrDefaultAsync(a => a.Sequence == seal.UpToSequence, ct);

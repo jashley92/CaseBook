@@ -24,6 +24,26 @@ public class SealSigningTests : IDisposable
         signer.Algorithm.Should().Be("RSASSA-PSS-SHA256");
     }
 
+    // Seals made before v1.4.0 were signed with PKCS#1 v1.5 and record that algorithm; they still verify, each by
+    // its own algorithm, so an upgraded site's history doesn't read as tampered.
+    [Fact]
+    public void A_seal_verifies_by_the_algorithm_it_records()
+    {
+        using var signer = NewSigner();
+        using var rsa = System.Security.Cryptography.RSA.Create();
+        rsa.ImportFromPem(File.ReadAllText(Path.Combine(_dir, "k.pem")));
+        var legacy = Convert.ToBase64String(rsa.SignData("payload"u8.ToArray(),
+            System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1));
+        var current = signer.Sign("payload");
+
+        signer.Verify("payload", legacy, "RSASSA-PKCS1-v1_5-SHA256").Should().BeTrue();
+        signer.Verify("payload", legacy, "RSASSA-PSS-SHA256").Should().BeFalse("a padding the seal didn't use");
+        signer.Verify("payload", current, "RSASSA-PSS-SHA256").Should().BeTrue();
+        signer.Verify("payload", current, "RSASSA-PKCS1-v1_5-SHA256").Should().BeFalse();
+        signer.Verify("payload", current, "SHA1withRSA").Should().BeFalse("an unknown algorithm never verifies");
+        signer.Verify("payload-tampered", legacy, "RSASSA-PKCS1-v1_5-SHA256").Should().BeFalse();
+    }
+
     [Fact]
     public void Verify_fails_when_the_content_is_altered()
     {

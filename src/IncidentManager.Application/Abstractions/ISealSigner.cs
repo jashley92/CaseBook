@@ -23,6 +23,7 @@ public interface ISealSigner
     /// <summary>Signs the content, returning a base64 signature.</summary>
     string Sign(string content);
 
-    /// <summary>Verifies a base64 signature against the content using the current key.</summary>
-    bool Verify(string content, string signatureBase64);
+    /// <summary>Verifies a base64 signature against the content using the current key, by the algorithm the seal
+    /// recorded (<see cref="SealAlgorithms"/>; none means the current one).</summary>
+    bool Verify(string content, string signatureBase64, string? algorithm = null);
 }

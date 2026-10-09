@@ -54,18 +54,20 @@ public sealed partial class ConfigBundleService
     }
 
     private static bool SignatureValid(ConfigBundleEnvelope env) =>
-        VerifyWithEmbeddedKey(ConfigBundleJson.Canonicalize(env.Bundle), env.Signature, env.PublicKeyPem);
+        VerifyWithEmbeddedKey(ConfigBundleJson.Canonicalize(env.Bundle), env.Signature, env.PublicKeyPem, env.Algorithm);
 
-    // Verifies an RSASSA-PSS-SHA256 signature against a caller-supplied SubjectPublicKeyInfo PEM.
-    private static bool VerifyWithEmbeddedKey(string content, string signatureBase64, string publicKeyPem)
+    // Verifies a signature against a caller-supplied SubjectPublicKeyInfo PEM, by the algorithm the bundle records
+    // (RSASSA-PSS now; RSASSA-PKCS1-v1_5 from releases before v1.4.0).
+    private static bool VerifyWithEmbeddedKey(string content, string signatureBase64, string publicKeyPem, string? algorithm)
     {
         if (string.IsNullOrWhiteSpace(signatureBase64) || string.IsNullOrWhiteSpace(publicKeyPem)) return false;
+        if (SealAlgorithms.PaddingFor(algorithm) is not { } padding) return false;
         try
         {
             using var rsa = RSA.Create();
             rsa.ImportFromPem(publicKeyPem);
             return rsa.VerifyData(Encoding.UTF8.GetBytes(content), Convert.FromBase64String(signatureBase64),
-                HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+                HashAlgorithmName.SHA256, padding);
         }
         catch (Exception ex) when (ex is FormatException or CryptographicException or ArgumentException)
         {

@@ -142,7 +142,7 @@ and any NYDFS Part 500 expectations (Legal owns the regulatory interpretation).
 
 ## 2. Integrity Signing-Key Management (F-05b)
 
-Integrity seals are signed with an RSA key (RSA-3072, RSASSA-PSS-SHA256 with a 32-byte salt). **Only in Development**
+Integrity seals are signed with an RSA key (RSA-3072, RSASSA-PSS-SHA256 with a 32-byte salt). Seals and configuration bundles signed before v1.4.0 (RSASSA-PKCS1-v1_5-SHA256) still verify: each is checked by the algorithm it records. **Only in Development**
 does the app generate a missing key at `Integrity:SigningKeyPath` (`App_Data/keys/seal-signing.pem`). In any
 other environment a missing key **stops startup** ("The seal-signing key … doesn't exist"), because a key the
 app made for itself on the server means a host compromise could re-sign forged seals. Install the production
