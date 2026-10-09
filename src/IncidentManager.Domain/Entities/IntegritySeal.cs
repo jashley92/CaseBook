@@ -18,7 +18,7 @@ public class IntegritySeal : Entity
     /// <summary>Signature over the canonical seal payload (base64). RSA in dev; HSM/DPAPI-backed in prod.</summary>
     public string Signature { get; set; } = string.Empty;
 
-    /// <summary>Signature algorithm identifier (e.g. "RSASSA-PKCS1-v1_5-SHA256").</summary>
+    /// <summary>Signature algorithm identifier (e.g. "RSASSA-PSS-SHA256").</summary>
     public string Algorithm { get; set; } = string.Empty;
 
     /// <summary>Thumbprint of the public key that produced <see cref="Signature"/>.</summary>

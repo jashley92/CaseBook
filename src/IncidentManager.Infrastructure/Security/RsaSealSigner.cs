@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace IncidentManager.Infrastructure.Security;
 
 /// <summary>
-/// Signs integrity seals with RSA (RSASSA-PKCS1-v1_5 over SHA-256). The private key is loaded from
+/// Signs integrity seals with RSA (RSASSA-PSS over SHA-256, MGF1-SHA256, 32-byte salt). The private key is loaded from
 /// the configured PEM file. Only in Development (<see cref="SealSigningOptions.AllowKeyGeneration"/>) is a
 /// missing key generated and persisted there; anywhere else a missing key is refused, because a key the app
 /// made for itself on the server can't vouch for anything — it must be provisioned out of band.
@@ -16,7 +16,7 @@ public sealed class RsaSealSigner : ISealSigner, IDisposable
     private const int KeySizeBits = 3072;
     private readonly RSA _rsa;
 
-    public string Algorithm => "RSASSA-PKCS1-v1_5-SHA256";
+    public string Algorithm => "RSASSA-PSS-SHA256";
     public string KeyId { get; }
 
     /// <summary>The public key in PEM (SubjectPublicKeyInfo) form for independent, offline verification.</summary>
@@ -90,7 +90,7 @@ public sealed class RsaSealSigner : ISealSigner, IDisposable
 
     public string Sign(string content)
     {
-        var sig = _rsa.SignData(Encoding.UTF8.GetBytes(content), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var sig = _rsa.SignData(Encoding.UTF8.GetBytes(content), HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
         return Convert.ToBase64String(sig);
     }
 
@@ -101,7 +101,7 @@ public sealed class RsaSealSigner : ISealSigner, IDisposable
         catch (FormatException) { return false; }
 
         return _rsa.VerifyData(Encoding.UTF8.GetBytes(content), sig,
-            HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
     }
 
     public void Dispose() => _rsa.Dispose();

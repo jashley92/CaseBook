@@ -21,7 +21,7 @@ public class SealSigningTests : IDisposable
 
         signer.Verify("payload", sig).Should().BeTrue();
         signer.KeyId.Should().NotBeNullOrEmpty();
-        signer.Algorithm.Should().Be("RSASSA-PKCS1-v1_5-SHA256");
+        signer.Algorithm.Should().Be("RSASSA-PSS-SHA256");
     }
 
     [Fact]

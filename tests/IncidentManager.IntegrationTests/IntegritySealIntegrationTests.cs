@@ -79,7 +79,7 @@ public sealed class IntegritySealIntegrationTests : IDisposable
 
         seal.Should().NotBeNull();
         seal!.Signature.Should().NotBeNullOrEmpty();
-        seal.Algorithm.Should().Be("RSASSA-PKCS1-v1_5-SHA256");
+        seal.Algorithm.Should().Be("RSASSA-PSS-SHA256");
         seal.KeyId.Should().Be(_signer.KeyId);
 
         // Exported out of band.

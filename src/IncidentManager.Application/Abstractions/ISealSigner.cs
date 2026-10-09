@@ -7,7 +7,7 @@ namespace IncidentManager.Application.Abstractions;
 /// </summary>
 public interface ISealSigner
 {
-    /// <summary>Identifier of the signature algorithm (e.g. "RSASSA-PKCS1-v1_5-SHA256").</summary>
+    /// <summary>Identifier of the signature algorithm (e.g. "RSASSA-PSS-SHA256").</summary>
     string Algorithm { get; }
 
     /// <summary>Stable thumbprint of the public key, so a seal records which key signed it.</summary>

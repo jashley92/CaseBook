@@ -42,14 +42,14 @@ public class ComplianceBundlePackTests
             ChainHeadHash: "cc",
             Seals: seals,
             CoveringSeal: seals.Length > 0 ? seals[0] : null,
-            Algorithm: "RSASSA-PKCS1-v1_5-SHA256",
+            Algorithm: "RSASSA-PSS-SHA256",
             KeyId: "deadbeef",
             PublicKeyPem: "-----BEGIN PUBLIC KEY-----\nMII...\n-----END PUBLIC KEY-----\n");
     }
 
     private static SealLine Seal() => new(
         new IntegritySeal { UpToSequence = 6, SealedAtUtc = DateTimeOffset.UnixEpoch, SealedBy = "admin1",
-            Algorithm = "RSASSA-PKCS1-v1_5-SHA256", KeyId = "deadbeef", ChainHeadHash = "cc", Signature = "sig==" },
+            Algorithm = "RSASSA-PSS-SHA256", KeyId = "deadbeef", ChainHeadHash = "cc", Signature = "sig==" },
         SignatureValid: true, ChainMatches: true);
 
     private static Dictionary<string, string> Unzip(byte[] bytes)
@@ -105,5 +105,17 @@ public class ComplianceBundlePackTests
         lines.Should().HaveCount(3); // header + 2 entries
         // The comma/quote-bearing summary is quoted with the embedded quotes doubled.
         csv.Should().Contain("\"Changed \"\"severity\"\", again\"");
+    }
+
+    [Fact]
+    public void Verify_guide_states_the_pss_parameters_the_signer_uses()
+    {
+        // .NET's RSASignaturePadding.Pss uses a salt as long as the hash (32 bytes for SHA-256). An examiner
+        // verifying with another salt length sees a genuine seal fail, so the guide must spell it out.
+        var guide = ComplianceBundlePack.VerifyReadme();
+
+        guide.Should().Contain("RSASSA-PSS, SHA-256, MGF1 with SHA-256, salt length 32 bytes");
+        guide.Should().Contain("-sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32");
+        guide.Should().Contain("-sigopt rsa_mgf1_md:sha256");
     }
 }
