@@ -166,6 +166,21 @@ key **before the app first starts**.
   seals: each seal records the `KeyId` and `Algorithm` that produced it, and is checked with that key.
   Keep each retired key's **public** half in the retired seal keys folder (below).
 
+### Where the key lives (F-23)
+
+`Integrity:SigningKey:Source` chooses; it's server configuration only, never an in-app setting.
+
+| Source | Settings | What to know |
+|---|---|---|
+| `File` (default) | `Integrity:SigningKeyPath` | A PEM private key, readable only by the app account. A copy of the server's disk includes it. |
+| `CertificateStore` | `CertificateThumbprint` (spaces allowed, as copied from the certificate console); `StoreLocation` = `LocalMachine` (default) or `CurrentUser`; store `My` | Windows signs with the certificate's private key. Import it **non-exportable** so it can be used but never copied out, and grant the app account **read** on the private key (Manage Private Keys). Any RSA certificate of 2048 bits or more; a self-signed one is fine, since trust comes from the key id you record, not a chain. |
+| `CyberArk` | `Secret` = `@cyberark:Safe=…;Object=…`, the PEM private key as the object's content | Needs `Secrets:CyberArk` enabled (§6). The key is fetched once at startup and held only in memory; it's never written to disk. CyberArk's log shows each fetch. |
+
+Whichever the source, a key that can't be loaded stops startup with a message naming the setting. The Integrity
+page shows the source and the key id in force. Moving between sources is a key change if the key itself changes:
+put the old public key in the retired folder first (below). Moving the **same** key (for example, importing the
+existing PEM into the certificate store) keeps its key id, and nothing else is needed.
+
 ### Rotating the signing key
 
 1. Export the current key's public half and put it in the **retired seal keys folder**:

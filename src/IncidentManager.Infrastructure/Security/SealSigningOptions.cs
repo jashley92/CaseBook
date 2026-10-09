@@ -1,5 +1,31 @@
 namespace IncidentManager.Infrastructure.Security;
 
+/// <summary>Where the seal signing key comes from (F-23).</summary>
+public enum SigningKeySource
+{
+    /// <summary>A PEM file at <see cref="SealSigningOptions.SigningKeyPath"/> (the default).</summary>
+    File,
+    /// <summary>A certificate in the Windows certificate store, by thumbprint; Windows signs with its private key.</summary>
+    CertificateStore,
+    /// <summary>A PEM fetched from CyberArk through an <c>@cyberark:</c> reference and held only in memory.</summary>
+    CyberArk
+}
+
+/// <summary>F-23: the signing key's source (config section <c>Integrity:SigningKey</c>). Server configuration only.</summary>
+public sealed class SigningKeyOptions
+{
+    public SigningKeySource Source { get; set; } = SigningKeySource.File;
+
+    /// <summary><see cref="SigningKeySource.CertificateStore"/>: the certificate's thumbprint (SHA-1 hex; spaces allowed).</summary>
+    public string CertificateThumbprint { get; set; } = "";
+
+    /// <summary><see cref="SigningKeySource.CertificateStore"/>: <c>LocalMachine</c> (default) or <c>CurrentUser</c>; the store is <c>My</c>.</summary>
+    public string StoreLocation { get; set; } = "LocalMachine";
+
+    /// <summary><see cref="SigningKeySource.CyberArk"/>: an <c>@cyberark:Safe=…;Object=…</c> reference to the PEM private key.</summary>
+    public string Secret { get; set; } = "";
+}
+
 /// <summary>Configuration for integrity-seal signing and out-of-band export (config section "Integrity").</summary>
 public sealed class SealSigningOptions
 {
@@ -15,6 +41,9 @@ public sealed class SealSigningOptions
     /// environment (Development only), so no setting can turn on key generation on a server.
     /// </summary>
     public bool AllowKeyGeneration { get; set; }
+
+    /// <summary>F-23: where the signing key comes from; the file at <see cref="SigningKeyPath"/> unless set.</summary>
+    public SigningKeyOptions SigningKey { get; set; } = new();
 
     /// <summary>
     /// F-24: a folder of PEM public keys (SubjectPublicKeyInfo) from earlier signing keys, kept so seals signed before a

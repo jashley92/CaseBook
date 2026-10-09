@@ -16,6 +16,9 @@ public interface ISealSigner
     /// <summary>Stable thumbprint of the public key, so a seal records which key signed it.</summary>
     string KeyId { get; }
 
+    /// <summary>Where the signing key came from (F-23), e.g. "File (…)", "Certificate store (…)", "CyberArk". No secrets.</summary>
+    string KeySource { get; }
+
     /// <summary>
     /// The public half of the signing key in PEM (SubjectPublicKeyInfo) form, so a seal signature can
     /// be verified independently of this application — e.g. bundled into a compliance export for an

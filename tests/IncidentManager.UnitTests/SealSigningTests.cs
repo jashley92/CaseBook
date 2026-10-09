@@ -67,6 +67,95 @@ public class SealSigningTests : IDisposable
         current.VerificationKeys.Select(k => (k.KeyId, k.Current)).Should().Equal((current.KeyId, true), (oldId, false));
     }
 
+    // ---- F-23: where the signing key comes from ----
+
+    private sealed class FakeSecrets(Dictionary<string, string?> values) : IncidentManager.Application.Abstractions.ISecretProvider
+    {
+        public ValueTask<string?> ResolveAsync(string? configuredValue, CancellationToken ct = default) =>
+            ValueTask.FromResult(configuredValue is not null && values.TryGetValue(configuredValue, out var v) ? v : null);
+    }
+
+    private RsaSealSigner Signer(SigningKeyOptions key, IncidentManager.Application.Abstractions.ISecretProvider? secrets = null) =>
+        new(Options.Create(new SealSigningOptions { SigningKeyPath = Path.Combine(_dir, "k.pem"), SigningKey = key }), secrets);
+
+    [Fact]
+    public void The_key_can_come_from_cyberark_and_stays_in_memory()
+    {
+        using var rsa = System.Security.Cryptography.RSA.Create(3072);
+        const string reference = "@cyberark:Safe=Seals;Object=CaseBook-Seal-Key";
+        var secrets = new FakeSecrets(new() { [reference] = rsa.ExportRSAPrivateKeyPem() });
+
+        using var signer = Signer(new SigningKeyOptions { Source = SigningKeySource.CyberArk, Secret = reference }, secrets);
+
+        signer.KeySource.Should().Be("CyberArk");
+        signer.KeyId.Should().Be(RsaSealSigner.KeyIdOf(rsa));
+        signer.Verify("payload", signer.Sign("payload")).Should().BeTrue();
+        File.Exists(Path.Combine(_dir, "k.pem")).Should().BeFalse("a CyberArk key is never written to disk");
+    }
+
+    [Fact]
+    public void A_cyberark_key_that_cant_be_fetched_or_isnt_a_reference_stops_startup()
+    {
+        var empty = new FakeSecrets(new());
+
+        var unresolved = () => Signer(new SigningKeyOptions { Source = SigningKeySource.CyberArk, Secret = "@cyberark:Safe=X;Object=Y" }, empty);
+        var literal = () => Signer(new SigningKeyOptions { Source = SigningKeySource.CyberArk, Secret = "-----BEGIN RSA PRIVATE KEY-----" }, empty);
+        var notAKey = () => Signer(new SigningKeyOptions { Source = SigningKeySource.CyberArk, Secret = "@cyberark:Safe=X;Object=Z" },
+            new FakeSecrets(new() { ["@cyberark:Safe=X;Object=Z"] = "hunter2" }));
+
+        unresolved.Should().Throw<InvalidOperationException>().WithMessage("*couldn't be fetched from CyberArk*");
+        literal.Should().Throw<InvalidOperationException>().WithMessage("*must be an @cyberark:*");
+        notAKey.Should().Throw<InvalidOperationException>().WithMessage("*isn't an RSA private key*");
+    }
+
+    [Fact]
+    public void The_key_can_come_from_the_certificate_store()
+    {
+        using var rsa = System.Security.Cryptography.RSA.Create(3072);
+        var request = new System.Security.Cryptography.X509Certificates.CertificateRequest("CN=CaseBook seal test",
+            rsa, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pss);
+        using var ephemeral = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+        // Round-trip through PFX so the private key is persisted with the certificate in the store.
+        using var cert = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12(ephemeral.Export(
+                System.Security.Cryptography.X509Certificates.X509ContentType.Pfx, "t"), "t",
+            System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.PersistKeySet
+            | System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.UserKeySet);
+        using var store = new System.Security.Cryptography.X509Certificates.X509Store(
+            System.Security.Cryptography.X509Certificates.StoreName.My, System.Security.Cryptography.X509Certificates.StoreLocation.CurrentUser);
+        store.Open(System.Security.Cryptography.X509Certificates.OpenFlags.ReadWrite);
+        store.Add(cert);
+        try
+        {
+            using var signer = Signer(new SigningKeyOptions
+            {
+                Source = SigningKeySource.CertificateStore, StoreLocation = "CurrentUser",
+                CertificateThumbprint = string.Join(' ', cert.Thumbprint.Chunk(2).Select(c => new string(c)))   // spaces as copied from MMC
+            });
+
+            signer.KeySource.Should().Contain("Certificate store").And.Contain(cert.Thumbprint);
+            signer.KeyId.Should().Be(RsaSealSigner.KeyIdOf(rsa));
+            signer.Verify("payload", signer.Sign("payload")).Should().BeTrue();
+        }
+        finally
+        {
+            store.Remove(cert);
+            // On Windows the imported private key persists in the user's key store; delete it too.
+            try { if (OperatingSystem.IsWindows() && System.Security.Cryptography.X509Certificates.RSACertificateExtensions.GetRSAPrivateKey(cert) is System.Security.Cryptography.RSACng cng) cng.Key.Delete(); }
+            catch (System.Security.Cryptography.CryptographicException) { /* already gone */ }
+        }
+    }
+
+    [Fact]
+    public void A_certificate_that_isnt_there_stops_startup()
+    {
+        var act = () => Signer(new SigningKeyOptions
+        {
+            Source = SigningKeySource.CertificateStore, StoreLocation = "CurrentUser", CertificateThumbprint = new string('0', 40)
+        });
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*No certificate with thumbprint*");
+    }
+
     [Fact]
     public void A_retired_keys_folder_entry_that_isnt_a_key_stops_startup()
     {

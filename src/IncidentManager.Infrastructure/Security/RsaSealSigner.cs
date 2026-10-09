@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using IncidentManager.Application.Abstractions;
 using Microsoft.Extensions.Options;
@@ -6,35 +7,130 @@ using Microsoft.Extensions.Options;
 namespace IncidentManager.Infrastructure.Security;
 
 /// <summary>
-/// Signs integrity seals with RSA (RSASSA-PSS over SHA-256, MGF1-SHA256, 32-byte salt). The private key is loaded from
-/// the configured PEM file. Only in Development (<see cref="SealSigningOptions.AllowKeyGeneration"/>) is a
-/// missing key generated and persisted there; anywhere else a missing key is refused, because a key the app
-/// made for itself on the server can't vouch for anything — it must be provisioned out of band.
+/// Signs integrity seals with RSA (RSASSA-PSS over SHA-256, MGF1-SHA256, 32-byte salt). The key comes from the configured
+/// source (F-23): a PEM file (the default), a certificate in the Windows certificate store, or a PEM held in CyberArk.
+/// Only in Development (<see cref="SealSigningOptions.AllowKeyGeneration"/>, file source) is a missing key generated and
+/// persisted; anywhere else a missing or unresolvable key stops startup, because a key the app made for itself on the
+/// server can't vouch for anything — it must be provisioned out of band.
 /// </summary>
 public sealed class RsaSealSigner : ISealSigner, IDisposable
 {
     private const int KeySizeBits = 3072;
+    private const int MinKeySizeBits = 2048;
     private readonly RSA _rsa;
+    private readonly X509Certificate2? _certificate;
     private readonly Dictionary<string, RSA> _retired = new(StringComparer.OrdinalIgnoreCase);
 
     public string Algorithm => SealAlgorithms.Pss;
     public string KeyId { get; }
 
+    /// <summary>Where the key came from, for the Integrity page and Diagnostics (no secrets).</summary>
+    public string KeySource { get; }
+
     /// <summary>The public key in PEM (SubjectPublicKeyInfo) form for independent, offline verification.</summary>
     public string PublicKeyPem => _rsa.ExportSubjectPublicKeyInfoPem();
 
-    public RsaSealSigner(IOptions<SealSigningOptions> options)
+    public RsaSealSigner(IOptions<SealSigningOptions> options, ISecretProvider? secrets = null)
     {
-        var path = options.Value.SigningKeyPath;
-        _rsa = RSA.Create(KeySizeBits);
-        LoadOrCreateKey(path, options.Value.AllowKeyGeneration);
+        var o = options.Value;
+        (_rsa, _certificate, KeySource) = o.SigningKey.Source switch
+        {
+            SigningKeySource.CertificateStore => FromCertificate(o.SigningKey),
+            SigningKeySource.CyberArk => FromCyberArk(o.SigningKey, secrets),
+            _ => (FromFile(o.SigningKeyPath, o.AllowKeyGeneration), null, $"File ({Path.GetFullPath(o.SigningKeyPath)})")
+        };
+        if (_rsa.KeySize < MinKeySizeBits)
+        {
+            Dispose();
+            throw new InvalidOperationException($"The seal signing key is {_rsa.KeySize}-bit; use RSA {MinKeySizeBits} bits or more.");
+        }
 
         // Thumbprint the public key so a seal can record which key signed it.
         KeyId = KeyIdOf(_rsa);
-        LoadRetiredKeys(options.Value);
+        LoadRetiredKeys(o);
         VerificationKeys = [new SealPublicKey(KeyId, PublicKeyPem, true),
             .. _retired.OrderBy(k => k.Key, StringComparer.Ordinal)
                 .Select(k => new SealPublicKey(k.Key, k.Value.ExportSubjectPublicKeyInfoPem(), false))];
+    }
+
+    private static RSA FromFile(string path, bool allowGeneration)
+    {
+        var rsa = RSA.Create(KeySizeBits);
+        if (File.Exists(path))
+        {
+            rsa.ImportFromPem(File.ReadAllText(path));
+            return rsa;
+        }
+
+        if (!allowGeneration)
+        {
+            rsa.Dispose();
+            throw new InvalidOperationException(
+                $"The seal-signing key '{Path.GetFullPath(path)}' (Integrity:SigningKeyPath) doesn't exist. " +
+                "Outside Development the app won't generate one: provision the key out of band (see OPERATIONS.md §2), then restart.");
+        }
+
+        var dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+        var pem = rsa.ExportRSAPrivateKeyPem();
+        File.WriteAllText(path, pem);
+        TryRestrictToOwner(path);
+        return rsa;
+    }
+
+    // F-23: Windows signs with the certificate's private key; a key marked non-exportable is used, never copied out.
+    private static (RSA, X509Certificate2?, string) FromCertificate(SigningKeyOptions k)
+    {
+        var thumbprint = new string(k.CertificateThumbprint.Where(char.IsAsciiHexDigit).ToArray()).ToUpperInvariant();
+        if (thumbprint.Length == 0)
+            throw new InvalidOperationException("Integrity:SigningKey:Source is CertificateStore but Integrity:SigningKey:CertificateThumbprint is empty.");
+        if (!Enum.TryParse<StoreLocation>(k.StoreLocation, ignoreCase: true, out var location))
+            throw new InvalidOperationException($"Integrity:SigningKey:StoreLocation '{k.StoreLocation}' isn't LocalMachine or CurrentUser.");
+
+        using var store = new X509Store(StoreName.My, location);
+        store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+        var found = store.Certificates.Find(X509FindType.FindByThumbprint, thumbprint, validOnly: false);
+        var cert = found.Count > 0 ? found[0] : null;
+        foreach (var other in found.Skip(1)) other.Dispose();
+        if (cert is null)
+            throw new InvalidOperationException($"No certificate with thumbprint {thumbprint} in {location}\\My (Integrity:SigningKey:CertificateThumbprint).");
+        if (!cert.HasPrivateKey)
+        {
+            cert.Dispose();
+            throw new InvalidOperationException($"The certificate {thumbprint} in {location}\\My has no private key, or the app account can't read it. Grant it read on the private key.");
+        }
+        var rsa = cert.GetRSAPrivateKey();
+        if (rsa is null)
+        {
+            cert.Dispose();
+            throw new InvalidOperationException($"The certificate {thumbprint} isn't an RSA certificate; seals need an RSA key.");
+        }
+        return (rsa, cert, $"Certificate store ({location}\\My, thumbprint {thumbprint})");
+    }
+
+    // F-23: the PEM comes from CyberArk at startup and stays in memory; it's never written to disk.
+    private static (RSA, X509Certificate2?, string) FromCyberArk(SigningKeyOptions k, ISecretProvider? secrets)
+    {
+        if (string.IsNullOrWhiteSpace(k.Secret))
+            throw new InvalidOperationException("Integrity:SigningKey:Source is CyberArk but Integrity:SigningKey:Secret is empty.");
+        if (!k.Secret.TrimStart().StartsWith("@cyberark:", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Integrity:SigningKey:Secret must be an @cyberark:Safe=…;Object=… reference; the key itself never goes in configuration.");
+        if (secrets is null)
+            throw new InvalidOperationException("Integrity:SigningKey:Source is CyberArk but no secret provider is available.");
+
+        var pem = secrets.ResolveAsync(k.Secret).AsTask().GetAwaiter().GetResult();
+        if (string.IsNullOrWhiteSpace(pem))
+            throw new InvalidOperationException("The seal signing key couldn't be fetched from CyberArk (Integrity:SigningKey:Secret). " +
+                "Check Secrets:CyberArk is enabled and Administration → Diagnostics → Secret resolution.");
+        var rsa = RSA.Create();
+        try { rsa.ImportFromPem(pem); }
+        catch (Exception ex) when (ex is ArgumentException or CryptographicException)
+        {
+            rsa.Dispose();
+            throw new InvalidOperationException("The secret CyberArk returned for Integrity:SigningKey:Secret isn't an RSA private key in PEM form.", ex);
+        }
+        return (rsa, null, "CyberArk");
     }
 
     public IReadOnlyList<SealPublicKey> VerificationKeys { get; }
@@ -72,30 +168,6 @@ public sealed class RsaSealSigner : ISealSigner, IDisposable
             }
             finally { rsa.Dispose(); }
         }
-    }
-
-    private void LoadOrCreateKey(string path, bool allowGeneration)
-    {
-        if (File.Exists(path))
-        {
-            _rsa.ImportFromPem(File.ReadAllText(path));
-            return;
-        }
-
-        if (!allowGeneration)
-        {
-            _rsa.Dispose();
-            throw new InvalidOperationException(
-                $"The seal-signing key '{Path.GetFullPath(path)}' (Integrity:SigningKeyPath) doesn't exist. " +
-                "Outside Development the app won't generate one: provision the key out of band (see OPERATIONS.md §2), then restart.");
-        }
-
-        var dir = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-        var pem = _rsa.ExportRSAPrivateKeyPem();
-        File.WriteAllText(path, pem);
-        TryRestrictToOwner(path);
     }
 
     /// <summary>Best-effort tightening of the key file's permissions to the current user only.</summary>
@@ -151,6 +223,7 @@ public sealed class RsaSealSigner : ISealSigner, IDisposable
     public void Dispose()
     {
         _rsa.Dispose();
+        _certificate?.Dispose();
         foreach (var k in _retired.Values) k.Dispose();
     }
 }

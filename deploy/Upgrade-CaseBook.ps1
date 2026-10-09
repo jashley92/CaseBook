@@ -320,7 +320,11 @@ if ($template) {
     # location would orphan the existing key, so a missing path stops the upgrade. Anything else (the session key
     # ring, the backup-status file an external job writes) is reported for the admin to set.
     $missingData  = @($missingAll | Where-Object { $_.Path -like '*:RootPath' -or $_.Path -eq 'Integrity:ExportPath' })
-    $missingKey   = @($missingAll | Where-Object { $_.Path -eq 'Integrity:SigningKeyPath' })
+    # F-23: a key from the certificate store or CyberArk doesn't use the file path.
+    $keySource    = "$(Get-JsonValue $liveCfg 'Integrity:SigningKey:Source')"
+    $keyIsFile    = (-not $keySource) -or ($keySource -ieq 'File')
+    $missingKey   = @($missingAll | Where-Object { $_.Path -eq 'Integrity:SigningKeyPath' -and $keyIsFile })
+    $missingAll   = @($missingAll | Where-Object { $_.Path -ne 'Integrity:SigningKeyPath' -or $keyIsFile })
     $missingOther = @($missingAll | Where-Object { $missingData -notcontains $_ -and $missingKey -notcontains $_ })
     if ($missingKey.Count -gt 0) {
         throw ("appsettings.Production.json has no Integrity:SigningKeyPath. It isn't added automatically because a new " +
