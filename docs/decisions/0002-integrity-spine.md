@@ -1,6 +1,6 @@
 # 0002. Tamper evidence: row hashes, a hash-chained audit log and signed seals
 
-- **Status:** Accepted. Keying the chain (HMAC) and off-box seal anchoring are deferred (security finding S-05, partial).
+- **Status:** Accepted. Keying the chain (HMAC) and off-box seal anchoring are deferred (security finding S-05, partial); [0016](0016-key-custody-and-seal-copies.md) proposes both.
 - **Recorded:** 2026-10-02
 
 ## Context

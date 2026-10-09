@@ -110,7 +110,8 @@ flowchart TB
 
 The chain is unkeyed. Someone with database write access who recomputes every later hash produces a chain that
 verifies on its own. The latest seal catches that, because they can't re-sign without the private key. Keying
-the chain (HMAC) and anchoring seals off the server (WORM, RFC 3161) are not implemented.
+the chain (HMAC) and anchoring seals off the server are not implemented yet; [ADR 0016](../decisions/0016-key-custody-and-seal-copies.md)
+plans both (a chain key from CyberArk or a certificate, and every seal sent to the SIEM).
 
 ## Evidence at rest
 
