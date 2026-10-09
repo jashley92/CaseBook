@@ -17,22 +17,22 @@ dirs=(
 
 head="$(git rev-parse HEAD)"
 tags="$(git tag --list 'v[0-9]*' --merged HEAD)"
-if [ -z "$tags" ]; then echo "No release tags reachable from HEAD; nothing to check."; exit 0; fi
+if [[ -z "$tags" ]]; then echo "No release tags reachable from HEAD; nothing to check."; exit 0; fi
 
 bad=0
 for tag in $tags; do
-  [ "$(git rev-parse "$tag^{commit}")" = "$head" ] && continue   # the release being built right now
+  [[ "$(git rev-parse "$tag^{commit}")" = "$head" ]] && continue   # the release being built right now
   # D = deleted, M = modified, R = renamed. A = added is the normal, safe case.
   changes="$(git diff --name-status --no-renames --diff-filter=DM "$tag" HEAD -- "${dirs[@]}" \
              | grep -v 'ModelSnapshot\.cs$' || true)"
-  if [ -n "$changes" ]; then
+  if [[ -n "$changes" ]]; then
     bad=1
     echo "::error::Migrations shipped in $tag were changed or removed:"
     echo "$changes" | sed 's/^/    /'
   fi
 done
 
-if [ "$bad" -ne 0 ]; then
+if [[ "$bad" -ne 0 ]]; then
   cat <<'EOF'
 
 A released migration must never be edited, deleted, renamed, regenerated, or squashed: databases

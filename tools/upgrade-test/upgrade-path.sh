@@ -45,9 +45,9 @@ fail() { printf '::error::%s\n' "$*" >&2; exit 1; }
 sql() { MSYS_NO_PATHCONV=1 $SQLCMD -b -h -1 -W -Q "SET NOCOUNT ON; $1" | tr -d '\r' | sed '/^$/d'; }
 
 cleanup() {
-  [ -n "$app_pid" ] && kill "$app_pid" 2>/dev/null || true
+  [[ -n "$app_pid" ]] && kill "$app_pid" 2>/dev/null || true
   sql "IF DB_ID('$db') IS NOT NULL BEGIN ALTER DATABASE [$db] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$db]; END" >/dev/null 2>&1 || true
-  for wt in "$work"/*/; do [ -d "$wt" ] && git -C "$repo" worktree remove --force "$wt" >/dev/null 2>&1 || true; done
+  for wt in "$work"/*/; do [[ -d "$wt" ]] && git -C "$repo" worktree remove --force "$wt" >/dev/null 2>&1 || true; done
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -72,7 +72,7 @@ start_app() {
   app_pid=$!
   for _ in $(seq 1 120); do
     # Any HTTP answer means Kestrel is listening (older builds predate /health/live and 404 it).
-    [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/health/live" || true)" != "000" ] && return 0
+    [[ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/health/live" || true)" != "000" ]] && return 0
     if ! kill -0 "$app_pid" 2>/dev/null; then
       tail -40 "$applog"; app_pid=""; fail "$label exited during startup (see log above)"
     fi
@@ -82,7 +82,7 @@ start_app() {
 }
 
 stop_app() {
-  [ -n "$app_pid" ] || return 0
+  [[ -n "$app_pid" ]] || return 0
   kill "$app_pid" 2>/dev/null || true
   for _ in $(seq 1 20); do kill -0 "$app_pid" 2>/dev/null || break; sleep 1; done
   kill -9 "$app_pid" 2>/dev/null || true
@@ -107,10 +107,10 @@ cases_before="$(sql "SELECT COUNT(*) FROM [$db].dbo.Cases")"
 audit_before="$(sql "SELECT COUNT(*) FROM [$db].dbo.AuditLog")"
 mig_before="$(sql "SELECT COUNT(*) FROM [$db].dbo.__EFMigrationsHistory")"
 log "$from_ref installed: $mig_before migrations, $cases_before cases, $audit_before audit rows"
-[ "$cases_before" -gt 0 ] || fail "$from_ref seeded no cases; the upgrade would not be exercised against data"
+[[ "$cases_before" -gt 0 ]] || fail "$from_ref seeded no cases; the upgrade would not be exercised against data"
 
 # --- 2. Newer build upgrades the same database in place ------------------------------------------
-if [ -n "$to_ref" ]; then
+if [[ -n "$to_ref" ]]; then
   git -C "$repo" worktree add --detach "$work/to" "$to_ref" >/dev/null 2>&1 || fail "cannot check out '$to_ref'"
   to_dir="$work/to"; to_label="to-$to_ref"
 else
@@ -120,18 +120,18 @@ build "$to_dir" "$to_label"
 start_app "$to_dir" "$to_label"
 ready="$(curl -sS "http://127.0.0.1:$port/health" || true)"
 stop_app
-[ "$ready" = "Healthy" ] || { grep -iE "health|unhealthy|fail" "$work/app-$to_label.log" | tail -20; \
+[[ "$ready" = "Healthy" ]] || { grep -iE "health|unhealthy|fail" "$work/app-$to_label.log" | tail -20; \
   fail "$to_label started but /health reported '$ready'"; }
 
 # --- 3. Assertions -------------------------------------------------------------------------------
 expected="$(migrations_in "$to_dir")"
 applied="$(sql "SELECT MigrationId FROM [$db].dbo.__EFMigrationsHistory ORDER BY MigrationId")"
 missing="$(comm -23 <(echo "$expected") <(echo "$applied"))"
-[ -z "$missing" ] || fail "migrations not applied after upgrade: $(echo $missing)"
+[[ -z "$missing" ]] || fail "migrations not applied after upgrade: $(echo $missing)"
 
 cases_after="$(sql "SELECT COUNT(*) FROM [$db].dbo.Cases")"
 audit_after="$(sql "SELECT COUNT(*) FROM [$db].dbo.AuditLog")"
-[ "$cases_after" -eq "$cases_before" ] || fail "case count changed across the upgrade ($cases_before -> $cases_after)"
-[ "$audit_after" -ge "$audit_before" ] || fail "audit rows lost across the upgrade ($audit_before -> $audit_after)"
+[[ "$cases_after" -eq "$cases_before" ]] || fail "case count changed across the upgrade ($cases_before -> $cases_after)"
+[[ "$audit_after" -ge "$audit_before" ]] || fail "audit rows lost across the upgrade ($audit_before -> $audit_after)"
 
 log "PASS $from_ref -> ${to_ref:-working tree}: $(echo "$expected" | wc -l | tr -d ' ') migrations applied, $cases_after cases and $audit_after audit rows preserved"
