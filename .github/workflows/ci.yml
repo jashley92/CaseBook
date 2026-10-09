@@ -28,6 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # SonarQube Cloud CI-based analysis wraps the build and test below. Every Sonar step is skipped when the
+      # secret is absent (fork PRs), so the build itself never depends on it. The scanner needs Java 17+,
+      # which ubuntu-latest ships.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,14 +50,41 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
           restore-keys: nuget-${{ runner.os }}-
 
+      - name: Cache SonarQube Cloud packages
+        if: env.SONAR_TOKEN != ''
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.sonar/cache
+          key: sonar-${{ runner.os }}
+          restore-keys: sonar-${{ runner.os }}
+
       - name: Restore
-        run: dotnet restore
+        run: |
+          dotnet restore
+          dotnet tool restore
+
+      # The generated SQL Server schema script comes from the EF Core migrations (dotnet ef migrations script),
+      # so findings in it can't be fixed by hand; its FOREIGN KEY ... ON DELETE NO ACTION clauses also trip the
+      # "DELETE without WHERE" rule. Hand-written SQL under deploy/sql stays analysed.
+      - name: SonarQube Cloud analysis (begin)
+        if: env.SONAR_TOKEN != ''
+        run: >-
+          dotnet sonarscanner begin /k:"jashley92_CaseBook" /o:"jashley92" /d:sonar.token="$SONAR_TOKEN"
+          /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.cs.opencover.reportsPaths="tests/**/TestResults/*/coverage.opencover.xml"
+          /d:sonar.exclusions="deploy/sql/casebook-schema-sqlserver.sql"
 
       - name: Build
         run: dotnet build --no-restore -c Release
 
       - name: Test
-        run: dotnet test --no-build -c Release --verbosity minimal
+        run: >-
+          dotnet test --no-build -c Release --verbosity minimal
+          --collect "XPlat Code Coverage;Format=opencover"
+
+      - name: SonarQube Cloud analysis (end)
+        if: env.SONAR_TOKEN != ''
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
 
       # Upgrade safety (see docs/UPGRADE.md). A migration that shipped in a release must never be edited,
       # removed, or regenerated — databases from that release would stop upgrading. And the model must not
@@ -63,7 +95,6 @@ jobs:
 
       - name: No un-migrated model changes (SQL Server + SQLite)
         run: |
-          dotnet tool restore
           IM_MIGRATIONS_PROVIDER=SqlServer dotnet ef migrations has-pending-model-changes --no-build --configuration Release             --project src/IncidentManager.Migrations.SqlServer --startup-project src/IncidentManager.Web --context AppDbContext
           dotnet ef migrations has-pending-model-changes --no-build --configuration Release             --project src/IncidentManager.Infrastructure --startup-project src/IncidentManager.Web --context AppDbContext
 
