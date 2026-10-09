@@ -61,8 +61,8 @@ public sealed class EventLogTransport : ISecurityEventTransport
             _sourceMissing = true;
             _logger.LogWarning(ex,
                 "Windows Event Log delivery disabled: couldn't write event {EventId} as source '{Source}' in '{Log}'. " +
-                "Register the source once as an administrator (New-EventLog -LogName {Log} -Source {Source}) and restart.",
-                e.EventId, o.Source, o.LogName, o.LogName, o.Source);
+                "Register the source once as an administrator ({RegisterCommand}) and restart.",
+                e.EventId, o.Source, o.LogName, $"New-EventLog -LogName {o.LogName} -Source {o.Source}");
         }
         return Task.CompletedTask;
     }
