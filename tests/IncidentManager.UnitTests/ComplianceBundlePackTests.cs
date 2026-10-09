@@ -72,6 +72,38 @@ public class ComplianceBundlePackTests
         files["signing-public-key.pem"].Should().Contain("BEGIN PUBLIC KEY");
     }
 
+    // An examiner recomputing hashes from audit-chain.csv by VERIFY.txt's rule must get every EntryHash, including
+    // rows that carry a reason or an entity label (both are in the hash when present).
+    [Fact]
+    public void Every_entry_hash_can_be_recomputed_from_the_csv_by_the_guides_rule()
+    {
+        var hasher = new IncidentManager.Infrastructure.Security.HashChainService();
+        AuditLogEntry? prev = null;
+        var entries = new List<AuditLogEntry>();
+        foreach (var (reason, label) in new[] { ((string?)null, (string?)null), ("Corrected IOC", null), (null, "Rotate credentials"), ("Why", "What") })
+        {
+            var e = new AuditLogEntry { AtUtc = DateTimeOffset.UnixEpoch, Actor = "a1", Action = AuditAction.EvidenceTransferred,
+                EntityType = "Case", EntityId = "x", Reason = reason, EntityLabel = label };
+            hasher.ChainAppend(e, prev);
+            entries.Add(e);
+            prev = e;
+        }
+
+        var rows = ComplianceBundlePack.AuditChainCsv(entries).Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Skip(1)
+            .Select(r => r.Split(',')).ToList();
+        var guide = ComplianceBundlePack.VerifyReadme();
+
+        guide.Should().Contain("EvidenceTransferred=16").And.Contain("'|' + Reason").And.Contain("'|' + EntityLabel");
+        foreach (var c in rows)
+        {
+            var action = (int)Enum.Parse<AuditAction>(c[3]);
+            var canonical = string.Join('|', c[0], c[1], c[2], action, c[4], c[5], c[6], c[7], c[8], c[9]);
+            if (c[12].Length > 0) canonical += "|" + c[12];
+            if (c[13].Length > 0) canonical += "|" + c[13];
+            hasher.Hash(canonical + "|" + c[10]).Should().Be(c[11]);
+        }
+    }
+
     // F-24: earlier signing keys travel with the bundle, so seals they signed can be checked offline.
     [Fact]
     public void Retired_public_keys_are_included_and_named_by_key_id()

@@ -1,4 +1,5 @@
 using System.Globalization;
+using IncidentManager.Domain.Enums;
 using System.IO.Compression;
 using System.Text;
 using IncidentManager.Domain.Entities;
@@ -105,7 +106,7 @@ public static class ComplianceBundlePack
     public static string AuditChainCsv(IReadOnlyList<AuditLogEntry> entries)
     {
         var sb = new StringBuilder();
-        sb.Append("Sequence,AtUtc,Actor,Action,EntityType,EntityId,CaseNumber,Summary,BeforeJson,AfterJson,PrevHash,EntryHash").Append(Nl);
+        sb.Append("Sequence,AtUtc,Actor,Action,EntityType,EntityId,CaseNumber,Summary,BeforeJson,AfterJson,PrevHash,EntryHash,Reason,EntityLabel").Append(Nl);
         foreach (var e in entries)
         {
             Field(sb, e.Sequence.ToString(CultureInfo.InvariantCulture)); Comma(sb);
@@ -119,7 +120,10 @@ public static class ComplianceBundlePack
             Field(sb, e.BeforeJson ?? ""); Comma(sb);
             Field(sb, e.AfterJson ?? ""); Comma(sb);
             Field(sb, e.PrevHash); Comma(sb);
-            Field(sb, e.EntryHash);
+            Field(sb, e.EntryHash); Comma(sb);
+            // Reason and EntityLabel are in the hash only when present; a row with neither leaves both blank.
+            Field(sb, e.Reason ?? ""); Comma(sb);
+            Field(sb, e.EntityLabel ?? "");
             sb.Append(Nl);
         }
         return sb.ToString();
@@ -165,11 +169,12 @@ public static class ComplianceBundlePack
         Line("       Sequence, AtUtc, Actor, Action, EntityType, EntityId,");
         Line("       CaseNumber, Summary, BeforeJson, AfterJson");
         Line("   - AtUtc is the ISO-8601 round-trip form ('o').");
-        Line("   - Action is the integer value of the action (Create=0, Update=1, SoftDelete=2,");
-        Line("     Access=3, Login=4, Logout=5, ClassificationChanged=6, StatusChanged=7,");
-        Line("     EvidenceUploaded=8, EvidenceDownloaded=9, ReportGenerated=10, ReportFinalized=11,");
-        Line("     LegalReferral=12, IntegritySeal=13, IntegrityVerification=14, Export=15).");
+        Line("   - Action is the integer value of the action:");
+        foreach (var chunk in Enum.GetValues<AuditAction>().Select(a => $"{a}={(int)a}").Chunk(4))
+            Line("       " + string.Join(", ", chunk));
         Line("   - An empty/absent field contributes an empty string.");
+        Line("   - Then, only when the row has one, '|' + Reason; then, only when it has one,");
+        Line("     '|' + EntityLabel (blank in the CSV means absent: nothing is appended).");
         Line("   Recompute each row's hash and confirm it equals EntryHash, and that each row's");
         Line("   PrevHash equals the previous row's EntryHash (the first row in the full chain links");
         Line("   against an empty previous hash).");
