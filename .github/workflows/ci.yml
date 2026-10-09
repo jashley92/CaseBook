@@ -67,6 +67,8 @@ jobs:
       # so findings in it can't be fixed by hand; its FOREIGN KEY ... ON DELETE NO ACTION clauses also trip the
       # "DELETE without WHERE" rule. Hand-written SQL under deploy/sql stays analysed. EF migrations are generated
       # too: they stay analysed for issues but don't count toward coverage (CI proves them by applying them).
+      # Razor components are left out of coverage too: there are no component tests, so the 80% new-code bar
+      # applies to the C# services and domain, where the logic lives and the tests are.
       - name: SonarQube Cloud analysis (begin)
         if: env.SONAR_TOKEN != ''
         run: >-
@@ -74,7 +76,7 @@ jobs:
           /d:sonar.host.url="https://sonarcloud.io"
           /d:sonar.cs.opencover.reportsPaths="tests/**/TestResults/*/coverage.opencover.xml"
           /d:sonar.exclusions="deploy/sql/casebook-schema-sqlserver.sql"
-          /d:sonar.coverage.exclusions="src/IncidentManager.Migrations.SqlServer/Migrations/**,src/IncidentManager.Infrastructure/Persistence/Migrations/**"
+          /d:sonar.coverage.exclusions="src/IncidentManager.Migrations.SqlServer/Migrations/**,src/IncidentManager.Infrastructure/Persistence/Migrations/**,**/*.razor"
 
       - name: Build
         run: dotnet build --no-restore -c Release
