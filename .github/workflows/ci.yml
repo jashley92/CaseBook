@@ -65,7 +65,8 @@ jobs:
 
       # The generated SQL Server schema script comes from the EF Core migrations (dotnet ef migrations script),
       # so findings in it can't be fixed by hand; its FOREIGN KEY ... ON DELETE NO ACTION clauses also trip the
-      # "DELETE without WHERE" rule. Hand-written SQL under deploy/sql stays analysed.
+      # "DELETE without WHERE" rule. Hand-written SQL under deploy/sql stays analysed. EF migrations are generated
+      # too: they stay analysed for issues but don't count toward coverage (CI proves them by applying them).
       - name: SonarQube Cloud analysis (begin)
         if: env.SONAR_TOKEN != ''
         run: >-
@@ -73,6 +74,7 @@ jobs:
           /d:sonar.host.url="https://sonarcloud.io"
           /d:sonar.cs.opencover.reportsPaths="tests/**/TestResults/*/coverage.opencover.xml"
           /d:sonar.exclusions="deploy/sql/casebook-schema-sqlserver.sql"
+          /d:sonar.coverage.exclusions="src/IncidentManager.Migrations.SqlServer/Migrations/**,src/IncidentManager.Infrastructure/Persistence/Migrations/**"
 
       - name: Build
         run: dotnet build --no-restore -c Release
