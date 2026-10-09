@@ -228,7 +228,10 @@ Legal and Privacy.
 
 ### Integrity &amp; audit
 The tamper-evident spine: an append-only, SHA-256 hash-chained audit trail with one-click chain
-verification and RSA-signed integrity seals exported out of band.
+verification and RSA-signed integrity seals exported out of band. Each seal also goes to your SIEM, which keeps a
+copy CaseBook's administrators can't change. The signing key can live in a file, the Windows certificate store or
+CyberArk, and an optional audit chain key (HMAC, from CyberArk or a certificate) stops anyone with only database
+access from rewriting recent history.
 
 ![Integrity and audit](docs/screenshots/integrity-audit.png)
 

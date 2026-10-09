@@ -1,7 +1,7 @@
 # 0016. Integrity keys from a file, the certificate store or CyberArk; seal copies outside CaseBook
 
-- **Status:** Proposed. Closes the rest of security finding S-05 and backlog item F-05b; the work is backlog items
-  F-23 to F-28.
+- **Status:** Accepted (v1.4.0). Closes the rest of security finding S-05 and backlog item F-05b; built as backlog
+  items F-23 to F-28. Configuration reference: [OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b).
 - **Recorded:** 2026-10-09
 
 ## Context
@@ -38,9 +38,9 @@ read-only.
 | `CyberArk` | The PEM fetched at startup through the existing secret provider (`@cyberark:…`) and held only in memory | Central custody, rotation and an access log; whoever fully controls the app server while it runs could read it from memory |
 
 Every seal already records the id of the key that signed it. **Seals verify by that key**: the current key, or a
-retired public key kept in `Integrity:SigningKey:RetiredPublicKeys` (a folder of PEM public keys, which are not
-secret). That makes rotating the key safe; today a rotation would make every earlier seal fail. F-24 comes first
-for that reason.
+retired public key kept in `Integrity:RetiredPublicKeysPath` (a folder of PEM public keys, which are not secret;
+blank means a `retired` folder beside the signing key). That makes rotating the key safe; before it, a rotation would
+have made every earlier seal fail. F-24 came first for that reason.
 
 ### 2. A key in the chain hash (F-25), off by default
 

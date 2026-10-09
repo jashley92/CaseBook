@@ -163,12 +163,14 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ### v1.4.0
 
-A routine upgrade: one additive migration, applied at startup. The visible changes are the rebuilt Program overview
-and how third-party cases record the attack.
+A routine upgrade: two additive migrations, applied at startup. The visible changes are the rebuilt Program overview,
+how third-party cases record the attack, and new, optional integrity hardening.
 
-- **One additive migration** (`AddStepEnvironment`): a nullable `Environment` column on `TimelineEntries`, for where a
-  third-party case's attack step happened. Existing rows keep their exact row hash. In `DbaApplies` mode the bundle's
-  `deploy/sql/casebook-schema-sqlserver.sql` includes it.
+- **Two additive migrations.** `AddStepEnvironment`: a nullable `Environment` column on `TimelineEntries`, for where
+  a third-party case's attack step happened. `AddAuditHashKeyId`: a nullable `HashKeyId` column on `AuditLog`, for
+  the optional audit chain key (empty on every existing row). Existing rows keep their exact hashes. In `DbaApplies`
+  mode the bundle's `deploy/sql/casebook-schema-sqlserver.sql` includes both. If you've turned on the SQL Server
+  ledger, the new `AuditLog` column is nullable, which ledger tables allow; `02-Enable-Ledger.sql` knows it.
 - **Third-party cases** separate the attacker's steps from the disclosure milestones, and an attack step can be in
   our environment after a pivot. Reports of vendor cases now print the disclosure milestones, which earlier releases
   built but left out.
@@ -184,7 +186,24 @@ and how third-party cases record the attack.
   for the new ones.
 - **Configuration-bundle imports over 64 MB are refused** with a message saying so (earlier releases broke
   the page with an error instead). The import page now states the limit under the file input.
-- **No new settings**, so `appsettings.Production.json` needs no edits.
+- **Integrity key custody and seal copies** ([ADR 0016](decisions/0016-key-custody-and-seal-copies.md); all optional,
+  in server configuration, OPERATIONS.md §2):
+  - **Seals now also go to the SIEM** as event **5004** whenever a SIEM transport is on, so a copy is kept that
+    CaseBook's administrators can't change. A failed seal copy is event **5005** and shows under *Integrity & audit →
+    Keys and seal copies*. Add both to your SIEM rules (OPERATIONS.md §5 has the comparison query).
+  - **The signing key can come from the certificate store or CyberArk** (`Integrity:SigningKey`), and retired public
+    keys in `Integrity:RetiredPublicKeysPath` keep older seals verifying after a key change.
+  - **An optional audit chain key** (`Integrity:ChainKey`, off by default) hashes new audit entries with a secret the
+    database doesn't hold. It's one-way in practice: read OPERATIONS.md §2 and back the key up before turning it on.
+  - **Optional extra seal copies** (`Integrity:SealCopies`): an email digest, and timestamps from an internal RFC 3161
+    authority.
+  - The upgrade doesn't add these settings to `appsettings.Production.json`; without them, CaseBook behaves as before
+    (signing key from the file, chain key off, no extra copies). Copy the blocks from
+    `deploy/appsettings.Production.template.json` when you want them.
+- **The compliance bundle's `audit-chain.csv` has three more columns** (`Reason`, `EntityLabel`, `HashKeyId`), so an
+  examiner can recompute every entry's hash; earlier bundles omitted the two fields that are hashed when present.
+  A tool that reads the CSV by column position needs updating.
+- **No required setting changes**, so `appsettings.Production.json` needs no edits to upgrade.
 
 ### v1.3.0
 
