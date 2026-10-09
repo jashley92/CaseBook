@@ -9,7 +9,7 @@ window.imMotion = {
             var head = document.getElementById(headId), bar = document.getElementById(barId);
             if (!head || !bar || !('IntersectionObserver' in window)) return;
             if (window._imHeadObs) window._imHeadObs.disconnect();
-            var top = parseFloat(getComputedStyle(bar).top) || 0;
+            var top = Number.parseFloat(getComputedStyle(bar).top) || 0;
             var obs = new IntersectionObserver(function (entries) {
                 entries.forEach(function (e) {
                     if (e.isIntersecting) bar.removeAttribute('data-stuck'); else bar.setAttribute('data-stuck', '');
