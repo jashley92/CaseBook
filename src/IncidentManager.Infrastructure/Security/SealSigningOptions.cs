@@ -16,6 +16,12 @@ public sealed class SealSigningOptions
     /// </summary>
     public bool AllowKeyGeneration { get; set; }
 
+    /// <summary>
+    /// F-24: a folder of PEM public keys (SubjectPublicKeyInfo) from earlier signing keys, kept so seals signed before a
+    /// key change still verify. Blank means a <c>retired</c> folder beside the signing key. Public keys aren't secret.
+    /// </summary>
+    public string RetiredPublicKeysPath { get; set; } = "";
+
     /// <summary>Directory to export each seal to, separate from the database (ideally restricted/WORM/offsite).</summary>
     public string ExportPath { get; set; } = "seals";
 }

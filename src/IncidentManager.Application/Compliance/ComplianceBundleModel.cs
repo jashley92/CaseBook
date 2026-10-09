@@ -25,7 +25,9 @@ public sealed record ComplianceBundleModel(
     SealLine? CoveringSeal,
     string Algorithm,
     string KeyId,
-    string PublicKeyPem);
+    string PublicKeyPem,
+    // F-24: earlier signing keys' public halves, so seals signed before a key change can be checked offline too.
+    IReadOnlyList<IncidentManager.Application.Abstractions.SealPublicKey>? RetiredKeys = null);
 
 /// <summary>A seal paired with the result of re-verifying it while building the bundle.</summary>
 public sealed record SealLine(IntegritySeal Seal, bool SignatureValid, bool ChainMatches)

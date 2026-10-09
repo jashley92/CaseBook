@@ -90,7 +90,8 @@ public sealed class ComplianceBundleService
             CoveringSeal: covering,
             Algorithm: _signer.Algorithm,
             KeyId: _signer.KeyId,
-            PublicKeyPem: _signer.PublicKeyPem);
+            PublicKeyPem: _signer.PublicKeyPem,
+            RetiredKeys: _signer.VerificationKeys.Where(k => !k.Current).ToList());
 
         var bytes = ComplianceBundlePack.Zip(model);
         var fileName = $"compliance-bundle-{fromUtc.UtcDateTime:yyyyMMdd}-{toUtc.UtcDateTime:yyyyMMdd}.zip";
@@ -105,7 +106,7 @@ public sealed class ComplianceBundleService
 
     private SealLine Verify(IntegritySeal seal, IReadOnlyDictionary<long, string> hashBySequence)
     {
-        var signatureValid = _signer.Verify(seal.BuildCanonicalContent(), seal.Signature, seal.Algorithm);
+        var signatureValid = _signer.Verify(seal.BuildCanonicalContent(), seal.Signature, seal.Algorithm, seal.KeyId);
         var chainMatches = hashBySequence.TryGetValue(seal.UpToSequence, out var h) && h == seal.ChainHeadHash;
         return new SealLine(seal, signatureValid, chainMatches);
     }

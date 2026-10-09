@@ -44,6 +44,40 @@ public class SealSigningTests : IDisposable
         signer.Verify("payload-tampered", legacy, "RSASSA-PKCS1-v1_5-SHA256").Should().BeFalse();
     }
 
+    // F-24: after a key change, seals signed by the old key verify against its public key kept in the retired folder.
+    [Fact]
+    public void After_a_key_change_old_seals_verify_by_the_retired_key_they_name()
+    {
+        string oldId, oldSig;
+        using (var old = NewSigner())
+        {
+            oldId = old.KeyId;
+            oldSig = old.Sign("payload");
+            Directory.CreateDirectory(Path.Combine(_dir, "retired"));
+            File.WriteAllText(Path.Combine(_dir, "retired", "old.pem"), old.PublicKeyPem);
+        }
+        File.Delete(Path.Combine(_dir, "k.pem"));   // rotate: a new signing key in the same place
+
+        using var current = NewSigner();
+        current.KeyId.Should().NotBe(oldId);
+        current.Verify("payload", oldSig, "RSASSA-PSS-SHA256", oldId).Should().BeTrue();
+        current.Verify("payload", oldSig, "RSASSA-PSS-SHA256", current.KeyId).Should().BeFalse("the current key didn't sign it");
+        current.Verify("payload", oldSig, "RSASSA-PSS-SHA256", "0000000000000000").Should().BeFalse("an unknown key never verifies");
+        current.Verify("payload", current.Sign("payload"), "RSASSA-PSS-SHA256", current.KeyId).Should().BeTrue();
+        current.VerificationKeys.Select(k => (k.KeyId, k.Current)).Should().Equal((current.KeyId, true), (oldId, false));
+    }
+
+    [Fact]
+    public void A_retired_keys_folder_entry_that_isnt_a_key_stops_startup()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "retired"));
+        File.WriteAllText(Path.Combine(_dir, "retired", "typo.pem"), "not a key");
+
+        var act = () => NewSigner();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*typo.pem*retired seal keys folder*");
+    }
+
     [Fact]
     public void Verify_fails_when_the_content_is_altered()
     {

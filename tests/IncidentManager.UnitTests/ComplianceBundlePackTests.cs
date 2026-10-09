@@ -55,7 +55,7 @@ public class ComplianceBundlePackTests
     private static Dictionary<string, string> Unzip(byte[] bytes)
     {
         using var archive = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
-        return archive.Entries.ToDictionary(e => e.Name, e =>
+        return archive.Entries.ToDictionary(e => e.FullName, e =>
         {
             using var reader = new StreamReader(e.Open(), Encoding.UTF8);
             return reader.ReadToEnd();
@@ -70,6 +70,23 @@ public class ComplianceBundlePackTests
         files.Keys.Should().BeEquivalentTo(
             "manifest.txt", "audit-chain.csv", "seals.csv", "signing-public-key.pem", "VERIFY.txt");
         files["signing-public-key.pem"].Should().Contain("BEGIN PUBLIC KEY");
+    }
+
+    // F-24: earlier signing keys travel with the bundle, so seals they signed can be checked offline.
+    [Fact]
+    public void Retired_public_keys_are_included_and_named_by_key_id()
+    {
+        var model = Model(ChainVerificationResult.Valid, Seal()) with
+        {
+            RetiredKeys = [new IncidentManager.Application.Abstractions.SealPublicKey("0123abcd0123abcd",
+                "-----BEGIN PUBLIC KEY-----\nOLD\n-----END PUBLIC KEY-----\n", false)]
+        };
+
+        var files = Unzip(ComplianceBundlePack.Zip(model));
+
+        files["retired-public-keys/0123abcd0123abcd.pem"].Should().Contain("OLD");
+        files["manifest.txt"].Should().Contain("retired-public-keys/").And.Contain("0123abcd0123abcd");
+        files["VERIFY.txt"].Should().Contain("retired-public-keys/<KeyId>.pem");
     }
 
     [Fact]

@@ -242,7 +242,7 @@ public sealed class IntegrityService
         var seal = await db.IntegritySeals.AsNoTracking().FirstOrDefaultAsync(s => s.Id == sealId, ct);
         if (seal is null) return new SealVerificationResult(false, false, "Seal not found.");
 
-        var signatureValid = _signer.Verify(seal.BuildCanonicalContent(), seal.Signature, seal.Algorithm);
+        var signatureValid = _signer.Verify(seal.BuildCanonicalContent(), seal.Signature, seal.Algorithm, seal.KeyId);
 
         var entry = await db.AuditLog.AsNoTracking()
             .FirstOrDefaultAsync(a => a.Sequence == seal.UpToSequence, ct);
@@ -251,6 +251,8 @@ public sealed class IntegrityService
         var detail = (signatureValid, chainMatches) switch
         {
             (true, true) => "Signature authentic and the chain head is unchanged since sealing.",
+            (false, _) when !_signer.VerificationKeys.Any(k => string.Equals(k.KeyId, seal.KeyId, StringComparison.OrdinalIgnoreCase))
+                => $"Signed by key {seal.KeyId}, which this server doesn't hold. Add that key's public key to the retired seal keys folder.",
             (false, _) => "Signature invalid. The seal record was altered or signed by a different key.",
             (true, false) when entry is null => $"No audit entry at sealed sequence {seal.UpToSequence}. History was truncated.",
             (true, false) => $"Chain head at sequence {seal.UpToSequence} differs from the seal. History was rewritten after sealing.",

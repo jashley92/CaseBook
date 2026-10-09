@@ -15,6 +15,7 @@ public sealed class RsaSealSigner : ISealSigner, IDisposable
 {
     private const int KeySizeBits = 3072;
     private readonly RSA _rsa;
+    private readonly Dictionary<string, RSA> _retired = new(StringComparer.OrdinalIgnoreCase);
 
     public string Algorithm => SealAlgorithms.Pss;
     public string KeyId { get; }
@@ -29,8 +30,48 @@ public sealed class RsaSealSigner : ISealSigner, IDisposable
         LoadOrCreateKey(path, options.Value.AllowKeyGeneration);
 
         // Thumbprint the public key so a seal can record which key signed it.
-        var spki = _rsa.ExportSubjectPublicKeyInfo();
-        KeyId = Convert.ToHexString(SHA256.HashData(spki))[..16].ToLowerInvariant();
+        KeyId = KeyIdOf(_rsa);
+        LoadRetiredKeys(options.Value);
+        VerificationKeys = [new SealPublicKey(KeyId, PublicKeyPem, true),
+            .. _retired.OrderBy(k => k.Key, StringComparer.Ordinal)
+                .Select(k => new SealPublicKey(k.Key, k.Value.ExportSubjectPublicKeyInfoPem(), false))];
+    }
+
+    public IReadOnlyList<SealPublicKey> VerificationKeys { get; }
+
+    /// <summary>A key's id: the first 16 hex characters of the SHA-256 of its SubjectPublicKeyInfo.</summary>
+    public static string KeyIdOf(RSA rsa) =>
+        Convert.ToHexString(SHA256.HashData(rsa.ExportSubjectPublicKeyInfo()))[..16].ToLowerInvariant();
+
+    /// <summary>The folder retired public keys are read from: the configured one, or <c>retired</c> beside the key.</summary>
+    public static string RetiredFolder(SealSigningOptions o) =>
+        !string.IsNullOrWhiteSpace(o.RetiredPublicKeysPath) ? o.RetiredPublicKeysPath
+        : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(o.SigningKeyPath)) ?? ".", "retired");
+
+    // F-24: each *.pem in the folder is a public key (or a private key, of which only the public half is kept). A file
+    // that isn't a readable RSA key stops startup, so a typo can't quietly leave seals unverifiable.
+    private void LoadRetiredKeys(SealSigningOptions o)
+    {
+        var folder = RetiredFolder(o);
+        if (!Directory.Exists(folder)) return;
+        foreach (var file in Directory.EnumerateFiles(folder, "*.pem").Order(StringComparer.Ordinal))
+        {
+            var rsa = RSA.Create();
+            try
+            {
+                rsa.ImportFromPem(File.ReadAllText(file));
+                var pub = RSA.Create();
+                pub.ImportSubjectPublicKeyInfo(rsa.ExportSubjectPublicKeyInfo(), out _);
+                var id = KeyIdOf(pub);
+                if (id == KeyId || !_retired.TryAdd(id, pub)) pub.Dispose();   // the current key, or a duplicate
+            }
+            catch (Exception ex) when (ex is ArgumentException or CryptographicException)
+            {
+                throw new InvalidOperationException(
+                    $"'{file}' in the retired seal keys folder isn't a readable RSA key in PEM form. Fix or remove it, then restart.", ex);
+            }
+            finally { rsa.Dispose(); }
+        }
     }
 
     private void LoadOrCreateKey(string path, bool allowGeneration)
@@ -94,15 +135,22 @@ public sealed class RsaSealSigner : ISealSigner, IDisposable
         return Convert.ToBase64String(sig);
     }
 
-    public bool Verify(string content, string signatureBase64, string? algorithm = null)
+    public bool Verify(string content, string signatureBase64, string? algorithm = null, string? keyId = null)
     {
         if (SealAlgorithms.PaddingFor(algorithm) is not { } padding) return false;
+        var key = string.IsNullOrEmpty(keyId) || string.Equals(keyId, KeyId, StringComparison.OrdinalIgnoreCase) ? _rsa
+            : _retired.GetValueOrDefault(keyId);
+        if (key is null) return false;
         byte[] sig;
         try { sig = Convert.FromBase64String(signatureBase64); }
         catch (FormatException) { return false; }
 
-        return _rsa.VerifyData(Encoding.UTF8.GetBytes(content), sig, HashAlgorithmName.SHA256, padding);
+        return key.VerifyData(Encoding.UTF8.GetBytes(content), sig, HashAlgorithmName.SHA256, padding);
     }
 
-    public void Dispose() => _rsa.Dispose();
+    public void Dispose()
+    {
+        _rsa.Dispose();
+        foreach (var k in _retired.Values) k.Dispose();
+    }
 }

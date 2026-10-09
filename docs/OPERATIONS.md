@@ -163,8 +163,23 @@ key **before the app first starts**.
   even if the app server is lost. Record the `KeyId` (public-key thumbprint) shown on the Integrity
   page alongside your key inventory.
 - **Rotate** on a defined schedule and on suspected compromise. Rotation does not invalidate old
-  seals — each seal records the `KeyId` and `Algorithm` that produced it, so keep retired **public**
-  keys available for verification.
+  seals: each seal records the `KeyId` and `Algorithm` that produced it, and is checked with that key.
+  Keep each retired key's **public** half in the retired seal keys folder (below).
+
+### Rotating the signing key
+
+1. Export the current key's public half and put it in the **retired seal keys folder**:
+   `Integrity:RetiredPublicKeysPath`, or a `retired` folder beside the signing key when that's blank. Any `*.pem`
+   file there is read at startup; a private-key file works too (only its public half is kept), but keep private
+   keys out of that folder. A file that isn't a readable RSA key stops startup, naming the file.
+2. Install the new private key in place of the old one, and restart.
+3. On the Integrity page, check the new `KeyId` and re-verify an older seal: it reports authentic. A seal whose
+   key isn't held says so ("Signed by key …, which this server doesn't hold"); add that key's public half to the
+   folder.
+
+Compliance bundles include every retired public key (`retired-public-keys/<KeyId>.pem`), so an examiner can check
+seals from before the rotation offline. Public keys aren't secret; the folder only needs to be protected from
+change, like the rest of the data root.
 - Back up the key material under the same immutable/offsite regime as the database, but with tighter
   access control.
 

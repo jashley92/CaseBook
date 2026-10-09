@@ -1,5 +1,8 @@
 namespace IncidentManager.Application.Abstractions;
 
+/// <summary>A public key that seals can be verified with, by the id seals record.</summary>
+public sealed record SealPublicKey(string KeyId, string PublicKeyPem, bool Current);
+
 /// <summary>
 /// Signs and verifies integrity-seal payloads with an asymmetric key, so a seal's authenticity can
 /// be checked independently of the database it protects. Development uses a locally-generated RSA
@@ -23,7 +26,14 @@ public interface ISealSigner
     /// <summary>Signs the content, returning a base64 signature.</summary>
     string Sign(string content);
 
-    /// <summary>Verifies a base64 signature against the content using the current key, by the algorithm the seal
-    /// recorded (<see cref="SealAlgorithms"/>; none means the current one).</summary>
-    bool Verify(string content, string signatureBase64, string? algorithm = null);
+    /// <summary>
+    /// Verifies a base64 signature against the content with the key the seal names (<paramref name="keyId"/>: the
+    /// current key, or a retired one kept for verification; none means the current key), by the algorithm the seal
+    /// recorded (<see cref="SealAlgorithms"/>; none means the current one). An unknown key id never verifies.
+    /// </summary>
+    bool Verify(string content, string signatureBase64, string? algorithm = null, string? keyId = null);
+
+    /// <summary>Every public key a seal can be verified with: the current key first, then retired keys kept so seals
+    /// signed before a key change still verify (F-24). Public halves only.</summary>
+    IReadOnlyList<SealPublicKey> VerificationKeys { get; }
 }
