@@ -30,7 +30,7 @@ public sealed class ReportJobsTests
     {
         for (var i = 0; i < 200; i++)
         {
-            if (jobs.For(caseId, "robin", kind).FirstOrDefault() is { } j && done(j)) return j;
+            if (jobs.For(caseId, "robin", kind) is [var j, ..] && done(j)) return j;
             await Task.Delay(20);
         }
         throw new TimeoutException();

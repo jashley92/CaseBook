@@ -1557,7 +1557,7 @@ else
             _tlShotName = f.Name;
             _tlShotType = string.IsNullOrWhiteSpace(f.ContentType) ? "image/png" : f.ContentType;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             Toasts.Error("Couldn't read the pasted image. Try again, or upload it on the Evidence tab (15 MB max).");
             ClearTimelineShot();

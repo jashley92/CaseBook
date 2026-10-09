@@ -11,7 +11,7 @@ public sealed record OnDemandVerification(ChainVerificationResult Result, DateTi
 /// concurrent presses can't turn the button into a load generator. The scheduled monitor (every 10 minutes) is
 /// unaffected.
 /// </summary>
-public sealed class OnDemandVerificationGate
+public sealed class OnDemandVerificationGate : IDisposable
 {
     /// <summary>How long a verification result is reused before a press runs a new one.</summary>
     public static readonly TimeSpan Freshness = TimeSpan.FromMinutes(1);
@@ -37,4 +37,6 @@ public sealed class OnDemandVerificationGate
 
     private OnDemandVerification? Fresh(DateTimeOffset nowUtc) =>
         _last is { } l && nowUtc - l.VerifiedAtUtc < Freshness ? l with { Shared = true } : null;
+
+    public void Dispose() => _single.Dispose();
 }

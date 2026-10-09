@@ -10,13 +10,13 @@ public sealed class SecurityHeadersMiddleware
     public async Task Invoke(HttpContext context)
     {
         var headers = context.Response.Headers;
-        headers["X-Content-Type-Options"] = "nosniff";
-        headers["X-Frame-Options"] = "DENY";
+        headers.XContentTypeOptions = "nosniff";
+        headers.XFrameOptions = "DENY";
         headers["Referrer-Policy"] = "no-referrer";
         headers["Cross-Origin-Opener-Policy"] = "same-origin";
         // Disable powerful features the app never uses (S-07 hardening).
         headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
-        headers["Content-Security-Policy"] =
+        headers.ContentSecurityPolicy =
             "default-src 'self'; " +
             "img-src 'self' data:; " +
             // 'unsafe-inline' is required for the app's inline style attributes (e.g. tactic-colour vars)

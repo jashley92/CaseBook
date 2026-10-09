@@ -20,7 +20,7 @@ namespace IncidentManager.IntegrationTests;
 /// </summary>
 public abstract class DashboardSlaParityTests : IDisposable
 {
-    protected readonly FixedClock _clock = new(new DateTimeOffset(2026, 9, 28, 12, 0, 0, TimeSpan.Zero));
+    private protected readonly FixedClock _clock = new(new DateTimeOffset(2026, 9, 28, 12, 0, 0, TimeSpan.Zero));
 
     protected static readonly SlaTargets Targets = new(
         new Dictionary<(SlaClock, Severity), int>
@@ -401,7 +401,11 @@ public sealed class DashboardSlaParitySqliteTests : DashboardSlaParityTests
         headline.Should().Contain("[c].[DetectedAtUtc] <= @");
     }
 
-    public override void Dispose() => _connection.Dispose();
+    public override void Dispose()
+    {
+        _connection.Dispose();
+        base.Dispose();
+    }
 }
 
 /// <summary>
@@ -439,8 +443,11 @@ public sealed class DashboardSlaParitySqlServerTests : DashboardSlaParityTests
 
     public override void Dispose()
     {
-        if (_connectionString is null) return;
-        using var db = NewContext();
-        db.Database.EnsureDeleted();
+        if (_connectionString is not null)
+        {
+            using var db = NewContext();
+            db.Database.EnsureDeleted();
+        }
+        base.Dispose();
     }
 }

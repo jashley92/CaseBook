@@ -789,5 +789,3 @@ app.MapGet("/api/import/cases/schema", () =>
     .AllowAnonymous().RequireRateLimiting("downloads");
 
 await app.RunAsync();   // S6966: async host run
-
-public partial class Program;

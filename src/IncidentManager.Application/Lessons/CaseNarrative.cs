@@ -75,7 +75,7 @@ public static class CaseNarrative
                 var tag = tactics.Count > 0 ? string.Join(", ", tactics.Select(TacticWord))
                     : milestones ? TypeWord(e.Type) : null;
                 sb.Append(CultureInfo.InvariantCulture, $"- {Stamp(e.OccurredAtUtc)}");
-                if (pivoted && !milestones && Cases.EventSteps.WhereLabel(c, e) is { } place) sb.Append(" ").Append(place);
+                if (pivoted && !milestones && Cases.EventSteps.WhereLabel(c, e) is { } place) sb.Append(' ').Append(place);
                 if (tag is not null) sb.Append(CultureInfo.InvariantCulture, $" ({tag}{(e.TechniqueId is { Length: > 0 } tid ? $", {tid}" : "")})");
                 sb.Append(": ").Append(Sentence(e.Description));
                 var actor = e.ActorEntityId is { } a ? entityLabel(a) : null;

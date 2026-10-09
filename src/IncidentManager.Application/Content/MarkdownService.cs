@@ -115,8 +115,8 @@ public sealed class MarkdownService : IMarkdownService
             {
                 // Navigable only when we know the case and the reference is a valid guid; the href is an
                 // app-absolute path (leading "/") so it resolves correctly under <base href="/">.
-                var navigable = caseId is { } && Guid.TryParse(u.Substring(EntityScheme.Length), out _);
-                if (navigable && Guid.TryParse(u.Substring(EntityScheme.Length), out var g))
+                var navigable = caseId is { } && Guid.TryParse(u.AsSpan(EntityScheme.Length), out _);
+                if (navigable && Guid.TryParse(u.AsSpan(EntityScheme.Length), out var g))
                     // INV-11: no tab in the link, so the entity opens in a side panel over whatever tab is open.
                     renderer.Write($"<a class=\"im-entity-tag\" href=\"/cases/{caseId}?entity={g}\" title=\"View tagged entity / IOC\">");
                 else
@@ -131,7 +131,7 @@ public sealed class MarkdownService : IMarkdownService
             if (link.Url is { } ev && ev.StartsWith(EvidenceScheme, StringComparison.OrdinalIgnoreCase))
             {
                 var evId = Guid.Empty;
-                var ok = caseId is { } && Guid.TryParse(ev.Substring(EvidenceScheme.Length), out evId);
+                var ok = caseId is { } && Guid.TryParse(ev.AsSpan(EvidenceScheme.Length), out evId);
                 renderer.Write(ok ? $"<a class=\"im-evidence-tag\" href=\"/cases/{caseId}?evidence={evId}\" title=\"Cited evidence\">"
                                   : "<span class=\"im-evidence-tag\" title=\"Cited evidence\">");
                 renderer.Write("<span class=\"bi bi-paperclip\" aria-hidden=\"true\"></span>");
