@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
@@ -429,7 +430,7 @@ public sealed class ReportingIntegrationTests : IDisposable
             _reporting.CurrentValue.IncludeMilestones = false;
             var item = (await NewReportService(db2).BuildPreviewModelAsync(caseId, null)).InvestigationTimeline.Single();
             item.Description.Should().EndWith("Actions taken: Disable j.morales (done "
-                + _clock.UtcNow.UtcDateTime.ToString("yyyy-MM-dd HH:mm") + " UTC by Identity team): Disabled; sessions revoked; Reset MFA (open).");
+                + _clock.UtcNow.UtcDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC by Identity team): Disabled; sessions revoked; Reset MFA (open).");
         }
     }
 
@@ -709,8 +710,8 @@ public sealed class ReportingIntegrationTests : IDisposable
                 async Task<string> Read(Func<string, bool> name) =>
                     await new StreamReader(zip.Entries.First(e => name(e.FullName)).Open()).ReadToEndAsync();
                 documentXml = await Read(n => n == "word/document.xml");
-                headerXml = await Read(n => n.StartsWith("word/header"));
-                footerXml = await Read(n => n.StartsWith("word/footer"));
+                headerXml = await Read(n => n.StartsWith("word/header", StringComparison.Ordinal));
+                footerXml = await Read(n => n.StartsWith("word/footer", StringComparison.Ordinal));
             }
 
             documentXml.Should().Contain("Indicators of Compromise").And.Contain("evil-cdn[.]test").And.Contain("Sharing: TLP:GREEN");

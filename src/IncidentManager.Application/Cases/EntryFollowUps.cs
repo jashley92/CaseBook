@@ -40,7 +40,7 @@ public sealed record EntryFollowUps(
     public static string? Clean(string? text)
     {
         var line = string.Join(' ', (text ?? "").Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
-        if (line.StartsWith("- ")) line = line[2..].Trim();
+        if (line.StartsWith("- ", StringComparison.Ordinal)) line = line[2..].Trim();
         return line.Length == 0 ? null : line;
     }
 }

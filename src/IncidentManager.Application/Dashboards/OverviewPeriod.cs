@@ -84,7 +84,7 @@ public sealed record OverviewWindows(ProgramWindow Current, ProgramWindow Previo
         DateTimeOffset MonthStart(DateTime m) => ZonedMonths.StartUtc(m.Year, m.Month, zone);
 
         var months = Enumerable.Range(0, 12).Select(i => thisMonth.AddMonths(i - 11))
-            .Select(m => new ProgramWindow(MonthStart(m), m == thisMonth ? now : MonthStart(m.AddMonths(1)), m.ToString("MMM yyyy")))
+            .Select(m => new ProgramWindow(MonthStart(m), m == thisMonth ? now : MonthStart(m.AddMonths(1)), m.ToString("MMM yyyy", CultureInfo.InvariantCulture)))
             .ToList();
 
         switch (period)

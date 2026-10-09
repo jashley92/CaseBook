@@ -113,7 +113,7 @@ public sealed class AttackCoverageTests : IDisposable
         var phishing = cov.Tactics.Single(t => t.Tactic == MitreTactic.InitialAccess).Techniques.Single(t => t.TechniqueId == "T1566");
         phishing.CaseCount.Should().Be(4, "two recent cases, the restricted one the commander can see, and the vendor's");
         phishing.ThirdPartyCount.Should().Be(1);
-        phishing.Cases.Single(c => c.CaseNumber.StartsWith("2026-06")).ThirdParty.Should().BeTrue();
+        phishing.Cases.Single(c => c.CaseNumber.StartsWith("2026-06", StringComparison.Ordinal)).ThirdParty.Should().BeTrue();
         var lateral = cov.Tactics.Single(t => t.Tactic == MitreTactic.LateralMovement).Techniques.Single(t => t.TechniqueId == "T1021");
         lateral.ThirdPartyCount.Should().Be(0, "seen in our network after the pivot");
         lateral.Cases.Should().ContainSingle(c => c.CaseNumber.StartsWith("2026-06"));

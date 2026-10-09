@@ -140,7 +140,7 @@ public sealed class EventTimelinePersistenceTests : IDisposable
             // The attacker pivots from the vendor into our network: a step in our environment, kept and editable.
             await svc.AddEventStepAsync(id, _clock.UtcNow.AddHours(2), [MitreTactic.LateralMovement], "T1021", null, null,
                 "Came in over the vendor's VPN tunnel", "EDR", environment: StepEnvironment.Ours);
-            var pivot = (await svc.GetDetailAsync(id))!.TimelineEntries.Single(t => t.Description.StartsWith("Came in"));
+            var pivot = (await svc.GetDetailAsync(id))!.TimelineEntries.Single(t => t.Description.StartsWith("Came in", StringComparison.Ordinal));
             pivot.Environment.Should().Be(StepEnvironment.Ours);
             await svc.EditEventStepAsync(id, pivot.Id, pivot.OccurredAtUtc, [MitreTactic.LateralMovement], "T1021", null, null,
                 pivot.Description, pivot.Source, environment: StepEnvironment.Vendor);

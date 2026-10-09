@@ -1,3 +1,4 @@
+using System.Globalization;
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Search;
@@ -247,7 +248,7 @@ public sealed class FindServiceTests : IDisposable
             lock (_gate)
             {
                 _commands.Add(c.CommandText);
-                foreach (System.Data.Common.DbParameter p in c.Parameters) _values.Add(Convert.ToString(p.Value) ?? "");
+                foreach (System.Data.Common.DbParameter p in c.Parameters) _values.Add(Convert.ToString(p.Value, CultureInfo.InvariantCulture) ?? "");
             }
         }
 

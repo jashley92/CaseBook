@@ -110,8 +110,10 @@ public sealed class FindService
         if (q.State is { } st)
         {
             var token = "," + st + ",";
+#pragma warning disable CA1304, CA1311 // EF Core translates ToUpper(); culture overloads don't translate.
             cases = cases.Where(c => c.AffectedStates != null
                                      && ("," + c.AffectedStates.Replace(" ", "").ToUpper() + ",").Contains(token));
+#pragma warning restore CA1304, CA1311
             filters.Add($"residents of {st} affected");
         }
 
@@ -119,7 +121,7 @@ public sealed class FindService
         List<Guid> entityIds = [];
         if (q.Entity is { } ev)
         {
-            var key = ev.ToLower();
+            var key = ev.ToLowerInvariant();
 #pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower(); culture overloads don't translate.
             entityIds = await db.CaseEntities.AsNoTracking()
                 .Where(e => cases.Select(c => c.Id).Contains(e.CaseId) && e.Value.Trim().ToLower() == key)
@@ -438,5 +440,5 @@ public sealed class FindService
         _ => "indicator"
     };
 
-    private static string Article(string w) => ("aeiouAEIOU".Contains(w[0]) && !w.StartsWith("URL") ? "an " : "a ") + w;
+    private static string Article(string w) => ("aeiouAEIOU".Contains(w[0]) && !w.StartsWith("URL", StringComparison.Ordinal) ? "an " : "a ") + w;
 }

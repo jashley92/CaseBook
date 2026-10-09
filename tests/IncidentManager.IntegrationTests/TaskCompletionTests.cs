@@ -352,7 +352,7 @@ public sealed class TaskCompletionTests : IDisposable
 
         var c = (await svc.GetDetailAsync(caseId))!;
         var decision = c.TimelineEntries.Single(e => e.Type == TimelineEntryType.Decision);
-        c.ActionItems.Single(t => t.Title.StartsWith("Block 203")).AboutRef.Should().Be($"entry:{decision.Id}");
+        c.ActionItems.Single(t => t.Title.StartsWith("Block 203", StringComparison.Ordinal)).AboutRef.Should().Be($"entry:{decision.Id}");
         var brief = c.Briefs.Single(b => b.IsCurrent);
         brief.Version.Should().Be(2, "the question and the Known line make one new version");
         brief.Known.Should().EndWith("- 203.0.113.66 was used again on 4 Oct against a second account.");

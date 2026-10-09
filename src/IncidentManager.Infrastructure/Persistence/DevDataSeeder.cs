@@ -96,8 +96,8 @@ public static class DevDataSeeder
 
         // INV-42: the proxy task was raised from that entry, so its "about" chip leads back to it.
         await db.SaveChangesAsync(ct);
-        var gateway = c.TimelineEntries.First(x => x.Description.StartsWith("Blocked the 12 look-alike sender domains"));
-        if (c.ActionItems.FirstOrDefault(x => x.Title.StartsWith("Block the 12 look-alike domains")) is { } proxy)
+        var gateway = c.TimelineEntries.First(x => x.Description.StartsWith("Blocked the 12 look-alike sender domains", StringComparison.Ordinal));
+        if (c.ActionItems.FirstOrDefault(x => x.Title.StartsWith("Block the 12 look-alike domains", StringComparison.Ordinal)) is { } proxy)
             proxy.AboutRef = $"{ActionItem.AboutEntry}:{gateway.Id}";
 
         if (store is not null)
@@ -122,7 +122,7 @@ public static class DevDataSeeder
             });
             c.Evidence.Add(ev);
 
-            var review = c.TimelineEntries.FirstOrDefault(t => t.IsCurrent && t.Description.StartsWith("Reviewed mailbox audit logs"));
+            var review = c.TimelineEntries.FirstOrDefault(t => t.IsCurrent && t.Description.StartsWith("Reviewed mailbox audit logs", StringComparison.Ordinal));
             if (review is not null) c.SetCitations(review.Id, [ev.Id], "analyst1", now.AddDays(-5).AddHours(2));
 
             // The brief's "Known" cites it (a new version, still before the materiality decision, so the brief shows

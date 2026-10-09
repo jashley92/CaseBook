@@ -2188,7 +2188,7 @@ public sealed class CaseService
     {
         Require();
         var q = Content.MarkdownService.OneLine(question);
-        if (q.StartsWith("- ")) q = q[2..].Trim();
+        if (q.StartsWith("- ", StringComparison.Ordinal)) q = q[2..].Trim();
         if (q.Length == 0) throw new ArgumentException("Write the question.");
         if (q.Length > ActionItem.MaxTitleLength) throw new ArgumentException($"Keep the question to {ActionItem.MaxTitleLength} characters or fewer.");
         using var db = _factory.CreateDbContext();

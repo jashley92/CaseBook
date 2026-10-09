@@ -168,7 +168,7 @@ public sealed partial class ReportGenerator : IReportGenerator
                 body.AppendChild(P(m.IocCaption, italic: true, size: 18));
                 body.AppendChild(WordTable(
                     ["Type", "Indicator", "Verdict", "TLP", "Added (UTC)", "Context"],
-                    m.Iocs.Select(x => new[] { x.Type, x.Value, x.Verdict, x.Tlp ?? "—", x.AddedAtUtc.ToString("yyyy-MM-dd"), x.Description ?? "" })));
+                    m.Iocs.Select(x => new[] { x.Type, x.Value, x.Verdict, x.Tlp ?? "—", x.AddedAtUtc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), x.Description ?? "" })));
                 break;
 
             case ReportSection.Recommendations:

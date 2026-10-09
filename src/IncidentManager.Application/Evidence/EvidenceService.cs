@@ -171,7 +171,7 @@ public sealed class EvidenceService
     public static bool IsTextPreviewable(string? contentType, string? fileName)
     {
         var ct = (contentType ?? "").ToLowerInvariant();
-        if (ct.StartsWith("text/") || ct is "application/json" or "application/xml" or "application/x-ndjson" or "message/rfc822")
+        if (ct.StartsWith("text/", StringComparison.Ordinal) || ct is "application/json" or "application/xml" or "application/x-ndjson" or "message/rfc822")
             return true;
         var ext = Path.GetExtension(fileName ?? "").ToLowerInvariant();
         return ext is ".txt" or ".csv" or ".tsv" or ".log" or ".json" or ".ndjson" or ".xml" or ".eml" or ".md" or ".yaml" or ".yml"
