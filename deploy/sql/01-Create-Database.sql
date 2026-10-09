@@ -26,12 +26,9 @@
 
 :on error exit
 
--- Defaults for variables not supplied on the command line -----------------------
-:setvar DbName "CaseBook"
-:setvar DataPath ""
-:setvar LogPath ""
-:setvar SchemaMode "AppMigrates"
--- AppAccount has no safe default; it must be provided.
+-- No :setvar defaults here: a :setvar in the script overrides the value passed on the command line, so the
+-- defaults used to win over -v DbName/DataPath/LogPath/SchemaMode. Pass all five; use "(default)" for an
+-- instance-default DataPath/LogPath (sqlcmd won't take an empty -v value). Install-Database.ps1 does this.
 
 SET NOCOUNT ON;
 GO
@@ -47,14 +44,21 @@ GO
 IF DB_ID(N'$(DbName)') IS NULL
 BEGIN
     DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(N'$(DbName)');
-    IF N'$(DataPath)' <> N'' AND N'$(LogPath)' <> N''
+    IF N'$(DataPath)' NOT IN (N'', N'(default)') AND N'$(LogPath)' NOT IN (N'', N'(default)')
         SET @sql = N'CREATE DATABASE ' + QUOTENAME(N'$(DbName)') + N'
              ON PRIMARY (NAME = ' + QUOTENAME(N'$(DbName)' + N'_data', '''') + N',
                          FILENAME = ' + QUOTENAME(N'$(DataPath)\$(DbName).mdf', '''') + N')
              LOG ON     (NAME = ' + QUOTENAME(N'$(DbName)' + N'_log', '''') + N',
                          FILENAME = ' + QUOTENAME(N'$(LogPath)\$(DbName)_log.ldf', '''') + N')';
-    EXEC (@sql);
-    PRINT 'Created database [$(DbName)].';
+    -- EXEC's errors don't end the batch on their own, so catch and re-raise: the "Created" line only prints on
+    -- success, and the re-raised error stops the script (sqlcmd :on error exit; Invoke-Sqlcmd -AbortOnError).
+    BEGIN TRY
+        EXEC (@sql);
+        PRINT 'Created database [$(DbName)].';
+    END TRY
+    BEGIN CATCH
+        THROW;
+    END CATCH
 END
 ELSE
     PRINT 'Database [$(DbName)] already exists - leaving as-is.';

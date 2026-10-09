@@ -102,8 +102,10 @@ function Invoke-Sql {
     param([string] $InputFile, [hashtable] $Vars, [switch] $NoDbVars)
     if ($useModule) {
         $varArray = $Vars.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }
+        # -AbortOnError: Invoke-Sqlcmd ignores the script's ":on error exit", so without it a failed step (no
+        # permission, say) was reported and the script carried on, printing success lines for things not done.
         Invoke-Sqlcmd -ServerInstance $SqlInstance -InputFile $InputFile -Variable $varArray `
-                      -TrustServerCertificate -QueryTimeout 0 -OutputSqlErrors $true -Verbose
+                      -TrustServerCertificate -QueryTimeout 0 -OutputSqlErrors $true -AbortOnError -ErrorAction Stop -Verbose
     } else {
         $varArgs = @()
         foreach ($k in $Vars.Keys) { $varArgs += @('-v', ("{0}={1}" -f $k, $Vars[$k])) }
@@ -114,11 +116,48 @@ function Invoke-Sql {
 
 Write-Host "==> Provisioning database [$DbName] on [$SqlInstance] for [$AppAccount] (mode: $SchemaMode)" -ForegroundColor Cyan
 
+# --- Preflight: does the account running this have the rights for what's still to do? ---------------------
+# Creating the database needs CREATE ANY DATABASE (dbcreator), the server login ALTER ANY LOGIN (securityadmin),
+# and the database user and its roles control of the database (its owner has that, so it follows from creating it).
+# sysadmin has all of it. Checked first so a missing right stops here, before anything is half done.
+$preflight = @"
+SET NOCOUNT ON;
+SELECT SUSER_SNAME() AS RunAs,
+       IS_SRVROLEMEMBER('sysadmin') AS IsSysadmin,
+       HAS_PERMS_BY_NAME(NULL, NULL, 'CREATE ANY DATABASE') AS CanCreateDb,
+       HAS_PERMS_BY_NAME(NULL, NULL, 'ALTER ANY LOGIN') AS CanCreateLogin,
+       CASE WHEN DB_ID(N'$($DbName -replace "'", "''")') IS NULL THEN 0 ELSE 1 END AS DbExists,
+       CASE WHEN SUSER_ID(N'$($AppAccount -replace "'", "''")') IS NULL THEN 0 ELSE 1 END AS LoginExists,
+       ISNULL(HAS_PERMS_BY_NAME(N'$($DbName -replace "'", "''")', 'DATABASE', 'CONTROL'), 0) AS ControlsDb;
+"@
+if ($useModule) {
+    $p = Invoke-Sqlcmd -ServerInstance $SqlInstance -Query $preflight -TrustServerCertificate -AbortOnError -ErrorAction Stop
+} else {
+    $line = (& sqlcmd.exe -S $SqlInstance -E -b -C -h -1 -W -s '|' -Q $preflight) | Where-Object { $_ -match '\|' } | Select-Object -First 1
+    if ($LASTEXITCODE -ne 0 -or -not $line) { throw "Couldn't connect to [$SqlInstance] to check permissions (sqlcmd exit $LASTEXITCODE)." }
+    $f = $line.Split('|')
+    $p = [pscustomobject]@{ RunAs = $f[0]; IsSysadmin = [int]$f[1]; CanCreateDb = [int]$f[2]; CanCreateLogin = [int]$f[3]
+                            DbExists = [int]$f[4]; LoginExists = [int]$f[5]; ControlsDb = [int]$f[6] }
+}
+$lacking = @()
+if ([int]$p.IsSysadmin -ne 1) {
+    if ([int]$p.DbExists -eq 0 -and [int]$p.CanCreateDb -ne 1) { $lacking += "create the database [$DbName] (CREATE ANY DATABASE; the dbcreator role)" }
+    if ([int]$p.LoginExists -eq 0 -and [int]$p.CanCreateLogin -ne 1) { $lacking += "create the login [$AppAccount] (ALTER ANY LOGIN; the securityadmin role)" }
+    if ([int]$p.DbExists -eq 1 -and [int]$p.ControlsDb -ne 1) { $lacking += "add the user and its roles in the existing database [$DbName] (CONTROL on it; db_owner)" }
+    # Server-level settings on the database (recovery model, snapshot isolation) need ALTER on it, which an owner has.
+}
+if ($lacking.Count) {
+    throw ("[$($p.RunAs)] can't provision CaseBook on [$SqlInstance]: it isn't sysadmin and can't " + ($lacking -join '; or ') +
+           ". Nothing was changed. Have a DBA with sysadmin run this script (same -ConfigFile), or grant those roles " +
+           "for the install. See INSTALL.md section 2.")
+}
+Write-Host "    Running as [$($p.RunAs)]$(if ([int]$p.IsSysadmin -eq 1) { ' (sysadmin)' }): permissions OK." -ForegroundColor Gray
+
 $vars = @{
     DbName     = $DbName
     AppAccount = $AppAccount
-    DataPath   = $DataPath
-    LogPath    = $LogPath
+    DataPath   = $(if ($DataPath) { $DataPath } else { '(default)' })   # sqlcmd won't take an empty -v value
+    LogPath    = $(if ($LogPath) { $LogPath } else { '(default)' })
     SchemaMode = $SchemaMode
 }
 Invoke-Sql -InputFile $createSql -Vars $vars
@@ -128,7 +167,7 @@ if ($SchemaMode -eq 'DbaApplies' -and $ApplySchema) {
     Write-Host "==> Applying schema from $([System.IO.Path]::GetFileName($schemaSql))" -ForegroundColor Cyan
     if ($useModule) {
         Invoke-Sqlcmd -ServerInstance $SqlInstance -Database $DbName -InputFile $schemaSql `
-                      -TrustServerCertificate -QueryTimeout 0 -OutputSqlErrors $true
+                      -TrustServerCertificate -QueryTimeout 0 -OutputSqlErrors $true -AbortOnError -ErrorAction Stop
     } else {
         & sqlcmd.exe -S $SqlInstance -E -b -C -d $DbName -i $schemaSql
         if ($LASTEXITCODE -ne 0) { throw "sqlcmd failed applying schema (exit $LASTEXITCODE)" }
