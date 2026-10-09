@@ -32,20 +32,22 @@ public static class CaseNarrative
         sb.Append(c.Origin == CaseOrigin.ThirdParty ? ", reported to us by a third party.\n\n" : ", identified internally.\n\n");
 
         // Key times.
-        var times = new List<string>();
-        void Time(string label, DateTimeOffset? at, DateTimeOffset? from = null, string? sinceLabel = null)
+        static string? Time(string label, DateTimeOffset? at, DateTimeOffset? from = null, string? sinceLabel = null)
         {
-            if (at is not { } t) return;
+            if (at is not { } t) return null;
             var line = $"- **{label}:** {Stamp(t)}";
             if (from is { } f && t >= f) line += $" ({Span(t - f)} after {sinceLabel})";
-            times.Add(line);
+            return line;
         }
-        Time("Activity began", c.OccurredAtUtc);
-        Time("Detected", c.DetectedAtUtc, c.OccurredAtUtc, "activity began");
-        Time("Contained", c.ContainedAtUtc, c.DetectedAtUtc, "detection");
-        Time("Resolved", c.ResolvedAtUtc, c.DetectedAtUtc, "detection");
-        Time("Reported to regulators", c.ReportedAtUtc, c.DetectedAtUtc, "detection");
-        Time("Closed", c.ClosedAtUtc);
+        var times = new[]
+        {
+            Time("Activity began", c.OccurredAtUtc),
+            Time("Detected", c.DetectedAtUtc, c.OccurredAtUtc, "activity began"),
+            Time("Contained", c.ContainedAtUtc, c.DetectedAtUtc, "detection"),
+            Time("Resolved", c.ResolvedAtUtc, c.DetectedAtUtc, "detection"),
+            Time("Reported to regulators", c.ReportedAtUtc, c.DetectedAtUtc, "detection"),
+            Time("Closed", c.ClosedAtUtc)
+        }.OfType<string>().ToList();
         if (times.Count > 0)
         {
             sb.Append("### Key times (UTC)\n");
