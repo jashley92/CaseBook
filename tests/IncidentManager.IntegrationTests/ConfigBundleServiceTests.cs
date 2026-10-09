@@ -609,7 +609,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         bundle.ReportTemplates!.Single().LessonsDefault.Should().BeTrue();
 
         // Two lessons defaults in one bundle are refused.
-        var twice = bundle with { ReportTemplates = [.. bundle.ReportTemplates, bundle.ReportTemplates[0] with { Name = "Copy" }] };
+        var twice = bundle with { ReportTemplates = [.. bundle.ReportTemplates!, bundle.ReportTemplates![0] with { Name = "Copy" }] };
         await target.Config.Invoking(c => c.PreviewAsync(twice)).Should()
             .ThrowAsync<InvalidOperationException>().WithMessage("*More than one*lessons-learned default*");
 

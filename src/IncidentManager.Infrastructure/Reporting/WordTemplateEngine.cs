@@ -86,7 +86,7 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
 
     private static IEnumerable<(OpenXmlElement Root, bool InBody)> Roots(MainDocumentPart main)
     {
-        yield return (main.Document.Body!, true);
+        yield return (main.Document!.Body!, true);
         foreach (var h in main.HeaderParts) if (h.Header is not null) yield return (h.Header, false);
         foreach (var f in main.FooterParts) if (f.Footer is not null) yield return (f.Footer, false);
     }
@@ -101,19 +101,19 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         using (var doc = WordprocessingDocument.Open(ms, true))
         {
             var main = doc.MainDocumentPart!;
-            Fill(main.Document.Body!, m, main);
+            Fill(main.Document!.Body!, m, main);
             if (!string.IsNullOrWhiteSpace(banner))
             {
                 // Preview marker: bold red first paragraph, so a preview can't pass for a stored report.
-                var body = main.Document.Body!;
+                var body = main.Document!.Body!;
                 var mark = new Paragraph(new Run(
                     new RunProperties(new Bold(), new Color { Val = "C00000" }),
                     new Text(banner) { Space = SpaceProcessingModeValues.Preserve }));
                 body.InsertAt(mark, 0);
             }
             main.Document.Save();
-            foreach (var h in main.HeaderParts) { Fill(h.Header, m, null); h.Header.Save(); }
-            foreach (var f in main.FooterParts) { Fill(f.Footer, m, null); f.Footer.Save(); }
+            foreach (var h in main.HeaderParts) if (h.Header is not null) { Fill(h.Header, m, null); h.Header.Save(); }
+            foreach (var f in main.FooterParts) if (f.Footer is not null) { Fill(f.Footer, m, null); f.Footer.Save(); }
         }
         return ms.ToArray();
     }

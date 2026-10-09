@@ -46,7 +46,7 @@ public class IocImportConverterTests
             ("FileHash", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", null),
             ("Domain", "login-contoso.example", "Malicious"),
             ("Url", "https://login-contoso.example/o365", "Malicious"));
-        r.Document.Entities[0].Label.Should().Be("C2");
+        r.Document.Entities![0].Label.Should().Be("C2");
         r.Document.Entities[3].Label.Should().Be("Phish kit host");
 
         r.Notes.Should().Contain(n => n.Contains("1 STIX indicator pattern"));
@@ -72,7 +72,7 @@ public class IocImportConverterTests
             ("IpAddress", "=cmd|' /C calc'!A0", "Malicious"),   // the export's formula guard is undone
             ("Domain", "evil.example", "Malicious"),
             ("FileHash", "44d88612fea8a8f36de82e1278abb02f", "Malicious"));
-        r.Document.Entities[0].Source.Should().Be("EDR");
+        r.Document.Entities![0].Source.Should().Be("EDR");
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public class IocImportConverterTests
         r.Document!.Entities!.Select(e => (e.Type, e.Value, e.Disposition)).Should().Equal(
             ("IpAddress", "198.51.100.7", "Malicious"),
             (null, "phish.example", "Suspicious"));
-        r.Document.Entities[0].Description.Should().Be("seen in \"wave 2\", multi-line\nnote");
+        r.Document.Entities![0].Description.Should().Be("seen in \"wave 2\", multi-line\nnote");
         r.Notes.Should().Contain(n => n.Contains("1 row had a type"));
     }
 

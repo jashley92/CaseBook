@@ -10,7 +10,7 @@ namespace IncidentManager.UnitTests;
 public class BriefFreshnessTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 9, 1, 8, 0, 0, TimeSpan.Zero);
-    private static readonly MilestoneLabels Labels = new(c => c.ToString(), s => s.ToString(), p => p.ToString(), m => m.ToString());
+    private static readonly MilestoneLabels Labels = new(c => c?.ToString() ?? "", s => s.ToString(), p => p.ToString(), m => m.ToString());
 
     private static Case NewCase() => Case.Open(2026, 7, "Phish", "Credential phishing", Classification.Incident,
         Severity.High, CaseOrigin.InternalDetection, "ic1", T0);
@@ -28,7 +28,7 @@ public class BriefFreshnessTests
         var c = NewCase();
         Entry(c, TimelineEntryType.Analysis, T0.AddHours(1));
         c.ChangePhase(CasePhase.Triage, null, "ic1", T0.AddHours(1));
-        var brief = c.ReviseBrief("Lure reached Finance.", null, null, null, null, "ic1", T0.AddHours(2));
+        var brief = c.ReviseBrief("Lure reached Finance.", null, null, null, null, "ic1", T0.AddHours(2))!;
 
         var fresh = BriefFreshness.Since(c, brief, Labels);
         fresh.Count.Should().Be(0);
@@ -63,7 +63,7 @@ public class BriefFreshnessTests
     public void Changes_recorded_after_the_brief_are_counted_and_the_latest_turning_point_is_named()
     {
         var c = NewCase();
-        var brief = c.ReviseBrief("Lure reached Finance.", null, null, null, null, "ic1", T0.AddHours(1));
+        var brief = c.ReviseBrief("Lure reached Finance.", null, null, null, null, "ic1", T0.AddHours(1))!;
 
         Entry(c, TimelineEntryType.Analysis, T0.AddHours(2));
         Entry(c, TimelineEntryType.Decision, T0.AddHours(3));
@@ -82,7 +82,7 @@ public class BriefFreshnessTests
     public void A_decision_after_the_last_phase_change_is_the_reason_given()
     {
         var c = NewCase();
-        var brief = c.ReviseBrief("Lure reached Finance.", null, null, null, null, "ic1", T0.AddHours(1));
+        var brief = c.ReviseBrief("Lure reached Finance.", null, null, null, null, "ic1", T0.AddHours(1))!;
         c.ChangePhase(CasePhase.Containment, null, "ic1", T0.AddHours(2));
         Entry(c, TimelineEntryType.Decision, T0.AddHours(3));
 
@@ -93,7 +93,7 @@ public class BriefFreshnessTests
     public void Routine_work_counts_but_does_not_prompt_an_update()
     {
         var c = NewCase();
-        var brief = c.ReviseBrief("Lure reached Finance.", null, null, null, null, "ic1", T0.AddHours(1));
+        var brief = c.ReviseBrief("Lure reached Finance.", null, null, null, null, "ic1", T0.AddHours(1))!;
         Entry(c, TimelineEntryType.Analysis, T0.AddHours(2));
         c.ChangeSeverity(Severity.Critical, "NPI exposed", "ic1", T0.AddHours(3));
 

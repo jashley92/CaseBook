@@ -341,7 +341,7 @@ public sealed class LessonsLearnedTests : IDisposable
         s.Dispose();
         ms.Position = 0;
         using var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false);
-        return doc.MainDocumentPart!.Document.Body!.Descendants<DocumentFormat.OpenXml.Wordprocessing.Run>()
+        return doc.MainDocumentPart!.Document!.Body!.Descendants<DocumentFormat.OpenXml.Wordprocessing.Run>()
             .Where(r => r.RunProperties?.Bold is not null)
             .Select(r => r.InnerText)
             .ToList();
@@ -356,8 +356,8 @@ public sealed class LessonsLearnedTests : IDisposable
         ms.Position = 0;
         using var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false);
         var main = doc.MainDocumentPart!;
-        return string.Join("\n", new[] { main.Document.Body!.InnerText }
-            .Concat(main.HeaderParts.Select(h => h.Header.InnerText)));
+        return string.Join("\n", new[] { main.Document!.Body!.InnerText }
+            .Concat(main.HeaderParts.Select(h => h.Header!.InnerText)));
     }
 
     private sealed class IdUserDirectory : IUserDirectory

@@ -315,7 +315,7 @@ public sealed class ReportingIntegrationTests : IDisposable
         {
             var model = await NewReportService(db).BuildPreviewModelAsync(caseId, null);
             // INV-36: the brief's first part is the case summary, printed once, as the summary.
-            model.Summary.TrimEnd().Should().Be("Ransomware staging on two finance hosts");   // Markdown flattened
+            model.Summary!.TrimEnd().Should().Be("Ransomware staging on two finance hosts");   // Markdown flattened
             model.Brief!.WorkingAssessment.Should().Be("Commodity loader");
             model.Brief.NextSteps.Should().Be("Restore test (robin)", "INV-25: the version records the open tasks");
             model.Brief.Version.Should().Be(1);
@@ -781,7 +781,7 @@ public sealed class ReportingIntegrationTests : IDisposable
                 ms.Position = 0;
                 using var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false);
                 new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(doc).Should().BeEmpty("Word opens it without repair");
-                return doc.MainDocumentPart!.Document.Body!.InnerText;
+                return doc.MainDocumentPart!.Document!.Body!.InnerText;
             }
 
             // Profile default.
@@ -808,7 +808,7 @@ public sealed class ReportingIntegrationTests : IDisposable
             using (var ms = new MemoryStream(bytes))
             using (var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false))
             {
-                var text = doc.MainDocumentPart!.Document.Body!.InnerText;
+                var text = doc.MainDocumentPart!.Document!.Body!.InnerText;
                 text.Should().StartWith("PREVIEW of template").And.Contain("2026-01_Phishing_Wave").And.NotContain("{{");
                 new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(doc).Should().BeEmpty();
             }
@@ -819,7 +819,7 @@ public sealed class ReportingIntegrationTests : IDisposable
             shown.TemplateName.Should().Be("House style");
             using (var ms = new MemoryStream(shown.Bytes))
             using (var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false))
-                doc.MainDocumentPart!.Document.Body!.InnerText.Should().Contain("2026-01_Phishing_Wave")
+                doc.MainDocumentPart!.Document!.Body!.InnerText.Should().Contain("2026-01_Phishing_Wave")
                     .And.Contain("Business impact").And.NotContain("PREVIEW").And.NotContain("{{");
             (await svc.FillTemplatePreviewAsync(caseId, profileId, template: boardId))!.Value.TemplateName.Should().Be("Board summary");
             (await svc.FillTemplatePreviewAsync(caseId, profileId, template: Guid.Empty)).Should().BeNull("the built-in layout has its own preview");
@@ -870,7 +870,7 @@ public sealed class ReportingIntegrationTests : IDisposable
             ms.Position = 0;
             using var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false);
             new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(doc).Should().BeEmpty("Word opens it without repair");
-            return doc.MainDocumentPart!.Document.Body!.InnerText;
+            return doc.MainDocumentPart!.Document!.Body!.InnerText;
         }
 
         // No lessons default yet: the built-in layout.

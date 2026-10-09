@@ -10,7 +10,7 @@ namespace IncidentManager.UnitTests;
 public class CommandMilestoneTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 9, 1, 8, 0, 0, TimeSpan.Zero);
-    private static readonly MilestoneLabels Labels = new(c => c.ToString(), s => s.ToString(), p => p.ToString(), m => m.ToString());
+    private static readonly MilestoneLabels Labels = new(c => c?.ToString() ?? "", s => s.ToString(), p => p.ToString(), m => m.ToString());
 
     private static Case NewCase() => Case.Open(2026, 7, "Phish", "Credential phishing", Classification.Incident,
         Severity.High, CaseOrigin.InternalDetection, "ic1", T0);

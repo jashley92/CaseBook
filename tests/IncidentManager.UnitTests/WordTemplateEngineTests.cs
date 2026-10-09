@@ -39,9 +39,9 @@ public class WordTemplateEngineTests
     {
         using var doc = WordprocessingDocument.Open(new MemoryStream(docx), false);
         var main = doc.MainDocumentPart!;
-        return (main.Document.Body!.InnerText,
-            string.Concat(main.HeaderParts.Select(h => h.Header.InnerText)),
-            string.Concat(main.FooterParts.Select(f => f.Footer.InnerText)),
+        return (main.Document!.Body!.InnerText,
+            string.Concat(main.HeaderParts.Select(h => h.Header!.InnerText)),
+            string.Concat(main.FooterParts.Select(f => f.Footer!.InnerText)),
             main.ImageParts.Count(),
             main.Document.Body.Descendants<Break>().Count());
     }
@@ -77,7 +77,7 @@ public class WordTemplateEngineTests
         // The Report tab's in-browser preview draws a page that states no size edge to edge; Word would assume Letter.
         using var ms = new MemoryStream(lessons ? _engine.LessonsStarter() : _engine.Starter());
         using var doc = WordprocessingDocument.Open(ms, false);
-        var section = doc.MainDocumentPart!.Document.Body!.Elements<SectionProperties>().Single();
+        var section = doc.MainDocumentPart!.Document!.Body!.Elements<SectionProperties>().Single();
         section.GetFirstChild<PageSize>()!.Width!.Value.Should().Be(12240U);
         section.GetFirstChild<PageMargin>()!.Left!.Value.Should().Be(1440U);
         new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(doc).Should().BeEmpty();
