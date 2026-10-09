@@ -162,6 +162,39 @@ public sealed class IntegritySealIntegrationTests : IDisposable
             ValueTask.FromResult(configuredValue == reference ? value : configuredValue);
     }
 
+    // F-27: each extra copy is tried after the folder; one that fails is recorded under its own name.
+    [Fact]
+    public async Task Extra_seal_copies_are_each_tried_and_recorded()
+    {
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);
+        var siem = new CapturingSecurityEventSink();
+        var copies = new SealCopyStatus();
+        var ok = new FakeCopier("Email", fail: false);
+        var bad = new FakeCopier("Timestamp authority", fail: true);
+        var svc = new IntegrityService(NewFactory(), _hasher, _signer, _store, _user, _clock, _monitor, _alerts,
+            siem: siem, copies: copies, copiers: [ok, bad]);
+
+        (await svc.SealAsync()).Should().NotBeNull();
+
+        ok.Copied.Should().Be(1);
+        copies.Snapshot().Select(c => (c.Destination, c.Ok)).Should().BeEquivalentTo(
+            [(IntegrityService.FolderCopy, true), ("Email", true), ("Timestamp authority", false)]);
+        siem.Events.Should().ContainSingle(e => e.EventId == 5005).Which.Detail.Should().Be("Timestamp authority: no answer");
+    }
+
+    private sealed class FakeCopier(string name, bool fail) : ISealCopier
+    {
+        public int Copied { get; private set; }
+        public string Name => name;
+        public Task CopyAsync(IncidentManager.Domain.Entities.IntegritySeal seal, CancellationToken ct = default)
+        {
+            if (fail) throw new HttpRequestException("no answer");
+            Copied++;
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class FailingStore : ISealStore
     {
         public Task ExportAsync(IncidentManager.Domain.Entities.IntegritySeal seal, CancellationToken ct = default) =>

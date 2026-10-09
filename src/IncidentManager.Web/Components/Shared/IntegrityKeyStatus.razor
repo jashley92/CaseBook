@@ -5,6 +5,7 @@
 @inject IncidentManager.Application.Abstractions.ISealSigner Signer
 @inject IncidentManager.Application.Abstractions.IChainKeyring ChainKeys
 @inject SealCopyStatus Copies
+@inject IEnumerable<ISealCopier> Copiers
 @inject IConfiguration Config
 @inject TimeDisplay TimeDisp
 
@@ -76,6 +77,31 @@
                 }
             </td>
         </tr>
+        @* F-27: the optional extra copies, each only when configured. *@
+        @foreach (var copier in Copiers)
+        {
+            var last = Copies.Snapshot().FirstOrDefault(c => c.Destination == copier.Name);
+            <tr>
+                <th scope="row">Seal copy: @copier.Name.ToLowerInvariant()</th>
+                <td>
+                    @if (last is null)
+                    {
+                        <span class="im-badge im-b-neutral">Configured</span>
+                        <span class="small text-muted ms-2">no seal made since the last restart.</span>
+                    }
+                    else if (last.Ok)
+                    {
+                        <span class="im-badge im-b-ok">Last copy OK</span>
+                        <span class="small text-muted ms-1">@TimeDisp.Short(last.LastAttemptUtc)</span>
+                    }
+                    else
+                    {
+                        <span class="im-badge im-b-danger">Last copy failed</span>
+                        <span class="small text-muted ms-1">@TimeDisp.Short(last.LastAttemptUtc): @last.LastError@(last.LastSuccessUtc is { } ok2 ? $" (last success {TimeDisp.Short(ok2)})" : "")</span>
+                    }
+                </td>
+            </tr>
+        }
     </tbody>
 </table>
 

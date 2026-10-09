@@ -258,6 +258,8 @@ var app = builder.Build();
 // instead of failing later in the integrity job (and never makes the app sign with a key it made itself).
 app.Services.GetRequiredService<ISealSigner>();
 app.Services.GetRequiredService<IChainKeyring>();   // F-25: a chain key that can't be loaded stops startup here, too
+// F-27: a timestamp authority outside the organization (or that doesn't resolve) stops startup with the reason.
+_ = app.Services.GetServices<IncidentManager.Application.Integrity.ISealCopier>().ToList();
 
 // X-02: wire the (global) taxonomy display-label provider into the static Ui helpers, so every
 // Ui.Label(...) call site reflects an admin rename with no per-site change.

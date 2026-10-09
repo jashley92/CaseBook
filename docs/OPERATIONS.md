@@ -223,6 +223,39 @@ chain key is on, where it comes from and its key id (key ids are derived from th
 Certificate: move `chain-key.json` into `chain-retired`, restart (a new key is made; the old file still decrypts,
 even if it was encrypted to an earlier certificate that's still in the store).
 
+### Extra seal copies (F-27, each off unless set)
+
+Every seal is already written to the database, to `Integrity:ExportPath` and, with a SIEM transport on, to the SIEM
+as event 5004 (§5). The copy that matters is one the people who run CaseBook's database and servers can't change.
+Three optional extras:
+
+- **An append-only share.** Point `Integrity:ExportPath` at a share on a server CaseBook's administrators don't
+  administer, and let the app account create files there but not change or delete them. On the share's folder,
+  give the account the right to create files in the folder itself, and only read on the files it holds:
+
+  ```powershell
+  icacls '\\files01\casebook-seals' /grant 'CONTOSO\svc-casebook$:(WD,AD,RA,REA,RC,X)'
+  icacls '\\files01\casebook-seals' /grant 'CONTOSO\svc-casebook$:(OI)(IO)(R)'
+  ```
+
+  CaseBook writes each seal file in the same call that creates it, so it never needs to reopen one for writing.
+  Confirm on your file server that the account can create a file there but not replace or delete one, and that the
+  share permissions don't grant more. It isn't WORM: an administrator of that file server can still change files,
+  so keep that role apart from CaseBook's.
+- **A seal digest by email** (`Integrity:SealCopies:EmailTo`, comma-separated): each seal's sequence, chain-head
+  hash, key id, time and signature, to a mailbox under Microsoft 365 retention or a litigation hold. Needs email
+  turned on in-app; with email off, the copy is reported as failed rather than skipped.
+- **RFC 3161 timestamps** (`Integrity:SealCopies:TimestampAuthorityUrl`): for an organization with its own timestamp
+  authority. Only internal addresses are accepted (the host must resolve to private, loopback or link-local
+  addresses; anything else stops startup), so CaseBook never sends seals to the internet. Each token is saved beside
+  the seal's JSON copy as `seal-<sequence>-<time>.tsr`; check one with
+  `openssl ts -verify -data payload.txt -in seal-….tsr -token_in -CAfile <your TSA's CA>` (the payload as in
+  `VERIFY.txt`). A timestamp proves the seal existed at that time, so even someone holding the signing key can't
+  backdate a rewritten history.
+
+A failed copy never undoes the seal: it's logged, sent as SIEM event 5005 naming the destination, and shown under
+**Integrity & audit → Keys and seal copies** with its last error.
+
 ### Rotating the signing key
 
 1. Export the current key's public half and put it in the **retired seal keys folder**:
@@ -426,7 +459,7 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5002 | Integrity | Non-whitelisted AppSettings override rejected on load (S-02 tamper signal) |
 | 5003 | Integrity | Evidence at rest drifted from its recorded SHA-256 (F-17 critical log/email alarm) |
 | 5004 | Integrity | Integrity seal recorded: the SIEM's copy of each seal (F-26; see *Seal copies in the SIEM* below) |
-| 5005 | Integrity | A seal's copy to the export folder failed; the seal itself is recorded (F-26) |
+| 5005 | Integrity | A copy of a seal failed (export folder, email digest or timestamp; the detail names it); the seal itself is recorded (F-26/F-27) |
 | 5101 | Authentication | Authentication failure |
 | 5201 | Authorization | Access denied (403) on a page or download **GET** (other 403s aren't streamed) |
 | 5202 | Authorization | In-app action refused for lack of a permission |

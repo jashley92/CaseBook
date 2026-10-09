@@ -15,7 +15,7 @@ public static class SecurityEventIds
     public const int RejectedSettingOverride = 5002; // a non-whitelisted AppSettings row ignored on load (S-02 tamper signal)
     public const int EvidenceIntegrityDrift = 5003; // evidence at rest no longer matches its recorded SHA-256 (F-17)
     public const int IntegritySealRecorded = 5004;  // a seal was recorded: its copy outside CaseBook (F-26)
-    public const int SealExportFailed = 5005;       // a seal's copy to the export folder failed (F-26)
+    public const int SealExportFailed = 5005;       // a copy of a seal failed: export folder, email or timestamp (F-26/F-27)
 
     // 51xx — Authentication
     public const int AuthenticationFailed = 5101;

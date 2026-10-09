@@ -26,6 +26,7 @@ public sealed class IntegrityService
     private readonly Security.ISecurityEventSink? _siem;
     private readonly SealCopyStatus? _copies;
     private readonly Microsoft.Extensions.Logging.ILogger? _logger;
+    private readonly IReadOnlyList<ISealCopier> _copiers;
 
     /// <summary>The destination name the export folder's results are recorded under in <see cref="SealCopyStatus"/>.</summary>
     public const string FolderCopy = "Export folder";
@@ -34,8 +35,9 @@ public sealed class IntegrityService
         ISealStore sealStore, ICurrentUser user, IClock clock, IIntegrityMonitor monitor,
         IIntegrityAlertNotifier alerts, OnDemandVerificationGate? gate = null,
         Security.ISecurityEventSink? siem = null, SealCopyStatus? copies = null,
-        Microsoft.Extensions.Logging.ILogger<IntegrityService>? logger = null)
+        Microsoft.Extensions.Logging.ILogger<IntegrityService>? logger = null, IEnumerable<ISealCopier>? copiers = null)
     {
+        _copiers = copiers?.ToList() ?? [];
         _siem = siem;
         _copies = copies;
         _logger = logger;
@@ -241,22 +243,29 @@ public sealed class IntegrityService
         _siem?.Emit(Security.SecurityEvents.IntegritySealRecorded(seal.UpToSequence, seal.ChainHeadHash, seal.KeyId,
             seal.SealedAtUtc, seal.SealedBy));
 
-        // The export folder's copy is best-effort: a failure must not roll back a persisted seal, but it must be seen.
-        try
-        {
-            await _sealStore.ExportAsync(seal, ct);
-            _copies?.Record(FolderCopy, _clock.UtcNow, null);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _copies?.Record(FolderCopy, _clock.UtcNow, ex.Message);
-            _logger?.LogWarning(new Microsoft.Extensions.Logging.EventId(Security.SecurityEventIds.SealExportFailed, "SealExportFailed"), ex,
-                "Integrity seal #{UpToSequence} was recorded, but its copy to the export folder failed. Check Integrity:ExportPath and the app account's rights there.",
-                seal.UpToSequence);
-            _siem?.Emit(Security.SecurityEvents.SealExportFailed(seal.UpToSequence, ex.Message));
-        }
+        // Every other copy is best-effort: a failure must not roll back a persisted seal, but it must be seen.
+        await CopyAsync(FolderCopy, () => _sealStore.ExportAsync(seal, ct), seal, ct);
+        foreach (var copier in _copiers)
+            await CopyAsync(copier.Name, () => copier.CopyAsync(seal, ct), seal, ct);
 
         return seal;
+    }
+
+    private async Task CopyAsync(string destination, Func<Task> copy, IntegritySeal seal, CancellationToken ct)
+    {
+        try
+        {
+            await copy();
+            _copies?.Record(destination, _clock.UtcNow, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            _copies?.Record(destination, _clock.UtcNow, ex.Message);
+            _logger?.LogWarning(new Microsoft.Extensions.Logging.EventId(Security.SecurityEventIds.SealExportFailed, "SealExportFailed"), ex,
+                "Integrity seal #{UpToSequence} was recorded, but its copy to {Destination} failed: {Reason}",
+                seal.UpToSequence, destination, ex.Message);
+            _siem?.Emit(Security.SecurityEvents.SealExportFailed(seal.UpToSequence, $"{destination}: {ex.Message}"));
+        }
     }
 
     /// <summary>

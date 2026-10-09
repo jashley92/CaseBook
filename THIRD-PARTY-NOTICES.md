@@ -31,11 +31,12 @@ Word template in the case Report tab's preview, in the browser. It loads only on
 | Package | Version | License |
 |---------|---------|---------|
 | DocumentFormat.OpenXml | 3.5.1 | MIT |
-| Markdig | 1.3.2 | BSD-2-Clause |
+| Markdig | 1.4.0 | BSD-2-Clause |
 | FluentValidation | 12.1.1 | Apache-2.0 |
-| SkiaSharp (+ SkiaSharp.NativeAssets.Linux.NoDependencies) | 4.152.1 | MIT |
+| SkiaSharp (+ SkiaSharp.NativeAssets.Linux.NoDependencies) | 4.153.1 | MIT |
 | Microsoft.AspNetCore.Authentication.Negotiate | 10.x | MIT |
 | System.DirectoryServices.AccountManagement | 10.x | MIT |
+| System.Security.Cryptography.Pkcs | 10.x | MIT |
 | Microsoft.EntityFrameworkCore (+ Relational, Sqlite, SqlServer, Design) | 10.x | MIT |
 | Microsoft.Extensions.* (Configuration, DI, Options) | 10.x | MIT |
 

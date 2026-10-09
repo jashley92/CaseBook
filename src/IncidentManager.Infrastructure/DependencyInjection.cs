@@ -82,6 +82,12 @@ public static class DependencyInjection
         // X-02: admin-set taxonomy display labels, read live from config (same mechanism as severity labels).
         services.AddSingleton<Application.Abstractions.ITaxonomyDisplay, Taxonomy.ConfigurationTaxonomyDisplay>();
         services.AddSingleton<IChainKeyring, ChainKeyring>();   // F-25: empty unless Integrity:ChainKey:Enabled
+        // F-27: optional extra seal copies, registered only when configured.
+        services.Configure<SealCopyOptions>(config.GetSection("Integrity:SealCopies"));
+        if (!string.IsNullOrWhiteSpace(config["Integrity:SealCopies:EmailTo"]))
+            services.AddSingleton<IncidentManager.Application.Integrity.ISealCopier, EmailSealCopier>();
+        if (!string.IsNullOrWhiteSpace(config["Integrity:SealCopies:TimestampAuthorityUrl"]))
+            services.AddSingleton<IncidentManager.Application.Integrity.ISealCopier, TimestampSealCopier>();
         services.AddSingleton<IHashChainService, HashChainService>();
         services.AddSingleton<ICaseChangeNotifier, Realtime.CaseChangeNotifier>();
         services.AddSingleton<ICasePresenceService, Realtime.CasePresenceService>();

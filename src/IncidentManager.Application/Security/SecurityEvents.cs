@@ -213,7 +213,8 @@ public static class SecurityEvents
         Detail = $"head={chainHeadHash} key={keyId} sealedAtUtc={sealedAtUtc.UtcDateTime.ToString("o", System.Globalization.CultureInfo.InvariantCulture)}"
     };
 
-    /// <summary>F-26: a seal's copy to the export folder failed. The seal itself is recorded; its out-of-band copy isn't.</summary>
+    /// <summary>F-26/F-27: a copy of a seal (export folder, email digest, timestamp) failed. The seal itself is recorded;
+    /// <see cref="SecurityEvent.Detail"/> names the destination and the reason.</summary>
     public static SecurityEvent SealExportFailed(long upToSequence, string reason) => new()
     {
         EventId = SecurityEventIds.SealExportFailed,
