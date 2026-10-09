@@ -70,6 +70,7 @@
         </div>
 
         <InputFile OnChange="OnFileSelected" accept=".json" class="form-control form-control-sm" style="max-width:28rem" />
+        <div class="form-text">A bundle file of up to @(MaxBundleBytes / 1024 / 1024) MB, the size of a large Word template library.</div>
 
         @if (_verification is not null)
         {
@@ -140,6 +141,10 @@
     private ConfigDiff? _diff;
     private bool _applying;
 
+    // Above the 8 MB rule-of-thumb on purpose: the bundle carries the Word template library (up to
+    // ReportTemplateService.MaxTemplateBytes each, base64-inflated by a third), and only SysAdmins reach this page.
+    private const long MaxBundleBytes = 64 * 1024 * 1024;
+
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync() => _bundle = await Config.BuildBundleAsync();
@@ -152,8 +157,7 @@
         try
         {
             using var ms = new MemoryStream();
-            // 64 MB: the bundle carries the Word template library.
-            await e.File.OpenReadStream(maxAllowedSize: 64 * 1024 * 1024).CopyToAsync(ms);
+            await e.File.OpenReadStream(maxAllowedSize: MaxBundleBytes).CopyToAsync(ms); // NOSONAR S5693: sized for the template library, see MaxBundleBytes
             var (envelope, verification) = Config.ParseAndVerify(ms.ToArray());
             _incoming = envelope;
             _verification = verification;
@@ -163,6 +167,12 @@
         {
             ClearUpload();
             Toasts.Error(ex.Message);
+        }
+        catch (IOException)
+        {
+            // OpenReadStream throws this when the file is over maxAllowedSize.
+            ClearUpload();
+            Toasts.Error($"That file is larger than {MaxBundleBytes / 1024 / 1024} MB, too big to be a configuration bundle.");
         }
     }
 
