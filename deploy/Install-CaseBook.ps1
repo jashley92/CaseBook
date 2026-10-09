@@ -108,6 +108,17 @@ param(
     [string] $SmtpHost = '',
     [string] $MailDomain = '',
 
+    # Integrity keys (ADR 0016; OPERATIONS.md section 2).
+    [ValidateSet('File', 'CertificateStore', 'CyberArk')]
+    [string] $SigningKeySource = 'File',
+    [string] $SigningKeyThumbprint = '',
+    [string] $SigningKeySecret = '',
+    # '' keeps the audit chain key off (the default).
+    [ValidateSet('', 'CyberArk', 'Certificate')]
+    [string] $ChainKeySource = '',
+    [string] $ChainKeySecret = '',
+    [string] $ChainKeyThumbprint = '',
+
     [string] $PublishConfiguration = 'Release',
 
     # Air-gapped / no nuget.org on this host: publish on a machine WITH internet
@@ -145,6 +156,12 @@ if ($ConfigFile) {
         AdGroupAppAdmins      = 'AdGroupAppAdmins'
         SmtpHost              = 'SmtpHost'
         MailDomain            = 'MailDomain'
+        SigningKeySource      = 'SigningKeySource'
+        SigningKeyThumbprint  = 'SigningKeyThumbprint'
+        SigningKeySecret      = 'SigningKeySecret'
+        ChainKeySource        = 'ChainKeySource'
+        ChainKeySecret        = 'ChainKeySecret'
+        ChainKeyThumbprint    = 'ChainKeyThumbprint'
     }
     foreach ($key in $mapping.Keys) {
         $var = $mapping[$key]
@@ -278,6 +295,13 @@ $map = @{
     '__AD_GROUP_LEADERSHIP__'  = $AdGroupLeadership
     '__AD_GROUP_LEGAL__'       = $AdGroupLegal
     '__AD_GROUP_APPADMINS__'   = $AdGroupAppAdmins
+    '__SIGNING_KEY_SOURCE__'   = $SigningKeySource
+    '__SIGNING_KEY_THUMBPRINT__' = ($SigningKeyThumbprint -replace '\s','')
+    '__SIGNING_KEY_SECRET__'   = $SigningKeySecret
+    '__CHAIN_KEY_ENABLED__'    = $(if ($ChainKeySource) { 'true' } else { 'false' })
+    '__CHAIN_KEY_SOURCE__'     = $(if ($ChainKeySource) { $ChainKeySource } else { 'CyberArk' })
+    '__CHAIN_KEY_SECRET__'     = $ChainKeySecret
+    '__CHAIN_KEY_THUMBPRINT__' = ($ChainKeyThumbprint -replace '\s','')
 }
 foreach ($k in $map.Keys) { $json = $json.Replace($k, $map[$k]) }
 # Guard against a genuinely-unsubstituted value: check only the known placeholder keys, so descriptive
@@ -306,7 +330,40 @@ foreach ($d in $dataDirs) { Grant-Ntfs $d 'Modify' }        # stores the app rea
 # no per-folder Modify carve-out is needed.
 # Tighten the private signing key to the app identity (read) - provision the key out of band (OPERATIONS section 2).
 $keysDir = Join-Path $DataRoot 'keys'
-Write-Host "    (Provision $keysDir\seal-signing.pem out of band; the app will not start until it exists.)" -ForegroundColor Yellow
+if ($SigningKeySource -eq 'File') {
+    Write-Host "    (Provision $keysDir\seal-signing.pem out of band; the app will not start until it exists.)" -ForegroundColor Yellow
+}
+
+# F-23/F-25: a key in the certificate store needs the app account to read its private key ("Manage Private Keys").
+function Grant-PrivateKeyRead([string] $thumbprint, [string] $what) {
+    $tp = ($thumbprint -replace '[^0-9A-Fa-f]', '').ToUpper()
+    if (-not $tp) { throw "$what is set to a certificate, but its thumbprint is empty." }
+    $cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Thumbprint -eq $tp }
+    if (-not $cert) { throw "$what certificate $tp isn't in LocalMachine\My. Import it (non-exportable), then re-run." }
+    if (-not $cert.HasPrivateKey) { throw "$what certificate $tp has no private key." }
+    $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+    if (-not $rsa) { throw "$what certificate $tp isn't an RSA certificate." }
+    $file = if ($rsa -is [System.Security.Cryptography.RSACng]) {
+        Join-Path $env:ProgramData "Microsoft\Crypto\Keys\$($rsa.Key.UniqueName)"
+    } else {
+        Join-Path $env:ProgramData "Microsoft\Crypto\RSA\MachineKeys\$($cert.PrivateKey.CspKeyContainerInfo.UniqueKeyContainerName)"
+    }
+    if (-not (Test-Path $file)) {
+        Write-Host "    WARNING: couldn't find the private key file for $what certificate $tp; grant '$AppPoolIdentity' read on it in certlm.msc (Manage Private Keys)." -ForegroundColor Yellow
+        return
+    }
+    $acl = Get-Acl $file
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($AppPoolIdentity, 'Read', 'Allow')))
+    Set-Acl -Path $file -AclObject $acl
+    Write-Host "    Granted $AppPoolIdentity read on the private key of $what certificate $tp." -ForegroundColor Gray
+}
+if ($SigningKeySource -eq 'CertificateStore') { Grant-PrivateKeyRead $SigningKeyThumbprint 'the seal signing' }
+if ($ChainKeySource -eq 'Certificate' -and ($ChainKeyThumbprint -replace '\s','') -ne ($SigningKeyThumbprint -replace '\s','')) {
+    Grant-PrivateKeyRead $ChainKeyThumbprint 'the audit chain key'
+}
+if ($SigningKeySource -eq 'CyberArk' -or $ChainKeySource -eq 'CyberArk') {
+    Write-Host "    (A key in CyberArk: enable Secrets:CyberArk in appsettings.Production.json, OPERATIONS.md section 6.)" -ForegroundColor Yellow
+}
 
 # --- 5. IIS: app pool + site + Windows Auth -----------------------------------
 Write-Step "Configuring IIS (pool '$AppPoolName', site '$SiteName')"
@@ -389,8 +446,8 @@ $baseUrl = "${scheme}://$Hostname/"
 Write-Host @"
 
 Next steps:
-  1. Provision the integrity signing key out of band into:
-        $keysDir\seal-signing.pem   (OPERATIONS.md section 2)
+  1. Integrity signing key ($SigningKeySource): $(if ($SigningKeySource -eq 'File') { "provision it out of band into $keysDir\seal-signing.pem" } else { 'confirm it on the Integrity page after first start' }) (OPERATIONS.md section 2).
+     Audit chain key: $(if ($ChainKeySource) { "$ChainKeySource; back the key up before real data" } else { 'off (the default)' }).
   2. Confirm SQL connectivity: the app applies EF migrations on first request/start.
         Browse to $baseUrl (the first request runs the SQL Server migrations).
   3. Verify:  .\Verify-Install.ps1 -Url $baseUrl -AppPoolName $AppPoolName

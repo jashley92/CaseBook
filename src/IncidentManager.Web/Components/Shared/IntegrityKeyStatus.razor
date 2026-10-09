@@ -1,0 +1,96 @@
+@* F-28: where the integrity keys come from and where seal copies go (ADR 0016). Read-only: all of it is set in the
+   server's configuration, never in-app, so the people it protects against can't switch it off. No secrets: key ids are
+   public thumbprints, and sources name a file, a certificate or CyberArk, never a key. *@
+@using IncidentManager.Application.Integrity
+@inject IncidentManager.Application.Abstractions.ISealSigner Signer
+@inject IncidentManager.Application.Abstractions.IChainKeyring ChainKeys
+@inject SealCopyStatus Copies
+@inject IConfiguration Config
+@inject TimeDisplay TimeDisp
+
+<table class="table table-sm mb-0 im-keystatus">
+    <tbody>
+        <tr>
+            <th scope="row" style="width:26%">Signing key</th>
+            <td>
+                <span class="im-badge im-b-ok">In use</span>
+                <span class="ms-2">@Signer.KeySource</span>
+                <div class="small text-muted">Key id <code>@Signer.KeyId</code>@(Retired.Count > 0 ? $" · {Retired.Count} retired key{(Retired.Count == 1 ? "" : "s")} kept for older seals: " : "")@if (Retired.Count > 0)
+                    {
+                        @foreach (var k in Retired) { <code class="me-1">@k.KeyId</code> }
+                    }
+                </div>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Audit chain key</th>
+            <td>
+                @if (ChainKeys.CurrentKeyId is { } chainId)
+                {
+                    <span class="im-badge im-b-ok">On</span>
+                    <span class="ms-2">@ChainKeys.Source</span>
+                    <div class="small text-muted">Key id <code>@chainId</code>@(ChainKeys.KeyIds.Count > 1 ? $" · {ChainKeys.KeyIds.Count - 1} retired" : ""). New entries are keyed; database access alone can't rewrite them.</div>
+                }
+                else
+                {
+                    <span class="im-badge im-b-neutral">Off</span>
+                    <span class="small text-muted ms-2">the default. Entries since the last seal are protected by database access control; see OPERATIONS §2 to turn it on.</span>
+                }
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Seal copy: SIEM</th>
+            <td>
+                @if (SiemOn)
+                {
+                    <span class="im-badge im-b-ok">Sent</span>
+                    <span class="small text-muted ms-2">each seal goes out as event 5004 (@string.Join(", ", SiemTransports)).</span>
+                }
+                else
+                {
+                    <span class="im-badge im-b-warn">Not sent</span>
+                    <span class="small text-muted ms-2">no SIEM transport is enabled, so no copy of the seals is kept outside CaseBook. See OPERATIONS §5.</span>
+                }
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Seal copy: export folder</th>
+            <td>
+                <code class="small">@ExportPath</code>
+                @if (Folder is { } f)
+                {
+                    @if (f.Ok)
+                    {
+                        <span class="im-badge im-b-ok ms-2">Last copy OK</span>
+                        <span class="small text-muted ms-1">@TimeDisp.Short(f.LastAttemptUtc)</span>
+                    }
+                    else
+                    {
+                        <span class="im-badge im-b-danger ms-2">Last copy failed</span>
+                        <span class="small text-muted ms-1">@TimeDisp.Short(f.LastAttemptUtc): @f.LastError@(f.LastSuccessUtc is { } ok ? $" (last success {TimeDisp.Short(ok)})" : "")</span>
+                    }
+                }
+                else
+                {
+                    <span class="small text-muted ms-2">no seal made since the last restart.</span>
+                }
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+@code {
+    private IReadOnlyList<IncidentManager.Application.Abstractions.SealPublicKey> Retired =>
+        Signer.VerificationKeys.Where(k => !k.Current).ToList();
+
+    private IEnumerable<string> SiemTransports =>
+        new[] { ("Webhook", "Siem:Webhook:Enabled"), ("Syslog", "Siem:Syslog:Enabled"), ("Event Log", "Siem:EventLog:Enabled") }
+            .Where(t => Config.GetValue<bool>(t.Item2)).Select(t => t.Item1);
+
+    private bool SiemOn => SiemTransports.Any();
+
+    private string ExportPath => Path.GetFullPath(Config["Integrity:ExportPath"] ?? "seals");
+
+    private SealCopyResult? Folder =>
+        Copies.Snapshot().FirstOrDefault(c => c.Destination == IntegrityService.FolderCopy);
+}

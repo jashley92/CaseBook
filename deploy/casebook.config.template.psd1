@@ -59,6 +59,26 @@
     SmtpHost    = ''                  # e.g. 'smtp.contoso.com'
     MailDomain  = ''                  # e.g. 'contoso.com' (the From address becomes casebook@<domain>)
 
+    # --- Integrity keys (ADR 0016; OPERATIONS.md section 2). Server configuration only, never in-app. ---
+    # Where the seal SIGNING key comes from:
+    #   'File' (default)      - a PEM at <DataRoot>\keys\seal-signing.pem, provisioned out of band.
+    #   'CertificateStore'    - a certificate in LocalMachine\My (ideally non-exportable); set SigningKeyThumbprint.
+    #                           The installer grants the app account read on its private key.
+    #   'CyberArk'            - the PEM held in CyberArk; set SigningKeySecret to an @cyberark:Safe=...;Object=... reference
+    #                           (Secrets:CyberArk must be enabled in appsettings.Production.json).
+    SigningKeySource     = 'File'
+    SigningKeyThumbprint = ''
+    SigningKeySecret     = ''
+
+    # The optional AUDIT CHAIN key (HMAC). Leave ChainKeySource '' to keep it off (the default).
+    # One-way in practice: back the key up before turning it on (OPERATIONS.md section 2).
+    #   'CyberArk'     - ChainKeySecret = an @cyberark: reference to 32 random bytes, base64.
+    #   'Certificate'  - ChainKeyThumbprint = a certificate in LocalMachine\My (can be the signing one); the key is
+    #                    generated on first start and kept encrypted beside the signing key.
+    ChainKeySource       = ''
+    ChainKeySecret       = ''
+    ChainKeyThumbprint   = ''
+
     # --- Optional SQL Server ledger (E-10; Enable-Ledger.ps1, Export-LedgerDigest.ps1, Verify-LedgerDigests.ps1) ---
     LedgerDigestPath = ''             # e.g. '\\worm01\casebook-ledger' - an immutable share the DBA can't modify
 }

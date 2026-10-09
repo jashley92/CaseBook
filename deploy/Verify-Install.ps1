@@ -137,6 +137,35 @@ if ($ConfigFile) {
             else { Warn "Drive $root for '$p' not found here (fine if you're not on the web host; the installer creates the folders, not the volume)" }
         }
 
+        # --- Integrity keys (F-23/F-25) ---
+        $sigSource = if ($cfg.ContainsKey('SigningKeySource') -and $cfg.SigningKeySource) { [string]$cfg.SigningKeySource } else { 'File' }
+        $chainSource = if ($cfg.ContainsKey('ChainKeySource')) { [string]$cfg.ChainKeySource } else { '' }
+        function Test-KeyCert([string] $thumb, [string] $what) {
+            $tp = ($thumb -replace '[^0-9A-Fa-f]','').ToUpper()
+            if (-not $tp) { Bad "$what uses a certificate but its thumbprint is empty"; return }
+            $c = Get-ChildItem Cert:\LocalMachine\My -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $tp }
+            if (-not $c) { Warn "$what certificate $tp not found in LocalMachine\My here (must be on the web host)" }
+            elseif (-not $c.HasPrivateKey) { Bad "$what certificate $tp has no private key" }
+            elseif (-not [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPublicKey($c)) { Bad "$what certificate $tp isn't RSA" }
+            else { Ok "$what certificate $tp present with a private key" }
+        }
+        function Test-KeySecret([string] $ref, [string] $what) {
+            if ($ref -notmatch '^\s*@cyberark:') { Bad "$what must be an @cyberark:Safe=...;Object=... reference (the key itself never goes in config)" }
+            else { Ok "$what is a CyberArk reference (resolved at startup; check Administration -> Diagnostics)" }
+        }
+        switch ($sigSource) {
+            'File'             { Info "Seal signing key: a file at <DataRoot>\keys\seal-signing.pem (provision it out of band)" }
+            'CertificateStore' { Test-KeyCert ([string]$cfg.SigningKeyThumbprint) 'Seal signing key' }
+            'CyberArk'         { Test-KeySecret ([string]$cfg.SigningKeySecret) 'SigningKeySecret' }
+            default            { Bad "SigningKeySource '$sigSource' isn't File, CertificateStore or CyberArk" }
+        }
+        switch ($chainSource) {
+            ''            { Info "Audit chain key: off (the default)" }
+            'Certificate' { Test-KeyCert ([string]$cfg.ChainKeyThumbprint) 'Audit chain key' }
+            'CyberArk'    { Test-KeySecret ([string]$cfg.ChainKeySecret) 'ChainKeySecret' }
+            default       { Bad "ChainKeySource '$chainSource' isn't '', CyberArk or Certificate" }
+        }
+
         # --- TLS certificate ---
         if ($cfg.ContainsKey('CertificateThumbprint') -and -not [string]::IsNullOrWhiteSpace([string]$cfg.CertificateThumbprint)) {
             $tp = (([string]$cfg.CertificateThumbprint) -replace '\s','').ToUpper()

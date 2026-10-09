@@ -243,6 +243,20 @@ E:\CaseBookData\keys\seal-signing.pem
 Restrict the file's ACL to the app-pool identity (read) and archive the **public** key + `KeyId`
 separately so seals remain independently verifiable.
 
+**Or keep the key elsewhere.** The answers file chooses where the signing key comes from (`SigningKeySource`):
+
+- `File` (default): the PEM above.
+- `CertificateStore`: a certificate in `LocalMachine\My`, ideally imported with a **non-exportable** key; set
+  `SigningKeyThumbprint`. The installer grants the app account read on the private key.
+- `CyberArk`: the PEM held in CyberArk; set `SigningKeySecret` to an `@cyberark:Safe=…;Object=…` reference and
+  enable `Secrets:CyberArk` (§6.1).
+
+The optional **audit chain key** (`ChainKeySource` = `CyberArk` or `Certificate`; blank = off, the default) hashes
+the audit trail with a secret the database doesn't hold. It's one-way in practice, so back the key up before turning
+it on. Both are explained in OPERATIONS.md §2. `Verify-Install` checks that the certificate is present with a
+private key, or that the CyberArk reference is well formed. After first start, **Integrity & audit → Keys and seal
+copies** shows what's in force.
+
 ---
 
 ## 5. Verify

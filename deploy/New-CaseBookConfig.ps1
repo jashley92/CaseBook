@@ -152,6 +152,25 @@ Write-Host "Email (optional - stays disabled until enabled in-app)" -ForegroundC
 $SmtpHost   = Ask -Prompt 'SMTP host' -Default ''
 $MailDomain = Ask -Prompt 'Mail domain (From = casebook@<domain>)' -Default ''
 
+# --- Integrity keys (ADR 0016; OPERATIONS.md section 2) -----------------------
+Write-Host ""
+Write-Host "Integrity keys (server configuration only; the defaults keep today's behavior)" -ForegroundColor Cyan
+$SigningKeySource = Ask-Choice -Prompt 'Seal signing key from' -Options @('File','CertificateStore','CyberArk') -Default 'File'
+$SigningKeyThumbprint = ''; $SigningKeySecret = ''
+if ($SigningKeySource -eq 'CertificateStore') {
+    $SigningKeyThumbprint = Ask -Prompt 'Signing certificate thumbprint (LocalMachine\My)' -Required -Pattern '^[0-9A-Fa-f\s]{40,}$' -PatternHint 'A 40-hex-digit thumbprint.'
+} elseif ($SigningKeySource -eq 'CyberArk') {
+    $SigningKeySecret = Ask -Prompt 'CyberArk reference to the PEM (@cyberark:Safe=...;Object=...)' -Required -Pattern '^@cyberark:' -PatternHint 'Start with @cyberark:'
+}
+$ChainKeySource = Ask-Choice -Prompt 'Audit chain key (one-way once on; back it up first)' -Options @('Off','CyberArk','Certificate') -Default 'Off'
+$ChainKeySecret = ''; $ChainKeyThumbprint = ''
+if ($ChainKeySource -eq 'CyberArk') {
+    $ChainKeySecret = Ask -Prompt 'CyberArk reference to 32 random bytes, base64 (@cyberark:...)' -Required -Pattern '^@cyberark:' -PatternHint 'Start with @cyberark:'
+} elseif ($ChainKeySource -eq 'Certificate') {
+    $ChainKeyThumbprint = Ask -Prompt 'Certificate to encrypt the chain key to (thumbprint; can be the signing one)' -Default $SigningKeyThumbprint -Required -Pattern '^[0-9A-Fa-f\s]{40,}$' -PatternHint 'A 40-hex-digit thumbprint.'
+}
+if ($ChainKeySource -eq 'Off') { $ChainKeySource = '' }
+
 # --- Optional SQL Server ledger (E-10) ------------------------------------------
 Write-Host ""
 Write-Host "SQL Server ledger digests (optional - used by Enable-Ledger.ps1 / Export-LedgerDigest.ps1)" -ForegroundColor Cyan
@@ -187,6 +206,13 @@ $body = @"
 
     SmtpHost    = $(Q $SmtpHost)
     MailDomain  = $(Q $MailDomain)
+
+    SigningKeySource     = $(Q $SigningKeySource)
+    SigningKeyThumbprint = $(Q $SigningKeyThumbprint)
+    SigningKeySecret     = $(Q $SigningKeySecret)
+    ChainKeySource       = $(Q $ChainKeySource)
+    ChainKeySecret       = $(Q $ChainKeySecret)
+    ChainKeyThumbprint   = $(Q $ChainKeyThumbprint)
 
     LedgerDigestPath = $(Q $LedgerDigestPath)
 }

@@ -83,6 +83,14 @@
 </div>
 
 <AuthorizeView Policy="@Policies.Administer">
+    @* F-28: where the keys come from and where seal copies go; set in server configuration, shown here read-only. *@
+    <div class="card mb-4">
+        <div class="card-header">Keys and seal copies</div>
+        <div class="card-body p-0"><IntegrityKeyStatus /></div>
+    </div>
+</AuthorizeView>
+
+<AuthorizeView Policy="@Policies.Administer">
     <div class="card mb-4">
         <div class="card-header">Compliance evidence bundle</div>
         <div class="card-body">
