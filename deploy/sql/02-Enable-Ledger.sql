@@ -79,7 +79,7 @@ GO
 IF EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'dbo.AuditLog') AND ledger_type = 0)
 BEGIN
     EXEC #AssertColumns N'AuditLog',
-        N'Id,Sequence,AtUtc,Actor,Action,EntityType,EntityId,EntityLabel,CaseNumber,Summary,BeforeJson,AfterJson,Reason,PrevHash,EntryHash';
+        N'Id,Sequence,AtUtc,Actor,Action,EntityType,EntityId,EntityLabel,CaseNumber,Summary,BeforeJson,AfterJson,Reason,PrevHash,EntryHash,HashKeyId';
 
     BEGIN TRANSACTION;
     EXEC sp_rename N'dbo.AuditLog', N'AuditLog_PreLedger';
@@ -101,13 +101,14 @@ BEGIN
         [PrevHash] nvarchar(64) NOT NULL,
         [EntryHash] nvarchar(64) NOT NULL,
         [EntityLabel] nvarchar(300) NULL,
+        [HashKeyId] nvarchar(16) NULL,
         CONSTRAINT [PK_AuditLog] PRIMARY KEY ([Id])
     ) WITH (LEDGER = ON (APPEND_ONLY = ON));
 
     INSERT INTO dbo.AuditLog ([Id],[Sequence],[AtUtc],[Actor],[Action],[EntityType],[EntityId],[CaseNumber],
-                              [Summary],[BeforeJson],[AfterJson],[Reason],[PrevHash],[EntryHash],[EntityLabel])
+                              [Summary],[BeforeJson],[AfterJson],[Reason],[PrevHash],[EntryHash],[EntityLabel],[HashKeyId])
     SELECT [Id],[Sequence],[AtUtc],[Actor],[Action],[EntityType],[EntityId],[CaseNumber],
-           [Summary],[BeforeJson],[AfterJson],[Reason],[PrevHash],[EntryHash],[EntityLabel]
+           [Summary],[BeforeJson],[AfterJson],[Reason],[PrevHash],[EntryHash],[EntityLabel],[HashKeyId]
     FROM dbo.AuditLog_PreLedger
     ORDER BY [Sequence];
 

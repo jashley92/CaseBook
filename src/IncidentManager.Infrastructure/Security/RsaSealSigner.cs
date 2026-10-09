@@ -82,31 +82,9 @@ public sealed class RsaSealSigner : ISealSigner, IDisposable
     // F-23: Windows signs with the certificate's private key; a key marked non-exportable is used, never copied out.
     private static (RSA, X509Certificate2?, string) FromCertificate(SigningKeyOptions k)
     {
-        var thumbprint = new string(k.CertificateThumbprint.Where(char.IsAsciiHexDigit).ToArray()).ToUpperInvariant();
-        if (thumbprint.Length == 0)
-            throw new InvalidOperationException("Integrity:SigningKey:Source is CertificateStore but Integrity:SigningKey:CertificateThumbprint is empty.");
-        if (!Enum.TryParse<StoreLocation>(k.StoreLocation, ignoreCase: true, out var location))
-            throw new InvalidOperationException($"Integrity:SigningKey:StoreLocation '{k.StoreLocation}' isn't LocalMachine or CurrentUser.");
-
-        using var store = new X509Store(StoreName.My, location);
-        store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
-        var found = store.Certificates.Find(X509FindType.FindByThumbprint, thumbprint, validOnly: false);
-        var cert = found.Count > 0 ? found[0] : null;
-        foreach (var other in found.Skip(1)) other.Dispose();
-        if (cert is null)
-            throw new InvalidOperationException($"No certificate with thumbprint {thumbprint} in {location}\\My (Integrity:SigningKey:CertificateThumbprint).");
-        if (!cert.HasPrivateKey)
-        {
-            cert.Dispose();
-            throw new InvalidOperationException($"The certificate {thumbprint} in {location}\\My has no private key, or the app account can't read it. Grant it read on the private key.");
-        }
-        var rsa = cert.GetRSAPrivateKey();
-        if (rsa is null)
-        {
-            cert.Dispose();
-            throw new InvalidOperationException($"The certificate {thumbprint} isn't an RSA certificate; seals need an RSA key.");
-        }
-        return (rsa, cert, $"Certificate store ({location}\\My, thumbprint {thumbprint})");
+        var cert = CertificateLookup.FindRsa(k.CertificateThumbprint, k.StoreLocation, "Integrity:SigningKey");
+        var location = Enum.Parse<StoreLocation>(k.StoreLocation, ignoreCase: true);
+        return (cert.GetRSAPrivateKey()!, cert, $"Certificate store ({location}\\My, thumbprint {CertificateLookup.Normalize(cert.Thumbprint)})");
     }
 
     // F-23: the PEM comes from CyberArk at startup and stays in memory; it's never written to disk.

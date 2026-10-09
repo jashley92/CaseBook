@@ -42,8 +42,15 @@ public class AuditLogEntry : Entity
     /// <summary>Hash of the previous entry (empty string for the genesis entry).</summary>
     public string PrevHash { get; set; } = string.Empty;
 
-    /// <summary>SHA-256 over <see cref="BuildCanonicalContent"/> + <see cref="PrevHash"/>.</summary>
+    /// <summary>SHA-256 over <see cref="BuildCanonicalContent"/> + <see cref="PrevHash"/>; HMAC-SHA256 under the chain
+    /// key named by <see cref="HashKeyId"/> when the entry is keyed.</summary>
     public string EntryHash { get; set; } = string.Empty;
+
+    /// <summary>
+    /// F-25: the id of the chain key this entry's hash was made with (HMAC-SHA256), or null for the plain SHA-256 hash.
+    /// Once an entry is keyed, every later one must be too: a plain entry after a keyed one is a break.
+    /// </summary>
+    public string? HashKeyId { get; set; }
 
     public string BuildCanonicalContent()
     {

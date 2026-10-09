@@ -2874,3 +2874,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261009185500_AddAuditHashKeyId'
+)
+BEGIN
+    ALTER TABLE [AuditLog] ADD [HashKeyId] nvarchar(16) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261009185500_AddAuditHashKeyId'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261009185500_AddAuditHashKeyId', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

@@ -11,6 +11,46 @@ public enum SigningKeySource
     CyberArk
 }
 
+/// <summary>Where the audit chain key comes from (F-25).</summary>
+public enum ChainKeySource
+{
+    /// <summary>A base64 32-byte secret in CyberArk, fetched at startup and held only in memory.</summary>
+    CyberArk,
+    /// <summary>A secret CaseBook generates once and keeps encrypted to a certificate's public key (RSA-OAEP), decrypted
+    /// at startup with the certificate's private key.</summary>
+    Certificate
+}
+
+/// <summary>
+/// F-25: the key the audit chain is hashed with (config section <c>Integrity:ChainKey</c>). Off by default; server
+/// configuration only. Turning it on is one-way in practice: keyed entries can only be checked while their key is held.
+/// </summary>
+public sealed class ChainKeyOptions
+{
+    public bool Enabled { get; set; }
+    public ChainKeySource Source { get; set; } = ChainKeySource.CyberArk;
+
+    /// <summary><see cref="ChainKeySource.CyberArk"/>: an <c>@cyberark:</c> reference to the current key (base64, 32 bytes).</summary>
+    public string Secret { get; set; } = "";
+
+    /// <summary><see cref="ChainKeySource.CyberArk"/>: references to earlier keys, kept so entries hashed with them verify.</summary>
+    public string[] RetiredSecrets { get; set; } = [];
+
+    /// <summary><see cref="ChainKeySource.Certificate"/>: the certificate the key is encrypted to (may be the signing certificate).</summary>
+    public string CertificateThumbprint { get; set; } = "";
+
+    /// <summary><see cref="ChainKeySource.Certificate"/>: <c>LocalMachine</c> (default) or <c>CurrentUser</c>; the store is <c>My</c>.</summary>
+    public string StoreLocation { get; set; } = "LocalMachine";
+
+    /// <summary><see cref="ChainKeySource.Certificate"/>: the encrypted key file; blank = <c>chain-key.json</c> beside the signing key.
+    /// Generated on first start when missing.</summary>
+    public string WrappedKeyPath { get; set; } = "";
+
+    /// <summary><see cref="ChainKeySource.Certificate"/>: a folder of earlier encrypted key files; blank = <c>chain-retired</c>
+    /// beside the signing key.</summary>
+    public string RetiredWrappedKeysPath { get; set; } = "";
+}
+
 /// <summary>F-23: the signing key's source (config section <c>Integrity:SigningKey</c>). Server configuration only.</summary>
 public sealed class SigningKeyOptions
 {
@@ -44,6 +84,9 @@ public sealed class SealSigningOptions
 
     /// <summary>F-23: where the signing key comes from; the file at <see cref="SigningKeyPath"/> unless set.</summary>
     public SigningKeyOptions SigningKey { get; set; } = new();
+
+    /// <summary>F-25: the audit chain key; off unless enabled.</summary>
+    public ChainKeyOptions ChainKey { get; set; } = new();
 
     /// <summary>
     /// F-24: a folder of PEM public keys (SubjectPublicKeyInfo) from earlier signing keys, kept so seals signed before a

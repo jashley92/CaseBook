@@ -257,6 +257,7 @@ var app = builder.Build();
 // Load the seal-signing key now, so a missing key outside Development stops startup with a clear message
 // instead of failing later in the integrity job (and never makes the app sign with a key it made itself).
 app.Services.GetRequiredService<ISealSigner>();
+app.Services.GetRequiredService<IChainKeyring>();   // F-25: a chain key that can't be loaded stops startup here, too
 
 // X-02: wire the (global) taxonomy display-label provider into the static Ui helpers, so every
 // Ui.Label(...) call site reflects an admin rename with no per-site change.

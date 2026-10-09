@@ -127,6 +127,41 @@ public sealed class IntegritySealIntegrationTests : IDisposable
         copies.Snapshot().Single().Should().Match<SealCopyResult>(c => !c.Ok && c.LastError == "share unreachable" && c.LastSuccessUtc == null);
     }
 
+    // F-25: with the chain key on, every entry the app writes is keyed and the chain still verifies end to end.
+    [Fact]
+    public async Task With_the_chain_key_on_saved_changes_are_keyed_and_verify()
+    {
+        var key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        var secrets = new OneSecret("@cyberark:Safe=S;Object=Chain", Convert.ToBase64String(key));
+        var ring = new ChainKeyring(Options.Create(new SealSigningOptions
+        {
+            SigningKeyPath = Path.Combine(_workDir, "k.pem"),
+            ChainKey = new ChainKeyOptions { Enabled = true, Secret = "@cyberark:Safe=S;Object=Chain" }
+        }), secrets);
+        var keyed = new HashChainService(ring);
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection)
+            .AddInterceptors(new AuditChainInterceptor(keyed, _user, _clock, new IncidentManager.Infrastructure.Realtime.CaseChangeNotifier()))
+            .Options;
+        await using (var db = new AppDbContext(options))
+        {
+            db.Database.EnsureCreated();
+            await DevDataSeeder.SeedAsync(db, _clock);
+        }
+
+        await using (var db = new AppDbContext(options))
+            (await db.AuditLog.AnyAsync(a => a.HashKeyId != ring.CurrentKeyId)).Should().BeFalse("every entry was written keyed");
+        var svc = new IntegrityService(new TestDbContextFactory(options), keyed, _signer, _store, _user, _clock, _monitor, _alerts);
+        (await svc.VerifyAsync()).IsValid.Should().BeTrue();
+        (await new IntegrityService(new TestDbContextFactory(options), _hasher, _signer, _store, _user, _clock, _monitor, _alerts)
+            .VerifyAsync()).IsValid.Should().BeFalse("without the key the keyed entries can't be checked");
+    }
+
+    private sealed class OneSecret(string reference, string value) : ISecretProvider
+    {
+        public ValueTask<string?> ResolveAsync(string? configuredValue, CancellationToken ct = default) =>
+            ValueTask.FromResult(configuredValue == reference ? value : configuredValue);
+    }
+
     private sealed class FailingStore : ISealStore
     {
         public Task ExportAsync(IncidentManager.Domain.Entities.IntegritySeal seal, CancellationToken ct = default) =>

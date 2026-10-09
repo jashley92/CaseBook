@@ -452,6 +452,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("HashKeyId")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
                     b.Property<string>("PrevHash")
                         .IsRequired()
                         .HasMaxLength(64)

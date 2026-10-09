@@ -12,7 +12,7 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 |---|---|---|---|
 | Medium | **Configuration-bundle signatures are checked against the key inside the file.** It proves integrity, not origin. (`ImportAsync` does refuse a bundle whose signature doesn't verify.) | A self-signed bundle from anywhere imports if an admin accepts it. | Pin trusted key ids. |
 | Low | Only `CaseService`, three admin services, the access log and API tokens emit SIEM 5202 on refusal; other services (including the compliance bundle) refuse silently. | Gaps in detection of stale sessions or UI defects. | Emit from the shared `ForbiddenException` path. |
-| Low | The audit chain is unkeyed; seals are the anchor (S-05 partial). Up to one seal interval (6 h by default) of the newest entries is protected only by database access control. | See [integrity.md](../architecture/integrity.md#known-limitation). | HMAC-key the chain with a key held off the database; point `Integrity:ExportPath` (each seal's out-of-band copy) at WORM storage, or timestamp seals (RFC 3161). Both wait on where the production signing key lives (F-05b). |
+| Low | The audit chain is unkeyed unless the chain key is turned on (off by default). Without it, up to one seal interval (6 h by default) of the newest entries is protected only by database access control. | See [integrity.md](../architecture/integrity.md#known-limitation). | Turn on `Integrity:ChainKey` once the key's backup is in place ([OPERATIONS.md §2](../OPERATIONS.md#the-audit-chain-key-f-25-off-by-default)). |
 | Low | PII at rest relies on SQL Server TDE; Always Encrypted isn't used. | Column-level protection for the most sensitive fields. | Always Encrypted on selected columns. |
 
 ## Data and behavior

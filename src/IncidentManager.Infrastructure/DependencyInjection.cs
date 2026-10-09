@@ -81,6 +81,7 @@ public static class DependencyInjection
         services.AddSingleton<Application.Abstractions.ISeverityLabels, Severities.ConfigurationSeverityLabels>();
         // X-02: admin-set taxonomy display labels, read live from config (same mechanism as severity labels).
         services.AddSingleton<Application.Abstractions.ITaxonomyDisplay, Taxonomy.ConfigurationTaxonomyDisplay>();
+        services.AddSingleton<IChainKeyring, ChainKeyring>();   // F-25: empty unless Integrity:ChainKey:Enabled
         services.AddSingleton<IHashChainService, HashChainService>();
         services.AddSingleton<ICaseChangeNotifier, Realtime.CaseChangeNotifier>();
         services.AddSingleton<ICasePresenceService, Realtime.CasePresenceService>();

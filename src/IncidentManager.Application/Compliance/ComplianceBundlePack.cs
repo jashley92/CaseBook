@@ -106,7 +106,7 @@ public static class ComplianceBundlePack
     public static string AuditChainCsv(IReadOnlyList<AuditLogEntry> entries)
     {
         var sb = new StringBuilder();
-        sb.Append("Sequence,AtUtc,Actor,Action,EntityType,EntityId,CaseNumber,Summary,BeforeJson,AfterJson,PrevHash,EntryHash,Reason,EntityLabel").Append(Nl);
+        sb.Append("Sequence,AtUtc,Actor,Action,EntityType,EntityId,CaseNumber,Summary,BeforeJson,AfterJson,PrevHash,EntryHash,Reason,EntityLabel,HashKeyId").Append(Nl);
         foreach (var e in entries)
         {
             Field(sb, e.Sequence.ToString(CultureInfo.InvariantCulture)); Comma(sb);
@@ -123,7 +123,8 @@ public static class ComplianceBundlePack
             Field(sb, e.EntryHash); Comma(sb);
             // Reason and EntityLabel are in the hash only when present; a row with neither leaves both blank.
             Field(sb, e.Reason ?? ""); Comma(sb);
-            Field(sb, e.EntityLabel ?? "");
+            Field(sb, e.EntityLabel ?? ""); Comma(sb);
+            Field(sb, e.HashKeyId ?? "");
             sb.Append(Nl);
         }
         return sb.ToString();
@@ -175,6 +176,11 @@ public static class ComplianceBundlePack
         Line("   - An empty/absent field contributes an empty string.");
         Line("   - Then, only when the row has one, '|' + Reason; then, only when it has one,");
         Line("     '|' + EntityLabel (blank in the CSV means absent: nothing is appended).");
+        Line("   - A row with a HashKeyId was hashed with the organization's secret audit chain key:");
+        Line("     EntryHash = HMAC-SHA256(key, canonical + \"|\" + PrevHash). The key isn't in this");
+        Line("     bundle, so recompute only the rows without a HashKeyId; CaseBook checks the keyed ones");
+        Line("     and the seals cover them. Every row after the first keyed one must also be keyed: a");
+        Line("     row with no HashKeyId after one that has it is a break.");
         Line("   Recompute each row's hash and confirm it equals EntryHash, and that each row's");
         Line("   PrevHash equals the previous row's EntryHash (the first row in the full chain links");
         Line("   against an empty previous hash).");

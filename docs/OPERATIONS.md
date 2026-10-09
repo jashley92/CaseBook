@@ -181,6 +181,48 @@ page shows the source and the key id in force. Moving between sources is a key c
 put the old public key in the retired folder first (below). Moving the **same** key (for example, importing the
 existing PEM into the certificate store) keeps its key id, and nothing else is needed.
 
+### The audit chain key (F-25, off by default)
+
+Without it, each audit entry's hash is plain SHA-256, so someone who can write to the database can rewrite the
+entries made since the last seal (6 hours by default) and recompute every hash after them. With the chain key on,
+new entries are hashed with HMAC-SHA256 under a secret the database doesn't hold, so that no longer works. Entries
+written before keep their plain hash and still verify; the first keyed entry marks the switch, and every entry after
+it must be keyed.
+
+`Integrity:ChainKey` (server configuration only):
+
+| Setting | Meaning |
+|---|---|
+| `Enabled` | `false` by default. |
+| `Source` | `CyberArk` or `Certificate`. |
+| `Secret` | CyberArk: an `@cyberark:Safe=…;Object=…` reference to **32 random bytes, base64-encoded**. |
+| `RetiredSecrets` | CyberArk: references to earlier keys, so entries hashed with them still verify. |
+| `CertificateThumbprint`, `StoreLocation` | Certificate: the certificate the key is encrypted to (it can be the signing certificate); the app account needs read on its private key. |
+| `WrappedKeyPath`, `RetiredWrappedKeysPath` | Certificate: the encrypted key file (`chain-key.json` beside the signing key) and a folder of earlier ones (`chain-retired`). |
+
+Making a CyberArk key (Windows PowerShell or PowerShell 7), then storing the output as the object's content:
+
+```powershell
+$b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)
+```
+
+With `Certificate`, CaseBook makes the key on its first start with the chain key on, and keeps only its encrypted
+form in `chain-key.json` (which names the certificate). The file is useless without the certificate's private key.
+
+**Before turning it on, back the key up.** Turning it on is one-way in practice: keyed entries can only be checked
+while their key is held. If the key is lost, the integrity check reports the first keyed entry as unverifiable
+("hashed with chain key …, which this server doesn't hold") and keeps alarming; the seals still prove the history
+up to each seal is intact, but the per-entry check can't run. So: for CyberArk, make sure the object is in your
+vault backup; for Certificate, back up the certificate with its private key **and** `chain-key.json`. Don't turn the
+chain key off afterwards: new entries would get the plain hash, and the check reports that as a break.
+
+A key that can't be loaded stops startup with a message naming the setting. The Integrity page shows whether the
+chain key is on, where it comes from and its key id (key ids are derived from the key and reveal nothing).
+
+**Rotating it:** CyberArk: put the old reference in `RetiredSecrets`, point `Secret` at a new object, restart.
+Certificate: move `chain-key.json` into `chain-retired`, restart (a new key is made; the old file still decrypts,
+even if it was encrypted to an earlier certificate that's still in the store).
+
 ### Rotating the signing key
 
 1. Export the current key's public half and put it in the **retired seal keys folder**:

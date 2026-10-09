@@ -112,10 +112,14 @@ flowchart TB
 
 ### Known limitation
 
-The chain is unkeyed. Someone with database write access who recomputes every later hash produces a chain that
-verifies on its own. The latest seal catches that, because they can't re-sign without the private key. Keying
-the chain (HMAC) and anchoring seals off the server are not implemented yet; [ADR 0016](../decisions/0016-key-custody-and-seal-copies.md)
-plans both (a chain key from CyberArk or a certificate, and every seal sent to the SIEM).
+By default the chain is unkeyed. Someone with database write access who recomputes every later hash produces a
+chain that verifies on its own; the next seal catches that, because they can't re-sign without the private key, so
+the entries since the last seal are protected by database access control alone. Turning on the **chain key**
+(`Integrity:ChainKey`, [OPERATIONS.md §2](../OPERATIONS.md#the-audit-chain-key-f-25-off-by-default)) closes that:
+new entries are hashed with HMAC-SHA256 under a key held in CyberArk or encrypted to a certificate, each entry
+records the key's id in `HashKeyId`, and a plain entry after a keyed one is a break. Seal copies in the SIEM
+(event 5004) cover the other side: a seal deleted or re-signed later shows up there
+([ADR 0016](../decisions/0016-key-custody-and-seal-copies.md)).
 
 ## Evidence at rest
 
