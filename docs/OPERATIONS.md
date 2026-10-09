@@ -368,6 +368,8 @@ ids/labels/actions — never case content, affected-individual PII, or before/af
 | 5001 | Integrity | Audit-chain integrity failure (also the F-16 critical log/email alarm) |
 | 5002 | Integrity | Non-whitelisted AppSettings override rejected on load (S-02 tamper signal) |
 | 5003 | Integrity | Evidence at rest drifted from its recorded SHA-256 (F-17 critical log/email alarm) |
+| 5004 | Integrity | Integrity seal recorded: the SIEM's copy of each seal (F-26; see *Seal copies in the SIEM* below) |
+| 5005 | Integrity | A seal's copy to the export folder failed; the seal itself is recorded (F-26) |
 | 5101 | Authentication | Authentication failure |
 | 5201 | Authorization | Access denied (403) on a page or download **GET** (other 403s aren't streamed) |
 | 5202 | Authorization | In-app action refused for lack of a permission |
@@ -396,6 +398,33 @@ revoked **API token** (the detail carries the token's display prefix and source 
 hides what a user can't do, so this marks a stale session (access removed while signed in) or a UI defect.
 Today it's emitted by case actions and by the role, settings and configuration-bundle services; refusals in other
 services (evidence, reports, lessons, imports, tokens) aren't streamed.
+
+### Seal copies in the SIEM (F-26)
+
+Every integrity seal is also sent as event **5004**, so the SIEM keeps a record of each seal that the people who
+run CaseBook's database and servers can't change. `targetId` is the sealed sequence; `detail` is
+`head=<chain-head hash> key=<key id> sealedAtUtc=<ISO 8601>`. It goes through every enabled transport; with none
+enabled, nothing is sent (configure one to get this copy).
+
+**Checking seals against the SIEM.** Compare the seals in a compliance bundle (`seals.csv`) with the 5004 events
+for the same sequences: each seal should have one event with the same chain-head hash and key id. A seal with no
+event, or with a different hash, was added, altered or re-signed after the fact; an event with no seal means a
+seal was deleted. An XSIAM query to list them (adjust the dataset and field names to how your collector maps the
+CaseBook JSON):
+
+```
+dataset = casebook_raw
+| filter eventId = 5004
+| alter sequence = to_integer(targetId),
+        head = arrayindex(regextract(detail, "head=([0-9a-f]+)"), 0),
+        key_id = arrayindex(regextract(detail, "key=([0-9a-f]+)"), 0)
+| fields _time, sequence, head, key_id
+| sort asc sequence
+```
+
+**Suggested rules:** alert on any **5005** (a seal's folder copy failed), and on **no 5004 for longer than twice
+the seal interval** (12 hours at the default 6), which means seals have stopped: sealing failed, the chain is
+broken (the job won't seal over a break, and 5001 should have fired), or the stream is down.
 
 ---
 

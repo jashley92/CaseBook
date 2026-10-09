@@ -79,10 +79,13 @@ template. These are preferences or workflow state, not findings.
 ## Seals and continuous verification
 
 A seal is `{ SealedAtUtc, UpToSequence, ChainHeadHash, SealedBy, Algorithm, KeyId, Signature }`, signed with
-RSA-3072 (PKCS#1 v1.5, SHA-256). If the sealed head hash still matches the live entry at `UpToSequence`, all
-history up to that point is unchanged since sealing. Seals are written to the database and as JSON files to
-`Integrity:ExportPath`, so they survive a database compromise if that folder is backed up separately (ideally
-to WORM storage).
+RSA-3072 (RSASSA-PSS, SHA-256; seals from before v1.4.0 used PKCS#1 v1.5 and still verify by the algorithm they
+record). Each seal is checked with the key its `KeyId` names: the current key or a retired one kept for that. If the
+sealed head hash still matches the live entry at `UpToSequence`, all history up to that point is unchanged since
+sealing. Seals are written to the database, as JSON files to `Integrity:ExportPath`, and to the SIEM as event 5004
+when a stream is configured. The SIEM copy is held apart from CaseBook's database and servers, so a seal added,
+altered or deleted later shows up when the two are compared
+([OPERATIONS.md §5](../OPERATIONS.md#seal-copies-in-the-siem-f-26)).
 
 ```mermaid
 flowchart TB
@@ -104,7 +107,8 @@ flowchart TB
 - *Verify now* on the Integrity page runs the same check (at most once a minute, shared between users).
 - **The signing key is generated only in Development.** Elsewhere a missing key file stops startup; provision it
   first ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)).
-- Seal-export failures are swallowed without being logged ([known issues](../reference/known-issues.md)).
+- A failed copy to the export folder leaves the seal in place, logs a warning, emits SIEM event 5005 and shows in
+  Diagnostics.
 
 ### Known limitation
 

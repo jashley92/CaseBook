@@ -201,6 +201,12 @@ public static class ComplianceBundlePack
         Line("   the EntryHash of the audit entry at UpToSequence. A valid signature plus a matching head");
         Line("   proves the history up to that point is unchanged since it was sealed.");
         Line();
+        Line("   If the organization streams CaseBook's security events to a SIEM, each seal was also");
+        Line("   sent there as event 5004 when it was made (targetId = UpToSequence, detail carries");
+        Line("   head=<ChainHeadHash> and key=<KeyId>). Ask for those events and confirm each seal here has");
+        Line("   one with the same hash and key: the SIEM is run apart from CaseBook, so a seal added,");
+        Line("   altered or re-signed later would be missing there or differ.");
+        Line();
         Line("The SignatureValid / ChainMatches columns in seals.csv record the result of the same two");
         Line("checks performed by CaseBook at the moment this bundle was generated.");
         return sb.ToString();

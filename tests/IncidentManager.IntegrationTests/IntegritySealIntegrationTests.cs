@@ -91,6 +91,48 @@ public sealed class IntegritySealIntegrationTests : IDisposable
         result.ChainMatches.Should().BeTrue();
     }
 
+    // F-26: each seal goes to the SIEM, which keeps the copy apart from CaseBook's database and servers.
+    [Fact]
+    public async Task A_seal_is_sent_to_the_siem_and_its_folder_copy_recorded()
+    {
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);
+        var siem = new CapturingSecurityEventSink();
+        var copies = new SealCopyStatus();
+        var svc = new IntegrityService(NewFactory(), _hasher, _signer, _store, _user, _clock, _monitor, _alerts,
+            siem: siem, copies: copies);
+
+        var seal = (await svc.SealAsync())!;
+
+        var e = siem.Events.Should().ContainSingle(x => x.EventId == 5004).Subject;
+        e.TargetId.Should().Be(seal.UpToSequence.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        e.Detail.Should().Be($"head={seal.ChainHeadHash} key={seal.KeyId} sealedAtUtc=2026-08-08T00:00:00.0000000Z");
+        copies.Snapshot().Should().ContainSingle(c => c.Destination == IntegrityService.FolderCopy && c.Ok);
+    }
+
+    [Fact]
+    public async Task A_failed_folder_copy_keeps_the_seal_and_is_reported()
+    {
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);
+        var siem = new CapturingSecurityEventSink();
+        var copies = new SealCopyStatus();
+        var svc = new IntegrityService(NewFactory(), _hasher, _signer, new FailingStore(), _user, _clock, _monitor, _alerts,
+            siem: siem, copies: copies);
+
+        var seal = await svc.SealAsync();
+
+        seal.Should().NotBeNull("the seal stands even when its copy fails");
+        siem.Events.Select(x => x.EventId).Should().Equal(5004, 5005);
+        copies.Snapshot().Single().Should().Match<SealCopyResult>(c => !c.Ok && c.LastError == "share unreachable" && c.LastSuccessUtc == null);
+    }
+
+    private sealed class FailingStore : ISealStore
+    {
+        public Task ExportAsync(IncidentManager.Domain.Entities.IntegritySeal seal, CancellationToken ct = default) =>
+            throw new IOException("share unreachable");
+    }
+
     [Fact]
     public async Task Verify_detects_history_rewritten_after_the_seal()
     {

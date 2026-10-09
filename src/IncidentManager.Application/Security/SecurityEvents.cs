@@ -194,6 +194,38 @@ public static class SecurityEvents
     /// recorded SHA-256, or are missing/unreadable — bit-rot or filesystem tampering under the evidence
     /// store. Carries only counts (no filenames/case content); the email alert carries the offender list.
     /// </summary>
+    /// <summary>
+    /// F-26: a seal was recorded. The SIEM keeps this copy apart from CaseBook's database and servers, so a later
+    /// comparison with the seals in a compliance bundle shows any seal that was altered, re-signed or deleted.
+    /// <see cref="SecurityEvent.TargetId"/> is the sealed sequence; <see cref="SecurityEvent.Detail"/> is
+    /// <c>head=&lt;chain-head hash&gt; key=&lt;key id&gt; sealedAtUtc=&lt;ISO 8601&gt;</c>.
+    /// </summary>
+    public static SecurityEvent IntegritySealRecorded(long upToSequence, string chainHeadHash, string keyId,
+        DateTimeOffset sealedAtUtc, string actor) => new()
+    {
+        EventId = SecurityEventIds.IntegritySealRecorded,
+        Category = "Integrity",
+        Action = "IntegritySealRecorded",
+        Outcome = SecurityOutcome.Success,
+        Severity = SecuritySeverity.Info,
+        Actor = actor, TargetType = "IntegritySeal",
+        TargetId = upToSequence.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        Detail = $"head={chainHeadHash} key={keyId} sealedAtUtc={sealedAtUtc.UtcDateTime.ToString("o", System.Globalization.CultureInfo.InvariantCulture)}"
+    };
+
+    /// <summary>F-26: a seal's copy to the export folder failed. The seal itself is recorded; its out-of-band copy isn't.</summary>
+    public static SecurityEvent SealExportFailed(long upToSequence, string reason) => new()
+    {
+        EventId = SecurityEventIds.SealExportFailed,
+        Category = "Integrity",
+        Action = "SealExportFailed",
+        Outcome = SecurityOutcome.Failure,
+        Severity = SecuritySeverity.Warning,
+        Actor = "system", TargetType = "IntegritySeal",
+        TargetId = upToSequence.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        Detail = reason.Length > 200 ? reason[..200] : reason
+    };
+
     public static SecurityEvent EvidenceIntegrityDrift(int driftCount, int checkedCount) => new()
     {
         EventId = SecurityEventIds.EvidenceIntegrityDrift,

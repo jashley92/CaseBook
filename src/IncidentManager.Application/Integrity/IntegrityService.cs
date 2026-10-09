@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Application.Security;
@@ -22,11 +23,22 @@ public sealed class IntegrityService
     private readonly IIntegrityMonitor _monitor;
     private readonly IIntegrityAlertNotifier _alerts;
     private readonly OnDemandVerificationGate _gate;
+    private readonly Security.ISecurityEventSink? _siem;
+    private readonly SealCopyStatus? _copies;
+    private readonly Microsoft.Extensions.Logging.ILogger? _logger;
+
+    /// <summary>The destination name the export folder's results are recorded under in <see cref="SealCopyStatus"/>.</summary>
+    public const string FolderCopy = "Export folder";
 
     public IntegrityService(IAppDbContextFactory factory, IHashChainService hasher, ISealSigner signer,
         ISealStore sealStore, ICurrentUser user, IClock clock, IIntegrityMonitor monitor,
-        IIntegrityAlertNotifier alerts, OnDemandVerificationGate? gate = null)
+        IIntegrityAlertNotifier alerts, OnDemandVerificationGate? gate = null,
+        Security.ISecurityEventSink? siem = null, SealCopyStatus? copies = null,
+        Microsoft.Extensions.Logging.ILogger<IntegrityService>? logger = null)
     {
+        _siem = siem;
+        _copies = copies;
+        _logger = logger;
         _gate = gate ?? new OnDemandVerificationGate();
         _factory = factory;
         _hasher = hasher;
@@ -225,8 +237,24 @@ public sealed class IntegrityService
         db.IntegritySeals.Add(seal);
         await db.SaveChangesAsync(ct);
 
-        // Best-effort out-of-band export; a failure here must not roll back a persisted seal.
-        try { await _sealStore.ExportAsync(seal, ct); } catch { /* logged upstream; DB copy stands */ }
+        // F-26: the SIEM's copy, kept apart from CaseBook's database and servers. Emit never blocks or throws.
+        _siem?.Emit(Security.SecurityEvents.IntegritySealRecorded(seal.UpToSequence, seal.ChainHeadHash, seal.KeyId,
+            seal.SealedAtUtc, seal.SealedBy));
+
+        // The export folder's copy is best-effort: a failure must not roll back a persisted seal, but it must be seen.
+        try
+        {
+            await _sealStore.ExportAsync(seal, ct);
+            _copies?.Record(FolderCopy, _clock.UtcNow, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _copies?.Record(FolderCopy, _clock.UtcNow, ex.Message);
+            _logger?.LogWarning(new Microsoft.Extensions.Logging.EventId(Security.SecurityEventIds.SealExportFailed, "SealExportFailed"), ex,
+                "Integrity seal #{UpToSequence} was recorded, but its copy to the export folder failed. Check Integrity:ExportPath and the app account's rights there.",
+                seal.UpToSequence);
+            _siem?.Emit(Security.SecurityEvents.SealExportFailed(seal.UpToSequence, ex.Message));
+        }
 
         return seal;
     }
