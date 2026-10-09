@@ -65,8 +65,8 @@ public sealed class ActivityFeedService
     }
 
     /// <param name="othersOnly">Leave out the caller's own actions (the notification bell: you know what you did).</param>
-    public async Task<IReadOnlyList<ActivityItem>> RecentAsync(int take = 20, CancellationToken ct = default,
-        bool othersOnly = false)
+    public async Task<IReadOnlyList<ActivityItem>> RecentAsync(int take = 20, bool othersOnly = false,
+        CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var scoped = db.Cases.AsNoTracking().ForUser(_user);

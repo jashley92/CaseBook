@@ -819,7 +819,7 @@ public sealed class CaseService
 
     public async Task ChangePhaseAsync(Guid id, CasePhase to, string? reason,
         IReadOnlySet<Guid>? attestedRequirementIds = null, string? overrideJustification = null,
-        DateTimeOffset? effectiveAtUtc = null, CancellationToken ct = default, CaseClosing? closing = null)
+        DateTimeOffset? effectiveAtUtc = null, CaseClosing? closing = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
@@ -894,11 +894,11 @@ public sealed class CaseService
 
     /// <summary>Evaluates the active gate for a transition (read-only) — for the workspace readiness view.</summary>
     /// <param name="summaryProvided">HR-01: the transition records a summary itself (closing), which meets the summary check.</param>
-    public async Task<GateEvaluation> EvaluateGateAsync(Guid id, StageGateTrigger trigger, CancellationToken ct = default,
-        bool summaryProvided = false)
+    public async Task<GateEvaluation> EvaluateGateAsync(Guid id, StageGateTrigger trigger, bool summaryProvided = false,
+        CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        return await _gates.EvaluateAsync(db, id, trigger, ct, summaryProvided);
+        return await _gates.EvaluateAsync(db, id, trigger, summaryProvided, ct);
     }
 
     /// <summary>
@@ -910,7 +910,7 @@ public sealed class CaseService
         IReadOnlySet<Guid>? attestedIds, string? overrideJustification, string? reason, CancellationToken ct,
         bool summaryProvided = false)
     {
-        var eval = await _gates.EvaluateAsync(db, c.Id, trigger, ct, summaryProvided);
+        var eval = await _gates.EvaluateAsync(db, c.Id, trigger, summaryProvided, ct);
         if (!eval.GateExists) return;
 
         var attested = attestedIds ?? (IReadOnlySet<Guid>)ImmutableHashSet<Guid>.Empty;
@@ -2263,7 +2263,7 @@ public sealed class CaseService
     /// </summary>
     /// <param name="knownLine">RD-10: a line to add to the brief's Known in the same save (a new brief version).</param>
     public async Task CompleteActionItemAsync(Guid caseId, Guid actionItemId, DateTimeOffset? completedAtUtc,
-        string? result, TimelineEntryType? logAs, CancellationToken ct = default, string? doneBy = null, string? knownLine = null)
+        string? result, TimelineEntryType? logAs, string? doneBy = null, string? knownLine = null, CancellationToken ct = default)
     {
         Require();
         var known = EntryFollowUps.Clean(knownLine);
@@ -2385,7 +2385,7 @@ public sealed class CaseService
     /// on the task, so a later reader knows it was dropped on purpose.</param>
     public async Task UpdateActionItemAsync(Guid caseId, Guid actionItemId, string title, string? owner,
         DateTimeOffset? dueAtUtc, ActionItemStatus status, string? description, TaskKind? kind = null,
-        CancellationToken ct = default, string? cancelReason = null)
+        string? cancelReason = null, CancellationToken ct = default)
     {
         Require();
         var cleanTitle = (title ?? "").Trim();

@@ -16,8 +16,8 @@ namespace IncidentManager.Infrastructure.Persistence;
 public static class DevDataSeeder
 {
     /// <param name="evidence">INV-35: where the demo's evidence file is stored; without one the demo has no evidence.</param>
-    public static async Task InitializeAsync(AppDbContext db, IClock clock, bool seedDemoData, CancellationToken ct = default,
-        IEvidenceStore? evidence = null)
+    public static async Task InitializeAsync(AppDbContext db, IClock clock, bool seedDemoData,
+        IEvidenceStore? evidence = null, CancellationToken ct = default)
     {
         await db.Database.MigrateAsync(ct);
 

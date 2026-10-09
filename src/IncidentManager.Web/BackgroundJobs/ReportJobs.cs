@@ -119,8 +119,8 @@ public sealed class ReportJobs : BackgroundService
     {
         var reports = sp.GetRequiredService<ReportService>();
         return r.Kind == ReportKind.LessonsLearned
-            ? reports.GenerateLessonsAsync(r.CaseId, r.Tlp, ct, r.Template, progress)
-            : reports.GenerateAsync(r.CaseId, r.Tlp, ct, r.Template, progress);
+            ? reports.GenerateLessonsAsync(r.CaseId, r.Tlp, r.Template, progress, ct)
+            : reports.GenerateAsync(r.CaseId, r.Tlp, r.Template, progress, ct);
     }
 
     private void Update(Guid id, Func<ReportJob, ReportJob> change)

@@ -8,7 +8,7 @@ namespace IncidentManager.Application.StageGates;
 public interface IStageGateEvaluator
 {
     Task<GateEvaluation> EvaluateAsync(IAppDbContext db, Guid caseId, StageGateTrigger trigger,
-        CancellationToken ct = default, bool summaryProvided = false);
+        bool summaryProvided = false, CancellationToken ct = default);
 }
 
 public sealed class StageGateEvaluator : IStageGateEvaluator
@@ -22,7 +22,7 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
     /// <param name="summaryProvided">HR-01: the transition itself records a summary (the closing brief), so the
     /// "summary recorded" check is met by it.</param>
     public async Task<GateEvaluation> EvaluateAsync(IAppDbContext db, Guid caseId, StageGateTrigger trigger,
-        CancellationToken ct = default, bool summaryProvided = false)
+        bool summaryProvided = false, CancellationToken ct = default)
     {
         var gate = await db.StageGates.AsNoTracking()
             .Include(g => g.Requirements)

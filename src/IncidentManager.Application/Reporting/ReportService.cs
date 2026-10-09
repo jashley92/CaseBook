@@ -208,8 +208,8 @@ public sealed class ReportService
     /// <param name="template">PROD-47: which Word template to fill. Null = the case's profile default (the built-in
     /// layout when it has none); <see cref="Guid.Empty"/> = the built-in layout; otherwise that library template.</param>
     /// <param name="progress">RD-23: told each stage as it starts (<see cref="ReportStages"/>), for a background run's progress.</param>
-    public async Task<Report> GenerateAsync(Guid caseId, TlpLevel? tlp = null, CancellationToken ct = default,
-        Guid? template = null, IProgress<string>? progress = null)
+    public async Task<Report> GenerateAsync(Guid caseId, TlpLevel? tlp = null,
+        Guid? template = null, IProgress<string>? progress = null, CancellationToken ct = default)
     {
         if (!_user.Has(Permission.EditCases)) throw new Security.ForbiddenException(Permission.EditCases);
         progress?.Report(ReportStages.Reading);
@@ -285,8 +285,8 @@ public sealed class ReportService
     /// </summary>
     /// <param name="template">Which Word template to fill. Null = the library's lessons-learned default (the built-in
     /// layout when there is none); <see cref="Guid.Empty"/> = the built-in layout; otherwise that library template.</param>
-    public async Task<Report> GenerateLessonsAsync(Guid caseId, TlpLevel? tlp = null, CancellationToken ct = default,
-        Guid? template = null, IProgress<string>? progress = null)
+    public async Task<Report> GenerateLessonsAsync(Guid caseId, TlpLevel? tlp = null,
+        Guid? template = null, IProgress<string>? progress = null, CancellationToken ct = default)
     {
         if (!_user.Has(Permission.EditCases)) throw new Security.ForbiddenException(Permission.EditCases);
         progress?.Report(ReportStages.Reading);
