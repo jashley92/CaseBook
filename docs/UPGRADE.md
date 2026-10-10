@@ -161,6 +161,24 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ## Notes
 
+### Unreleased
+
+- **One additive migration** (`AddStepTimePrecision`): three nullable columns on `TimelineEntries`
+  (`OccurredPrecision`, `OccurredUntilUtc`, `StepOrder`) so an attack step can record its time as it was stated (a
+  date, a range, on or before a date, or not stated) and its place in order. Existing rows keep their exact hashes.
+  In `DbaApplies` mode the bundle's `deploy/sql/casebook-schema-sqlserver.sql` includes it.
+- **Attack steps whose time wasn't given precisely** print the time as stated, in the Record, the briefing, the case
+  report (with a note under the attack chain) and the narrative. A Word template's `{{step.when}}` prints the stated
+  wording for such a step, and `{{case.activity_began}}` adds "(approximate)" when it comes from one. Existing steps
+  are all exact, so nothing changes until someone records an approximate one.
+- **Case import:** an `Event` timeline entry can carry `timePrecision` and `occurredUntilUtc` (see API.md). Existing
+  import documents are unaffected.
+- **`deploy/Install-Database.ps1`** checks the account's rights before changing anything, stops at the first SQL
+  error (it used to report "Created database" after a failed create), and honors `-DbName`, `-SchemaMode` and the
+  data/log paths (a `:setvar` default in `01-Create-Database.sql` used to override them). If you installed with
+  `DbaApplies` on v1.4.0 or earlier and a non-default database name, check that the app account has `db_owner` on the
+  database you meant.
+
 ### v1.4.0
 
 A routine upgrade: two additive migrations, applied at startup. The visible changes are the rebuilt Program overview,
