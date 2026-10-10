@@ -1,6 +1,7 @@
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
+using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
 using IncidentManager.Infrastructure.Persistence.Interceptors;
@@ -88,6 +89,45 @@ public sealed class EventTimelinePersistenceTests : IDisposable
             step.ActorEntityId.Should().Be(actorId);
             step.TargetEntityId.Should().Be(targetId);
 
+            var chain = await db.AuditLog.OrderBy(a => a.Sequence).ToListAsync();
+            _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task Stated_times_and_step_order_round_trip_and_rows_rehash_when_reordered()
+    {
+        Guid id, window, loose;
+        var mar4 = new DateTimeOffset(2026, 3, 4, 0, 0, 0, TimeSpan.Zero);
+        await using (var db = NewContext())
+        {
+            var svc = NewService(db);
+            id = (await svc.CreateAsync(new CreateCaseRequest
+            {
+                DescriptiveName = "Vendor breach", Title = "Payroll vendor intrusion",
+                Classification = Classification.Incident, Severity = Severity.High, Origin = CaseOrigin.ThirdParty, VendorName = "Acme Payroll"
+            })).Id;
+            window = await svc.AddEventStepAsync(id, mar4, [MitreTactic.InitialAccess], null, null, null, "Phished a vendor admin", "Vendor letter",
+                timing: new StepTiming(TimePrecision.Window, mar4.AddDays(2)));
+            await svc.AddEventStepAsync(id, mar4.AddDays(5), [MitreTactic.Exfiltration], null, null, null, "Took the payroll export", "Vendor letter",
+                timing: new StepTiming(TimePrecision.OnOrBefore));
+            loose = await svc.AddEventStepAsync(id, _clock.UtcNow, [MitreTactic.LateralMovement], null, null, null, "Reached the file server", "Vendor letter",
+                timing: new StepTiming(TimePrecision.NotStated, AfterStepId: window));
+            await svc.MoveEventStepAsync(id, loose, earlier: true);
+        }
+
+        await using (var db = NewContext())
+        {
+            var loaded = (await NewService(db).GetDetailAsync(id))!;
+            var steps = loaded.TimelineEntries.Where(t => t.Kind == TimelineKind.Event).InTimelineOrder().ToList();
+            steps.Select(s => s.Description).Should().Equal("Reached the file server", "Phished a vendor admin", "Took the payroll export");
+            var w = steps.Single(s => s.Id == window);
+            w.OccurredPrecision.Should().Be(TimePrecision.Window);
+            w.OccurredUntilUtc.Should().Be(new DateTimeOffset(2026, 3, 6, 12, 0, 0, TimeSpan.Zero));
+            steps[0].OccurredPrecision.Should().Be(TimePrecision.NotStated);
+            steps.Take(2).Select(s => s.StepOrder).Should().Equal(1, 2);
+
+            foreach (var s in steps) s.RowHash.Should().Be(_hasher.ComputeRowHash(s));
             var chain = await db.AuditLog.OrderBy(a => a.Sequence).ToListAsync();
             _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
         }

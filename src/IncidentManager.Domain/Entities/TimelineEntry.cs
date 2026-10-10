@@ -40,6 +40,21 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
     /// <summary>On a third-party case, where the attack step happened (the vendor's environment or ours); null otherwise.</summary>
     public StepEnvironment? Environment { get; set; }
 
+    // ---- ST-01: an attack step's time as it was stated, and its order (null on every other entry) ----
+
+    /// <summary>How precisely <see cref="OccurredAtUtc"/> is known; null means exact.</summary>
+    public TimePrecision? OccurredPrecision { get; set; }
+
+    /// <summary>The last day of a <see cref="TimePrecision.Window"/> (12:00 UTC on it); null otherwise.</summary>
+    public DateTimeOffset? OccurredUntilUtc { get; set; }
+
+    /// <summary>Breaks ties between event steps with the same <see cref="OccurredAtUtc"/> (same date, or a step
+    /// whose time wasn't stated placed after another); null sorts as 0, then by when each was recorded.</summary>
+    public int? StepOrder { get; set; }
+
+    /// <summary>True when the step's time is approximate (anything but exact).</summary>
+    public bool IsApproximate => OccurredPrecision is { } p && p != TimePrecision.Exact;
+
     /// <summary>
     /// Optional screenshot attached to this entry (U-40): the id of an <see cref="Evidence"/> item the
     /// image was stored as — so a pasted screenshot stays hashed and in the chain of custody like any other
@@ -141,6 +156,11 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
 
         // Where a third-party case's attack step happened, folded in only when present (no re-baseline).
         if (Environment is { } env) content = string.Join('|', content, "env", (int)env);
+
+        // ST-01: the stated precision, a window's end and the step's order, each folded in only when set.
+        if (OccurredPrecision is { } prec) content = string.Join('|', content, "prec", (int)prec);
+        if (OccurredUntilUtc is { } until) content = string.Join('|', content, "until", until.ToString("o"));
+        if (StepOrder is { } order) content = string.Join('|', content, "ord", order);
         return content;
     }
 }

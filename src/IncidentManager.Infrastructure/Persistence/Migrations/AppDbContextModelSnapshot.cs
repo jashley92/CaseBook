@@ -2372,6 +2372,12 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<long>("OccurredAtUtc")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("OccurredPrecision")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("OccurredUntilUtc")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("OptionsConsidered")
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
@@ -2391,6 +2397,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<string>("Source")
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("StepOrder")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid?>("SupersedesEntryId")
                         .HasColumnType("TEXT");

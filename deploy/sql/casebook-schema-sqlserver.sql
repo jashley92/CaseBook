@@ -2895,3 +2895,40 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261010032839_AddStepTimePrecision'
+)
+BEGIN
+    ALTER TABLE [TimelineEntries] ADD [OccurredPrecision] int NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261010032839_AddStepTimePrecision'
+)
+BEGIN
+    ALTER TABLE [TimelineEntries] ADD [OccurredUntilUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261010032839_AddStepTimePrecision'
+)
+BEGIN
+    ALTER TABLE [TimelineEntries] ADD [StepOrder] int NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261010032839_AddStepTimePrecision'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261010032839_AddStepTimePrecision', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

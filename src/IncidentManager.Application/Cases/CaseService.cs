@@ -1166,10 +1166,10 @@ public sealed class CaseService
     /// Adds an Event-timeline step (the attack narrative): one or more MITRE ATT&amp;CK tactics, an
     /// optional technique, and actor &rarr; target attribution to entities already on the case.
     /// </summary>
-    public async Task AddEventStepAsync(Guid id, DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
+    public async Task<Guid> AddEventStepAsync(Guid id, DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
         Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other, EntryFollowUps? followUps = null,
-        StepEnvironment? environment = null, CancellationToken ct = default)
+        StepEnvironment? environment = null, StepTiming? timing = null, CancellationToken ct = default)
     {
         Require();
         followUps?.Validate();
@@ -1177,9 +1177,10 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, id, ct);
         // One-line field: inline Markdown only, so the step reads as one line in tables and the attack-chain diagram.
         var step = c.AddEventStep(occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, Content.MarkdownService.OneLine(description), source,
-            _user.UserId, _clock.UtcNow, evidenceId, type, environment);
+            _user.UserId, _clock.UtcNow, evidenceId, type, environment, timing);
         if (followUps is not null) await ApplyFollowUpsAsync(db, c, step, followUps, ct);
         await db.SaveChangesAsync(ct);
+        return step.Id;
     }
 
     /// <summary>
@@ -1189,14 +1190,25 @@ public sealed class CaseService
     public async Task EditEventStepAsync(Guid id, Guid entryId, DateTimeOffset occurredAtUtc,
         IEnumerable<MitreTactic> tactics, string? techniqueId, Guid? actorEntityId, Guid? targetEntityId,
         string description, string? source, string? reason = null,
-        TimelineEntryType type = TimelineEntryType.Other, StepEnvironment? environment = null, CancellationToken ct = default)
+        TimelineEntryType type = TimelineEntryType.Other, StepEnvironment? environment = null, StepTiming? timing = null,
+        CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.EditEventStep(entryId, occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, Content.MarkdownService.OneLine(description),
-            source, _user.UserId, _clock.UtcNow, type, environment);
+            source, _user.UserId, _clock.UtcNow, type, environment, timing);
         db.PendingChangeReason = reason;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>ST-01: moves an event step one place earlier or later among the steps (see <see cref="Case.MoveEventStep"/>).</summary>
+    public async Task MoveEventStepAsync(Guid id, Guid entryId, bool earlier, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        c.MoveEventStep(entryId, earlier, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
 

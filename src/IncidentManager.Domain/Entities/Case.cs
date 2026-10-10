@@ -719,13 +719,15 @@ public class Case : AuditableEntity, IHashableEntity
     /// </summary>
     public TimelineEntry EditEventStep(Guid entryId, DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
-        string actor, DateTimeOffset nowUtc, TimelineEntryType type = TimelineEntryType.Other, StepEnvironment? environment = null)
+        string actor, DateTimeOffset nowUtc, TimelineEntryType type = TimelineEntryType.Other, StepEnvironment? environment = null,
+        StepTiming? timing = null)
     {
         if (string.IsNullOrWhiteSpace(description))
             throw new ArgumentException("A description is required.");
 
         var entry = TimelineEntries.FirstOrDefault(t => t.Id == entryId && t.Kind == TimelineKind.Event)
             ?? throw new InvalidOperationException("Event step not found on this case.");
+        if (timing?.AfterStepId == entryId) throw new ArgumentException("A step can't come after itself.");
 
         var normalisedTechnique = string.IsNullOrWhiteSpace(techniqueId) ? null : CaseTechnique.NormaliseId(techniqueId);
 
@@ -734,7 +736,7 @@ public class Case : AuditableEntity, IHashableEntity
         if (targetEntityId is { } tid && Entities.All(e => e.Id != tid))
             throw new ArgumentException("The target is not an entity on this case.");
 
-        entry.OccurredAtUtc = occurredAtUtc;
+        ApplyTiming(entry, occurredAtUtc, timing, editing: true);
         entry.Type = type;   // vendor-disclosure stage for third-party cases (E-32); Other for first-party
         entry.Description = description.Trim();
         entry.Source = source;
@@ -828,7 +830,7 @@ public class Case : AuditableEntity, IHashableEntity
     public TimelineEntry AddEventStep(DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
         string actor, DateTimeOffset nowUtc, Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other,
-        StepEnvironment? environment = null)
+        StepEnvironment? environment = null, StepTiming? timing = null)
     {
         if (string.IsNullOrWhiteSpace(description))
             throw new ArgumentException("A description is required.");
@@ -848,7 +850,6 @@ public class Case : AuditableEntity, IHashableEntity
             // has no adversary kill-chain in our estate (E-32): its event steps are vendor-disclosure
             // milestones instead, and the stage is carried in Type (Detection / Analysis / Communication / …).
             Type = type,
-            OccurredAtUtc = occurredAtUtc,
             Description = description.Trim(),
             Source = source,
             TechniqueId = normalisedTechnique,
@@ -863,9 +864,178 @@ public class Case : AuditableEntity, IHashableEntity
         foreach (var tactic in tactics.Distinct())
             entry.Tactics.Add(new EventStepTactic { TimelineEntryId = entry.Id, Tactic = tactic });
 
+        ApplyTiming(entry, occurredAtUtc, timing, editing: false);
         TimelineEntries.Add(entry);
         Touch(actor, nowUtc);
         return entry;
+    }
+
+    // ---- ST-01: a step's time as stated, and its order among steps at the same time ----
+
+    private IEnumerable<TimelineEntry> EventStepsInOrder(TimelineEntry? except = null) =>
+        TimelineEntries.Where(t => t.Kind == TimelineKind.Event && t.IsCurrent && t != except).InTimelineOrder();
+
+    /// <summary>
+    /// Sets an event step's time, precision and place from what was stated. A date is stored at 12:00 UTC on it; a
+    /// step whose time wasn't stated takes the time of the step it follows (only as a sort key). When the time of a
+    /// step changes, the not-stated steps placed directly after it move with it.
+    /// </summary>
+    private void ApplyTiming(TimelineEntry entry, DateTimeOffset occurredAtUtc, StepTiming? timing, bool editing)
+    {
+        var precision = timing?.Precision ?? TimePrecision.Exact;
+        DateTimeOffset at;
+        DateTimeOffset? until = null;
+        Guid? after = null;
+        var first = false;
+        switch (precision)
+        {
+            case TimePrecision.Exact:
+                at = occurredAtUtc;
+                break;
+            case TimePrecision.Day:
+            case TimePrecision.OnOrBefore:
+                at = StepTiming.DateAnchor(occurredAtUtc);
+                break;
+            case TimePrecision.Window:
+                at = StepTiming.DateAnchor(occurredAtUtc);
+                until = timing!.UntilUtc is { } u ? StepTiming.DateAnchor(u)
+                    : throw new ArgumentException("Give the last date of the window.");
+                if (until <= at) throw new ArgumentException("The window's last date must be after its first.");
+                break;
+            case TimePrecision.NotStated:
+                if (timing!.AfterStepId is { } afterId)
+                {
+                    var prev = EventStepsInOrder(entry).FirstOrDefault(t => t.Id == afterId)
+                        ?? throw new ArgumentException("The step it comes after isn't on this case.");
+                    at = prev.OccurredAtUtc;
+                    after = afterId;
+                }
+                else if (timing.First || !editing || entry.OccurredPrecision != TimePrecision.NotStated)
+                {
+                    // First (or, when nothing else is said, first too): before the earliest step, or the given time.
+                    var earliest = EventStepsInOrder(entry).FirstOrDefault();
+                    at = earliest?.OccurredAtUtc ?? occurredAtUtc;
+                    first = earliest is not null;
+                }
+                else
+                {
+                    at = entry.OccurredAtUtc;   // editing a not-stated step without moving it: it stays where it is
+                }
+                break;
+            default:
+                throw new ArgumentException("Unknown time precision.");
+        }
+
+        var moved = !editing || at != entry.OccurredAtUtc || after is not null || first;
+        // The not-stated steps directly after this one, which follow it when its time changes.
+        var followers = editing && at != entry.OccurredAtUtc ? FollowersOf(entry) : [];
+
+        entry.OccurredPrecision = precision == TimePrecision.Exact ? null : precision;
+        entry.OccurredUntilUtc = until;
+        if (!moved) { entry.OccurredAtUtc = at; return; }
+
+        entry.OccurredAtUtc = at;
+        if (after is { } a) PlaceAfter(entry, a);
+        else if (first) PlaceFirst(entry);
+        else PlaceLast(entry);
+
+        var lead = entry;
+        foreach (var f in followers)
+        {
+            f.OccurredAtUtc = at;
+            PlaceAfter(f, lead.Id);
+            lead = f;
+        }
+    }
+
+    private List<TimelineEntry> FollowersOf(TimelineEntry entry)
+    {
+        var group = EventStepsInOrder().Where(t => t.OccurredAtUtc == entry.OccurredAtUtc).ToList();
+        return group.SkipWhile(t => t != entry).Skip(1).TakeWhile(t => t.OccurredPrecision == TimePrecision.NotStated).ToList();
+    }
+
+    // The steps at the step's time, in order, without it.
+    private List<TimelineEntry> TieGroup(TimelineEntry entry) =>
+        EventStepsInOrder(entry).Where(t => t.OccurredAtUtc == entry.OccurredAtUtc).ToList();
+
+    private static void Renumber(List<TimelineEntry> group)
+    {
+        for (var i = 0; i < group.Count; i++)
+            if (group[i].StepOrder != i + 1) group[i].StepOrder = i + 1;
+    }
+
+    // Last at its time: the common case, so it changes nothing else (steps without an order sort by when recorded).
+    private void PlaceLast(TimelineEntry entry)
+    {
+        var group = TieGroup(entry);
+        entry.StepOrder = group.Count == 0 || group.All(t => t.StepOrder is null) ? null : group.Max(t => t.StepOrder ?? 0) + 1;
+    }
+
+    private void PlaceFirst(TimelineEntry entry)
+    {
+        var group = TieGroup(entry);
+        group.Insert(0, entry);
+        Renumber(group);
+    }
+
+    private void PlaceAfter(TimelineEntry entry, Guid afterId)
+    {
+        var group = TieGroup(entry);
+        var i = group.FindIndex(t => t.Id == afterId);
+        group.Insert(i < 0 ? group.Count : i + 1, entry);
+        Renumber(group);
+    }
+
+    private void PlaceBefore(TimelineEntry entry, Guid beforeId)
+    {
+        var group = TieGroup(entry);
+        var i = group.FindIndex(t => t.Id == beforeId);
+        group.Insert(i < 0 ? 0 : i, entry);
+        Renumber(group);
+    }
+
+    /// <summary>
+    /// ST-01: moves an event step one place earlier or later. Steps at the same time swap; a step whose time wasn't
+    /// stated takes its neighbour's time (as a sort key) to pass it. A step can't be moved past one whose stated time
+    /// puts it elsewhere: its time has to change instead.
+    /// </summary>
+    public void MoveEventStep(Guid entryId, bool earlier, string actor, DateTimeOffset nowUtc)
+    {
+        // Among the attack steps (on a third-party case the disclosure milestones aren't part of the chain), the same
+        // rule as the application's EventSteps.IsAttack.
+        var steps = EventStepsInOrder().Where(t => Origin != CaseOrigin.ThirdParty || t.Tactics.Count > 0
+            || !string.IsNullOrWhiteSpace(t.TechniqueId) || t.ActorEntityId is not null || t.TargetEntityId is not null
+            || t.Environment is not null).ToList();
+        var i = steps.FindIndex(t => t.Id == entryId);
+        if (i < 0) throw new InvalidOperationException("Event step not found on this case.");
+        var j = earlier ? i - 1 : i + 1;
+        if (j < 0 || j >= steps.Count) return;   // already first or last
+        var step = steps[i];
+        var other = steps[j];
+
+        if (other.OccurredAtUtc == step.OccurredAtUtc)
+        {
+            if (earlier) PlaceBefore(step, other.Id); else PlaceAfter(step, other.Id);
+        }
+        else if (step.OccurredPrecision == TimePrecision.NotStated)
+        {
+            step.OccurredAtUtc = other.OccurredAtUtc;
+            if (earlier) PlaceBefore(step, other.Id); else PlaceAfter(step, other.Id);
+        }
+        else if (other.OccurredPrecision == TimePrecision.NotStated)
+        {
+            other.OccurredAtUtc = step.OccurredAtUtc;
+            if (earlier) PlaceAfter(other, step.Id); else PlaceBefore(other, step.Id);
+            other.ModifiedBy = actor;
+            other.ModifiedAtUtc = nowUtc;
+        }
+        else
+        {
+            throw new InvalidOperationException("Its time puts it here. To move it, correct the step's time.");
+        }
+        step.ModifiedBy = actor;
+        step.ModifiedAtUtc = nowUtc;
+        Touch(actor, nowUtc);
     }
 
     /// <summary>

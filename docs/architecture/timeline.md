@@ -160,6 +160,17 @@ becomes an edge on the relationship graph, its tactics feed ATT&CK coverage, and
 cases' event steps into one timeline. On a third-party case the attack steps make the chain, each at the vendor or
 in our environment (`TimelineEntry.Environment`); its disclosure milestones don't (`EventSteps`).
 
+### Times as they were stated (ST-01)
+
+A vendor often gives the steps without every time. An attack step records its time **as stated**: a date and time,
+a date only, between two dates, on or before a date, or not stated (`OccurredPrecision`, `OccurredUntilUtc`). A stated
+date is a calendar date, kept at 12:00 UTC so it reads the same in any display zone; it's only a sort key, and nothing
+measures a duration from it. A step with no stated time is placed after a chosen step (or first) and takes that
+step's time as its sort key; when that step's time is corrected, it moves with it. Steps at the same time keep the
+order they were entered (`StepOrder` breaks the tie); the arrows on an attack step move it earlier or later where the
+times don't settle the order (`Case.MoveEventStep`), and refuse where they do. Everything sorts with one rule,
+`InTimelineOrder()`: time, then step order, then when recorded.
+
 ## Evidence on the timeline
 
 - A **screenshot pasted** into the composer is uploaded as evidence (hashed, with custody) and shown on that

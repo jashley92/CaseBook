@@ -41,8 +41,7 @@
     var rows = MergeRows(tlView, msView);
     var totalAll = tlAll.Count + msAll.Count;
     // The attack chain is always event-only, regardless of lens (shown under All and Event).
-    var tlChain = Case.TimelineEntries.Where(x => x.IsCurrent && IncidentManager.Application.Cases.EventSteps.IsAttack(Case, x))
-        .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc).ToList();
+    var tlChain = AttackSteps();
 }
 
 <div class="tl-toolbar">
@@ -270,9 +269,7 @@
                        INV-47: rows with the time buttons align to the top, so the buttons hang under the date only. *@
                     <div class="row g-2 align-items-start">
                         <div class="col-md-4">
-                            <label class="form-label small mb-0" for="tl-atk-when">Occurred (@TimeDisp.Label)</label>
-                            <input id="tl-atk-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
-                            @TimeNudges()
+                            @StepWhenField()
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small mb-0" for="tl-atk-actor">Actor <span class="text-muted">(from IOCs)</span></label>
@@ -762,6 +759,18 @@ else
                                 <button type="button" class="btn btn-sm btn-link p-0 tl-edit" @onclick="() => StartEventEdit(e)">
                                     <span class="bi bi-pencil" aria-hidden="true"></span> Edit
                                 </button>
+                                @if (asAttack && CanReorder(e))
+                                {
+                                    @* ST-01: steps whose times don't settle the order (same date, or not stated) are put in order by hand. *@
+                                    <span class="tl-move" role="group" aria-label="Move this step">
+                                        <button type="button" class="btn btn-sm btn-link p-0 tl-edit" title="Move earlier in the attack chain" @onclick="() => MoveStep(e, true)">
+                                            <span class="bi bi-arrow-up" aria-hidden="true"></span><span class="visually-hidden">Move earlier</span>
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-link p-0 tl-edit" title="Move later in the attack chain" @onclick="() => MoveStep(e, false)">
+                                            <span class="bi bi-arrow-down" aria-hidden="true"></span><span class="visually-hidden">Move later</span>
+                                        </button>
+                                    </span>
+                                }
                             }
                             @CiteButton(e)
                             @TaskButton(e)
@@ -1011,6 +1020,12 @@ else
     private TimelineKind _tlAddKind = TimelineKind.Event;  // which timeline the composer adds/edits
     private TimelineEntryType _tlType = TimelineEntryType.Analysis;
     private DateTime _tlWhen = DateTime.UtcNow;
+    // ST-01: an attack step's time as stated: the precision, the date (or a window's first date) and last date, and
+    // for a step with no stated time, the step it comes after ("" = first).
+    private TimePrecision _tlPrecision = TimePrecision.Exact;
+    private DateTime _tlDay = DateTime.UtcNow.Date;
+    private DateTime _tlUntilDay = DateTime.UtcNow.Date.AddDays(1);
+    private string _tlAfter = "";
     private string _tlDesc = "";
     private string? _tlSource;
 
@@ -1629,8 +1644,10 @@ else
                 Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
                 Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
-                await Cases.AddEventStepAsync(CaseId, whenUtc, EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, evidenceId: shotId,
-                    followUps: FollowUps(), environment: StepWhere);
+                var added = await Cases.AddEventStepAsync(CaseId, StepWhenUtc(), EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, evidenceId: shotId,
+                    followUps: FollowUps(), environment: StepWhere, timing: Timing());
+                // A run of steps without times is entered in order: the next one comes after this one.
+                if (_tlPrecision == TimePrecision.NotStated) _tlAfter = added.ToString();
             }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
@@ -1680,6 +1697,12 @@ else
         _evtTechnique = e.TechniqueId ?? "";
         _evtTactic = e.Tactics.Select(t => t.Tactic).FirstOrDefault();
         _evtStage = e.Type;   // E-32: vendor-disclosure stage for a third-party case
+        _tlPrecision = e.OccurredPrecision ?? TimePrecision.Exact;
+        _tlDay = e.OccurredAtUtc.UtcDateTime.Date;
+        _tlUntilDay = (e.OccurredUntilUtc ?? e.OccurredAtUtc.AddDays(1)).UtcDateTime.Date;
+        var chain = AttackSteps();
+        var at = chain.FindIndex(x => x.Id == e.Id);
+        _tlAfter = at > 0 ? chain[at - 1].Id.ToString() : "";
         _tagRefs.Clear();
         _tlDesc = IncidentManager.Application.Content.TagText.ToEditable(e.Description, _tagRefs) ?? "";
         _tlSource = e.Source;
@@ -1703,8 +1726,8 @@ else
                 Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
                 Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
-                await Cases.EditEventStepAsync(CaseId, id, whenUtc, EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, _tlReason,
-                    environment: StepWhere);
+                await Cases.EditEventStepAsync(CaseId, id, StepWhenUtc(), EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, _tlReason,
+                    environment: StepWhere, timing: Timing());
             }
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
@@ -1754,6 +1777,7 @@ else
         _tlEditId = null; _tlReason = null; ClearDecision();
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
         _evtTactic = MitreTactic.Unspecified; _evtAttackMode = false; // FR-24: back to the default disclosure composer
+        _tlPrecision = TimePrecision.Exact; _tlAfter = "";
         if (wasInvestigationEdit)
         {
             try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); }
@@ -1990,6 +2014,110 @@ else
             <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _tlWhen = _tlWhen.AddMinutes(15)" aria-label="15 minutes later">+15 min</button>
         </div>
     </text>;
+
+    // --- ST-01: an attack step's time as stated ---
+
+    // The attack steps in order (the attack chain).
+    private List<TimelineEntry> AttackSteps() => Case.TimelineEntries
+        .Where(x => x.IsCurrent && IncidentManager.Application.Cases.EventSteps.IsAttack(Case, x)).InTimelineOrder().ToList();
+
+    private RenderFragment StepWhenField() => @<text>
+        <label class="form-label small mb-0" for="tl-atk-prec">Occurred</label>
+        <select id="tl-atk-prec" class="form-select form-select-sm" @bind="_tlPrecision" @bind:after="PrecisionChanged">
+            <option value="@TimePrecision.Exact">Date and time (@TimeDisp.Label)</option>
+            <option value="@TimePrecision.Day">Date only</option>
+            <option value="@TimePrecision.Window">Between two dates</option>
+            <option value="@TimePrecision.OnOrBefore">On or before a date</option>
+            <option value="@TimePrecision.NotStated">Not stated</option>
+        </select>
+        @switch (_tlPrecision)
+        {
+            case TimePrecision.Exact:
+                <input id="tl-atk-when" type="datetime-local" class="form-control form-control-sm mt-1" aria-label="Date and time (@TimeDisp.Label)" @bind="_tlWhen" />
+                @TimeNudges()
+                break;
+            case TimePrecision.Day:
+            case TimePrecision.OnOrBefore:
+                <input id="tl-atk-day" type="date" class="form-control form-control-sm mt-1" aria-label="Date" @bind="_tlDay" />
+                break;
+            case TimePrecision.Window:
+                <div class="d-flex gap-1 align-items-center mt-1">
+                    <input id="tl-atk-from" type="date" class="form-control form-control-sm" aria-label="First date" @bind="_tlDay" />
+                    <span class="small text-muted">to</span>
+                    <input id="tl-atk-until" type="date" class="form-control form-control-sm" aria-label="Last date" @bind="_tlUntilDay" />
+                </div>
+                break;
+            case TimePrecision.NotStated:
+                <select id="tl-atk-after" class="form-select form-select-sm mt-1" aria-label="Comes after" @bind="_tlAfter">
+                    <option value="">First in the attack chain</option>
+                    @{ var steps = AttackSteps(); }
+                    @for (var i = 0; i < steps.Count; i++)
+                    {
+                        var s = steps[i];
+                        if (s.Id == _tlEditId) continue;
+                        <option value="@s.Id">After @(i + 1). @OneLine(s.Description)</option>
+                    }
+                </select>
+                break;
+        }
+        @if (_tlPrecision != TimePrecision.Exact)
+        {
+            @* Say the design: an approximate time is kept as stated, and never used to measure anything. *@
+            <div class="form-text small mb-0">
+                @(_tlPrecision == TimePrecision.NotStated
+                    ? "Placed by order alone. Use the arrows on the Record to adjust it."
+                    : "Kept as stated, with no time of day. Nothing is measured from it.")
+            </div>
+        }
+    </text>;
+
+    private void PrecisionChanged()
+    {
+        // Carry what's in the composer across: the date from the time, or the time from the date.
+        var day = _tlWhen.Date;
+        if (_tlPrecision is TimePrecision.Day or TimePrecision.OnOrBefore or TimePrecision.Window && _tlEditId is null)
+        {
+            _tlDay = day;
+            if (_tlUntilDay <= _tlDay) _tlUntilDay = _tlDay.AddDays(1);
+        }
+        if (_tlPrecision == TimePrecision.NotStated && _tlEditId is null)
+            _tlAfter = AttackSteps().LastOrDefault()?.Id.ToString() ?? "";
+    }
+
+    private StepTiming? Timing() => _tlPrecision switch
+    {
+        TimePrecision.Exact => null,
+        TimePrecision.Window => new StepTiming(TimePrecision.Window, StepTiming.DateAnchor(DateOnly.FromDateTime(_tlUntilDay))),
+        TimePrecision.NotStated => Guid.TryParse(_tlAfter, out var after)
+            ? new StepTiming(TimePrecision.NotStated, AfterStepId: after)
+            : new StepTiming(TimePrecision.NotStated, First: true),
+        var p => new StepTiming(p)
+    };
+
+    // The time sent with the step: the date for a stated date or window, else the composer's date and time (for a
+    // step whose time wasn't stated, only used when there's no other step to place it by).
+    private DateTimeOffset StepWhenUtc() => _tlPrecision is TimePrecision.Day or TimePrecision.Window or TimePrecision.OnOrBefore
+        ? StepTiming.DateAnchor(DateOnly.FromDateTime(_tlDay))
+        : WallToUtc(_tlWhen);
+
+    // The arrows show where they can do something: on a step that shares its time with a neighbour, or where either
+    // neighbour has no stated time.
+    private bool CanReorder(TimelineEntry e)
+    {
+        var steps = AttackSteps();
+        var i = steps.FindIndex(x => x.Id == e.Id);
+        if (i < 0 || steps.Count < 2) return false;
+        bool Loose(int j) => j >= 0 && j < steps.Count
+            && (steps[j].OccurredAtUtc == e.OccurredAtUtc || steps[j].OccurredPrecision == TimePrecision.NotStated);
+        return e.OccurredPrecision == TimePrecision.NotStated || Loose(i - 1) || Loose(i + 1);
+    }
+
+    private async Task MoveStep(TimelineEntry e, bool earlier)
+    {
+        try { await Cases.MoveEventStepAsync(CaseId, e.Id, earlier); }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
+        await OnChanged.InvokeAsync();
+    }
 
     // --- INV-14: the 'l' shortcut opens the composer on an investigation entry and focuses it ---
     [Parameter] public bool AutofocusComposer { get; set; }
@@ -2376,8 +2504,7 @@ else
             .Where(x => string.IsNullOrWhiteSpace(_tlFilterSource)
                 || (x.Source ?? "").Contains(_tlFilterSource, StringComparison.OrdinalIgnoreCase))
             .Where(x => _tlFilterEntity is not { } en || Touches(x, en))
-            .OrderBy(x => x.OccurredAtUtc)
-            .ThenBy(x => x.CreatedAtUtc)
+            .InTimelineOrder()
             .ToList();
         if (!_tlOldestFirst) view.Reverse();
         return view;

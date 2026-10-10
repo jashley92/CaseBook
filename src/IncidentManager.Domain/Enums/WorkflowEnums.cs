@@ -217,6 +217,25 @@ public enum StepEnvironment
     Ours = 2
 }
 
+/// <summary>
+/// ST-01: how precisely an attack step's time is known, as it was stated (often by a vendor). Stored as null when
+/// exact, so existing steps are unchanged. Dates are calendar dates: the step's time is 12:00 UTC on that date, so the
+/// date reads the same in any display zone, and it's only a sort key. Nothing measures a duration from one.
+/// </summary>
+public enum TimePrecision
+{
+    /// <summary>Date and time known (the default; stored as null).</summary>
+    Exact = 0,
+    /// <summary>The date is known, the time isn't.</summary>
+    Day = 1,
+    /// <summary>Somewhere between two dates; the step's time is the first, <c>OccurredUntilUtc</c> the last.</summary>
+    Window = 2,
+    /// <summary>On or before a date; the step's time is that date.</summary>
+    OnOrBefore = 3,
+    /// <summary>No time given: placed by order alone, after another step (its time is that step's, as a sort key).</summary>
+    NotStated = 4
+}
+
 public enum CaseLinkType
 {
     /// <summary>Symmetric: generally related (shared indicators, actor, or context).</summary>

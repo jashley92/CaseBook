@@ -159,7 +159,10 @@ Stored timeline content. Milestones are not stored; see [timeline.md](timeline.m
 |---|---|---|---|
 | `Kind` | int | no | 0 **Event** (what the adversary or vendor did), 1 **Investigation** (what the team did). |
 | `Type` | int | no | 0 Detection, 1 Analysis, 2 Containment, 3 Eradication, 4 Recovery, 5 Communication, 6 Evidence, 7 Escalation, 8 Note, 9 Other, 10 Notified, 11 ScopeConfirmed, 12 DataConfirmed, 13 Remediation, 14 RegulatoryNotification, 15 **Decision**, 16 **Handoff**. First-party event steps use Other; third-party ones use the disclosure types 10–14. |
-| `OccurredAtUtc` | datetimeoffset | no | When it happened (analyst-supplied). |
+| `OccurredAtUtc` | datetimeoffset | no | When it happened (analyst-supplied). For an approximate event step, a sort key: 12:00 UTC on the stated date, or the time of the step it follows. |
+| `OccurredPrecision` | int | yes | Event steps: how precisely the time was stated. Null = exact; 1 Day, 2 Window, 3 OnOrBefore, 4 NotStated. |
+| `OccurredUntilUtc` | datetimeoffset | yes | A window's last date (12:00 UTC on it). |
+| `StepOrder` | int | yes | Event steps: order among steps at the same `OccurredAtUtc` (null sorts as 0, then by `CreatedAtUtc`). |
 | `CreatedAtUtc`, `CreatedBy` | | no | When and by whom it was recorded. |
 | `Description` | nvarchar(max) | no | Markdown for investigation entries (16000 max). |
 | `Source` | nvarchar(200) | yes | Provenance: a tool, "Handoff", "Task: …", or the import's origin. |

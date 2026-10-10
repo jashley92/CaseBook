@@ -57,6 +57,7 @@ public static class CaseActionPermissions
             [nameof(CaseService.AddTimelineEntryAsync)] = Permission.EditCases,
             [nameof(CaseService.AddEventStepAsync)] = Permission.EditCases,
             [nameof(CaseService.EditEventStepAsync)] = Permission.EditCases,
+            [nameof(CaseService.MoveEventStepAsync)] = Permission.EditCases,
             [nameof(CaseService.EditInvestigationEntryAsync)] = Permission.EditCases,
 
             // Entities & graph
