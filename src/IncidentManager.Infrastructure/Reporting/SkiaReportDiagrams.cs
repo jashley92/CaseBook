@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentManager.Application.Reporting;
 using IncidentManager.Domain.Enums;
 using SkiaSharp;
@@ -83,7 +84,7 @@ public sealed class SkiaReportDiagrams : IReportDiagrams
                 }
                 using var muted = Fill("#6c757d");
                 var where = s.InOurEnvironment switch { true => " · our network", false => " · vendor", null => "" };
-                canvas.DrawText(Fit($"#{s.Order} · {s.OccurredAtUtc:MM-dd HH:mm}{where}", colW - 4, small), x + colW / 2, top - 12, SKTextAlign.Center, small, muted);
+                canvas.DrawText(Fit($"#{s.Order} · {s.Stated ?? s.OccurredAtUtc.ToString("MM-dd HH:mm", CultureInfo.InvariantCulture)}{where}", colW - 4, small), x + colW / 2, top - 12, SKTextAlign.Center, small, muted);
                 // The pivot: where a third-party case's chain crosses from the vendor into our network.
                 if (i > 0 && steps[i - 1].InOurEnvironment == false && s.InOurEnvironment == true)
                 {

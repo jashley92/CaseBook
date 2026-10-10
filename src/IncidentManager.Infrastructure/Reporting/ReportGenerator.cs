@@ -119,7 +119,7 @@ public sealed partial class ReportGenerator : IReportGenerator
                     string[] Row(ReportAttackStep x) =>
                     [
                         x.Order.ToString(CultureInfo.InvariantCulture),
-                        x.OccurredAtUtc.ToString("u"),
+                        x.When,
                         x.Tactics,
                         string.IsNullOrEmpty(x.Actor) && string.IsNullOrEmpty(x.Target) ? "" : $"{x.Actor} → {x.Target}",
                         x.TechniqueId ?? "",
@@ -130,6 +130,9 @@ public sealed partial class ReportGenerator : IReportGenerator
                             m.AttackChain.Select(x => Row(x).Take(2).Append(x.Where ?? "").Concat(Row(x).Skip(2)).ToArray()))
                         : WordTable(["#", "When (UTC)", "Tactic(s)", "Actor → Target", "Technique", "What happened"],
                             m.AttackChain.Select(Row)));
+                    // ST-02: say once that approximate times are as reported, rather than leave them to look like gaps.
+                    if (m.AttackChain.Any(x => x.Stated is not null))
+                        body.AppendChild(P(ReportAttackStep.ApproximateNote, italic: true, size: 18));
                 }
                 if (m.DisclosureMilestones.Count > 0)
                 {

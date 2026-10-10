@@ -31,7 +31,7 @@ public sealed record CampaignTechnique(string TechniqueId, string Name, MitreTac
 /// <summary>One event-timeline step from a member case, placed on the merged campaign timeline.</summary>
 public sealed record CampaignTimelineItem(
     DateTimeOffset OccurredAtUtc, Guid CaseId, string CaseNumber, TimelineEntryType Type,
-    string Description, string? Source, string? TechniqueId);
+    string Description, string? Source, string? TechniqueId, string? Stated = null);
 
 /// <summary>
 /// The cross-case rollup for one campaign: its member cases, the indicators and techniques they share, a
@@ -126,7 +126,8 @@ public sealed class CampaignService
 
         var timelineRows = await db.TimelineEntries.AsNoTracking()
             .Where(t => memberIds.Contains(t.CaseId) && t.Kind == TimelineKind.Event)
-            .Select(t => new { t.CaseId, t.OccurredAtUtc, t.Type, t.Description, t.Source, t.TechniqueId })
+            .Select(t => new { t.CaseId, t.OccurredAtUtc, t.Type, t.Description, t.Source, t.TechniqueId,
+                t.OccurredPrecision, t.OccurredUntilUtc, t.StepOrder, t.CreatedAtUtc })
             .ToListAsync(ct);
 
         var caseNumbers = members.ToDictionary(m => m.CaseId, m => m.CaseNumber);
@@ -162,13 +163,16 @@ public sealed class CampaignService
             .ThenBy(t => t.TechniqueId, StringComparer.Ordinal)
             .ToList();
 
+        // ST-01: each case's steps in their stated order; cases interleave by time.
         var timeline = timelineRows
+            .OrderBy(t => t.OccurredAtUtc)
+            .ThenBy(t => caseNumbers.TryGetValue(t.CaseId, out var cn) ? cn : "", StringComparer.Ordinal)
+            .ThenBy(t => t.StepOrder ?? 0).ThenBy(t => t.CreatedAtUtc)
             .Select(t => new CampaignTimelineItem(
                 t.OccurredAtUtc, t.CaseId,
                 caseNumbers.TryGetValue(t.CaseId, out var n) ? n : "",
-                t.Type, t.Description, t.Source, t.TechniqueId))
-            .OrderBy(t => t.OccurredAtUtc)
-            .ThenBy(t => t.CaseNumber, StringComparer.Ordinal)
+                t.Type, t.Description, t.Source, t.TechniqueId,
+                Cases.StepTime.Stated(t.OccurredPrecision, t.OccurredAtUtc, t.OccurredUntilUtc)))
             .ToList();
 
         // Aggregate posture.

@@ -496,10 +496,11 @@ public sealed class ReportService
         if (_diagrams is null) return [];
         var steps = c.TimelineEntries
             .Where(x => EventSteps.IsAttack(c, x))
-            .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
+            .InTimelineOrder()
             .Select((x, i) => new DiagramStep(i + 1, x.OccurredAtUtc, x.Tactics.Select(t => t.Tactic).ToList(), x.TechniqueId,
                 d.Text(EntityName(c, x.ActorEntityId)), d.Text(EntityName(c, x.TargetEntityId)),
-                c.Origin == CaseOrigin.ThirdParty ? EventSteps.Where(c, x) == StepEnvironment.Ours : null))
+                c.Origin == CaseOrigin.ThirdParty ? EventSteps.Where(c, x) == StepEnvironment.Ours : null)
+                { Stated = StepTime.Short(x) })
             .ToList();
         // Nothing mapped to ATT&CK means one "Unmapped" lane — the table already says that better.
         return steps.Any(s => s.Tactics.Any(t => t != MitreTactic.Unspecified)) ? _diagrams.AttackChain(steps) : [];
@@ -804,13 +805,13 @@ public sealed class ReportService
             // A third-party case's disclosure milestones: when the vendor told us what, and what we confirmed.
             DisclosureMilestones = c.TimelineEntries
                 .Where(x => EventSteps.IsDisclosure(c, x))
-                .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
+                .InTimelineOrder()
                 .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), d.Text(Content.MarkdownService.PlainLine(x.Description)), x.Source))
                 .ToList(),
             // The attack chain: the adversary's steps, in our estate or, on a third-party case, in the vendor's.
             AttackChain = c.TimelineEntries
                 .Where(x => EventSteps.IsAttack(c, x))
-                .OrderBy(x => x.OccurredAtUtc).ThenBy(x => x.CreatedAtUtc)
+                .InTimelineOrder()
                 .Select((x, i) => new ReportAttackStep(
                     i + 1,
                     x.OccurredAtUtc,
@@ -820,7 +821,8 @@ public sealed class ReportService
                     x.TechniqueId,
                     d.Text(Content.MarkdownService.PlainLine(x.Description)),
                     EventSteps.Where(c, x) is { } env && c.Origin == CaseOrigin.ThirdParty
-                        ? (env == StepEnvironment.Ours ? "Our environment" : "Vendor") : null))
+                        ? (env == StepEnvironment.Ours ? "Our environment" : "Vendor") : null,
+                    StepTime.Stated(x)))
                 .ToList(),
             InvestigationTimeline = InvestigationTimeline(c, d, opts, extras),
             Brief = c.Briefs.FirstOrDefault(b => b.IsCurrent) is { } brief

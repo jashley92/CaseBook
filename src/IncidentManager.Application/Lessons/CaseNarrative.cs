@@ -56,7 +56,7 @@ public static class CaseNarrative
         }
 
         // Sequence of events: the attack chain (at the vendor, on a third-party case), then the disclosure milestones.
-        var events = c.TimelineEntries.Where(e => e.Kind == TimelineKind.Event).OrderBy(e => e.OccurredAtUtc).ToList();
+        var events = c.TimelineEntries.Where(e => e.Kind == TimelineKind.Event).InTimelineOrder().ToList();
         var attack = events.Where(e => Cases.EventSteps.IsAttack(c, e)).ToList();
         // A third-party case whose attacker pivoted into our network: one sequence, each step saying where.
         var pivoted = c.Origin == CaseOrigin.ThirdParty && attack.Any(e => Cases.EventSteps.Where(c, e) == StepEnvironment.Ours);
@@ -74,7 +74,7 @@ public static class CaseNarrative
                 var tactics = e.Tactics.Select(t => t.Tactic).Where(t => t != MitreTactic.Unspecified).Distinct().ToList();
                 var tag = tactics.Count > 0 ? string.Join(", ", tactics.Select(TacticWord))
                     : milestones ? TypeWord(e.Type) : null;
-                sb.Append(CultureInfo.InvariantCulture, $"- {Stamp(e.OccurredAtUtc)}");
+                sb.Append(CultureInfo.InvariantCulture, $"- {Cases.StepTime.Text(e, Stamp)}");
                 if (pivoted && !milestones && Cases.EventSteps.WhereLabel(c, e) is { } place) sb.Append(' ').Append(place);
                 if (tag is not null) sb.Append(CultureInfo.InvariantCulture, $" ({tag}{(e.TechniqueId is { Length: > 0 } tid ? $", {tid}" : "")})");
                 sb.Append(": ").Append(Sentence(e.Description));

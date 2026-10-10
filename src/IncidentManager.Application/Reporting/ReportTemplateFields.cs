@@ -99,7 +99,7 @@ public static partial class ReportTemplateFields
     [
         Coll("step", "Attack chain steps (on a third-party case, the attacker's steps at the vendor)", m => m.AttackChain,
             ("number", "Step number", s => s.Order.ToString(CultureInfo.InvariantCulture)),
-            ("when", "When (UTC)", s => D(s.OccurredAtUtc)),
+            ("when", "When (UTC, or as stated)", s => s.Stated ?? D(s.OccurredAtUtc)),
             ("tactics", "ATT&CK tactic(s)", s => s.Tactics),
             ("actor", "Actor", s => s.Actor),
             ("target", "Target", s => s.Target),

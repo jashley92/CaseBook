@@ -1447,6 +1447,9 @@ h1:focus {
     content: "·";
     margin-right: 0.4rem;
 }
+/* ST-02: a time as stated (a date, a range, or none): italic, so it never reads as a measured clock time. */
+.tl-approx { font-style: italic; }
+.tl-move { display: inline-flex; gap: 0.35rem; }
 .tl-desc {
     margin-top: 0.1rem;
     color: var(--bs-body-color);

@@ -14,11 +14,14 @@ public static class StepTime
 
     /// <summary>The stated time of an approximate step ("2026-03-04 · time not stated", "Between … and …",
     /// "On or before …", "Time not stated"); null when the time is exact.</summary>
-    public static string? Stated(TimelineEntry e) => e.OccurredPrecision switch
+    public static string? Stated(TimelineEntry e) => Stated(e.OccurredPrecision, e.OccurredAtUtc, e.OccurredUntilUtc);
+
+    /// <summary>The same, from the stored values (for read models that don't load the entry).</summary>
+    public static string? Stated(TimePrecision? precision, DateTimeOffset at, DateTimeOffset? until) => precision switch
     {
-        TimePrecision.Day => $"{D(e.OccurredAtUtc)} · time not stated",
-        TimePrecision.Window => $"Between {D(e.OccurredAtUtc)} and {D(e.OccurredUntilUtc ?? e.OccurredAtUtc)}",
-        TimePrecision.OnOrBefore => $"On or before {D(e.OccurredAtUtc)}",
+        TimePrecision.Day => $"{D(at)} · time not stated",
+        TimePrecision.Window => $"Between {D(at)} and {D(until ?? at)}",
+        TimePrecision.OnOrBefore => $"On or before {D(at)}",
         TimePrecision.NotStated => "Time not stated",
         _ => null
     };

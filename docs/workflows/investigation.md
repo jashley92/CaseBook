@@ -73,6 +73,19 @@ On **third-party** cases the lens and lane are *Attack & disclosure*, and the co
   Scope confirmed, Data confirmed, Remediation, Regulatory notification, Communication, Evidence, Other), without
   ATT&CK. The report prints these as *Disclosure milestones* (template collection `milestone`).
 
+### When the time isn't known (ST-01, ST-02)
+
+A vendor's report, or logs past retention, often give the steps without every time. *Occurred* on an attack or
+adversary step offers **Date and time** (the default), **Date only**, **Between two dates**, **On or before a date**
+and **Not stated**. Don't invent a time: pick what was stated. A date is a calendar date (no zone); a step with no
+stated time asks what it **comes after** (or *First in the attack chain*), and a run of them is entered in order, each
+defaulting to after the last. The Record, the attack-chain strip, the briefing, the report and the narrative print the
+time as stated ("Between 2026-09-02 and 2026-09-05", "Time not stated"), in italics, with no T+, no "ago" and no gap
+marker measured from it. Where the times don't settle the order (same date, or no time), the **↑ / ↓** arrows on a
+step move it; they refuse to move a step past one whose stated time puts it elsewhere ("correct the step's time").
+When the vendor later gives the exact time, edit the step: the change and its reason are in the audit trail.
+Disclosure milestones and investigation entries keep exact times.
+
 `EventSteps.IsAttack` / `IsDisclosure` decide which a step is: on a third-party case, a step with ATT&CK content
 (tactics, a technique, an actor or target) or a stated environment is an attack step; on an internal case every step
 is. `EventSteps.Where` says where an attack step happened.

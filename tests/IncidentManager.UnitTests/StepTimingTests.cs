@@ -138,4 +138,12 @@ public class StepTimingTests
         s.OccurredUntilUtc.Should().BeNull();
         s.OccurredAtUtc.Should().Be(Mar4);
     }
+
+    [Fact]
+    public void The_report_prints_the_stated_time_or_the_exact_UTC_time()
+    {
+        new IncidentManager.Application.Reporting.ReportAttackStep(1, Mar4, "", "", "", null, "x").When.Should().Be("2026-03-04 15:37:00Z");
+        new IncidentManager.Application.Reporting.ReportAttackStep(1, Mar4, "", "", "", null, "x", Stated: "Time not stated").When
+            .Should().Be("Time not stated");
+    }
 }

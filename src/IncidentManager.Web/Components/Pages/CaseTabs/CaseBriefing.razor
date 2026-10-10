@@ -311,7 +311,7 @@
     private List<MitreTactic> Chain()
     {
         var list = new List<MitreTactic>();
-        foreach (var step in Case.TimelineEntries.Where(e => e.IsCurrent && e.Kind == TimelineKind.Event).OrderBy(e => e.OccurredAtUtc))
+        foreach (var step in Case.TimelineEntries.Where(e => e.IsCurrent && e.Kind == TimelineKind.Event).InTimelineOrder())
             foreach (var t in step.Tactics.Select(t => t.Tactic).Where(t => t != MitreTactic.Unspecified))
                 if (list.Count == 0 || list[^1] != t) list.Add(t);
         return list;

@@ -673,12 +673,18 @@ public static class DevDataSeeder
         c2.ChangePhase(CasePhase.Triage, "Awaiting vendor scope confirmation", actor, now.AddDays(-3));
         // The attack as the vendor reported it, the disclosure milestones, and the pivot into our network through
         // the vendor's integration account, so a vendor case's chain shows both environments.
-        c2.AddEventStep(now.AddDays(-12), [MitreTactic.InitialAccess], "T1078", null, null,
+        // ST-01: the vendor's report gives a range, a step with no time, and a date, as vendor reports do.
+        var vendorIn = c2.AddEventStep(now.AddDays(-14), [MitreTactic.InitialAccess], "T1078", null, null,
             "Signed in to ClaimStream's admin portal using an administrator's **reused password**; password-only sign-in.", "Vendor IR report",
-            actor, now.AddDays(-3), environment: StepEnvironment.Vendor);
+            actor, now.AddDays(-3), environment: StepEnvironment.Vendor,
+            timing: new StepTiming(TimePrecision.Window, now.AddDays(-12)));
+        c2.AddEventStep(now.AddDays(-12), [MitreTactic.Persistence], "T1098", null, null,
+            "Added a second administrator account to the vendor's tenant.", "Vendor IR report",
+            actor, now.AddDays(-3), environment: StepEnvironment.Vendor,
+            timing: new StepTiming(TimePrecision.NotStated, AfterStepId: vendorIn.Id));
         c2.AddEventStep(now.AddDays(-10), [MitreTactic.Exfiltration], "T1567.002", null, null,
             "Claims dataset exported from the vendor's tenant to cloud storage.", "Vendor IR report",
-            actor, now.AddDays(-3), environment: StepEnvironment.Vendor);
+            actor, now.AddDays(-3), environment: StepEnvironment.Vendor, timing: new StepTiming(TimePrecision.Day));
         c2.AddEventStep(now.AddDays(-9), [MitreTactic.InitialAccess, MitreTactic.LateralMovement], "T1078", null, null,
             "Used ClaimStream's integration service account to sign in to our claims SFTP gateway.", "SIEM",
             actor, now.AddDays(-2), environment: StepEnvironment.Ours);

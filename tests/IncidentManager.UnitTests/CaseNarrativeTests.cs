@@ -77,6 +77,27 @@ public class CaseNarrativeTests
     }
 
     [Fact]
+    public void Steps_read_with_their_times_as_stated_in_their_stated_order()
+    {
+        var c = Case.Open(2026, 9, "Vendor", "Vendor breach", null, Severity.High, CaseOrigin.ThirdParty, "ic1", T0);
+        var first = c.AddEventStep(T0, [MitreTactic.InitialAccess], null, null, null, "Phished an engineer", null, "ic1", T0,
+            timing: new StepTiming(TimePrecision.Window, T0.AddDays(3)));
+        c.AddEventStep(T0.AddDays(5), [MitreTactic.Exfiltration], null, null, null, "Took the export", null, "ic1", T0,
+            timing: new StepTiming(TimePrecision.Day));
+        c.AddEventStep(T0, [MitreTactic.Collection], null, null, null, "Read the claims API", null, "ic1", T0,
+            timing: new StepTiming(TimePrecision.NotStated, AfterStepId: first.Id));
+
+        var md = CaseNarrative.Draft(c, _ => null, Sev, T0.AddDays(10));
+
+        var a = md.IndexOf("- Between 2026-09-01 and 2026-09-04 (Initial Access): Phished an engineer.", StringComparison.Ordinal);
+        var b = md.IndexOf("- Time not stated (Collection): Read the claims API.", StringComparison.Ordinal);
+        var x = md.IndexOf("- 2026-09-06 · time not stated (Exfiltration): Took the export.", StringComparison.Ordinal);
+        a.Should().BeGreaterThan(0);
+        b.Should().BeGreaterThan(a);
+        x.Should().BeGreaterThan(b);
+    }
+
+    [Fact]
     public void A_vendor_matter_reads_as_a_disclosure_sequence_and_a_promotion_is_a_decision()
     {
         var c = Case.Open(2026, 8, "Vendor", "Vendor disclosed a breach", null, Severity.Medium, CaseOrigin.ThirdParty, "ic1", T0);

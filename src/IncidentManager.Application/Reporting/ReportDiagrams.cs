@@ -6,7 +6,11 @@ namespace IncidentManager.Application.Reporting;
 /// <param name="InOurEnvironment">On a third-party case, true for a step after the attacker pivoted into our network,
 /// false for one at the vendor; null on an internal case.</param>
 public sealed record DiagramStep(int Order, DateTimeOffset OccurredAtUtc, IReadOnlyList<MitreTactic> Tactics,
-    string? TechniqueId, string Actor, string Target, bool? InOurEnvironment = null);
+    string? TechniqueId, string Actor, string Target, bool? InOurEnvironment = null)
+{
+    /// <summary>ST-02: the time in short form when it isn't exact ("2026-03-04", "Not stated"); null when exact.</summary>
+    public string? Stated { get; init; }
+}
 
 /// <summary>PROD-46: one entity in the relationship picture; X/Y are the analyst's saved graph layout, if any.</summary>
 public sealed record DiagramNode(Guid Id, string Label, EntityType Type, EntityDisposition Disposition, double? X, double? Y);

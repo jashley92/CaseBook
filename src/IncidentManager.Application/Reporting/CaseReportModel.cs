@@ -74,8 +74,16 @@ public sealed record ReportIocRow(string Type, string Value, string Verdict, str
 
 /// <summary>One ordered step of the reconstructed attack narrative (Event timeline), for the report.</summary>
 /// <param name="Where">On a third-party case, "Vendor" or "Our environment" (after a pivot); null on an internal case.</param>
+/// <param name="Stated">ST-02: the time as stated when it isn't exact ("Between 2026-03-02 and 2026-03-06"); null when exact.</param>
 public sealed record ReportAttackStep(int Order, DateTimeOffset OccurredAtUtc, string Tactics, string Actor,
-    string Target, string? TechniqueId, string Description, string? Where = null);
+    string Target, string? TechniqueId, string Description, string? Where = null, string? Stated = null)
+{
+    /// <summary>The step's time for the report: the stated wording, or the exact time in UTC.</summary>
+    public string When => Stated ?? OccurredAtUtc.ToString("u", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>The note printed under an attack chain with any approximate time.</summary>
+    public const string ApproximateNote = "Times are as reported. Where only a date, a range or no time was given, the step says so, and its place in the order is as reported.";
+}
 
 /// <summary>Flat, presentation-ready projection of a case for the report generator and Word templates. A record, so
 /// a template can be filled from the case model with the review added (<c>with</c>).</summary>

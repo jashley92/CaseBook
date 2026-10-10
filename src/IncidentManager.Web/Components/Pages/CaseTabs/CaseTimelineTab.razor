@@ -508,7 +508,14 @@
                         <div class="killchain-node-head">
                             <span class="killchain-idx">@(i + 1)</span>
                             <span class="bi @Ui.TacticGlyph(PrimaryTactic(step))" aria-hidden="true"></span>
-                            <time class="killchain-time" title="@TimeDisp.Long(step.OccurredAtUtc)">@TimeDisp.Short(step.OccurredAtUtc)</time>
+                            @if (IncidentManager.Application.Cases.StepTime.Stated(step) is { } stated)
+                            {
+                                <span class="killchain-time tl-approx" title="@stated">@IncidentManager.Application.Cases.StepTime.Short(step)</span>
+                            }
+                            else
+                            {
+                                <time class="killchain-time" title="@TimeDisp.Long(step.OccurredAtUtc)">@TimeDisp.Short(step.OccurredAtUtc)</time>
+                            }
                             @if (IncidentManager.Application.Cases.EventSteps.WhereLabel(Case, step) is { } where)
                             {
                                 <span class="im-badge im-b-neutral killchain-where">@where</span>
@@ -598,11 +605,13 @@ else
         @foreach (var row in rows)
         {
             @* RD-13: a long quiet stretch is shown as one, so silence reads as silence. *@
-            if (lastAt is { } prevAt && Math.Abs((row.At - prevAt).TotalHours) >= GapHours)
+            @* ST-02: an approximate time measures nothing, so no gap is drawn to or from one. *@
+            var rowApprox = row.Entry?.IsApproximate == true;
+            if (lastAt is { } prevAt && !rowApprox && Math.Abs((row.At - prevAt).TotalHours) >= GapHours)
             {
                 <li class="tl-gap" @key="@($"gap-{row.At.UtcTicks}")"><span>@Ui.Hours(Math.Abs((row.At - prevAt).TotalHours)) with nothing recorded</span></li>
             }
-            lastAt = row.At;
+            lastAt = rowApprox ? null : row.At;
             var day = LocalDay(row.At);
             if (day != lastDay)
             {
@@ -713,7 +722,7 @@ else
                                     <span class="bi @Ui.TimelineGlyph(e.Type)" aria-hidden="true"></span> @Ui.Label(e.Type)
                                 </span>
                             }
-                            @TimeLabel(e.OccurredAtUtc)
+                            @StepTimeLabel(e)
                         </div>
                         <div class="tl-desc md-body">@((MarkupString)Md.ToInlineHtml(e.Description, CaseId))</div>
                         @if (e.EvidenceId is { } shotId)
@@ -2342,6 +2351,12 @@ else
         return n >= 0 ? $"{text} · Day {n}" : $"{text} · before detection";
     }
 
+    // ST-02: an event step's time as stated. An approximate one has no clock time, no "ago" and no T+ (nothing is
+    // measured from it); an exact one is the usual label.
+    private RenderFragment StepTimeLabel(TimelineEntry e) => IncidentManager.Application.Cases.StepTime.Stated(e) is { } stated
+        ? @<span class="tl-time tl-approx" title="Time as stated: nothing is measured from it"><span class="tl-time-abs">@stated</span></span>
+        : TimeLabel(e.OccurredAtUtc);
+
     // One time label for every row: clock time (with "5d ago"), or time since detection when T+ is on.
     private RenderFragment TimeLabel(DateTimeOffset at) => @<text>
         @if (_tPlus && Case.DetectedAtUtc is { } detected)
@@ -2408,7 +2423,7 @@ else
         var pts = Case.TimelineEntries.Where(x => x.IsCurrent)
             .Select(x => new MiniPoint(x.Id.ToString(), x.OccurredAtUtc,
                 x.Kind == TimelineKind.Event ? "adv" : x.Type == TimelineEntryType.Decision ? "dec" : "resp",
-                $"{TimeDisp.Short(x.OccurredAtUtc)} · {OneLine(x.Description)}"))
+                $"{IncidentManager.Application.Cases.StepTime.Stated(x) ?? TimeDisp.Short(x.OccurredAtUtc)} · {OneLine(x.Description)}"))
             .Concat(Milestones().Select(m => new MiniPoint(m.Key, m.AtUtc, "ms", $"{TimeDisp.Short(m.AtUtc)} · {m.Title}")))
             .OrderBy(p => p.At).ToList();
         if (pts.Count < 3) return;
@@ -2462,7 +2477,7 @@ else
     {
         var rows = entries.Select(e => new TlRow(e.OccurredAtUtc, e.CreatedAtUtc, e, null))
             .Concat(milestones.Select(m => new TlRow(m.AtUtc, m.AtUtc, null, m)))
-            .OrderBy(r => r.At).ThenBy(r => r.Tiebreak)
+            .OrderBy(r => r.At).ThenBy(r => r.Entry?.StepOrder ?? 0).ThenBy(r => r.Tiebreak)
             .ToList();
         if (!_tlOldestFirst) rows.Reverse();
         return rows;

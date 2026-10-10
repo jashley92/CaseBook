@@ -37,6 +37,9 @@ them. Notable behavior:
   case the attack chain is the attacker's steps, at the vendor and (after a pivot) in our environment, with a *Where*
   column (`step.where`); the diagram tints the steps in our network and marks the pivot. The Event Timeline adds a
   *Disclosure milestones* table (template collection `milestone`: `when`, `type`, `description`, `source`).
+- An attack step's time prints **as it was stated**: "Between 2026-09-02 and 2026-09-05", "2026-09-08 · time not
+  stated", "On or before …", "Time not stated" (template field `step.when` does the same), the diagram labels it the
+  same way, and a note under the table says the times are as reported. Steps are in their stated order.
 - Indicators are listed apart from everything examined and **defanged** (`Reporting:DefangIndicators`).
 - A TLP 2.0 marking is printed on every page.
 - People appear by display name and enums by their labels; no raw ids or code names.

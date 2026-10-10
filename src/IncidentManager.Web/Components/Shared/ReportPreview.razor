@@ -92,7 +92,7 @@ else
                                         {
                                             <tr>
                                                 <td>@x.Order</td>
-                                                <td class="text-nowrap">@x.OccurredAtUtc.ToString("u")</td>
+                                                <td class="@(x.Stated is null ? "text-nowrap" : "")">@x.When</td>
                                                 <td>@x.Tactics</td>
                                                 <td>@(string.IsNullOrEmpty(x.Actor) && string.IsNullOrEmpty(x.Target) ? "" : $"{x.Actor} → {x.Target}")</td>
                                                 <td>@x.TechniqueId</td>
@@ -102,6 +102,10 @@ else
                                     </tbody>
                                 </table>
                             </div>
+                            @if (Model.AttackChain.Any(x => x.Stated is not null))
+                            {
+                                <p class="small fst-italic text-muted mt-1 mb-0">@ReportAttackStep.ApproximateNote</p>
+                            }
                         }
                         break;
 
