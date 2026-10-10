@@ -161,7 +161,10 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ## Notes
 
-### Unreleased
+### v1.5.0
+
+A routine upgrade: one additive migration, applied at startup. Attack steps can now record a time as it was stated, and
+`Install-Database.ps1` is fixed.
 
 - **One additive migration** (`AddStepTimePrecision`): three nullable columns on `TimelineEntries`
   (`OccurredPrecision`, `OccurredUntilUtc`, `StepOrder`) so an attack step can record its time as it was stated (a
