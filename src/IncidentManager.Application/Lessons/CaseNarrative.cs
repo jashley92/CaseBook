@@ -39,10 +39,14 @@ public static class CaseNarrative
             if (from is { } f && t >= f) line += $" ({Span(t - f)} after {sinceLabel})";
             return line;
         }
+        // ST-04: an approximate start says so, and nothing is measured from it.
+        var approx = Cases.StepTime.ActivityBeganCaveat(c);
+        var beganLine = Time("Activity began", c.OccurredAtUtc);
+        if (beganLine is not null && approx is not null) beganLine += $" (approximate: {approx})";
         var times = new[]
         {
-            Time("Activity began", c.OccurredAtUtc),
-            Time("Detected", c.DetectedAtUtc, c.OccurredAtUtc, "activity began"),
+            beganLine,
+            Time("Detected", c.DetectedAtUtc, approx is null ? c.OccurredAtUtc : null, "activity began"),
             Time("Contained", c.ContainedAtUtc, c.DetectedAtUtc, "detection"),
             Time("Resolved", c.ResolvedAtUtc, c.DetectedAtUtc, "detection"),
             Time("Reported to regulators", c.ReportedAtUtc, c.DetectedAtUtc, "detection"),

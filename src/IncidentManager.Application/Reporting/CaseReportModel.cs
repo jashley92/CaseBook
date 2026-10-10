@@ -169,6 +169,9 @@ public sealed record CaseReportModel
     public DateTimeOffset? ResolvedAtUtc { get; init; }
     /// <summary>HR-16: when the activity began, if recorded, so the Outcome section tells the story in order.</summary>
     public DateTimeOffset? ActivityBeganAtUtc { get; init; }
+
+    /// <summary>ST-04: why <see cref="ActivityBeganAtUtc"/> is approximate ("the first attack step is …"); null when it isn't.</summary>
+    public string? ActivityBeganApproximate { get; init; }
     public DateTimeOffset? ClosedAtUtc { get; init; }
     /// <summary>HR-01: what the case concluded when it closed (the outcome's label), when one was recorded.</summary>
     public string? Outcome { get; init; }

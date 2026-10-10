@@ -194,9 +194,13 @@ public static class CaseMilestones
         }
 
         // HR-07: the story starts when the activity did.
+        // ST-04: when it comes from an approximate first step, it says so and measures nothing from it.
         if (c.OccurredAtUtc is { } began && (c.DetectedAtUtc is null || began < c.DetectedAtUtc))
-            list.Add(new CaseMilestone($"began:{c.Id}", began, MilestoneKind.ActivityBegan, "Activity began",
-                c.DetectedAtUtc is { } det ? $"{Span(det - began)} before detection" : null, null, "case record"));
+            list.Add(StepTime.ActivityBeganCaveat(c) is { } approx
+                ? new CaseMilestone($"began:{c.Id}", began, MilestoneKind.ActivityBegan, "Activity began (approximately)",
+                    $"Approximate: {approx}.", null, "case record")
+                : new CaseMilestone($"began:{c.Id}", began, MilestoneKind.ActivityBegan, "Activity began",
+                    c.DetectedAtUtc is { } det ? $"{Span(det - began)} before detection" : null, null, "case record"));
 
         if (c.ReportedAtUtc is { } reported)
             list.Add(new CaseMilestone($"reported:{c.Id}", reported, MilestoneKind.Reported,

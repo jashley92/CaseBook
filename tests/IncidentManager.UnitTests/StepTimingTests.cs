@@ -146,4 +146,26 @@ public class StepTimingTests
         new IncidentManager.Application.Reporting.ReportAttackStep(1, Mar4, "", "", "", null, "x", Stated: "Time not stated").When
             .Should().Be("Time not stated");
     }
+
+    [Fact]
+    public void Activity_began_is_approximate_when_it_comes_from_an_approximate_first_step()
+    {
+        var c = NewCase();
+        Step(c, "Phished", Mar4, new StepTiming(TimePrecision.Window, Mar4.AddDays(2)));
+        Step(c, "Exfiltrated", Mar4.AddDays(5));
+        c.OccurredAtUtc = new DateTimeOffset(2026, 3, 4, 0, 0, 0, TimeSpan.Zero);
+        c.DetectedAtUtc = Mar4.AddDays(8);
+
+        StepTime.ActivityBeganCaveat(c).Should().Be("the first attack step is between 2026-03-04 and 2026-03-06");
+        var began = CaseMilestones.Project(c, MilestoneLabelsForTests()).Single(m => m.Kind == MilestoneKind.ActivityBegan);
+        began.Title.Should().Be("Activity began (approximately)");
+        began.Detail.Should().NotContain("before detection", "nothing is measured from an approximate time");
+
+        // A start recorded well away from the step's dates is the analyst's own, not approximate.
+        c.OccurredAtUtc = Mar4.AddDays(-20);
+        StepTime.ActivityBeganCaveat(c).Should().BeNull();
+    }
+
+    private static MilestoneLabels MilestoneLabelsForTests() => new(
+        x => x?.ToString() ?? "", x => x.ToString(), x => x.ToString(), x => x.ToString());
 }

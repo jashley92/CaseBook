@@ -60,7 +60,7 @@ public static partial class ReportTemplateFields
         (new("case.reported", "Reported (UTC)"), m => D(m.ReportedAtUtc)),
         (new("case.contained", "Contained (UTC)"), m => D(m.ContainedAtUtc)),
         (new("case.resolved", "Recovery started (UTC)"), m => D(m.ResolvedAtUtc)),
-        (new("case.activity_began", "Activity began (UTC), if recorded"), m => D(m.ActivityBeganAtUtc)),
+        (new("case.activity_began", "Activity began (UTC), if recorded"), m => D(m.ActivityBeganAtUtc) + (m.ActivityBeganApproximate is null ? "" : " (approximate)")),
         (new("case.closed", "Closed (UTC)"), m => D(m.ClosedAtUtc)),
         (new("case.outcome", "Outcome (when closed)"), m => m.Outcome ?? ""),
         (new("case.conclusion", "Conclusion (closing brief)"), m => m.Conclusion ?? ""),

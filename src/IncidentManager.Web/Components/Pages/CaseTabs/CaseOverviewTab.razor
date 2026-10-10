@@ -45,7 +45,7 @@
         </div>
         <div>
             <dt>Activity began</dt>
-            <dd>@(Case.OccurredAtUtc is { } began ? TimeDisp.Short(began) : "Not recorded")</dd>
+            <dd>@(Case.OccurredAtUtc is { } began ? TimeDisp.Short(began) + (BeganApprox is null ? "" : " (approximately)") : "Not recorded")</dd>
         </div>
         <div>
             <dt>Detected → contained</dt>
@@ -411,7 +411,7 @@
                         @if (Case.OccurredAtUtc is { } began)
                         {
                             <dt class="col-sm-3">Initial activity</dt>
-                            <dd class="col-sm-9">@TimeDisp.Long(began)</dd>
+                            <dd class="col-sm-9">@TimeDisp.Long(began)@if (BeganApprox is { } why) { <span class="text-muted small fst-italic"> · approximate: @why</span> }</dd>
                         }
                         <dt class="col-sm-3">Opened</dt>
                         <dd class="col-sm-9">@TimeDisp.Long(Case.CreatedAtUtc) by @Users.DisplayFor(Case.CreatedBy)</dd>
@@ -603,6 +603,9 @@
 }
 
 @code {
+    // ST-04: why the recorded start is approximate (its first attack step's time is), or null.
+    private string? BeganApprox => IncidentManager.Application.Cases.StepTime.ActivityBeganCaveat(Case);
+
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     /// <summary>HR-01: outcome labels by key (admin-managed), for the Closed milestone.</summary>

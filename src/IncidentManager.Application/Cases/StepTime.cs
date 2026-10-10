@@ -41,6 +41,32 @@ public static class StepTime
     /// <summary>The step's time as text: the stated wording when approximate, else <paramref name="exact"/> of its time.</summary>
     public static string Text(TimelineEntry e, Func<DateTimeOffset, string> exact) => Stated(e) ?? exact(e.OccurredAtUtc);
 
+    /// <summary>
+    /// ST-04: why the case's "activity began" is approximate, or null when it isn't: the first attack step's time is
+    /// approximate and the recorded start falls on (or a day either side of) its stated dates, or isn't recorded.
+    /// E.g. "the first attack step is between 2026-09-02 and 2026-09-05".
+    /// </summary>
+    public static string? ActivityBeganCaveat(Case c)
+    {
+        var first = c.TimelineEntries.Where(e => e.IsCurrent && EventSteps.IsAttack(c, e)).InTimelineOrder().FirstOrDefault();
+        if (first is null || !first.IsApproximate) return null;
+        if (first.OccurredPrecision == TimePrecision.NotStated) return "the first attack step's time wasn't stated";
+        if (c.OccurredAtUtc is { } began)
+        {
+            var day = DateOnly.FromDateTime(began.UtcDateTime);
+            var from = DateOnly.FromDateTime(first.OccurredAtUtc.UtcDateTime);
+            var to = DateOnly.FromDateTime((first.OccurredUntilUtc ?? first.OccurredAtUtc).UtcDateTime);
+            if (first.OccurredPrecision == TimePrecision.OnOrBefore) from = DateOnly.MinValue;
+            if (day < from.AddDays(from == DateOnly.MinValue ? 0 : -1) || day > to.AddDays(1)) return null;
+        }
+        var stated = Stated(first)!;
+        return first.OccurredPrecision switch
+        {
+            TimePrecision.Day => $"the first attack step is dated {D(first.OccurredAtUtc)}, with no time",
+            _ => $"the first attack step is {char.ToLowerInvariant(stated[0])}{stated[1..]}"
+        };
+    }
+
     /// <summary>The fixed UTC form reports and prompts use for an exact time.</summary>
     public static string Utc(DateTimeOffset t) => t.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture);
 }

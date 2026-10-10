@@ -84,7 +84,9 @@ time as stated ("Between 2026-09-02 and 2026-09-05", "Time not stated"), in ital
 marker measured from it. Where the times don't settle the order (same date, or no time), the **↑ / ↓** arrows on a
 step move it; they refuse to move a step past one whose stated time puts it elsewhere ("correct the step's time").
 When the vendor later gives the exact time, edit the step: the change and its reason are in the audit trail.
-Disclosure milestones and investigation entries keep exact times.
+Disclosure milestones and investigation entries keep exact times. When the case's *activity began* falls on the first
+attack step's approximate dates (or the first step has no time), the Record's milestone, the Overview, the briefing,
+the narrative and the report say "approximately" and why, and no "N before detection" is measured from it (ST-04).
 
 `EventSteps.IsAttack` / `IsDisclosure` decide which a step is: on a third-party case, a step with ATT&CK content
 (tactics, a technique, an actor or target) or a stated environment is an attack step; on an internal case every step

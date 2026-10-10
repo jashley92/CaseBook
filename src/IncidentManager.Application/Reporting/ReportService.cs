@@ -783,6 +783,7 @@ public sealed class ReportService
             ContainedAtUtc = c.ContainedAtUtc,
             ResolvedAtUtc = c.ResolvedAtUtc,
             ActivityBeganAtUtc = c.OccurredAtUtc,
+            ActivityBeganApproximate = c.OccurredAtUtc is null ? null : StepTime.ActivityBeganCaveat(c),
             ClosedAtUtc = c.ClosedAtUtc,
             // HR-01: the outcome and the closing brief's conclusion (the current brief, written when it closed).
             Outcome = c.OutcomeKey is { } ok ? extras?.OutcomeLabels.GetValueOrDefault(ok) ?? Admin.CaseOutcomeCatalog.Label(ok) : null,

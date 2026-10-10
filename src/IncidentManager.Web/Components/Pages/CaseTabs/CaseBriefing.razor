@@ -322,6 +322,10 @@
         var began = Case.OccurredAtUtc;
         var detected = Case.DetectedAtUtc;
         if (began is null && detected is null) return null;
+        // ST-04: an approximate start is said as one, with no gap measured from it.
+        if (began is { } ab && IncidentManager.Application.Cases.StepTime.ActivityBeganCaveat(Case) is { } approx)
+            return $"Activity began around {TimeDisp.Short(ab)} (approximate: {approx})"
+                   + (detected is { } dd ? $" and was detected {TimeDisp.Short(dd)}." : ".");
         if (began is { } b && detected is { } d)
         {
             var gap = d - b;

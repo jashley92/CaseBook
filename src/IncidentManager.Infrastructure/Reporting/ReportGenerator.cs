@@ -310,7 +310,9 @@ public sealed partial class ReportGenerator : IReportGenerator
             ("Recovery started", m.ResolvedAtUtc), ("Reported to regulators", m.ReportedAtUtc), ("Closed", m.ClosedAtUtc)
         };
         foreach (var (label, at) in stamps.Where(s => s.At is not null).OrderBy(s => s.At))
-            body.AppendChild(P($"{label}: {at:u}"));
+            body.AppendChild(P(label == "Activity began" && m.ActivityBeganApproximate is { } approx
+                ? $"{label}: {at:u} (approximate: {approx})"   // ST-04
+                : $"{label}: {at:u}"));
         if (m.ChangedAfterClosure is { } after) body.AppendChild(P(after));   // HR-15
         if (m.LegalReferred) body.AppendChild(P($"Referred to Legal/Privacy. {m.LegalNote}"));
         if (m.LegalHold) body.AppendChild(P("Legal hold in effect. Case data must be preserved and not deleted."));
