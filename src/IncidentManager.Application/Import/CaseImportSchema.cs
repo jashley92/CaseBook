@@ -86,7 +86,10 @@ public static class CaseImportSchema
                     ["required"] = new JsonArray { "description" },
                     ["properties"] = new JsonObject
                     {
-                        ["occurredAtUtc"] = DateTime("When it happened (defaults to now if omitted; future entries are excluded)."),
+                        ["occurredAtUtc"] = DateTime("When it happened (defaults to now if omitted; future entries are excluded). With timePrecision Day or OnOrBefore, the date; with Window, the first date."),
+                        // ST-03: an event step's time as it was stated, never a guessed time.
+                        ["timePrecision"] = EnumOf<TimePrecision>("For kind Event: how precisely the time was stated. Exact (default), Day (date only), Window (between occurredAtUtc and occurredUntilUtc), OnOrBefore (on or before occurredAtUtc's date), NotStated (no time; placed after the step before it)."),
+                        ["occurredUntilUtc"] = DateTime("For timePrecision Window: the last date."),
                         ["kind"] = EnumOf<TimelineKind>(),
                         ["type"] = EnumProp(ImportableTimelineTypes(), null),
                         ["description"] = Str("What happened."),

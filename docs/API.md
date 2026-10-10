@@ -104,6 +104,11 @@ Notes:
   why in `rationale` (required for a decision), and optionally `optionsConsidered` and `decidedBy`. A decision
   without a `rationale` is imported as `Communication`, flagged in the preview so the reviewer can add the why.
   `Handoff` isn't an importable type (a handoff is made in CaseBook, to a person).
+- An **`Event`** entry can give its time as it was stated, instead of a guessed one: `timePrecision` `Day` (the date
+  in `occurredAtUtc`), `Window` (from `occurredAtUtc` to `occurredUntilUtc`), `OnOrBefore`, or `NotStated` (no time:
+  it's placed right after the event entry before it in the document, or first). Omitted means `Exact`. A date-based
+  precision without a date imports as `NotStated`, and a window without a later end as `Day`, each flagged in the
+  preview. List event entries in the order the source gives them.
 - Enum fields (classification, severity, kind, type, disposition, …) and their allowed values are defined in
   the schema; unknown values fall back to a safe default and are flagged in the review preview.
 

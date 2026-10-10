@@ -293,6 +293,40 @@ public sealed class CaseImportTests : IDisposable
             (EntityType.Host, "FIN-WKS-07", EntityDisposition.Compromised, (string?)null, "STIX 2.1 bundle (CaseBook)"));
     }
 
+    // ── ST-03: event steps with their times as stated ──────────────────────────────────────────
+
+    [Fact]
+    public async Task Event_steps_import_with_their_times_as_stated_in_document_order()
+    {
+        var d = new DateTimeOffset(2026, 9, 2, 0, 0, 0, TimeSpan.Zero);
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Origin = "AI-assisted",
+            Target = new() { NewCase = new() { Title = "Vendor breach", Classification = "Incident", Severity = "High" } },
+            Timeline = new()
+            {
+                new() { Kind = "Event", Type = "Other", Description = "Phished an engineer", OccurredAtUtc = d, TimePrecision = "Window", OccurredUntilUtc = d.AddDays(3) },
+                new() { Kind = "Event", Type = "Other", Description = "Read the claims API", TimePrecision = "NotStated" },
+                new() { Kind = "Event", Type = "Other", Description = "Exported the data", OccurredAtUtc = d.AddDays(6), TimePrecision = "day" },
+                new() { Kind = "Event", Type = "Other", Description = "No date given", TimePrecision = "OnOrBefore" },
+            }
+        };
+
+        var p = CaseImportService.BuildPreviewCore(doc, _clock.UtcNow);
+        p.Timeline.Select(t => t.Precision).Should().Equal(TimePrecision.Window, TimePrecision.NotStated, TimePrecision.Day, TimePrecision.NotStated);
+        p.Timeline[1].Warning.Should().BeNull("a step with no stated time isn't missing a timestamp");
+        p.Timeline[3].Warning.Should().Contain("time not stated");
+
+        await using var db = NewContext();
+        var result = await NewImportService(db).ApplyAsync(await NewImportService(db).BuildPreviewAsync(doc));
+        await using var verify = NewContext();
+        var steps = (await verify.Set<TimelineEntry>().Where(t => t.CaseId == result.CaseId).ToListAsync()).InTimelineOrder().ToList();
+        steps.Select(s => s.Description).Should().Equal("Phished an engineer", "Read the claims API", "Exported the data", "No date given");
+        steps[0].OccurredUntilUtc.Should().Be(new DateTimeOffset(2026, 9, 5, 12, 0, 0, TimeSpan.Zero));
+        steps[3].OccurredPrecision.Should().Be(TimePrecision.NotStated);
+    }
+
     // ── Apply (integration) ──────────────────────────────────────────────────────────────────────
 
     private static CaseImportDocument FullDoc() => new()

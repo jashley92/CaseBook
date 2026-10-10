@@ -64,6 +64,10 @@ public sealed class CaseImportNewCase
 public sealed class CaseImportTimelineEntry
 {
     public DateTimeOffset? OccurredAtUtc { get; set; }
+
+    // ST-03: an event step's time as stated (Exact, Day, Window, OnOrBefore, NotStated) and a window's last date.
+    public string? TimePrecision { get; set; }
+    public DateTimeOffset? OccurredUntilUtc { get; set; }
     public string? Kind { get; set; }
     public string? Type { get; set; }
     public string? Description { get; set; }

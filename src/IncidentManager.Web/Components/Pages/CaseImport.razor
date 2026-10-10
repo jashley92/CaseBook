@@ -252,9 +252,18 @@ else if (_pending.Count > 0)
                             <tr class="@(t.Include ? "" : "opacity-50")">
                                 <td><input class="form-check-input" type="checkbox" aria-label="Include timeline entry @(p.Timeline.IndexOf(t) + 1)" @bind="t.Include" /></td>
                                 <td>
-                                    <input type="datetime-local" class="form-control form-control-sm" aria-label="When (UTC)"
-                                           value="@t.OccurredAtUtc.UtcDateTime.ToString("yyyy-MM-ddTHH:mm")"
-                                           @onchange="e => SetOccurred(t, e.Value?.ToString())" />
+                                    @if (t.Kind == TimelineKind.Event && IncidentManager.Application.Cases.StepTime.Stated(t.Precision, t.OccurredAtUtc, t.OccurredUntilUtc) is { } stated)
+                                    {
+                                        @* ST-03: kept as the source stated it; an exact time can still be given here. *@
+                                        <div class="small fst-italic">@stated</div>
+                                        <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => t.Precision = TimePrecision.Exact">Give an exact time</button>
+                                    }
+                                    else
+                                    {
+                                        <input type="datetime-local" class="form-control form-control-sm" aria-label="When (UTC)"
+                                               value="@t.OccurredAtUtc.UtcDateTime.ToString("yyyy-MM-ddTHH:mm")"
+                                               @onchange="e => SetOccurred(t, e.Value?.ToString())" />
+                                    }
                                     @if (t.Warning is not null) { <div class="form-text text-warning small">@t.Warning</div> }
                                 </td>
                                 <td><select class="form-select form-select-sm" aria-label="Kind" @bind="t.Kind">@foreach (var k in Enum.GetValues<TimelineKind>()) { <option value="@k">@k</option> }</select></td>

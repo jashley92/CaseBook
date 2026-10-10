@@ -1091,9 +1091,10 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task AddTimelineEntryAsync(Guid id, TimelineKind kind, TimelineEntryType type,
+    public async Task<Guid> AddTimelineEntryAsync(Guid id, TimelineKind kind, TimelineEntryType type,
         DateTimeOffset occurredAtUtc, string description, string? source, Guid? evidenceId = null,
-        DecisionDetails? decision = null, bool imported = false, EntryFollowUps? followUps = null, CancellationToken ct = default)
+        DecisionDetails? decision = null, bool imported = false, EntryFollowUps? followUps = null, StepTiming? timing = null,
+        CancellationToken ct = default)
     {
         Require();
         TimelineEntry.EnsureDecisionHasRationale(type, decision?.Rationale);
@@ -1110,9 +1111,12 @@ public sealed class CaseService
             DecidedBy = isDecision && !string.IsNullOrWhiteSpace(decision?.DecidedBy) ? decision.DecidedBy.Trim() : null,
             PromotedFrom = imported ? TimelineEntry.Imported : null   // INV-23
         };
+        // ST-03: an event step takes its time as stated and its place in order, as in the composer.
+        if (kind == TimelineKind.Event) c.PlaceNewEventStep(entry, occurredAtUtc, timing);
         c.TimelineEntries.Add(entry);
         if (followUps is not null) await ApplyFollowUpsAsync(db, c, entry, followUps, ct);
         await db.SaveChangesAsync(ct);
+        return entry.Id;
     }
 
     /// <summary>

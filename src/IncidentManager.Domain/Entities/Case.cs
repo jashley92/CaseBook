@@ -872,6 +872,11 @@ public class Case : AuditableEntity, IHashableEntity
 
     // ---- ST-01: a step's time as stated, and its order among steps at the same time ----
 
+    /// <summary>ST-03: sets the time, precision and place of a new event step built outside <see cref="AddEventStep"/>
+    /// (the generic add an import uses), by the same rules.</summary>
+    public void PlaceNewEventStep(TimelineEntry entry, DateTimeOffset occurredAtUtc, StepTiming? timing) =>
+        ApplyTiming(entry, occurredAtUtc, timing, editing: false);
+
     private IEnumerable<TimelineEntry> EventStepsInOrder(TimelineEntry? except = null) =>
         TimelineEntries.Where(t => t.Kind == TimelineKind.Event && t.IsCurrent && t != except).InTimelineOrder();
 

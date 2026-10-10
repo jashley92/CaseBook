@@ -175,15 +175,27 @@ public sealed class CaseImportService
         if (p.SummaryApplied) notes = 1;
 
         var timeline = 0;
+        Guid? lastStep = null;   // ST-03: a step with no stated time follows the step before it in the document
         foreach (var t in p.Timeline.Where(t => t.Include))
         {
             if (!t.Applied)
             {
-                await _cases.AddTimelineEntryAsync(caseId, t.Kind, t.Type, t.OccurredAtUtc,
+                var precision = t.Kind == TimelineKind.Event ? t.Precision : TimePrecision.Exact;
+                StepTiming? timing = precision switch
+                {
+                    TimePrecision.Exact => null,
+                    TimePrecision.Window => new StepTiming(TimePrecision.Window, t.OccurredUntilUtc),
+                    TimePrecision.NotStated => lastStep is { } prev
+                        ? new StepTiming(TimePrecision.NotStated, AfterStepId: prev)
+                        : new StepTiming(TimePrecision.NotStated, First: true),
+                    _ => new StepTiming(precision)
+                };
+                var added = await _cases.AddTimelineEntryAsync(caseId, t.Kind, t.Type, t.OccurredAtUtc,
                     t.Description, t.Source ?? origin, null,
                     decision: t.Type == TimelineEntryType.Decision
                         ? new CaseService.DecisionDetails(t.Rationale ?? "", t.OptionsConsidered, t.DecidedBy) : null,
-                    imported: true, ct: ct);
+                    imported: true, timing: timing, ct: ct);
+                if (t.Kind == TimelineKind.Event) lastStep = added;
                 t.Applied = true;
             }
             timeline++;
@@ -384,7 +396,31 @@ public sealed class CaseImportService
                     row.Warning = "A decision needs its why. Imported as Communication; add the why and set the type back to Decision to keep it as a decision.";
                 }
             }
-            if (t.OccurredAtUtc is { } occ)
+            // ST-03: an event step can carry its time as stated. A date-based precision needs the date; a window its end.
+            if (row.Kind == TimelineKind.Event && !string.IsNullOrWhiteSpace(t.TimePrecision))
+            {
+                row.Precision = ParseEnum(t.TimePrecision, TimePrecision.Exact, "time precision", p.Warnings);
+                if (row.Precision is TimePrecision.Day or TimePrecision.Window or TimePrecision.OnOrBefore && t.OccurredAtUtc is null)
+                {
+                    row.Precision = TimePrecision.NotStated;
+                    row.Warning = "No date was given, so it's imported as time not stated.";
+                }
+                else if (row.Precision == TimePrecision.Window)
+                {
+                    if (t.OccurredUntilUtc is { } until && StepTiming.DateAnchor(until) > StepTiming.DateAnchor(t.OccurredAtUtc!.Value))
+                        row.OccurredUntilUtc = until;
+                    else
+                    {
+                        row.Precision = TimePrecision.Day;
+                        row.Warning = "The window had no later last date, so it's imported as its first date only.";
+                    }
+                }
+            }
+            if (row.Precision == TimePrecision.NotStated)
+            {
+                row.OccurredAtUtc = t.OccurredAtUtc ?? nowUtc;   // only a fallback sort key; placed by order
+            }
+            else if (t.OccurredAtUtc is { } occ)
             {
                 row.OccurredAtUtc = occ;
                 if (occ > nowUtc)

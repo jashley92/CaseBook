@@ -62,6 +62,9 @@ public sealed class ImportTimelineRow
     public bool Include { get; set; } = true;
     public bool Applied { get; set; }
     public DateTimeOffset OccurredAtUtc { get; set; }
+    /// <summary>ST-03: an event step's time as stated; anything but exact applies only to an Event row.</summary>
+    public TimePrecision Precision { get; set; } = TimePrecision.Exact;
+    public DateTimeOffset? OccurredUntilUtc { get; set; }
     public TimelineKind Kind { get; set; } = TimelineKind.Investigation;
     public TimelineEntryType Type { get; set; } = TimelineEntryType.Communication;
     public string Description { get; set; } = string.Empty;

@@ -143,7 +143,23 @@
         "occurredAtUtc": {
           "type": "string",
           "format": "date-time",
-          "description": "When it happened (defaults to now if omitted; future entries are excluded)."
+          "description": "When it happened (defaults to now if omitted; future entries are excluded). With timePrecision Day or OnOrBefore, the date; with Window, the first date."
+        },
+        "timePrecision": {
+          "type": "string",
+          "enum": [
+            "Exact",
+            "Day",
+            "Window",
+            "OnOrBefore",
+            "NotStated"
+          ],
+          "description": "For kind Event: how precisely the time was stated. Exact (default), Day (date only), Window (between occurredAtUtc and occurredUntilUtc), OnOrBefore (on or before occurredAtUtc's date), NotStated (no time; placed after the step before it)."
+        },
+        "occurredUntilUtc": {
+          "type": "string",
+          "format": "date-time",
+          "description": "For timePrecision Window: the last date."
         },
         "kind": {
           "type": "string",
