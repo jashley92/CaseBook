@@ -167,9 +167,23 @@
                     {
                         <li><span><span class="bi bi-alarm" aria-hidden="true"></span> @notice</span></li>
                     }
-                    @if (gate is not null)
+                    @if (GateMissing() is { } gm)
                     {
-                        <li><span><span class="bi bi-shield-check" aria-hidden="true"></span> @gate</span></li>
+                        @* The next gate's unmet checks as a checklist: what's needed first, advisory ones after, marked. *@
+                        <li class="im-bf-gate">
+                            <span><span class="bi bi-shield-check" aria-hidden="true"></span> To @gm.Action
+                                <span class="im-bf-sub">· @Counted(gm.Blocking.Count, "needed")@(gm.Blocking.Count > 0 && gm.Advisory.Count > 0 ? ", " : "")@Counted(gm.Advisory.Count, "advisory")</span></span>
+                            <ul class="im-bf-gate-list">
+                                @foreach (var label in gm.Blocking)
+                                {
+                                    <li><span class="bi bi-square" aria-hidden="true"></span><span>@label</span></li>
+                                }
+                                @foreach (var label in gm.Advisory)
+                                {
+                                    <li class="is-advisory"><span class="bi bi-info-circle" aria-hidden="true"></span><span>@label <span class="im-badge im-b-neutral">Advisory</span></span></li>
+                                }
+                            </ul>
+                        </li>
                     }
                 </ul>
             </section>
@@ -369,17 +383,28 @@
         Notify?.Headline is { IsActive: true, DueAtUtc: { } due } h && Notify.ReportedAtUtc is null
             ? $"Notify {h.JurisdictionLabel} by {TimeDisp.Brief(due, now)}" + (due < now ? " (overdue)" : "") + "." : null;
 
-    // What the next gate still needs, blocking first; advisory items are named as such.
-    private string? GateLine()
+    private sealed record GateGap(string Action, List<string> Blocking, List<string> Advisory);
+
+    // What the next gate still needs: its unmet automatic checks, blocking first, then advisory.
+    private GateGap? GateMissing()
     {
         if (Readiness is not { GateExists: true } rg) return null;
         var missing = rg.Requirements.Where(i => i.Kind == GateRequirementKind.MachineCheck && !i.MachineSatisfied).ToList();
         if (missing.Count == 0) return null;
-        var blocking = missing.Where(m => m.IsBlocking).Select(m => m.Label).ToList();
-        var advisory = missing.Where(m => !m.IsBlocking).Select(m => m.Label).ToList();
-        var line = $"To {StageGateTriggers.Label(rg.Trigger).ToLowerInvariant()}: ";
-        if (blocking.Count > 0) line += string.Join("; ", blocking);
-        if (advisory.Count > 0) line += (blocking.Count > 0 ? ". Advisory: " : "advisory: ") + string.Join("; ", advisory);
+        return new GateGap(StageGateTriggers.Label(rg.Trigger).ToLowerInvariant(),
+            missing.Where(m => m.IsBlocking).Select(m => m.Label).ToList(),
+            missing.Where(m => !m.IsBlocking).Select(m => m.Label).ToList());
+    }
+
+    private static string Counted(int n, string what) => n == 0 ? "" : $"{n} {what}";
+
+    // The same as one line, for the copied text briefing.
+    private string? GateLine()
+    {
+        if (GateMissing() is not { } g) return null;
+        var line = $"To {g.Action}: ";
+        if (g.Blocking.Count > 0) line += string.Join("; ", g.Blocking);
+        if (g.Advisory.Count > 0) line += (g.Blocking.Count > 0 ? ". Advisory: " : "advisory: ") + string.Join("; ", g.Advisory);
         return line + ".";
     }
 

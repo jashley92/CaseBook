@@ -2917,6 +2917,12 @@ a.im-evidence-tag:hover { border-color: var(--im-border-strong); color: var(--im
 .im-bf-list li.is-done > span:first-child { color: var(--im-text-muted); }
 .im-bf-list .bi-check2 { color: var(--im-ok); }
 .im-bf-list .md-body p { display: inline; margin: 0; }
+/* The next gate's unmet checks, one per line: needed first, advisory after and quieter. */
+.im-bf-gate-list { list-style: none; margin: .15rem 0 0; padding: 0 0 0 1.4rem; display: grid; gap: .2rem; }
+.im-bf-list .im-bf-gate-list li { display: flex; gap: .45rem; align-items: baseline; }
+.im-bf-gate-list .bi-square { color: var(--im-text-muted); font-size: .8em; }
+.im-bf-gate-list li.is-advisory { color: var(--im-text-muted); }
+.im-bf-gate-list .im-badge { margin-left: .25rem; }
 .im-bf-qmark { display: inline-grid; place-items: center; width: 1.15rem; height: 1.15rem; margin-right: .4rem; border-radius: 50%;
     border: 1px solid var(--im-border-strong); font: 600 .7rem var(--im-font-ui); color: var(--im-text-muted); vertical-align: .1em; }
 .im-bf-decision { border-left: 3px solid var(--im-border-strong); padding: .1rem 0 .1rem .75rem; margin-bottom: .75rem; }
