@@ -167,18 +167,25 @@
                     {
                         <li><span><span class="bi bi-alarm" aria-hidden="true"></span> @notice</span></li>
                     }
-                    @if (GateMissing() is { } gm)
+                    @if (GateMissing() is { } gm && OnShowGate.HasDelegate)
                     {
-                        @* The next gate's unmet checks as a checklist: what's needed first, advisory ones after, marked. *@
+                        @* The page shows the gate in full (met checks, attestations, Fix links): say how far off it is and point there. *@
+                        <li><span><span class="bi bi-shield-check" aria-hidden="true"></span> To @gm.Action:
+                            @Counted(gm.Blocking.Count, "needed")@(gm.Blocking.Count > 0 && gm.Advisory.Count > 0 ? ", " : "")@Counted(gm.Advisory.Count, "advisory")
+                            <button type="button" class="btn btn-link btn-sm p-0 align-baseline" @onclick="OnShowGate">See the gate</button></span></li>
+                    }
+                    else if (GateMissing() is { } list)
+                    {
+                        @* Without the gate card beside it (the side-by-side view), the unmet checks as a checklist. *@
                         <li class="im-bf-gate">
-                            <span><span class="bi bi-shield-check" aria-hidden="true"></span> To @gm.Action
-                                <span class="im-bf-sub">· @Counted(gm.Blocking.Count, "needed")@(gm.Blocking.Count > 0 && gm.Advisory.Count > 0 ? ", " : "")@Counted(gm.Advisory.Count, "advisory")</span></span>
+                            <span><span class="bi bi-shield-check" aria-hidden="true"></span> To @list.Action
+                                <span class="im-bf-sub">· @Counted(list.Blocking.Count, "needed")@(list.Blocking.Count > 0 && list.Advisory.Count > 0 ? ", " : "")@Counted(list.Advisory.Count, "advisory")</span></span>
                             <ul class="im-bf-gate-list">
-                                @foreach (var label in gm.Blocking)
+                                @foreach (var label in list.Blocking)
                                 {
                                     <li><span class="bi bi-square" aria-hidden="true"></span><span>@label</span></li>
                                 }
-                                @foreach (var label in gm.Advisory)
+                                @foreach (var label in list.Advisory)
                                 {
                                     <li class="is-advisory"><span class="bi bi-info-circle" aria-hidden="true"></span><span>@label <span class="im-badge im-b-neutral">Advisory</span></span></li>
                                 }
@@ -382,6 +389,10 @@
     private string? NoticeLine(DateTimeOffset now) =>
         Notify?.Headline is { IsActive: true, DueAtUtc: { } due } h && Notify.ReportedAtUtc is null
             ? $"Notify {h.JurisdictionLabel} by {TimeDisp.Brief(due, now)}" + (due < now ? " (overdue)" : "") + "." : null;
+
+    /// <summary>Opens the page's full gate card, when it has one; "What remains" then points to it instead of
+    /// repeating its checks.</summary>
+    [Parameter] public EventCallback OnShowGate { get; set; }
 
     private sealed record GateGap(string Action, List<string> Blocking, List<string> Advisory);
 

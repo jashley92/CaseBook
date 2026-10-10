@@ -87,7 +87,7 @@
 @if (Section == "Briefing")
 {
     <CaseBriefing @ref="_briefing" Case="Case" TaskResults="TaskResults" Notify="_deadlines" Readiness="ReadinessEval" DataElementLabels="_dataElementLabels"
-                  CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" />
+                  CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" OnShowGate="ShowGate" />
 }
 
 <div class="im-ov">
@@ -687,6 +687,14 @@
     // Techniques matrix + change-history toggle
     private bool _techMatrixOpen;
     private bool _showReadiness;   // INV-29: one collapsed row until asked for
+
+    // The briefing's "See the gate": open the gate card and bring it into view.
+    private async Task ShowGate()
+    {
+        _showReadiness = true;
+        StateHasChanged();
+        try { await JS.InvokeVoidAsync("imMotion.scrollToId", "ov-gate"); } catch (JSException) { /* cosmetic */ }
+    }
 
     private string DetectionLabel
     {
