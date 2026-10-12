@@ -83,6 +83,38 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
 
         yield return resolved;                                  // DOMAIN\Group
         var slash = resolved.IndexOf('\\');
-        if (slash >= 0) yield return resolved[(slash + 1)..];   // Group
+        // BUG-188: a group name is unique only within its domain, so the bare "Group" is offered only for a group of
+        // this server's own domain (or the machine itself). A same-named group made in a trusted domain matches only a
+        // mapping that names its domain.
+        if (slash >= 0 && IsLocalToServer(value, resolved[..slash])) yield return resolved[(slash + 1)..];   // Group
+    }
+
+    // The domain this server is joined to, as the domain part of its computer account's SID; null when it can't be
+    // found (not domain-joined, or not Windows), in which case there's no other domain to tell apart.
+    private static readonly Lazy<string?> ServerDomainSid = new(() =>
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        try
+        {
+            var sid = (SecurityIdentifier)new NTAccount(Environment.MachineName + "$").Translate(typeof(SecurityIdentifier));
+            return sid.AccountDomainSid?.Value;
+        }
+        catch { return null; }   // not domain-joined, or AD unreachable
+    });
+
+    private static bool IsLocalToServer(string sid, string domain) =>
+        !OperatingSystem.IsWindows() || IsLocalToServer(sid, domain, Environment.MachineName, ServerDomainSid.Value);
+
+    /// <summary>Whether a group (its SID and the domain part of its name) belongs to the server: a local or built-in
+    /// group, or one of the server's domain (<paramref name="serverDomainSid"/>; null when unknown, so any).</summary>
+    public static bool IsLocalToServer(string sid, string domain, string machineName, string? serverDomainSid)
+    {
+        if (!OperatingSystem.IsWindows()) return true;
+        if (string.Equals(domain, machineName, StringComparison.OrdinalIgnoreCase)) return true;   // a local group
+        SecurityIdentifier? groupDomain;
+        try { groupDomain = new SecurityIdentifier(sid).AccountDomainSid; }
+        catch (ArgumentException) { return false; }
+        if (groupDomain is null) return true;   // a built-in group (BUILTIN\…, NT AUTHORITY\…): this machine's
+        return serverDomainSid is null || string.Equals(groupDomain.Value, serverDomainSid, StringComparison.OrdinalIgnoreCase);
     }
 }

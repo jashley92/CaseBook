@@ -168,6 +168,14 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### Next release
+
+- **A bare AD group name maps only that group in the server's own domain.** A mapping written `SOC-AppAdmins` used
+  to match a group of that name in any domain the server trusts, so whoever could create groups in a child or
+  trusted domain could make one and get its role. It now matches the server's domain (and local or built-in groups)
+  only. **If people from another domain sign in through a mapping by bare name, rewrite it as `OTHER\Group`** in
+  Administration → Roles & access before upgrading, or they lose that role.
+
 ### v1.5.3
 
 A bug-fix release with five migrations, applied at startup, and a first start that records each history row's hash

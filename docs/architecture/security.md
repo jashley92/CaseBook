@@ -28,7 +28,9 @@ flowchart TB
   the whole site except `/api`.
 - `Web/Security/RoleClaimsTransformer.cs` runs on each request. It takes the user's group claims (SIDs),
   resolves them to `DOMAIN\Group` and `Group` names (cached for the process lifetime), asks the role directory
-  which CaseBook roles those groups map to, and adds role claims and `perm` claims.
+  which CaseBook roles those groups map to, and adds role claims and `perm` claims. The bare `Group` name is offered
+  only for a group of the server's own domain (or a local or built-in group): group names are unique only within a
+  domain, so a same-named group made in a trusted domain matches only a mapping written as `OTHER\Group`.
 - A user in no mapped group signs in successfully but has no permissions. Every page refuses them, and they land
   on `/access-denied`, which shows who they're signed in as and names the permission the page needed.
 - A failed Negotiate handshake is SIEM event 5101.
