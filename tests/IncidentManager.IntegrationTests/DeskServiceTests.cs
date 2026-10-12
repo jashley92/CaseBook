@@ -28,9 +28,35 @@ public sealed class DeskServiceTests : IDisposable
 
     private IAppDbContextFactory NewFactory() => _db!.Factory();
 
-    private DeskService NewDesk() => new(NewFactory(), _me, _clock, new MyWorkService(NewFactory(), _me, _clock),
-        new NotificationDeadlineService(NewFactory(), new OffSettings(), new NotificationRuleService(NewFactory(), _me, _clock), _clock),
+    private DeskService NewDesk(INotificationDeadlineSettingsProvider? deadlines = null) => new(NewFactory(), _me, _clock,
+        new MyWorkService(NewFactory(), _me, _clock),
+        new NotificationDeadlineService(NewFactory(), deadlines ?? new OffSettings(), new NotificationRuleService(NewFactory(), _me, _clock), _clock),
         new TestSlaTargets());
+
+    [Fact]
+    public async Task A_running_notification_clock_on_my_case_needs_me(/* BUG-214: read in one pass */)
+    {
+        _db = TestDatabase.Open(TestDatabase.Sqlite);
+        await using (var db = NewContext())
+        {
+            db.DataElements.Add(new DataElement { Key = "SSN", Label = "SSN", NotificationJurisdictions = "NY", IsActive = true,
+                CreatedBy = "system", CreatedAtUtc = H(-100) });
+            db.NotificationRules.Add(new NotificationRule { Code = "NY", Label = "New York (NYDFS)", WindowHours = 72, IsActive = true,
+                CreatedBy = "system", CreatedAtUtc = H(-100) });
+            var b = Case.Open(2026, 1, "breach", "Breach", Classification.Breach, Severity.High, CaseOrigin.InternalDetection, "ivy", H(-20));
+            b.SetImpactAssessment(10, ["SSN"], "NY", "ivy", H(-19));
+            b.RecordMateriality(MaterialityStatus.Material, "CISO", H(-10), "Harm likely", "ivy", H(-10));
+            b.Assign("analyst1", "Analyst One", CaseAssignmentRole.Analyst, "ivy", H(-10));
+            db.Cases.Add(b);
+            await db.SaveChangesAsync();
+        }
+
+        var on = new OffSettings { Current = new NotificationDeadlineSettings(true, NotificationStartBasis.Determination, 72, 80) };
+        var desk = await NewDesk(on).GetAsync();
+
+        desk.Needs.Should().ContainSingle(n => n.Kind == DeskNeedKind.Notify).Which.AtUtc.Should().Be(H(62));
+        desk.Clocks.Should().Contain(c => c.Notify != null);
+    }
 
     private static DateTimeOffset H(int hoursFromNow) => Now.AddHours(hoursFromNow);
 
