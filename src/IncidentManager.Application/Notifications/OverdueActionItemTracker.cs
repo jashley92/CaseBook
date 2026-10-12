@@ -14,6 +14,11 @@ public interface IOverdueActionItemTracker
 
     /// <summary>PROD-03: records an escalation tier as sent; true only the first time for this (item, due date, tier).</summary>
     bool TryMarkEscalated(Guid actionItemId, DateTimeOffset dueAtUtc, int tier);
+
+    /// <summary>BUG-08: un-marks reminders that weren't delivered, so the next scan sends them again.</summary>
+    void ForgetNotified(Guid actionItemId, DateTimeOffset dueAtUtc);
+
+    void ForgetEscalated(Guid actionItemId, DateTimeOffset dueAtUtc, int tier);
 }
 
 /// <inheritdoc />
@@ -31,5 +36,15 @@ public sealed class OverdueActionItemTracker : IOverdueActionItemTracker
     public bool TryMarkEscalated(Guid actionItemId, DateTimeOffset dueAtUtc, int tier)
     {
         lock (_gate) return _escalated.Add((actionItemId, dueAtUtc, tier));
+    }
+
+    public void ForgetNotified(Guid actionItemId, DateTimeOffset dueAtUtc)
+    {
+        lock (_gate) _notified.Remove((actionItemId, dueAtUtc));
+    }
+
+    public void ForgetEscalated(Guid actionItemId, DateTimeOffset dueAtUtc, int tier)
+    {
+        lock (_gate) _escalated.Remove((actionItemId, dueAtUtc, tier));
     }
 }

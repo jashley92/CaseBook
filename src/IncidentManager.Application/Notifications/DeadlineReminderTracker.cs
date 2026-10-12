@@ -16,6 +16,9 @@ public interface IDeadlineReminderTracker
     /// <summary>Records the case as reminded for this (band, deadline); returns true only the first time that
     /// combination is seen.</summary>
     bool TryMarkNotified(Guid caseId, SlaState band, DateTimeOffset? dueAtUtc);
+
+    /// <summary>BUG-08: un-marks what wasn't delivered, so the next scan sends it again.</summary>
+    void Forget(Guid caseId, SlaState band, DateTimeOffset? dueAtUtc);
 }
 
 /// <inheritdoc />
@@ -27,5 +30,10 @@ public sealed class DeadlineReminderTracker : IDeadlineReminderTracker
     public bool TryMarkNotified(Guid caseId, SlaState band, DateTimeOffset? dueAtUtc)
     {
         lock (_gate) return _notified.Add((caseId, band, dueAtUtc ?? DateTimeOffset.MinValue));
+    }
+
+    public void Forget(Guid caseId, SlaState band, DateTimeOffset? dueAtUtc)
+    {
+        lock (_gate) _notified.Remove((caseId, band, dueAtUtc ?? DateTimeOffset.MinValue));
     }
 }

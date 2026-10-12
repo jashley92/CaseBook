@@ -43,7 +43,16 @@ public sealed class DueSoonActionItemScanner(
         // Only alert on items not already reminded for this due date (once per approaching deadline).
         var newly = dueSoon.Where(i => tracker.TryMarkNotified(i.ActionItemId, i.DueAtUtc)).ToList();
         if (newly.Count > 0)
+        {
+            // BUG-08: a reminder that wasn't delivered is un-marked, so the next scan sends it again.
+            using var watch = DeliveryWatch.Begin();
             await notifications.OnActionItemsDueSoonAsync(newly, (int)Math.Round(leadHours > 0 ? leadHours : 24), ct);
+            if (watch.Failed)
+            {
+                foreach (var i in newly) tracker.Forget(i.ActionItemId, i.DueAtUtc);
+                return 0;
+            }
+        }
 
         return newly.Count;
     }

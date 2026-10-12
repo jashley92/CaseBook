@@ -12,6 +12,9 @@ public interface IExecutiveReportTracker
 {
     /// <summary>True only the first time a quarter is marked sent.</summary>
     bool TryMarkSent(ProgramPeriod period);
+
+    /// <summary>BUG-08: un-marks what wasn't delivered, so the next scan sends it again.</summary>
+    void Forget(ProgramPeriod period);
 }
 
 /// <inheritdoc />
@@ -23,6 +26,11 @@ public sealed class ExecutiveReportTracker : IExecutiveReportTracker
     public bool TryMarkSent(ProgramPeriod period)
     {
         lock (_gate) return _sent.Add(period);
+    }
+
+    public void Forget(ProgramPeriod period)
+    {
+        lock (_gate) _sent.Remove(period);
     }
 }
 
@@ -58,10 +66,21 @@ public sealed class ExecutiveReportScanner(
         var period = current.Previous;
         if (!tracker.TryMarkSent(period)) return false;
 
-        var viewer = new ReportViewer();
-        var program = new ProgramReportService(factory, viewer, clock, sla, new AttackCoverageService(factory, viewer, clock), zone);
-        var report = await program.BuildAsync(period, includeExercises: false, ct);
-        await notifications.OnExecutiveReportAsync(report, ct);
+        // BUG-08: a quarter counts as sent only once its report is built and delivered.
+        using var watch = DeliveryWatch.Begin();
+        try
+        {
+            var viewer = new ReportViewer();
+            var program = new ProgramReportService(factory, viewer, clock, sla, new AttackCoverageService(factory, viewer, clock), zone);
+            var report = await program.BuildAsync(period, includeExercises: false, ct);
+            await notifications.OnExecutiveReportAsync(report, ct);
+        }
+        catch
+        {
+            tracker.Forget(period);
+            throw;
+        }
+        if (watch.Failed) { tracker.Forget(period); return false; }
         return true;
     }
 

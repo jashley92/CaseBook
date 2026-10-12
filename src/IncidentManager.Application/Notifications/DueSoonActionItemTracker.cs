@@ -12,6 +12,9 @@ public interface IDueSoonActionItemTracker
 {
     /// <summary>Records the item as notified; returns true only the first time this (item, due-date) is seen.</summary>
     bool TryMarkNotified(Guid actionItemId, DateTimeOffset dueAtUtc);
+
+    /// <summary>BUG-08: un-marks what wasn't delivered, so the next scan sends it again.</summary>
+    void Forget(Guid actionItemId, DateTimeOffset dueAtUtc);
 }
 
 /// <inheritdoc />
@@ -23,5 +26,10 @@ public sealed class DueSoonActionItemTracker : IDueSoonActionItemTracker
     public bool TryMarkNotified(Guid actionItemId, DateTimeOffset dueAtUtc)
     {
         lock (_gate) return _notified.Add((actionItemId, dueAtUtc));
+    }
+
+    public void Forget(Guid actionItemId, DateTimeOffset dueAtUtc)
+    {
+        lock (_gate) _notified.Remove((actionItemId, dueAtUtc));
     }
 }

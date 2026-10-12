@@ -64,6 +64,7 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     {
         public List<DeadlineReminder> Received { get; } = new();
         public int Calls { get; private set; }
+        public int FailNext { get; set; }   // BUG-08: the next N sends fail, as the email layer reports them
         public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
         public Task OnAssignedAsync(Case c, string a, string b, CaseAssignmentRole role, string by, CancellationToken ct = default) => Task.CompletedTask;
         public Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
@@ -72,6 +73,7 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         {
             Calls++;
             Received.AddRange(reminders);
+            if (FailNext > 0) { FailNext--; DeliveryWatch.ReportFailure(); }
             return Task.CompletedTask;
         }
     }
@@ -122,6 +124,22 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         reminder.CaseNumber.Should().StartWith("2026-01");
         reminder.JurisdictionLabel.Should().Contain("New York");
         reminder.RecipientUserIds.Should().BeEquivalentTo(new[] { "ic1", "analyst1" });
+    }
+
+    [Fact]
+    public async Task A_reminder_that_failed_to_send_is_sent_again_on_the_next_scan()
+    {
+        // BUG-08: the reminder used to be marked sent before delivery, so an SMTP outage lost it for good.
+        await SeedMaterialBreachAsync(hoursAgo: 80);
+        await SaveNyRuleAsync();
+        EnableClock();
+        var notifications = new CapturingNotifications { FailNext = 1 };
+        var tracker = new DeadlineReminderTracker();
+
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(0, "nothing was delivered");
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(1, "the next scan tries again");
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(0, "and once delivered, it isn't repeated");
+        notifications.Calls.Should().Be(2);
     }
 
     [Fact]

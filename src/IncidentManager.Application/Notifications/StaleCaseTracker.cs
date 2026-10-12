@@ -13,6 +13,9 @@ public interface IStaleCaseTracker
     /// <summary>Records the case as nudged for this quiet spell; returns true only the first time this
     /// (case, last-activity) pair is seen.</summary>
     bool TryMarkNotified(Guid caseId, DateTimeOffset lastActivityAtUtc);
+
+    /// <summary>BUG-08: un-marks what wasn't delivered, so the next scan sends it again.</summary>
+    void Forget(Guid caseId, DateTimeOffset lastActivityAtUtc);
 }
 
 /// <inheritdoc />
@@ -24,5 +27,10 @@ public sealed class StaleCaseTracker : IStaleCaseTracker
     public bool TryMarkNotified(Guid caseId, DateTimeOffset lastActivityAtUtc)
     {
         lock (_gate) return _notified.Add((caseId, lastActivityAtUtc));
+    }
+
+    public void Forget(Guid caseId, DateTimeOffset lastActivityAtUtc)
+    {
+        lock (_gate) _notified.Remove((caseId, lastActivityAtUtc));
     }
 }

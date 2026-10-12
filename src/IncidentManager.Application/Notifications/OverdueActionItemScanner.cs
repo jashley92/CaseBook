@@ -48,12 +48,29 @@ public sealed class OverdueActionItemScanner(
 
         // Only alert on items not already reminded for this due date (once per episode).
         var newly = overdue.Where(i => tracker.TryMarkNotified(i.ActionItemId, i.DueAtUtc)).ToList();
+        // BUG-08: a reminder or escalation that wasn't delivered is un-marked, so the next scan sends it again.
         if (newly.Count > 0)
+        {
+            using var watch = DeliveryWatch.Begin();
             await notifications.OnActionItemsOverdueAsync(newly, ct);
+            if (watch.Failed)
+            {
+                foreach (var i in newly) tracker.ForgetNotified(i.ActionItemId, i.DueAtUtc);
+                newly = [];
+            }
+        }
 
         var escalated = escalation is null ? [] : Escalations(overdue, escalation, now);
         if (escalated.Count > 0)
+        {
+            using var watch = DeliveryWatch.Begin();
             await notifications.OnActionItemsEscalatedAsync(escalated, ct);
+            if (watch.Failed)
+            {
+                foreach (var e in escalated) tracker.ForgetEscalated(e.Item.ActionItemId, e.Item.DueAtUtc, (int)e.Tier);
+                escalated = [];
+            }
+        }
 
         return newly.Count + escalated.Count;
     }

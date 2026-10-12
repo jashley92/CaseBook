@@ -14,6 +14,9 @@ public interface IDigestTracker
     /// <summary>Records the digest as sent for this (user, cadence, period); returns true only the first time
     /// that combination is seen.</summary>
     bool TryMarkSent(string userId, DigestCadence cadence, string periodKey);
+
+    /// <summary>BUG-08: un-marks what wasn't delivered, so the next scan sends it again.</summary>
+    void Forget(string userId, DigestCadence cadence, string periodKey);
 }
 
 /// <inheritdoc />
@@ -25,5 +28,10 @@ public sealed class DigestTracker : IDigestTracker
     public bool TryMarkSent(string userId, DigestCadence cadence, string periodKey)
     {
         lock (_gate) return _sent.Add((userId, cadence, periodKey));
+    }
+
+    public void Forget(string userId, DigestCadence cadence, string periodKey)
+    {
+        lock (_gate) _sent.Remove((userId, cadence, periodKey));
     }
 }

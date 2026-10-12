@@ -75,6 +75,7 @@ public sealed class EmailSender : IEmailSender
             // As above (CWE-359): the exception is the actionable signal for an SMTP problem; the subject and
             // recipient addresses would only leak personal/case data into the log, so log a count instead.
             _log.LogError(ex, "Failed to send notification email to {RecipientCount} recipient(s).", to.Count);
+            DeliveryWatch.ReportFailure();   // BUG-08: a scheduled reminder is retried on the next scan
         }
     }
 

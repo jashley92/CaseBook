@@ -48,7 +48,10 @@ public sealed class DigestScanner(
             if (!tracker.TryMarkSent(sub.UserId, sub.Cadence, PeriodKey(sub.Cadence, ZonedDays.Of(now, tz))))
                 continue;
 
+            // BUG-08: a digest that wasn't delivered is un-marked, so the next scan sends it again.
+            using var watch = DeliveryWatch.Begin();
             await notifications.OnDigestAsync(new UserDigest(sub.UserId, sub.Cadence, overdue, today, thisWeek), ct);
+            if (watch.Failed) { tracker.Forget(sub.UserId, sub.Cadence, PeriodKey(sub.Cadence, ZonedDays.Of(now, tz))); continue; }
             sent++;
         }
 
