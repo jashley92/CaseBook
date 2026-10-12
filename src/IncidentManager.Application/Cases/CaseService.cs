@@ -1663,6 +1663,42 @@ public sealed class CaseService
         return new EntityAddResult(entity.Id, existed, entity.Disposition, entity.Label);
     }
 
+    /// <summary>One indicator for <see cref="AddOrMatchEntitiesAsync"/>; <see cref="Tlp"/> only ever raises a marking.</summary>
+    public sealed record EntityToAdd(EntityType Type, string Value, string? Label, EntityDisposition Disposition,
+        string? Description, string? Source, TlpLevel? Tlp = null);
+
+    /// <summary>BUG-202: how many indicators one audited save takes.</summary>
+    public const int EntitiesPerSave = 200;
+
+    /// <summary>
+    /// BUG-202: adds (or matches) many indicators, loading the case once per <see cref="EntitiesPerSave"/> and saving each
+    /// batch as one audited change, rather than reloading the whole case and saving once per indicator. Matching is the
+    /// same as <see cref="AddOrMatchEntityAsync"/>, so a retry after a failure part-way adds nothing twice. A marking
+    /// (BUG-152) is kept, and only ever raises the one an indicator already has.
+    /// </summary>
+    public async Task<IReadOnlyList<EntityAddResult>> AddOrMatchEntitiesAsync(Guid id, IReadOnlyList<EntityToAdd> items,
+        CancellationToken ct = default)
+    {
+        Require();
+        var results = new List<EntityAddResult>(items.Count);
+        foreach (var batch in items.Chunk(EntitiesPerSave))
+        {
+            using var db = _factory.CreateDbContext();
+            var c = await LoadTrackedAsync(db, id, ct);
+            var now = _clock.UtcNow;
+            foreach (var i in batch)
+            {
+                var existed = c.FindEntity(i.Type, i.Value) is not null;
+                var entity = c.AddEntity(i.Type, i.Value, i.Label, i.Disposition, i.Description, i.Source, _user.UserId, now);
+                if (i.Tlp is { } tlp && (!existed || entity.Tlp is not { } had || had < tlp))
+                    c.SetEntityTlp(entity.Id, tlp, _user.UserId, now);
+                results.Add(new EntityAddResult(entity.Id, existed, entity.Disposition, entity.Label));
+            }
+            await db.SaveChangesAsync(ct);
+        }
+        return results;
+    }
+
     /// <summary>
     /// Corrects an existing IOC/entity in place (e.g. a mis-typed value or a re-assessed disposition).
     /// The optional <paramref name="reason"/> is recorded on the audit entry.

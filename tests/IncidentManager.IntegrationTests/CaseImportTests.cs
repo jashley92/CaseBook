@@ -79,6 +79,40 @@ public sealed class CaseImportTests : IDisposable
         root["$defs"]![def]!["properties"]![prop]!["enum"]!.AsArray().Select(n => n!.GetValue<string>()).ToArray();
 
     [Fact]
+    public void Parse_rejects_more_items_than_one_import_takes(/* BUG-202 */)
+    {
+        var entities = string.Join(",", Enumerable.Range(1, CaseImportService.MaxEntities + 1)
+            .Select(i => $$"""{ "value": "10.0.{{i / 256}}.{{i % 256}}" }"""));
+        var json = $$"""{ "format": "casebook-case-import", "schemaVersion": 1, "target": { "newCase": { "title": "Big" } }, "entities": [{{entities}}] }""";
+        CaseImportService.Parse(json).Error.Should().Contain("up to 2,000").And.Contain("Split it");
+    }
+
+    [Fact]
+    public async Task Many_indicators_are_added_in_batches_and_matched_as_one_at_a_time_would_be(/* BUG-202 */)
+    {
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+        }
+        await using var ctx = NewContext();
+        var before = await ctx.Set<CaseEntity>().CountAsync(e => e.CaseId == caseId);
+        var items = Enumerable.Range(0, 450)
+            .Select(i => new CaseService.EntityToAdd(EntityType.IpAddress, $"10.9.{i / 256}.{i % 256}", null,
+                EntityDisposition.Suspicious, null, "bulk", i == 5 ? TlpLevel.Amber : null))
+            .Append(new CaseService.EntityToAdd(EntityType.IpAddress, "10.9.0.0", null, EntityDisposition.Suspicious, null, "bulk"))
+            .ToList();
+
+        var results = await NewCaseService(ctx).AddOrMatchEntitiesAsync(caseId, items);
+
+        results.Should().HaveCount(451);
+        results.Count(r => r.AlreadyOnCase).Should().Be(1, "the repeat matches the one added earlier in the list");
+        (await ctx.Set<CaseEntity>().CountAsync(e => e.CaseId == caseId)).Should().Be(before + 450);
+        (await ctx.Set<CaseEntity>().AsNoTracking().SingleAsync(e => e.CaseId == caseId && e.Value == "10.9.0.5")).Tlp.Should().Be(TlpLevel.Amber);
+    }
+
+    [Fact]
     public void The_schema_is_valid_json_and_pins_the_format_and_version()
     {
         var act = () => JsonNode.Parse(CaseImportSchema.Build());

@@ -43,6 +43,19 @@ public sealed class CaseImportService
     private const int MaxEntityDescription = 4000;
     private const int MaxSource = 200;
     private const int MaxValue = 2000;   // BUG-175: CaseEntities.Value
+
+    /// <summary>BUG-202: the most of each a document can carry (indicators as for an IOC file).</summary>
+    public const int MaxEntities = IocImportConverter.MaxIndicators, MaxTimelineEntries = 1000, MaxActionItems = 500;
+
+    private static string? TooMany(CaseImportDocument doc)
+    {
+        string? Over(int? count, int max, string what) => count > max
+            ? $"This document has {count:N0} {what}; one import takes up to {max:N0}, so a reviewer can check what's applied. Split it into several documents."
+            : null;
+        return Over(doc.Entities?.Count, MaxEntities, "indicators")
+               ?? Over(doc.Timeline?.Count, MaxTimelineEntries, "timeline entries")
+               ?? Over(doc.ActionItems?.Count, MaxActionItems, "tasks");
+    }
     private const int MaxLabel = 300;
     private const int MaxOwner = 200;
 
@@ -71,6 +84,8 @@ public sealed class CaseImportService
         if (doc.SchemaVersion is { } v && v > CaseImportJson.CurrentSchemaVersion)
             return CaseImportParse.Fail(
                 $"This document is schema v{v}, newer than this app supports (v{CaseImportJson.CurrentSchemaVersion}). Upgrade CaseBook first.");
+        // BUG-202: the same limits a reviewer can check by eye; a bigger set is split across documents.
+        if (TooMany(doc) is { } tooMany) return CaseImportParse.Fail(tooMany);
 
         return CaseImportParse.Success(doc);
     }
@@ -215,20 +230,17 @@ public sealed class CaseImportService
             timeline++;
         }
 
-        var entities = 0;
-        foreach (var e in p.Entities.Where(e => e.Include))
+        // BUG-202: in batches (one load and one audited save each), not a whole-case reload and save per indicator. A
+        // batch's items are marked applied once it's saved; matching makes a retry of an unsaved one harmless anyway.
+        var included = p.Entities.Where(e => e.Include).ToList();
+        foreach (var batch in included.Where(e => !e.Applied).Chunk(CaseService.EntitiesPerSave))
         {
-            if (!e.Applied)
-            {
-                var added = await _cases.AddOrMatchEntityAsync(caseId, e.Type, e.Value, e.Label, e.Disposition,
-                    e.Description, e.Source ?? origin, ct);
-                // BUG-152: the document's marking is kept, and only ever raises one the case already has.
-                if (e.Tlp is { } tlp && (!added.AlreadyOnCase || await _cases.EntityTlpAsync(caseId, added.Id, ct) is not { } had || had < tlp))
-                    await _cases.SetEntityTlpAsync(caseId, added.Id, tlp, ct);
-                e.Applied = true;
-            }
-            entities++;
+            // BUG-152: the document's marking is kept, and only ever raises one the case already has.
+            await _cases.AddOrMatchEntitiesAsync(caseId, batch.Select(e => new CaseService.EntityToAdd(e.Type, e.Value, e.Label,
+                e.Disposition, e.Description, e.Source ?? origin, e.Tlp)).ToList(), ct);
+            foreach (var e in batch) e.Applied = true;
         }
+        var entities = included.Count;
 
         var actionItems = 0;
         foreach (var a in p.ActionItems.Where(a => a.Include))

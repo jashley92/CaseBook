@@ -32,19 +32,22 @@
       "type": "array",
       "items": {
         "$ref": "#/$defs/timelineEntry"
-      }
+      },
+      "maxItems": 1000
     },
     "entities": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/entity"
-      }
+      },
+      "maxItems": 2000
     },
     "actionItems": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/actionItem"
-      }
+      },
+      "maxItems": 500
     }
   },
   "$defs": {

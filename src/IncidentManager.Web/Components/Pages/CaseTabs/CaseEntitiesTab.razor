@@ -705,6 +705,13 @@ else
         foreach (var p in IocObservable.ParseIndicators(_bulkText))
             _bulkRows.Add(new BulkRow { Type = p.Type, Value = p.Value });
         _bulkParsedEmpty = _bulkRows.Count == 0;
+        // BUG-202: as many as an IOC file takes, so the list stays one a person can review.
+        if (_bulkRows.Count > IncidentManager.Application.Import.CaseImportService.MaxEntities)
+        {
+            _bulkError = $"That's {_bulkRows.Count:N0} indicators; paste up to {IncidentManager.Application.Import.CaseImportService.MaxEntities:N0} " +
+                         "at a time, or import them from a STIX bundle or IOC CSV file.";
+            _bulkRows.Clear();
+        }
     }
 
     private void ClearBulk()
@@ -733,11 +740,11 @@ else
             // One case is a coherent cohort (like PROD-21's per-case task bulk), so no E-18 cross-case
             // metering applies here. AddEntity upserts by (type, value), so re-pasting is idempotent, and it
             // never overwrites a recorded verdict or detail (HR-04).
-            foreach (var r in rows)
-            {
-                var res = await Cases.AddOrMatchEntityAsync(CaseId, r.Type, r.Value, null, _bulkDisposition, null, _bulkSource);
-                if (res.AlreadyOnCase) existing++; else added++;
-            }
+            // BUG-202: one load and one audited save per batch, not per indicator.
+            var results = await Cases.AddOrMatchEntitiesAsync(CaseId,
+                rows.Select(r => new CaseService.EntityToAdd(r.Type, r.Value, null, _bulkDisposition, null, _bulkSource)).ToList());
+            existing = results.Count(r => r.AlreadyOnCase);
+            added = results.Count - existing;
             ClearBulk();
             await OnChanged.InvokeAsync();
             await LoadOverlaps(); // pasted IOCs may correlate with other cases — refresh "also in"

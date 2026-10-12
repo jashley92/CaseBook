@@ -40,9 +40,10 @@ public static class CaseImportSchema
                     + "(e.g. \"AI-assisted (Copilot)\", \"manual\", \"XSIAM\")."),
                 ["target"] = Ref("target"),
                 ["summary"] = Str("A narrative summary of the matter, imported as an analyst note."),
-                ["timeline"] = Array("timelineEntry"),
-                ["entities"] = Array("entity"),
-                ["actionItems"] = Array("actionItem"),
+                // BUG-202: the most one import takes.
+                ["timeline"] = Array("timelineEntry", CaseImportService.MaxTimelineEntries),
+                ["entities"] = Array("entity", CaseImportService.MaxEntities),
+                ["actionItems"] = Array("actionItem", CaseImportService.MaxActionItems),
             },
             ["$defs"] = new JsonObject
             {
@@ -149,10 +150,11 @@ public static class CaseImportSchema
 
     private static JsonObject Ref(string def) => new() { ["$ref"] = $"#/$defs/{def}" };
 
-    private static JsonObject Array(string def) => new()
+    private static JsonObject Array(string def, int maxItems) => new()
     {
         ["type"] = "array",
         ["items"] = Ref(def),
+        ["maxItems"] = maxItems,
     };
 
     // INV-15: every timeline type except Handoff (a person-to-person act inside CaseBook, not something an import
