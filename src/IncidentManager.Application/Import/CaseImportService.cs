@@ -181,8 +181,10 @@ public sealed class CaseImportService
         Guid? lastStep = null;   // ST-03: a step with no stated time follows the step before it in the document
         // BUG-118: a not-stated step that opens the document, on a case with no steps yet, is placed by the earliest time
         // the document does state, not by when it's imported (which would put it after the steps it comes before).
+        // BUG-174: as each will be stored: a date-only step at its date's anchor (12:00 UTC), not the time the document wrote.
         var firstStated = p.Timeline.Where(x => x.Include && x.Kind == TimelineKind.Event && x.Precision != TimePrecision.NotStated)
-            .Select(x => (DateTimeOffset?)x.OccurredAtUtc).Min();
+            .Select(x => (DateTimeOffset?)(x.Precision is TimePrecision.Day or TimePrecision.OnOrBefore or TimePrecision.Window
+                ? StepTiming.DateAnchor(x.OccurredAtUtc) : x.OccurredAtUtc)).Min();
         foreach (var t in p.Timeline.Where(t => t.Include))
         {
             // BUG-15: on a retry, a step applied last time is still the one the next not-stated step follows.

@@ -441,6 +441,29 @@ public sealed class CaseImportTests : IDisposable
         steps[0].OccurredAtUtc.Should().BeOnOrBefore(d, "it isn't dated at import time, after the step it precedes");
     }
 
+    [Fact]
+    public async Task A_not_stated_opening_step_comes_before_a_date_only_one_written_late_in_its_day(/* BUG-174 */)
+    {
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Target = new() { NewCase = new() { Title = "Intrusion", Classification = "Incident", Severity = "High" } },
+            Timeline = new()
+            {
+                new() { Kind = "Event", Type = "Other", Description = "Initial access", TimePrecision = "NotStated" },
+                new() { Kind = "Event", Type = "Other", Description = "Exfiltration", TimePrecision = "Day",
+                    OccurredAtUtc = new DateTimeOffset(2026, 3, 1, 18, 0, 0, TimeSpan.Zero) },
+            }
+        };
+        await using var db = NewContext();
+        var svc = NewImportService(db);
+        var result = await svc.ApplyAsync(await svc.BuildPreviewAsync(doc));
+
+        await using var verify = NewContext();
+        (await verify.Set<TimelineEntry>().Where(t => t.CaseId == result.CaseId && t.Kind == TimelineKind.Event).ToListAsync())
+            .InTimelineOrder().Select(s => s.Description).Should().Equal("Initial access", "Exfiltration");
+    }
+
     // ── Apply (integration) ──────────────────────────────────────────────────────────────────────
 
     private static CaseImportDocument FullDoc() => new()
