@@ -473,7 +473,7 @@ app.MapGet("/evidence/{id:guid}", async (Guid id, EvidenceService evidence,
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.EvidenceDownload,
         item.CaseId, item.OriginalFileName, item.Id, ct);
     return Results.File(stream, item.ContentType, item.OriginalFileName);
-}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // --- Inline evidence image (U-40): renders a linked screenshot as a timeline thumbnail ---
 // Same need-to-know enforcement as the download (OpenAsync scopes to ForUser cases). Restricted to
@@ -519,7 +519,7 @@ app.MapGet("/reports/{id:guid}", async (Guid id, IncidentManager.Application.Rep
         ? "application/pdf"
         : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     return Results.File(stream, contentType, report.FileName);
-}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // --- E-07: per-case entity-graph export as a STIX 2.1 bundle (shareable investigation graph) ---
 // Need-to-know scoped by the service (ForUser); 404 for a case the caller can't see. Audited as an Export
@@ -535,7 +535,7 @@ app.MapGet("/cases/{id:guid}/graph.stix.json", async (Guid id,
     var fileName = $"case-{result.CaseNumber}-graph.stix.json";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, id, fileName, null, ct);
     return Results.File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", fileName);
-}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // --- Campaign rollup export (E-29): the cross-case rollup for the campaign a case belongs to, as JSON ---
 // Need-to-know scoped by the service (ForUser walk); 404 for a case the caller can't see. Audited as an
@@ -557,7 +557,7 @@ app.MapGet("/campaigns/{id:guid}/rollup.json", async (Guid id,
     var fileName = $"campaign-{anchorNumber}-rollup.json";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, id, fileName, null, ct);
     return Results.File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", fileName);
-}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // --- Metrics export for board / regulatory reporting packs (E-11) ---
 // Scoped to the caller's visible cases via DashboardService; plain CSV attachment (no JS).
@@ -571,7 +571,7 @@ app.MapGet("/export/metrics.csv", async (
     var fileName = $"incident-metrics-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
-}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // --- PROD-12: the Legal/Privacy obligations register. Legal doesn't use the app — this CSV is their interface.
 // Need-to-know scoped by the service; access-logged and rate-limited like every export. ---
@@ -585,7 +585,7 @@ app.MapGet("/export/legal-register.csv", async (
     var fileName = $"legal-obligations-register-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
-}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // --- E-31: quarterly program-metrics report as a two-period CSV (board / exam packs). Need-to-know scoped by
 // the service; access-logged and rate-limited like every export. ---
@@ -605,7 +605,7 @@ app.MapGet("/export/program-report.csv", async (
     var fileName = $"program-report-{period.Year}-Q{period.Quarter}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
-}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // --- Improvement-action register (E-26/PROD-41): the cross-case follow-up register as CSV, honouring the
 // page's scope + exercise filters (free-text search is deliberately not a URL parameter — it would land in
@@ -624,7 +624,7 @@ app.MapGet("/export/improvement-actions.csv", async (
     var fileName = $"improvement-actions-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
-}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // --- Malicious-IOC blocklist feed (E-13): curated confirmed IOCs across the caller's visible cases ---
 // Flat CSV to push to SIEM / firewalls / EDR — closes the detection loop. Need-to-know scoped by the
@@ -639,7 +639,7 @@ app.MapGet("/export/iocs.csv", async (
     var fileName = $"malicious-iocs-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
     return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);   // no BOM: machines read it (BUG-168)
-}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // --- Per-case audit-trail export (E-24): the hash-chained trail for one case, filtered, as CSV ---
 // Scoped: the caller must be able to view the case (need-to-know), mirroring the workspace Audit tab.
@@ -676,7 +676,7 @@ app.MapGet("/export/case-audit.csv", async (
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, await cases.FindIdByNumberAsync(@case, ct),
         fileName, null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
-}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // --- Access-log export (C-05): the out-of-chain read/access telemetry, filtered, as CSV ---
 // Administer-gated like the console; UTC times; `to` inclusive to end of day. Plain attachment (no JS).
@@ -706,7 +706,7 @@ app.MapGet("/export/access-log.csv", async (
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null,
         IncidentManager.Application.Access.AccessLogCsv.ExportLabel(fileName, filter), null, ct);
     return Results.File(ExcelCsv(csv), "text/csv", fileName);
-}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // --- Compliance evidence bundle (C-01): audit-chain segment + covering seals + verification, zipped ---
 // Administer-gated: the package contains the whole cross-case audit record (including before/after
@@ -733,7 +733,7 @@ app.MapGet("/export/compliance-bundle.zip", async (
     var bundle = await bundles.BuildAsync(fromUtc, toUtc, ct);
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, bundle.FileName, null, ct);
     return Results.File(bundle.Content, "application/zip", bundle.FileName);
-}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // X-07: download the editable-configuration "seed pack" as a signed, versioned JSON bundle. The export
 // is audited inside the service; SysAdmin-only like the other admin exports.
@@ -742,24 +742,24 @@ app.MapGet("/export/config-bundle.json", async (
 {
     var export = await config.ExportAsync(ct);
     return Results.File(export.Content, "application/json", export.FileName);
-}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // PROD-47: Word report templates — the starter template, and a profile's uploaded template (to edit and re-upload).
 // Administer-gated like the other admin downloads; plain attachments.
 app.MapGet("/export/report-template-starter.docx",
     (IncidentManager.Application.Reporting.IReportTemplateEngine templates) =>
         Results.File(templates.Starter(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "casebook-report-template-starter.docx"))
-    .RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
+    .RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
 app.MapGet("/export/report-template-starter-lessons.docx",
     (IncidentManager.Application.Reporting.IReportTemplateEngine templates) =>
         Results.File(templates.LessonsStarter(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "casebook-lessons-template-starter.docx"))
-    .RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
+    .RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
 app.MapGet("/export/report-templates/{id:guid}", async (Guid id,
     IncidentManager.Application.Admin.ReportTemplateService templates, CancellationToken ct) =>
     await templates.GetFileAsync(id, ct) is { } t
         ? Results.File(t.Bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", t.FileName)
         : Results.NotFound())
-    .RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
+    .RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
 // PROD-47: a template filled with one case's data, to check it before anyone generates with it. Not stored as a
 // report; the download is recorded in the access log as an export of that case's data.
 app.MapGet("/export/report-templates/{id:guid}/preview", async (Guid id, Guid caseId,
@@ -773,7 +773,7 @@ app.MapGet("/export/report-templates/{id:guid}/preview", async (Guid id, Guid ca
         return Results.File(bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileName);
     }
     catch (InvalidOperationException) { return Results.NotFound(); }
-}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
+}).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // PROD-33: programmatic case import. A producer (an XSIAM/SOAR playbook, a script) POSTs a case-import
 // document; it is validated and STAGED as a pending import for a human to review and confirm in CaseBook —

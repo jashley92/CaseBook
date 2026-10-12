@@ -64,6 +64,27 @@ public sealed class HostStartupSmokeTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task Downloads_refuse_a_passive_load_but_answer_a_request()
+    {
+        // BUG-186: an <img> or <script> pointing at a download is the browser's load, not the person's.
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient();
+
+            using var asImage = new HttpRequestMessage(HttpMethod.Get, "/export/iocs.csv");
+            asImage.Headers.Add("Sec-Fetch-Dest", "image");
+            (await client.SendAsync(asImage)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            using var asDocument = new HttpRequestMessage(HttpMethod.Get, "/export/iocs.csv");
+            asDocument.Headers.Add("Sec-Fetch-Dest", "document");
+            (await client.SendAsync(asDocument)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+            (await client.GetAsync("/export/iocs.csv")).StatusCode.Should().Be(HttpStatusCode.OK);
+        });
+    }
+
     private static async Task RunWithin(TimeSpan limit, Func<Task> body)
     {
         var work = Task.Run(body);

@@ -47,6 +47,26 @@ public class MarkdownServiceTests
     }
 
     [Theory]
+    [InlineData("![shot](/evidence/8f1c2d1e-0000-0000-0000-000000000001?n=1)")]
+    [InlineData("![](https://example.com/pixel.png)")]
+    public void Images_render_as_links_not_inline_loads(string markdown)
+    {
+        // BUG-186: an <img> would be fetched by every viewer's browser as them.
+        foreach (var html in new[] { _md.ToHtml(markdown), _md.ToInlineHtml(markdown) })
+        {
+            html.Should().NotContain("<img");
+            html.Should().Contain("<a href=");
+        }
+    }
+
+    [Fact]
+    public void Unsafe_image_urls_are_neutralised_too()
+    {
+        var html = _md.ToHtml("![x](javascript:alert(1))");
+        html.Should().NotContain("javascript:").And.NotContain("<img");
+    }
+
+    [Theory]
     [InlineData("[docs](https://example.com/page)", "https://example.com/page")]
     [InlineData("[mail](mailto:soc@example.com)", "mailto:soc@example.com")]
     public void Keeps_safe_link_schemes(string markdown, string expectedHref)

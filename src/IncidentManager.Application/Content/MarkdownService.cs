@@ -139,6 +139,18 @@ public sealed class MarkdownService : IMarkdownService
                 renderer.Write(ok ? "</a>" : "</span>");
                 return;
             }
+            // BUG-186: an image isn't loaded inline. Its URL would be fetched by every viewer's browser as them, and a
+            // same-origin one (an evidence download, an export) records an access in their name. It shows as a link.
+            if (link.IsImage)
+            {
+                renderer.Write("<a href=\"").WriteEscapeUrl(link.Url ?? "#")
+                    .Write("\" title=\"Images aren't shown inline. Attach the file as evidence and cite it instead.\">");
+                renderer.Write("<span class=\"bi bi-image\" aria-hidden=\"true\"></span> ");
+                if (link.FirstChild is null) renderer.WriteEscape(link.Url ?? "image");
+                else renderer.WriteChildren(link);
+                renderer.Write("</a>");
+                return;
+            }
             base.Write(renderer, link);
         }
     }
