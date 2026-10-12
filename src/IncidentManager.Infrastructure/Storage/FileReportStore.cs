@@ -33,16 +33,26 @@ public sealed class FileReportStore : IReportStore
         var ext = Path.GetExtension(safeName);
         for (var n = 2; ; n++)
         {
-            try
-            {
-                await using var fs = new FileStream(Path.Combine(absDir, safeName), FileMode.CreateNew, FileAccess.Write, FileShare.None);
-                await fs.WriteAsync(content, ct);
-                break;
-            }
-            catch (IOException) when (File.Exists(Path.Combine(absDir, safeName)) && n < 1000)
+            var path = Path.Combine(absDir, safeName);
+            FileStream fs;
+            // Only "that name is taken" moves to the next name (BUG-82): a write that fails part-way (a full disk, a
+            // cancelled request) removes what it wrote and fails, rather than leaving a partial file under each name.
+            try { fs = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None); }
+            catch (IOException) when (File.Exists(path) && n < 1000)
             {
                 safeName = $"{stem}-{n}{ext}";
+                continue;
             }
+            try
+            {
+                await using (fs) await fs.WriteAsync(content, ct);
+            }
+            catch
+            {
+                try { File.Delete(path); } catch (IOException) { /* best effort */ }
+                throw;
+            }
+            break;
         }
 
         var hash = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
