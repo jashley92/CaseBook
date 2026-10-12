@@ -284,6 +284,10 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 
         var head = ctx.Set<AuditLogEntry>().AsNoTracking().OrderByDescending(a => a.Sequence).FirstOrDefault();
         var newEntries = new List<AuditLogEntry>(auditable.Count);
+        // BUG-167: the time is taken before the gate and the sequence under it, so a save that waited could follow one
+        // that prepared later. An entry is never earlier than the one before it, so a time range (a compliance bundle's
+        // day or quarter) is a run of consecutive sequence numbers with no gap at its edges.
+        if (head is not null && head.AtUtc > now) now = head.AtUtc;
 
         foreach (var e in auditable)
         {

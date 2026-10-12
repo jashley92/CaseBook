@@ -40,6 +40,23 @@ public sealed class AuditChainIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task An_entry_is_never_earlier_than_the_one_before_it(/* BUG-167 */)
+    {
+        await using var db = NewContext();
+        db.DataElements.Add(new DataElement { Key = "A", Label = "A", IsActive = true, CreatedBy = "t", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+        var first = await db.AuditLog.AsNoTracking().OrderByDescending(a => a.Sequence).FirstAsync();
+
+        _clock.UtcNow = _clock.UtcNow.AddMilliseconds(-5);   // a save that prepared earlier and got the gate second
+        db.DataElements.Add(new DataElement { Key = "B", Label = "B", IsActive = true, CreatedBy = "t", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+
+        var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+        chain[^1].AtUtc.Should().Be(first.AtUtc);
+        _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Full_case_workflow_writes_a_valid_audit_chain()
     {
         await using var db = NewContext();
