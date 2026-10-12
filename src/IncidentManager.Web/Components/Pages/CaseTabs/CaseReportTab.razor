@@ -188,14 +188,14 @@
         _profileDirty = false;
     }
 
-    private void OnProfileChanged(ChangeEventArgs e)
+    private async Task OnProfileChanged(ChangeEventArgs e)
     {
         var raw = e.Value?.ToString();
         _selectedProfileId = string.IsNullOrEmpty(raw) ? null : Guid.Parse(raw);
         _profileDirty = _selectedProfileId != CaseProfileId;
         _wordTemplate = "";   // the default follows the newly selected profile
         // Keep an open preview in sync with the new selection.
-        if (State.ShowPreview) _ = RefreshPreview();
+        if (State.ShowPreview) await RefreshPreview();
     }
 
     private async Task SaveProfile()
@@ -220,19 +220,26 @@
 
     private Guid? TemplateChoice => Guid.TryParse(_wordTemplate, out var tid) ? tid : null;
 
+    // BUG-36: only the latest refresh is shown; a slower earlier one (another profile) finishing last is dropped.
+    private int _previewGeneration;
+
     private async Task RefreshPreview()
     {
+        var generation = ++_previewGeneration;
         _docxError = null;
         try
         {
             // A report filled from a Word template is previewed as that document; otherwise the built-in layout.
             var filled = await Reports.FillTemplatePreviewAsync(CaseId, _selectedProfileId, _tlp, TemplateChoice);
+            var model = filled is null ? await Reports.BuildPreviewModelAsync(CaseId, _selectedProfileId, _tlp) : null;
+            if (generation != _previewGeneration) return;
             (_filledName, _filledBytes) = filled is { } f ? (f.TemplateName, f.Bytes) : (null, null);
             _docxPending = filled is not null;
-            _previewModel = filled is null ? await Reports.BuildPreviewModelAsync(CaseId, _selectedProfileId, _tlp) : null;
+            _previewModel = model;
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
+            if (generation != _previewGeneration) return;
             Toasts.Error(ex.Message);
             (_previewModel, _filledName, _filledBytes, _docxPending) = (null, null, null, false);
         }
