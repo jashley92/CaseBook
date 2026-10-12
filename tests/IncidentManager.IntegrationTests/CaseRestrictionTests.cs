@@ -133,6 +133,24 @@ public sealed class CaseRestrictionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_team_member_cannot_make_themselves_incident_commander_of_a_restricted_case(/* BUG-128 */)
+    {
+        var id = await SeedOpenCaseAsync();
+        _user.UserId = "analyst-1";
+        _user.RoleSet = [AppRole.Analyst];
+        var svc = NewService();
+        await svc.SetRestrictedAsync(id, true, null);
+
+        var takeOver = () => svc.AssignAsync(id, "analyst-1", "Analyst One", CaseAssignmentRole.IncidentCommander);
+
+        await takeOver.Should().ThrowAsync<InvalidOperationException>().WithMessage("*name a new incident commander*");
+        await svc.Invoking(s => s.SetRestrictedAsync(id, false, "Not sensitive after all"))
+            .Should().ThrowAsync<InvalidOperationException>();
+        // Adding someone in another role is still anyone's to do.
+        await svc.AssignAsync(id, "analyst-2", "Analyst Two", CaseAssignmentRole.Analyst);
+    }
+
+    [Fact]
     public async Task The_incident_commander_can_lift_it_with_a_reason_that_lands_in_the_audit_trail()
     {
         var id = await SeedOpenCaseAsync(ic: "analyst-ic");

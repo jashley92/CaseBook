@@ -1188,6 +1188,13 @@ public sealed class CaseService
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        // BUG-128: on a restricted case the incident commander can lift the restriction, so naming one is held to those
+        // who could lift it already: the current incident commander or someone cleared for restricted cases.
+        if (c.IsRestricted && role == CaseAssignmentRole.IncidentCommander
+            && !string.Equals(c.IncidentCommander, userId, StringComparison.Ordinal)
+            && !CaseRestrictionPolicy.CanLift(_user, c.IncidentCommander))
+            throw new InvalidOperationException(
+                "On a restricted case, only the incident commander or someone cleared for restricted cases can name a new incident commander.");
         c.Assign(userId, displayName, role, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
 
