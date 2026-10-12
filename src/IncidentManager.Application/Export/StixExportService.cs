@@ -101,10 +101,13 @@ public sealed class StixExportService
 
         // One SCO per entity; remember the mapped STIX id so relationships can reference it.
         var stixIdByEntity = new Dictionary<Guid, string>();
-        var tlpByEntity = entities.ToDictionary(e => e.Id, e => e.Tlp);
+        // BUG-73: an entity without its own marking carries the default, as it does in the Word report, so a bundle never
+        // goes out unmarked (a TIP reads no marking as unrestricted).
+        var fallback = _reporting.CurrentValue.EffectiveDefaultTlp;
+        var tlpByEntity = entities.ToDictionary(e => e.Id, e => (TlpLevel?)(e.Tlp ?? fallback));
         foreach (var e in entities.OrderBy(e => e.CreatedAtUtc))
         {
-            var sco = MapEntity(e);
+            var sco = MapEntity(e, tlpByEntity[e.Id]);
             stixIdByEntity[e.Id] = (string)sco["id"]!;
             objects.Add(sco);
         }
@@ -132,7 +135,7 @@ public sealed class StixExportService
         }
 
         // The marking definitions the bundle uses, so a consumer that doesn't know TLP 2.0 can still read them.
-        var used = entities.Where(e => e.Tlp is not null).Select(e => e.Tlp!.Value).Distinct().Order().ToList();
+        var used = tlpByEntity.Values.Select(t => t!.Value).Append(fallback).Distinct().Order().ToList();
         objects.InsertRange(1, used.Select(MarkingDefinition));
 
         // report SDO tying the graph together with the case metadata.
@@ -153,8 +156,9 @@ public sealed class StixExportService
             ["x_casebook_case_number"] = c.CaseNumber,
             ["x_casebook_classification"] = c.Classification?.ToString(),
             ["x_casebook_severity"] = c.Severity.ToString(),
-            // The report carries the most restricted marking of anything it contains.
-            ["object_marking_refs"] = MarkingRefs(used.Count > 0 ? used.Max() : null),
+            // The report carries the most restricted marking of anything it contains, and at least the default (its
+            // title and summary are the case's).
+            ["object_marking_refs"] = MarkingRefs(used.Max()),
         }));
 
         var bundle = new Dictionary<string, object?>
@@ -167,7 +171,7 @@ public sealed class StixExportService
     }
 
     /// <summary>Maps a case entity to the closest STIX 2.1 cyber-observable object.</summary>
-    private static Dictionary<string, object?> MapEntity(CaseEntity e)
+    private static Dictionary<string, object?> MapEntity(CaseEntity e, TlpLevel? tlp)
     {
         var (stixType, props) = Observable(e);
         var o = new Dictionary<string, object?>
@@ -178,7 +182,7 @@ public sealed class StixExportService
         };
         foreach (var (k, v) in props) o[k] = v;
 
-        o["object_marking_refs"] = MarkingRefs(e.Tlp);   // BUG-41: the indicator's TLP, so a TLP:RED IOC isn't shared unmarked
+        o["object_marking_refs"] = MarkingRefs(tlp);   // BUG-41: the indicator's TLP, so a TLP:RED IOC isn't shared unmarked
         // Analyst verdict + provenance travel as spec-legal custom properties.
         o["x_casebook_entity_type"] = e.Type.ToString();
         o["x_casebook_disposition"] = e.Disposition.ToString();

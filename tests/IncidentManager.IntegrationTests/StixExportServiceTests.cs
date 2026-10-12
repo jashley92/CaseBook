@@ -109,15 +109,16 @@ public sealed class StixExportServiceTests : IDisposable
     {
         // BUG-41: the bundle had no markings, so a TLP:RED indicator went to a partner unmarked.
         const string red = "marking-definition--e828b379-4e03-4974-9ac4-e53a884c97c1";
+        const string amber = "marking-definition--55d920b0-5e8b-4f79-9ee9-91f868d9b421";
         var objs = Objects((await NewService().BuildAsync(SeedGraph(ipTlp: TlpLevel.Red)))!);
 
-        var marking = objs.Single(o => (string)o["type"]! == "marking-definition");
-        marking["id"].Should().Be(red);
-        marking["name"].Should().Be("TLP:RED");
+        objs.Where(o => (string)o["type"]! == "marking-definition").Select(o => (string)o["name"]!)
+            .Should().BeEquivalentTo(["TLP:AMBER", "TLP:RED"]);
 
         string[]? Refs(Dictionary<string, object?> o) => o.TryGetValue("object_marking_refs", out var r) ? (string[]?)r : null;
         Refs(objs.Single(o => (string)o["type"]! == "ipv4-addr")).Should().Equal(red);
-        Refs(objs.Single(o => (string)o["type"]! == "domain-name")).Should().BeNull("an unmarked indicator stays unmarked");
+        // BUG-73: an indicator with no marking of its own carries the default (AMBER), as in the Word report.
+        Refs(objs.Single(o => (string)o["type"]! == "domain-name")).Should().Equal(amber);
         objs.Where(o => (string)o["type"]! == "relationship").Select(Refs).Should().AllSatisfy(r => r.Should().Equal(red), "both relationships touch the RED address");
         Refs(objs.Single(o => (string)o["type"]! == "report")).Should().Equal(red);
     }

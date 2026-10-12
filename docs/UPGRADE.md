@@ -163,6 +163,10 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ### Next release (unreleased)
 
+- **STIX exports are marked with the default TLP.** An indicator with no TLP of its own now carries
+  `Reporting:DefaultTlp` (AMBER unless changed), and the bundle's report object at least that, as the Word report
+  already did. Before, such a bundle went out with no marking, which a TIP or partner reads as unrestricted.
+
 - **DbaApplies installs: the schema script now runs.** `deploy/sql/casebook-schema-sqlserver.sql` failed with
   "Invalid column name 'TemplateId'" (or 'TemplateFileName' on a re-run), so a DBA-applied install or upgrade stopped
   part-way. Its data statements now run through `EXEC`, and CI applies the script to an empty database twice. Apply
