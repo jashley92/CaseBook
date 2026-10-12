@@ -109,6 +109,26 @@ public class CaseNotificationsTests
     }
 
     [Fact]
+    public async Task A_case_with_two_deadlines_needing_attention_lists_both(/* BUG-191 */)
+    {
+        var sender = new CapturingEmailSender();
+        var users = new FakeUserDirectory().Add("ic1", "Ina", "ina@insurer.example");
+        var n = new CaseNotifications(sender, TestEmail.Composer(), users, TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), new NullChatNotifier(), new FakePrefs(),
+            sent: new InMemoryNotificationMarks());
+        var c = NewCase();
+        var ny = new DeadlineReminder(c.Id, c.CaseNumber, c.Title, c.Severity, ["ic1"],
+            IncidentManager.Application.Sla.SlaState.Breached, "NYDFS", Now.AddHours(-8), TimeSpan.FromHours(-8));
+        var ca = ny with { State = IncidentManager.Application.Sla.SlaState.AtRisk, JurisdictionLabel = "California",
+            DueAtUtc = Now.AddHours(16), Remaining = TimeSpan.FromHours(16) };
+
+        await n.OnDeadlineApproachingAsync([ny, ca]);
+
+        var body = sender.Sent.Should().ContainSingle().Subject.HtmlBody;
+        body.Should().Contain("NYDFS: past deadline").And.Contain("California: at risk");
+    }
+
+    [Fact]
     public async Task A_deadline_reminder_nobody_could_be_sent_is_tried_again_and_broadcast_once(/* BUG-156 */)
     {
         var sender = new CapturingEmailSender();

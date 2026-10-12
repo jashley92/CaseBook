@@ -43,11 +43,13 @@ public sealed class NotificationDeadlineScanner(
             // the reported time is recorded.
             .Where(c => !c.IsArchived && c.ReportedAtUtc == null && c.Classification != null);
 
-        // BUG-11: every candidate's clock in one pass, then only the ones that need attention are loaded.
-        var heads = (await deadlines.HeadlinesNowAsync(db, scope, ct: ct))
-            .Where(h => h.Value.NeedsAttention).ToDictionary(h => h.Key, h => h.Value);
-        if (heads.Count == 0) return 0;
-        var ids = heads.Keys.ToList();
+        // BUG-11: every candidate's clock in one pass, then only the ones that need attention are loaded. BUG-191: every
+        // jurisdiction's clock, not just the headline's, so a breached one can't hide another's.
+        var due = (await deadlines.AllNowAsync(db, scope, ct))
+            .Select(h => (h.Key, Statuses: h.Value.Where(s => s.NeedsAttention).ToList()))
+            .Where(h => h.Statuses.Count > 0).ToDictionary(h => h.Key, h => h.Statuses);
+        if (due.Count == 0) return 0;
+        var ids = due.Keys.ToList();
         var candidates = await scope.Where(c => ids.Contains(c.Id))
             .Select(c => new Candidate(
                 c.Id, c.CaseNumber, c.Title, c.Severity, c.IncidentCommander,
@@ -59,19 +61,21 @@ public sealed class NotificationDeadlineScanner(
         var reminders = new List<DeadlineReminder>();
         foreach (var cand in candidates.OrderBy(c => c.CaseNumber, StringComparer.Ordinal))
         {
-            var headline = heads[cand.CaseId];
-
-            // Once per band: a fresh reminder when it enters "at risk" and again if it enters "breached".
-            if (!tracker.TryMarkNotified(cand.CaseId, headline.State, headline.DueAtUtc)) continue;
-
             var recipients = new List<string>();
             if (!string.IsNullOrWhiteSpace(cand.IncidentCommander)) recipients.Add(cand.IncidentCommander!);
             recipients.AddRange(cand.AssigneeUserIds.Where(id => !string.IsNullOrWhiteSpace(id)));
+            var to = recipients.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-            reminders.Add(new DeadlineReminder(
-                cand.CaseId, cand.CaseNumber, cand.CaseTitle, cand.Severity,
-                recipients.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-                headline.State, headline.JurisdictionLabel, headline.DueAtUtc, headline.Remaining));
+            // Jurisdictions on the same clock (band and deadline) share one reminder that names them all.
+            foreach (var clock in due[cand.CaseId].GroupBy(s => (s.State, s.DueAtUtc)).OrderBy(g => g.Key.DueAtUtc))
+            {
+                // Once per band: a fresh reminder when it enters "at risk" and again if it enters "breached".
+                if (!tracker.TryMarkNotified(cand.CaseId, clock.Key.State, clock.Key.DueAtUtc)) continue;
+                reminders.Add(new DeadlineReminder(
+                    cand.CaseId, cand.CaseNumber, cand.CaseTitle, cand.Severity, to,
+                    clock.Key.State, string.Join(", ", clock.Select(s => s.JurisdictionLabel)), clock.Key.DueAtUtc,
+                    clock.First().Remaining));
+            }
         }
 
         if (reminders.Count > 0)

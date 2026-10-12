@@ -540,9 +540,10 @@ public sealed class CaseNotifications : ICaseNotifications
 
         foreach (var (to, list) in byRecipient)
         {
-            // A recipient who is both IC and an assignee on the same case would otherwise see it twice.
+            // A recipient who is both IC and an assignee on the same case would otherwise see it twice. BUG-191: a case can
+            // have more than one clock needing attention (one per deadline), each listed.
             var ordered = NotYetSentTo(list
-                .DistinctBy(r => r.CaseId)
+                .DistinctBy(DeadlineKey)
                 .OrderBy(r => r.DueAtUtc ?? DateTimeOffset.MaxValue)
                 .ThenBy(r => r.CaseNumber, StringComparer.OrdinalIgnoreCase), DeadlineKey, to);
             if (ordered.Count == 0) continue;

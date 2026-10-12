@@ -170,6 +170,11 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ### Next release
 
+- **Deadline reminders cover every jurisdiction in play.** Only the soonest-due clock was reminded, and a breached
+  jurisdiction stays soonest until it's notified, so a second jurisdiction could go at risk and breach with no
+  reminder naming it. Each jurisdiction's clock is now reminded as it enters at risk and breached (jurisdictions on
+  the same deadline share one line). Reminders already sent aren't sent again.
+
 - **A bare AD group name maps only that group in the server's own domain.** A mapping written `SOC-AppAdmins` used
   to match a group of that name in any domain the server trusts, so whoever could create groups in a child or
   trusted domain could make one and get its role. It now matches the server's domain (and local or built-in groups)

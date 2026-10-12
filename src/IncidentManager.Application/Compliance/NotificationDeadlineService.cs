@@ -116,6 +116,20 @@ public sealed class NotificationDeadlineService
         return heads;
     }
 
+    /// <summary>
+    /// BUG-191: every jurisdiction's clock for each unreported case in <paramref name="cases"/> (not just the headline),
+    /// with the live settings and rules, for the reminders: a breached jurisdiction stays the headline until it's
+    /// notified, and would hide another's at-risk and breach. Empty when the feature is off.
+    /// </summary>
+    public async Task<Dictionary<Guid, IReadOnlyList<NotificationDeadlineStatus>>> AllNowAsync(IAppDbContext db, IQueryable<Case> cases,
+        CancellationToken ct = default)
+    {
+        var settings = _settings.Current;
+        if (!settings.Enabled) return [];
+        var ruleSet = await _rules.LoadRuleSetAsync(settings.DefaultWindowHours, ct);
+        return await StatusesAsync(db, cases, settings, ruleSet, _clock.UtcNow, reported: false, ct);
+    }
+
     /// <summary>Jurisdictions in play = the union of the notification jurisdictions across the case's data elements.</summary>
     public static async Task<IReadOnlyList<string>> JurisdictionsInPlayAsync(IAppDbContext db, IEnumerable<string> elementKeys,
         CancellationToken ct = default)
@@ -160,6 +174,17 @@ public sealed class NotificationDeadlineService
         IAppDbContext db, IQueryable<Case> cases, NotificationDeadlineSettings settings,
         NotificationRuleSet ruleSet, DateTimeOffset now, bool reported, CancellationToken ct = default)
     {
+        var result = new Dictionary<Guid, NotificationDeadlineStatus>();
+        foreach (var (id, statuses) in await StatusesAsync(db, cases, settings, ruleSet, now, reported, ct))
+            if (NotificationDeadlinePolicy.Headline(statuses) is { } head) result[id] = head;
+        return result;
+    }
+
+    // Each case's per-jurisdiction statuses, for cases with a triggered obligation and a jurisdiction in play.
+    private static async Task<Dictionary<Guid, IReadOnlyList<NotificationDeadlineStatus>>> StatusesAsync(
+        IAppDbContext db, IQueryable<Case> cases, NotificationDeadlineSettings settings,
+        NotificationRuleSet ruleSet, DateTimeOffset now, bool reported, CancellationToken ct)
+    {
         var elementJur = await db.DataElements.AsNoTracking()
             .Where(e => e.NotificationJurisdictions != null && e.NotificationJurisdictions != "")
             .Select(e => new { e.Key, e.NotificationJurisdictions })
@@ -176,7 +201,7 @@ public sealed class NotificationDeadlineService
             })
             .ToListAsync(ct);
 
-        var result = new Dictionary<Guid, NotificationDeadlineStatus>();
+        var result = new Dictionary<Guid, IReadOnlyList<NotificationDeadlineStatus>>();
         foreach (var c in rows)
         {
             var start = ResolveStart(settings.StartBasis, c.Classification, c.DetectedAtUtc, c.MatStatus, c.MatDecided, c.MatRecorded);
@@ -187,11 +212,9 @@ public sealed class NotificationDeadlineService
                 .Select(j => j.ToUpperInvariant()).Distinct().ToList();
             if (jurisdictions.Count == 0) continue;
 
-            var head = NotificationDeadlinePolicy.Headline(
-                NotificationDeadlinePolicy.EvaluateByJurisdiction(start,
-                    NotifiedAt(c.Notices.ToDictionary(n => n.Jurisdiction, n => n.NotifiedAtUtc, StringComparer.OrdinalIgnoreCase), c.ReportedAtUtc),
-                    jurisdictions, ruleSet, settings.AtRiskThresholdPercent, now));
-            if (head is not null) result[c.Id] = head;
+            result[c.Id] = NotificationDeadlinePolicy.EvaluateByJurisdiction(start,
+                NotifiedAt(c.Notices.ToDictionary(n => n.Jurisdiction, n => n.NotifiedAtUtc, StringComparer.OrdinalIgnoreCase), c.ReportedAtUtc),
+                jurisdictions, ruleSet, settings.AtRiskThresholdPercent, now);
         }
         return result;
     }

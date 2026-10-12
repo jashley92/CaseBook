@@ -128,6 +128,37 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_breached_jurisdiction_does_not_hide_another_ones_reminders()
+    {
+        // BUG-191: only the headline (the soonest-due clock) was reminded, and a breached one stays the headline until
+        // it's notified, so a second jurisdiction went at risk and breached unannounced.
+        await SeedMaterialBreachAsync(hoursAgo: 80);
+        await using (var db = NewContext())
+        {
+            (await db.DataElements.SingleAsync()).NotificationJurisdictions = "NY,CA";
+            await db.SaveChangesAsync();
+        }
+        await SaveNyRuleAsync();
+        await new NotificationRuleService(NewFactory(), _user, _clock).SaveAsync(null, "CA", "California", 96);
+        EnableClock();
+        var notifications = new CapturingNotifications();
+        var tracker = new DeadlineReminderTracker();
+
+        // 80h in: NY (72h) is past, CA (96h) is at risk (over 80%).
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(2);
+        notifications.Received.Select(r => (r.JurisdictionLabel, r.State)).Should().BeEquivalentTo(new[]
+        {
+            ("New York (NYDFS Part 500)", SlaState.Breached), ("California", SlaState.AtRisk),
+        });
+
+        // 100h in: CA is past too. NY was already reminded for its breach.
+        _clock.UtcNow = _clock.UtcNow.AddHours(20);
+        notifications.Received.Clear();
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(1);
+        notifications.Received.Single().Should().Match<DeadlineReminder>(r => r.JurisdictionLabel == "California" && r.State == SlaState.Breached);
+    }
+
+    [Fact]
     public async Task A_reminder_that_failed_to_send_is_sent_again_on_the_next_scan()
     {
         // BUG-08: the reminder used to be marked sent before delivery, so an SMTP outage lost it for good.
