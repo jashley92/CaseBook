@@ -18,12 +18,15 @@ public partial class DeployScriptTests
             .ToList();
 
         calls.Should().NotBeEmpty();
-        calls.Where(c => !Regex.IsMatch(c.Text, @"\s-I(\s|$)")).Select(c => $"{c.File}:{c.Line}")
+        calls.Where(c => !UpperIFlag().IsMatch(c.Text)).Select(c => $"{c.File}:{c.Line}")
             .Should().BeEmpty("every sqlcmd.exe call that runs a .sql file needs -I");
     }
 
     [GeneratedRegex(@"sqlcmd(\.exe)?\b.*\s-i\s", RegexOptions.None)]
     private static partial Regex SqlcmdWithInputFile();
+
+    [GeneratedRegex(@"\s-I(\s|$)", RegexOptions.None)]
+    private static partial Regex UpperIFlag();
 
     private static string RepoRoot()
     {
