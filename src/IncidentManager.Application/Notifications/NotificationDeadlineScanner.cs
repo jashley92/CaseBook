@@ -38,21 +38,26 @@ public sealed class NotificationDeadlineScanner(
         // on the IRP ladder (a Complex Event can't have started a clock under either basis). The precise
         // start/trigger test is left to NotificationDeadlineService, the single source of truth — this is
         // just a cheap pre-filter. Elevated-events-only intake keeps this set small.
-        var candidates = await db.Cases.AsNoTracking().ExcludingExercises() // PROD-43: no real-clock reminders for drills
+        var scope = db.Cases.AsNoTracking().ExcludingExercises() // PROD-43: no real-clock reminders for drills
             // INV-43: closed cases stay in — closing doesn't answer a notification, so reminders continue until
             // the reported time is recorded.
-            .Where(c => !c.IsArchived && c.ReportedAtUtc == null && c.Classification != null)
+            .Where(c => !c.IsArchived && c.ReportedAtUtc == null && c.Classification != null);
+
+        // BUG-11: every candidate's clock in one pass, then only the ones that need attention are loaded.
+        var heads = (await deadlines.HeadlinesNowAsync(db, scope, ct: ct))
+            .Where(h => h.Value.NeedsAttention).ToDictionary(h => h.Key, h => h.Value);
+        if (heads.Count == 0) return 0;
+        var ids = heads.Keys.ToList();
+        var candidates = await scope.Where(c => ids.Contains(c.Id))
             .Select(c => new Candidate(
                 c.Id, c.CaseNumber, c.Title, c.Severity, c.IncidentCommander,
                 c.Assignments.Select(a => a.UserId).ToList()))
             .ToListAsync(ct);
 
         var reminders = new List<DeadlineReminder>();
-        foreach (var cand in candidates)
+        foreach (var cand in candidates.OrderBy(c => c.CaseNumber, StringComparer.Ordinal))
         {
-            var eval = await deadlines.EvaluateAsync(cand.CaseId, ct);
-            var headline = eval.Headline;
-            if (headline is null || !headline.NeedsAttention) continue;   // on track / already reported / no clock
+            var headline = heads[cand.CaseId];
 
             // Once per band: a fresh reminder when it enters "at risk" and again if it enters "breached".
             if (!tracker.TryMarkNotified(cand.CaseId, headline.State, headline.DueAtUtc)) continue;

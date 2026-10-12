@@ -42,9 +42,12 @@ public sealed class LegalRegisterService
     public async Task<IReadOnlyList<LegalRegisterRow>> BuildAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var cases = await db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises()
+        var scope = db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises()
             .Where(c => c.LegalReferral.IsReferred || c.LegalHold || c.Classification == Classification.Breach
-                        || c.Materiality.Status != MaterialityStatus.Undetermined)
+                        || c.Materiality.Status != MaterialityStatus.Undetermined);
+        // BUG-11: every case's headline deadline in one pass, reported ones included (met or missed).
+        var heads = await _deadlines.HeadlinesNowAsync(db, scope, includeReported: true, ct);
+        var cases = await scope
             .Select(c => new
             {
                 c.Id, c.CaseNumber, c.Title, c.Classification, c.Severity, c.Phase, c.CreatedAtUtc,
@@ -59,8 +62,7 @@ public sealed class LegalRegisterService
         foreach (var c in cases.OrderBy(x => x.CaseNumber, StringComparer.Ordinal))
         {
             // The headline (most urgent) jurisdiction, when the deadline feature is on and a clock applies.
-            var d = await _deadlines.EvaluateAsync(c.Id, ct);
-            var h = d.Headline;
+            var h = heads.GetValueOrDefault(c.Id);
             rows.Add(new LegalRegisterRow(
                 c.CaseNumber, c.Title, c.Classification, c.Severity, c.Phase, c.CreatedAtUtc,
                 c.ReferredAtUtc, c.ReferredBy is { } by ? _users.DisplayFor(by) : null, c.ReferredToContact,

@@ -97,6 +97,25 @@ public sealed class NotificationDeadlineService
         { NoticeCodes = notices.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase) };
     }
 
+    /// <summary>
+    /// BUG-11: the headline for each case in <paramref name="cases"/> in one pass, with the live settings and rules (the
+    /// same answer <see cref="EvaluateAsync"/> gives per case). Unreported cases only unless
+    /// <paramref name="includeReported"/>, which adds reported cases' met / missed outcome. Empty when the feature is off.
+    /// </summary>
+    public async Task<Dictionary<Guid, NotificationDeadlineStatus>> HeadlinesNowAsync(IAppDbContext db, IQueryable<Case> cases,
+        bool includeReported = false, CancellationToken ct = default)
+    {
+        var settings = _settings.Current;
+        if (!settings.Enabled) return [];
+        var ruleSet = await _rules.LoadRuleSetAsync(settings.DefaultWindowHours, ct);
+        var now = _clock.UtcNow;
+        var heads = await HeadlinesAsync(db, cases, settings, ruleSet, now, reported: false, ct);
+        if (includeReported)
+            foreach (var (id, head) in await HeadlinesAsync(db, cases, settings, ruleSet, now, reported: true, ct))
+                heads[id] = head;
+        return heads;
+    }
+
     /// <summary>Jurisdictions in play = the union of the notification jurisdictions across the case's data elements.</summary>
     public static async Task<IReadOnlyList<string>> JurisdictionsInPlayAsync(IAppDbContext db, IEnumerable<string> elementKeys,
         CancellationToken ct = default)
