@@ -435,6 +435,11 @@ Write-Step "Stopping app pool '$AppPoolName'"
 if ((Get-WebAppPoolState -Name $AppPoolName).Value -ne 'Stopped') { Stop-WebAppPool -Name $AppPoolName }
 Start-Sleep -Seconds 3   # let the worker exit and release the DLL locks
 
+# BUG-183: what the database has applied before the new build runs, so a rollback can tell whether it migrated.
+$appliedBeforeDeploy = @()
+try { $appliedBeforeDeploy = @(Invoke-SqlColumn "IF OBJECT_ID('dbo.__EFMigrationsHistory') IS NOT NULL SELECT MigrationId FROM dbo.__EFMigrationsHistory") }
+catch { Write-Warn2 "Couldn't read the migration history before deploying: $($_.Exception.Message)" }
+
 Write-Step "Deploying new binaries (preserving appsettings.Production.json + logs)"
 # /MIR removes stale files from the prior version; /XF + /XD keep the production config and logs.
 & robocopy $appSrc $SitePath /MIR /XF appsettings.Production.json VERSION.txt.bak /XD logs /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
@@ -485,6 +490,21 @@ if (-not $started -or ($lastStatus -ge 500)) {
     Stop-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
     & robocopy $rollbackDir $SitePath /MIR /XF appsettings.Production.json /XD logs /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
+    # BUG-183: if the new build recorded migrations, the previous build would run against a schema (and records) it
+    # doesn't know: from v1.5.2 on, row hashes and seals are in formats older builds read as tampered. Leave the pool
+    # stopped until the database backup is restored.
+    $migrated = @()
+    try {
+        $now = @(Invoke-SqlColumn "IF OBJECT_ID('dbo.__EFMigrationsHistory') IS NOT NULL SELECT MigrationId FROM dbo.__EFMigrationsHistory")
+        $migrated = @($now | Where-Object { $appliedBeforeDeploy -notcontains $_ })
+    } catch { Write-Warn2 "Couldn't read the migration history to check what the new build applied: $($_.Exception.Message)" }
+    if ($migrated.Count -gt 0) {
+        throw ("Upgrade failed -- the previous build's files are back, but the new build had already applied " +
+               "$($migrated.Count) migration(s) ($([string]::Join(', ', ($migrated | Select-Object -First 3)))), so the app pool " +
+               "is left STOPPED. Restore the pre-upgrade DB backup (in the SQL default backup directory), then start the " +
+               "app pool. Running the previous build on the upgraded database would raise false tamper alarms. " +
+               "Review the event-log error above and docs/UPGRADE.md.")
+    }
     Start-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
     throw ("Upgrade failed -- the previous build has been restored and the app pool restarted. " +
            "If the new build had begun applying migrations, restore the DB backup in the SQL default backup " +

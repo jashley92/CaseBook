@@ -156,6 +156,13 @@ The database is **not** restored automatically. The app applies pending migratio
 serves any request, and each migration commits on its own, so a startup failure (500.30) can leave the schema
 partly upgraded. Compare `__EFMigrationsHistory` with the release's `migrations-sqlserver.txt`: if new
 migrations were recorded, restore the pre-upgrade backup before retrying so schema and binaries match again.
+When the script sees that the new build recorded migrations, it restores the previous binaries but leaves the app
+pool **stopped** until you've restored the backup.
+
+Never roll back the binaries alone over a database a newer build has run against. From v1.5.2 on, row hashes and
+seals are written in formats earlier builds don't read, so an earlier build reports them as tampered (critical log,
+SIEM event, alarm email, banner), and a migration's `Down()` can't always undo one (a wider column holding longer
+values). Restore the pre-upgrade database backup together with the previous binaries.
 
 ---
 
