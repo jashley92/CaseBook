@@ -168,7 +168,14 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
-### Next release
+### v1.5.3
+
+A bug-fix release with five migrations, applied at startup, and a first start that records each history row's hash
+in the audit trail (one audited system entry per row, once). Visible to the team: skipping Containment needs a
+recorded decision, an archived case is restored before its classification, materiality or impact changes, and
+Supersede warns in more cases. Touching the deployment: DBA-applied installs now run the schema with `sqlcmd -I`, a
+failed upgrade that already migrated leaves the app pool stopped, and audit entries use format 2, so update any
+compliance-bundle verifier of your own. Read the notes below before upgrading.
 
 - **A brief left current by v1.5.2's clean-up is corrected.** Where two brief saves had raced, v1.5.2 kept one
   current but could keep the earlier, which then disagreed with the case summary. A data migration makes the later
