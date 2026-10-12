@@ -151,13 +151,18 @@ else if (_pending.Count > 0)
     @* Target *@
     <div class="im-card nc-card">
         <div class="fw-semibold mb-2">Target</div>
+        @if (TargetLocked(p))
+        {
+            @* BUG-120: say why the choice is fixed: the rest has to follow what's already in. *@
+            <div class="form-text mb-2">Part of this import is already in a case, so the rest goes there too. The target can't change now.</div>
+        }
         <div class="form-check">
-            <input class="form-check-input" type="radio" id="tgtNew" checked="@(p.TargetKind == CaseImportTargetKind.NewCase)"
+            <input class="form-check-input" type="radio" id="tgtNew" checked="@(p.TargetKind == CaseImportTargetKind.NewCase)" disabled="@TargetLocked(p)"
                    @onchange="async () => { p.TargetKind = CaseImportTargetKind.NewCase; await RefreshGates(); }" />
             <label class="form-check-label" for="tgtNew">Create a new case</label>
         </div>
         <div class="form-check mb-2">
-            <input class="form-check-input" type="radio" id="tgtExisting" checked="@(p.TargetKind == CaseImportTargetKind.ExistingCase)"
+            <input class="form-check-input" type="radio" id="tgtExisting" checked="@(p.TargetKind == CaseImportTargetKind.ExistingCase)" disabled="@TargetLocked(p)"
                    @onchange="() => p.TargetKind = CaseImportTargetKind.ExistingCase" />
             <label class="form-check-label" for="tgtExisting">Add to an existing case</label>
         </div>
@@ -600,6 +605,10 @@ else if (_pending.Count > 0)
         if (_gate.Gate?.GateName == eval.GateName) _gate.Gate = eval;   // same gates: keep the ticks
         else _gate.UseGate(eval);
     }
+
+    // BUG-120: once a case was created, or any item applied, the rest of the import follows it.
+    private static bool TargetLocked(CaseImportPreview p) =>
+        p.CreatedCaseId is not null || p.Timeline.Any(t => t.Applied) || p.Entities.Any(e => e.Applied);
 
     private static bool CanApply(CaseImportPreview p)
     {
