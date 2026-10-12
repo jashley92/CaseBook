@@ -672,10 +672,10 @@ else
             catch (JSException) { /* shortcuts are a progressive enhancement */ }
 
             // RD-04: whether the Now/Next pane fits beside the tab.
-            try { await JS.InvokeVoidAsync("imMedia.watch", _dotNetRef, "(min-width: 1200px)"); }
+            try { _mediaWatches.Add(await JS.InvokeAsync<int>("imMedia.watch", _dotNetRef, "(min-width: 1200px)")); }
             catch (JSException) { /* without it the pane shows, as on a wide screen */ }
             // RD-25: phone layout below 768px.
-            try { await JS.InvokeVoidAsync("imMedia.watch", _dotNetRef, "(max-width: 767.98px)", "OnPhoneChanged"); }
+            try { _mediaWatches.Add(await JS.InvokeAsync<int>("imMedia.watch", _dotNetRef, "(max-width: 767.98px)", "OnPhoneChanged")); }
             catch (JSException) { /* without it the desktop layout shows */ }
         }
 
@@ -713,6 +713,8 @@ else
     private void OnAuthStateChanged(Task<AuthenticationState> state) =>
         _ = InvokeAsync(async () => { await RefreshPermissionsAsync(); StateHasChanged(); });
 
+    private readonly List<int> _mediaWatches = [];
+
     public async ValueTask DisposeAsync()
     {
         AuthState.AuthenticationStateChanged -= OnAuthStateChanged;
@@ -722,6 +724,11 @@ else
         // EasyMDE editors and the entity graph are torn down by their own tab components (UX-13).
         try { await JS.InvokeVoidAsync("imKeymap.unregisterCase"); }   // U-14: stop forwarding keys to this circuit
         catch { /* circuit may already be gone during teardown */ }
+        foreach (var id in _mediaWatches.Where(id => id > 0))   // BUG-37: the viewport listeners go with the page
+        {
+            try { await JS.InvokeVoidAsync("imMedia.unwatch", id); }
+            catch { /* circuit may already be gone during teardown */ }
+        }
         _dotNetRef?.Dispose();
     }
 
