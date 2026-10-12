@@ -54,7 +54,7 @@ public sealed record ReportActionItemRow(string Title, string? Owner, DateTimeOf
 {
     /// <summary>The status as printed: "Done, 2026-10-01 10:18 UTC by Dev Analyst" for a completed task.</summary>
     public string StatusLine => CompletedAtUtc is { } at
-        ? $"{Status}, {at:yyyy-MM-dd HH:mm} UTC{(string.IsNullOrWhiteSpace(CompletedBy) ? "" : " by " + CompletedBy)}"
+        ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{Status}, {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC{(string.IsNullOrWhiteSpace(CompletedBy) ? "" : " by " + CompletedBy)}")
         : Status;
 }
 public sealed record ReportAssignmentRow(string User, string Role);

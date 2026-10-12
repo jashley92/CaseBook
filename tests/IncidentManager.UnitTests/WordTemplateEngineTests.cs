@@ -61,6 +61,22 @@ public class WordTemplateEngineTests
     }
 
     [Fact]
+    public void Case_text_that_looks_like_a_field_is_printed_as_typed(/* BUG-44 */)
+    {
+        var template = Doc(["Title: {{case.title}}"], ["{{ioc.value}}"]);
+        var m = Model() with
+        {
+            Title = "Note says {{report.content_hash}}",
+            Iocs = [new ReportIocRow("Url", "hxxps://x/{{case.title}}", "Malicious", null, DateTimeOffset.UnixEpoch, null, null)]
+        };
+
+        var body = Read(_engine.Render(template, m)).Body;
+
+        body.Should().Contain("Title: Note says {{report.content_hash}}").And.Contain("hxxps://x/{{case.title}}");
+        body.Should().NotContain("abc123");
+    }
+
+    [Fact]
     public void The_starter_template_passes_its_own_check()
     {
         var check = _engine.Check(_engine.Starter());

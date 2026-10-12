@@ -231,7 +231,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         body.AppendChild(Title("Post-Incident Review"));
         body.AppendChild(P($"{m.CaseNumber} — {m.Title}", size: 24));
         body.AppendChild(P($"Classification: {m.Classification}    Phase: {m.Phase}"
-            + (m.ClosedAtUtc is { } closed ? $"    Closed: {closed:yyyy-MM-dd}" : ""), size: 20));
+            + (m.ClosedAtUtc is { } closed ? string.Create(CultureInfo.InvariantCulture, $"    Closed: {closed.UtcDateTime:yyyy-MM-dd}") : ""), size: 20));
 
         body.AppendChild(Heading("Review"));
         if (m.Review is null)
@@ -269,7 +269,7 @@ public sealed partial class ReportGenerator : IReportGenerator
     private static void AppendBusinessImpact(Body body, CaseReportModel m)
     {
         var any = false;
-        if (m.AffectedIndividualsCount is { } n) { body.AppendChild(P($"Affected individuals: {n:N0}")); any = true; }
+        if (m.AffectedIndividualsCount is { } n) { body.AppendChild(P(string.Create(CultureInfo.InvariantCulture, $"Affected individuals: {n:N0}"))); any = true; }
         if (m.DataElementsSummary is not null) { body.AppendChild(P($"Data elements: {m.DataElementsSummary}")); any = true; }
         if (m.NotificationTriggersSummary is not null) { body.AppendChild(P($"Notification triggers: {m.NotificationTriggersSummary}")); any = true; }
         if (!string.IsNullOrWhiteSpace(m.AffectedStates)) { body.AppendChild(P($"Affected jurisdictions: {m.AffectedStates}")); any = true; }
@@ -280,7 +280,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (m.MaterialityStatus is { } ms)
         {
             var by = string.IsNullOrWhiteSpace(m.MaterialityDecisionMaker) ? "" : $" by {m.MaterialityDecisionMaker}";
-            var on = m.MaterialityDecidedOnUtc is { } d ? $" on {d:yyyy-MM-dd}" : "";
+            var on = m.MaterialityDecidedOnUtc is { } d ? string.Create(CultureInfo.InvariantCulture, $" on {d.UtcDateTime:yyyy-MM-dd}") : "";
             body.AppendChild(P($"Materiality: {ms}{(m.MaterialityDetermined ? $", determined{by}{on}" : "")}."));
             if (!string.IsNullOrWhiteSpace(m.MaterialityRationale)) body.AppendChild(P($"Materiality rationale: {m.MaterialityRationale}"));
             any = true;

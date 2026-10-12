@@ -145,7 +145,15 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
 
         // Everything else: single values (unknown or out-of-place fields become blank).
         Replace(root, name => ReportTemplateFields.Scalar(m, name));
+
+        // BUG-44: case text that looks like a field was held out of the passes above; put it back as typed.
+        foreach (var t in root.Descendants<Text>())
+            if (t.Text.Contains(Held, StringComparison.Ordinal)) t.Text = t.Text.Replace(Held, "{{", StringComparison.Ordinal);
     }
+
+    // BUG-44: stands in for "{{" inside a filled-in value, so a later pass can't read case text
+    // ("{{report.content_hash}}" in a note) as a field. A private-use character: never in a template or case data.
+    private const string Held = "\uE000";
 
     private static bool Is(string text, string field) =>
         ReportTemplateFields.Placeholder().Match(text) is { Success: true } mt && mt.Value.Length == text.Length
@@ -182,7 +190,8 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         foreach (var t in root.Descendants<Text>().ToList())
         {
             if (!t.Text.Contains("{{", StringComparison.Ordinal)) continue;
-            var replaced = ReportTemplateFields.Placeholder().Replace(t.Text, mt => value(mt.Groups[1].Value) ?? mt.Value);
+            var replaced = ReportTemplateFields.Placeholder().Replace(t.Text,
+                mt => value(mt.Groups[1].Value)?.Replace("{{", Held, StringComparison.Ordinal) ?? mt.Value);
             SetText(t, replaced);
         }
     }

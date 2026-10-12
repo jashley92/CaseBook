@@ -146,7 +146,7 @@ public sealed class ReportService
         {
             if (t.Status != ActionItemStatus.Done)
                 return $"{t.Title} ({TaskStatusLabel(t.Status).ToLowerInvariant()})";
-            var done = t.CompletedAtUtc is { } at ? $"done {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC" : "done";
+            var done = t.CompletedAtUtc is { } at ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"done {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC") : "done";
             if (t.CompletedBy is { } by) done += $" by {_users.DisplayFor(by)}";
             return results.TryGetValue(t.Id, out var r) ? $"{t.Title} ({done}): {Cases.TaskResults.Excerpt(r.Text, 300)}" : $"{t.Title} ({done})";
         });
@@ -270,7 +270,7 @@ public sealed class ReportService
         var sections = await ResolveSectionsAsync(db, c.ReportProfileId, ct);
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
         var model = await WithReviewAsync(db, c, BuildModel(c, now, logo, sections, elemSummary, triggers, null), ct);
-        var banner = $"PREVIEW of template “{tpl.Name}” with case {c.CaseNumber}, {now:yyyy-MM-dd HH:mm} UTC. " +
+        var banner = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"PREVIEW of template “{tpl.Name}” with case {c.CaseNumber}, {now.UtcDateTime:yyyy-MM-dd HH:mm} UTC. ") +
                      "Not a stored or approved report.";
         var rendered = _templates.Render(bytes, model, banner);
         var safeName = string.Concat(tpl.Name.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '-'));
