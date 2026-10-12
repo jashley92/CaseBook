@@ -145,6 +145,27 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task Indicators_in_the_title_tasks_and_sources_are_defanged_too(/* BUG-74 */)
+    {
+        await using var db = NewContext();
+        _user.RoleSet = [AppRole.Manager];
+        var c = Case.Open(2026, 1, "Phish", "Phishing from http://login-micros0ft.test/x", Classification.Incident,
+            Severity.High, CaseOrigin.InternalDetection, "ic", _clock.UtcNow);
+        c.AddEntity(EntityType.Url, "http://login-micros0ft.test/x", null, EntityDisposition.Malicious, null, "Proofpoint", "ic", _clock.UtcNow);
+        c.AddEntity(EntityType.IpAddress, "203.0.113.7", null, EntityDisposition.Malicious, null, "seen at 203.0.113.7", "ic", _clock.UtcNow);
+        c.ActionItems.Add(new ActionItem { CaseId = c.Id, Title = "Block 203.0.113.7 at the firewall", CreatedBy = "ic", CreatedAtUtc = _clock.UtcNow });
+        db.Cases.Add(c);
+        await db.SaveChangesAsync();
+
+        var model = await NewReportService(db).BuildPreviewModelAsync(c.Id, null);
+
+        model.IndicatorsDefanged.Should().BeTrue();
+        model.Title.Should().NotContain("http://").And.Contain("hxxp");
+        model.ActionItems.Single().Title.Should().NotContain("203.0.113.7").And.Contain("203[.]0[.]113[.]7");
+        model.Iocs.Should().OnlyContain(i => i.Source == null || !i.Source.Contains("203.0.113.7"));
+    }
+
+    [Fact]
     public async Task Word_report_contains_the_attack_chain_from_event_steps()
     {
         _user.RoleSet = [AppRole.IncidentCommander];

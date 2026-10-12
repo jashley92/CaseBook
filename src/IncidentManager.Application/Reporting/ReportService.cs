@@ -94,7 +94,7 @@ public sealed class ReportService
                 TaxLabel("TimelineEntryType", x.Type.ToString()),
                 d.Text(EntryText(x) + ActionsTaken(c, x, taskResults)) + Cited(c, x) + (x.IsImported ? "" : Late(x.OccurredAtUtc, FirstRecorded(c, x)))
                     + AfterClosureNote(c, FirstRecorded(c, x), x.CreatedAtUtc),
-                x.Source, x.IsImported, _users.DisplayFor(x.CreatedBy))))
+                d.NullableText(x.Source), x.IsImported, _users.DisplayFor(x.CreatedBy))))
             .ToList();
 
         if (opts.IncludeMilestones)
@@ -698,7 +698,7 @@ public sealed class ReportService
             LogoContentType = logo?.ContentType,
             Sections = [],
             CaseNumber = c.CaseNumber,
-            Title = c.Title,
+            Title = d.Text(c.Title),   // BUG-74: a title like "Phishing from hxxp://…" is defanged too
             Classification = ClassificationLabel(c.Classification),
             Phase = PhaseLabel(c.Phase),
             Severity = _severityLabels.For(c.Severity),
@@ -756,7 +756,7 @@ public sealed class ReportService
                 .OrderBy(x => x.Disposition == EntityDisposition.Malicious ? 0 : 1).ThenBy(x => x.Type).ThenBy(x => x.Value)
                 .Select(x => new ReportIocRow(TaxLabel("EntityType", x.Type.ToString()), d.Value(x.Type, x.Value),
                     TaxLabel("EntityDisposition", x.Disposition.ToString()), x.Tlp is { } t ? Domain.Enums.Tlp.Label(t) : null,
-                    x.CreatedAtUtc, x.Source, d.NullableText(x.Description)))
+                    x.CreatedAtUtc, d.NullableText(x.Source), d.NullableText(x.Description)))
                 .ToList(),
             OrganizationName = string.IsNullOrWhiteSpace(opts.OrganizationName) ? null : opts.OrganizationName.Trim(),
             TeamName = string.IsNullOrWhiteSpace(opts.TeamName) ? null : opts.TeamName.Trim(),
@@ -764,7 +764,7 @@ public sealed class ReportService
             LogoContentType = logo?.ContentType,
             Sections = sections,
             CaseNumber = c.CaseNumber,
-            Title = c.Title,
+            Title = d.Text(c.Title),   // BUG-74: a title like "Phishing from hxxp://…" is defanged too
             Classification = ClassificationLabel(c.Classification),
             Phase = PhaseLabel(c.Phase),
             Severity = _severityLabels.For(c.Severity),
@@ -780,14 +780,14 @@ public sealed class ReportService
             NotificationTriggersSummary = notificationTriggersSummary,
             AffectedStates = c.AffectedStates,
             LegalReferred = c.LegalReferral.IsReferred,
-            LegalNote = c.LegalReferral.RegulatoryRelevanceNote,
+            LegalNote = d.NullableText(c.LegalReferral.RegulatoryRelevanceNote),
             LegalHold = c.LegalHold,
             MaterialityStatus = c.Materiality.Status == Domain.Enums.MaterialityStatus.Undetermined
                 ? null : MaterialityLabel(c.Materiality.Status),
             MaterialityDetermined = c.Materiality.IsDetermined,
             MaterialityDecisionMaker = c.Materiality.DecisionMaker,
             MaterialityDecidedOnUtc = c.Materiality.DecidedOnUtc,
-            MaterialityRationale = c.Materiality.Rationale,
+            MaterialityRationale = d.NullableText(c.Materiality.Rationale),
             DetectedAtUtc = c.DetectedAtUtc,
             ReportedAtUtc = c.ReportedAtUtc,
             ContainedAtUtc = c.ContainedAtUtc,
@@ -807,18 +807,18 @@ public sealed class ReportService
             // INV-05: history reads in the order things happened, dated when they happened.
             ClassificationHistory = c.ClassificationChanges
                 .OrderBy(x => x.EffectiveAt)
-                .Select(x => new ReportClassificationItem(x.EffectiveAt, x.From is { } fc ? ClassificationLabel(fc) : "—", ClassificationLabel(x.To), x.Reason, _users.DisplayFor(x.ChangedBy)))
+                .Select(x => new ReportClassificationItem(x.EffectiveAt, x.From is { } fc ? ClassificationLabel(fc) : "—", ClassificationLabel(x.To), d.Text(x.Reason), _users.DisplayFor(x.ChangedBy)))
                 .ToList(),
             SeverityHistory = c.SeverityChanges
                 .OrderBy(x => x.EffectiveAt)
-                .Select(x => new ReportClassificationItem(x.EffectiveAt, x.From is { } f ? _severityLabels.For(f) : "—", _severityLabels.For(x.To), x.Reason ?? "", _users.DisplayFor(x.ChangedBy)))
+                .Select(x => new ReportClassificationItem(x.EffectiveAt, x.From is { } f ? _severityLabels.For(f) : "—", _severityLabels.For(x.To), d.Text(x.Reason ?? ""), _users.DisplayFor(x.ChangedBy)))
                 .ToList(),
             // A third-party case's disclosure milestones: when the vendor told us what, and what we confirmed.
             DisclosureMilestones = c.TimelineEntries
                 .Where(x => EventSteps.IsDisclosure(c, x))
                 .InTimelineOrder()
                 .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()),
-                    d.Text(Content.MarkdownService.PlainLine(x.Description)), x.Source, Stated: StepTime.Stated(x)))
+                    d.Text(Content.MarkdownService.PlainLine(x.Description)), d.NullableText(x.Source), Stated: StepTime.Stated(x)))
                 .ToList(),
             // The attack chain: the adversary's steps, in our estate or, on a third-party case, in the vendor's.
             AttackChain = c.TimelineEntries
@@ -857,7 +857,7 @@ public sealed class ReportService
                 // Owner may be a user id (playbook tasks default to the case owner) or free text; resolve
                 // ids to display names, pass free text through, so the examiner report never shows a raw id.
                 // HR-02: a done task prints what it found or did, when, and who did it.
-                .Select(x => new ReportActionItemRow(x.Title, _users.DisplayFor(x.Owner), x.DueAtUtc, TaskStatusLabel(x.Status),
+                .Select(x => new ReportActionItemRow(d.Text(x.Title), _users.DisplayFor(x.Owner), x.DueAtUtc, TaskStatusLabel(x.Status),
                     x.Status == ActionItemStatus.Done && taskResults.TryGetValue(x.Id, out var r) ? d.Text(r.Text) : null,
                     x.Status == ActionItemStatus.Done ? x.CompletedAtUtc : null,
                     x.Status == ActionItemStatus.Done && x.CompletedBy is { } by ? _users.DisplayFor(by) : null))
@@ -871,7 +871,7 @@ public sealed class ReportService
             Entities = c.Entities
                 .OrderBy(x => x.Type).ThenBy(x => x.Value)
                 .Select(x => new ReportEntityRow(TaxLabel("EntityType", x.Type.ToString()), d.Value(x.Type, x.Value), d.NullableText(x.Label),
-                    TaxLabel("EntityDisposition", x.Disposition.ToString()), d.NullableText(x.Description), x.Source))
+                    TaxLabel("EntityDisposition", x.Disposition.ToString()), d.NullableText(x.Description), d.NullableText(x.Source)))
                 .ToList(),
             Relationships = c.EntityRelationships
                 .OrderBy(x => x.CreatedAtUtc)
