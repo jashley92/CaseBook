@@ -360,9 +360,12 @@ public sealed class ReportService
         var bytes = await _templateStore.GetAsync(tid, ct)
                     ?? throw new InvalidOperationException($"The file for template “{t.Name}” is missing. Ask an administrator to replace it.");
         // BUG-75: a template stored before the upload check required the marking is refused here, not filled unmarked.
-        if (!_templates.Check(bytes).Placeholders.Contains(ReportTemplateFields.MarkingField, StringComparer.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"Template “{t.Name}” has no {{{{report.tlp}}}} field, so the report would print " +
-                                                "without its TLP marking. Ask an administrator to add it and replace the file, or pick another template.");
+        // BUG-166: one it can fill: a field only in a tracked deletion or split across a link prints nothing or as typed.
+        var check = _templates.Check(bytes);
+        if (!(check.Fillable ?? check.Placeholders).Contains(ReportTemplateFields.MarkingField, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Template “{t.Name}” has no {{{{report.tlp}}}} field it can fill, so the report would print " +
+                                                "without its TLP marking. Ask an administrator to add it (typed in one go, outside any tracked " +
+                                                "change) and replace the file, or pick another template.");
         return new ResolvedTemplate(t.Name, t.Sha256, bytes);
     }
 

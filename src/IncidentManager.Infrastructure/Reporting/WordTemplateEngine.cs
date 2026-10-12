@@ -20,6 +20,7 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         var problems = new List<string>();
         var fill = new List<string>();   // BUG-151: ones that only stop it filling correctly
         var found = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var fillable = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);   // BUG-166
         try
         {
             using var ms = new MemoryStream(docx);
@@ -62,6 +63,8 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
                     JoinSplitFields(joined);
                     var whole = joined.Descendants<Text>().SelectMany(t => ReportTemplateFields.Placeholder().Matches(t.Text))
                         .Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
+                    foreach (var m in joined.Descendants<Text>().SelectMany(t => ReportTemplateFields.Placeholder().Matches(t.Text)))
+                        fillable.Add(m.Groups[1].Value.ToLowerInvariant());
                     foreach (System.Text.RegularExpressions.Match match in ReportTemplateFields.Placeholder().Matches(p.InnerText))
                         if (!whole.Contains(match.Value))
                             fill.Add($"{match.Value} is split by a link, a content control or a tracked change, so it can't be filled. " +
@@ -84,7 +87,7 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
             fill.Add("It has no {{report.tlp}} field, so a report could go out without its TLP marking. " +
                      "Add {{report.tlp}} (the page header is a good place), as the starter template does.");
         fill = fill.Distinct().ToList();
-        return new TemplateCheck(problems.Concat(fill).Distinct().ToList(), found.ToList(), fill);
+        return new TemplateCheck(problems.Concat(fill).Distinct().ToList(), found.ToList(), fill, fillable.ToList());
     }
 
     private static IEnumerable<OpenXmlPart> AllParts(OpenXmlPartContainer root)

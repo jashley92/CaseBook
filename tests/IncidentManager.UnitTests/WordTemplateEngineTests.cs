@@ -75,6 +75,25 @@ public class WordTemplateEngineTests
     }
 
     [Fact]
+    public void A_marking_only_in_a_tracked_deletion_isnt_one_the_report_can_fill(/* BUG-166 */)
+    {
+        using var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
+        {
+            var main = doc.AddMainDocumentPart();
+            var deleted = new DeletedRun(new Run(new DeletedText("{{report.tlp}}") { Space = SpaceProcessingModeValues.Preserve }))
+                { Id = "1", Author = "Ana" };
+            main.Document = new Document(new Body(new Paragraph(R("{{case.title}}")), new Paragraph(deleted)));
+            main.Document.Save();
+        }
+
+        var check = _engine.Check(ms.ToArray());
+        check.Placeholders.Should().Contain("report.tlp", "the text is there");
+        check.Fillable.Should().Contain("case.title").And.NotContain("report.tlp", "a deletion isn't printed");
+        _engine.Check(_engine.Starter()).Fillable.Should().Contain("report.tlp");
+    }
+
+    [Fact]
     public void A_template_that_doesnt_print_the_TLP_marking_is_refused(/* BUG-75 */)
     {
         using var ms = new MemoryStream();

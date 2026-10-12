@@ -6,8 +6,10 @@ namespace IncidentManager.Application.Reporting;
 /// correctly (no <c>{{report.tlp}}</c>, a field Word split): an upload is refused for them, but a template stored before
 /// v1.5.2 may have them, so a config bundle still imports it (generation refuses an unmarked one).
 /// </summary>
+/// BUG-166: <see cref="Fillable"/> are the fields a report can actually fill: whole in one run once split runs are
+/// rejoined, and not in a tracked deletion. <see cref="Placeholders"/> also lists ones it can't.
 public sealed record TemplateCheck(IReadOnlyList<string> Problems, IReadOnlyList<string> Placeholders,
-    IReadOnlyList<string>? FillProblems = null)
+    IReadOnlyList<string>? FillProblems = null, IReadOnlyList<string>? Fillable = null)
 {
     public bool Ok => Problems.Count == 0;
 
