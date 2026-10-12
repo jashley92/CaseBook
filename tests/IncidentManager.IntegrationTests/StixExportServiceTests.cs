@@ -97,6 +97,8 @@ public sealed class StixExportServiceTests : IDisposable
 
         var objs = Objects(result);
         objs.Should().Contain(o => (string)o["type"]! == "identity" && (string)o["name"]! == "Northwind Mutual");
+        // BUG-201: an RFC 4122 v5 UUID (the same as Python's uuid.uuid5(uuid.NAMESPACE_URL, "urn:casebook:identity:Northwind Mutual")).
+        objs.Single(o => (string)o["type"]! == "identity")["id"].Should().Be("identity--3f7415bd-3021-5fdf-9d35-fd0855cd732b");
         objs.Count(o => (string)o["type"]! == "report").Should().Be(1);
         objs.Count(o => (string)o["type"]! == "relationship").Should().Be(2);
         objs.Should().Contain(o => (string)o["type"]! == "ipv4-addr" && (string)o["value"]! == "185.220.101.47");

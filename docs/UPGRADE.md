@@ -170,6 +170,11 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ### Next release
 
+- **The STIX export's identity id is a valid RFC 4122 UUID.** It was derived from the organization name without the
+  version and variant bits STIX 2.1 requires, so strict consumers (the OASIS `stix2` library, validators, some TIPs)
+  refused the bundle or dropped the identity. It's now a version-5 UUID, which **changes the identity id once**: a
+  platform that keyed on the old one sees a new author for later exports.
+
 - **A blanked SLA target is off, as its hint says.** Clearing a Containment or Resolution hours box saved it blank,
   but the shipped `appsettings.json` default (4 h, 12 h, …) kept applying, while the Settings page showed it blank. A
   blank target now means none. **If you cleared one and its cases were still being measured, they stop being

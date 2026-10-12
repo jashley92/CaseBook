@@ -241,14 +241,19 @@ public sealed class StixExportService
     // identifier, not a security primitive; there is nothing secret to protect.
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CA5350:Do Not Use Weak Cryptographic Algorithms",
         Justification = "RFC 4122 name-based UUID derivation, not a security use.")]
-    private static Guid Deterministic(string ns, string name)
+    internal static Guid Deterministic(string ns, string name)
     {
-        var bytes = System.Security.Cryptography.SHA1.HashData(
-            System.Text.Encoding.UTF8.GetBytes($"casebook:{ns}:{name}"));
-        var g = new byte[16];
-        Array.Copy(bytes, g, 16);
-        return new Guid(g);
+        // BUG-201: a real name-based (v5) UUID, in the URL namespace. STIX 2.1 requires an RFC 4122 UUID, and SHA-1 bytes
+        // copied straight into a Guid carry no version or variant, so strict consumers refused the bundle.
+        var input = UrlNamespace.ToByteArray(bigEndian: true)
+            .Concat(System.Text.Encoding.UTF8.GetBytes($"urn:casebook:{ns}:{name}")).ToArray();
+        var g = System.Security.Cryptography.SHA1.HashData(input)[..16];
+        g[6] = (byte)((g[6] & 0x0F) | 0x50);   // version 5
+        g[8] = (byte)((g[8] & 0x3F) | 0x80);   // the RFC 4122 variant
+        return new Guid(g, bigEndian: true);
     }
+
+    private static readonly Guid UrlNamespace = new("6ba7b811-9dad-11d1-80b4-00c04fd430c8");   // RFC 4122 appendix C
 
     private static TlpLevel? Max(TlpLevel? a, TlpLevel? b) => a is null ? b : b is null ? a : (TlpLevel)Math.Max((int)a, (int)b);
 
