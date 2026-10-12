@@ -120,6 +120,11 @@ public sealed class CaseService
     /// <summary>Applies need-to-know scoping to a case query for the current user.</summary>
     private IQueryable<Case> Scoped(IQueryable<Case> query) => query.ForUser(_user);
 
+    // BUG-46: a read keyed by a case id answers only for a case the caller can see (callers scope today; this holds
+    // if one doesn't).
+    private Task<bool> CanSeeAsync(IAppDbContext db, Guid caseId, CancellationToken ct) =>
+        Scoped(db.Cases.AsNoTracking()).AnyAsync(c => c.Id == caseId, ct);
+
     /// <summary>
     /// F-21: the write-authorization backstop. Every mutating use case calls this on entry; the caller's
     /// method name (via <see cref="CallerMemberNameAttribute"/>) is looked up in the single reviewed
@@ -914,6 +919,7 @@ public sealed class CaseService
         CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
+        if (!await CanSeeAsync(db, id, ct)) return GateEvaluation.None(trigger);   // BUG-46
         return await _gates.EvaluateAsync(db, id, trigger, summaryProvided, ct);
     }
 
@@ -1347,6 +1353,7 @@ public sealed class CaseService
     public async Task<IReadOnlyList<EntityOverlap>> FindEntityOverlapsAsync(Guid caseId, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
+        if (!await CanSeeAsync(db, caseId, ct)) return Array.Empty<EntityOverlap>();   // BUG-46
         var mine = await db.CaseEntities.AsNoTracking()
             .Where(e => e.CaseId == caseId)
             .Select(e => new { e.Id, e.Type, e.Value })
@@ -1510,6 +1517,7 @@ public sealed class CaseService
         Guid caseId, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
+        if (!await CanSeeAsync(db, caseId, ct)) return Array.Empty<RelatedCaseSuggestion>();   // BUG-46
 
         var mine = await db.CaseEntities.AsNoTracking()
             .Where(e => e.CaseId == caseId)
@@ -1755,7 +1763,8 @@ public sealed class CaseService
         return new SupersedeResult(primary.Id, primary.CaseNumber, copied, !linked);
     }
 
-    /// <summary>Removes a case link. No-op unless the link touches <paramref name="caseId"/> and the caller can see it.</summary>
+    /// <summary>Removes a case link. No-op unless the link touches <paramref name="caseId"/> and the caller can see both
+    /// ends (BUG-47: as linking requires).</summary>
     public async Task RemoveCaseLinkAsync(Guid caseId, Guid linkId, CancellationToken ct = default)
     {
         Require();
@@ -1763,9 +1772,9 @@ public sealed class CaseService
         var link = await db.CaseLinks.FirstOrDefaultAsync(l => l.Id == linkId, ct);
         if (link is null || (link.CaseId != caseId && link.RelatedCaseId != caseId)) return;
 
-        var canSee = await Scoped(db.Cases.AsNoTracking())
-            .AnyAsync(c => c.Id == link.CaseId || c.Id == link.RelatedCaseId, ct);
-        if (!canSee) return;
+        var visible = await Scoped(db.Cases.AsNoTracking())
+            .CountAsync(c => c.Id == link.CaseId || c.Id == link.RelatedCaseId, ct);
+        if (visible < 2) return;
 
         db.CaseLinks.Remove(link);
         await db.SaveChangesAsync(ct);
@@ -1778,6 +1787,7 @@ public sealed class CaseService
     public async Task<IReadOnlyList<CaseLinkView>> GetCaseLinksAsync(Guid caseId, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
+        if (!await CanSeeAsync(db, caseId, ct)) return Array.Empty<CaseLinkView>();   // BUG-46
         var links = await db.CaseLinks.AsNoTracking()
             .Where(l => l.CaseId == caseId || l.RelatedCaseId == caseId)
             .ToListAsync(ct);
@@ -2233,6 +2243,11 @@ public sealed class CaseService
 
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, caseId, ct);
+        // BUG-48: the person taking the case on (and the tasks handed to them) must be able to open it.
+        if (_roles is not null && _users is not null && c.IsRestricted
+            && !CaseAudience.CanSee(c.IsRestricted, c.IncidentCommander, c.Assignments.Select(a => a.UserId).ToList(), _users.Resolve(toUserId), _roles))
+            throw new InvalidOperationException(
+                "That person can't see this restricted case. Add them to the team first, then hand it off.");
         var now = _clock.UtcNow;
         c.TimelineEntries.Add(new TimelineEntry
         {

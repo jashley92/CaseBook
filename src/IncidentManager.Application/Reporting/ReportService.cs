@@ -197,6 +197,7 @@ public sealed class ReportService
     public async Task<List<Report>> ListAsync(Guid caseId, ReportKind kind = ReportKind.Case, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
+        if (!await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct)) return [];   // BUG-46
         return await db.Reports.AsNoTracking().Where(r => r.CaseId == caseId && r.Kind == kind)
             .OrderByDescending(r => r.CreatedAtUtc).ToListAsync(ct);
     }

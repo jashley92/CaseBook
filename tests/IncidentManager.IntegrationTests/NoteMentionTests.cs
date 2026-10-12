@@ -126,7 +126,9 @@ public sealed class NoteMentionTests : IDisposable
 
         await Svc().HandOffAsync(id, "teammate", "Where it stands: contained.", reassignMyOpenTasks: false, notify: true);
         await Svc().HandOffAsync(id, "teammate", "Second handoff, not emailed.", reassignMyOpenTasks: false);
-        await Svc().HandOffAsync(id, "outsider", "To someone outside the restricted case.", reassignMyOpenTasks: false, notify: true);
+        // BUG-48: someone outside a restricted case can't take it on (nor its tasks); add them to the team first.
+        await Svc().Invoking(s => s.HandOffAsync(id, "outsider", "To someone outside the restricted case.", reassignMyOpenTasks: true, notify: true))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*can't see this restricted case*");
 
         _notifications.HandedOff.Should().Equal("teammate");
     }
