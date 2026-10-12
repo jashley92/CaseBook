@@ -257,7 +257,7 @@
                     else if (_deadlines.Statuses.Count > 0)
                     {
                         <table class="table table-sm im-table mb-2">
-                            <thead><tr><th>Jurisdiction</th><th>Window</th><th>Deadline</th><th>Status</th></tr></thead>
+                            <thead><tr><th>Jurisdiction</th><th>Window</th><th>Deadline</th><th>Status</th><th>Notified</th></tr></thead>
                             <tbody>
                                 @foreach (var s in _deadlines.Statuses)
                                 {
@@ -268,6 +268,36 @@
                                             @if (s is { IsActive: true, Remaining: { } rem }) { <span class="text-muted"> (@RemainingLabel(rem))</span> }
                                         </td>
                                         <td><span class="@Ui.SlaBadge(s.State)">@Ui.SlaLabel(s.State)</span></td>
+                                        @* BUG-09: each regulator's notice is recorded on its own row; its clock stops there. *@
+                                        <td class="small">
+                                            @if (s.NotifiedAtUtc is { } notified)
+                                            {
+                                                @TimeDisp.Short(notified)
+                                                @if (CanEdit && _deadlines.NoticeCodes.Contains(s.JurisdictionCode))
+                                                {
+                                                    <button type="button" class="im-rail-x ms-1" aria-label="Remove the notice to @s.JurisdictionLabel"
+                                                            title="Remove this notice (a mis-entry)" @onclick="() => RemoveNotice(s.JurisdictionCode, s.JurisdictionLabel)">×</button>
+                                                }
+                                            }
+                                            else if (CanEdit && _noticeFor == s.JurisdictionCode)
+                                            {
+                                                <div class="d-flex align-items-center gap-1 flex-wrap">
+                                                    <input type="datetime-local" class="form-control form-control-sm" style="max-width: 13rem" @bind="_noticeAt"
+                                                           aria-label="When @s.JurisdictionLabel was notified (@TimeDisp.Label)" />
+                                                    <button class="btn btn-sm btn-primary" @onclick="() => SaveNotice(s.JurisdictionCode)">Save</button>
+                                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => _noticeFor = null">Cancel</button>
+                                                </div>
+                                                @if (_noticeError is not null) { <div class="text-danger small">@_noticeError</div> }
+                                            }
+                                            else if (CanEdit)
+                                            {
+                                                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => BeginNotice(s.JurisdictionCode)">Record notice</button>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">Not yet</span>
+                                            }
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -282,7 +312,7 @@
                             {
                                 <div class="d-flex align-items-end gap-2 flex-wrap">
                                     <div>
-                                        <label class="form-label small mb-0" for="ov-reported-at">Reported at (@TimeDisp.Label)</label>
+                                        <label class="form-label small mb-0" for="ov-reported-at">@(_deadlines.Statuses.Count > 1 ? "Every regulator not yet recorded was notified at" : "Reported at") (@TimeDisp.Label)</label>
                                         <input id="ov-reported-at" type="datetime-local" class="form-control form-control-sm" @bind="_reportedAt"
                                                title="When regulators were notified. Saving this stops the notification countdown." />
                                     </div>
@@ -294,13 +324,13 @@
                             else
                             {
                                 <button class="btn btn-sm btn-outline-primary" @onclick="BeginMarkReported">
-                                    <span class="bi bi-send-check" aria-hidden="true"></span> Mark reported to regulators
+                                    <span class="bi bi-send-check" aria-hidden="true"></span> @(_deadlines.Statuses.Count > 1 ? "Record notice to all regulators" : "Mark reported to regulators")
                                 </button>
                             }
                         }
                         else if (_deadlines.ReportedAtUtc is not null)
                         {
-                            <button class="btn btn-sm btn-link text-danger p-0" @onclick="ClearReported">Clear reported milestone</button>
+                            <button class="btn btn-sm btn-link text-danger p-0" @onclick="ClearReported">@(_deadlines.NoticeCodes.Count > 1 ? "Clear all notices" : "Clear reported milestone")</button>
                         }
                     }
                 </div>
@@ -672,6 +702,46 @@
     // Regulatory notification deadlines (PROD-07)
     private CaseNotificationDeadlines? _deadlines;
     private bool _markingReported;
+
+    // BUG-09: recording one regulator's notice.
+    private string? _noticeFor;
+    private DateTime? _noticeAt;
+    private string? _noticeError;
+
+    private void BeginNotice(string code)
+    {
+        _noticeFor = code;
+        _noticeError = null;
+        _noticeAt = UtcToWall(Clock.UtcNow);
+    }
+
+    private async Task SaveNotice(string code)
+    {
+        _noticeError = null;
+        if (_noticeAt is not { } at) { _noticeError = "Enter when they were notified."; return; }
+        try
+        {
+            await Cases.RecordNoticeAsync(CaseId, code, WallToUtc(at));
+            _noticeFor = null;
+            _deadlines = await Deadlines.EvaluateAsync(CaseId);
+            await OnChanged.InvokeAsync();
+            Toasts.Success("Notice recorded");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+        {
+            _noticeError = ex.Message;
+        }
+    }
+
+    private async Task RemoveNotice(string code, string label) =>
+        await RequestConfirm.InvokeAsync(($"Remove the notice to {label}? Its countdown resumes.", "Remove",
+            async () =>
+            {
+                await Cases.RemoveNoticeAsync(CaseId, code);
+                _deadlines = await Deadlines.EvaluateAsync(CaseId);
+                await OnChanged.InvokeAsync();
+                Toasts.Success("Notice removed");
+            }));
     private DateTime? _reportedAt;
     private string? _reportedError;
 

@@ -20,6 +20,9 @@ public sealed record CaseNotificationDeadlines(
         false, NotificationStartBasis.Determination, null, null,
         Array.Empty<NotificationDeadlineStatus>(), null);
 
+    /// <summary>BUG-09: the jurisdictions with a recorded notice (empty for a case reported before notices were per jurisdiction).</summary>
+    public IReadOnlySet<string> NoticeCodes { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>There is a live countdown to show (feature on, clock started, at least one jurisdiction).</summary>
     public bool HasClock => Enabled && StartInstant is not null && Statuses.Count > 0;
     /// <summary>Feature is on and the obligation is triggered, but no jurisdiction is in play yet.</summary>
@@ -67,7 +70,8 @@ public sealed class NotificationDeadlineService
                 MatStatus = x.Materiality.Status,
                 MatDecidedOn = x.Materiality.DecidedOnUtc,
                 MatRecordedAt = x.Materiality.RecordedAtUtc,
-                Keys = x.DataElements.Select(d => d.ElementKey).ToList()
+                Keys = x.DataElements.Select(d => d.ElementKey).ToList(),
+                Notices = x.JurisdictionNotices.Select(n => new { n.Jurisdiction, n.NotifiedAtUtc }).ToList()
             })
             .FirstOrDefaultAsync(ct);
 
@@ -80,26 +84,42 @@ public sealed class NotificationDeadlineService
             Array.Empty<NotificationDeadlineStatus>(), null);
         if (start is null) return empty;
 
-        // Jurisdictions in play = the union of the notification jurisdictions across the case's data elements.
+        var jurisdictions = await JurisdictionsInPlayAsync(db, c.Keys, ct);
+        if (jurisdictions.Count == 0) return empty;
+
+        var ruleSet = await _rules.LoadRuleSetAsync(settings.DefaultWindowHours, ct);
+        var notices = c.Notices.ToDictionary(n => n.Jurisdiction, n => n.NotifiedAtUtc, StringComparer.OrdinalIgnoreCase);
+        var statuses = NotificationDeadlinePolicy.EvaluateByJurisdiction(start, NotifiedAt(notices, c.ReportedAtUtc), jurisdictions, ruleSet,
+            settings.AtRiskThresholdPercent, _clock.UtcNow);
+
+        return new CaseNotificationDeadlines(true, settings.StartBasis, start, c.ReportedAtUtc,
+            statuses, NotificationDeadlinePolicy.Headline(statuses))
+        { NoticeCodes = notices.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase) };
+    }
+
+    /// <summary>Jurisdictions in play = the union of the notification jurisdictions across the case's data elements.</summary>
+    public static async Task<IReadOnlyList<string>> JurisdictionsInPlayAsync(IAppDbContext db, IEnumerable<string> elementKeys,
+        CancellationToken ct = default)
+    {
+        var keys = elementKeys.ToList();
+        if (keys.Count == 0) return [];
         var raw = await db.DataElements.AsNoTracking()
-            .Where(e => c.Keys.Contains(e.Key)
-                        && e.NotificationJurisdictions != null && e.NotificationJurisdictions != "")
+            .Where(e => keys.Contains(e.Key) && e.NotificationJurisdictions != null && e.NotificationJurisdictions != "")
             .Select(e => e.NotificationJurisdictions!)
             .ToListAsync(ct);
-        var jurisdictions = raw
+        return raw
             .SelectMany(s => s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             .Select(j => j.ToUpperInvariant())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        if (jurisdictions.Count == 0) return empty;
-
-        var ruleSet = await _rules.LoadRuleSetAsync(settings.DefaultWindowHours, ct);
-        var statuses = NotificationDeadlinePolicy.Evaluate(start, c.ReportedAtUtc, jurisdictions, ruleSet,
-            settings.AtRiskThresholdPercent, _clock.UtcNow);
-
-        return new CaseNotificationDeadlines(true, settings.StartBasis, start, c.ReportedAtUtc,
-            statuses, NotificationDeadlinePolicy.Headline(statuses));
     }
+
+    /// <summary>
+    /// BUG-09: when a jurisdiction was notified: its own notice; for a case reported before notices were recorded per
+    /// jurisdiction (none recorded), the case's reported time, which meant every regulator.
+    /// </summary>
+    private static Func<string, DateTimeOffset?> NotifiedAt(IReadOnlyDictionary<string, DateTimeOffset> notices, DateTimeOffset? reportedAtUtc) =>
+        code => notices.TryGetValue(code, out var at) ? at : notices.Count == 0 ? reportedAtUtc : null;
 
     /// <summary>
     /// The headline deadline for each unreported case in <paramref name="cases"/> whose obligation is triggered
@@ -132,7 +152,8 @@ public sealed class NotificationDeadlineService
             {
                 c.Id, c.Classification, c.DetectedAtUtc, c.ReportedAtUtc,
                 MatStatus = c.Materiality.Status, MatDecided = c.Materiality.DecidedOnUtc, MatRecorded = c.Materiality.RecordedAtUtc,
-                Keys = c.DataElements.Select(d => d.ElementKey).ToList()
+                Keys = c.DataElements.Select(d => d.ElementKey).ToList(),
+                Notices = c.JurisdictionNotices.Select(n => new { n.Jurisdiction, n.NotifiedAtUtc }).ToList()
             })
             .ToListAsync(ct);
 
@@ -148,7 +169,9 @@ public sealed class NotificationDeadlineService
             if (jurisdictions.Count == 0) continue;
 
             var head = NotificationDeadlinePolicy.Headline(
-                NotificationDeadlinePolicy.Evaluate(start, c.ReportedAtUtc, jurisdictions, ruleSet, settings.AtRiskThresholdPercent, now));
+                NotificationDeadlinePolicy.EvaluateByJurisdiction(start,
+                    NotifiedAt(c.Notices.ToDictionary(n => n.Jurisdiction, n => n.NotifiedAtUtc, StringComparer.OrdinalIgnoreCase), c.ReportedAtUtc),
+                    jurisdictions, ruleSet, settings.AtRiskThresholdPercent, now));
             if (head is not null) result[c.Id] = head;
         }
         return result;

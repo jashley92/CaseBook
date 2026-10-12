@@ -1642,6 +1642,48 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("IntegritySeals", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.JurisdictionNotice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Jurisdiction")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("NotifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseId", "Jurisdiction")
+                        .IsUnique();
+
+                    b.ToTable("JurisdictionNotices", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.MaterialityChange", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2855,6 +2897,15 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.JurisdictionNotice", b =>
+                {
+                    b.HasOne("IncidentManager.Domain.Entities.Case", null)
+                        .WithMany("JurisdictionNotices")
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.MaterialityChange", b =>
                 {
                     b.HasOne("IncidentManager.Domain.Entities.Case", null)
@@ -2970,6 +3021,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Navigation("Evidence");
 
                     b.Navigation("GatePassages");
+
+                    b.Navigation("JurisdictionNotices");
 
                     b.Navigation("MaterialityChanges");
 

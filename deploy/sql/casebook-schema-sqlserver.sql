@@ -2961,3 +2961,44 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012060710_JurisdictionNotices'
+)
+BEGIN
+    CREATE TABLE [JurisdictionNotices] (
+        [Id] uniqueidentifier NOT NULL,
+        [CaseId] uniqueidentifier NOT NULL,
+        [Jurisdiction] nvarchar(50) NOT NULL,
+        [NotifiedAtUtc] datetimeoffset NOT NULL,
+        [RowHash] nvarchar(64) NULL,
+        [CreatedAtUtc] datetimeoffset NOT NULL,
+        [CreatedBy] nvarchar(200) NOT NULL,
+        [ModifiedAtUtc] datetimeoffset NULL,
+        [ModifiedBy] nvarchar(max) NULL,
+        CONSTRAINT [PK_JurisdictionNotices] PRIMARY KEY ([Id]),
+        CONSTRAINT [FK_JurisdictionNotices_Cases_CaseId] FOREIGN KEY ([CaseId]) REFERENCES [Cases] ([Id]) ON DELETE CASCADE
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012060710_JurisdictionNotices'
+)
+BEGIN
+    CREATE UNIQUE INDEX [IX_JurisdictionNotices_CaseId_Jurisdiction] ON [JurisdictionNotices] ([CaseId], [Jurisdiction]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012060710_JurisdictionNotices'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261012060710_JurisdictionNotices', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

@@ -162,6 +162,9 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>INV-05b: later corrections of when a transition happened (append-only).</summary>
     public List<TransitionTimeCorrection> TimeCorrections { get; set; } = new();
 
+    /// <summary>BUG-09: when each regulator was notified (one per jurisdiction).</summary>
+    public List<JurisdictionNotice> JurisdictionNotices { get; set; } = new();
+
     /// <summary>Saved graph node positions (cosmetic; not audited/hashed).</summary>
     public List<EntityLayout> EntityLayouts { get; set; } = new();
 
@@ -1135,8 +1138,57 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>Clears the reported milestone (a mis-entry), reopening the notification countdown. Audited.</summary>
     public void ClearReported(string actor, DateTimeOffset nowUtc)
     {
-        if (ReportedAtUtc is null) return;
+        if (ReportedAtUtc is null && JurisdictionNotices.Count == 0) return;
+        JurisdictionNotices.Clear();
         ReportedAtUtc = null;
+        Touch(actor, nowUtc);
+    }
+
+    /// <summary>
+    /// BUG-09: records when one regulator was notified (or corrects the time). Validated like the reported time.
+    /// Call <see cref="ReportedFromNotices"/> afterwards, with the jurisdictions in play.
+    /// </summary>
+    public JurisdictionNotice RecordNotice(string jurisdiction, DateTimeOffset notifiedAtUtc, string actor, DateTimeOffset nowUtc)
+    {
+        var code = (jurisdiction ?? "").Trim().ToUpperInvariant();
+        if (code.Length == 0) throw new ArgumentException("Say which jurisdiction was notified.");
+        if (code.Length > JurisdictionNotice.MaxJurisdictionLength) throw new ArgumentException("That jurisdiction code is too long.");
+        if (notifiedAtUtc > nowUtc) throw new ArgumentException("The notice time can't be in the future.");
+        if (DetectedAtUtc is { } detected && notifiedAtUtc < detected)
+            throw new ArgumentException("The notice time can't be earlier than the detected time.");
+
+        var notice = JurisdictionNotices.FirstOrDefault(n => n.Jurisdiction == code);
+        if (notice is null)
+        {
+            notice = new JurisdictionNotice { CaseId = Id, Jurisdiction = code, NotifiedAtUtc = notifiedAtUtc, CreatedBy = actor, CreatedAtUtc = nowUtc };
+            JurisdictionNotices.Add(notice);
+        }
+        else notice.NotifiedAtUtc = notifiedAtUtc;
+        Touch(actor, nowUtc);
+        return notice;
+    }
+
+    /// <summary>BUG-09: removes one regulator's notice (a mis-entry).</summary>
+    public void RemoveNotice(string jurisdiction, string actor, DateTimeOffset nowUtc)
+    {
+        var code = (jurisdiction ?? "").Trim().ToUpperInvariant();
+        if (JurisdictionNotices.RemoveAll(n => n.Jurisdiction == code) > 0) Touch(actor, nowUtc);
+    }
+
+    /// <summary>
+    /// BUG-09: the reported time follows the notices: the time the last jurisdiction in play was notified, or none
+    /// while any is outstanding (so the reminders, the close gate and archiving keep watching). A case reported before
+    /// notices were recorded per jurisdiction has none, and keeps its reported time.
+    /// </summary>
+    public void ReportedFromNotices(IReadOnlyCollection<string> jurisdictionsInPlay, string actor, DateTimeOffset nowUtc)
+    {
+        if (JurisdictionNotices.Count == 0) return;
+        var byCode = JurisdictionNotices.ToDictionary(n => n.Jurisdiction, n => n.NotifiedAtUtc, StringComparer.OrdinalIgnoreCase);
+        DateTimeOffset? reported = jurisdictionsInPlay.Count > 0 && jurisdictionsInPlay.All(byCode.ContainsKey)
+            ? jurisdictionsInPlay.Max(j => byCode[j])
+            : null;
+        if (reported == ReportedAtUtc) return;
+        ReportedAtUtc = reported;
         Touch(actor, nowUtc);
     }
 

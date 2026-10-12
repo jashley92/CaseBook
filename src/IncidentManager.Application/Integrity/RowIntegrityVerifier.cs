@@ -36,6 +36,7 @@ public static class RowIntegrityVerifier
         db.PostIncidentReviews.AsNoTracking(),
         db.ImprovementActions.AsNoTracking(),
         db.TransitionTimeCorrections.AsNoTracking(),
+        db.JurisdictionNotices.AsNoTracking(),
         db.CaseTemplates.AsNoTracking(),
         db.CaseTemplateSteps.AsNoTracking(),
         db.StageGates.AsNoTracking(),

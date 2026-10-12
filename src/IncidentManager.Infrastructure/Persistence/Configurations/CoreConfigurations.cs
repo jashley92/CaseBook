@@ -590,6 +590,18 @@ public sealed class TransitionTimeCorrectionConfiguration : IEntityTypeConfigura
     }
 }
 
+public sealed class JurisdictionNoticeConfiguration : IEntityTypeConfiguration<JurisdictionNotice>
+{
+    public void Configure(EntityTypeBuilder<JurisdictionNotice> b)
+    {
+        b.ToTable("JurisdictionNotices");   // BUG-09
+        b.Property(x => x.Jurisdiction).HasMaxLength(JurisdictionNotice.MaxJurisdictionLength).IsRequired();
+        b.Property(x => x.CreatedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.HasIndex(x => new { x.CaseId, x.Jurisdiction }).IsUnique();
+    }
+}
+
 public sealed class PostIncidentReviewConfiguration : IEntityTypeConfiguration<PostIncidentReview>
 {
     public void Configure(EntityTypeBuilder<PostIncidentReview> b)

@@ -49,7 +49,8 @@ public sealed record NotificationDeadlineStatus(
     int WindowHours,
     DateTimeOffset? DueAtUtc,
     TimeSpan? Remaining,
-    double? ElapsedHours)
+    double? ElapsedHours,
+    DateTimeOffset? NotifiedAtUtc = null)   // BUG-09: when this jurisdiction was notified, if it has been
 {
     /// <summary>The clock is still running (not yet reported).</summary>
     public bool IsActive => State is SlaState.OnTrack or SlaState.AtRisk or SlaState.Breached;
@@ -72,6 +73,15 @@ public static class NotificationDeadlinePolicy
     /// jurisdiction is in play.</summary>
     public static IReadOnlyList<NotificationDeadlineStatus> Evaluate(
         DateTimeOffset? startInstant, DateTimeOffset? reportedAtUtc, IEnumerable<string> jurisdictionCodes,
+        NotificationRuleSet rules, int atRiskThresholdPercent, DateTimeOffset nowUtc) =>
+        EvaluateByJurisdiction(startInstant, _ => reportedAtUtc, jurisdictionCodes, rules, atRiskThresholdPercent, nowUtc);
+
+    /// <summary>
+    /// BUG-09: each jurisdiction's clock stops on its own notice. <paramref name="notifiedAt"/> gives the time a
+    /// jurisdiction was notified, or null while it hasn't been.
+    /// </summary>
+    public static IReadOnlyList<NotificationDeadlineStatus> EvaluateByJurisdiction(
+        DateTimeOffset? startInstant, Func<string, DateTimeOffset?> notifiedAt, IEnumerable<string> jurisdictionCodes,
         NotificationRuleSet rules, int atRiskThresholdPercent, DateTimeOffset nowUtc)
     {
         if (startInstant is not { } start)
@@ -89,7 +99,7 @@ public static class NotificationDeadlinePolicy
         {
             var (label, window) = rules.Resolve(code);
             if (window <= 0) continue; // a zero/blank window means "no deadline tracked" for this jurisdiction
-            list.Add(EvaluateOne(code, label, window, start, reportedAtUtc, pct, nowUtc));
+            list.Add(EvaluateOne(code, label, window, start, notifiedAt(code), pct, nowUtc));
         }
         return list;
     }
@@ -114,7 +124,7 @@ public static class NotificationDeadlinePolicy
         {
             var elapsed = Math.Round((reported - start).TotalHours, 1);
             var outcome = reported <= due ? SlaState.Met : SlaState.Missed;
-            return new NotificationDeadlineStatus(outcome, code, label, windowHours, due, null, elapsed);
+            return new NotificationDeadlineStatus(outcome, code, label, windowHours, due, null, elapsed, reported);
         }
 
         var elapsedNow = Math.Round((now - start).TotalHours, 1);

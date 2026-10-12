@@ -551,6 +551,7 @@ public sealed class CaseService
             .Include(x => x.Reports)
             .Include(x => x.GatePassages)   // INV-01: shown on the timeline as milestones
             .Include(x => x.TimeCorrections)  // INV-05b: the "time corrected" history on those milestones
+            .Include(x => x.JurisdictionNotices)   // BUG-09: each regulator's notice, a milestone
             .Include(x => x.Briefs)           // INV-09: the case brief and its earlier versions
             .Include(x => x.Citations)        // INV-10: evidence cited by timeline entries
             .FirstOrDefaultAsync(x => x.Id == id, ct);
@@ -1004,13 +1005,60 @@ public sealed class CaseService
 
     /// <summary>Records the regulatory-notification milestone (PROD-07): sets <c>ReportedAtUtc</c>, stopping the
     /// per-jurisdiction deadline countdown. Backdatable but not future / pre-detection (enforced in the domain).</summary>
+    /// <summary>
+    /// Records that regulators were notified. BUG-09: with jurisdictions in play, this records a notice for each one not
+    /// yet notified (all at once); otherwise it sets the reported time directly, as before.
+    /// </summary>
     public async Task MarkReportedAsync(Guid id, DateTimeOffset reportedAtUtc, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
-        var c = await LoadTrackedAsync(db, id, ct);
-        c.MarkReported(reportedAtUtc, _user.UserId, _clock.UtcNow);
+        var c = await LoadWithNoticesAsync(db, id, ct);
+        var now = _clock.UtcNow;
+        var inPlay = await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
+        if (inPlay.Count == 0) c.MarkReported(reportedAtUtc, _user.UserId, now);
+        else
+        {
+            foreach (var code in inPlay.Where(j => c.JurisdictionNotices.All(n => n.Jurisdiction != j)))
+                c.RecordNotice(code, reportedAtUtc, _user.UserId, now);
+            c.ReportedFromNotices(inPlay, _user.UserId, now);
+        }
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>BUG-09: records (or corrects) when one regulator was notified; the case counts as reported once all in play are.</summary>
+    public async Task RecordNoticeAsync(Guid id, string jurisdiction, DateTimeOffset notifiedAtUtc, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadWithNoticesAsync(db, id, ct);
+        var now = _clock.UtcNow;
+        c.RecordNotice(jurisdiction, notifiedAtUtc, _user.UserId, now);
+        c.ReportedFromNotices(await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(
+            db, c.DataElements.Select(d => d.ElementKey), ct), _user.UserId, now);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>BUG-09: removes one regulator's notice (a mis-entry); its clock runs again.</summary>
+    public async Task RemoveNoticeAsync(Guid id, string jurisdiction, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadWithNoticesAsync(db, id, ct);
+        var now = _clock.UtcNow;
+        var hadNotices = c.JurisdictionNotices.Count > 0;
+        c.RemoveNotice(jurisdiction, _user.UserId, now);
+        if (hadNotices && c.JurisdictionNotices.Count == 0) c.ClearReported(_user.UserId, now);
+        else c.ReportedFromNotices(await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(
+            db, c.DataElements.Select(d => d.ElementKey), ct), _user.UserId, now);
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task<Case> LoadWithNoticesAsync(IAppDbContext db, Guid id, CancellationToken ct)
+    {
+        var c = await LoadTrackedAsync(db, id, ct);
+        await db.JurisdictionNotices.Where(n => n.CaseId == id).ToListAsync(ct);   // tracked: fixes up c.JurisdictionNotices
+        return c;
     }
 
     /// <summary>Clears the reported milestone (a mis-entry), reopening the notification countdown.</summary>
@@ -1018,8 +1066,8 @@ public sealed class CaseService
     {
         Require();
         using var db = _factory.CreateDbContext();
-        var c = await LoadTrackedAsync(db, id, ct);
-        c.ClearReported(_user.UserId, _clock.UtcNow);
+        var c = await LoadWithNoticesAsync(db, id, ct);
+        c.ClearReported(_user.UserId, _clock.UtcNow);   // BUG-09: and every jurisdiction's notice
         await db.SaveChangesAsync(ct);
     }
 
@@ -1112,6 +1160,10 @@ public sealed class CaseService
             throw new StaleEditException(c.ImpactConcurrencyStamp(),
                 "Someone else changed the impact assessment while you were editing. Reload and try again.");
         c.SetImpactAssessment(affectedIndividualsCount, dataElementKeys, affectedStates, _user.UserId, _clock.UtcNow);
+        // BUG-09: a data element that brings a new jurisdiction into play reopens the report until that regulator is notified.
+        await db.JurisdictionNotices.Where(n => n.CaseId == id).ToListAsync(ct);
+        c.ReportedFromNotices(await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(
+            db, c.DataElements.Select(d => d.ElementKey), ct), _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
 

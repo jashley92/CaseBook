@@ -57,6 +57,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<UserNotificationPreference> UserNotificationPreferences => Set<UserNotificationPreference>();
     public DbSet<UserDisplayPreference> UserDisplayPreferences => Set<UserDisplayPreference>();
     public DbSet<TransitionTimeCorrection> TransitionTimeCorrections => Set<TransitionTimeCorrection>();
+    public DbSet<JurisdictionNotice> JurisdictionNotices => Set<JurisdictionNotice>();
     public DbSet<CaseBrief> CaseBriefs => Set<CaseBrief>();
     public DbSet<PostIncidentReview> PostIncidentReviews => Set<PostIncidentReview>();
     public DbSet<ImprovementAction> ImprovementActions => Set<ImprovementAction>();

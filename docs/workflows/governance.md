@@ -106,7 +106,8 @@ flowchart LR
     S["Start: when the materiality 'Material' decision was made<br/>(or detection, by setting)"] --> D["Deadline per jurisdiction"]
     R --> D
     D --> UI["Briefing table · header clock · Next ·<br/>dashboard · reminder emails"]
-    MR["Mark reported to regulators"] --> Stop["All clocks stop"]
+    N["Record notice (per jurisdiction)"] --> Stop["That jurisdiction's clock stops"]
+    Stop --> All["All in play notified → case reported"]
 ```
 
 - **Which deadlines apply**: the union of notification jurisdictions on the data elements recorded in the case's
@@ -114,10 +115,16 @@ flowchart LR
   seeded) or the default window.
 - **When the clock starts**: the moment the materiality decision was made (`Determination`, the default) or detection
   (`Detection`, for Breach cases).
-- **Mark reported**: Next → *Mark reported…*, or Briefing → *Mark reported to regulators*, with the time it was done (can be backdated; not
-  future, not before detection). `CaseService.MarkReportedAsync`. One reported time **stops every
-  jurisdiction's clock**; there's no per-jurisdiction reporting. *Clear reported milestone* undoes it.
-  Milestone "Reported to regulators".
+- **Recording notices**: each regulator's notice is recorded on its own row of the Briefing table (*Record notice*,
+  with the time it was done: can be backdated, not future, not before detection), and **stops only that
+  jurisdiction's clock** (`CaseService.RecordNoticeAsync`, a `JurisdictionNotice` row). *Record notice to all
+  regulators* (Next → *Mark reported…* too) records the same time for every jurisdiction not yet notified. The case
+  counts as **reported** (`ReportedAtUtc`) once every jurisdiction in play has a notice, at the latest notice's
+  time; that is what reminders, the close gate, archiving and the dashboards check. A data element that brings a
+  new jurisdiction into play makes it unreported again until that regulator is notified. A row's × removes a
+  mis-entered notice; *Clear all notices* removes them all. Milestones "Notified NY" (one per regulator) and
+  "Reported to every regulator in play". A case reported before notices were per jurisdiction keeps its single
+  reported time, which counts for every jurisdiction.
 - **Reminders**: when `Notifications:DeadlineScan` is on, the incident commander and assignees are emailed once
   as a deadline becomes at-risk and once when it passes.
 - **Closing doesn't stop the clock.** Closed cases with an unrecorded notification keep appearing as "awaiting

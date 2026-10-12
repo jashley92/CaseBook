@@ -451,6 +451,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         Evidence ev => ev.OriginalFileName,
         CaseAssignment asg => string.IsNullOrWhiteSpace(asg.UserDisplayName) ? asg.UserId : asg.UserDisplayName,
         CaseTechnique tech => tech.TechniqueId,
+        JurisdictionNotice n => $"Notice to {n.Jurisdiction}",
         _ => null
     };
 

@@ -1636,6 +1636,48 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.ToTable("IntegritySeals", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.JurisdictionNotice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CaseId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Jurisdiction")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ModifiedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("NotifiedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseId", "Jurisdiction")
+                        .IsUnique();
+
+                    b.ToTable("JurisdictionNotices", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.MaterialityChange", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2849,6 +2891,15 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.JurisdictionNotice", b =>
+                {
+                    b.HasOne("IncidentManager.Domain.Entities.Case", null)
+                        .WithMany("JurisdictionNotices")
+                        .HasForeignKey("CaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.MaterialityChange", b =>
                 {
                     b.HasOne("IncidentManager.Domain.Entities.Case", null)
@@ -2964,6 +3015,8 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Navigation("Evidence");
 
                     b.Navigation("GatePassages");
+
+                    b.Navigation("JurisdictionNotices");
 
                     b.Navigation("MaterialityChanges");
 

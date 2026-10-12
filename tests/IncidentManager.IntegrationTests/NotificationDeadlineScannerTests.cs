@@ -163,6 +163,76 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         (await db.Cases.AsNoTracking().SingleAsync(c => c.Id == id)).IsArchived.Should().BeTrue();
     }
 
+    private CaseService NewCases(AppDbContext db) =>
+        new(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+            notifySettings: _settings, notifyRules: new NotificationRuleService(NewFactory(), _user, _clock));
+
+    [Fact]
+    public async Task Each_regulator_is_notified_on_its_own_and_the_case_is_reported_when_all_are()
+    {
+        // BUG-09: one case-level reported time used to mark every jurisdiction met.
+        var id = await SeedMaterialBreachAsync(hoursAgo: 60);
+        await SaveNyRuleAsync();
+        EnableClock();
+        await using var db = NewContext();
+        db.DataElements.Add(new DataElement
+        {
+            Key = "DL", Label = "Driver's licence", NotificationJurisdictions = "CA",
+            IsActive = true, IsSystem = false, CreatedBy = "system", CreatedAtUtc = _clock.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var cases = NewCases(db);
+        await cases.UpdateImpactAssessmentAsync(id, 500, ["SSN", "DL"], "NY,CA");
+        var deadlines = NewDeadlines();
+
+        await cases.RecordNoticeAsync(id, "ny", _clock.UtcNow);
+        var d = await deadlines.EvaluateAsync(id);
+        d.Statuses.Single(s => s.JurisdictionCode == "NY").State.Should().Be(SlaState.Met);
+        d.Statuses.Single(s => s.JurisdictionCode == "CA").IsActive.Should().BeTrue("California hasn't been told");
+        d.ReportedAtUtc.Should().BeNull("the case is reported once every regulator in play is");
+        (await NewScanner(new CapturingNotifications(), new DeadlineReminderTracker()).ScanAndNotifyAsync())
+            .Should().Be(1, "California's reminder still goes out");
+
+        _clock.UtcNow = _clock.UtcNow.AddHours(1);
+        await cases.RecordNoticeAsync(id, "CA", _clock.UtcNow);
+        (await deadlines.EvaluateAsync(id)).ReportedAtUtc.Should().Be(_clock.UtcNow, "the last notice completes it");
+
+        // A data element that brings a new jurisdiction into play reopens it.
+        db.DataElements.Add(new DataElement
+        {
+            Key = "MED", Label = "Medical record", NotificationJurisdictions = "TX",
+            IsActive = true, IsSystem = false, CreatedBy = "system", CreatedAtUtc = _clock.UtcNow
+        });
+        await db.SaveChangesAsync();
+        await cases.UpdateImpactAssessmentAsync(id, 500, ["SSN", "DL", "MED"], "NY,CA,TX");
+        (await deadlines.EvaluateAsync(id)).ReportedAtUtc.Should().BeNull();
+
+        // Recording "all at once" covers only the regulators not yet notified.
+        await cases.MarkReportedAsync(id, _clock.UtcNow);
+        var all = await deadlines.EvaluateAsync(id);
+        all.ReportedAtUtc.Should().NotBeNull();
+        all.NoticeCodes.Should().BeEquivalentTo(["NY", "CA", "TX"]);
+        all.Statuses.Single(s => s.JurisdictionCode == "NY").NotifiedAtUtc.Should().BeBefore(_clock.UtcNow, "NY's earlier notice stands");
+    }
+
+    [Fact]
+    public async Task A_case_reported_before_per_jurisdiction_notices_keeps_its_meaning()
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 60);
+        await SaveNyRuleAsync();
+        EnableClock();
+        await using (var db = NewContext())
+        {
+            var c = await db.Cases.SingleAsync(x => x.Id == id);
+            c.ReportedAtUtc = _clock.UtcNow;   // as written before notices were per jurisdiction
+            await db.SaveChangesAsync();
+        }
+        var d = await NewDeadlines().EvaluateAsync(id);
+        d.Statuses.Should().OnlyContain(s => s.State == SlaState.Met);
+        d.NoticeCodes.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task Reminds_an_at_risk_case()
     {

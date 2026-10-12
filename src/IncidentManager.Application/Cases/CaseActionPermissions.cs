@@ -44,6 +44,8 @@ public static class CaseActionPermissions
             [nameof(CaseService.ApproveLegalHoldReleaseAsync)] = Permission.ManageLegal,
             [nameof(CaseService.CancelLegalHoldReleaseAsync)] = Permission.ManageLegal,
             [nameof(CaseService.MarkReportedAsync)] = Permission.EditCases,
+            [nameof(CaseService.RecordNoticeAsync)] = Permission.EditCases,   // BUG-09
+            [nameof(CaseService.RemoveNoticeAsync)] = Permission.EditCases,
             [nameof(CaseService.ClearReportedAsync)] = Permission.EditCases,
             [nameof(CaseService.RecordMaterialityAsync)] = Permission.EditCases,
 

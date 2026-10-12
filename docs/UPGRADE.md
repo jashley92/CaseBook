@@ -167,6 +167,9 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   `IX_CaseEntities_CaseId_Type`, carrying `Value` as an included column on SQL Server. The old index's key could
   exceed SQL Server's 1,700-byte limit, so an indicator value over about 840 characters (a long URL or command line)
   failed to save. Rebuilding the index on a large `CaseEntities` table takes a moment at startup; no data changes.
+- **One table migration** (`JurisdictionNotices`): regulator notices are recorded per jurisdiction, and each
+  jurisdiction's clock stops on its own notice. A case counts as reported once every jurisdiction in play is
+  notified. Cases reported before this keep their single reported time (it counted for every jurisdiction).
 - **Stage gates apply on every rung climbed, and when filing a case.** A jump (Adverse Event to Breach) passes the
   Incident gate too, and New case and imports that create a case pass the gates up to the chosen rung. With the default
   gates, filing an Adverse Event needs a summary, an Incident also an indicator, and a Breach the impact fields, or an

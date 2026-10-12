@@ -202,9 +202,15 @@ public static class CaseMilestones
                 : new CaseMilestone($"began:{c.Id}", began, MilestoneKind.ActivityBegan, "Activity began",
                     c.DetectedAtUtc is { } det ? $"{Span(det - began)} before detection" : null, null, "case record"));
 
+        // BUG-09: with more than one regulator, each notice is its own milestone; the case is reported when the last is.
+        if (c.JurisdictionNotices.Count > 1)
+            foreach (var n in c.JurisdictionNotices.OrderBy(n => n.NotifiedAtUtc))
+                list.Add(new CaseMilestone($"notice:{n.Id}", n.NotifiedAtUtc, MilestoneKind.Reported,
+                    $"Notified {n.Jurisdiction}", null, n.CreatedBy, "notice"));
         if (c.ReportedAtUtc is { } reported)
             list.Add(new CaseMilestone($"reported:{c.Id}", reported, MilestoneKind.Reported,
-                "Reported to regulators", null, null, "reported milestone"));
+                c.JurisdictionNotices.Count > 1 ? "Reported to every regulator in play" : "Reported to regulators",
+                null, null, "reported milestone"));
 
         // A task whose result was logged on the timeline (INV-08) is told by that entry; don't say it twice.
         var loggedTasks = c.TimelineEntries.Where(e => e.IsCurrent && e.ActionItemId is not null)
