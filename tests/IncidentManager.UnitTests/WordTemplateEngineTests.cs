@@ -60,6 +60,31 @@ public class WordTemplateEngineTests
         return ms.ToArray();
     }
 
+    private static Run R(string text) => new(new Text(text) { Space = SpaceProcessingModeValues.Preserve });
+
+    private static byte[] DocWith(Paragraph p)
+    {
+        using var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
+        {
+            var main = doc.AddMainDocumentPart();
+            main.Document = new Document(new Body(p));
+            main.Document.Save();
+        }
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void A_field_split_inside_a_link_is_filled_and_one_split_across_its_edge_is_reported(/* BUG-76 */)
+    {
+        var inside = DocWith(new Paragraph(R("Case: "), new Hyperlink(R("{{case."), R("title}}")) { Anchor = "top" }));
+        _engine.Check(inside).Problems.Should().BeEmpty();
+        Read(_engine.Render(inside, Model())).Body.Should().Be("Case: Credential-phishing wave");
+
+        var across = DocWith(new Paragraph(R("{{case."), new Hyperlink(R("title}}")) { Anchor = "top" }));
+        _engine.Check(across).Problems.Should().Contain(p => p.Contains("{{case.title}}") && p.Contains("Retype it"));
+    }
+
     [Fact]
     public void Case_text_that_looks_like_a_field_is_printed_as_typed(/* BUG-44 */)
     {

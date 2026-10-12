@@ -55,6 +55,16 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
                         if (!inBody && name.StartsWith("image.", StringComparison.Ordinal))
                             problems.Add($"{{{{{name}}}}} is in a header or footer; pictures can only go in the body.");
                     }
+                    // BUG-76: a field Word split across a boundary it keeps (a link, a content control, a tracked change)
+                    // can't be rejoined, so it would print as typed. Say so now rather than in the report.
+                    var joined = (Paragraph)p.CloneNode(true);
+                    JoinSplitFields(joined);
+                    var whole = joined.Descendants<Text>().SelectMany(t => ReportTemplateFields.Placeholder().Matches(t.Text))
+                        .Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
+                    foreach (System.Text.RegularExpressions.Match match in ReportTemplateFields.Placeholder().Matches(p.InnerText))
+                        if (!whole.Contains(match.Value))
+                            problems.Add($"{match.Value} is split by a link, a content control or a tracked change, so it can't be filled. " +
+                                         "Retype it in one go (and accept any tracked changes).");
                 }
             }
         }
@@ -213,10 +223,20 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         }
     }
 
-    /// <summary>Merges only the runs a <c>{{…}}</c> field is split across, keeping the first run's formatting.</summary>
+    /// <summary>
+    /// Merges only the runs a <c>{{…}}</c> field is split across, keeping the first run's formatting. BUG-76: runs inside
+    /// a hyperlink, a content control or a tracked insertion are rejoined within it too.
+    /// </summary>
     private static void JoinSplitFields(Paragraph p)
     {
-        var runs = p.Elements<Run>().ToList();
+        JoinRuns(p);
+        foreach (var container in p.Descendants().Where(e => e is Hyperlink or InsertedRun or SdtContentRun or SimpleField).ToList())
+            JoinRuns(container);
+    }
+
+    private static void JoinRuns(OpenXmlElement container)
+    {
+        var runs = container.Elements<Run>().ToList();
         if (runs.Count < 2) return;
         var texts = runs.Select(r => string.Concat(r.Elements<Text>().Select(t => t.Text))).ToList();
         var full = string.Concat(texts);
@@ -248,7 +268,12 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
             var first = runs[from];
             foreach (var t in first.Elements<Text>().ToList()) t.Remove();
             first.AppendChild(new Text(XmlSafe.Clean(merged)) { Space = SpaceProcessingModeValues.Preserve });
-            for (var i = from + 1; i <= to; i++) runs[i].Remove();
+            // A later run gives up its text; one that also holds a tab, a break or a note reference keeps those.
+            for (var i = from + 1; i <= to; i++)
+            {
+                foreach (var t in runs[i].Elements<Text>().ToList()) t.Remove();
+                if (!runs[i].ChildElements.Any(c => c is not RunProperties)) runs[i].Remove();
+            }
         }
     }
 
