@@ -107,7 +107,7 @@ public static partial class ReportTemplateFields
             ("description", "What happened", s => s.Description),
             ("where", "Third-party case: Vendor, or Our environment after a pivot (blank on an internal case)", s => s.Where ?? "")),
         Coll("milestone", "Disclosure milestones (third-party cases)", m => m.DisclosureMilestones,
-            ("when", "When (UTC)", x => D(x.OccurredAtUtc)),
+            ("when", "When (UTC), or as stated", x => x.Stated ?? D(x.OccurredAtUtc)),
             ("type", "Milestone", x => x.Type),
             ("description", "What the vendor reported or we confirmed", x => x.Description),
             ("source", "Source", x => x.Source ?? "")),

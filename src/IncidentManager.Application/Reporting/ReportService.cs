@@ -817,7 +817,8 @@ public sealed class ReportService
             DisclosureMilestones = c.TimelineEntries
                 .Where(x => EventSteps.IsDisclosure(c, x))
                 .InTimelineOrder()
-                .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()), d.Text(Content.MarkdownService.PlainLine(x.Description)), x.Source))
+                .Select(x => new ReportTimelineItem(x.OccurredAtUtc, TaxLabel("TimelineEntryType", x.Type.ToString()),
+                    d.Text(Content.MarkdownService.PlainLine(x.Description)), x.Source, Stated: StepTime.Stated(x)))
                 .ToList(),
             // The attack chain: the adversary's steps, in our estate or, on a third-party case, in the vendor's.
             AttackChain = c.TimelineEntries

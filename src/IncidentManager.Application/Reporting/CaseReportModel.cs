@@ -6,9 +6,14 @@ namespace IncidentManager.Application.Reporting;
 public sealed record ReportClassificationItem(DateTimeOffset AtUtc, string From, string To, string Reason, string By);
 /// <param name="Imported">INV-23: brought in by a structured import, dated as the imported document gave it.</param>
 /// <param name="By">INV-46: who recorded the entry (as the timeline says "logged by"), or who made the milestone's change.</param>
+/// <param name="Stated">BUG-71: a disclosure milestone's time as it was stated ("2026-03-04, time not stated"), when it
+/// wasn't given exactly; null otherwise.</param>
 public sealed record ReportTimelineItem(DateTimeOffset OccurredAtUtc, string Type, string Description, string? Source,
-    bool Imported = false, string? By = null)
+    bool Imported = false, string? By = null, string? Stated = null)
 {
+    /// <summary>The time for the report: the stated wording, or the exact time in UTC.</summary>
+    public string When => Stated ?? OccurredAtUtc.ToString("u", System.Globalization.CultureInfo.InvariantCulture);
+
     /// <summary>INV-16: the <see cref="Type"/> of a response milestone in the investigation timeline.</summary>
     public const string Milestone = "Milestone";
 

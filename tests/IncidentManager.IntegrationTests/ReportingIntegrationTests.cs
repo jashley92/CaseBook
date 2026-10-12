@@ -574,7 +574,7 @@ public sealed class ReportingIntegrationTests : IDisposable
         // A disclosure milestone: no ATT&CK, the milestone carried in Type.
         c.AddEventStep(_clock.UtcNow.AddHours(3), Array.Empty<MitreTactic>(), null, null, null,
             "Vendor confirmed our records were exposed", "Acme SaaS", "ic", _clock.UtcNow,
-            type: TimelineEntryType.DataConfirmed);
+            type: TimelineEntryType.DataConfirmed, timing: new StepTiming(TimePrecision.Day));
         // The attacker's steps in the vendor's environment: one mapped, one with nothing ATT&CK picked.
         c.AddEventStep(_clock.UtcNow.AddHours(1), [MitreTactic.InitialAccess], "T1190", null, null,
             "Exploited the vendor's file-transfer appliance", "Acme SaaS", "ic", _clock.UtcNow);
@@ -592,7 +592,9 @@ public sealed class ReportingIntegrationTests : IDisposable
         model.AttackChain.Select(x => (x.Description, x.Where)).Should().Equal(
             ("Exploited the vendor's file-transfer appliance", "Vendor"), ("Copied the customer share", "Vendor"),
             ("Came in over the vendor's VPN tunnel", "Our environment"));
-        model.DisclosureMilestones.Should().ContainSingle().Which.Description.Should().Be("Vendor confirmed our records were exposed");
+        var milestone = model.DisclosureMilestones.Should().ContainSingle().Subject;
+        milestone.Description.Should().Be("Vendor confirmed our records were exposed");
+        milestone.When.Should().EndWith("time not stated", "BUG-71: a date given without a time isn't printed as an exact time");
         IncidentManager.Application.Mitre.CaseTechniques.For(c).Should().ContainSingle(t => t.TechniqueId == "T1190" && t.ChainSteps == 1);
 
         _user.RoleSet = [AppRole.IncidentCommander];

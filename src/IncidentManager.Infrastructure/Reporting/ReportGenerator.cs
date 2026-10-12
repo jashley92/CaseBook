@@ -140,7 +140,7 @@ public sealed partial class ReportGenerator : IReportGenerator
                     body.AppendChild(P("What the vendor reported to us and what we confirmed, in order.", italic: true, size: 18));
                     body.AppendChild(WordTable(
                         ["When (UTC)", "Milestone", "What happened", "Source"],
-                        m.DisclosureMilestones.Select(x => new[] { x.OccurredAtUtc.ToString("u"), x.Type, x.Description, x.Source ?? "" })));
+                        m.DisclosureMilestones.Select(x => new[] { x.When, x.Type, x.Description, x.Source ?? "" })));
                 }
                 break;
             }
