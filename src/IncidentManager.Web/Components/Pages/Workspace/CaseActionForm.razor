@@ -7,6 +7,7 @@
 @inject ISeverityLabels SevLabels
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject IncidentManager.Application.Abstractions.IExerciseEscalationPolicy ExercisePolicy
+@inject ToastService Toasts
 
 @{ var T = D.Transition; var backdated = T.Backdated(TimeDisp.Zone, Clock.UtcNow); }
 <div class="modal-header">
@@ -459,6 +460,7 @@
         D.Error = null;
         var t = D.Transition;
         var id = Case.Id;
+        var number = Case.CaseNumber;
         string? closeReason = null;
         try
         {
@@ -563,6 +565,13 @@
                 default:
                     done = "";
                     break;
+            }
+            // BUG-179: the workspace may have moved to another case while this saved (Back, the palette, a tab). What
+            // follows an action (a reload, the close-out it opens, "Duplicate of …") belongs to the case it was for.
+            if (Case.Id != id)
+            {
+                Toasts.Success(string.IsNullOrEmpty(done) ? $"Saved on {number}." : $"{number}: {done}.");
+                return;
             }
             await OnApplied.InvokeAsync((done, closeReason));
         }
