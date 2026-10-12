@@ -69,7 +69,9 @@ public sealed record ReportReview(IReadOnlyList<RichBlock> WhatHappened, IReadOn
 /// <summary>PROD-41: one improvement action row in the lessons-learned report.</summary>
 public sealed record ReportImprovementActionRow(string Title, string? RelatedArea, string? Details, string Owner,
     DateTimeOffset? TargetDateUtc, string Status, string? OutcomeNote);
-public sealed record ReportEntityRow(string Type, string Value, string? Label, string Disposition, string? Description, string? Source);
+/// <param name="Tlp">BUG-72: the entity's own TLP marking ("TLP:RED"), if any, printed beside it as in the IOC table.</param>
+public sealed record ReportEntityRow(string Type, string Value, string? Label, string Disposition, string? Description, string? Source,
+    string? Tlp = null);
 public sealed record ReportRelationshipRow(string Source, string Relationship, string Target, string? Description);
 /// <param name="Source">HR-13: "Tagged", "Attack chain (2 steps)" or both.</param>
 public sealed record ReportTechniqueRow(string TechniqueId, string Name, string Tactic, string Source = "Tagged");

@@ -130,6 +130,7 @@ public static partial class ReportTemplateFields
             ("value", "Value", x => x.Value),
             ("label", "Label", x => x.Label ?? ""),
             ("verdict", "Verdict", x => x.Disposition),
+            ("tlp", "The entity's own TLP marking, if any", x => x.Tlp ?? ""),
             ("source", "Source", x => x.Source ?? "")),
         Coll("relationship", "Entity relationships", m => m.Relationships,
             ("source", "From", x => x.Source),

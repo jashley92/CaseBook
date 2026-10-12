@@ -912,7 +912,8 @@ public sealed class ReportService
             Entities = c.Entities
                 .OrderBy(x => x.Type).ThenBy(x => x.Value)
                 .Select(x => new ReportEntityRow(TaxLabel("EntityType", x.Type.ToString()), d.Value(x.Type, x.Value), d.NullableText(x.Label),
-                    TaxLabel("EntityDisposition", x.Disposition.ToString()), d.NullableText(x.Description), d.NullableText(x.Source)))
+                    TaxLabel("EntityDisposition", x.Disposition.ToString()), d.NullableText(x.Description), d.NullableText(x.Source),
+                    x.Tlp is { } tlpMark ? Domain.Enums.Tlp.Label(tlpMark) : null))
                 .ToList(),
             Relationships = c.EntityRelationships
                 .OrderBy(x => x.CreatedAtUtc)

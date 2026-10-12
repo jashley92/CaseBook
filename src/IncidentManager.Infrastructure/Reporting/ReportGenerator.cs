@@ -162,8 +162,8 @@ public sealed partial class ReportGenerator : IReportGenerator
                 if (!string.IsNullOrWhiteSpace(m.ImpactedAssets))
                     body.AppendChild(P($"Impacted assets: {m.ImpactedAssets}"));
                 body.AppendChild(WordTable(
-                    ["Type", "Value", "Label", "Disposition", "Source"],
-                    m.Entities.Select(x => new[] { x.Type, x.Value, x.Label ?? "", x.Disposition, x.Source ?? "" })));
+                    ["Type", "Value", "Label", "Disposition", "TLP", "Source"],
+                    m.Entities.Select(x => new[] { x.Type, x.Value, x.Label ?? "", x.Disposition, x.Tlp ?? "", x.Source ?? "" })));
                 break;
 
             case ReportSection.Indicators:
