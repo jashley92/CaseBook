@@ -205,6 +205,8 @@ public sealed class ProgramReportTests : IDisposable
         csv.Should().Contain("section,metric,Q2 2026,Q1 2026");
         csv.Should().Contain("Volume,Cases opened,3,1");
         csv.Should().Contain("(includes exercise cases)");
+        // BUG-77: the page's regulatory-notice and review figures are in the CSV too.
+        csv.Should().Contain("Regulatory,Notices inside / outside their window,").And.Contain("Post-incident,Closed cases with a review,");
     }
 
     [Fact]
