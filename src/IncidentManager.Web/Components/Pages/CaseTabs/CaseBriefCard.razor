@@ -200,7 +200,7 @@
         if (!Guid.TryParse(evidenceId, out var id) || Case.Evidence.FirstOrDefault(e => e.Id == id) is not { } ev) return;
         var name = ev.OriginalFileName.Replace("[", "(").Replace("]", ")");
         var current = (_draft.GetValueOrDefault(KnownKey) ?? "").TrimEnd();
-        _refs[name] = $"evidence:{id}";
+        IncidentManager.Application.Content.TagText.Remember(_refs, name, $"evidence:{id}");   // BUG-121: after any earlier [[name]]
         _draft[KnownKey] = (current.Length == 0 ? "- " : current + " ") + $"[[{name}]]";
     }
     private const string NextKey = "next";

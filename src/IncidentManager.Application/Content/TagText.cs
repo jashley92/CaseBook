@@ -19,14 +19,23 @@ public static partial class TagText
     private static partial Regex Tag();
 
     /// <summary>The text with its tag links shown as <c>[[label]]</c>; each label's target is added to
-    /// <paramref name="refs"/> (the first wins when two links share a label).</summary>
+    /// <paramref name="refs"/>. BUG-121: when two links share a label (a file that is both cited evidence and an entity,
+    /// two entities with the same label), the label keeps each target in the order they appear, joined by
+    /// <see cref="Next"/>, so the unchanged text puts each link back where it pointed.</summary>
     public static string? ToEditable(string? markdown, IDictionary<string, string> refs) =>
         markdown is null ? null : Link().Replace(markdown, m =>
         {
             var label = m.Groups["label"].Value;
-            refs.TryAdd(label, m.Groups["ref"].Value);
+            Remember(refs, label, m.Groups["ref"].Value);
             return $"[[{label}]]";
         });
+
+    /// <summary>Records what the next <c>[[label]]</c> in the text points at, after any already recorded for that label
+    /// (a citation added at the end of the text, for one).</summary>
+    public static void Remember(IDictionary<string, string> refs, string label, string target) =>
+        refs[label] = refs.TryGetValue(label, out var known) ? known + Next + target : target;
+
+    private const char Next = '|';
 
     /// <param name="refs">What each label pointed at when the text was opened (<see cref="ToEditable"/>).</param>
     /// <param name="entities">The case's entities, for a tag typed in the box: id plus its label and value.</param>
@@ -35,14 +44,25 @@ public static partial class TagText
     {
         if (text is null) return null;
         var list = entities.ToList();
+        var used = new Dictionary<string, int>(StringComparer.Ordinal);   // how many of each label's targets are taken
         return Tag().Replace(text, m =>
         {
             var label = m.Groups["label"].Value;
-            var target = refs.TryGetValue(label, out var known) ? known
-                : refs.FirstOrDefault(r => r.Key.Equals(label, StringComparison.OrdinalIgnoreCase)).Value
-                  ?? (list.FirstOrDefault(e => string.Equals(e.Label, label, StringComparison.OrdinalIgnoreCase)
-                                               || string.Equals(e.Value, label, StringComparison.OrdinalIgnoreCase)) is { Id: var id } && id != Guid.Empty
-                      ? $"entity:{id}" : null);
+            var known = refs.TryGetValue(label, out var exact) ? exact
+                : refs.FirstOrDefault(r => r.Key.Equals(label, StringComparison.OrdinalIgnoreCase)).Value;
+            string? target;
+            if (known is not null)
+            {
+                // The n-th tag with this label takes its n-th target (the last again if more were typed).
+                var targets = known.Split(Next);
+                var n = used.GetValueOrDefault(label);
+                used[label] = n + 1;
+                target = targets[Math.Min(n, targets.Length - 1)];
+            }
+            else
+                target = list.FirstOrDefault(e => string.Equals(e.Label, label, StringComparison.OrdinalIgnoreCase)
+                                                  || string.Equals(e.Value, label, StringComparison.OrdinalIgnoreCase)) is { Id: var id } && id != Guid.Empty
+                    ? $"entity:{id}" : null;
             return target is null ? m.Value : $"[{label}]({target})";
         });
     }

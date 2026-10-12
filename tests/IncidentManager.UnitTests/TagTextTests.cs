@@ -25,6 +25,18 @@ public class TagTextTests
     }
 
     [Fact]
+    public void Two_links_that_share_a_label_each_keep_their_target(/* BUG-121 */)
+    {
+        var md = $"Opened [invoice.docm](evidence:{File}); the file [invoice.docm](entity:{Jane}) beaconed out.";
+        var refs = new Dictionary<string, string>();
+
+        var editable = TagText.ToEditable(md, refs);
+
+        editable.Should().Be("Opened [[invoice.docm]]; the file [[invoice.docm]] beaconed out.");
+        TagText.FromEditable(editable, refs, Entities).Should().Be(md);
+    }
+
+    [Fact]
     public void A_typed_tag_links_to_the_entity_of_that_label_or_value_and_an_unknown_one_stays_as_typed()
     {
         var refs = new Dictionary<string, string>();
