@@ -134,7 +134,7 @@ new entries are hashed with HMAC-SHA256 under a key held in CyberArk or encrypte
 records the key's id in `HashKeyId`, and a plain entry after a keyed one is a break. That rule needs a keyed entry
 that can't be rewritten, so the seal job seals at its next run (not its next interval) once keyed entries exist past
 the latest seal and none is under one, and the running server flags the entry it last keyed if it comes back plain;
-together they leave no window for downgrading every keyed entry to the plain hash. Seal copies in the SIEM
+until that seal, a restart is the only gap in which every keyed entry could be downgraded to the plain hash. Seal copies in the SIEM
 (event 5004) cover the other side: a seal deleted or re-signed later shows up there
 ([ADR 0016](../decisions/0016-key-custody-and-seal-copies.md)).
 
