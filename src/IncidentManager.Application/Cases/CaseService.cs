@@ -1988,6 +1988,14 @@ public sealed class CaseService
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        // BUG-10: archiving drops a case from the deadline scan and the "awaiting report" count, so a case whose
+        // notification clock is running can't be archived until the notice is recorded (INV-43). Drills are exempt.
+        if (archived && !c.IsArchived && !c.IsExercise && c.ReportedAtUtc is null
+            && _notifySettings is not null && _notifyRules is not null
+            && (await new Compliance.NotificationDeadlineService(_factory, _notifySettings, _notifyRules, _clock)
+                .EvaluateAsync(id, ct)).HasClock)
+            throw new InvalidOperationException("This case has a regulatory notification deadline running and no notice recorded. " +
+                "Record when regulators were notified before archiving it, so the deadline isn't silenced.");
         if (archived) c.Archive(_user.UserId, _clock.UtcNow);
         else c.Unarchive(_user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);

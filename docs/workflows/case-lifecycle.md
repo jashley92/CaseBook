@@ -173,7 +173,9 @@ of …". Needs `EditCases`.
 
 Actions → *Archive case…* / *Restore from archive* (needs `Administer`). Archived cases leave the default case
 list, duplicate-check suggestions and notification headlines. **Refused under legal hold** ("This case is under
-legal hold and can't be archived. Release the hold first."). Archiving doesn't depend on phase, and an archived
+legal hold and can't be archived. Release the hold first."). **Also refused while a regulatory notification deadline is
+running with no notice recorded** (drills excepted), since archiving would stop its reminders; the dialog says so and
+the button is disabled. Archiving doesn't depend on phase, and an archived
 case can still be edited.
 
 `Retention:CaseYears` is shown as a setting but no code uses it; nothing flags cases for archiving

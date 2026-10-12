@@ -191,7 +191,16 @@
     }
     else if (D.Name == "archive")
     {
-        <p class="mb-0">Archive <code>@Case.CaseNumber</code>? It's hidden from active queues and can be restored later.</p>
+        @if (DeadlineBlocksArchive)
+        {
+            @* BUG-10: say why, before the analyst tries. *@
+            <p class="mb-0">This case has a regulatory notification deadline running and no notice recorded. Archiving would
+                stop its reminders, so record when regulators were notified first.</p>
+        }
+        else
+        {
+            <p class="mb-0">Archive <code>@Case.CaseNumber</code>? It's hidden from active queues and can be restored later.</p>
+        }
     }
     else if (D.Name == "reopen")
     {
@@ -248,6 +257,8 @@
     [Parameter, EditorRequired] public CaseActionDraft D { get; set; } = null!;
     [Parameter, EditorRequired] public CaseAccess Access { get; set; } = CaseAccess.None;
     [Parameter] public IncidentManager.Application.Compliance.CaseNotificationDeadlines? Notify { get; set; }
+
+    private bool DeadlineBlocksArchive => !Case.IsExercise && Case.ReportedAtUtc is null && Notify is { HasClock: true };
 
     [Parameter] public EventCallback OnClose { get; set; }
     /// <summary>The reclassify or phase target changed ("reclass" or "status"): the workspace loads its gate (and
@@ -324,6 +335,7 @@
     private bool PrimaryDisabled()
     {
         if (_inFlight) return true;
+        if (D.Name == "archive" && DeadlineBlocksArchive) return true;
         var t = D.Transition;
         var backdated = t.Backdated(TimeDisp.Zone, Clock.UtcNow);
         return D.Name switch

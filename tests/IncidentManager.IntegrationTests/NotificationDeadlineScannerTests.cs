@@ -1,6 +1,7 @@
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Admin;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Compliance;
 using IncidentManager.Application.Notifications;
 using IncidentManager.Application.StageGates;
@@ -140,6 +141,26 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(1, "the next scan tries again");
         (await NewScanner(notifications, tracker).ScanAndNotifyAsync()).Should().Be(0, "and once delivered, it isn't repeated");
         notifications.Calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task A_case_with_a_running_deadline_cant_be_archived_until_the_notice_is_recorded()
+    {
+        // BUG-10: archiving dropped the case from the scan and the "awaiting report" count, silencing the deadline.
+        var id = await SeedMaterialBreachAsync(hoursAgo: 80);
+        await SaveNyRuleAsync();
+        EnableClock();
+        await using var db = NewContext();
+        var cases = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+            notifySettings: _settings, notifyRules: new NotificationRuleService(NewFactory(), _user, _clock));
+
+        var archive = () => cases.SetArchivedAsync(id, true);
+        await archive.Should().ThrowAsync<InvalidOperationException>().WithMessage("*notification deadline running*");
+
+        await cases.MarkReportedAsync(id, _clock.UtcNow);
+        await cases.SetArchivedAsync(id, true);
+        (await db.Cases.AsNoTracking().SingleAsync(c => c.Id == id)).IsArchived.Should().BeTrue();
     }
 
     [Fact]
