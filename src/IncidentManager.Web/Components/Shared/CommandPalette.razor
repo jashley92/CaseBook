@@ -288,7 +288,7 @@
         if (q.Length >= FindMinChars)
         {
             var seq = ++_searchSeq;
-            _findCts?.Cancel();
+            if (_findCts is not null) await _findCts.CancelAsync();
             _findCts?.Dispose();
             var cts = _findCts = new CancellationTokenSource();
             try
