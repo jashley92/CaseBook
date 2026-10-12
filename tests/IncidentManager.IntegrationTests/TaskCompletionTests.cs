@@ -125,6 +125,19 @@ public sealed class TaskCompletionTests : IDisposable
     }
 
     [Fact]
+    public async Task An_added_event_step_is_one_line_and_an_entry_needs_a_description(/* BUG-119 */)
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+
+        var id = await svc.AddTimelineEntryAsync(caseId, TimelineKind.Event, TimelineEntryType.Other, _clock.UtcNow,
+            "Phished the engineer\n- then moved laterally", "AI-assisted", imported: true);
+
+        (await svc.GetDetailAsync(caseId))!.TimelineEntries.Single(e => e.Id == id).Description.Should().NotContain("\n");
+        await svc.Invoking(s => s.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Analysis,
+            _clock.UtcNow, "  ", null)).Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
     public async Task Setting_a_done_task_to_done_again_keeps_who_and_when(/* BUG-109 */)
     {
         var (svc, caseId, taskId) = await CaseWithTask();

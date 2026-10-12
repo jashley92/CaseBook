@@ -606,6 +606,8 @@ else if (_pending.Count > 0)
         if (!p.HasAnything) return false;
         // INV-18: an included decision needs its why.
         if (p.Timeline.Any(t => t.Include && t.Type == TimelineEntryType.Decision && string.IsNullOrWhiteSpace(t.Rationale))) return false;
+        // BUG-119: and an included entry something to say.
+        if (p.Timeline.Any(t => t.Include && !t.Applied && string.IsNullOrWhiteSpace(t.Description))) return false;
         return p.TargetKind == CaseImportTargetKind.NewCase
             ? p.NewCase is { } nc && !string.IsNullOrWhiteSpace(nc.Title)
               && (nc.Origin != CaseOrigin.ThirdParty || !string.IsNullOrWhiteSpace(nc.VendorName))   // BUG-117

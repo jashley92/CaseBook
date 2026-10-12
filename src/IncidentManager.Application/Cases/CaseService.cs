@@ -1234,6 +1234,9 @@ public sealed class CaseService
         CancellationToken ct = default)
     {
         Require();
+        // BUG-119: the same rules as the composer: something to say, and an event step is one line.
+        if (string.IsNullOrWhiteSpace(description)) throw new ArgumentException("Say what happened.");
+        if (kind == TimelineKind.Event) description = Content.MarkdownService.OneLine(description);
         TimelineEntry.EnsureDecisionHasRationale(type, decision?.Rationale);
         followUps?.Validate();
         using var db = _factory.CreateDbContext();
