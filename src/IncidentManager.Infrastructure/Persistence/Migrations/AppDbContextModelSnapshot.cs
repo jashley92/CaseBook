@@ -872,7 +872,8 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CaseId");
 
-                    b.HasIndex("CaseId", "Type", "Value");
+                    b.HasIndex("CaseId", "Type")
+                        .HasAnnotation("SqlServer:Include", new[] { "Value" });
 
                     b.ToTable("CaseEntities", (string)null);
                 });

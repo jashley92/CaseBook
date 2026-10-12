@@ -2932,3 +2932,32 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012014606_CaseEntityIndexFitsSqlServer'
+)
+BEGIN
+    DROP INDEX [IX_CaseEntities_CaseId_Type_Value] ON [CaseEntities];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012014606_CaseEntityIndexFitsSqlServer'
+)
+BEGIN
+    CREATE INDEX [IX_CaseEntities_CaseId_Type] ON [CaseEntities] ([CaseId], [Type]) INCLUDE ([Value]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012014606_CaseEntityIndexFitsSqlServer'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261012014606_CaseEntityIndexFitsSqlServer', N'10.0.12');
+END;
+
+COMMIT;
+GO
+

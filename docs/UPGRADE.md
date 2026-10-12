@@ -161,6 +161,15 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ## Notes
 
+### Next release (unreleased)
+
+- **One index migration** (`CaseEntityIndexFitsSqlServer`): replaces `IX_CaseEntities_CaseId_Type_Value` with
+  `IX_CaseEntities_CaseId_Type`, carrying `Value` as an included column on SQL Server. The old index's key could
+  exceed SQL Server's 1,700-byte limit, so an indicator value over about 840 characters (a long URL or command line)
+  failed to save. Rebuilding the index on a large `CaseEntities` table takes a moment at startup; no data changes.
+- **`Install-CaseBook.ps1`** now JSON-escapes every value it writes into `appsettings.Production.json`. A named SQL
+  instance (`SQLHOST\PROD`) or a `DOMAIN\Group` name used to make the file invalid or silently corrupt it.
+
 ### v1.5.0
 
 A routine upgrade: one additive migration, applied at startup. Attack steps can now record a time as it was stated, and

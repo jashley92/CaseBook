@@ -148,7 +148,7 @@ public sealed class AuditChainIntegrityTests : IDisposable
 
         var entries = await db.AuditLog.AsNoTracking().OrderBy(e => e.Sequence).ToListAsync();
         entries.Should().OnlyContain(e => e.EntityLabel == null || e.EntityLabel.Length <= 300);
-        entries.Should().Contain(e => e.EntityLabel != null && e.EntityLabel.EndsWith("…"));
+        entries.Should().Contain(e => e.EntityLabel != null && e.EntityLabel.EndsWith('…'));
         _hasher.VerifyChain(entries).IsValid.Should().BeTrue();
     }
 

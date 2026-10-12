@@ -199,7 +199,9 @@ public sealed class CaseEntityConfiguration : IEntityTypeConfiguration<CaseEntit
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.RowHash).HasMaxLength(64);
         b.HasIndex(x => x.CaseId);
-        b.HasIndex(x => new { x.CaseId, x.Type, x.Value });
+        // BUG-63: Value (nvarchar(2000)) can't be an index key on SQL Server, whose nonclustered key limit is 1700 bytes:
+        // an IOC over ~840 characters failed to save. Key on case and type; SQL Server carries Value as an included column.
+        b.HasIndex(x => new { x.CaseId, x.Type }).IncludeProperties(x => x.Value);
     }
 }
 

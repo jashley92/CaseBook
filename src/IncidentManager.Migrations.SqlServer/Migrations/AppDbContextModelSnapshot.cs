@@ -877,7 +877,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
 
                     b.HasIndex("CaseId");
 
-                    b.HasIndex("CaseId", "Type", "Value");
+                    b.HasIndex("CaseId", "Type");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("CaseId", "Type"), new[] { "Value" });
 
                     b.ToTable("CaseEntities", (string)null);
                 });
