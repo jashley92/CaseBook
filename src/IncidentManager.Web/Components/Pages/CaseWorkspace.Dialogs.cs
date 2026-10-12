@@ -220,10 +220,13 @@ public partial class CaseWorkspace
         else if (_action.Name is not null) CloseModal();
     }
 
-    // UX-01: whether any of the three trap modals is currently open (drives arm/release in OnAfterRenderAsync).
-    private bool AnyTrapModalOpen => _confirm is not null || _previewShotId is not null || (_action.Name is not null && !_action.IsSheet) || _confirmLeaveOpen
-        || _panelEntity is not null || _panelEvidence is not null;
-    private bool _modalTrapArmed;
+    // UX-01: which trap is on top, if any (drives arm/release in OnAfterRenderAsync). BUG-88: a dialog opened over a side
+    // panel takes focus, and closing it hands focus back to the panel rather than to the page behind both.
+    private string? TopTrap =>
+        _confirm is not null || _previewShotId is not null || (_action.Name is not null && !_action.IsSheet) || _confirmLeaveOpen ? "dialog"
+        : _panelEntity is not null || _panelEvidence is not null ? "panel"
+        : null;
+    private string? _armedTrap;
     private string? _revealedTab;
 
     private async Task RunConfirm()

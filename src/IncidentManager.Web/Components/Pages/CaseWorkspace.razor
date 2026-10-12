@@ -704,10 +704,10 @@ else
         }
 
         // UX-01: move focus into a modal when it opens and back to the trigger when it closes.
-        if (AnyTrapModalOpen != _modalTrapArmed)
+        if (TopTrap != _armedTrap)
         {
-            _modalTrapArmed = AnyTrapModalOpen;
-            try { await JS.InvokeVoidAsync(_modalTrapArmed ? "imModal.arm" : "imModal.release"); }
+            _armedTrap = TopTrap;
+            try { await JS.InvokeVoidAsync(_armedTrap is not null ? "imModal.arm" : "imModal.release"); }
             catch (JSException) { /* focus trap is a progressive enhancement */ }
         }
 

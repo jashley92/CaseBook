@@ -48,7 +48,9 @@ window.imModal = (function () {
         },
         // Move focus into the visible trap modal and start cycling Tab within it.
         arm: function () {
-            var el = document.querySelector('.modal.d-block.im-trap');
+            // BUG-88: the topmost trap: a dialog, else a side panel (the entity or evidence panel, which a dialog can
+            // open on top of).
+            var el = document.querySelector('.modal.d-block.im-trap') || document.querySelector('aside.im-trap');
             if (!el || el === trapped) return;
             if (trapped) {
                 detach();                       // switching from one modal to another: keep lastFocused
