@@ -62,7 +62,10 @@ export and import, API token create and revoke.
 
 **Hash:** `EntryHash = SHA-256(canonical content | PrevHash)`. The first row has `PrevHash = ""`. Verification
 walks the chain in order and stops at the first sequence gap, broken link, or mismatched hash, and reports that
-sequence number.
+sequence number. Entries are written in canonical format 2 (`Format = 2`, BUG-184): `v2|`, the fields with `\`
+and `|` escaped, then `reason|…|label|…`. Entries from before it (no `Format`) keep the first format, where a reason
+and a label were appended only when present; a first-format entry after a format-2 one is a break. An entry's time
+is never earlier than the one before it (BUG-167), so a time range is a run of consecutive sequence numbers.
 
 **Concurrency:** a process-wide semaphore serializes "read the head, append, commit", and the unique index on
 `Sequence` is the backstop. This assumes one app instance.
