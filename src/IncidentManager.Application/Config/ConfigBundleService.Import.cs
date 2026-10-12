@@ -150,19 +150,18 @@ public sealed partial class ConfigBundleService
     // one bundle that differ only in case would both land on the same row. Throws with each such pair.
     private static void CheckNaturalKeys(ConfigBundle bundle)
     {
-        var problems = new List<string>();
-        void Check<T>(string section, IEnumerable<T>? items, Func<T, string?> key)
-        {
-            foreach (var g in (items ?? []).Select(key).OfType<string>().GroupBy(k => k, StringComparer.OrdinalIgnoreCase)
-                         .Where(g => g.Distinct(StringComparer.Ordinal).Count() > 1))
-                problems.Add($"{section} \"{string.Join("\" and \"", g.Distinct(StringComparer.Ordinal))}\" differ only in case.");
-        }
-        Check("Case templates", bundle.CaseTemplates, t => t.Name);
-        Check("Stage gates", bundle.StageGates, g => g.Name);
-        Check("Report profiles", bundle.ReportProfiles, p => p.Name);
-        Check("Data elements", bundle.DataElements, d => d.Key);
-        Check("Notification rules", bundle.NotificationRules, r => r.Code);
-        Check("Case outcomes", bundle.CaseOutcomes, o => o.Key);
+        static IEnumerable<string> Check<T>(string section, IEnumerable<T>? items, Func<T, string?> key) =>
+            (items ?? []).Select(key).OfType<string>().GroupBy(k => k, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.Distinct(StringComparer.Ordinal).ToList())
+                .Where(names => names.Count > 1)
+                .Select(names => $"{section} \"{string.Join("\" and \"", names)}\" differ only in case.");
+        var problems = Check("Case templates", bundle.CaseTemplates, t => t.Name)
+            .Concat(Check("Stage gates", bundle.StageGates, g => g.Name))
+            .Concat(Check("Report profiles", bundle.ReportProfiles, p => p.Name))
+            .Concat(Check("Data elements", bundle.DataElements, d => d.Key))
+            .Concat(Check("Notification rules", bundle.NotificationRules, r => r.Code))
+            .Concat(Check("Case outcomes", bundle.CaseOutcomes, o => o.Key))
+            .ToList();
         if (problems.Count > 0)
             throw new ArgumentException("This bundle can't be imported: " + string.Join(" ", problems) + " Rename one, then export again.");
     }
