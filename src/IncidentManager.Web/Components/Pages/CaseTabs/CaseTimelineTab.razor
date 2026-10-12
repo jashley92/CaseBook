@@ -1750,15 +1750,15 @@ else
     private async Task SaveEventEditCore()
     {
         if (_tlEditId is not { } id || string.IsNullOrWhiteSpace(_tlDesc)) return;
-        var whenUtc = WallToUtc(_tlWhen);
         // Captured before CancelTimelineEdit resets the composer mode, so the toast names what was edited.
         var savedLabel = IsThirdParty && !_evtAttackMode ? "Disclosure milestone updated" : IsThirdParty ? "Attack step updated" : "Event step updated";
         try
         {
             if (IsThirdParty && !_evtAttackMode)
             {
-                await Cases.EditEventStepAsync(CaseId, id, whenUtc, Array.Empty<MitreTactic>(), null, null, null,
-                    Tagged(_tlDesc)!, _tlSource, _tlReason, type: _evtStage);
+                // BUG-122: a milestone keeps its time as stated (a date, a window) through an edit.
+                await Cases.EditEventStepAsync(CaseId, id, StepWhenUtc(), Array.Empty<MitreTactic>(), null, null, null,
+                    Tagged(_tlDesc)!, _tlSource, _tlReason, type: _evtStage, timing: Timing());
             }
             else
             {
