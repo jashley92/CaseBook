@@ -59,6 +59,9 @@ public sealed class CaseActionDraft
     public string? SupersedeQuery { get; set; }
     public string? SupersedeReason { get; set; }
     public bool SupersedeCopy { get; set; } = true;
+    /// <summary>BUG-129: indicators a restricted duplicate would copy to an unrestricted kept case; null when not so.</summary>
+    public int? SupersedeExposure { get; set; }
+    public bool SupersedeAck { get; set; }
     public IReadOnlyList<LinkableCase> SupersedeResults { get; set; } = [];
     public IReadOnlyList<CaseLinkView> SupersedeLinked { get; set; } = [];
 

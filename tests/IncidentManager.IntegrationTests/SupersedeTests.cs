@@ -55,6 +55,24 @@ public sealed class SupersedeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_restricted_duplicate_is_superseded_into_an_unrestricted_case_only_once_confirmed(/* BUG-129 */)
+    {
+        var (db, svc, dup, primary) = await SeedAsync();
+        await using var _ = db;
+        _user.RoleSet = [AppRole.SysAdmin];   // sees restricted cases
+        await db.Cases.Where(c => c.Id == dup).ExecuteUpdateAsync(s => s.SetProperty(c => c.IsRestricted, true));
+
+        (await svc.SupersedeExposureAsync(dup, primary)).Should().Be(1, "the IP is already there; the domain would be copied");
+        (await svc.SupersedeExposureAsync(primary, dup)).Should().BeNull("an unrestricted case into a restricted one exposes nothing");
+
+        var act = () => svc.SupersedeAsync(dup, primary, copyIndicators: true, "Same wave");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*restricted*Confirm*indicators*");
+
+        (await svc.SupersedeAsync(dup, primary, copyIndicators: true, "Same wave", acknowledgeExposure: true))
+            .IndicatorsCopied.Should().Be(1);
+    }
+
+    [Fact]
     public async Task Superseding_links_copies_missing_indicators_and_notes_both_cases_without_closing()
     {
         var (db, svc, dup, primary) = await SeedAsync();

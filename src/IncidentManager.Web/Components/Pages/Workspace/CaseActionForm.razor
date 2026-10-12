@@ -125,6 +125,17 @@
         <label class="form-label small mt-2" for="supersede-reason">Why it's a duplicate</label>
         <textarea id="supersede-reason" class="form-control" rows="2" @bind="D.SupersedeReason" @bind:event="oninput"
                   placeholder="e.g. Same phishing wave; the user report and the SIEM alert were filed separately"></textarea>
+        @if (D.SupersedeTargetId is not null && D.SupersedeExposure is { } exposed)
+        {
+            <div class="alert alert-warning py-2 px-2 small mt-2 mb-0">
+                <p class="mb-1">This case is restricted and <code>@D.SupersedeTargetNumber</code> isn't. Everyone who can see
+                    <code>@D.SupersedeTargetNumber</code> will see this case's number in its note@(D.SupersedeCopy && exposed > 0 ? $", and the {IncidentManager.Application.Common.Plural.Of(exposed, "indicator")} copied across" : "").</p>
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="supersede-ack" @bind="D.SupersedeAck" />
+                    <label class="form-check-label" for="supersede-ack">I understand; supersede anyway</label>
+                </div>
+            </div>
+        }
     }
     else if (D.Name == "restrict")
     {
@@ -288,10 +299,12 @@
     /// <summary>Whether the current user would still see the case once restricted (else the service adds them).</summary>
     private bool RestrictKeepsMe => Access.CanLiftRestriction(Case) || Access.IsOnCase(Case);
 
-    private void PickSupersedeTarget(Guid id, string number)
+    private async Task PickSupersedeTarget(Guid id, string number)
     {
         D.SupersedeTargetId = id;
         D.SupersedeTargetNumber = number;
+        D.SupersedeAck = false;
+        D.SupersedeExposure = await Cases.SupersedeExposureAsync(Case.Id, id);   // BUG-129
     }
 
     private async Task SearchSupersede() =>
@@ -352,7 +365,8 @@
             "assign" => string.IsNullOrEmpty(D.AssignUserId) || CurrentRole(D.AssignUserId) == D.AssignRole,
             "reopen" => string.IsNullOrWhiteSpace(D.ReopenReason),
             "holdrelease" => string.IsNullOrWhiteSpace(D.HoldReleaseReason),
-            "supersede" => D.SupersedeTargetId is null || string.IsNullOrWhiteSpace(D.SupersedeReason),
+            "supersede" => D.SupersedeTargetId is null || string.IsNullOrWhiteSpace(D.SupersedeReason)
+                || (D.SupersedeExposure is not null && !D.SupersedeAck),
             "unrestrict" => string.IsNullOrWhiteSpace(D.RestrictReason),
             // A final call needs decision-maker, date and rationale; "Under review" needs none of them.
             "materiality" => D.MaterialityIsFinal
@@ -430,7 +444,8 @@
                     break;
                 case "supersede":
                 {
-                    var res = await Cases.SupersedeAsync(id, D.SupersedeTargetId!.Value, D.SupersedeCopy, D.SupersedeReason ?? "");
+                    var res = await Cases.SupersedeAsync(id, D.SupersedeTargetId!.Value, D.SupersedeCopy, D.SupersedeReason ?? "",
+                        acknowledgeExposure: D.SupersedeAck);
                     closeReason = $"Duplicate of {res.PrimaryCaseNumber}: {D.SupersedeReason?.Trim()}";
                     done = $"Superseded by {res.PrimaryCaseNumber}" + (D.SupersedeCopy ? $" · {IncidentManager.Application.Common.Plural.Of(res.IndicatorsCopied, "indicator")} copied" : "")
                            + ". Close this case to finish.";

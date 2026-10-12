@@ -1735,8 +1735,28 @@ public sealed class CaseService
     /// or none of it does. It deliberately does <b>not</b> close the duplicate: closing stays a separate human act
     /// through the normal close gate. Both cases must be visible to the caller.
     /// </summary>
+    /// <summary>
+    /// BUG-129: superseding a restricted case into one that isn't puts its number (in the note) and, when copied, its
+    /// indicators in front of everyone who can see the kept case. Returns how many indicators would be copied when that
+    /// applies (the dialog warns and asks for a tick); null when it doesn't.
+    /// </summary>
+    public async Task<int?> SupersedeExposureAsync(Guid duplicateId, Guid primaryId, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var cases = await Scoped(db.Cases.AsNoTracking()).Where(c => c.Id == duplicateId || c.Id == primaryId)
+            .Select(c => new { c.Id, c.IsRestricted }).ToListAsync(ct);
+        if (cases.FirstOrDefault(c => c.Id == duplicateId) is not { IsRestricted: true }
+            || cases.FirstOrDefault(c => c.Id == primaryId) is not { IsRestricted: false })
+            return null;
+        var dupValues = await db.CaseEntities.AsNoTracking().Where(e => e.CaseId == duplicateId).Select(e => new { e.Type, e.Value }).ToListAsync(ct);
+        var have = await db.CaseEntities.AsNoTracking().Where(e => e.CaseId == primaryId).Select(e => new { e.Type, e.Value }).ToListAsync(ct);
+        return dupValues.Count(d => !have.Any(p => p.Type == d.Type && string.Equals(p.Value, d.Value, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <param name="acknowledgeExposure">BUG-129: the caller confirmed that a restricted duplicate's number and indicators
+    /// will be visible on an unrestricted kept case (see <see cref="SupersedeExposureAsync"/>).</param>
     public async Task<SupersedeResult> SupersedeAsync(Guid duplicateId, Guid primaryId, bool copyIndicators, string reason,
-        CancellationToken ct = default)
+        CancellationToken ct = default, bool acknowledgeExposure = false)
     {
         Require();
         if (duplicateId == primaryId) throw new ArgumentException("A case can't supersede itself.");
@@ -1754,6 +1774,9 @@ public sealed class CaseService
         // BUG-114: as the docs and the workspace say, neither case may be closed (reopen it first).
         if (dup.Phase == CasePhase.Closed || primary.Phase == CasePhase.Closed)
             throw new InvalidOperationException("A closed case can't supersede or be superseded. Reopen it first.");
+        if (dup.IsRestricted && !primary.IsRestricted && !acknowledgeExposure)
+            throw new InvalidOperationException($"This case is restricted and {primary.CaseNumber} isn't. Confirm that its number" +
+                                                (copyIndicators ? " and indicators" : "") + " may be seen by everyone who can see that case.");
         var now = _clock.UtcNow;
 
         // One link per pair: an existing link of another kind ("Related to") becomes "Duplicate of".
