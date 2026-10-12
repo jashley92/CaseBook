@@ -416,6 +416,31 @@ public sealed class CaseImportTests : IDisposable
         steps.Select(s => s.Description).Should().Equal("Initial access", "Lateral movement", "Exfiltration");
     }
 
+    [Fact]
+    public async Task A_not_stated_step_that_opens_the_document_comes_before_the_stated_ones(/* BUG-118 */)
+    {
+        var d = new DateTimeOffset(2026, 9, 1, 9, 0, 0, TimeSpan.Zero);
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Target = new() { NewCase = new() { Title = "Intrusion", Classification = "Incident", Severity = "High" } },
+            Timeline = new()
+            {
+                new() { Kind = "Event", Type = "Other", Description = "Initial access", TimePrecision = "NotStated" },
+                new() { Kind = "Event", Type = "Other", Description = "Lateral movement", OccurredAtUtc = d },
+            }
+        };
+        await using var db = NewContext();
+        var svc = NewImportService(db);
+        var result = await svc.ApplyAsync(await svc.BuildPreviewAsync(doc));
+
+        await using var verify = NewContext();
+        var steps = (await verify.Set<TimelineEntry>().Where(t => t.CaseId == result.CaseId && t.Kind == TimelineKind.Event)
+            .ToListAsync()).InTimelineOrder().ToList();
+        steps.Select(s => s.Description).Should().Equal("Initial access", "Lateral movement");
+        steps[0].OccurredAtUtc.Should().BeOnOrBefore(d, "it isn't dated at import time, after the step it precedes");
+    }
+
     // ── Apply (integration) ──────────────────────────────────────────────────────────────────────
 
     private static CaseImportDocument FullDoc() => new()

@@ -179,6 +179,10 @@ public sealed class CaseImportService
 
         var timeline = 0;
         Guid? lastStep = null;   // ST-03: a step with no stated time follows the step before it in the document
+        // BUG-118: a not-stated step that opens the document, on a case with no steps yet, is placed by the earliest time
+        // the document does state, not by when it's imported (which would put it after the steps it comes before).
+        var firstStated = p.Timeline.Where(x => x.Include && x.Kind == TimelineKind.Event && x.Precision != TimePrecision.NotStated)
+            .Select(x => (DateTimeOffset?)x.OccurredAtUtc).Min();
         foreach (var t in p.Timeline.Where(t => t.Include))
         {
             // BUG-15: on a retry, a step applied last time is still the one the next not-stated step follows.
@@ -195,7 +199,9 @@ public sealed class CaseImportService
                         : new StepTiming(TimePrecision.NotStated, First: true),
                     _ => new StepTiming(precision)
                 };
-                var added = await _cases.AddTimelineEntryAsync(caseId, t.Kind, t.Type, t.OccurredAtUtc,
+                var when = precision == TimePrecision.NotStated && lastStep is null && firstStated is { } earliest
+                    ? earliest : t.OccurredAtUtc;
+                var added = await _cases.AddTimelineEntryAsync(caseId, t.Kind, t.Type, when,
                     t.Description, t.Source ?? origin, null,
                     decision: t.Type == TimelineEntryType.Decision
                         ? new CaseService.DecisionDetails(t.Rationale ?? "", t.OptionsConsidered, t.DecidedBy) : null,
