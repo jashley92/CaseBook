@@ -1718,6 +1718,22 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.ToTable("MaterialityChanges", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.NotificationMark", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(450)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("SentAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Key");
+
+                    b.HasIndex("SentAtUtc");
+
+                    b.ToTable("NotificationMarks", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.NotificationRule", b =>
                 {
                     b.Property<Guid>("Id")

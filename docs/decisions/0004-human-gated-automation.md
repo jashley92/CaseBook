@@ -11,7 +11,8 @@ finding) "who decided this, and when?" An automated change has no good answer.
 ## Decision
 
 - Background jobs **read** case data and send reminders, digests and alarms. The only database write any job
-  makes is an integrity seal. "Reminder already sent" is tracked in memory, not stored.
+  makes is an integrity seal, plus the operational "reminder already sent" marks (`NotificationMarks`, outside the
+  audit chain), which aren't case data.
 - The inbound API (`POST /api/import/cases`) never writes to a case. It stages a **pending import**, which a
   person reviews, edits and confirms in *Import → Pending imports*.
 - Stage gates block or warn; they don't move a case on their own. A person applies the transition, or

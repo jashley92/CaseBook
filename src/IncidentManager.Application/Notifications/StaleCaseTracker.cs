@@ -3,8 +3,7 @@ namespace IncidentManager.Application.Notifications;
 /// <summary>
 /// Remembers which cases have already had a stale-case nudge sent for a given last-activity instant
 /// (PROD-38), so the periodic scan nudges <em>once</em> per quiet spell rather than on every cycle while the
-/// case stays quiet. In-memory (singleton), so a restart may re-send at most one nudge — the same "ops
-/// telemetry out of the tamper-evident chain" trade as the overdue/due-soon/deadline trackers. The key is
+/// case stays quiet. BUG-95: kept in the database, outside the tamper-evident chain, so a restart doesn't resend. The key is
 /// (case, last-activity instant): the moment anything is recorded on the case its last-activity advances, so
 /// the next quiet spell is a fresh episode and will nudge again — the "reset on activity" behavior.
 /// </summary>
@@ -19,18 +18,13 @@ public interface IStaleCaseTracker
 }
 
 /// <inheritdoc />
-public sealed class StaleCaseTracker : IStaleCaseTracker
+public sealed class StaleCaseTracker(Abstractions.INotificationMarks? marks = null) : IStaleCaseTracker
 {
-    private readonly object _gate = new();
-    private readonly HashSet<(Guid, DateTimeOffset)> _notified = [];
+    private readonly Abstractions.INotificationMarks _marks = marks ?? new Abstractions.InMemoryNotificationMarks();
 
-    public bool TryMarkNotified(Guid caseId, DateTimeOffset lastActivityAtUtc)
-    {
-        lock (_gate) return _notified.Add((caseId, lastActivityAtUtc));
-    }
+    private static string Key(Guid caseId, DateTimeOffset lastActivity) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"stale|{caseId:N}|{lastActivity.UtcTicks}");
 
-    public void Forget(Guid caseId, DateTimeOffset lastActivityAtUtc)
-    {
-        lock (_gate) _notified.Remove((caseId, lastActivityAtUtc));
-    }
+    public bool TryMarkNotified(Guid caseId, DateTimeOffset lastActivityAtUtc) => _marks.TryAdd(Key(caseId, lastActivityAtUtc));
+
+    public void Forget(Guid caseId, DateTimeOffset lastActivityAtUtc) => _marks.Remove(Key(caseId, lastActivityAtUtc));
 }

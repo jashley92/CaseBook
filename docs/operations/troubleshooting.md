@@ -342,8 +342,9 @@ follow `Organization:TimeZone`.
 
 ### A reminder email was sent twice
 
-After a restart the in-memory "already sent" trackers are empty, so the first scan re-sends one reminder per
-qualifying item. Expected behavior today ([known issues](../reference/known-issues.md)).
+"Already sent" marks are kept in the database, so a restart shouldn't resend. Check the app pool: `Verify-Install.ps1`
+warns when it allows overlapped recycling or recycles on a schedule. A reminder whose send failed is sent again on the
+next scan, by design. A reminder still due after 180 days is sent once more when its mark is pruned.
 
 ## Escalation
 

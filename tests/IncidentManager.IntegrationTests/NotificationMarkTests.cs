@@ -1,0 +1,79 @@
+using FluentAssertions;
+using IncidentManager.Application.Notifications;
+using IncidentManager.Infrastructure.Notifications;
+using IncidentManager.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
+
+namespace IncidentManager.IntegrationTests;
+
+/// <summary>BUG-95/137: the scans' sent marks survive a restart, and two processes don't both send.</summary>
+public sealed class NotificationMarkTests : IDisposable
+{
+    private readonly SqliteConnection _connection = new("Data Source=:memory:");
+    private readonly FixedClock _clock = new(new DateTimeOffset(2026, 10, 12, 9, 0, 0, TimeSpan.Zero));
+    private readonly ServiceProvider _services;
+
+    public NotificationMarkTests()
+    {
+        _connection.Open();
+        _services = new ServiceCollection()
+            .AddDbContextFactory<AppDbContext>(o => o.UseSqlite(_connection))
+            .BuildServiceProvider();
+        using var db = _services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext();
+        db.Database.EnsureCreated();
+    }
+
+    // A fresh store is what a restarted (or a second, overlapping) app process holds.
+    private DbNotificationMarks Process() =>
+        new(_services.GetRequiredService<IServiceScopeFactory>(), _clock, NullLogger<DbNotificationMarks>.Instance);
+
+    [Fact]
+    public void A_reminder_marked_sent_isnt_sent_again_after_a_restart()
+    {
+        var item = Guid.NewGuid();
+        var due = _clock.UtcNow.AddDays(-1);
+
+        new OverdueActionItemTracker(Process()).TryMarkNotified(item, due).Should().BeTrue();
+
+        var restarted = new OverdueActionItemTracker(Process());
+        restarted.TryMarkNotified(item, due).Should().BeFalse("the mark is in the database");
+        restarted.TryMarkNotified(item, due.AddDays(1)).Should().BeTrue("a new due date is a fresh reminder");
+    }
+
+    [Fact]
+    public void Of_two_processes_only_the_first_to_mark_sends()
+    {
+        var first = new DigestTracker(Process());
+        var second = new DigestTracker(Process());
+        second.TryMarkSent("someone", Domain.Enums.DigestCadence.Daily, "2026-10-11");   // loads its view of the table
+
+        first.TryMarkSent("ana", Domain.Enums.DigestCadence.Daily, "2026-10-12").Should().BeTrue();
+        second.TryMarkSent("ANA", Domain.Enums.DigestCadence.Daily, "2026-10-12").Should().BeFalse("the other process sent it");
+    }
+
+    [Fact]
+    public void An_undelivered_mark_is_forgotten_across_restarts_and_old_marks_are_pruned()
+    {
+        var c = Guid.NewGuid();
+        var marks = Process();
+        var tracker = new StaleCaseTracker(marks);
+        tracker.TryMarkNotified(c, _clock.UtcNow).Should().BeTrue();
+        tracker.Forget(c, _clock.UtcNow);   // the send failed
+        new StaleCaseTracker(Process()).TryMarkNotified(c, _clock.UtcNow).Should().BeTrue("the next scan tries again");
+
+        _clock.UtcNow = _clock.UtcNow.AddDays(200);
+        new StaleCaseTracker(Process()).TryMarkNotified(Guid.NewGuid(), _clock.UtcNow);   // prunes on load
+        using var db = _services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext();
+        db.NotificationMarks.Should().ContainSingle("marks older than 180 days are pruned");
+    }
+
+    public void Dispose()
+    {
+        _services.Dispose();
+        _connection.Dispose();
+    }
+}

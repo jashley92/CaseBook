@@ -3,8 +3,7 @@ namespace IncidentManager.Application.Notifications;
 /// <summary>
 /// Remembers which after-action items have already had a <em>due-soon</em> reminder sent (E-03d), so the
 /// periodic scan alerts <em>once</em> per item as its due date approaches rather than on every cycle inside
-/// the lead window. In-memory (singleton), so a restart may re-send at most one reminder — the same trade as
-/// the overdue tracker. Kept separate from <see cref="IOverdueActionItemTracker"/> so the two reminder
+/// the lead window. BUG-95: kept in the database like the overdue tracker's marks, so a restart doesn't resend. Kept separate from <see cref="IOverdueActionItemTracker"/> so the two reminder
 /// episodes are independent: an item reminded "due soon" still gets its distinct "overdue" reminder later.
 /// The key includes the due date, so an item rescheduled to a new due date is a fresh reminder.
 /// </summary>
@@ -18,18 +17,13 @@ public interface IDueSoonActionItemTracker
 }
 
 /// <inheritdoc />
-public sealed class DueSoonActionItemTracker : IDueSoonActionItemTracker
+public sealed class DueSoonActionItemTracker(Abstractions.INotificationMarks? marks = null) : IDueSoonActionItemTracker
 {
-    private readonly object _gate = new();
-    private readonly HashSet<(Guid, DateTimeOffset)> _notified = [];
+    private readonly Abstractions.INotificationMarks _marks = marks ?? new Abstractions.InMemoryNotificationMarks();
 
-    public bool TryMarkNotified(Guid actionItemId, DateTimeOffset dueAtUtc)
-    {
-        lock (_gate) return _notified.Add((actionItemId, dueAtUtc));
-    }
+    private static string Key(Guid id, DateTimeOffset due) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"duesoon|{id:N}|{due.UtcTicks}");
 
-    public void Forget(Guid actionItemId, DateTimeOffset dueAtUtc)
-    {
-        lock (_gate) _notified.Remove((actionItemId, dueAtUtc));
-    }
+    public bool TryMarkNotified(Guid actionItemId, DateTimeOffset dueAtUtc) => _marks.TryAdd(Key(actionItemId, dueAtUtc));
+
+    public void Forget(Guid actionItemId, DateTimeOffset dueAtUtc) => _marks.Remove(Key(actionItemId, dueAtUtc));
 }

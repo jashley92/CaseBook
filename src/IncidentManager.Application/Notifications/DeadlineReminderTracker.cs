@@ -5,9 +5,8 @@ namespace IncidentManager.Application.Notifications;
 /// <summary>
 /// Remembers which cases have already had a regulatory-deadline reminder sent for a given <em>band</em>
 /// (PROD-37), so the periodic scan alerts <em>once</em> as a case crosses into "at risk" and again if it
-/// crosses into "breached" — rather than on every cycle while it sits there. In-memory (singleton), so a
-/// restart may re-send at most one reminder per band — the same "ops telemetry out of the tamper-evident
-/// chain" trade as the overdue/due-soon trackers. The key is (case, band, deadline instant): a case whose
+/// crosses into "breached" — rather than on every cycle while it sits there. BUG-95: kept in the database, outside
+/// the tamper-evident chain, so a restart doesn't resend. The key is (case, band, deadline instant): a case whose
 /// clock is re-based (e.g. the materiality decision date is corrected) has a new deadline and so is treated
 /// as a fresh reminder.
 /// </summary>
@@ -22,18 +21,14 @@ public interface IDeadlineReminderTracker
 }
 
 /// <inheritdoc />
-public sealed class DeadlineReminderTracker : IDeadlineReminderTracker
+public sealed class DeadlineReminderTracker(Abstractions.INotificationMarks? marks = null) : IDeadlineReminderTracker
 {
-    private readonly object _gate = new();
-    private readonly HashSet<(Guid, SlaState, DateTimeOffset)> _notified = [];
+    private readonly Abstractions.INotificationMarks _marks = marks ?? new Abstractions.InMemoryNotificationMarks();
 
-    public bool TryMarkNotified(Guid caseId, SlaState band, DateTimeOffset? dueAtUtc)
-    {
-        lock (_gate) return _notified.Add((caseId, band, dueAtUtc ?? DateTimeOffset.MinValue));
-    }
+    private static string Key(Guid caseId, SlaState band, DateTimeOffset? due) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"deadline|{caseId:N}|{band}|{(due ?? DateTimeOffset.MinValue).UtcTicks}");
 
-    public void Forget(Guid caseId, SlaState band, DateTimeOffset? dueAtUtc)
-    {
-        lock (_gate) _notified.Remove((caseId, band, dueAtUtc ?? DateTimeOffset.MinValue));
-    }
+    public bool TryMarkNotified(Guid caseId, SlaState band, DateTimeOffset? dueAtUtc) => _marks.TryAdd(Key(caseId, band, dueAtUtc));
+
+    public void Forget(Guid caseId, SlaState band, DateTimeOffset? dueAtUtc) => _marks.Remove(Key(caseId, band, dueAtUtc));
 }

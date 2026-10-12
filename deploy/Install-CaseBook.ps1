@@ -401,6 +401,10 @@ if (-not (Test-Path "IIS:\AppPools\$AppPoolName")) { New-WebAppPool -Name $AppPo
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name managedRuntimeVersion -Value ''      # No Managed Code
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name startMode -Value AlwaysRunning
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.idleTimeout -Value '00:00:00'
+# BUG-95/137: no scheduled recycle (IIS's default is every 29 hours) and never two CaseBook processes at once. The
+# audit-chain gate is per process, and an overlapped recycle briefly runs two.
+Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.periodicRestart.time -Value '00:00:00'
+Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name recycling.disallowOverlappingRotation -Value $true
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.identityType -Value SpecificUser
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.userName -Value $AppPoolIdentity
 if ($AppPoolCredential) {

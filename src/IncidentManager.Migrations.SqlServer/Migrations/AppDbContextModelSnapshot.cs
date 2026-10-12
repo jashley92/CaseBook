@@ -1724,6 +1724,22 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("MaterialityChanges", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.NotificationMark", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTimeOffset>("SentAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Key");
+
+                    b.HasIndex("SentAtUtc");
+
+                    b.ToTable("NotificationMarks", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.NotificationRule", b =>
                 {
                     b.Property<Guid>("Id")

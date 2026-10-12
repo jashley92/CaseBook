@@ -7,7 +7,7 @@ using IncidentManager.Domain.Enums;
 
 namespace IncidentManager.Application.Notifications;
 
-/// <summary>Remembers which quarters' executive reports have been sent (in memory, like the other trackers).</summary>
+/// <summary>Remembers which quarters' executive reports have been sent (BUG-95: in the database, like the other trackers).</summary>
 public interface IExecutiveReportTracker
 {
     /// <summary>True only the first time a quarter is marked sent.</summary>
@@ -18,20 +18,15 @@ public interface IExecutiveReportTracker
 }
 
 /// <inheritdoc />
-public sealed class ExecutiveReportTracker : IExecutiveReportTracker
+public sealed class ExecutiveReportTracker(INotificationMarks? marks = null) : IExecutiveReportTracker
 {
-    private readonly object _gate = new();
-    private readonly HashSet<ProgramPeriod> _sent = [];
+    private readonly INotificationMarks _marks = marks ?? new InMemoryNotificationMarks();
 
-    public bool TryMarkSent(ProgramPeriod period)
-    {
-        lock (_gate) return _sent.Add(period);
-    }
+    private static string Key(ProgramPeriod p) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"executive|{p.Year}-Q{p.Quarter}");
 
-    public void Forget(ProgramPeriod period)
-    {
-        lock (_gate) _sent.Remove(period);
-    }
+    public bool TryMarkSent(ProgramPeriod period) => _marks.TryAdd(Key(period));
+
+    public void Forget(ProgramPeriod period) => _marks.Remove(Key(period));
 }
 
 /// <summary>
@@ -40,8 +35,8 @@ public sealed class ExecutiveReportTracker : IExecutiveReportTracker
 /// managers (via <see cref="ICaseNotifications.OnExecutiveReportAsync"/>), with a link to the full report.
 /// The report is built with Manager visibility (every case, <see cref="Permission.ViewAllCases"/>), which is
 /// exactly what its recipients can already see in the app, so no figure reaches someone outside their scope.
-/// Read-only; exercises excluded; once per quarter via the tracker (a restart inside the window may re-send
-/// once — the same trade as the other in-memory reminder trackers).
+/// Read-only; exercises excluded; once per quarter via the tracker, whose mark is kept in the database (BUG-95), so
+/// a restart inside the window doesn't send it again.
 /// </summary>
 public sealed class ExecutiveReportScanner(
     IAppDbContextFactory factory,

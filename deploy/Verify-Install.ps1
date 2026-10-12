@@ -228,6 +228,12 @@ if ($Url) {
         $state = (Get-WebAppPoolState -Name $pool).Value
         if ($state -eq 'Started') { Ok "App pool '$pool' is Started" }
         else { Bad "App pool '$pool' state is '$state' (expected Started)" }
+        # BUG-95/137: one CaseBook process at a time, and no scheduled recycle.
+        $recycling = (Get-Item "IIS:\AppPools\$pool").recycling
+        if ($recycling.disallowOverlappingRotation) { Ok "App pool '$pool' never runs two processes at once" }
+        else { Warn "App pool '$pool' allows overlapped recycling: two CaseBook processes run side by side during a recycle. Set recycling.disallowOverlappingRotation (Upgrade-CaseBook.ps1 does)." }
+        if ($recycling.periodicRestart.time -eq [TimeSpan]::Zero) { Ok "App pool '$pool' has no scheduled recycle" }
+        else { Warn "App pool '$pool' recycles every $($recycling.periodicRestart.time). Set recycling.periodicRestart.time to 00:00:00 (Upgrade-CaseBook.ps1 does)." }
     } catch { Bad "Could not read app pool '$pool': $($_.Exception.Message)" }
 
     # 2. HTTP reachability over Windows auth

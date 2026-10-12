@@ -2998,3 +2998,36 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012153629_NotificationMarks'
+)
+BEGIN
+    CREATE TABLE [NotificationMarks] (
+        [Key] nvarchar(450) NOT NULL,
+        [SentAtUtc] datetimeoffset NOT NULL,
+        CONSTRAINT [PK_NotificationMarks] PRIMARY KEY ([Key])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012153629_NotificationMarks'
+)
+BEGIN
+    CREATE INDEX [IX_NotificationMarks_SentAtUtc] ON [NotificationMarks] ([SentAtUtc]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012153629_NotificationMarks'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261012153629_NotificationMarks'', N''10.0.12'');');
+END;
+
+COMMIT;
+GO
+

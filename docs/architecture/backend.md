@@ -168,8 +168,9 @@ scope per cycle, and log and continue on failure. In a background scope the "use
 
 Caveats:
 
-- "Already reminded" trackers are in memory. After a restart, the first cycle sends one reminder again for each
-  item that still qualifies. Two instances would double-send.
+- "Already reminded" marks are kept in the `NotificationMarks` table (BUG-95), outside the audit chain, so a restart
+  doesn't resend. The mark is the table's key, so if two processes overlap only the first to record it sends. Marks
+  older than 180 days are pruned; a reminder still due then is sent once more.
 - The executive report marks a quarter as sent before sending, so a failed send isn't retried until a restart.
 
 ## Real-time

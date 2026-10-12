@@ -208,6 +208,14 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   the chat title, the SIEM event's `msg`). To send none of them, set Settings → Notifications → Exercise escalations
   to "Don't send them". A SIEM rule on event 5503 can exclude exercises by matching `msg` starting `EXERCISE`.
 
+- **One table migration** (`NotificationMarks`): what the reminder, digest and executive-report scans have sent is
+  now kept in the database, so an IIS recycle or a deploy no longer resends every active reminder, digest and the
+  executive report. Marks older than 180 days are pruned.
+- **The app pool no longer recycles on a schedule or overlaps.** `Install-CaseBook.ps1` and `Upgrade-CaseBook.ps1`
+  set `recycling.periodicRestart.time` to `00:00:00` (IIS's default is every 29 hours) and turn on
+  `recycling.disallowOverlappingRotation`, so two CaseBook processes never run side by side. `Verify-Install.ps1`
+  warns when either isn't set. A recycle still happens on a config change or a crash; the marks cover those.
+
 ### v1.5.1
 
 A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung

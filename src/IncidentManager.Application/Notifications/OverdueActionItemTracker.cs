@@ -2,10 +2,10 @@ namespace IncidentManager.Application.Notifications;
 
 /// <summary>
 /// Remembers which after-action items have already had an overdue reminder sent this run (E-03b), so the
-/// periodic scan alerts <em>once</em> per item rather than on every cycle while it stays overdue. In-memory
-/// (singleton), so a restart may re-send at most one reminder — an acceptable trade for keeping this out of
-/// the tamper-evident audit chain (the same principle as the F-16/F-17 monitors). The key includes the due
-/// date, so an item rescheduled to a new due date and gone overdue again is treated as a fresh reminder.
+/// periodic scan alerts <em>once</em> per item rather than on every cycle while it stays overdue. BUG-95: the marks
+/// are kept in the database (<see cref="Abstractions.INotificationMarks"/>), outside the tamper-evident audit chain,
+/// so a restart doesn't resend them. The key includes the due date, so an item rescheduled to a new due date and gone
+/// overdue again is treated as a fresh reminder.
 /// </summary>
 public interface IOverdueActionItemTracker
 {
@@ -22,29 +22,20 @@ public interface IOverdueActionItemTracker
 }
 
 /// <inheritdoc />
-public sealed class OverdueActionItemTracker : IOverdueActionItemTracker
+public sealed class OverdueActionItemTracker(Abstractions.INotificationMarks? marks = null) : IOverdueActionItemTracker
 {
-    private readonly object _gate = new();
-    private readonly HashSet<(Guid, DateTimeOffset)> _notified = [];
-    private readonly HashSet<(Guid, DateTimeOffset, int)> _escalated = [];
+    private readonly Abstractions.INotificationMarks _marks = marks ?? new Abstractions.InMemoryNotificationMarks();
 
-    public bool TryMarkNotified(Guid actionItemId, DateTimeOffset dueAtUtc)
-    {
-        lock (_gate) return _notified.Add((actionItemId, dueAtUtc));
-    }
+    private static string Notified(Guid id, DateTimeOffset due) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"overdue|{id:N}|{due.UtcTicks}");
+    private static string Escalated(Guid id, DateTimeOffset due, int tier) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"escalation|{id:N}|{due.UtcTicks}|{tier}");
 
-    public bool TryMarkEscalated(Guid actionItemId, DateTimeOffset dueAtUtc, int tier)
-    {
-        lock (_gate) return _escalated.Add((actionItemId, dueAtUtc, tier));
-    }
+    public bool TryMarkNotified(Guid actionItemId, DateTimeOffset dueAtUtc) => _marks.TryAdd(Notified(actionItemId, dueAtUtc));
 
-    public void ForgetNotified(Guid actionItemId, DateTimeOffset dueAtUtc)
-    {
-        lock (_gate) _notified.Remove((actionItemId, dueAtUtc));
-    }
+    public bool TryMarkEscalated(Guid actionItemId, DateTimeOffset dueAtUtc, int tier) =>
+        _marks.TryAdd(Escalated(actionItemId, dueAtUtc, tier));
 
-    public void ForgetEscalated(Guid actionItemId, DateTimeOffset dueAtUtc, int tier)
-    {
-        lock (_gate) _escalated.Remove((actionItemId, dueAtUtc, tier));
-    }
+    public void ForgetNotified(Guid actionItemId, DateTimeOffset dueAtUtc) => _marks.Remove(Notified(actionItemId, dueAtUtc));
+
+    public void ForgetEscalated(Guid actionItemId, DateTimeOffset dueAtUtc, int tier) =>
+        _marks.Remove(Escalated(actionItemId, dueAtUtc, tier));
 }

@@ -70,7 +70,7 @@ Put **rules that must always hold** here, as methods on the entity that throw `A
 | `Security/` | `Permission` policies, `RoleDefinitions` (system roles), `AdminActionPermissions`, SIEM event ids and factories, idle-timeout policy | 🔴 |
 | `Admin/` | Settings catalog (the in-app whitelist), roles, templates, gates, data elements, notification rules, report profiles and templates, taxonomy, email templates, access review | 🟡 (`SettingsCatalog` is 🔴) |
 | `Config/` | Signed configuration-bundle export and import | 🟡 |
-| `Notifications/` | Reminder scanners and their in-memory "already sent" trackers; per-user notification preferences | 🟢 |
+| `Notifications/` | Reminder scanners and their "already sent" trackers (marks kept in `NotificationMarks`); per-user notification preferences | 🟢 |
 | `Dashboards/`, `Sla/`, `Work/`, `Intel/`, `Campaigns/`, `Mitre/`, `Export/`, `Activity/`, `Views/` | Read models: dashboard, program report, SLA math, My work, agenda and ICS, team workload, indicators, campaigns, ATT&CK catalog and coverage, IOC feed and STIX, activity feed, saved views | 🟢 |
 | `Content/` | Markdown → sanitized HTML, and to plain text | 🟡 (sanitization) |
 | `Abstractions/` | Ports: `IAppDbContextFactory`, `ICurrentUser`, `IClock`, stores, notifier, email, hash chain, seal signer… | 🟡 |

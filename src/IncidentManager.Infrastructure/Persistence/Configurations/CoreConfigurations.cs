@@ -690,6 +690,18 @@ public sealed class OpenCaseTabConfiguration : IEntityTypeConfiguration<OpenCase
     }
 }
 
+/// <summary>BUG-95: the scans' sent marks. The key is the primary key, so two processes can't both record one.</summary>
+public sealed class NotificationMarkConfiguration : IEntityTypeConfiguration<NotificationMark>
+{
+    public void Configure(EntityTypeBuilder<NotificationMark> b)
+    {
+        b.ToTable("NotificationMarks");
+        b.HasKey(x => x.Key);
+        b.Property(x => x.Key).HasMaxLength(NotificationMark.MaxKeyLength);
+        b.HasIndex(x => x.SentAtUtc);   // pruning
+    }
+}
+
 public sealed class UserNotificationPreferenceConfiguration : IEntityTypeConfiguration<UserNotificationPreference>
 {
     public void Configure(EntityTypeBuilder<UserNotificationPreference> b)
