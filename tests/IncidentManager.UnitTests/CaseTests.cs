@@ -110,6 +110,28 @@ public class CaseTests
     }
 
     [Fact]
+    public void An_archived_case_is_restored_before_anything_that_could_start_its_notification_clock_changes(/* BUG-150 */)
+    {
+        var c = Case.Open(2026, 1, "Vendor", "Vendor incident", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "analyst1", Now);
+        c.Archive("admin1", Now.AddHours(1));
+
+        var acts = new Action[]
+        {
+            () => c.RecordMateriality(MaterialityStatus.Material, "CISO", Now.AddDays(3), "Material", "analyst1", Now.AddDays(3)),
+            () => c.Reclassify(Classification.Breach, "Data left", "analyst1", Now.AddDays(3)),
+            () => c.SetImpactAssessment(1200, ["ssn"], "NY", "analyst1", Now.AddDays(3)),
+        };
+        foreach (var act in acts) act.Should().Throw<InvalidOperationException>().WithMessage("*archived*Restore it*");
+        c.Materiality.Status.Should().Be(MaterialityStatus.Undetermined);
+        c.Classification.Should().Be(Classification.Incident);
+
+        c.Unarchive("admin1", Now.AddDays(3));
+        c.RecordMateriality(MaterialityStatus.Material, "CISO", Now.AddDays(3), "Material", "analyst1", Now.AddDays(3));
+        c.Materiality.Status.Should().Be(MaterialityStatus.Material);
+    }
+
+    [Fact]
     public void A_two_person_hold_release_needs_a_reason_and_a_different_approver(/* F-12 */)
     {
         var c = NewCase();

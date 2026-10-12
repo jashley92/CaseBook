@@ -70,7 +70,7 @@
         @if (c.LegalHold) { <span class="im-flag-hot"><span class="bi bi-lock" aria-hidden="true"></span>Legal hold</span> }
         @if (c.IsRestricted) { <span><span class="bi bi-eye-slash" aria-hidden="true"></span>Restricted</span> }
         @if (c.IsExercise) { <span title="Tabletop exercise or drill"><span class="bi bi-mortarboard" aria-hidden="true"></span>Exercise</span> }
-        @if (c.IsArchived) { <span><span class="bi bi-archive" aria-hidden="true"></span>Archived</span> }
+        @if (c.IsArchived) { <span title="Archived: no deadline reminders. Restore it to change its classification, materiality or impact assessment."><span class="bi bi-archive" aria-hidden="true"></span>Archived</span> }
         @if (!string.IsNullOrWhiteSpace(c.IncidentCommander))
         {
             <span title="Incident commander"><span class="bi bi-person" aria-hidden="true"></span>@Users.DisplayFor(c.IncidentCommander), commander</span>

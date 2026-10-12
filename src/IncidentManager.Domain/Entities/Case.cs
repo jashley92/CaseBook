@@ -229,6 +229,7 @@ public class Case : AuditableEntity, IHashableEntity
         if (string.IsNullOrWhiteSpace(reason))
             throw new ArgumentException("A reason is required to change classification.");
         if (to == Classification) return;
+        EnsureNotArchived("change its classification");
         // BUG-107: raising a closed case would skip the close gate for the higher class (a closed Breach that never
         // passed the Breach close checks). Reopen it, raise it, and close it again; lowering it stays allowed.
         if (Phase == CasePhase.Closed && RaisesClassification(to))
@@ -458,6 +459,7 @@ public class Case : AuditableEntity, IHashableEntity
     {
         if (affectedIndividualsCount is < 0)
             throw new ArgumentException("The affected-individual count can't be negative.");
+        EnsureNotArchived("change its impact assessment");
 
         AffectedIndividualsCount = affectedIndividualsCount;
 
@@ -584,6 +586,7 @@ public class Case : AuditableEntity, IHashableEntity
         // record), and can revise it, since a Material call still runs the notification clock.
         if (!MaterialityApplies)
             throw new InvalidOperationException("Materiality is determined only for Incidents and Breaches.");
+        EnsureNotArchived("record its materiality");
         if (decidedOnUtc is { } future && future > nowUtc)
             throw new ArgumentException("The decision date can't be in the future.");
 
@@ -1163,6 +1166,7 @@ public class Case : AuditableEntity, IHashableEntity
     public void ClearReported(string actor, DateTimeOffset nowUtc)
     {
         if (ReportedAtUtc is null && JurisdictionNotices.Count == 0) return;
+        EnsureNotArchived("clear its notices");
         JurisdictionNotices.Clear();
         ReportedAtUtc = null;
         Touch(actor, nowUtc);
@@ -1313,6 +1317,18 @@ public class Case : AuditableEntity, IHashableEntity
         if (IsArchived) return;
         IsArchived = true;
         Touch(actor, nowUtc);
+    }
+
+    /// <summary>
+    /// BUG-150: an archived case gets no deadline reminders and isn't counted on the dashboard (BUG-10 refuses to archive
+    /// one whose clock is running). So what can start or re-arm a notification clock (classification, materiality,
+    /// the impact assessment, clearing a notice) isn't changed while it's archived: restore it first.
+    /// </summary>
+    private void EnsureNotArchived(string what)
+    {
+        if (IsArchived)
+            throw new InvalidOperationException($"This case is archived. Restore it from the archive to {what}: an archived case " +
+                                                "gets no deadline reminders, so a change that could start its notification clock waits until it's restored.");
     }
 
     /// <summary>Restores an archived case to active status.</summary>
