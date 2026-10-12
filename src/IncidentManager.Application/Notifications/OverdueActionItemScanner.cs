@@ -63,10 +63,10 @@ public sealed class OverdueActionItemScanner(
         {
             using var watch = DeliveryWatch.Begin();
             await notifications.OnActionItemsOverdueAsync(newly, ct);
-            if (watch.Failed)
+            foreach (var i in newly.Where(i => watch.ShouldRetry(i.ActionItemId.ToString())).ToList())
             {
-                foreach (var i in newly) tracker.ForgetNotified(i.ActionItemId, i.DueAtUtc);
-                newly = [];
+                tracker.ForgetNotified(i.ActionItemId, i.DueAtUtc);
+                newly.Remove(i);
             }
         }
 
@@ -75,11 +75,9 @@ public sealed class OverdueActionItemScanner(
         {
             using var watch = DeliveryWatch.Begin();
             await notifications.OnActionItemsEscalatedAsync(escalated, ct);
-            if (watch.Failed)
-            {
-                foreach (var e in escalated) tracker.ForgetEscalated(e.Item.ActionItemId, e.Item.DueAtUtc, (int)e.Tier);
-                escalated = [];
-            }
+            var retry = escalated.Where(e => watch.ShouldRetry(e.Item.ActionItemId.ToString())).ToList();
+            foreach (var e in retry) tracker.ForgetEscalated(e.Item.ActionItemId, e.Item.DueAtUtc, (int)e.Tier);
+            escalated = escalated.Except(retry).ToList();
         }
 
         return newly.Count + escalated.Count;

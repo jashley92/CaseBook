@@ -77,10 +77,10 @@ public sealed class NotificationDeadlineScanner(
             // BUG-08: a reminder that wasn't delivered is un-marked, so the next scan sends it again.
             using var watch = DeliveryWatch.Begin();
             await notifications.OnDeadlineApproachingAsync(reminders, ct);
-            if (watch.Failed)
+            foreach (var r in reminders.Where(r => watch.ShouldRetry(r.CaseId.ToString())).ToList())
             {
-                foreach (var r in reminders) tracker.Forget(r.CaseId, r.State, r.DueAtUtc);
-                return 0;
+                tracker.Forget(r.CaseId, r.State, r.DueAtUtc);
+                reminders.Remove(r);
             }
         }
 

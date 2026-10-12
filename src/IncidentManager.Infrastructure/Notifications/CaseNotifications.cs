@@ -208,6 +208,18 @@ public sealed class CaseNotifications : ICaseNotifications
         await _email.SendAsync(message, ct);
     }
 
+    // BUG-94: a reminder email to one person, watched so a failure is put down to the items it carried, not the batch.
+    private async Task SendForAsync(EmailMessage message, IEnumerable<string> itemKeys, CancellationToken ct)
+    {
+        int failures;
+        using (var send = DeliveryWatch.Begin())
+        {
+            await _email.SendAsync(message, ct);
+            failures = send.Failures;
+        }
+        if (failures > 0) DeliveryWatch.Attribute(itemKeys, failures);
+    }
+
     public async Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default)
     {
         if (items.Count == 0) return;
@@ -252,7 +264,7 @@ public sealed class CaseNotifications : ICaseNotifications
             };
 
             var message = await _composer.ComposeAsync("overdue", [to], tokens, overdueUrl, htmlTokens, ct);
-            await _email.SendAsync(message, ct);
+            await SendForAsync(message, ordered.Select(i => i.ActionItemId.ToString()), ct);
         }
     }
 
@@ -320,7 +332,7 @@ public sealed class CaseNotifications : ICaseNotifications
                     $"due {WebUtility.HtmlEncode(i.Item.DueAtUtc.ToString("u"))}, {OverdueSpan(i.HoursOverdue)} overdue)</li>")) + "</ul>",
             };
             var message = await _composer.ComposeAsync("overdue-escalated", [to], tokens, overdueUrl, htmlTokens, ct);
-            await _email.SendAsync(message, ct);
+            await SendForAsync(message, ordered.Select(i => i.Item.ActionItemId.ToString()), ct);
         }
     }
 
@@ -414,7 +426,7 @@ public sealed class CaseNotifications : ICaseNotifications
             };
 
             var message = await _composer.ComposeAsync("action-item-due-soon", [to], tokens, agendaUrl, htmlTokens, ct);
-            await _email.SendAsync(message, ct);
+            await SendForAsync(message, ordered.Select(i => i.ActionItemId.ToString()), ct);
         }
     }
 
@@ -471,7 +483,7 @@ public sealed class CaseNotifications : ICaseNotifications
             };
 
             var message = await _composer.ComposeAsync("notification-deadline", [to], tokens, cta, htmlTokens, ct);
-            await _email.SendAsync(message, ct);
+            await SendForAsync(message, ordered.Select(r => r.CaseId.ToString()), ct);
         }
     }
 
@@ -523,7 +535,7 @@ public sealed class CaseNotifications : ICaseNotifications
             };
 
             var message = await _composer.ComposeAsync("stale-case", [to], tokens, cta, htmlTokens, ct);
-            await _email.SendAsync(message, ct);
+            await SendForAsync(message, ordered.Select(r => r.CaseId.ToString()), ct);
         }
     }
 

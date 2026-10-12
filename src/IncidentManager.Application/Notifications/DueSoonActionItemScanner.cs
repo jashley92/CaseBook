@@ -57,10 +57,10 @@ public sealed class DueSoonActionItemScanner(
             // BUG-08: a reminder that wasn't delivered is un-marked, so the next scan sends it again.
             using var watch = DeliveryWatch.Begin();
             await notifications.OnActionItemsDueSoonAsync(newly, (int)Math.Round(leadHours > 0 ? leadHours : 24), ct);
-            if (watch.Failed)
+            foreach (var i in newly.Where(i => watch.ShouldRetry(i.ActionItemId.ToString())).ToList())
             {
-                foreach (var i in newly) tracker.Forget(i.ActionItemId, i.DueAtUtc);
-                return 0;
+                tracker.Forget(i.ActionItemId, i.DueAtUtc);
+                newly.Remove(i);
             }
         }
 

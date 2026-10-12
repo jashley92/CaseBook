@@ -70,6 +70,13 @@ public sealed class EmailSender : IEmailSender
         {
             await DeliverAsync(o, to, subject, textBody, htmlBody, ct);
         }
+        catch (SmtpFailedRecipientsException ex) when (ex.InnerExceptions.Length < to.Count)
+        {
+            // BUG-94: the relay took the message for the other recipients. Sending it again would repeat it to all of
+            // them (the executive report went out every hour for a week over one closed mailbox), so it isn't retried.
+            _log.LogWarning(ex, "Notification email reached {Delivered} of {RecipientCount} recipient(s); {Failed} address(es) were refused.",
+                to.Count - ex.InnerExceptions.Length, to.Count, ex.InnerExceptions.Length);
+        }
         catch (Exception ex)
         {
             // As above (CWE-359): the exception is the actionable signal for an SMTP problem; the subject and

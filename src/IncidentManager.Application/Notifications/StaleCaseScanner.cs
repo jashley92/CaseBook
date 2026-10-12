@@ -90,10 +90,10 @@ public sealed class StaleCaseScanner(
             // BUG-08: a nudge that wasn't delivered is un-marked, so the next scan sends it again.
             using var watch = DeliveryWatch.Begin();
             await notifications.OnCasesStaleAsync(reminders, ct);
-            if (watch.Failed)
+            foreach (var r in reminders.Where(r => watch.ShouldRetry(r.CaseId.ToString())).ToList())
             {
-                foreach (var r in reminders) tracker.Forget(r.CaseId, r.LastActivityAtUtc);
-                return 0;
+                tracker.Forget(r.CaseId, r.LastActivityAtUtc);
+                reminders.Remove(r);
             }
         }
 
