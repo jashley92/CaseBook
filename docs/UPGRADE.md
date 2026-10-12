@@ -161,6 +161,14 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ## Notes
 
+### Next release
+
+- **DbaApplies installs: `Install-Database.ps1 -ApplySchema` now applies the schema with `sqlcmd -I` too.** v1.5.2 added
+  `-I` only to the database-creation step, so on a host without the SqlServer PowerShell module the schema step still
+  ran with QUOTED_IDENTIFIER off and stopped at the first filtered index (a fresh install got no schema; an upgrade
+  stopped at `IX_CaseBriefs_OneCurrent`). If that happened, re-run the script (it's idempotent) or apply
+  `deploy/sql/casebook-schema-sqlserver.sql` with `sqlcmd -I` yourself.
+
 ### v1.5.2
 
 A bug-fix and hardening release with six migrations, applied at startup, and a first start that gives existing

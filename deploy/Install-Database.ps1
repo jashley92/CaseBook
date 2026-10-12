@@ -169,7 +169,7 @@ if ($SchemaMode -eq 'DbaApplies' -and $ApplySchema) {
         Invoke-Sqlcmd -ServerInstance $SqlInstance -Database $DbName -InputFile $schemaSql `
                       -TrustServerCertificate -QueryTimeout 0 -OutputSqlErrors $true -AbortOnError -ErrorAction Stop
     } else {
-        & sqlcmd.exe -S $SqlInstance -E -b -C -d $DbName -i $schemaSql
+        & sqlcmd.exe -S $SqlInstance -E -b -C -I -d $DbName -i $schemaSql   # -I: the schema has filtered indexes (BUG-143)
         if ($LASTEXITCODE -ne 0) { throw "sqlcmd failed applying schema (exit $LASTEXITCODE)" }
     }
 }
