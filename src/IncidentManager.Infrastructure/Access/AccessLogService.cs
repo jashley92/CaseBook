@@ -1,5 +1,6 @@
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Access;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Common;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
@@ -145,7 +146,11 @@ public sealed class AccessLogService : IAccessLogService
 
     public async Task<IReadOnlyList<CaseAccessEvent>> ForCaseAsync(Guid caseId, int take = 200, CancellationToken ct = default)
     {
+        // BUG-131: who opened a case is shown to roles that see every case (the Audit tab's gate), and only for a case
+        // the caller can see; asserted here too, not only by the page.
+        if (!_user.Has(Permission.ViewAllCases)) return [];
         using var db = _factory.CreateDbContext();
+        if (!await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct)) return [];
         return await db.CaseAccessEvents.AsNoTracking()
             .Where(e => e.CaseId == caseId && e.AccessType == AccessType.CaseOpen)
             .OrderByDescending(e => e.LastSeenUtc)
