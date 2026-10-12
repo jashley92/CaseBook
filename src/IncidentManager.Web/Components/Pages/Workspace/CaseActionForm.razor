@@ -21,6 +21,10 @@
         }
         <label class="form-label small" for="ws-reclass-to">@(Case.Classification is null ? "Promote to" : "New classification")</label>
         <select id="ws-reclass-to" class="form-select mb-2" @bind="D.NewClass" @bind:after='() => OnTargetChanged.InvokeAsync("reclass")'>@foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }</select>
+        @if (ClosedAndRaising)
+        {
+            <div class="alert alert-warning py-1 px-2 small mb-2">This case is closed. Reopen it to raise its classification, so that closing it again runs the close checks for @Ui.Label(D.NewClass). Lowering it is allowed while closed.</div>
+        }
         <label class="form-label small" for="ws-reclass-reason">Reason <span class="text-muted">(required)</span></label>
         <input id="ws-reclass-reason" class="form-control" placeholder="e.g. new evidence confirms data was exfiltrated" @bind="D.ReclassReason" @bind:event="oninput" />
         <RationaleHint Gate="T.Gate" Text="@D.ReclassReason" />
@@ -356,7 +360,7 @@
                     || string.IsNullOrWhiteSpace(D.MaterialityRationale)),
             // Reclass always needs a reason; both gated dialogs need an override justification when a blocking
             // requirement is unmet, and a long-enough rationale when the gate requires commentary.
-            "reclass" => string.IsNullOrWhiteSpace(D.ReclassReason) || t.When is null
+            "reclass" => ClosedAndRaising || string.IsNullOrWhiteSpace(D.ReclassReason) || t.When is null
                 || (t.NeedsOverride && string.IsNullOrWhiteSpace(t.Override))
                 || t.RationaleError(D.ReclassReason) is not null,
             "status" => (t.NeedsOverride && string.IsNullOrWhiteSpace(t.Override))
@@ -368,6 +372,9 @@
             _ => false
         };
     }
+
+    /// <summary>BUG-107: a closed case is reopened before its classification goes up.</summary>
+    private bool ClosedAndRaising => Case.Phase == CasePhase.Closed && Case.RaisesClassification(D.NewClass);
 
     // BUG-14: one save at a time. A double-click, or Ctrl+Enter and a click, used to save twice.
     private bool _inFlight;

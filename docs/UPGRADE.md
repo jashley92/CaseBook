@@ -189,6 +189,11 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   hard delete; only the name changes, and earlier entries verify unchanged. Update any SIEM or spreadsheet filter that
   matches `SoftDelete`.
 
+- **Leaving Closed needs a reason, and a closed case is reopened before its classification goes up.** Change phase
+  out of Closed now asks for a reason, as Reopen does. Raising a closed case's classification (to Breach, say) is
+  refused with "Reopen the case to raise its classification", so closing it again runs the close checks for the
+  higher class. Lowering it while closed is still allowed.
+
 ### v1.5.1
 
 A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung

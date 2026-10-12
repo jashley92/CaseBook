@@ -228,6 +228,10 @@ public class Case : AuditableEntity, IHashableEntity
         if (string.IsNullOrWhiteSpace(reason))
             throw new ArgumentException("A reason is required to change classification.");
         if (to == Classification) return;
+        // BUG-107: raising a closed case would skip the close gate for the higher class (a closed Breach that never
+        // passed the Breach close checks). Reopen it, raise it, and close it again; lowering it stays allowed.
+        if (Phase == CasePhase.Closed && RaisesClassification(to))
+            throw new InvalidOperationException("Reopen the case to raise its classification. Closing it again runs the close checks for the new class.");
 
         var effective = CheckEffective(effectiveAtUtc, nowUtc, "classification",
             ClassificationChanges.Where(x => x.From is not null || x.ChangedAtUtc > CreatedAtUtc).Select(x => x.EffectiveAt));
@@ -241,6 +245,9 @@ public class Case : AuditableEntity, IHashableEntity
         });
         Touch(actor, nowUtc);
     }
+
+    /// <summary>True when <paramref name="to"/> is above the current classification (or promotes a Complex Event).</summary>
+    public bool RaisesClassification(Classification to) => Classification is not { } from || to > from;
 
     /// <summary>
     /// Renumbers an (auto-numbered) Complex Event into the IRP scheme when it is promoted onto the ladder,

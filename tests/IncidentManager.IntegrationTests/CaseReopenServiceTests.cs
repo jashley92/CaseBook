@@ -112,5 +112,23 @@ public sealed class CaseReopenServiceTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task A_closed_case_is_reopened_before_its_classification_goes_up_but_can_go_down(/* BUG-107 */)
+    {
+        var id = SeedClosedCase();
+        _clock.UtcNow = _clock.UtcNow.AddDays(1);
+
+        await using (var db = NewContext())
+        {
+            var act = () => NewService(db).ReclassifyAsync(id, Classification.Breach, "NPI found in the archive");
+            await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Reopen the case*");
+        }
+        await using (var db = NewContext())
+            await NewService(db).ReclassifyAsync(id, Classification.AdverseEvent, "no compromise after all");
+
+        await using var check = NewContext();
+        (await check.Cases.FirstAsync(x => x.Id == id)).Classification.Should().Be(Classification.AdverseEvent);
+    }
+
     public void Dispose() => _connection.Dispose();
 }
