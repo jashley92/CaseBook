@@ -59,8 +59,24 @@ public sealed class IntegrityService
     public async Task<ChainVerificationResult> VerifyAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync(ct);
-        return _hasher.VerifyChain(chain, await KeyedFromAsync(db, ct));
+        return await StreamChainAsync(db, null, ct);
+    }
+
+    /// <summary>
+    /// BUG-195: the chain checked as it's read, one entry at a time (as the compliance bundle does, BUG-78), instead of
+    /// loading the whole audit log, its JSON snapshots included, every cycle. <paramref name="records"/>, when given,
+    /// collects what the record check needs from each entry.
+    /// </summary>
+    private async Task<ChainVerificationResult> StreamChainAsync(IAppDbContext db, RowIntegrityVerifier.ChainRecords? records,
+        CancellationToken ct)
+    {
+        var verifier = _hasher.BeginVerify(await KeyedFromAsync(db, ct));
+        await foreach (var e in db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).AsAsyncEnumerable().WithCancellation(ct))
+        {
+            if (!verifier.Add(e)) break;
+            records?.Add(e);
+        }
+        return verifier.Result;
     }
 
     /// <summary>BUG-142: where the latest seal says the chain is keyed from (its signature is checked with the seal).</summary>
@@ -80,10 +96,10 @@ public sealed class IntegrityService
         for (var attempt = 0; attempt < 3; attempt++)
         {
             using var db = _factory.CreateDbContext();
-            var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync(ct);
-            var result = _hasher.VerifyChain(chain, await KeyedFromAsync(db, ct));
+            var records = new RowIntegrityVerifier.ChainRecords();
+            var result = await StreamChainAsync(db, records, ct);
             if (!result.IsValid) return result;
-            var bad = await RowIntegrityVerifier.VerifyAsync(db, _hasher, chain, ct);
+            var bad = await RowIntegrityVerifier.VerifyAsync(db, _hasher, records, ct);
             if (bad is null) return result;
             if (previous is not null && previous.EntityType == bad.EntityType && previous.Id == bad.Id)
                 return ChainVerificationResult.Broken(bad.LastSequence ?? 0, bad.Detail);

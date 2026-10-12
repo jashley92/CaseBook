@@ -18,7 +18,8 @@ public sealed class IntegritySealHostedService : BackgroundService
 {
     // Verification (chain + latest seal) and the alarm run on this cadence regardless of the seal
     // interval, so detection latency is decoupled from — and far shorter than — how often we seal. Full
-    // re-verification is O(n) over the audit log; 10 minutes balances detection latency against load.
+    // re-verification is O(n) over the audit log, read as a stream (BUG-195); 10 minutes balances detection latency
+    // against load.
     private static readonly TimeSpan VerifyPoll = TimeSpan.FromMinutes(10);
 
     private readonly IServiceScopeFactory _scopeFactory;

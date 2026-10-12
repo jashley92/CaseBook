@@ -66,10 +66,21 @@ public static class RowIntegrityVerifier
     /// Checks every hashable record against its own hash and against the hash the chain last recorded for it.
     /// <paramref name="chain"/> is the full audit log in sequence order (the caller has already verified its links).
     /// </summary>
-    public static async Task<RowMismatch?> VerifyAsync(IAppDbContext db, IHashChainService hasher,
+    public static Task<RowMismatch?> VerifyAsync(IAppDbContext db, IHashChainService hasher,
         IReadOnlyList<AuditLogEntry> chain, CancellationToken ct = default)
     {
-        var recorded = LastRecordedHashes(chain);
+        var recorded = new ChainRecords();
+        foreach (var e in chain) recorded.Add(e);
+        return VerifyAsync(db, hasher, recorded, ct);
+    }
+
+    /// <summary>
+    /// The same check against <paramref name="recorded"/>, which the caller built while streaming the chain (BUG-195), so
+    /// the audit log is never held in memory.
+    /// </summary>
+    public static async Task<RowMismatch?> VerifyAsync(IAppDbContext db, IHashChainService hasher,
+        ChainRecords recorded, CancellationToken ct = default)
+    {
         var checkedTypes = new HashSet<string>(StringComparer.Ordinal);
         var present = new HashSet<(string, string)>();
         foreach (var table in Tables(db))
@@ -81,7 +92,7 @@ public static class RowIntegrityVerifier
                 var type = row.GetType().Name;
                 var key = (type, entity.Id.ToString());
                 present.Add(key);
-                var known = recorded.TryGetValue(key, out var last);
+                var known = recorded.TryGet(key, out var last);
 
                 if (known && last.Deleted)
                     return new RowMismatch(type, entity.Id, last.Sequence,
@@ -118,7 +129,7 @@ public static class RowIntegrityVerifier
 
         // A record the chain last recorded as created or changed (with a row hash, so after row hashes existed) that is
         // no longer in its table was deleted outside CaseBook: the app records every removal.
-        foreach (var ((type, id), last) in recorded)
+        foreach (var ((type, id), last) in recorded.All)
         {
             // BUG-153: in the tables made hashable later, every row is in the trail, so a missing one counts even when its
             // latest entry predates row hashes.
@@ -147,16 +158,24 @@ public static class RowIntegrityVerifier
         nameof(AssignmentChange), nameof(EntityVerdictChange), nameof(CaseAssignment), nameof(EvidenceCitation),
     };
 
-    /// <summary>Per record (type, id), the row hash its latest audit entry recorded, that entry's sequence, and whether
-    /// it was a removal.</summary>
-    private static Dictionary<(string Type, string Id), (string? Hash, long Sequence, bool Deleted)> LastRecordedHashes(IReadOnlyList<AuditLogEntry> chain)
+    /// <summary>
+    /// Per record (type, id), the row hash its latest audit entry recorded, that entry's sequence, and whether it was a
+    /// removal. BUG-195: built one entry at a time as the chain is read, keeping only these, not the entries.
+    /// </summary>
+    public sealed class ChainRecords
     {
-        var map = new Dictionary<(string, string), (string?, long, bool)>();
-        foreach (var e in chain)
+        private readonly Dictionary<(string Type, string Id), (string? Hash, long Sequence, bool Deleted)> _last = new();
+
+        /// <summary>The last entry added: what the record check is up to date with.</summary>
+        public long? Head { get; private set; }
+
+        public void Add(AuditLogEntry e)
         {
-            if (e.EntityId is not { } id) continue;
-            if (e.Action == Domain.Enums.AuditAction.Delete) { map[(e.EntityType, id)] = (null, e.Sequence, true); continue; }
-            if (e.AfterJson is not { } after) continue;
+            Head = e.Sequence;
+            if (e.EntityId is not { } id) return;
+            var type = string.Intern(e.EntityType);   // a few dozen names, repeated across every entry
+            if (e.Action == Domain.Enums.AuditAction.Delete) { _last[(type, id)] = (null, e.Sequence, true); return; }
+            if (e.AfterJson is not { } after) return;
             // The latest entry decides. Entries written before every update recorded the row hash don't carry it, and
             // a record whose latest entry is one of those is checked against its own hash only.
             string? hash = null;
@@ -169,8 +188,12 @@ public static class RowIntegrityVerifier
                 }
                 catch (JsonException) { /* not a snapshot this check reads; the chain check covers the entry itself */ }
             }
-            map[(e.EntityType, id)] = (hash, e.Sequence, false);
+            _last[(type, id)] = (hash, e.Sequence, false);
         }
-        return map;
+
+        internal bool TryGet((string Type, string Id) key, out (string? Hash, long Sequence, bool Deleted) last) =>
+            _last.TryGetValue(key, out last);
+
+        internal IEnumerable<KeyValuePair<(string Type, string Id), (string? Hash, long Sequence, bool Deleted)>> All => _last;
     }
 }
