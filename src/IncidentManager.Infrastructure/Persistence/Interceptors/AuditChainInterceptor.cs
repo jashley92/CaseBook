@@ -91,6 +91,23 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         return base.SaveChangesFailedAsync(eventData, ct);
     }
 
+    // BUG-01: a concurrency conflict (e.g. two people removing the same row) is reported here, not through
+    // SaveChangesFailed, so the gate must be released here as well.
+    public override InterceptionResult ThrowingConcurrencyException(ConcurrencyExceptionEventData eventData, InterceptionResult result)
+    {
+        ReleaseGate();
+        _pendingCaseIds.Clear();
+        return base.ThrowingConcurrencyException(eventData, result);
+    }
+
+    public override ValueTask<InterceptionResult> ThrowingConcurrencyExceptionAsync(
+        ConcurrencyExceptionEventData eventData, InterceptionResult result, CancellationToken ct = default)
+    {
+        ReleaseGate();
+        _pendingCaseIds.Clear();
+        return base.ThrowingConcurrencyExceptionAsync(eventData, result, ct);
+    }
+
     public override void SaveChangesCanceled(DbContextEventData eventData)
     {
         ReleaseGate();
@@ -103,6 +120,19 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         ReleaseGate();
         _pendingCaseIds.Clear();
         return base.SaveChangesCanceledAsync(eventData, ct);
+    }
+
+    // BUG-01: EF calls SavingChanges before the save's own error handling, so an exception while appending (the
+    // chain-head read timing out, say) reaches none of the completion callbacks. Release the gate here.
+    private void AppendOrRelease(DbContext context, PreparedAudit prepared)
+    {
+        try { AppendChain(context, prepared); }
+        catch
+        {
+            ReleaseGate();
+            _pendingCaseIds.Clear();
+            throw;
+        }
     }
 
     private void ReleaseGate()
@@ -131,7 +161,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                 // callbacks) so a concurrent append can't read the same head and fork the chain.
                 AuditChainGate.Enter();
                 _gateHeld = true;
-                AppendChain(eventData.Context, prepared);
+                AppendOrRelease(eventData.Context, prepared);
             }
         }
         return result;
@@ -147,7 +177,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             {
                 await AuditChainGate.EnterAsync(ct);
                 _gateHeld = true;
-                AppendChain(eventData.Context, prepared);
+                AppendOrRelease(eventData.Context, prepared);
             }
         }
         return result;

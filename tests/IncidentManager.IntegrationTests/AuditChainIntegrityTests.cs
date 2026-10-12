@@ -95,5 +95,44 @@ public sealed class AuditChainIntegrityTests : IDisposable
         _hasher.VerifyChain(entries).IsValid.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task A_concurrency_conflict_releases_the_audit_gate()
+    {
+        // BUG-01: EF reports a concurrency conflict through ThrowingConcurrencyException, not SaveChangesFailed.
+        // Two people remove the same assignment: the second DELETE matches no row.
+        var now = _clock.UtcNow;
+        Guid id;
+        await using (var db = NewContext())
+        {
+            var c = Case.Open(2026, 1, "conflict", "Conflict", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, _user.UserId, now);
+            c.Assign("someone", "Someone", CaseAssignmentRole.Analyst, _user.UserId, now);
+            db.Cases.Add(c);
+            await db.SaveChangesAsync();
+            id = c.Id;
+        }
+
+        await using var first = NewContext();
+        await using var second = NewContext();
+        var a = await first.Cases.Include(x => x.Assignments).Include(x => x.AssignmentChanges).SingleAsync(x => x.Id == id);
+        var b = await second.Cases.Include(x => x.Assignments).Include(x => x.AssignmentChanges).SingleAsync(x => x.Id == id);
+        a.Unassign("someone", _user.UserId, now);
+        await first.SaveChangesAsync();
+        b.Unassign("someone", _user.UserId, now);
+        var conflict = async () => await second.SaveChangesAsync();
+        await conflict.Should().ThrowAsync<DbUpdateConcurrencyException>();
+
+        // A leaked gate would block this forever.
+        await using var db3 = NewContext();
+        var created = await NewService(db3).CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "after",
+            Title = "After the conflict",
+            Classification = Classification.Incident,
+            Severity = Severity.Medium,
+            Origin = CaseOrigin.InternalDetection
+        }).WaitAsync(TimeSpan.FromSeconds(5));
+        created.Should().NotBeNull();
+    }
+
     public void Dispose() => _connection.Dispose();
 }
