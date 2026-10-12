@@ -74,8 +74,10 @@ public sealed class CriticalAlertOutbox(IEmailSender email, IServiceScopeFactory
                         log.LogError("A {Kind} email for {CaseNumber} still wasn't delivered after {Retries} retries; administrators are shown it.",
                             a.Kind, a.CaseNumber ?? "(no case)", a.Retries);
                 }
+                // BUG-159: saved after each send, and even while shutting down, so a delivered alert isn't sent to Legal
+                // again because a later row's save (or the pass's single save at the end) didn't happen.
+                await db.SaveChangesAsync(CancellationToken.None);
             }
-            if (due.Count > 0) await db.SaveChangesAsync(ct);
             return sent;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

@@ -58,6 +58,23 @@ public sealed class CriticalAlertOutboxTests : IDisposable
     }
 
     [Fact]
+    public async Task A_retry_pass_that_stops_part_way_keeps_what_it_delivered(/* BUG-159 */)
+    {
+        var outbox = Outbox();
+        _sender.Failing = true;
+        await outbox.SendAsync(AlertDelivery.BreachEscalation, Guid.NewGuid(), "2026-04_Vendor", Message());
+        await outbox.SendAsync(AlertDelivery.IntegrityAlarm, null, null, Message());
+
+        _sender.Failing = false;
+        _sender.ThrowOnAttempt = 4;   // the pass delivers the first, then stops on the second
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(3);
+        await outbox.Invoking(o => o.RetryDueAsync()).Should().ThrowAsync<OperationCanceledException>();
+
+        using var db = Factory().CreateAppDbContext();
+        (await db.AlertDeliveries.CountAsync(a => a.DeliveredAtUtc != null)).Should().Be(1, "the one that went isn't sent again");
+    }
+
+    [Fact]
     public async Task One_that_never_goes_is_shown_on_its_case_and_to_administrators_until_marked_handled()
     {
         var outbox = Outbox();
@@ -101,10 +118,12 @@ public sealed class CriticalAlertOutboxTests : IDisposable
     {
         public bool Failing { get; set; }
         public int Attempts { get; private set; }
+        public int? ThrowOnAttempt { get; set; }
 
         public Task SendAsync(EmailMessage message, CancellationToken ct = default)
         {
             Attempts++;
+            if (Attempts == ThrowOnAttempt) throw new OperationCanceledException("the app is shutting down");
             if (Failing) DeliveryWatch.ReportFailure();
             return Task.CompletedTask;
         }
