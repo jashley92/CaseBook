@@ -345,18 +345,38 @@ public sealed class CaseImportService
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Discards a queued submission with an optional reason (nothing is written to any case).</summary>
-    public async Task RejectPendingAsync(Guid pendingId, string? note, CancellationToken ct = default)
+    /// <summary>
+    /// BUG-116: puts a claimed submission back in the queue when its apply failed, so it isn't left marked applied with
+    /// no case. If the apply had already created the case, the submission now targets it, so a retry (by anyone)
+    /// carries on into that case rather than creating another.
+    /// </summary>
+    public async Task ReleaseClaimAsync(Guid pendingId, Guid? createdCaseId, CancellationToken ct = default)
     {
         RequireEdit();
         using var db = _factory.CreateDbContext();
         var row = await VisiblePending(db).FirstOrDefaultAsync(p => p.Id == pendingId, ct);
-        if (row is null || row.Status != PendingImportStatus.Pending) return;
+        if (row is not { Status: PendingImportStatus.Applied, ResolvedCaseId: null } || row.DecidedBy != _user.UserId) return;
+        row.Status = PendingImportStatus.Pending;
+        row.DecidedBy = null;
+        row.DecidedAtUtc = null;
+        if (createdCaseId is { } created) row.TargetCaseId = created;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Discards a queued submission with an optional reason (nothing is written to any case). False when it
+    /// was no longer waiting (BUG-92: someone else applied or rejected it first).</summary>
+    public async Task<bool> RejectPendingAsync(Guid pendingId, string? note, CancellationToken ct = default)
+    {
+        RequireEdit();
+        using var db = _factory.CreateDbContext();
+        var row = await VisiblePending(db).FirstOrDefaultAsync(p => p.Id == pendingId, ct);
+        if (row is null || row.Status != PendingImportStatus.Pending) return false;
         row.Status = PendingImportStatus.Rejected;
         row.DecidedBy = _user.UserId;
         row.DecidedAtUtc = _clock.UtcNow;
         row.DecisionNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
         await db.SaveChangesAsync(ct);
+        return true;
     }
 
     /// <summary>S-09: deciding a queued import is a case edit (the page is EditCases-gated; this is the backstop).</summary>

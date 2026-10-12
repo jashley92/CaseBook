@@ -468,7 +468,8 @@ else if (_pending.Count > 0)
     private async Task Reject()
     {
         if (_reviewingPendingId is not { } pid) return;
-        try { await Import.RejectPendingAsync(pid, string.IsNullOrWhiteSpace(_rejectNote) ? null : _rejectNote.Trim()); }
+        bool rejected;
+        try { rejected = await Import.RejectPendingAsync(pid, string.IsNullOrWhiteSpace(_rejectNote) ? null : _rejectNote.Trim()); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IncidentManager.Application.Security.ForbiddenException)
         {
             Toasts.Error($"Couldn't reject the import. {ex.Message}");
@@ -478,7 +479,9 @@ else if (_pending.Count > 0)
         _reviewingPendingId = null;
         _rejectNote = null;
         _rejecting = false;
-        Toasts.Success("Import rejected. Nothing was written.");
+        // BUG-92: say so when someone else got to it first; it may have been applied to a case.
+        if (rejected) Toasts.Success("Import rejected. Nothing was written.");
+        else Toasts.Error("This import was no longer waiting: someone else applied or rejected it first.");
         Nav.NavigateTo("cases/import");
     }
 
@@ -651,6 +654,7 @@ else if (_pending.Count > 0)
         if (_applying || _preview is not { } p || !CanApply(p)) return;   // BUG-14: one apply at a time
         _applying = true;
         _error = null;
+        Guid? claimed = null;
         try
         {
             if (NewCaseTarget)
@@ -666,6 +670,7 @@ else if (_pending.Count > 0)
                 _error = "This import was already applied or rejected by someone else. Reload the queue to see it.";
                 return;
             }
+            claimed = _reviewingPendingId;
             var result = await Import.ApplyAsync(p);
             if (_reviewingPendingId is { } pid) await Import.MarkPendingAppliedAsync(pid, result);
             var what = result.CaseCreated ? $"Case {result.CaseNumber} created" : $"Imported into {result.CaseNumber}";
@@ -678,6 +683,12 @@ else if (_pending.Count > 0)
             // resumes (already-applied items are skipped) rather than duplicating.
             _error = UserFacingError.Describe(ex, Logger, "importing a case",
                 "Couldn't complete the import. Try again; items already imported won't be duplicated.");
+            // BUG-116: back in the queue, so it isn't stranded if this page is left.
+            if (claimed is { } c)
+            {
+                try { await Import.ReleaseClaimAsync(c, p.CreatedCaseId); }
+                catch (Exception releaseEx) { Logger.LogWarning(releaseEx, "Couldn't put a failed import back in the queue."); }
+            }
         }
         finally
         {

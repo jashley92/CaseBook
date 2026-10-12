@@ -614,13 +614,36 @@ public sealed class CaseImportTests : IDisposable
         try
         {
             (await svc.ClaimPendingAsync(pid)).Should().BeFalse("another reviewer has it");
-            await svc.RejectPendingAsync(pid, "dup");
+            (await svc.RejectPendingAsync(pid, "dup")).Should().BeFalse("BUG-92: the reject says it didn't happen");
         }
         finally { _user.UserId = someoneElse; }
 
         var row = await ctx.Set<PendingImport>().AsNoTracking().FirstAsync(p => p.Id == pid);
         row.Status.Should().Be(PendingImportStatus.Applied, "a claimed import can't be rejected out from under its reviewer");
         row.DecidedBy.Should().Be(someoneElse);
+    }
+
+    [Fact]
+    public async Task A_failed_apply_puts_the_import_back_in_the_queue_aimed_at_any_case_it_created(/* BUG-116 */)
+    {
+        Guid pid;
+        await using (var db = NewContext())
+        {
+            var json = FullDocJson();
+            (pid, _) = await NewImportService(db).SubmitAsync(json, CaseImportService.Parse(json).Document!);
+        }
+
+        await using var ctx = NewContext();
+        var svc = NewImportService(ctx);
+        (await svc.ClaimPendingAsync(pid)).Should().BeTrue();
+        var created = Guid.NewGuid();
+        await svc.ReleaseClaimAsync(pid, created);
+
+        var row = await ctx.Set<PendingImport>().AsNoTracking().FirstAsync(p => p.Id == pid);
+        row.Status.Should().Be(PendingImportStatus.Pending);
+        row.DecidedBy.Should().BeNull();
+        row.TargetCaseId.Should().Be(created, "a retry carries on into the case the first try created");
+        (await svc.ListPendingAsync()).Should().Contain(p => p.Id == pid);
     }
 
     [Fact]
