@@ -72,6 +72,31 @@ public sealed class ChainKeyTests : IDisposable
     }
 
     [Fact]
+    public void Stripping_every_keyed_entry_is_caught_by_the_server_that_keyed_them(/* BUG-67 */)
+    {
+        // Every keyed entry rewritten with the plain hash: no keyed entry survives for the plain-after-keyed rule.
+        var chain = new List<AuditLogEntry>();
+        var plain = new HashChainService();
+        Append(plain, chain, "before the key");
+        var server = new HashChainService(new Ring(KeyA));
+        Append(server, chain, "after the key");
+        Append(server, chain, "and after");
+        var forged = new List<AuditLogEntry>();
+        foreach (var e in chain)
+        {
+            var copy = new AuditLogEntry { AtUtc = e.AtUtc, Actor = e.Actor, Action = e.Action, EntityType = e.EntityType, Summary = e.Summary };
+            plain.ChainAppend(copy, forged.LastOrDefault());
+            forged.Add(copy);
+        }
+
+        var result = server.VerifyChain(forged);
+
+        result.IsValid.Should().BeFalse();
+        result.FirstBrokenSequence.Should().Be(3);
+        result.Detail.Should().Contain("this server wrote it with the chain key");
+    }
+
+    [Fact]
     public void A_keyed_entry_altered_without_the_key_fails_its_hash()
     {
         var chain = PlainThenKeyed();

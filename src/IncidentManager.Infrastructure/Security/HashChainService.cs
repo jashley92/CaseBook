@@ -20,6 +20,11 @@ public sealed class HashChainService : IHashChainService
 
     public HashChainService(IChainKeyring? keys = null) => _keys = keys ?? NoChainKeys.Instance;
 
+    // BUG-67: the latest entry this server hashed with the chain key. The plain-after-keyed rule needs a keyed entry
+    // to survive, so someone with database access could otherwise downgrade every keyed entry not yet under a seal;
+    // while this server runs, the one it last keyed must still be keyed.
+    private long _lastKeyedSequence;
+
     public string Hash(string content)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(content));
@@ -34,6 +39,7 @@ public sealed class HashChainService : IHashChainService
         entry.PrevHash = previous?.EntryHash ?? GenesisPrevHash;
         entry.HashKeyId = _keys.CurrentKeyId;
         entry.EntryHash = ComputeEntryHash(entry)!;
+        if (entry.HashKeyId is not null) Interlocked.Exchange(ref _lastKeyedSequence, entry.Sequence);
     }
 
     public ChainVerificationResult VerifyChain(IReadOnlyList<AuditLogEntry> orderedEntries)
@@ -52,6 +58,9 @@ public sealed class HashChainService : IHashChainService
                 return ChainVerificationResult.Broken(entry.Sequence,
                     "Previous-hash link doesn't match the prior entry's hash.");
 
+            if (entry.HashKeyId is null && entry.Sequence == Interlocked.Read(ref _lastKeyedSequence))
+                return ChainVerificationResult.Broken(entry.Sequence,
+                    "Entry has the plain hash, but this server wrote it with the chain key. It was rewritten without the chain key.");
             // F-25: once the chain is keyed it stays keyed, so an entry can't be rewritten under the plain hash.
             if (entry.HashKeyId is null && firstKeyed is { } k)
                 return ChainVerificationResult.Broken(entry.Sequence,

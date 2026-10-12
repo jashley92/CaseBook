@@ -151,11 +151,23 @@ public sealed class IntegrityService
     /// </summary>
     public async Task<IntegritySeal?> SealIfDueAsync(TimeSpan minInterval, CancellationToken ct = default)
     {
-        if (await LatestSealAtUtc(ct) is { } last && _clock.UtcNow - last < minInterval)
+        if (await LatestSealAtUtc(ct) is { } last && _clock.UtcNow - last < minInterval && !await KeyedButUnsealedAsync(ct))
             return null;
         // The background job's system path: the scheduled cadence isn't an admin action, so it bypasses the
         // F-23 assertion that guards the on-demand SealAsync.
         return await SealCoreAsync(ct);
+    }
+
+    // BUG-67: the chain's keyed entries are only anchored once a seal covers one (after that, a plain entry after a keyed
+    // one is a break). Until then, someone with database access could rewrite them all with the plain hash. So the first
+    // keyed entry after a seal over a plain head is sealed at the next run, not at the next interval.
+    private async Task<bool> KeyedButUnsealedAsync(CancellationToken ct)
+    {
+        using var db = _factory.CreateDbContext();
+        var sealedUpTo = await db.IntegritySeals.AsNoTracking().OrderByDescending(s => s.UpToSequence)
+            .Select(s => (long?)s.UpToSequence).FirstOrDefaultAsync(ct) ?? 0;
+        var keyedUnderSeal = await db.AuditLog.AsNoTracking().AnyAsync(a => a.Sequence <= sealedUpTo && a.HashKeyId != null, ct);
+        return !keyedUnderSeal && await db.AuditLog.AsNoTracking().AnyAsync(a => a.Sequence > sealedUpTo && a.HashKeyId != null, ct);
     }
 
     public async Task<int> AuditCountAsync(CancellationToken ct = default)

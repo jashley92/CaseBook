@@ -131,7 +131,10 @@ chain that verifies on its own; the next seal catches that, because they can't r
 the entries since the last seal are protected by database access control alone. Turning on the **chain key**
 (`Integrity:ChainKey`, [OPERATIONS.md §2](../OPERATIONS.md#the-audit-chain-key-f-25-off-by-default)) closes that:
 new entries are hashed with HMAC-SHA256 under a key held in CyberArk or encrypted to a certificate, each entry
-records the key's id in `HashKeyId`, and a plain entry after a keyed one is a break. Seal copies in the SIEM
+records the key's id in `HashKeyId`, and a plain entry after a keyed one is a break. That rule needs a keyed entry
+that can't be rewritten, so the seal job seals at its next run (not its next interval) once keyed entries exist past
+the latest seal and none is under one, and the running server flags the entry it last keyed if it comes back plain;
+together they leave no window for downgrading every keyed entry to the plain hash. Seal copies in the SIEM
 (event 5004) cover the other side: a seal deleted or re-signed later shows up there
 ([ADR 0016](../decisions/0016-key-custody-and-seal-copies.md)).
 
