@@ -58,7 +58,7 @@ public static class RoleSeeder
         if (!await db.RoleMappings.AnyAsync(ct))
         {
             foreach (var (roleName, groups) in mapping.Groups)
-                foreach (var group in groups.Distinct())
+                foreach (var group in groups.Distinct(StringComparer.OrdinalIgnoreCase))   // BUG-136: as the unique index
                     db.RoleMappings.Add(new AdGroupRoleMapping
                     {
                         AdGroup = group,

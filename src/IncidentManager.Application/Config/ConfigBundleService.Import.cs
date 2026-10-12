@@ -235,10 +235,14 @@ public sealed partial class ConfigBundleService
         var mappings = await db.RoleMappings.ToListAsync(ct);
         foreach (var m in bundle.RoleMappings)
         {
-            var exists = mappings.Any(x => x.AdGroup == m.AdGroup && x.RoleName == m.RoleName);
+            // BUG-136: AD group and role names match ignoring case, as SQL Server's unique index does (and AD itself).
+            var exists = mappings.Any(x => string.Equals(x.AdGroup, m.AdGroup, StringComparison.OrdinalIgnoreCase)
+                                           && string.Equals(x.RoleName, m.RoleName, StringComparison.OrdinalIgnoreCase));
             if (!exists)
             {
-                db.RoleMappings.Add(new AdGroupRoleMapping { AdGroup = m.AdGroup, RoleName = m.RoleName, UpdatedAtUtc = now, UpdatedBy = actor });
+                var mapping = new AdGroupRoleMapping { AdGroup = m.AdGroup, RoleName = m.RoleName, UpdatedAtUtc = now, UpdatedBy = actor };
+                db.RoleMappings.Add(mapping);
+                mappings.Add(mapping);   // a bundle that lists the same mapping twice, in two casings, adds it once
                 addedMappings.Add($"{m.AdGroup} → {m.RoleName}");
                 Tally(true, true);
             }

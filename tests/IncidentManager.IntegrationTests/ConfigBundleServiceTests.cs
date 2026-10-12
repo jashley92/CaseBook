@@ -210,6 +210,29 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_mapping_that_differs_only_in_case_is_not_added_again(/* BUG-136 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var existing = live.RoleMappings.First();
+        var incoming = live with
+        {
+            RoleMappings = live.RoleMappings
+                .Append(new ConfigRoleMapping(existing.AdGroup.ToLowerInvariant(), existing.RoleName.ToUpperInvariant()))
+                .Append(new ConfigRoleMapping("corp\\new-group", "IR Lead"))
+                .Append(new ConfigRoleMapping("CORP\\NEW-GROUP", "ir lead"))
+                .ToList()
+        };
+
+        await svc.ImportAsync(Signed(incoming));
+
+        (await db.RoleMappings.AsNoTracking().CountAsync()).Should().Be(live.RoleMappings.Count + 1,
+            "SQL Server's unique index ignores case, so these are the same mappings");
+    }
+
+    [Fact]
     public async Task A_bundle_signed_with_another_key_needs_its_source_confirmed()
     {
         // BUG-19: the signature is checked against the key in the bundle, so anyone can re-sign an edited bundle with
