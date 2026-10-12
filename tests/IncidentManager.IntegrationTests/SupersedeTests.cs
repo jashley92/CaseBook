@@ -45,7 +45,8 @@ public sealed class SupersedeTests : IDisposable
         var dup = Case.Open(2026, 2, "Dup", "User-reported phish", Classification.Incident, Severity.Medium,
             CaseOrigin.InternalDetection, "analyst1", _clock.UtcNow);
         dup.AddEntity(EntityType.IpAddress, "203.0.113.66", "C2 (dup)", EntityDisposition.Suspicious, null, "User", "analyst1", _clock.UtcNow);
-        dup.AddEntity(EntityType.Domain, "lure.attacker.test", null, EntityDisposition.Malicious, null, "Proofpoint", "analyst1", _clock.UtcNow);
+        dup.AddEntity(EntityType.Domain, "lure.attacker.test", null, EntityDisposition.Malicious, null, "Proofpoint", "analyst1", _clock.UtcNow)
+            .Tlp = TlpLevel.Red;
         db.Cases.AddRange(primary, dup);
         await db.SaveChangesAsync();
         var svc = new CaseService(new TestDbContextFactory(Options()), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
@@ -68,6 +69,7 @@ public sealed class SupersedeTests : IDisposable
         var kept = await read.CaseEntities.AsNoTracking().Where(e => e.CaseId == primary).ToListAsync();
         kept.Single(e => e.Type == EntityType.IpAddress).Label.Should().Be("C2 (main)", "an existing indicator is never overwritten");
         kept.Single(e => e.Type == EntityType.Domain).Source.Should().Be("Copied from 2026-02_Dup (Proofpoint)");
+        kept.Single(e => e.Type == EntityType.Domain).Tlp.Should().Be(TlpLevel.Red, "BUG-106: the marking is copied too");
 
         var link = await read.CaseLinks.AsNoTracking().SingleAsync();
         (link.CaseId, link.RelatedCaseId, link.Type).Should().Be((dup, primary, CaseLinkType.DuplicateOf));

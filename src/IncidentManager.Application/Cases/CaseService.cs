@@ -1750,8 +1750,9 @@ public sealed class CaseService
                 var have = primary.Entities.Any(p => p.Type == e.Type && string.Equals(p.Value, e.Value, StringComparison.OrdinalIgnoreCase));
                 if (have) continue;
                 var source = $"Copied from {dup.CaseNumber}" + (string.IsNullOrWhiteSpace(e.Source) ? "" : $" ({e.Source})");
-                primary.AddEntity(e.Type, e.Value, e.Label, e.Disposition, e.Description,
+                var copy = primary.AddEntity(e.Type, e.Value, e.Label, e.Disposition, e.Description,
                     source.Length > 200 ? source[..200] : source, _user.UserId, now);
+                copy.Tlp = e.Tlp;   // BUG-106: the sharing marking travels with the indicator
                 copied++;
             }
         }
