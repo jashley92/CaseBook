@@ -344,11 +344,17 @@ if (!app.Environment.IsDevelopment())
     // with it in the query string. The page renders interactively (Routes is InteractiveServer), so the
     // cascading HttpContext — and thus TraceIdentifier — is null there; passing the id via the query is the
     // reliable way to show a Request ID for support. Development still gets the developer exception page.
-    app.UseExceptionHandler(errorApp => errorApp.Run(context =>
+    app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
     {
         var id = System.Diagnostics.Activity.Current?.Id ?? context.TraceIdentifier;
+        // BUG-213: an API caller (a SOAR playbook) gets an error it can act on, not a redirect to an HTML page.
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            await context.Response.WriteAsJsonAsync(new { error = "An unexpected server error. Quote the ref when reporting it.", @ref = id });
+            return;
+        }
         context.Response.Redirect($"/Error?ref={Uri.EscapeDataString(id)}");
-        return Task.CompletedTask;
     }));
     app.UseHsts();
     app.UseHttpsRedirection();
@@ -800,7 +806,13 @@ app.MapPost("/api/import/cases", async (
     if (request.HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
         limit.MaxRequestBodySize = maxImportBytes;
     using var reader = new StreamReader(request.Body);
-    var json = await reader.ReadToEndAsync(ct);
+    string json;
+    // BUG-213: a body sent without Content-Length (chunked) meets the limit as it's read.
+    try { json = await reader.ReadToEndAsync(ct); }
+    catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
+    {
+        return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+    }
 
     var parsed = IncidentManager.Application.Import.CaseImportService.Parse(json);
     if (!parsed.Ok)

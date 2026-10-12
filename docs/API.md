@@ -50,9 +50,9 @@ resubmitting creates a second pending import.
 | `400 Bad Request` | The document isn't valid / not a `casebook-case-import` / a newer schema version than the server supports / carries more than one import takes (2,000 indicators, 1,000 timeline entries, 500 tasks; split it). Body: `{ error }`. |
 | `401 Unauthorized` | Missing, invalid, expired, or revoked token. |
 | `403 Forbidden` | The token authenticated but lacks the **EditCases** permission. |
-| `413 Payload Too Large` | The body is over 5 MiB. |
+| `413 Payload Too Large` | The body is over 5 MiB (with or without a `Content-Length`). |
 | `429 Too Many Requests` | Per-caller rate limit exceeded (default 40 requests burst, 40 per minute; `Retry-After` is set). |
-| `302` to `/Error?ref=…` | An unexpected server error. The response is an HTML redirect, not JSON; quote the `ref` value when reporting it. |
+| `500 Internal Server Error` | An unexpected server error. Body: `{ error, ref }`; quote the `ref` value when reporting it. |
 
 **Example**
 
