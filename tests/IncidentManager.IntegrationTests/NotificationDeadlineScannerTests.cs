@@ -90,8 +90,9 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
             Key = "SSN", Label = "Social Security number", NotificationJurisdictions = "NY",
             IsActive = true, IsSystem = false, CreatedBy = "system", CreatedAtUtc = _clock.UtcNow
         });
+        // Detected before the decision (BUG-209: a decision can't precede detection).
         var c = Case.Open(2026, 1, "Breach", "Breach case", Classification.Breach, Severity.High,
-            CaseOrigin.InternalDetection, "alice", _clock.UtcNow);
+            CaseOrigin.InternalDetection, "alice", _clock.UtcNow.AddHours(-hoursAgo - 1));
         c.SetImpactAssessment(500, new[] { "SSN" }, "NY", "alice", _clock.UtcNow);
         c.RecordMateriality(MaterialityStatus.Material, "Disclosure Committee", _clock.UtcNow.AddHours(-hoursAgo),
             "Reasonable likelihood of harm.", "alice", _clock.UtcNow);

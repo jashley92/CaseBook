@@ -261,7 +261,13 @@
         <label class="form-label small" for="ws-mat-maker">Decision-maker <span class="text-muted">@(D.MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
         <input id="ws-mat-maker" class="form-control mb-2" maxlength="300" placeholder="e.g. Disclosure Committee, General Counsel" @bind="D.MaterialityDecisionMaker" />
         <label class="form-label small mb-0" for="ws-mat-date">When it was decided (@TimeDisp.Label) <span class="text-muted">@(D.MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-        <input id="ws-mat-date" type="datetime-local" class="form-control" @bind="D.MaterialityDecidedOn" />
+        <input id="ws-mat-date" type="datetime-local" class="form-control" @bind="D.MaterialityDecidedOn"
+               min="@(Case.DetectedAtUtc is { } det ? TimeZoneInfo.ConvertTime(det, TimeDisp.Zone).ToString("yyyy-MM-ddTHH:mm", System.Globalization.CultureInfo.InvariantCulture) : null)" />
+        @if (Case.DetectedAtUtc is { } detectedAt)
+        {
+            @* BUG-209: the decision is about what was found, so it can't predate the detection (it would start the clock early). *@
+            <div class="form-text">Not before the case was detected (@TimeDisp.Short(detectedAt)).</div>
+        }
         @* BUG-07: the time matters: a Material call starts the notification clock at this moment, not at midnight. *@
         <div class="form-text mb-2">A Material determination starts the notification clock at this time.</div>
         <label class="form-label small" for="ws-mat-rationale">Rationale <span class="text-muted">@(D.MaterialityIsFinal ? "(required)" : "(optional)")</span></label>

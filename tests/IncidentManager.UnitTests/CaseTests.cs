@@ -303,6 +303,20 @@ public class CaseTests
     }
 
     [Fact]
+    public void Materiality_cant_be_decided_before_detection_nor_detection_moved_past_it(/* BUG-209 */)
+    {
+        var c = Case.Open(2026, 1, "Vendor", "Vendor incident", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "analyst1", Now);
+        c.Invoking(x => x.RecordMateriality(MaterialityStatus.Material, "CISO", Now.AddHours(-1), "Harm likely", "a1", Now.AddDays(1)))
+            .Should().Throw<ArgumentException>().WithMessage("*earlier than the detected time*");
+
+        c.RecordMateriality(MaterialityStatus.Material, "CISO", Now.AddHours(5), "Harm likely", "a1", Now.AddDays(1));
+        c.Invoking(x => x.UpdateDetails(x.Title, x.Summary, x.DetectionCaseId, x.DataTypesInvolved, x.ImpactedAssets,
+                Now.AddHours(6), x.OccurredAtUtc, "a1", Now.AddDays(1)))
+            .Should().Throw<ArgumentException>().WithMessage("*after materiality was decided*");
+    }
+
+    [Fact]
     public void Going_past_recovery_without_it_needs_when_it_was_resolved(/* BUG-208 */)
     {
         var c = NewCase();

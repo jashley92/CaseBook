@@ -504,6 +504,9 @@ public class Case : AuditableEntity, IHashableEntity
                 throw new ArgumentException($"The detected time can't be after the severity first changed ({firstSeverity:u}).");
             if (ActionItems.Select(a => a.CompletedAtUtc).Min() is { } firstDone && detectedAtUtc > firstDone)
                 throw new ArgumentException($"The detected time can't be after a task was completed ({firstDone:u}).");
+            // BUG-209: nor the materiality decision, which can start the notification clock.
+            if (Materiality.DecidedOnUtc is { } decided && detectedAtUtc > decided)
+                throw new ArgumentException($"The detected time can't be after materiality was decided ({decided:u}).");
         }
 
         Title = title.Trim();
@@ -662,6 +665,9 @@ public class Case : AuditableEntity, IHashableEntity
         EnsureNotArchived("record its materiality");
         if (decidedOnUtc is { } future && future > nowUtc)
             throw new ArgumentException("The decision date can't be in the future.");
+        // BUG-209: a decision about what was found can't come before it was found (it would start the clock early).
+        if (decidedOnUtc is { } early && DetectedAtUtc is { } detected && early < detected)
+            throw new ArgumentException("The decision date can't be earlier than the detected time.");
 
         if (status is MaterialityStatus.Material or MaterialityStatus.NotMaterial)
         {

@@ -86,7 +86,7 @@ public sealed class MaterialityDeterminationTests : IDisposable
             id = await NewIncidentAsync(svc);
         }
 
-        var decidedOn = _clock.UtcNow.AddDays(-1);
+        var decidedOn = _clock.UtcNow;   // BUG-209: not before the case was detected (on creation, now)
         await using (var db = NewContext())
         {
             _user.UserId = "soc-analyst";
