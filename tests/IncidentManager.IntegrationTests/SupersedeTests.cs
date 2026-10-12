@@ -85,6 +85,29 @@ public sealed class SupersedeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_related_link_becomes_duplicate_of_and_a_closed_case_is_refused(/* BUG-114 */)
+    {
+        var (db, svc, dup, primary) = await SeedAsync();
+        await using var _ = db;
+        await svc.LinkCaseAsync(primary, dup, CaseLinkType.RelatedTo, "Same sender");
+
+        await svc.SupersedeAsync(dup, primary, copyIndicators: false, "Filed twice");
+
+        await using (var read = new AppDbContext(Options()))
+        {
+            var link = await read.CaseLinks.AsNoTracking().SingleAsync();
+            (link.CaseId, link.RelatedCaseId, link.Type).Should().Be((dup, primary, CaseLinkType.DuplicateOf));
+        }
+
+        await using (var write = new AppDbContext(Options()))
+        {
+            await write.Cases.Where(c => c.Id == primary).ExecuteUpdateAsync(u => u.SetProperty(c => c.Phase, CasePhase.Closed));
+        }
+        await svc.Invoking(s => s.SupersedeAsync(dup, primary, copyIndicators: false, "Again"))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*closed*");
+    }
+
+    [Fact]
     public async Task Superseding_needs_a_reason_a_different_visible_case_and_edit_rights()
     {
         var (db, svc, dup, primary) = await SeedAsync();

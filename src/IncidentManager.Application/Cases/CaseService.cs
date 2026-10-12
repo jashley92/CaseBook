@@ -1748,10 +1748,16 @@ public sealed class CaseService
 
         var dup = await LoadTrackedAsync(db, duplicateId, ct);
         var primary = await LoadTrackedAsync(db, primaryId, ct);
+        // BUG-114: as the docs and the workspace say, neither case may be closed (reopen it first).
+        if (dup.Phase == CasePhase.Closed || primary.Phase == CasePhase.Closed)
+            throw new InvalidOperationException("A closed case can't supersede or be superseded. Reopen it first.");
         var now = _clock.UtcNow;
 
-        var linked = await db.CaseLinks.AsNoTracking().AnyAsync(l =>
+        // One link per pair: an existing link of another kind ("Related to") becomes "Duplicate of".
+        var existing = await db.CaseLinks.FirstOrDefaultAsync(l =>
             (l.CaseId == duplicateId && l.RelatedCaseId == primaryId) || (l.CaseId == primaryId && l.RelatedCaseId == duplicateId), ct);
+        var linked = existing is { Type: CaseLinkType.DuplicateOf } && existing.CaseId == duplicateId;
+        if (existing is not null && !linked) db.CaseLinks.Remove(existing);
         if (!linked)
             db.CaseLinks.Add(new CaseLink
             {
