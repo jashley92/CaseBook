@@ -39,6 +39,9 @@ public sealed class CaseImportService
     private const int MaxDescriptiveName = 120;
     private const int MaxSummary = 8000;
     private const int MaxDescription = 8000;
+    // BUG-02: the limits below match the database columns, which SQL Server enforces (SQLite doesn't).
+    private const int MaxEntityDescription = 4000;
+    private const int MaxSource = 200;
     private const int MaxValue = 1024;
     private const int MaxLabel = 300;
     private const int MaxOwner = 200;
@@ -243,7 +246,7 @@ public sealed class CaseImportService
         {
             SubmittedBy = _user.UserId,
             SubmittedAtUtc = _clock.UtcNow,
-            Origin = string.IsNullOrWhiteSpace(doc.Origin) ? null : doc.Origin.Trim(),
+            Origin = preview.Origin,
             Summary = SummariseForQueue(preview),
             RawJson = rawJson,
             TargetCaseId = doc.Target?.CaseId,
@@ -356,11 +359,8 @@ public sealed class CaseImportService
     /// </summary>
     public static CaseImportPreview BuildPreviewCore(CaseImportDocument doc, DateTimeOffset nowUtc)
     {
-        var p = new CaseImportPreview
-        {
-            TargetKind = CaseImportTargetKind.NewCase,
-            Origin = string.IsNullOrWhiteSpace(doc.Origin) ? null : doc.Origin.Trim()
-        };
+        var p = new CaseImportPreview { TargetKind = CaseImportTargetKind.NewCase };
+        p.Origin = Clamp(doc.Origin, MaxSource, "Origin", p.Warnings);
         p.NewCase = BuildNewCase(doc.Target?.NewCase, p.Warnings);
 
         var summary = Clamp(doc.Summary, MaxSummary, "Summary", p.Warnings);
@@ -382,7 +382,7 @@ public sealed class CaseImportService
                 Kind = ParseEnum(t.Kind, TimelineKind.Investigation, "timeline kind", p.Warnings),
                 Type = ImportableTimelineType(ParseEnum(t.Type, TimelineEntryType.Communication, "timeline type", p.Warnings), p.Warnings),
                 Description = desc!,
-                Source = string.IsNullOrWhiteSpace(t.Source) ? p.Origin : t.Source.Trim()
+                Source = Clamp(t.Source, MaxSource, "Timeline source", p.Warnings) ?? p.Origin
             };
             // INV-18: a decision comes in with its why; without one it's imported as Communication, with a note.
             if (row.Type == TimelineEntryType.Decision)
@@ -467,8 +467,8 @@ public sealed class CaseImportService
                 Value = value,
                 Label = Clamp(e.Label, MaxLabel, "Entity label", p.Warnings),
                 Disposition = ParseEnum(e.Disposition, EntityDisposition.Unknown, "entity disposition", p.Warnings),
-                Description = Clamp(e.Description, MaxDescription, "Entity description", p.Warnings),
-                Source = string.IsNullOrWhiteSpace(e.Source) ? p.Origin : e.Source.Trim()
+                Description = Clamp(e.Description, MaxEntityDescription, "Entity description", p.Warnings),
+                Source = Clamp(e.Source, MaxSource, "Entity source", p.Warnings) ?? p.Origin
             });
         }
         if (droppedEntities > 0) p.Warnings.Add(droppedEntities == 1 ? "1 entity had no value and was skipped." : $"{droppedEntities} entities had no value and were skipped.");

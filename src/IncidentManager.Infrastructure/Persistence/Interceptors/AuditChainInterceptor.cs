@@ -280,7 +280,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                 CaseNumber = caseNumber,
                 // A human identity for the changed thing, captured now so the trail reads "Update ActionItem —
                 // Rotate exposed credentials" instead of an opaque type + GUID (folded into the hash only when set).
-                EntityLabel = LabelFor(entity),
+                EntityLabel = Cap(LabelFor(entity), MaxEntityLabel),
                 // Name the fields that actually moved (e.g. "Update Case — Legal hold") so the trail reads as
                 // what changed, not just that "something" did. The full before/after is in the JSON below.
                 Summary = AuditChangeDetail.ComposeSummary(action, type, changedFields),
@@ -396,6 +396,11 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     /// use their opening words. Entities with no cheap self-label (e.g. a relationship between two IDs) return
     /// null and are still identified by the resolved reference values in the diff.
     /// </summary>
+    // BUG-02: the label column is nvarchar(300). It's set before the entry is hashed, so the stored label is the hashed one.
+    private const int MaxEntityLabel = 300;
+
+    private static string? Cap(string? s, int max) => s is null || s.Length <= max ? s : s[..(max - 1)] + "…";
+
     private static string? LabelFor(Entity entity) => entity switch
     {
         Case c => c.Title,

@@ -188,6 +188,27 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public void Preview_clamps_to_the_database_column_lengths()
+    {
+        // BUG-02: SQL Server enforces these (SQLite doesn't), so an over-long value would fail the whole apply.
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Origin = new string('o', 500),
+            Timeline = new() { new() { OccurredAtUtc = _clock.UtcNow.AddHours(-1), Description = "x", Source = new string('s', 500) } },
+            Entities = new() { new() { Value = "10.0.0.5", Description = new string('d', 6000), Source = new string('s', 500) } }
+        };
+
+        var p = CaseImportService.BuildPreviewCore(doc, _clock.UtcNow);
+
+        p.Origin!.Length.Should().Be(200);
+        p.Timeline.Single().Source!.Length.Should().Be(200);
+        p.Entities.Single().Source!.Length.Should().Be(200);
+        p.Entities.Single().Description!.Length.Should().Be(4000);
+        p.Warnings.Should().Contain(w => w.Contains("Entity description"));
+    }
+
+    [Fact]
     public void Preview_falls_back_on_unknown_enums_and_flags_them()
     {
         var doc = new CaseImportDocument

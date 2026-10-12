@@ -134,5 +134,23 @@ public sealed class AuditChainIntegrityTests : IDisposable
         created.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task A_long_audit_label_is_cut_to_its_column_and_the_chain_still_verifies()
+    {
+        // BUG-02: the label column is nvarchar(300); an IOC's "{Label} ({Value})" can run to thousands of characters.
+        await using var db = NewContext();
+        var now = _clock.UtcNow;
+        var c = Case.Open(2026, 1, "long", "Long label", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, _user.UserId, now);
+        db.Cases.Add(c);
+        await db.SaveChangesAsync();
+        c.AddEntity(EntityType.Url, "https://example.test/" + new string('a', 1900), new string('L', 380), EntityDisposition.Unknown, null, null, _user.UserId, now);
+        await db.SaveChangesAsync();
+
+        var entries = await db.AuditLog.AsNoTracking().OrderBy(e => e.Sequence).ToListAsync();
+        entries.Should().OnlyContain(e => e.EntityLabel == null || e.EntityLabel.Length <= 300);
+        entries.Should().Contain(e => e.EntityLabel != null && e.EntityLabel.EndsWith("…"));
+        _hasher.VerifyChain(entries).IsValid.Should().BeTrue();
+    }
+
     public void Dispose() => _connection.Dispose();
 }
