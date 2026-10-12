@@ -48,7 +48,9 @@ public sealed class RoleService
         using var db = _factory.CreateDbContext();
         name = (name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A role name is required.");
-        if (await db.Roles.AnyAsync(r => r.Name == name, ct))
+        // BUG-18: role names are matched regardless of case everywhere else, so "sysadmin" is SysAdmin.
+        var lower = name.ToLowerInvariant();
+        if (await db.Roles.AnyAsync(r => r.Name.ToLower() == lower, ct))
             throw new InvalidOperationException($"A role named '{name}' already exists. Choose a different name.");
 
         var role = new Role { Name = name, Description = description?.Trim(), IsSystem = false };
@@ -109,8 +111,10 @@ public sealed class RoleService
         adGroup = (adGroup ?? "").Trim();
         roleName = (roleName ?? "").Trim();
         if (string.IsNullOrWhiteSpace(adGroup)) throw new ArgumentException("An AD group is required.");
-        if (!await db.Roles.AnyAsync(r => r.Name == roleName, ct))
-            throw new InvalidOperationException($"No role named '{roleName}'. Reload the page and choose another.");
+        var roleLower = roleName.ToLowerInvariant();
+        var role = await db.Roles.AsNoTracking().FirstOrDefaultAsync(r => r.Name.ToLower() == roleLower, ct)
+                   ?? throw new InvalidOperationException($"No role named '{roleName}'. Reload the page and choose another.");
+        roleName = role.Name;   // BUG-18: store the role's own spelling
         if (await db.RoleMappings.AnyAsync(m => m.AdGroup == adGroup && m.RoleName == roleName, ct))
             throw new InvalidOperationException("That mapping already exists.");
 

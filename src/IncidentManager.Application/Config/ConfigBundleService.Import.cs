@@ -203,7 +203,8 @@ public sealed partial class ConfigBundleService
         var roles = await db.Roles.ToListAsync(ct);
         foreach (var r in bundle.Roles.Where(r => !r.IsSystem))
         {
-            var existing = roles.FirstOrDefault(x => x.Name == r.Name);
+            // BUG-18: matched regardless of case, like the role directory, so "sysadmin" is SysAdmin, not a new role.
+            var existing = roles.FirstOrDefault(x => string.Equals(x.Name, r.Name, StringComparison.OrdinalIgnoreCase));
             if (existing is null)
             {
                 db.Roles.Add(new Role { Name = r.Name, Description = r.Description, IsSystem = false,

@@ -42,10 +42,15 @@ public sealed class RoleDirectory : IRoleDirectory
             var roles = db.Roles.AsNoTracking().ToList();
             var maps = db.RoleMappings.AsNoTracking().ToList();
 
-            var rolePermissions = roles.ToDictionary(
-                r => r.Name,
-                r => (IReadOnlySet<Permission>)Role.ParsePermissions(r.PermissionsCsv),
-                StringComparer.OrdinalIgnoreCase);
+            // BUG-18: names match regardless of case. Should two rows differ only by case (made before that was
+            // enforced), the system role wins, so a look-alike custom role can't add permissions to it, and the
+            // directory still loads instead of failing on the duplicate and resolving nothing.
+            var rolePermissions = roles
+                .GroupBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlySet<Permission>)Role.ParsePermissions(g.OrderByDescending(r => r.IsSystem).First().PermissionsCsv),
+                    StringComparer.OrdinalIgnoreCase);
 
             var groupRoles = maps
                 .GroupBy(m => m.AdGroup, StringComparer.OrdinalIgnoreCase)

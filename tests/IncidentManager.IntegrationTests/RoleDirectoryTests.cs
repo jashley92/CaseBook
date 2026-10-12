@@ -81,6 +81,36 @@ public sealed class RoleDirectoryTests : IDisposable
     }
 
     [Fact]
+    public async Task Role_names_differing_only_by_case_are_the_same_role()
+    {
+        // BUG-18: SQLite compared case-sensitively, so "sysadmin" was created beside SysAdmin, and the directory then
+        // failed on the duplicate and silently resolved nothing.
+        await SeedAsync(new RoleMappingOptions { Groups = new() { ["SysAdmin"] = ["SOC-AppAdmins"] } });
+        using (var scope = Scope())
+        {
+            var svc = scope.ServiceProvider.GetRequiredService<RoleService>();
+            var dup = () => svc.CreateRoleAsync("sysadmin", null, [Permission.ViewCases]);
+            await dup.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already exists*");
+
+            await svc.AddMappingAsync("SOC-Leads", "analyst");
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            (await db.RoleMappings.SingleAsync(m => m.AdGroup == "SOC-Leads")).RoleName.Should().Be("Analyst", "the role's own spelling is stored");
+        }
+
+        // A look-alike row already in the database (made before this was enforced) can't add to the system role.
+        using (var scope = Scope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Roles.Add(new IncidentManager.Domain.Entities.Role { Name = "analyst", IsSystem = false, PermissionsCsv = "Administer", UpdatedAtUtc = _clock.UtcNow, UpdatedBy = "t" });
+            await db.SaveChangesAsync();
+        }
+        var dir = _sp.GetRequiredService<IRoleDirectory>();
+        dir.Invalidate();
+        dir.RolesForGroups(["SOC-AppAdmins"]).Should().Contain("SysAdmin", "the directory still loads");
+        dir.PermissionsForRoles(["Analyst"]).Should().NotContain(Permission.Administer);
+    }
+
+    [Fact]
     public async Task Custom_role_grants_its_permissions_through_the_directory()
     {
         await SeedAsync(new RoleMappingOptions { Groups = new() { ["SysAdmin"] = ["SOC-AppAdmins"] } });
