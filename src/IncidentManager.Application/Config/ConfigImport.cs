@@ -28,7 +28,9 @@ public sealed record ConfigVerification(
     DateTimeOffset ExportedAtUtc, int SchemaVersion, string AppVersion, string SourceHost);
 
 /// <summary>Counts applied by an import, per outcome.</summary>
-public sealed record ConfigImportResult(int Added, int Updated, int Unchanged)
+/// <param name="RolesInEffect">BUG-193: false when the import changed roles or mappings that the role directory couldn't
+/// reload yet (it keeps retrying).</param>
+public sealed record ConfigImportResult(int Added, int Updated, int Unchanged, bool RolesInEffect = true)
 {
     public int Changed => Added + Updated;
 }

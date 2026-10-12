@@ -4,6 +4,8 @@ using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace IncidentManager.Infrastructure.Security;
 
@@ -15,12 +17,45 @@ namespace IncidentManager.Infrastructure.Security;
 public sealed class RoleDirectory : IRoleDirectory
 {
     private readonly IServiceScopeFactory _scopes;
+    private readonly ILogger<RoleDirectory> _logger;
     private volatile Snapshot _snapshot = Snapshot.Empty;
+    private readonly object _reload = new();
+    private Timer? _retry;
 
-    public RoleDirectory(IServiceScopeFactory scopes)
+    /// <summary>BUG-193: how often a failed reload is tried again.</summary>
+    internal static TimeSpan RetryEvery { get; set; } = TimeSpan.FromSeconds(30);
+
+    public RoleDirectory(IServiceScopeFactory scopes, ILogger<RoleDirectory>? logger = null)
     {
         _scopes = scopes;
-        Invalidate();
+        _logger = logger ?? NullLogger<RoleDirectory>.Instance;
+        // Schema not present yet on a first run (pre-migration): resolve nothing until the startup reload after migrating.
+        TryLoad(out _);
+    }
+
+    /// <inheritdoc />
+    public bool IsCurrent => _retry is null;
+
+    public void Invalidate()
+    {
+        if (TryLoad(out var error)) return;
+        // BUG-193: the change is saved, but sessions and tokens still resolve the previous roles and mappings, so a
+        // revoked grant would stay in force with nothing said. Say so, and keep trying until it takes.
+        _logger.LogCritical(error, "The role directory couldn't reload from the database: role and AD-group mapping " +
+            "changes aren't in effect yet, and permissions still follow the previous ones. Retrying every {Seconds} s.",
+            RetryEvery.TotalSeconds);
+        lock (_reload) _retry ??= new Timer(_ => Retry(), null, RetryEvery, RetryEvery);
+    }
+
+    private void Retry()
+    {
+        if (!TryLoad(out _)) return;
+        lock (_reload)
+        {
+            _retry?.Dispose();
+            _retry = null;
+        }
+        _logger.LogWarning("The role directory reloaded: role and AD-group mapping changes are in effect.");
     }
 
     private sealed record Snapshot(
@@ -32,8 +67,9 @@ public sealed class RoleDirectory : IRoleDirectory
             new Dictionary<string, IReadOnlySet<string>>());
     }
 
-    public void Invalidate()
+    private bool TryLoad(out Exception? error)
     {
+        error = null;
         try
         {
             using var scope = _scopes.CreateScope();
@@ -59,12 +95,13 @@ public sealed class RoleDirectory : IRoleDirectory
                     g => (IReadOnlySet<string>)g.Select(x => x.RoleName).ToHashSet(StringComparer.OrdinalIgnoreCase),
                     StringComparer.OrdinalIgnoreCase);
 
-            _snapshot = new Snapshot(rolePermissions, groupRoles);
+            lock (_reload) _snapshot = new Snapshot(rolePermissions, groupRoles);
+            return true;
         }
-        catch
+        catch (Exception ex)
         {
-            // Schema not present yet (first run, pre-migration). The seeder calls Invalidate() again
-            // once the database is ready; until then we resolve nothing.
+            error = ex;
+            return false;
         }
     }
 

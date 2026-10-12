@@ -21,4 +21,8 @@ public interface IRoleDirectory
 
     /// <summary>Rebuilds the cached snapshot from the database (call after any role/mapping change).</summary>
     void Invalidate();
+
+    /// <summary>BUG-193: false while the last reload failed (and is being retried), so the snapshot still holds the
+    /// roles and mappings from before the latest change.</summary>
+    bool IsCurrent => true;
 }

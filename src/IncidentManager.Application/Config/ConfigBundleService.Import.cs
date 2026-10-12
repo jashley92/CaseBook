@@ -467,7 +467,7 @@ public sealed partial class ConfigBundleService
         foreach (var mapping in addedMappings)
             _siem?.Emit(SecurityEvents.MappingChanged("AdGroupMappingImported", _user.UserId, _user.UserPrincipalName, mapping));
 
-        return new ConfigImportResult(added, updated, unchanged);
+        return new ConfigImportResult(added, updated, unchanged, _roles?.IsCurrent ?? true);
     }
 
     /// <summary>

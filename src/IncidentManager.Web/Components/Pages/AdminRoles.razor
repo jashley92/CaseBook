@@ -343,7 +343,14 @@ else
         }
         _editing = null;
         await LoadAsync();
-        Toasts.Success("Role saved");
+        Saved("Role saved");
+    }
+
+    // BUG-193: a saved change the role directory couldn't reload isn't in effect yet, so say that instead of success.
+    private void Saved(string done)
+    {
+        if (Roles.ChangesInEffect) Toasts.Success(done);
+        else Toasts.Error(RoleService.NotInEffectMessage);
     }
 
     private async Task DeleteRole(Role r)
@@ -355,7 +362,7 @@ else
             return;
         }
         await LoadAsync();
-        Toasts.Info($"Deleted role '{r.Name}'");
+        Saved($"Deleted role '{r.Name}'");
     }
 
     private async Task AddMapping()
@@ -368,7 +375,7 @@ else
         }
         _newGroup = "";
         await LoadAsync();
-        Toasts.Success("Mapping added");
+        Saved("Mapping added");
     }
 
     private async Task RemoveMapping(AdGroupRoleMapping m)
@@ -380,6 +387,6 @@ else
             return;
         }
         await LoadAsync();
-        Toasts.Info("Mapping removed");
+        Saved("Mapping removed");
     }
 }

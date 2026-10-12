@@ -64,6 +64,14 @@ public sealed class RoleService
         _siem?.Emit(SecurityEvents.RoleChanged("RoleCreated", _user.UserId, _user.UserPrincipalName, name));
     }
 
+    /// <summary>BUG-193: false when the last change is saved but the role directory couldn't reload it yet (it keeps
+    /// retrying), so permissions still follow the previous roles and mappings.</summary>
+    public bool ChangesInEffect => _directory.IsCurrent;
+
+    /// <summary>What to tell the admin when <see cref="ChangesInEffect"/> is false.</summary>
+    public const string NotInEffectMessage = "Saved, but not in effect yet: CaseBook couldn't reload roles from the database, " +
+        "so people still have the permissions they had before. It keeps retrying; check the application log.";
+
     public async Task UpdateRoleAsync(Guid id, string? description, IEnumerable<Permission> permissions, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<RoleService>(_user, _siem);
