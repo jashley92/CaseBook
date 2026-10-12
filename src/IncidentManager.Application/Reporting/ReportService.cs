@@ -427,6 +427,8 @@ public sealed class ReportService
             && string.Equals(report.CreatedBy, _user.UserId, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
                 "Two-person control is on. Someone other than the analyst who generated this report must approve it.");
+        if (!await FileMatchesAsync(db, report, ct))
+            throw new ReportFileAlteredException(AlteredMessage + " It can't be approved; generate it again.");
 
         report.Approve(_user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
@@ -444,9 +446,52 @@ public sealed class ReportService
         var canAccess = await db.Cases.AsNoTracking().ForUser(_user)
             .AnyAsync(c => c.Id == report.CaseId, ct);
         if (!canAccess) throw new InvalidOperationException("Report not found.");
+        if (!await FileMatchesAsync(db, report, ct)) throw new ReportFileAlteredException(AlteredMessage);
 
         var stream = await _store.OpenReadAsync(report.StoragePath, ct);
         return (report, stream);
+    }
+
+    /// <summary>BUG-69: the stored file doesn't match the hash recorded when it was generated.</summary>
+    public sealed class ReportFileAlteredException(string message) : InvalidOperationException(message);
+
+    private const string AlteredMessage =
+        "This report's file no longer matches the one generated: it was changed or replaced outside CaseBook.";
+
+    /// <summary>
+    /// BUG-69: the stored file against the hash recorded when it was generated. That hash is taken from the audit chain
+    /// (the report's creation entry), which is linked and sealed, rather than only from the report's own row, which an
+    /// edit in the database could change along with the file. A report from before its creation was audited is
+    /// checked against its row.
+    /// </summary>
+    private async Task<bool> FileMatchesAsync(IAppDbContext db, Report report, CancellationToken ct)
+    {
+        var id = report.Id.ToString();
+        var created = await db.AuditLog.AsNoTracking()
+            .Where(a => a.EntityType == nameof(Report) && a.EntityId == id && a.Action == Domain.Enums.AuditAction.Create)
+            .Select(a => a.AfterJson).FirstOrDefaultAsync(ct);
+        var recorded = report.ContentSha256;
+        if (created is not null)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(created);
+                if (doc.RootElement.TryGetProperty(nameof(Report.ContentSha256), out var h) && h.GetString() is { } chained)
+                {
+                    if (!string.Equals(chained, recorded, StringComparison.OrdinalIgnoreCase)) return false;
+                    recorded = chained;
+                }
+            }
+            catch (System.Text.Json.JsonException) { /* not a snapshot this reads; the row's hash stands */ }
+        }
+        try
+        {
+            await using var stream = await _store.OpenReadAsync(report.StoragePath, ct);
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            var actual = Convert.ToHexString(await sha.ComputeHashAsync(stream, ct)).ToLowerInvariant();
+            return string.Equals(actual, recorded, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return false; }
     }
 
     /// <summary>
@@ -461,11 +506,7 @@ public sealed class ReportService
                      ?? throw new InvalidOperationException("Report not found.");
         var canAccess = await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == report.CaseId, ct);
         if (!canAccess) throw new InvalidOperationException("Report not found.");
-        await using var stream = await _store.OpenReadAsync(report.StoragePath, ct);
-        using var ms = new MemoryStream();
-        await stream.CopyToAsync(ms, ct);
-        var actual = HashBytes(ms.ToArray());
-        return string.Equals(actual, report.ContentSha256, StringComparison.OrdinalIgnoreCase);
+        return await FileMatchesAsync(db, report, ct);
     }
 
     /// <summary>Display string for an entity referenced by a relationship: "Label (value)" or just the value.</summary>

@@ -495,7 +495,14 @@ app.MapGet("/evidence/{id:guid}/inline", async (Guid id, EvidenceService evidenc
 app.MapGet("/reports/{id:guid}", async (Guid id, IncidentManager.Application.Reporting.ReportService reports,
     IncidentManager.Application.Access.IAccessLogService access, CancellationToken ct) =>
 {
-    var (report, stream) = await reports.OpenAsync(id, ct);
+    (IncidentManager.Domain.Entities.Report, Stream) opened;
+    try { opened = await reports.OpenAsync(id, ct); }
+    catch (IncidentManager.Application.Reporting.ReportService.ReportFileAlteredException ex)
+    {
+        // BUG-69: never hand over bytes that don't match what was generated; say why instead.
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status409Conflict, title: "Report file altered");
+    }
+    var (report, stream) = opened;
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.ReportDownload,
         report.CaseId, report.FileName, report.Id, ct);
     var contentType = report.Format == IncidentManager.Domain.Enums.ReportFormat.Pdf

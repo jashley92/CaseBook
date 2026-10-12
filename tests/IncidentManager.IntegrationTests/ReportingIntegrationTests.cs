@@ -145,6 +145,30 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_report_file_replaced_on_disk_is_refused_even_with_its_row_hash_changed_to_match(/* BUG-69 */)
+    {
+        await using var db = NewContext();
+        _user.RoleSet = [AppRole.IncidentCommander];
+        var c = Case.Open(2026, 1, "Rpt", "Report tamper", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic", _clock.UtcNow);
+        db.Cases.Add(c);
+        await db.SaveChangesAsync();
+        var svc = NewReportService(db);
+        var report = await svc.GenerateAsync(c.Id);
+        (await svc.VerifyFileAsync(report.Id)).Should().BeTrue();
+
+        var path = Path.Combine(_reportDir, report.StoragePath);
+        await File.WriteAllBytesAsync(path, [1, 2, 3]);
+        await svc.Invoking(s => s.OpenAsync(report.Id)).Should().ThrowAsync<InvalidOperationException>().WithMessage("*no longer matches*");
+
+        // Someone with database access updates the row's hash to the swapped file's: the chain still has the original.
+        var forged = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(new byte[] { 1, 2, 3 })).ToLowerInvariant();
+        await db.Reports.Where(r => r.Id == report.Id).ExecuteUpdateAsync(u => u.SetProperty(r => r.ContentSha256, forged));
+        (await svc.VerifyFileAsync(report.Id)).Should().BeFalse();
+        _user.UserId = "approver";   // a second IC: approval needs ApproveReports, and someone other than the author
+        await svc.Invoking(s => s.ApproveAsync(report.Id)).Should().ThrowAsync<InvalidOperationException>().WithMessage("*can't be approved*");
+    }
+
+    [Fact]
     public async Task Indicators_in_the_title_tasks_and_sources_are_defanged_too(/* BUG-74 */)
     {
         await using var db = NewContext();

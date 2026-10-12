@@ -11,7 +11,7 @@ how tampering is detected, and what is deliberately outside that protection. Why
 | Signed seals | Periodic RSA signature over the chain head, stored in the database and as files out of band | A competent rewrite that recomputes every hash | `IntegrityService`, `RsaSealSigner`, `FileSealStore` |
 | Ledger (optional) | SQL Server append-only ledger tables plus external digests | Any UPDATE or DELETE, even by `sysadmin`; page-level tampering | `deploy/sql/02-Enable-Ledger.sql` |
 | Evidence re-hash (optional) | Re-hashes stored evidence files against their recorded SHA-256 | Bit-rot, a swapped or deleted file | `EvidenceIntegrityVerifier` |
-| Report hash | SHA-256 of each generated report, re-checkable | A stored report altered after generation | `ReportService.VerifyFileAsync` |
+| Report hash | SHA-256 of each generated report, recorded in its audit entry and checked on every download and approval | A stored report altered or replaced after generation (even with its row changed to match) | `ReportService.FileMatchesAsync` |
 
 ## How a save becomes audited
 
