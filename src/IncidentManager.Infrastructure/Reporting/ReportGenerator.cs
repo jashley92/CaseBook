@@ -326,7 +326,8 @@ public sealed partial class ReportGenerator : IReportGenerator
         // HR-16: in the order they happened, as the timeline tells it; "Resolved" was the move into Recovery.
         var stamps = new (string Label, DateTimeOffset? At)[]
         {
-            ("Activity began", m.ActivityBeganAtUtc), ("Detected", m.DetectedAtUtc), ("Contained", m.ContainedAtUtc),
+            ("Activity began", m.ActivityBeganAtUtc), ("Detected", m.DetectedAtUtc),
+            m.ContainmentNotNeeded is { } why ? ($"Containment not needed ({why})", m.ContainmentDecidedAtUtc) : ("Contained", m.ContainedAtUtc),
             ("Recovery started", m.ResolvedAtUtc), ("Reported to regulators", m.ReportedAtUtc), ("Closed", m.ClosedAtUtc)
         };
         foreach (var (label, at) in stamps.Where(s => s.At is not null).OrderBy(s => s.At))

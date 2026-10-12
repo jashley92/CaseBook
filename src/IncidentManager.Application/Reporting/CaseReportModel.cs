@@ -172,6 +172,10 @@ public sealed record CaseReportModel
     /// <summary>PROD-07: the regulatory-notification milestone, when set. Legal reads the report, not the app.</summary>
     public DateTimeOffset? ReportedAtUtc { get; init; }
     public DateTimeOffset? ContainedAtUtc { get; init; }
+    /// <summary>BUG-165: why containment wasn't needed (then <see cref="ContainedAtUtc"/> is null, and this was decided
+    /// at <see cref="ContainmentDecidedAtUtc"/>).</summary>
+    public string? ContainmentNotNeeded { get; init; }
+    public DateTimeOffset? ContainmentDecidedAtUtc { get; init; }
     /// <summary>When recovery began (the case's resolved time is set on entering Recovery).</summary>
     public DateTimeOffset? ResolvedAtUtc { get; init; }
     /// <summary>HR-16: when the activity began, if recorded, so the Outcome section tells the story in order.</summary>

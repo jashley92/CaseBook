@@ -49,7 +49,7 @@
         </div>
         <div>
             <dt>Detected → contained</dt>
-            <dd>@SpanFragment(Case.DetectedAtUtc, Case.ContainedAtUtc)</dd>
+            <dd>@if (Case.ContainmentNotNeededReason is { } why) { <span title="@why">Not needed: @why</span> } else { @SpanFragment(Case.DetectedAtUtc, Case.ContainedAtUtc) }</dd>
         </div>
         <div>
             @if (RecoveryStarted is not null)

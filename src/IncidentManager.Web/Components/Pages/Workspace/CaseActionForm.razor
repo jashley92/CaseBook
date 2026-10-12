@@ -91,6 +91,34 @@
             <div class="form-text">Moving a case out of Closed reopens it, so it needs a reason, as Reopen does.</div>
         }
         <WhenItHappened Draft="T" OnChanged="Changed" />
+        @if (Case.SkipsContainment(D.NewPhase))
+        {
+            @* BUG-165: going past Containment without it is a decision, recorded either way. *@
+            <fieldset class="border rounded p-2 mt-2">
+                <legend class="form-label small mb-1 float-none w-auto px-1">This case hasn't been through Containment (required)</legend>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="ws-contained" id="ws-contained-yes" checked="@(D.WasContained == true)"
+                           @onchange="() => D.WasContained = true" />
+                    <label class="form-check-label small" for="ws-contained-yes">It was contained, at</label>
+                </div>
+                @if (D.WasContained == true)
+                {
+                    <input type="datetime-local" class="form-control form-control-sm mb-1" aria-label="When it was contained" @bind="D.ContainedAt" @bind:event="oninput" />
+                }
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="ws-contained" id="ws-contained-no" checked="@(D.WasContained == false)"
+                           @onchange="() => D.WasContained = false" />
+                    <label class="form-check-label small" for="ws-contained-no">Containment wasn't needed, because</label>
+                </div>
+                @if (D.WasContained == false)
+                {
+                    <input class="form-control form-control-sm" maxlength="@Case.MaxContainmentReason" aria-label="Why containment wasn't needed"
+                           placeholder="e.g. the phishing link was never clicked" @bind="D.ContainmentNotNeededReason" @bind:event="oninput" />
+                }
+                <div class="form-text">Skipping Containment is recorded either way. "Not needed" stops the containment clock and leaves the
+                    case out of time-to-contain.</div>
+            </fieldset>
+        }
         <TransitionWarnings Case="Case" To="D.NewPhase" Notify="Notify" />
         <GateSection Draft="T" OnFix="OnFix" OnChanged="Changed" />
     }
@@ -315,6 +343,14 @@
     /// <summary>Whether the current user would still see the case once restricted (else the service adds them).</summary>
     private bool RestrictKeepsMe => Access.CanLiftRestriction(Case) || Access.IsOnCase(Case);
 
+    // BUG-165: when or why, as chosen.
+    private bool ContainmentSaid => D.WasContained switch
+    {
+        true => D.ContainedAt is not null,
+        false => !string.IsNullOrWhiteSpace(D.ContainmentNotNeededReason),
+        _ => false,
+    };
+
     private async Task PickSupersedeTarget(Guid id, string number)
     {
         D.SupersedeTargetId = id;
@@ -396,7 +432,8 @@
             "status" => (t.NeedsOverride && string.IsNullOrWhiteSpace(t.Override))
                 || t.RationaleError(D.PhaseReason) is not null
                 || t.When is null || (backdated && string.IsNullOrWhiteSpace(D.PhaseReason))
-                || (Case.Phase == CasePhase.Closed && D.NewPhase != CasePhase.Closed && string.IsNullOrWhiteSpace(D.PhaseReason)),   // BUG-62
+                || (Case.Phase == CasePhase.Closed && D.NewPhase != CasePhase.Closed && string.IsNullOrWhiteSpace(D.PhaseReason))   // BUG-62
+                || (Case.SkipsContainment(D.NewPhase) && !ContainmentSaid),   // BUG-165
             "severity" => t.When is null || ((backdated || D.NewSeverity > Case.Severity) && string.IsNullOrWhiteSpace(D.SeverityReason)),   // HR-11
             "handoff" => string.IsNullOrWhiteSpace(D.HandoffTo) || string.IsNullOrWhiteSpace(D.HandoffState),
             _ => false
@@ -454,8 +491,14 @@
                     { D.Error = "Enter an override justification for the unmet requirements."; return; }
                     if (t.RationaleError(D.PhaseReason) is { } m2) { D.Error = m2; return; }
                     await Cases.ChangePhaseAsync(id, D.NewPhase, D.PhaseReason,
-                        t.Attested.Count > 0 ? t.Attested : null, t.Override, t.EffectiveUtc(TimeDisp.Zone));
+                        t.Attested.Count > 0 ? t.Attested : null, t.Override, t.EffectiveUtc(TimeDisp.Zone),
+                        containment: Case.SkipsContainment(D.NewPhase)
+                            ? new CaseService.ContainmentDecision(
+                                D.WasContained == true && D.ContainedAt is { } ca ? WallClock.ToUtc(ca, TimeDisp.Zone) : null,
+                                D.WasContained == false ? D.ContainmentNotNeededReason : null)
+                            : null);
                     D.PhaseReason = null;
+                    (D.WasContained, D.ContainedAt, D.ContainmentNotNeededReason) = (null, null, null);
                     done = $"Phase changed to {Ui.Label(D.NewPhase)}";
                     break;
                 case "supersede":

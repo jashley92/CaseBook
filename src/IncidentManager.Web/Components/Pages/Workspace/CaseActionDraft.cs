@@ -26,6 +26,11 @@ public sealed class CaseActionDraft
     public string ReclassReason { get; set; } = "";
     public CasePhase NewPhase { get; set; } = CasePhase.Triage;
     public string? PhaseReason { get; set; }
+    /// <summary>BUG-165: going past Containment without it: true = it was contained (at <see cref="ContainedAt"/>, a wall
+    /// time in the display zone), false = it wasn't needed (<see cref="ContainmentNotNeededReason"/>), null = not said.</summary>
+    public bool? WasContained { get; set; }
+    public DateTime? ContainedAt { get; set; }
+    public string? ContainmentNotNeededReason { get; set; }
     public Severity NewSeverity { get; set; } = Severity.Medium;
     public string? SeverityReason { get; set; }
     public string? ReopenReason { get; set; }

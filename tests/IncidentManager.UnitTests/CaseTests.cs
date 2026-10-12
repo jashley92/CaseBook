@@ -252,6 +252,40 @@ public class CaseTests
     }
 
     [Fact]
+    public void Going_past_containment_without_it_needs_when_it_was_contained_or_why_it_wasnt_needed(/* BUG-165 */)
+    {
+        var c = NewCase();
+        var detected = c.DetectedAtUtc!.Value;
+        c.Invoking(x => x.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(2)))
+            .Should().Throw<ArgumentException>().WithMessage("*hasn't been through Containment*");
+
+        c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(2), containedAtUtc: detected.AddHours(1));
+        c.ContainedAtUtc.Should().Be(detected.AddHours(1));
+        c.ContainmentNotNeededReason.Should().BeNull();
+
+        var other = NewCase();
+        other.ChangePhase(CasePhase.Recovery, null, "ic1", Now.AddHours(3), containmentNotNeededReason: "The link was never clicked");
+        other.ContainmentNotNeededReason.Should().Be("The link was never clicked");
+        other.ContainedAtUtc.Should().Be(Now.AddHours(3), "the containment clock stops at the decision");
+        other.BuildCanonicalContent().Should().EndWith("|containmentnotneeded|The link was never clicked");
+    }
+
+    [Fact]
+    public void Closing_straight_away_or_a_case_already_contained_needs_no_containment_decision(/* BUG-165 */)
+    {
+        var c = NewCase();
+        c.ChangePhase(CasePhase.Closed, null, "ic1", Now.AddHours(1));
+        c.Phase.Should().Be(CasePhase.Closed);
+
+        var contained = NewCase();
+        contained.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(1));
+        contained.ChangePhase(CasePhase.Recovery, null, "ic1", Now.AddHours(2));
+        contained.Invoking(x => x.ChangePhase(CasePhase.PostIncident, null, "ic1", Now.AddHours(3), containmentNotNeededReason: "x"))
+            .Should().Throw<ArgumentException>().WithMessage("*only when a case goes past Containment*");
+        NewCase().BuildCanonicalContent().Should().NotContain("containmentnotneeded", "a case without the decision hashes as before");
+    }
+
+    [Fact]
     public void The_detected_time_cant_move_past_a_complex_events_promotion(/* BUG-164 */)
     {
         var c = Case.Open(2026, 0, "Beaconing", "Odd beaconing", classification: null, Severity.Medium,

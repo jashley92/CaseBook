@@ -28,6 +28,7 @@ public sealed class CaseEditRaceTests
         var database = TestDatabase.Open(provider, new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()));
         await using var db = database.NewContext();
         var c = Case.Open(2026, 1, "Race", "Two closes", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "ic1", _clock.UtcNow);
+        c.ChangePhase(CasePhase.Containment, "contained", "ic1", _clock.UtcNow.AddMinutes(30));
         c.ChangePhase(CasePhase.Recovery, "recovered", "ic1", _clock.UtcNow.AddHours(1));
         db.Cases.Add(c);
         await db.SaveChangesAsync();

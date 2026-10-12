@@ -871,7 +871,8 @@ public static class DevDataSeeder
             if (o.ContainAfterH is { } ch)
                 c.ChangePhase(CasePhase.Containment, "Contained", actor, created.AddHours(ch));
             if (o.Phase is CasePhase.Eradication or CasePhase.Recovery)
-                c.ChangePhase(o.Phase, o.Phase.ToString(), actor, now.AddHours(-6));
+                c.ChangePhase(o.Phase, o.Phase.ToString(), actor, now.AddHours(-6),
+                    containmentNotNeededReason: c.SkipsContainment(o.Phase) ? "Nothing was left to contain: the access was already cut off." : null);
 
             if (o.Overdue)
                 c.ActionItems.Add(new ActionItem

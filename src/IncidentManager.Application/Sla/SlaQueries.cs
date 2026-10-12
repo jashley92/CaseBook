@@ -73,7 +73,8 @@ public static class SlaQueries
         }
         Expression<Func<Case, bool>> reached = clock switch
         {
-            SlaClock.Containment => c => c.DetectedAtUtc != null && c.ContainedAtUtc != null,
+            // BUG-165: one that didn't need containment is neither met nor missed.
+            SlaClock.Containment => c => c.DetectedAtUtc != null && c.ContainedAtUtc != null && c.ContainmentNotNeededReason == null,
             SlaClock.Resolution => c => c.DetectedAtUtc != null && c.ResolvedAtUtc != null,
             SlaClock.Detection => c => c.OccurredAtUtc != null && c.DetectedAtUtc != null,
             _ => throw new ArgumentOutOfRangeException(nameof(clock))

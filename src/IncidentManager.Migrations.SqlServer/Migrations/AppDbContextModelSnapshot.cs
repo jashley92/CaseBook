@@ -577,6 +577,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<DateTimeOffset?>("ContainedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("ContainmentNotNeededReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 

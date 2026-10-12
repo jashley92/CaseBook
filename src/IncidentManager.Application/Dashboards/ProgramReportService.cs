@@ -168,8 +168,10 @@ public sealed class ProgramReportService
         var cases = db.Cases.AsNoTracking().ForUser(_user);
         if (!includeExercises) cases = cases.ExcludingExercises();
 
+        // BUG-165: a case that didn't need containment has no time to contain and no containment target outcome.
         var rows = await cases.Select(c => new CaseRow(c.Id, c.Classification, c.Severity, c.Phase, c.CreatedAtUtc,
-            c.OccurredAtUtc, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.ReportedAtUtc, c.ClosedAtUtc)).ToListAsync(ct);
+            c.OccurredAtUtc, c.DetectedAtUtc, c.ContainmentNotNeededReason == null ? c.ContainedAtUtc : null, c.ResolvedAtUtc,
+            c.ReportedAtUtc, c.ClosedAtUtc)).ToListAsync(ct);
         // The child tables filter by a subquery over the same visible cases rather than a list of every id.
         var ids = cases.Select(c => c.Id);
 

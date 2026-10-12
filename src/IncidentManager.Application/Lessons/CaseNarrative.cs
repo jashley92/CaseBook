@@ -47,7 +47,9 @@ public static class CaseNarrative
         {
             beganLine,
             Time("Detected", c.DetectedAtUtc, approx is null ? c.OccurredAtUtc : null, "activity began"),
-            Time("Contained", c.ContainedAtUtc, c.DetectedAtUtc, "detection"),
+            c.ContainmentNotNeededReason is { } why   // BUG-165
+                ? $"- **Containment not needed:** {why}"
+                : Time("Contained", c.ContainedAtUtc, c.DetectedAtUtc, "detection"),
             Time("Resolved", c.ResolvedAtUtc, c.DetectedAtUtc, "detection"),
             Time("Reported to regulators", c.ReportedAtUtc, c.DetectedAtUtc, "detection"),
             Time("Closed", c.ClosedAtUtc)

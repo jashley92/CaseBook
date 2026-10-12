@@ -111,7 +111,8 @@ public sealed class ReportingIntegrationTests : IDisposable
                 DescriptiveName = "Takeover", Title = "Impossible travel", Classification = Classification.Incident,
                 Severity = Severity.High, Origin = CaseOrigin.InternalDetection, DetectedAtUtc = _clock.UtcNow, OccurredAtUtc = began
             })).Id;
-            await cases.ChangePhaseAsync(caseId, CasePhase.PostIncident, "Recovered; review under way");
+            await cases.ChangePhaseAsync(caseId, CasePhase.PostIncident, "Recovered; review under way",
+                containment: new IncidentManager.Application.Cases.CaseService.ContainmentDecision(null, "The sessions had already expired"));
         }
 
         await using (var db = NewContext())

@@ -3779,3 +3779,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012180740_ContainmentNotNeeded'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [ContainmentNotNeededReason] nvarchar(1000) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012180740_ContainmentNotNeeded'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261012180740_ContainmentNotNeeded'', N''10.0.12'');');
+END;
+
+COMMIT;
+GO
+

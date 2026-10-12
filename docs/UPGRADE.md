@@ -163,6 +163,12 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ### Next release
 
+- **Skipping Containment is a recorded decision.** Moving a case from New or Triage straight to Eradication,
+  Recovery or Post-incident now asks when it was contained, or why containment wasn't needed. Before, such a case
+  kept a running containment clock, so it showed as SLA-breached and "not contained" until it closed. "Not needed"
+  stops the clock and leaves the case out of time-to-contain (one migration, `Cases.ContainmentNotNeededReason`).
+  Cases that already skipped Containment are unchanged.
+
 - **History rows' hashes are recorded in the audit trail.** v1.5.2 gave existing status, classification, materiality,
   severity, assignment and verdict changes, case assignments and evidence citations their row hash but wrote it only
   to the row, so deleting one, or editing it and recomputing its hash, still passed the record check. At the first

@@ -26,6 +26,7 @@ public sealed class CaseConfiguration : IEntityTypeConfiguration<Case>
             .HasDatabaseName("IX_Cases_IrpSequence");
 
         b.Property(c => c.DescriptiveName).HasMaxLength(200).IsRequired();
+        b.Property(c => c.ContainmentNotNeededReason).HasMaxLength(Case.MaxContainmentReason);   // BUG-165
         b.Property(c => c.Title).HasMaxLength(300).IsRequired();
         b.Property(c => c.Summary).HasMaxLength(8000);
         b.Property(c => c.ImpactedAssets).HasMaxLength(4000);

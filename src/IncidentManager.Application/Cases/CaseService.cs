@@ -885,9 +885,12 @@ public sealed class CaseService
     /// </summary>
     public sealed record CaseClosing(string OutcomeKey, string Summary, string Conclusion);
 
+    /// <param name="containment">BUG-165: when moving past Containment without it, when it was contained or why it
+    /// wasn't needed.</param>
     public async Task ChangePhaseAsync(Guid id, CasePhase to, string? reason,
         IReadOnlySet<Guid>? attestedRequirementIds = null, string? overrideJustification = null,
-        DateTimeOffset? effectiveAtUtc = null, CaseClosing? closing = null, CancellationToken ct = default)
+        DateTimeOffset? effectiveAtUtc = null, CaseClosing? closing = null, ContainmentDecision? containment = null,
+        CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
@@ -920,9 +923,13 @@ public sealed class CaseService
         }
         else RequireReasonIfBackdated(effectiveAtUtc, reason);
 
-        c.ChangePhase(to, reason, _user.UserId, now, effectiveAtUtc, outcomeKey);
+        c.ChangePhase(to, reason, _user.UserId, now, effectiveAtUtc, outcomeKey,
+            containment?.ContainedAtUtc, containment?.NotNeededReason);
         await db.SaveChangesAsync(ct);
     }
+
+    /// <summary>BUG-165: for a case going past Containment without it: when it was contained, or why it wasn't needed.</summary>
+    public sealed record ContainmentDecision(DateTimeOffset? ContainedAtUtc, string? NotNeededReason);
 
     private static async Task<(string Key, string Summary, string Conclusion)> ValidateClosingAsync(IAppDbContext db,
         CaseClosing? closing, CancellationToken ct)

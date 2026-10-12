@@ -160,7 +160,8 @@ public sealed class DashboardService
         var (rMet, rMissed) = MetMissed(Sla.SlaClock.Resolution);
         var (dMet, dMissed) = MetMissed(Sla.SlaClock.Detection);
         // Mean time-to-contain / resolve over cases that reached those milestones.
-        var meanToContainTicks = historyScan.Average(c => c.ContainedAtUtc != null && c.DetectedAtUtc != null
+        // BUG-165: a case that didn't need containment isn't in time-to-contain.
+        var meanToContainTicks = historyScan.Average(c => c.ContainedAtUtc != null && c.DetectedAtUtc != null && c.ContainmentNotNeededReason == null
             ? (double?)DbTime.TicksBetween(c.DetectedAtUtc, c.ContainedAtUtc) : null);
         var meanToResolveTicks = historyScan.Average(c => c.ResolvedAtUtc != null && c.DetectedAtUtc != null
             ? (double?)DbTime.TicksBetween(c.DetectedAtUtc, c.ResolvedAtUtc) : null);

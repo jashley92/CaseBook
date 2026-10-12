@@ -200,6 +200,7 @@ else
                             <li>Current phase: @Model.Phase. Classification: @Model.Classification. Severity: @Model.Severity.</li>
                             @if (Model.DetectedAtUtc is { } d) { <li>Detected: @d.ToString("u")</li> }
                             @if (Model.ContainedAtUtc is { } cn) { <li>Contained: @cn.ToString("u")</li> }
+                            @if (Model.ContainmentNotNeeded is { } why) { <li>Containment not needed (@why): @Model.ContainmentDecidedAtUtc?.ToString("u")</li> }
                             @if (Model.ResolvedAtUtc is { } r) { <li>Resolved: @r.ToString("u")</li> }
                             @if (Model.ReportedAtUtc is { } rep) { <li>Reported to regulators: @rep.ToString("u")</li> }
                             @if (Model.ClosedAtUtc is { } cl) { <li>Closed: @cl.ToString("u")</li> }

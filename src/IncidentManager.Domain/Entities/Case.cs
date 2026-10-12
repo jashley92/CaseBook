@@ -112,6 +112,13 @@ public class Case : AuditableEntity, IHashableEntity
     public DateTimeOffset? DetectedAtUtc { get; set; }
     public DateTimeOffset? ReportedAtUtc { get; set; }
     public DateTimeOffset? ContainedAtUtc { get; set; }
+    /// <summary>
+    /// BUG-165: why containment wasn't needed, when the case went past Containment without it (a deliberate, recorded
+    /// decision). The containment clock stops at that decision (<see cref="ContainedAtUtc"/> holds its time), and the
+    /// case is left out of time-to-contain and the containment target's met/missed counts.
+    /// </summary>
+    public string? ContainmentNotNeededReason { get; set; }
+    public const int MaxContainmentReason = 1000;
     public DateTimeOffset? ResolvedAtUtc { get; set; }
     public DateTimeOffset? ClosedAtUtc { get; set; }
 
@@ -309,10 +316,22 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>Advances (or moves) the lifecycle phase, capturing containment/resolution/closure timestamps.
     /// <paramref name="effectiveAtUtc"/> (INV-05) is when the move actually happened, for a change recorded after
     /// the fact; the milestone timestamps take that time, not the moment it was recorded.</summary>
+    /// <param name="containedAtUtc">BUG-165: when moving past Containment without going through it, when the case was
+    /// contained.</param>
+    /// <param name="containmentNotNeededReason">BUG-165: or why containment wasn't needed.</param>
     public void ChangePhase(CasePhase to, string? reason, string actor, DateTimeOffset nowUtc,
-        DateTimeOffset? effectiveAtUtc = null, string? outcomeKey = null)
+        DateTimeOffset? effectiveAtUtc = null, string? outcomeKey = null,
+        DateTimeOffset? containedAtUtc = null, string? containmentNotNeededReason = null)
     {
         if (to == Phase) return;
+        var notNeeded = string.IsNullOrWhiteSpace(containmentNotNeededReason) ? null : containmentNotNeededReason.Trim();
+        var skips = SkipsContainment(to);
+        if (!skips && (containedAtUtc is not null || notNeeded is not null))
+            throw new ArgumentException("When it was contained, or why it wasn't needed, is recorded only when a case goes past Containment without it.");
+        if (skips && containedAtUtc is null && notNeeded is null)
+            throw new ArgumentException("This case hasn't been through Containment. Say when it was contained, or that containment wasn't needed and why.");
+        if (notNeeded is { Length: > MaxContainmentReason })
+            throw new ArgumentException($"Keep why containment wasn't needed to {MaxContainmentReason:N0} characters or fewer.");
         if (outcomeKey is not null && to != CasePhase.Closed)
             throw new ArgumentException("An outcome is recorded only when a case is closed.");
         // BUG-62: leaving Closed is a reopen by another route, so it needs a reason as Reopen does (E-27).
@@ -333,6 +352,21 @@ public class Case : AuditableEntity, IHashableEntity
         // HR-01: the outcome belongs to this close. Reopening clears it (the close's history row keeps it).
         OutcomeKey = to == CasePhase.Closed ? outcomeKey : null;
 
+        // BUG-165: going past Containment without it, the containment milestone is what was said: when it was contained,
+        // or that it wasn't needed (the clock stops at this move).
+        if (skips && containedAtUtc is { } contained)
+        {
+            if (contained > nowUtc) throw new ArgumentException("When it was contained can't be in the future.");
+            if (DetectedAtUtc is { } det && contained < det) throw new ArgumentException("It can't have been contained before it was detected.");
+            if (contained > at) throw new ArgumentException("It can't have been contained after this move.");
+            ContainedAtUtc = contained;
+        }
+        else if (skips)
+        {
+            ContainmentNotNeededReason = notNeeded;
+            ContainedAtUtc = at;
+        }
+
         switch (to)
         {
             case CasePhase.Containment: ContainedAtUtc ??= at; break;
@@ -347,6 +381,15 @@ public class Case : AuditableEntity, IHashableEntity
 
         Touch(actor, nowUtc);
     }
+
+    /// <summary>
+    /// BUG-165: whether moving to <paramref name="to"/> goes past Containment without it: from before Containment to
+    /// Eradication, Recovery or Post-incident, with no contained time. Closing straight away doesn't (closing stops the
+    /// clocks), and neither does a case already contained or recorded as not needing it.
+    /// </summary>
+    public bool SkipsContainment(CasePhase to) =>
+        Phase < CasePhase.Containment && to is CasePhase.Eradication or CasePhase.Recovery or CasePhase.PostIncident
+        && ContainedAtUtc is null && ContainmentNotNeededReason is null;
 
     /// <summary>
     /// Reopens a closed case (E-27): moves it back to the phase it held before closure (or Recovery if that
@@ -1679,7 +1722,9 @@ public class Case : AuditableEntity, IHashableEntity
         ContainedAtUtc?.ToString("o"), ResolvedAtUtc?.ToString("o"), ClosedAtUtc?.ToString("o"),
         CreatedBy, CreatedAtUtc.ToString("o"))
         // HR-01: the outcome only when one is recorded, so existing rows keep their exact hash.
-        + (OutcomeKey is { Length: > 0 } outcome ? "|outcome|" + outcome : "");
+        + (OutcomeKey is { Length: > 0 } outcome ? "|outcome|" + outcome : "")
+        // BUG-165: likewise a containment-not-needed decision.
+        + (ContainmentNotNeededReason is { } why ? "|containmentnotneeded|" + Canonical.Text(why) : "");
 
     public static string FormatCaseNumber(int year, int sequence, string descriptiveName)
         => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{year:0000}-{sequence:00}_{descriptiveName}");
