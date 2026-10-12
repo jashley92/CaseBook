@@ -64,6 +64,8 @@ public sealed class ImportTimelineRow
     public DateTimeOffset OccurredAtUtc { get; set; }
     /// <summary>ST-03: an event step's time as stated; anything but exact applies only to an Event row.</summary>
     public TimePrecision Precision { get; set; } = TimePrecision.Exact;
+    /// <summary>BUG-15: the entry this row became, so a retry can place a following not-stated step after it.</summary>
+    public Guid? AppliedId { get; set; }
     public DateTimeOffset? OccurredUntilUtc { get; set; }
     public TimelineKind Kind { get; set; } = TimelineKind.Investigation;
     public TimelineEntryType Type { get; set; } = TimelineEntryType.Communication;

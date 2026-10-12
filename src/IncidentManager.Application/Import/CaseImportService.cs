@@ -181,6 +181,8 @@ public sealed class CaseImportService
         Guid? lastStep = null;   // ST-03: a step with no stated time follows the step before it in the document
         foreach (var t in p.Timeline.Where(t => t.Include))
         {
+            // BUG-15: on a retry, a step applied last time is still the one the next not-stated step follows.
+            if (t.Applied && t.Kind == TimelineKind.Event && t.AppliedId is { } before) lastStep = before;
             if (!t.Applied)
             {
                 var precision = t.Kind == TimelineKind.Event ? t.Precision : TimePrecision.Exact;
@@ -199,6 +201,7 @@ public sealed class CaseImportService
                         ? new CaseService.DecisionDetails(t.Rationale ?? "", t.OptionsConsidered, t.DecidedBy) : null,
                     imported: true, timing: timing, ct: ct);
                 if (t.Kind == TimelineKind.Event) lastStep = added;
+                t.AppliedId = added;
                 t.Applied = true;
             }
             timeline++;

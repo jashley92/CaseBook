@@ -348,6 +348,37 @@ public sealed class CaseImportTests : IDisposable
         steps[3].OccurredPrecision.Should().Be(TimePrecision.NotStated);
     }
 
+    [Fact]
+    public async Task A_retried_import_places_a_not_stated_step_after_the_step_applied_last_time()
+    {
+        // BUG-15: the retry skipped already-applied rows without remembering them, so the next not-stated step went first.
+        var d = new DateTimeOffset(2026, 9, 2, 9, 0, 0, TimeSpan.Zero);
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Target = new() { NewCase = new() { Title = "Vendor breach", Classification = "Incident", Severity = "High" } },
+            Timeline = new()
+            {
+                new() { Kind = "Event", Type = "Other", Description = "Initial access", OccurredAtUtc = d },
+                new() { Kind = "Event", Type = "Other", Description = "Lateral movement", TimePrecision = "NotStated" },
+                new() { Kind = "Event", Type = "Other", Description = "Exfiltration", OccurredAtUtc = d.AddDays(5) },
+            }
+        };
+        await using var db = NewContext();
+        var svc = NewImportService(db);
+        var p = await svc.BuildPreviewAsync(doc);
+
+        // The first attempt gets as far as the first step, then stops.
+        p.Timeline[1].Include = p.Timeline[2].Include = false;
+        var first = await svc.ApplyAsync(p);
+        p.Timeline[1].Include = p.Timeline[2].Include = true;
+        await svc.ApplyAsync(p);
+
+        await using var verify = NewContext();
+        var steps = (await verify.Set<TimelineEntry>().Where(t => t.CaseId == first.CaseId).ToListAsync()).InTimelineOrder().ToList();
+        steps.Select(s => s.Description).Should().Equal("Initial access", "Lateral movement", "Exfiltration");
+    }
+
     // ── Apply (integration) ──────────────────────────────────────────────────────────────────────
 
     private static CaseImportDocument FullDoc() => new()
