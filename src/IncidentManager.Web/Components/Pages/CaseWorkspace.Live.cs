@@ -27,6 +27,7 @@ public partial class CaseWorkspace
         await InvokeAsync(async () =>
         {
             if (_accessLost) return; // REL-07: already holding the workspace for a copy-out — don't churn it
+            if (change.CaseId != Id) return; // BUG-05: a late change for the case this view just left
 
             // RD-22: a change to the record, tasks, things, evidence, the brief or the paperwork re-reads only that part
             // of the case; anything touching the case itself (phase, rung, team, gates…) re-reads the whole case below.

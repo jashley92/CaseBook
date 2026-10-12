@@ -53,6 +53,31 @@ public sealed class EventTimelinePersistenceTests : IDisposable
 
 
     [Fact]
+    public async Task A_step_cannot_attach_another_cases_evidence()
+    {
+        // BUG-05: a screenshot staged on one case must not end up linked to another case's record.
+        await using var db = NewContext();
+        var svc = NewService(db);
+        CreateCaseRequest Req(string name) => new()
+        {
+            DescriptiveName = name, Title = name, Classification = Classification.Incident,
+            Severity = Severity.High, Origin = CaseOrigin.InternalDetection
+        };
+        var a = await svc.CreateAsync(Req("Case A"));
+        var b = await svc.CreateAsync(Req("Case B"));
+        var shot = new Evidence { CaseId = a.Id, OriginalFileName = "shot.png", Sha256 = new string('a', 64), StoragePath = "x", CreatedBy = "analyst1", CreatedAtUtc = _clock.UtcNow };
+        db.Evidence.Add(shot);
+        await db.SaveChangesAsync();
+
+        var onB = () => svc.AddEventStepAsync(b.Id, _clock.UtcNow, [MitreTactic.Execution], null, null, null, "x", null, evidenceId: shot.Id);
+        await onB.Should().ThrowAsync<InvalidOperationException>().WithMessage("*evidence on this case*");
+        var entryOnB = () => svc.AddTimelineEntryAsync(b.Id, TimelineKind.Investigation, TimelineEntryType.Other, _clock.UtcNow, "x", null, shot.Id);
+        await entryOnB.Should().ThrowAsync<InvalidOperationException>();
+
+        await svc.AddEventStepAsync(a.Id, _clock.UtcNow, [MitreTactic.Execution], null, null, null, "x", null, evidenceId: shot.Id);
+    }
+
+    [Fact]
     public async Task Event_step_persists_tactics_and_attribution_and_chain_stays_valid()
     {
         Guid id, actorId, targetId;
@@ -205,6 +230,8 @@ public sealed class EventTimelinePersistenceTests : IDisposable
                 DescriptiveName = "Phish", Title = "Phishing wave",
                 Classification = Classification.Incident, Severity = Severity.Medium, Origin = CaseOrigin.InternalDetection
             })).Id;
+            db.Evidence.Add(new Evidence { Id = shotId, CaseId = id, OriginalFileName = "shot.png", Sha256 = new string('a', 64), StoragePath = "x", CreatedBy = "analyst1", CreatedAtUtc = _clock.UtcNow });
+            await db.SaveChangesAsync();
 
             await svc.AddTimelineEntryAsync(id, TimelineKind.Investigation, TimelineEntryType.Analysis,
                 _clock.UtcNow, "Reviewed the mailbox rule", "analyst", evidenceId: shotId);

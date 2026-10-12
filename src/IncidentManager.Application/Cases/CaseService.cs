@@ -1091,6 +1091,13 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    // BUG-05: an entry's attached file must be this case's evidence (a screenshot staged on another case mustn't link).
+    private static async Task EnsureEvidenceOnCaseAsync(IAppDbContext db, Guid caseId, Guid? evidenceId, CancellationToken ct)
+    {
+        if (evidenceId is { } eid && !await db.Evidence.AnyAsync(e => e.Id == eid && e.CaseId == caseId, ct))
+            throw new InvalidOperationException("Only evidence on this case can be attached to its record.");
+    }
+
     public async Task<Guid> AddTimelineEntryAsync(Guid id, TimelineKind kind, TimelineEntryType type,
         DateTimeOffset occurredAtUtc, string description, string? source, Guid? evidenceId = null,
         DecisionDetails? decision = null, bool imported = false, EntryFollowUps? followUps = null, StepTiming? timing = null,
@@ -1101,6 +1108,7 @@ public sealed class CaseService
         followUps?.Validate();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        await EnsureEvidenceOnCaseAsync(db, id, evidenceId, ct);
         var isDecision = type == TimelineEntryType.Decision;
         var entry = new TimelineEntry
         {
@@ -1179,6 +1187,7 @@ public sealed class CaseService
         followUps?.Validate();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        await EnsureEvidenceOnCaseAsync(db, id, evidenceId, ct);
         // One-line field: inline Markdown only, so the step reads as one line in tables and the attack-chain diagram.
         var step = c.AddEventStep(occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, Content.MarkdownService.OneLine(description), source,
             _user.UserId, _clock.UtcNow, evidenceId, type, environment, timing);

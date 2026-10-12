@@ -116,7 +116,9 @@ else
     {
         <p class="im-phone-deskonly is-shown">Reports are generated and approved at a desk. You can read what's here.</p>
     }
-    <div class="tabbody" @key="_activeTab">
+    @* BUG-05: keyed on the case too, so following a link to another case on the same tab mounts the tab fresh
+       instead of keeping the last case's data and composer state (a staged screenshot, an edit in progress). *@
+    <div class="tabbody" @key="TabBodyKey">
     @* REL-01: a per-tab error boundary. Because .tabbody is @key'd on the active tab, switching tabs mounts
        a fresh boundary — so a tab that throws shows a contained "this tab couldn't load" fallback (the case
        header, tab bar and other tabs stay usable) and recovers when you switch away and back, with no manual
@@ -334,6 +336,8 @@ else
     private bool _canManageLegal;
     private bool _canAdmin;
     private IDisposable? _caseSub;
+    private Guid _subscribedTo;   // the case _caseSub listens to
+    private string TabBodyKey => $"{Id}/{_activeTab}";
     private (string Message, string Verb, Func<Task> OnConfirm)? _confirm;
 
     // UX-13: the extracted Entities tab raises this to use the parent-owned confirm dialog.
@@ -421,8 +425,6 @@ else
         // S-10: an open session's permissions can be refreshed in place; re-check the edit affordances when they are.
         AuthState.AuthenticationStateChanged += OnAuthStateChanged;
 
-        // Live collaboration: refresh when another analyst changes this case.
-        _caseSub = Notifier.SubscribeChanges(Id, OnCaseChangedAsync);
 
         // PROD-19: publish this case's action verbs to the command palette. The provider is a closure over
         // live state, so the palette reflects the case as it currently is (permissions, next phase, hold state).
@@ -438,6 +440,23 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        // BUG-05: the route component is reused when the Id changes, so the live subscription and anything held for
+        // the last case (an open dialog, the access banners, a refusal's demoted permissions) move to the new case.
+        if (_subscribedTo != Id)
+        {
+            _caseSub?.Dispose();
+            _caseSub = Notifier.SubscribeChanges(Id, OnCaseChangedAsync);   // live collaboration on this case
+            if (_subscribedTo != Guid.Empty)
+            {
+                CloseModal();
+                _confirm = null;
+                _accessLost = false;
+                _permissionLost = false;
+                _reportState.ShowPreview = false;
+                await RefreshPermissionsAsync();
+            }
+            _subscribedTo = Id;
+        }
         await Reload();
         _panelEntity = QEntity;   // INV-11: an entity tag link opens the entity panel
         _panelEvidence = QEntity is null ? QEvidence : null;   // RD-06: a cited-file chip opens the evidence panel
