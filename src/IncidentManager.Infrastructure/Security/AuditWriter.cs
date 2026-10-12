@@ -38,10 +38,14 @@ public sealed class AuditWriter : IAuditWriter
             using var db = _factory.CreateDbContext();
             var head = await db.AuditLog.AsNoTracking()
                 .OrderByDescending(a => a.Sequence).FirstOrDefaultAsync(ct);
+            // BUG-219: never earlier than the entry before it, as the interceptor keeps them (BUG-167), so a time range
+            // stays a run of consecutive sequence numbers even if the clock steps back.
+            var now = _clock.UtcNow;
+            if (head is not null && head.AtUtc > now) now = head.AtUtc;
 
             var entry = new AuditLogEntry
             {
-                AtUtc = _clock.UtcNow,
+                AtUtc = now,
                 Actor = _user.IsAuthenticated ? _user.UserId : "system",
                 Action = action,
                 EntityType = entityType,

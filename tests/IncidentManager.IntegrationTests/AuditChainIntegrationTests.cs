@@ -57,6 +57,24 @@ public sealed class AuditChainIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task An_explicitly_written_entry_is_never_earlier_than_the_one_before_it_either(/* BUG-219 */)
+    {
+        await using var db = NewContext();
+        db.DataElements.Add(new DataElement { Key = "A", Label = "A", IsActive = true, CreatedBy = "t", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+        var first = await db.AuditLog.AsNoTracking().OrderByDescending(a => a.Sequence).FirstAsync();
+
+        _clock.UtcNow = _clock.UtcNow.AddSeconds(-30);   // the clock stepped back (a time-sync correction)
+        var writer = new AuditWriter(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options),
+            _hasher, _user, _clock);
+        await writer.RecordAsync(IncidentManager.Domain.Enums.AuditAction.Export, "Export", null, null, "An export");
+
+        var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+        chain[^1].AtUtc.Should().Be(first.AtUtc);
+        _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Full_case_workflow_writes_a_valid_audit_chain()
     {
         await using var db = NewContext();
