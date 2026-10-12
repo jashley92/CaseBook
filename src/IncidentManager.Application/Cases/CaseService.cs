@@ -1774,7 +1774,7 @@ public sealed class CaseService
     /// <param name="acknowledgeExposure">BUG-129: the caller confirmed that a restricted duplicate's number and indicators
     /// will be visible on an unrestricted kept case (see <see cref="SupersedeExposureAsync"/>).</param>
     public async Task<SupersedeResult> SupersedeAsync(Guid duplicateId, Guid primaryId, bool copyIndicators, string reason,
-        CancellationToken ct = default, bool acknowledgeExposure = false)
+        bool acknowledgeExposure = false, CancellationToken ct = default)
     {
         Require();
         if (duplicateId == primaryId) throw new ArgumentException("A case can't supersede itself.");

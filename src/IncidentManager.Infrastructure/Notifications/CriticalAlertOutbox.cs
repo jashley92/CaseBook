@@ -13,9 +13,11 @@ namespace IncidentManager.Infrastructure.Notifications;
 /// retry it's given up, and administrators (and, for a breach escalation, everyone on the case) see it wasn't delivered.
 /// </summary>
 public sealed class CriticalAlertOutbox(IEmailSender email, IServiceScopeFactory scopes, IClock clock,
-    ILogger<CriticalAlertOutbox> log) : ICriticalAlertOutbox
+    ILogger<CriticalAlertOutbox> log) : ICriticalAlertOutbox, IDisposable
 {
     private readonly SemaphoreSlim _retrying = new(1, 1);
+
+    public void Dispose() => _retrying.Dispose();
 
     public async Task SendAsync(string kind, Guid? caseId, string? caseNumber, EmailMessage message, CancellationToken ct = default)
     {
