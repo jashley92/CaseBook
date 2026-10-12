@@ -151,10 +151,13 @@ public sealed class DeskService
         var needs = new List<DeskNeed>();
         var clocks = new List<DeskClock>();
         var targets = _sla.Current;
+        // BUG-214: every open case's notification clock in one pass (unreported cases only), not a context and three
+        // queries per case.
+        var openIds = work.OpenCases.Select(c => c.Id).ToList();
+        var heads = await _deadlines.HeadlinesNowAsync(db, db.Cases.AsNoTracking().Where(c => openIds.Contains(c.Id)), ct: ct);
         foreach (var c in work.OpenCases)
         {
-            var d = await _deadlines.EvaluateAsync(c.Id, ct);
-            if (d.Headline is { IsActive: true } h && d.ReportedAtUtc is null)
+            if (heads.TryGetValue(c.Id, out var h) && h.IsActive)
             {
                 needs.Add(new DeskNeed(DeskNeedKind.Notify, c.Id, c.CaseNumber, $"Notify {h.JurisdictionLabel}", c.Title, h.DueAtUtc));
                 clocks.Add(new DeskClock(c.Id, c.CaseNumber, h, null));
