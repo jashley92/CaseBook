@@ -1163,21 +1163,37 @@ else
     private string? _bulkReferContact;
     private string? _bulkReferNote;
 
-    // The "select page" header checkbox is on when the page's selectable rows (up to the cap) are all selected.
+    // The "select page" header checkbox is on when every row on the page is selected, or when the cap is reached
+    // (nothing more can be added).
     private bool PageAllSelected =>
-        _page is { Items.Count: > 0 } p && p.Items.Take(MaxBulk).All(i => _selected.Contains(i.Id));
+        _page is { Items.Count: > 0 } p && (p.Items.All(i => _selected.Contains(i.Id))
+            || _selected.Count >= MaxBulk);
 
     private void ToggleSelect(Guid id, bool on)
     {
         if (on) { if (_selected.Count < MaxBulk) _selected.Add(id); }
-        else _selected.Remove(id);
+        else
+        {
+            _selected.Remove(id);
+            if (_selected.Count == 0) _ = ApplyPendingLiveRefresh();   // BUG-38: as Clear does
+        }
     }
 
     private void TogglePage(bool on)
     {
         if (_page is not { Items.Count: > 0 } p) return;
-        if (on) foreach (var i in p.Items.Take(MaxBulk)) _selected.Add(i.Id);
-        else foreach (var i in p.Items) _selected.Remove(i.Id);
+        // BUG-32: the cap counts the rows already ticked one by one.
+        if (on)
+            foreach (var i in p.Items)
+            {
+                if (_selected.Count >= MaxBulk) break;
+                _selected.Add(i.Id);
+            }
+        else
+        {
+            foreach (var i in p.Items) _selected.Remove(i.Id);
+            if (_selected.Count == 0) _ = ApplyPendingLiveRefresh();
+        }
     }
 
     private void ClearSelection() { _selected.Clear(); _ = ApplyPendingLiveRefresh(); }
