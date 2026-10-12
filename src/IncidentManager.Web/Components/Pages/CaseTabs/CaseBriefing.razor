@@ -234,7 +234,9 @@
                 @{
                     var (contain, resolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
                         Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification);
-                    var slas = new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget).ToList();
+                    // BUG-165: a case recorded as not needing containment has no containment target to meet or miss.
+                    var slas = new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget
+                        && !(Case.ContainmentNotNeededReason is not null && s.Clock == SlaClock.Containment)).ToList();
                 }
                 @if (Notify is { HasClock: true } n)
                 {
@@ -251,6 +253,10 @@
                 else if (Notify is { AwaitingTrigger: true } wait)
                 {
                     <div class="im-bf-sub mb-2">@(wait.StartBasis == NotificationStartBasis.Determination ? "Notification clocks start once the case is determined material." : "Notification clocks start once the case is a Breach.")</div>
+                }
+                @if (Case.ContainmentNotNeededReason is { } notNeeded)
+                {
+                    <div class="im-bf-sub" title="@notNeeded">Containment not needed: @notNeeded</div>
                 }
                 @foreach (var st in slas)
                 {

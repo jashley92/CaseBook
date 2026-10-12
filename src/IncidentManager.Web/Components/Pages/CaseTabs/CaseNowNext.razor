@@ -72,7 +72,13 @@
                 }
             </div>
         }
-        @foreach (var st in new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget))
+        @* BUG-165: a case recorded as not needing containment has no containment target to meet or miss. *@
+        @if (Case.ContainmentNotNeededReason is { } notNeeded)
+        {
+            <div class="im-nn-ob small text-muted" title="@notNeeded">Containment not needed</div>
+        }
+        @foreach (var st in new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget
+                     && !(Case.ContainmentNotNeededReason is not null && s.Clock == SlaClock.Containment)))
         {
             <div class="im-nn-ob">
                 <ClockMark State="st.State" Label="@(st.Clock is { } k ? Ui.SlaClockLabel(k) : "SLA")" Detail="@Ui.SlaShort(st)"
