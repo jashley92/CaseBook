@@ -570,7 +570,7 @@ app.MapGet("/export/metrics.csv", async (
     var csv = IncidentManager.Application.Dashboards.MetricsCsv.Build(metrics, clock.UtcNow);
     var fileName = $"incident-metrics-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
-    return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
+    return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
 // --- PROD-12: the Legal/Privacy obligations register. Legal doesn't use the app — this CSV is their interface.
@@ -584,7 +584,7 @@ app.MapGet("/export/legal-register.csv", async (
     var csv = IncidentManager.Application.Compliance.LegalRegisterService.ToCsv(rows, clock.UtcNow);
     var fileName = $"legal-obligations-register-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
-    return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
+    return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
 // --- E-31: quarterly program-metrics report as a two-period CSV (board / exam packs). Need-to-know scoped by
@@ -604,7 +604,7 @@ app.MapGet("/export/program-report.csv", async (
         sevLabels.For);
     var fileName = $"program-report-{period.Year}-Q{period.Quarter}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
-    return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
+    return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
 // --- Improvement-action register (E-26/PROD-41): the cross-case follow-up register as CSV, honouring the
@@ -623,7 +623,7 @@ app.MapGet("/export/improvement-actions.csv", async (
     var csv = await lessons.ExportRegisterCsvAsync(filter, ct);
     var fileName = $"improvement-actions-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
-    return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
+    return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
 // --- Malicious-IOC blocklist feed (E-13): curated confirmed IOCs across the caller's visible cases ---
@@ -638,7 +638,7 @@ app.MapGet("/export/iocs.csv", async (
     var csv = IncidentManager.Application.Export.IocFeedCsv.Build(rows, clock.UtcNow);
     var fileName = $"malicious-iocs-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
-    return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
+    return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);   // no BOM: machines read it (BUG-168)
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
 // --- Per-case audit-trail export (E-24): the hash-chained trail for one case, filtered, as CSV ---
@@ -675,7 +675,7 @@ app.MapGet("/export/case-audit.csv", async (
     // BUG-155: logged against the case, so the access log's case and "restricted only" filters find it.
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, await cases.FindIdByNumberAsync(@case, ct),
         fileName, null, ct);
-    return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
+    return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
 // --- Access-log export (C-05): the out-of-chain read/access telemetry, filtered, as CSV ---
@@ -705,7 +705,7 @@ app.MapGet("/export/access-log.csv", async (
     // BUG-132: pulling the access log is itself an access, recorded with the slice that was pulled.
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null,
         IncidentManager.Application.Access.AccessLogCsv.ExportLabel(fileName, filter), null, ct);
-    return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
+    return Results.File(ExcelCsv(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
 
 // --- Compliance evidence bundle (C-01): audit-chain segment + covering seals + verification, zipped ---
@@ -821,3 +821,8 @@ app.MapGet("/api/import/cases/schema", () =>
     .AllowAnonymous().RequireRateLimiting("downloads");
 
 await app.RunAsync();   // S6966: async host run
+
+// BUG-168: a CSV people open in a spreadsheet starts with the UTF-8 byte-order mark, or Excel reads it as the local code
+// page ("—" shows as "â€”", accented names garble). Not the IOC feed (blocking controls read it, and a BOM would spoil its
+// first value) nor the compliance bundle's files (checked byte for byte).
+static byte[] ExcelCsv(string csv) => [.. System.Text.Encoding.UTF8.GetPreamble(), .. System.Text.Encoding.UTF8.GetBytes(csv)];
