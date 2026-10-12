@@ -70,10 +70,16 @@
     private bool _seenLoaded;
     private IReadOnlyList<ActivityItem> _items = Array.Empty<ActivityItem>();
     private IDisposable? _sub;
+    private Timer? _debounce;
+
+    // BUG-204: every circuit has a bell, and a busy moment (a bulk import, a team at work) publishes many changes, so the
+    // feed is re-read once things settle rather than once per change in every open session.
+    private const int SettleMs = 1500;
 
     protected override async Task OnInitializedAsync()
     {
         await Load();
+        _debounce = new Timer(_ => _ = InvokeAsync(Refresh), null, Timeout.Infinite, Timeout.Infinite);
         _sub = Notifier.SubscribeAll(OnAnyChange);
         Palette.DismissRequested += OnDismiss;
     }
@@ -104,12 +110,18 @@
 
     private async Task Load() => _items = await Feed.RecentAsync(20, othersOnly: true);
 
-    private Task OnAnyChange(Guid _, string __) => InvokeAsync(async () =>
+    private Task OnAnyChange(Guid _, string __)
+    {
+        _debounce?.Change(SettleMs, Timeout.Infinite);
+        return Task.CompletedTask;
+    }
+
+    private async Task Refresh()
     {
         await Load();
         Recount();
         StateHasChanged();
-    });
+    }
 
     private void Recount()
     {
@@ -161,6 +173,7 @@
     public void Dispose()
     {
         _sub?.Dispose();
+        _debounce?.Dispose();
         Palette.DismissRequested -= OnDismiss;
     }
 }
