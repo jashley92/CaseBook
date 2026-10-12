@@ -33,5 +33,5 @@ public class NotificationRule : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        Code, Label, WindowHours, IsActive, IsSystem, CreatedBy, CreatedAtUtc.ToString("o"));
+        Code, Canonical.Text(Label), WindowHours, IsActive, IsSystem, CreatedBy, CreatedAtUtc.ToString("o"));
 }

@@ -7,6 +7,12 @@ how tampering is detected, and what is deliberately outside that protection. Why
 | Layer | Mechanism | Detects | Code |
 |---|---|---|---|
 | Row hash | SHA-256 of each record's canonical fields, stored in `RowHash` | A field edited without going through the app | `IHashableEntity.BuildCanonicalContent`, `HashChainService.ComputeRowHash` |
+
+**Canonical format 2 (BUG-24).** A canonical joins fields with `|`. In the first format free text was joined as is, so
+text could move between two adjacent fields of one record without changing the hash. Row hashes are now computed over
+format 2, where `\` and `|` in free text are escaped (`Canonical.Text`), and are stored as `v2:` plus the hex digest.
+A hash without the prefix was written in the first format and is checked in it, so existing rows verify unchanged
+until they're next saved. The audit chain's own entry hash is unchanged.
 | Hash chain | Every change appends an `AuditLog` row whose hash covers the previous row's hash | Inserted, deleted, reordered or edited history | `AuditChainInterceptor`, `HashChainService` |
 | Signed seals | Periodic RSA signature over the chain head, stored in the database and as files out of band | A competent rewrite that recomputes every hash | `IntegrityService`, `RsaSealSigner`, `FileSealStore` |
 | Ledger (optional) | SQL Server append-only ledger tables plus external digests | Any UPDATE or DELETE, even by `sysadmin`; page-level tampering | `deploy/sql/02-Enable-Ledger.sql` |

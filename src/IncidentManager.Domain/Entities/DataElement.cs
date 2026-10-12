@@ -47,6 +47,6 @@ public class DataElement : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        Key, Label, SortOrder, IsActive, IsSystem, NotificationJurisdictions,
+        Key, Canonical.Text(Label), SortOrder, IsActive, IsSystem, NotificationJurisdictions,
         CreatedBy, CreatedAtUtc.ToString("o"));
 }

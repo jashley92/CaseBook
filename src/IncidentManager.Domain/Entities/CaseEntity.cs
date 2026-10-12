@@ -40,7 +40,7 @@ public class CaseEntity : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        CaseId, (int)Type, Value, Label, (int)Disposition, Description, Source, CreatedBy, CreatedAtUtc.ToString("o"));
+        CaseId, (int)Type, Canonical.Text(Value), Canonical.Text(Label), (int)Disposition, Canonical.Text(Description), Canonical.Text(Source), CreatedBy, CreatedAtUtc.ToString("o"));
 }
 
 /// <summary>
@@ -58,5 +58,5 @@ public class EntityRelationship : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        CaseId, SourceEntityId, TargetEntityId, (int)Type, Description, CreatedBy, CreatedAtUtc.ToString("o"));
+        CaseId, SourceEntityId, TargetEntityId, (int)Type, Canonical.Text(Description), CreatedBy, CreatedAtUtc.ToString("o"));
 }

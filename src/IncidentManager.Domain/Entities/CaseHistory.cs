@@ -25,7 +25,7 @@ public class ClassificationChange : Entity, IHashableEntity
 
     public string? RowHash { get; set; }
 
-    public string BuildCanonicalContent() => string.Join('|', CaseId, Canonical.Num(From), Canonical.Num(To), Reason,
+    public string BuildCanonicalContent() => string.Join('|', CaseId, Canonical.Num(From), Canonical.Num(To), Canonical.Text(Reason),
         ChangedBy, Canonical.Time(ChangedAtUtc), Canonical.Time(EffectiveAtUtc));
 }
 
@@ -51,7 +51,7 @@ public class StatusChange : Entity, IHashableEntity
 
     public string? RowHash { get; set; }
 
-    public string BuildCanonicalContent() => string.Join('|', CaseId, Canonical.Num(From), Canonical.Num(To), Reason,
+    public string BuildCanonicalContent() => string.Join('|', CaseId, Canonical.Num(From), Canonical.Num(To), Canonical.Text(Reason),
         ChangedBy, Canonical.Time(ChangedAtUtc), Canonical.Time(EffectiveAtUtc), OutcomeKey);
 }
 
@@ -72,8 +72,8 @@ public class MaterialityChange : Entity, IHashableEntity
 
     public string? RowHash { get; set; }   // BUG-70
 
-    public string BuildCanonicalContent() => string.Join('|', CaseId, Canonical.Num(From), Canonical.Num(To), DecisionMaker,
-        Canonical.Time(DecidedOnUtc), Rationale, ChangedBy, Canonical.Time(ChangedAtUtc));
+    public string BuildCanonicalContent() => string.Join('|', CaseId, Canonical.Num(From), Canonical.Num(To), Canonical.Text(DecisionMaker),
+        Canonical.Time(DecidedOnUtc), Canonical.Text(Rationale), ChangedBy, Canonical.Time(ChangedAtUtc));
 }
 
 /// <summary>
@@ -94,7 +94,7 @@ public class AssignmentChange : Entity, IHashableEntity
 
     public string? RowHash { get; set; }   // BUG-70
 
-    public string BuildCanonicalContent() => string.Join('|', CaseId, UserId, UserDisplayName, Canonical.Num(From),
+    public string BuildCanonicalContent() => string.Join('|', CaseId, UserId, Canonical.Text(UserDisplayName), Canonical.Num(From),
         Canonical.Num(To), ChangedBy, Canonical.Time(ChangedAtUtc));
 }
 
@@ -117,8 +117,8 @@ public class EntityVerdictChange : Entity, IHashableEntity
 
     public string? RowHash { get; set; }   // BUG-70
 
-    public string BuildCanonicalContent() => string.Join('|', CaseId, EntityId, EntityLabel, Canonical.Num(From),
-        Canonical.Num(To), Reason, ChangedBy, Canonical.Time(ChangedAtUtc));
+    public string BuildCanonicalContent() => string.Join('|', CaseId, EntityId, Canonical.Text(EntityLabel), Canonical.Num(From),
+        Canonical.Num(To), Canonical.Text(Reason), ChangedBy, Canonical.Time(ChangedAtUtc));
 }
 
 /// <summary>Immutable record of a severity change. BUG-70: hashed.</summary>
@@ -142,6 +142,6 @@ public class SeverityChange : Entity, IHashableEntity
 
     public string? RowHash { get; set; }
 
-    public string BuildCanonicalContent() => string.Join('|', CaseId, Canonical.Num(From), Canonical.Num(To), Reason,
+    public string BuildCanonicalContent() => string.Join('|', CaseId, Canonical.Num(From), Canonical.Num(To), Canonical.Text(Reason),
         ChangedBy, Canonical.Time(ChangedAtUtc), Canonical.Time(EffectiveAtUtc));
 }

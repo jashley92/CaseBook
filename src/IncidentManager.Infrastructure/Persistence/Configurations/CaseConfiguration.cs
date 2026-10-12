@@ -38,7 +38,7 @@ public sealed class CaseConfiguration : IEntityTypeConfiguration<Case>
         b.Property(c => c.IncidentCommander).HasMaxLength(200);
         b.Property(c => c.CreatedBy).HasMaxLength(200);
         b.Property(c => c.ModifiedBy).HasMaxLength(200);
-        b.Property(c => c.RowHash).HasMaxLength(64);
+        b.Property(c => c.RowHash).HasMaxLength(70);
 
         b.OwnsOne(c => c.ThirdParty, tp =>
         {

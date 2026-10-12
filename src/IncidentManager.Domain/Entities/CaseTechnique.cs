@@ -24,7 +24,7 @@ public partial class CaseTechnique : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        CaseId, TechniqueId, Name, (int)Tactic, CreatedBy, CreatedAtUtc.ToString("o"));
+        CaseId, TechniqueId, Canonical.Text(Name), (int)Tactic, CreatedBy, CreatedAtUtc.ToString("o"));
 
     /// <summary>Matches an ATT&amp;CK technique ID like T1566 or a sub-technique like T1566.001.</summary>
     [GeneratedRegex(@"^T\d{4}(\.\d{3})?$")]

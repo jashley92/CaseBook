@@ -125,7 +125,7 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
     public string BuildCanonicalContent()
     {
         var baseContent = string.Join('|',
-            CaseId, (int)Kind, OccurredAtUtc.ToString("o"), (int)Type, Description, Source, CreatedBy, CreatedAtUtc.ToString("o"));
+            CaseId, (int)Kind, OccurredAtUtc.ToString("o"), (int)Type, Canonical.Text(Description), Canonical.Text(Source), CreatedBy, CreatedAtUtc.ToString("o"));
 
         string content;
         if (Kind == TimelineKind.Event)
@@ -152,7 +152,7 @@ public class TimelineEntry : AuditableEntity, IHashableEntity
 
         // INV-06: a decision's rationale / options / decider, folded in only when present (no re-baseline).
         if (Rationale is not null || OptionsConsidered is not null || DecidedBy is not null)
-            content = string.Join('|', content, "dec", Rationale, OptionsConsidered, DecidedBy);
+            content = string.Join('|', content, "dec", Canonical.Text(Rationale), Canonical.Text(OptionsConsidered), Canonical.Text(DecidedBy));
 
         // Where a third-party case's attack step happened, folded in only when present (no re-baseline).
         if (Environment is { } env) content = string.Join('|', content, "env", (int)env);

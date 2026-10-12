@@ -24,6 +24,6 @@ public class TransitionTimeCorrection : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        CaseId, (int)Kind, ChangeId, FromEffectiveUtc.ToString("o"), ToEffectiveUtc.ToString("o"), Reason,
+        CaseId, (int)Kind, ChangeId, FromEffectiveUtc.ToString("o"), ToEffectiveUtc.ToString("o"), Canonical.Text(Reason),
         CreatedBy, CreatedAtUtc.ToString("o"));
 }

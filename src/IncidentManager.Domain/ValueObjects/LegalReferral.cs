@@ -16,5 +16,5 @@ public class LegalReferral
     public string? RegulatoryRelevanceNote { get; set; }
 
     public string ToCanonical() =>
-        $"{IsReferred}|{ReferredAtUtc:o}|{ReferredBy}|{ReferredToContact}|{RegulatoryRelevanceNote}";
+        $"{IsReferred}|{ReferredAtUtc:o}|{ReferredBy}|{Common.Canonical.Text(ReferredToContact)}|{Common.Canonical.Text(RegulatoryRelevanceNote)}";
 }

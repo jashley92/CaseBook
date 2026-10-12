@@ -25,7 +25,7 @@ public class Evidence : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        CaseId, OriginalFileName, ContentType, SizeBytes, Sha256, CreatedBy, CreatedAtUtc.ToString("o"));
+        CaseId, Canonical.Text(OriginalFileName), Canonical.Text(ContentType), SizeBytes, Sha256, CreatedBy, CreatedAtUtc.ToString("o"));
 }
 
 /// <summary>An access/transfer event in an evidence item's chain of custody.</summary>

@@ -68,7 +68,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Status")
@@ -117,7 +117,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -145,7 +145,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<long>("UpdatedAtUtc")
@@ -266,7 +266,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid?>("SupersedesNoteId")
@@ -362,7 +362,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<long>("UpdatedAtUtc")
@@ -448,7 +448,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("To")
@@ -664,7 +664,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Sequence")
@@ -776,7 +776,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("UserDisplayName")
@@ -844,7 +844,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Summary")
@@ -930,7 +930,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Source")
@@ -988,7 +988,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Type")
@@ -1047,7 +1047,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("SortOrder")
@@ -1089,7 +1089,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Tactic")
@@ -1152,7 +1152,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("SortOrder")
@@ -1193,7 +1193,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("TemplateId")
@@ -1271,7 +1271,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("To")
@@ -1325,7 +1325,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("SortOrder")
@@ -1393,7 +1393,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("SourceEntityId")
@@ -1448,7 +1448,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("To")
@@ -1518,7 +1518,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Sha256")
@@ -1555,7 +1555,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("TimelineEntryId")
@@ -1603,7 +1603,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Trigger")
@@ -1662,7 +1662,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Status")
@@ -1762,7 +1762,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -1804,7 +1804,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("To")
@@ -1870,7 +1870,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("WindowHours")
@@ -2031,7 +2031,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("WhatHappened")
@@ -2156,7 +2156,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("SectionLayout")
@@ -2215,7 +2215,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Sha256")
@@ -2254,7 +2254,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<long>("UpdatedAtUtc")
@@ -2341,7 +2341,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("To")
@@ -2389,7 +2389,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Trigger")
@@ -2432,7 +2432,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -2473,7 +2473,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("To")
@@ -2557,7 +2557,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Source")
@@ -2635,7 +2635,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
+                        .HasMaxLength(70)
                         .HasColumnType("TEXT");
 
                     b.Property<long>("ToEffectiveUtc")

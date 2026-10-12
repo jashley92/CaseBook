@@ -32,5 +32,5 @@ public class ReportTemplate : AuditableEntity, IHashableEntity
 
     // The lessons flag is appended only when set, so rows hashed before it existed still verify.
     public string BuildCanonicalContent() => string.Join('|',
-        Name, FileName, Sha256, SizeBytes, IsActive, CreatedBy, CreatedAtUtc.ToString("o")) + (IsLessonsDefault ? "|lessons-default" : "");
+        Canonical.Text(Name), Canonical.Text(FileName), Sha256, SizeBytes, IsActive, CreatedBy, CreatedAtUtc.ToString("o")) + (IsLessonsDefault ? "|lessons-default" : "");
 }

@@ -209,6 +209,53 @@ public sealed class RowIntegrityTests
         (await VerifyAsync(database))?.Detail.Should().BeNull();
     }
 
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Text_moved_between_two_fields_directly_in_the_database_is_caught(string provider /* BUG-24 */)
+    {
+        using var database = Seeded(provider);
+        Guid id;
+        await using (var db = database.NewContext())
+        {
+            var e = await db.CaseEntities.FirstAsync();
+            e.Description = "seen beaconing|EDR";
+            e.Source = "triage";
+            await db.SaveChangesAsync();   // through CaseBook: hashed and audited
+            id = e.Id;
+        }
+        (await VerifyAsync(database))?.Detail.Should().BeNull();
+
+        await using (var db = database.NewContext())
+            await db.CaseEntities.Where(x => x.Id == id).ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Description, "seen beaconing").SetProperty(x => x.Source, "EDR|triage"));
+
+        var bad = await VerifyAsync(database);
+        bad!.EntityType.Should().Be(nameof(CaseEntity));
+        bad.Detail.Should().Contain("no longer matches its hash");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_row_hashed_in_the_first_format_still_verifies(string provider /* BUG-24 */)
+    {
+        // As a row written before format 2 has it: the hash without the prefix, recorded as such in the chain.
+        using var database = Seeded(provider);
+        await using (var db = database.NewContext())
+        {
+            var note = await db.Notes.FirstAsync();
+            var v1 = _hasher.Hash(note.BuildCanonicalContent());
+            await db.Notes.Where(n => n.Id == note.Id).ExecuteUpdateAsync(s => s.SetProperty(n => n.RowHash, v1));
+            var v2 = note.RowHash!;
+            await db.AuditLog.Where(a => a.EntityId == note.Id.ToString() && a.AfterJson != null)
+                .ExecuteUpdateAsync(s => s.SetProperty(a => a.AfterJson, a => a.AfterJson!.Replace(v2, v1)));
+        }
+        await using (var db = database.NewContext())
+        {
+            var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+            (await RowIntegrityVerifier.VerifyAsync(db, _hasher, chain))?.Detail.Should().BeNull();
+        }
+    }
+
     [Fact]
     public async Task An_existing_database_passes_when_one_is_named()
     {

@@ -34,7 +34,7 @@ public class StageGate : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        (int)Trigger, IsActive, Name, Description, CommentaryMinLength, CreatedBy, CreatedAtUtc.ToString("o"));
+        (int)Trigger, IsActive, Canonical.Text(Name), Canonical.Text(Description), CommentaryMinLength, CreatedBy, CreatedAtUtc.ToString("o"));
 }
 
 /// <summary>
@@ -72,7 +72,7 @@ public class StageGateRequirement : Entity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        GateId, Order, (int)Kind, CheckKey ?? "", CheckParam?.ToString(CultureInfo.InvariantCulture) ?? "", Label, IsBlocking);
+        GateId, Order, (int)Kind, CheckKey ?? "", CheckParam?.ToString(CultureInfo.InvariantCulture) ?? "", Canonical.Text(Label), IsBlocking);
 }
 
 /// <summary>
@@ -102,5 +102,5 @@ public class GatePassage : Entity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        CaseId, (int)Trigger, PassedAtUtc.ToString("o"), PassedBy, WasOverridden, OverrideJustification, Commentary, Detail);
+        CaseId, (int)Trigger, PassedAtUtc.ToString("o"), PassedBy, WasOverridden, Canonical.Text(OverrideJustification), Canonical.Text(Commentary), Canonical.Text(Detail));
 }

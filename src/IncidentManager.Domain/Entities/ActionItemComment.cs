@@ -21,5 +21,5 @@ public class ActionItemComment : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        ActionItemId, CaseId, Body, CreatedBy, CreatedAtUtc.ToString("o"));
+        ActionItemId, CaseId, Canonical.Text(Body), CreatedBy, CreatedAtUtc.ToString("o"));
 }

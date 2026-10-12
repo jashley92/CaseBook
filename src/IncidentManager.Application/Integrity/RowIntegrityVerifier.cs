@@ -102,7 +102,7 @@ public static class RowIntegrityVerifier
                     return new RowMismatch(type, entity.Id, null,
                         $"{type} {entity.Id} isn't in the audit trail: it was added outside CaseBook.");
 
-                if (!string.Equals(hasher.ComputeRowHash(row), stored, StringComparison.OrdinalIgnoreCase))
+                if (!hasher.RowHashMatches(row, stored))   // BUG-24: in the format the hash was written in
                     return new RowMismatch(type, entity.Id, last.Sequence,
                         $"{type} {entity.Id} was changed outside CaseBook: its content no longer matches its hash.");
                 if (last.Hash is { } chained && !string.Equals(chained, stored, StringComparison.OrdinalIgnoreCase))

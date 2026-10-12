@@ -3212,3 +3212,520 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var2 nvarchar(max);
+    SELECT @var2 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[TransitionTimeCorrections]') AND [c].[name] = N'RowHash');
+    IF @var2 IS NOT NULL EXEC(N'ALTER TABLE [TransitionTimeCorrections] DROP CONSTRAINT ' + @var2 + ';');
+    ALTER TABLE [TransitionTimeCorrections] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var3 nvarchar(max);
+    SELECT @var3 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[TimelineEntries]') AND [c].[name] = N'RowHash');
+    IF @var3 IS NOT NULL EXEC(N'ALTER TABLE [TimelineEntries] DROP CONSTRAINT ' + @var3 + ';');
+    ALTER TABLE [TimelineEntries] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var4 nvarchar(max);
+    SELECT @var4 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[StatusChanges]') AND [c].[name] = N'RowHash');
+    IF @var4 IS NOT NULL EXEC(N'ALTER TABLE [StatusChanges] DROP CONSTRAINT ' + @var4 + ';');
+    ALTER TABLE [StatusChanges] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var5 nvarchar(max);
+    SELECT @var5 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[StageGates]') AND [c].[name] = N'RowHash');
+    IF @var5 IS NOT NULL EXEC(N'ALTER TABLE [StageGates] DROP CONSTRAINT ' + @var5 + ';');
+    ALTER TABLE [StageGates] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var6 nvarchar(max);
+    SELECT @var6 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[StageGateRequirements]') AND [c].[name] = N'RowHash');
+    IF @var6 IS NOT NULL EXEC(N'ALTER TABLE [StageGateRequirements] DROP CONSTRAINT ' + @var6 + ';');
+    ALTER TABLE [StageGateRequirements] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var7 nvarchar(max);
+    SELECT @var7 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[SeverityChanges]') AND [c].[name] = N'RowHash');
+    IF @var7 IS NOT NULL EXEC(N'ALTER TABLE [SeverityChanges] DROP CONSTRAINT ' + @var7 + ';');
+    ALTER TABLE [SeverityChanges] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var8 nvarchar(max);
+    SELECT @var8 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[Roles]') AND [c].[name] = N'RowHash');
+    IF @var8 IS NOT NULL EXEC(N'ALTER TABLE [Roles] DROP CONSTRAINT ' + @var8 + ';');
+    ALTER TABLE [Roles] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var9 nvarchar(max);
+    SELECT @var9 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[ReportTemplates]') AND [c].[name] = N'RowHash');
+    IF @var9 IS NOT NULL EXEC(N'ALTER TABLE [ReportTemplates] DROP CONSTRAINT ' + @var9 + ';');
+    ALTER TABLE [ReportTemplates] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var10 nvarchar(max);
+    SELECT @var10 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[ReportProfiles]') AND [c].[name] = N'RowHash');
+    IF @var10 IS NOT NULL EXEC(N'ALTER TABLE [ReportProfiles] DROP CONSTRAINT ' + @var10 + ';');
+    ALTER TABLE [ReportProfiles] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var11 nvarchar(max);
+    SELECT @var11 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[PostIncidentReviews]') AND [c].[name] = N'RowHash');
+    IF @var11 IS NOT NULL EXEC(N'ALTER TABLE [PostIncidentReviews] DROP CONSTRAINT ' + @var11 + ';');
+    ALTER TABLE [PostIncidentReviews] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var12 nvarchar(max);
+    SELECT @var12 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[NotificationRules]') AND [c].[name] = N'RowHash');
+    IF @var12 IS NOT NULL EXEC(N'ALTER TABLE [NotificationRules] DROP CONSTRAINT ' + @var12 + ';');
+    ALTER TABLE [NotificationRules] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var13 nvarchar(max);
+    SELECT @var13 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[MaterialityChanges]') AND [c].[name] = N'RowHash');
+    IF @var13 IS NOT NULL EXEC(N'ALTER TABLE [MaterialityChanges] DROP CONSTRAINT ' + @var13 + ';');
+    ALTER TABLE [MaterialityChanges] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var14 nvarchar(max);
+    SELECT @var14 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[JurisdictionNotices]') AND [c].[name] = N'RowHash');
+    IF @var14 IS NOT NULL EXEC(N'ALTER TABLE [JurisdictionNotices] DROP CONSTRAINT ' + @var14 + ';');
+    ALTER TABLE [JurisdictionNotices] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var15 nvarchar(max);
+    SELECT @var15 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[ImprovementActions]') AND [c].[name] = N'RowHash');
+    IF @var15 IS NOT NULL EXEC(N'ALTER TABLE [ImprovementActions] DROP CONSTRAINT ' + @var15 + ';');
+    ALTER TABLE [ImprovementActions] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var16 nvarchar(max);
+    SELECT @var16 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[GatePassages]') AND [c].[name] = N'RowHash');
+    IF @var16 IS NOT NULL EXEC(N'ALTER TABLE [GatePassages] DROP CONSTRAINT ' + @var16 + ';');
+    ALTER TABLE [GatePassages] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var17 nvarchar(max);
+    SELECT @var17 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[EvidenceCitations]') AND [c].[name] = N'RowHash');
+    IF @var17 IS NOT NULL EXEC(N'ALTER TABLE [EvidenceCitations] DROP CONSTRAINT ' + @var17 + ';');
+    ALTER TABLE [EvidenceCitations] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var18 nvarchar(max);
+    SELECT @var18 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[Evidence]') AND [c].[name] = N'RowHash');
+    IF @var18 IS NOT NULL EXEC(N'ALTER TABLE [Evidence] DROP CONSTRAINT ' + @var18 + ';');
+    ALTER TABLE [Evidence] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var19 nvarchar(max);
+    SELECT @var19 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[EntityVerdictChanges]') AND [c].[name] = N'RowHash');
+    IF @var19 IS NOT NULL EXEC(N'ALTER TABLE [EntityVerdictChanges] DROP CONSTRAINT ' + @var19 + ';');
+    ALTER TABLE [EntityVerdictChanges] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var20 nvarchar(max);
+    SELECT @var20 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[EntityRelationships]') AND [c].[name] = N'RowHash');
+    IF @var20 IS NOT NULL EXEC(N'ALTER TABLE [EntityRelationships] DROP CONSTRAINT ' + @var20 + ';');
+    ALTER TABLE [EntityRelationships] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var21 nvarchar(max);
+    SELECT @var21 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[DataElements]') AND [c].[name] = N'RowHash');
+    IF @var21 IS NOT NULL EXEC(N'ALTER TABLE [DataElements] DROP CONSTRAINT ' + @var21 + ';');
+    ALTER TABLE [DataElements] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var22 nvarchar(max);
+    SELECT @var22 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[ClassificationChanges]') AND [c].[name] = N'RowHash');
+    IF @var22 IS NOT NULL EXEC(N'ALTER TABLE [ClassificationChanges] DROP CONSTRAINT ' + @var22 + ';');
+    ALTER TABLE [ClassificationChanges] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var23 nvarchar(max);
+    SELECT @var23 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[CaseTemplateSteps]') AND [c].[name] = N'RowHash');
+    IF @var23 IS NOT NULL EXEC(N'ALTER TABLE [CaseTemplateSteps] DROP CONSTRAINT ' + @var23 + ';');
+    ALTER TABLE [CaseTemplateSteps] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var24 nvarchar(max);
+    SELECT @var24 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[CaseTemplates]') AND [c].[name] = N'RowHash');
+    IF @var24 IS NOT NULL EXEC(N'ALTER TABLE [CaseTemplates] DROP CONSTRAINT ' + @var24 + ';');
+    ALTER TABLE [CaseTemplates] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var25 nvarchar(max);
+    SELECT @var25 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[CaseTechniques]') AND [c].[name] = N'RowHash');
+    IF @var25 IS NOT NULL EXEC(N'ALTER TABLE [CaseTechniques] DROP CONSTRAINT ' + @var25 + ';');
+    ALTER TABLE [CaseTechniques] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var26 nvarchar(max);
+    SELECT @var26 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[Cases]') AND [c].[name] = N'RowHash');
+    IF @var26 IS NOT NULL EXEC(N'ALTER TABLE [Cases] DROP CONSTRAINT ' + @var26 + ';');
+    ALTER TABLE [Cases] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var27 nvarchar(max);
+    SELECT @var27 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[CaseOutcomes]') AND [c].[name] = N'RowHash');
+    IF @var27 IS NOT NULL EXEC(N'ALTER TABLE [CaseOutcomes] DROP CONSTRAINT ' + @var27 + ';');
+    ALTER TABLE [CaseOutcomes] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var28 nvarchar(max);
+    SELECT @var28 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[CaseLinks]') AND [c].[name] = N'RowHash');
+    IF @var28 IS NOT NULL EXEC(N'ALTER TABLE [CaseLinks] DROP CONSTRAINT ' + @var28 + ';');
+    ALTER TABLE [CaseLinks] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var29 nvarchar(max);
+    SELECT @var29 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[CaseEntities]') AND [c].[name] = N'RowHash');
+    IF @var29 IS NOT NULL EXEC(N'ALTER TABLE [CaseEntities] DROP CONSTRAINT ' + @var29 + ';');
+    ALTER TABLE [CaseEntities] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var30 nvarchar(max);
+    SELECT @var30 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[CaseBriefs]') AND [c].[name] = N'RowHash');
+    IF @var30 IS NOT NULL EXEC(N'ALTER TABLE [CaseBriefs] DROP CONSTRAINT ' + @var30 + ';');
+    ALTER TABLE [CaseBriefs] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var31 nvarchar(max);
+    SELECT @var31 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[CaseAssignments]') AND [c].[name] = N'RowHash');
+    IF @var31 IS NOT NULL EXEC(N'ALTER TABLE [CaseAssignments] DROP CONSTRAINT ' + @var31 + ';');
+    ALTER TABLE [CaseAssignments] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var32 nvarchar(max);
+    SELECT @var32 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[AssignmentChanges]') AND [c].[name] = N'RowHash');
+    IF @var32 IS NOT NULL EXEC(N'ALTER TABLE [AssignmentChanges] DROP CONSTRAINT ' + @var32 + ';');
+    ALTER TABLE [AssignmentChanges] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var33 nvarchar(max);
+    SELECT @var33 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[AppSettings]') AND [c].[name] = N'RowHash');
+    IF @var33 IS NOT NULL EXEC(N'ALTER TABLE [AppSettings] DROP CONSTRAINT ' + @var33 + ';');
+    ALTER TABLE [AppSettings] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var34 nvarchar(max);
+    SELECT @var34 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[AnalystNotes]') AND [c].[name] = N'RowHash');
+    IF @var34 IS NOT NULL EXEC(N'ALTER TABLE [AnalystNotes] DROP CONSTRAINT ' + @var34 + ';');
+    ALTER TABLE [AnalystNotes] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var35 nvarchar(max);
+    SELECT @var35 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[AdGroupRoleMappings]') AND [c].[name] = N'RowHash');
+    IF @var35 IS NOT NULL EXEC(N'ALTER TABLE [AdGroupRoleMappings] DROP CONSTRAINT ' + @var35 + ';');
+    ALTER TABLE [AdGroupRoleMappings] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var36 nvarchar(max);
+    SELECT @var36 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[ActionItems]') AND [c].[name] = N'RowHash');
+    IF @var36 IS NOT NULL EXEC(N'ALTER TABLE [ActionItems] DROP CONSTRAINT ' + @var36 + ';');
+    ALTER TABLE [ActionItems] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    DECLARE @var37 nvarchar(max);
+    SELECT @var37 = QUOTENAME([d].[name])
+    FROM [sys].[default_constraints] [d]
+    INNER JOIN [sys].[columns] [c] ON [d].[parent_column_id] = [c].[column_id] AND [d].[parent_object_id] = [c].[object_id]
+    WHERE ([d].[parent_object_id] = OBJECT_ID(N'[ActionItemComments]') AND [c].[name] = N'RowHash');
+    IF @var37 IS NOT NULL EXEC(N'ALTER TABLE [ActionItemComments] DROP CONSTRAINT ' + @var37 + ';');
+    ALTER TABLE [ActionItemComments] ALTER COLUMN [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012161613_RowHashFormat2'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261012161613_RowHashFormat2'', N''10.0.12'');');
+END;
+
+COMMIT;
+GO
+

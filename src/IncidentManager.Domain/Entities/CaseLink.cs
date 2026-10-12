@@ -26,5 +26,5 @@ public class CaseLink : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        CaseId, RelatedCaseId, (int)Type, Description, CreatedBy, CreatedAtUtc.ToString("o"));
+        CaseId, RelatedCaseId, (int)Type, Canonical.Text(Description), CreatedBy, CreatedAtUtc.ToString("o"));
 }

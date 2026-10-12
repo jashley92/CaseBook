@@ -31,5 +31,5 @@ public class CaseOutcome : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        Key, Label, Description, SortOrder, IsActive, IsSystem, CreatedBy, CreatedAtUtc.ToString("o"));
+        Key, Canonical.Text(Label), Canonical.Text(Description), SortOrder, IsActive, IsSystem, CreatedBy, CreatedAtUtc.ToString("o"));
 }

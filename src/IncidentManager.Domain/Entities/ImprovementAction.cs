@@ -44,6 +44,6 @@ public class ImprovementAction : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        CaseId, Title, RelatedArea, Details, Owner, TargetDateUtc?.ToString("o"), (int)Status,
-        ClosedAtUtc?.ToString("o"), OutcomeNote, CreatedBy, CreatedAtUtc.ToString("o"));
+        CaseId, Canonical.Text(Title), Canonical.Text(RelatedArea), Canonical.Text(Details), Canonical.Text(Owner), TargetDateUtc?.ToString("o"), (int)Status,
+        ClosedAtUtc?.ToString("o"), Canonical.Text(OutcomeNote), CreatedBy, CreatedAtUtc.ToString("o"));
 }

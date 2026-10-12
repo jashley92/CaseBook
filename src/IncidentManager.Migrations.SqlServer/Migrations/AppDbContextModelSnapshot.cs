@@ -73,8 +73,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -122,8 +122,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.HasKey("Id");
 
@@ -150,8 +150,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset");
@@ -271,8 +271,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<Guid?>("SupersedesNoteId")
                         .HasColumnType("uniqueidentifier");
@@ -367,8 +367,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset");
@@ -453,8 +453,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("int");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int?>("To")
                         .HasColumnType("int");
@@ -669,8 +669,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("Sequence")
                         .HasColumnType("int");
@@ -781,8 +781,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("int");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<string>("UserDisplayName")
                         .IsRequired()
@@ -849,8 +849,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<string>("Summary")
                         .HasMaxLength(8000)
@@ -935,8 +935,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<string>("Source")
                         .HasMaxLength(200)
@@ -994,8 +994,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("Type")
                         .HasColumnType("int");
@@ -1053,8 +1053,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
@@ -1095,8 +1095,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(400)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("Tactic")
                         .HasColumnType("int");
@@ -1158,8 +1158,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
@@ -1199,8 +1199,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<Guid>("TemplateId")
                         .HasColumnType("uniqueidentifier");
@@ -1277,8 +1277,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("To")
                         .HasColumnType("int");
@@ -1331,8 +1331,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(400)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
@@ -1399,8 +1399,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<Guid>("SourceEntityId")
                         .HasColumnType("uniqueidentifier");
@@ -1454,8 +1454,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("To")
                         .HasColumnType("int");
@@ -1524,8 +1524,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(500)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<string>("Sha256")
                         .IsRequired()
@@ -1561,8 +1561,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<Guid>("TimelineEntryId")
                         .HasColumnType("uniqueidentifier");
@@ -1609,8 +1609,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("Trigger")
                         .HasColumnType("int");
@@ -1668,8 +1668,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -1768,8 +1768,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.HasKey("Id");
 
@@ -1810,8 +1810,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("To")
                         .HasColumnType("int");
@@ -1876,8 +1876,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("WindowHours")
                         .HasColumnType("int");
@@ -2037,8 +2037,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<string>("WhatHappened")
                         .HasMaxLength(4000)
@@ -2162,8 +2162,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<string>("SectionLayout")
                         .HasMaxLength(1000)
@@ -2221,8 +2221,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<string>("Sha256")
                         .IsRequired()
@@ -2260,8 +2260,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset");
@@ -2347,8 +2347,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("To")
                         .HasColumnType("int");
@@ -2395,8 +2395,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("Trigger")
                         .HasColumnType("int");
@@ -2438,8 +2438,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("int");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.HasKey("Id");
 
@@ -2479,8 +2479,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<int>("To")
                         .HasColumnType("int");
@@ -2563,8 +2563,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<string>("Source")
                         .HasMaxLength(200)
@@ -2641,8 +2641,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("RowHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasMaxLength(70)
+                        .HasColumnType("nvarchar(70)");
 
                     b.Property<DateTimeOffset>("ToEffectiveUtc")
                         .HasColumnType("datetimeoffset");

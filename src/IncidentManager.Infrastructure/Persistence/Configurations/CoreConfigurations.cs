@@ -9,7 +9,7 @@ public sealed class ClassificationChangeConfiguration : IEntityTypeConfiguration
     public void Configure(EntityTypeBuilder<ClassificationChange> b)
     {
         b.ToTable("ClassificationChanges");
-        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
+        b.Property(x => x.RowHash).HasMaxLength(70);   // BUG-70
         b.Property(x => x.Reason).HasMaxLength(2000);
         b.Property(x => x.ChangedBy).HasMaxLength(200);
         b.HasIndex(x => x.CaseId);
@@ -21,7 +21,7 @@ public sealed class StatusChangeConfiguration : IEntityTypeConfiguration<StatusC
     public void Configure(EntityTypeBuilder<StatusChange> b)
     {
         b.ToTable("StatusChanges");
-        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
+        b.Property(x => x.RowHash).HasMaxLength(70);   // BUG-70
         b.Property(x => x.Reason).HasMaxLength(2000);
         b.Property(x => x.OutcomeKey).HasMaxLength(64);   // HR-01
         b.Property(x => x.ChangedBy).HasMaxLength(200);
@@ -34,7 +34,7 @@ public sealed class MaterialityChangeConfiguration : IEntityTypeConfiguration<Ma
     public void Configure(EntityTypeBuilder<MaterialityChange> b)
     {
         b.ToTable("MaterialityChanges");
-        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
+        b.Property(x => x.RowHash).HasMaxLength(70);   // BUG-70
         b.Property(x => x.DecisionMaker).HasMaxLength(300);
         b.Property(x => x.Rationale).HasMaxLength(4000);
         b.Property(x => x.ChangedBy).HasMaxLength(200);
@@ -47,7 +47,7 @@ public sealed class SeverityChangeConfiguration : IEntityTypeConfiguration<Sever
     public void Configure(EntityTypeBuilder<SeverityChange> b)
     {
         b.ToTable("SeverityChanges");
-        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
+        b.Property(x => x.RowHash).HasMaxLength(70);   // BUG-70
         b.Property(x => x.Reason).HasMaxLength(2000);
         b.Property(x => x.ChangedBy).HasMaxLength(200);
         b.HasIndex(x => x.CaseId);
@@ -68,7 +68,7 @@ public sealed class TimelineEntryConfiguration : IEntityTypeConfiguration<Timeli
         b.Property(x => x.Source).HasMaxLength(200);
         b.Property(x => x.TechniqueId).HasMaxLength(20);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.CaseId);
         b.HasIndex(x => x.OccurredAtUtc);
         // Investigation entries are versioned (supersede on edit); most reads want only the current row.
@@ -101,7 +101,7 @@ public sealed class AnalystNoteConfiguration : IEntityTypeConfiguration<AnalystN
         b.Property(x => x.Body).HasMaxLength(16000).IsRequired();
         b.Property(x => x.MentionsCsv).HasMaxLength(2000).IsRequired();
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => new { x.CaseId, x.IsCurrent });
     }
 }
@@ -117,7 +117,7 @@ public sealed class EvidenceConfiguration : IEntityTypeConfiguration<Evidence>
         b.Property(x => x.StoragePath).HasMaxLength(500).IsRequired();
         b.Property(x => x.Description).HasMaxLength(2000);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.CaseId);
         b.HasIndex(x => x.Sha256);
         b.HasMany(x => x.CustodyEvents).WithOne().HasForeignKey(x => x.EvidenceId).OnDelete(DeleteBehavior.Cascade);
@@ -147,7 +147,7 @@ public sealed class ActionItemConfiguration : IEntityTypeConfiguration<ActionIte
         b.Property(x => x.Owner).HasMaxLength(ActionItem.MaxOwnerLength);
         b.Property(x => x.CompletedBy).HasMaxLength(200);   // HR-02
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => new { x.CaseId, x.Status });
     }
 }
@@ -157,7 +157,7 @@ public sealed class AssignmentChangeConfiguration : IEntityTypeConfiguration<Ass
     public void Configure(EntityTypeBuilder<AssignmentChange> b)
     {
         b.ToTable("AssignmentChanges");
-        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
+        b.Property(x => x.RowHash).HasMaxLength(70);   // BUG-70
         b.Property(x => x.UserId).HasMaxLength(200).IsRequired();
         b.Property(x => x.UserDisplayName).HasMaxLength(200);
         b.Property(x => x.ChangedBy).HasMaxLength(200);
@@ -171,7 +171,7 @@ public sealed class EntityVerdictChangeConfiguration : IEntityTypeConfiguration<
     public void Configure(EntityTypeBuilder<EntityVerdictChange> b)
     {
         b.ToTable("EntityVerdictChanges");
-        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
+        b.Property(x => x.RowHash).HasMaxLength(70);   // BUG-70
         b.Property(x => x.EntityLabel).HasMaxLength(400).IsRequired();
         b.Property(x => x.Reason).HasMaxLength(2000);
         b.Property(x => x.ChangedBy).HasMaxLength(200);
@@ -185,7 +185,7 @@ public sealed class CaseAssignmentConfiguration : IEntityTypeConfiguration<CaseA
     public void Configure(EntityTypeBuilder<CaseAssignment> b)
     {
         b.ToTable("CaseAssignments");
-        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
+        b.Property(x => x.RowHash).HasMaxLength(70);   // BUG-70
         b.Property(x => x.UserId).HasMaxLength(200).IsRequired();
         b.Property(x => x.UserDisplayName).HasMaxLength(200);
         b.Property(x => x.AssignedBy).HasMaxLength(200);
@@ -204,7 +204,7 @@ public sealed class CaseEntityConfiguration : IEntityTypeConfiguration<CaseEntit
         b.Property(x => x.Description).HasMaxLength(4000);
         b.Property(x => x.Source).HasMaxLength(200);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.CaseId);
         // BUG-63: Value (nvarchar(2000)) can't be an index key on SQL Server, whose nonclustered key limit is 1700 bytes:
         // an IOC over ~840 characters failed to save. Key on case and type; SQL Server carries Value as an included column.
@@ -219,7 +219,7 @@ public sealed class EntityRelationshipConfiguration : IEntityTypeConfiguration<E
         b.ToTable("EntityRelationships");
         b.Property(x => x.Description).HasMaxLength(2000);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.CaseId);
         b.HasIndex(x => x.SourceEntityId);
         b.HasIndex(x => x.TargetEntityId);
@@ -233,7 +233,7 @@ public sealed class CaseLinkConfiguration : IEntityTypeConfiguration<CaseLink>
         b.ToTable("CaseLinks");
         b.Property(x => x.Description).HasMaxLength(2000);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.CaseId);
         b.HasIndex(x => x.RelatedCaseId);
         // No FK navigations (a link spans two Case aggregates); columns are indexed and the exact
@@ -254,7 +254,7 @@ public sealed class CaseTemplateConfiguration : IEntityTypeConfiguration<CaseTem
         b.Property(x => x.DefaultDataTypes).HasMaxLength(2000);
         b.Property(x => x.SummaryBoilerplate).HasMaxLength(8000);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.Name).IsUnique();
         // Steps are cascade-owned by the template row (deleting a template removes its playbook steps).
         b.HasMany(x => x.Steps).WithOne().HasForeignKey(x => x.TemplateId).OnDelete(DeleteBehavior.Cascade);
@@ -269,7 +269,7 @@ public sealed class CaseTemplateStepConfiguration : IEntityTypeConfiguration<Cas
         b.Property(x => x.Title).HasMaxLength(400).IsRequired();
         b.Property(x => x.Description).HasMaxLength(4000);
         b.Property(x => x.OwnerHint).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.TemplateId);
     }
 }
@@ -283,7 +283,7 @@ public sealed class ReportProfileConfiguration : IEntityTypeConfiguration<Report
         b.Property(x => x.Description).HasMaxLength(2000);
         b.Property(x => x.SectionLayout).HasMaxLength(1000);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.Name).IsUnique();
         // PROD-47: the default Word template. Restrict: a template in use as a default can't be deleted.
         b.HasOne<ReportTemplate>().WithMany().HasForeignKey(x => x.TemplateId).OnDelete(DeleteBehavior.Restrict);
@@ -299,7 +299,7 @@ public sealed class ReportTemplateConfiguration : IEntityTypeConfiguration<Repor
         b.Property(x => x.FileName).HasMaxLength(260).IsRequired();
         b.Property(x => x.Sha256).HasMaxLength(64).IsRequired();
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
     }
 }
 
@@ -314,7 +314,7 @@ public sealed class CaseOutcomeConfiguration : IEntityTypeConfiguration<CaseOutc
         b.Property(x => x.Description).HasMaxLength(500);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.ModifiedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.Key).IsUnique();
     }
 }
@@ -329,7 +329,7 @@ public sealed class DataElementConfiguration : IEntityTypeConfiguration<DataElem
         b.Property(x => x.NotificationJurisdictions).HasMaxLength(400);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.ModifiedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         // Key is the stable identity referenced by cases and matched by imports â€” unique, never renamed.
         b.HasIndex(x => x.Key).IsUnique();
     }
@@ -344,7 +344,7 @@ public sealed class NotificationRuleConfiguration : IEntityTypeConfiguration<Not
         b.Property(x => x.Label).HasMaxLength(200).IsRequired();
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.ModifiedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         // Code is the stable jurisdiction identity matched against DataElement.NotificationJurisdictions.
         b.HasIndex(x => x.Code).IsUnique();
     }
@@ -371,7 +371,7 @@ public sealed class StageGateConfiguration : IEntityTypeConfiguration<StageGate>
         b.Property(x => x.Name).HasMaxLength(200).IsRequired();
         b.Property(x => x.Description).HasMaxLength(2000);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         // At most one active gate per transition. BUG-139: that is enforced by StageGateService (an admin-only check
         // before save), not by this index, which only speeds up finding the active gate for a transition.
         b.HasIndex(x => new { x.Trigger, x.IsActive });
@@ -387,7 +387,7 @@ public sealed class StageGateRequirementConfiguration : IEntityTypeConfiguration
         b.ToTable("StageGateRequirements");
         b.Property(x => x.CheckKey).HasMaxLength(100);
         b.Property(x => x.Label).HasMaxLength(400).IsRequired();
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.GateId);
     }
 }
@@ -401,7 +401,7 @@ public sealed class GatePassageConfiguration : IEntityTypeConfiguration<GatePass
         b.Property(x => x.OverrideJustification).HasMaxLength(2000);
         b.Property(x => x.Commentary).HasMaxLength(4000);
         b.Property(x => x.Detail).HasMaxLength(8000);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.CaseId);
         // Owned by the case aggregate: deleting a case (archival is the norm) removes its passages.
         b.HasOne<Case>().WithMany(c => c.GatePassages).HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
@@ -416,7 +416,7 @@ public sealed class CaseTechniqueConfiguration : IEntityTypeConfiguration<CaseTe
         b.Property(x => x.TechniqueId).HasMaxLength(20).IsRequired();
         b.Property(x => x.Name).HasMaxLength(400);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.CaseId);
         b.HasIndex(x => new { x.CaseId, x.TechniqueId }).IsUnique();
     }
@@ -522,7 +522,7 @@ public sealed class AppSettingConfiguration : IEntityTypeConfiguration<AppSettin
         b.Property(x => x.Key).HasMaxLength(200).IsRequired();
         b.Property(x => x.Value).HasMaxLength(8000);
         b.Property(x => x.UpdatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.Key).IsUnique();
     }
 }
@@ -536,7 +536,7 @@ public sealed class RoleConfiguration : IEntityTypeConfiguration<Role>
         b.Property(x => x.Description).HasMaxLength(400);
         b.Property(x => x.PermissionsCsv).HasMaxLength(1000);
         b.Property(x => x.UpdatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.Name).IsUnique();
     }
 }
@@ -549,7 +549,7 @@ public sealed class AdGroupRoleMappingConfiguration : IEntityTypeConfiguration<A
         b.Property(x => x.AdGroup).HasMaxLength(400).IsRequired();
         b.Property(x => x.RoleName).HasMaxLength(100).IsRequired();
         b.Property(x => x.UpdatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => new { x.AdGroup, x.RoleName }).IsUnique();
         b.HasIndex(x => x.RoleName);
     }
@@ -562,7 +562,7 @@ public sealed class EvidenceCitationConfiguration : IEntityTypeConfiguration<Evi
         // INV-10. Only the case is a foreign key: a second cascade path through timeline entries would be refused
         // by SQL Server, and evidence is never deleted.
         b.ToTable("EvidenceCitations");
-        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
+        b.Property(x => x.RowHash).HasMaxLength(70);   // BUG-70
         b.HasIndex(x => x.CaseId);
         b.HasIndex(x => new { x.TimelineEntryId, x.EvidenceId }).IsUnique();
         b.HasIndex(x => x.EvidenceId);
@@ -581,7 +581,7 @@ public sealed class CaseBriefConfiguration : IEntityTypeConfiguration<CaseBrief>
         b.Property(x => x.NextSteps).HasMaxLength(CaseBrief.MaxPartLength);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.ConfirmedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.CaseId);
         // BUG-113: one current brief per case, even if two revisions race. Keyed on IsCurrent too, so EF orders the old
         // version's demotion before the new one's insert in the same save.
@@ -596,7 +596,7 @@ public sealed class TransitionTimeCorrectionConfiguration : IEntityTypeConfigura
         b.ToTable("TransitionTimeCorrections");
         b.Property(x => x.Reason).HasMaxLength(2000).IsRequired();
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.CaseId);
     }
 }
@@ -608,7 +608,7 @@ public sealed class JurisdictionNoticeConfiguration : IEntityTypeConfiguration<J
         b.ToTable("JurisdictionNotices");   // BUG-09
         b.Property(x => x.Jurisdiction).HasMaxLength(JurisdictionNotice.MaxJurisdictionLength).IsRequired();
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => new { x.CaseId, x.Jurisdiction }).IsUnique();
     }
 }
@@ -624,7 +624,7 @@ public sealed class PostIncidentReviewConfiguration : IEntityTypeConfiguration<P
         b.Property(x => x.OpportunitiesToImprove).HasMaxLength(4000);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.ModifiedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasOne<Case>().WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.CaseId).IsUnique();   // one review per case
     }
@@ -642,7 +642,7 @@ public sealed class ImprovementActionConfiguration : IEntityTypeConfiguration<Im
         b.Property(x => x.OutcomeNote).HasMaxLength(4000);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.ModifiedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasOne<Case>().WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.CaseId);
         b.HasIndex(x => new { x.Status, x.TargetDateUtc });   // the register's open / past-target view
@@ -656,7 +656,7 @@ public sealed class ActionItemCommentConfiguration : IEntityTypeConfiguration<Ac
         b.ToTable("ActionItemComments");
         b.Property(x => x.Body).HasMaxLength(8000).IsRequired();
         b.Property(x => x.CreatedBy).HasMaxLength(200);
-        b.Property(x => x.RowHash).HasMaxLength(64);
+        b.Property(x => x.RowHash).HasMaxLength(70);
         b.HasIndex(x => x.ActionItemId);
         b.HasIndex(x => x.CaseId);
     }

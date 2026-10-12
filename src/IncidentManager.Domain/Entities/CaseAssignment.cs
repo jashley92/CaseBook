@@ -18,6 +18,6 @@ public class CaseAssignment : Entity, IHashableEntity
 
     public string? RowHash { get; set; }
 
-    public string BuildCanonicalContent() => string.Join('|', CaseId, UserId, UserDisplayName, Canonical.Num(Role),
+    public string BuildCanonicalContent() => string.Join('|', CaseId, UserId, Canonical.Text(UserDisplayName), Canonical.Num(Role),
         Canonical.Time(AssignedAtUtc), AssignedBy);
 }

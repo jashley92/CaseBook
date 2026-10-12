@@ -33,10 +33,10 @@ public class CaseTemplate : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        Name, Description, IsActive, SortOrder,
+        Canonical.Text(Name), Canonical.Text(Description), IsActive, SortOrder,
         DefaultClassification is { } c ? ((int)c).ToString(CultureInfo.InvariantCulture) : "",
         DefaultSeverity is { } s ? ((int)s).ToString(CultureInfo.InvariantCulture) : "",
-        DefaultDataTypes, SummaryBoilerplate, CreatedBy, CreatedAtUtc.ToString("o"));
+        Canonical.Text(DefaultDataTypes), Canonical.Text(SummaryBoilerplate), CreatedBy, CreatedAtUtc.ToString("o"));
 }
 
 /// <summary>
@@ -71,7 +71,7 @@ public class CaseTemplateStep : Entity, IHashableEntity
     // INV-28: the kind is folded in only when it isn't General, so existing steps keep their exact hash.
     public string BuildCanonicalContent()
     {
-        var content = string.Join('|', TemplateId, Order, Title, Description, OwnerHint,
+        var content = string.Join('|', TemplateId, Order, Canonical.Text(Title), Canonical.Text(Description), Canonical.Text(OwnerHint),
             DueOffsetHours is { } h ? h.ToString(CultureInfo.InvariantCulture) : "");
         return Kind == TaskKind.General ? content : string.Join('|', content, "kind", (int)Kind);
     }

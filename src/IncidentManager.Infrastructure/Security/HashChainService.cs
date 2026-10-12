@@ -31,7 +31,14 @@ public sealed class HashChainService : IHashChainService
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    public string ComputeRowHash(IHashableEntity entity) => Hash(entity.BuildCanonicalContent());
+    // BUG-24: new row hashes are over the escaped (format 2) canonical and say so; older ones are checked as written.
+    public string ComputeRowHash(IHashableEntity entity) =>
+        Canonical.V2Prefix + Hash(Canonical.InFormat(2, entity.BuildCanonicalContent));
+
+    public bool RowHashMatches(IHashableEntity entity, string stored) =>
+        stored.StartsWith(Canonical.V2Prefix, StringComparison.Ordinal)
+            ? string.Equals(ComputeRowHash(entity), stored, StringComparison.OrdinalIgnoreCase)
+            : string.Equals(Hash(Canonical.InFormat(1, entity.BuildCanonicalContent)), stored, StringComparison.OrdinalIgnoreCase);
 
     public void ChainAppend(AuditLogEntry entry, AuditLogEntry? previous)
     {

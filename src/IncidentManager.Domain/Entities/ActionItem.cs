@@ -60,7 +60,7 @@ public class ActionItem : AuditableEntity, IHashableEntity
     public string BuildCanonicalContent()
     {
         var content = string.Join('|',
-            CaseId, Title, Description, Owner, DueAtUtc?.ToString("o"), (int)Status, CompletedAtUtc?.ToString("o"));
+            CaseId, Canonical.Text(Title), Canonical.Text(Description), Canonical.Text(Owner), DueAtUtc?.ToString("o"), (int)Status, CompletedAtUtc?.ToString("o"));
         if (Kind != TaskKind.General) content = string.Join('|', content, "kind", (int)Kind);
         if (RaisedFromBriefId is { } b) content = string.Join('|', content, "brief", b);
         // INV-28: likewise what it's about, only when set.

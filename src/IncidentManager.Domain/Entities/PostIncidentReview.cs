@@ -45,6 +45,6 @@ public class PostIncidentReview : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        CaseId, WhatHappened, ContributingFactors, WhatWorkedWell, OpportunitiesToImprove, NoActionsIdentified,
+        CaseId, Canonical.Text(WhatHappened), Canonical.Text(ContributingFactors), Canonical.Text(WhatWorkedWell), Canonical.Text(OpportunitiesToImprove), NoActionsIdentified,
         CreatedBy, CreatedAtUtc.ToString("o"));
 }

@@ -29,5 +29,5 @@ public class AppSetting : Entity, IHashableEntity
     /// invalidating its row hash and breaking the audit chain.
     /// </summary>
     public string BuildCanonicalContent() =>
-        string.Join('|', Key, Value ?? "", UpdatedAtUtc.ToString("o"), UpdatedBy);
+        string.Join('|', Key, Canonical.Text(Value) ?? "", UpdatedAtUtc.ToString("o"), UpdatedBy);
 }

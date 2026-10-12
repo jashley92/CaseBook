@@ -31,7 +31,7 @@ public class AnalystNote : AuditableEntity, IHashableEntity
     // INV-37: mentions are folded in only when there are some, so existing notes keep their exact hash.
     public string BuildCanonicalContent()
     {
-        var content = string.Join('|', CaseId, Version, Body, CreatedBy, CreatedAtUtc.ToString("o"));
+        var content = string.Join('|', CaseId, Version, Canonical.Text(Body), CreatedBy, CreatedAtUtc.ToString("o"));
         return MentionsCsv.Length == 0 ? content : string.Join('|', content, "mentions", MentionsCsv);
     }
 }

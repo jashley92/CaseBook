@@ -41,5 +41,5 @@ public class ReportProfile : AuditableEntity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() => string.Join('|',
-        Name, Description, IsActive, SortOrder, SectionLayout, CreatedBy, CreatedAtUtc.ToString("o"));
+        Canonical.Text(Name), Canonical.Text(Description), IsActive, SortOrder, SectionLayout, CreatedBy, CreatedAtUtc.ToString("o"));
 }

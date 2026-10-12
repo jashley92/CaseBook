@@ -31,5 +31,5 @@ public class MaterialityDetermination
     public bool IsDetermined => Status is MaterialityStatus.Material or MaterialityStatus.NotMaterial;
 
     public string ToCanonical() =>
-        $"{(int)Status}|{DecisionMaker}|{DecidedOnUtc:o}|{Rationale}|{RecordedBy}|{RecordedAtUtc:o}";
+        $"{(int)Status}|{Common.Canonical.Text(DecisionMaker)}|{DecidedOnUtc:o}|{Common.Canonical.Text(Rationale)}|{RecordedBy}|{RecordedAtUtc:o}";
 }

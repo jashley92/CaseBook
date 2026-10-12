@@ -12,5 +12,5 @@ public class ThirdPartyDetails
     /// <summary>The vendor's own reference/ticket number for the event, if provided.</summary>
     public string? VendorReference { get; set; }
 
-    public string ToCanonical() => $"{VendorName}|{VendorContact}|{VendorReference}";
+    public string ToCanonical() => $"{Common.Canonical.Text(VendorName)}|{Common.Canonical.Text(VendorContact)}|{Common.Canonical.Text(VendorReference)}";
 }

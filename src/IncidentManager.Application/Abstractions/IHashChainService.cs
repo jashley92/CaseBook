@@ -19,8 +19,12 @@ public interface IHashChainService
     /// <summary>Lower-case hex SHA-256 of the supplied content.</summary>
     string Hash(string content);
 
-    /// <summary>Computes the point-in-time row hash for a hashable entity.</summary>
+    /// <summary>Computes the point-in-time row hash for a hashable entity, in the current canonical format (BUG-24:
+    /// format 2, prefixed <c>v2:</c>).</summary>
     string ComputeRowHash(IHashableEntity entity);
+
+    /// <summary>BUG-24: whether the entity still produces <paramref name="stored"/>, in the format that hash was written in.</summary>
+    bool RowHashMatches(IHashableEntity entity, string stored);
 
     /// <summary>
     /// Links a new audit entry onto the chain, assigning its sequence, previous-hash and

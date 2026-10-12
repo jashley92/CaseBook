@@ -20,5 +20,5 @@ public class AdGroupRoleMapping : Entity, IHashableEntity
     public string? RowHash { get; set; }
 
     public string BuildCanonicalContent() =>
-        string.Join('|', AdGroup, RoleName, UpdatedAtUtc.ToString("o"), UpdatedBy);
+        string.Join('|', Canonical.Text(AdGroup), Canonical.Text(RoleName), UpdatedAtUtc.ToString("o"), UpdatedBy);
 }

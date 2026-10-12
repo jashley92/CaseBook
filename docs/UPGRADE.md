@@ -244,6 +244,12 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   ledger** (`02-Enable-Ledger.sql`), the migration adds the nullable column to the append-only table, which SQL
   Server allows; use this release's script for any new install.
 
+- **One column migration** (`RowHashFormat2`, SQL Server only): every `RowHash` column widens from 64 to 70
+  characters. New row hashes are written in canonical format 2, which escapes `\` and `|` in free text so text can't
+  be moved between two fields of a record without changing the hash, and are stored with a `v2:` prefix. Existing
+  hashes are checked as they were written, so the record check passes on upgrade; a record moves to format 2 the next
+  time it's saved, which adds its new hash to the audit trail as usual.
+
 ### v1.5.1
 
 A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung

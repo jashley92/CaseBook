@@ -1652,8 +1652,8 @@ public class Case : AuditableEntity, IHashableEntity
         Materiality.Rationale);
 
     public string BuildCanonicalContent() => string.Join('|',
-        CaseNumber, Title, Classification is { } cls ? ((int)cls).ToString(CultureInfo.InvariantCulture) : "", (int)Phase, (int)Severity, (int)Origin,
-        Summary, ImpactedAssets, DataTypesInvolved, DetectionCaseId,
+        Canonical.Text(CaseNumber), Canonical.Text(Title), Classification is { } cls ? ((int)cls).ToString(CultureInfo.InvariantCulture) : "", (int)Phase, (int)Severity, (int)Origin,
+        Canonical.Text(Summary), Canonical.Text(ImpactedAssets), Canonical.Text(DataTypesInvolved), Canonical.Text(DetectionCaseId),
         AffectedIndividualsCount, string.Join(',', DataElements.Select(d => d.ElementKey).OrderBy(k => k, StringComparer.Ordinal)), AffectedStates,
         ThirdParty?.ToCanonical(), LegalReferral.ToCanonical(), Materiality.ToCanonical(),
         IncidentCommander, IsRestricted, IsArchived, LegalHold, IsExercise,

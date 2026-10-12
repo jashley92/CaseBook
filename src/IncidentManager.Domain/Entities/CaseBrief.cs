@@ -54,7 +54,7 @@ public class CaseBrief : AuditableEntity, IHashableEntity
 
     // The confirmation is folded in only when set, so rows written before it existed hash exactly as before.
     public string BuildCanonicalContent() => string.Join('|',
-        CaseId, Version, SupersedesBriefId, Summary, WorkingAssessment, Known, OpenQuestions, NextSteps,
+        CaseId, Version, SupersedesBriefId, Canonical.Text(Summary), Canonical.Text(WorkingAssessment), Canonical.Text(Known), Canonical.Text(OpenQuestions), Canonical.Text(NextSteps),
         CreatedBy, CreatedAtUtc.ToString("o"))
         + (ConfirmedAtUtc is { } at ? $"|confirmed|{ConfirmedBy}|{at:o}" : "");
 }

@@ -56,5 +56,5 @@ public class Role : Entity, IHashableEntity
             .ToHashSet();
 
     public string BuildCanonicalContent() =>
-        string.Join('|', Name, Description ?? "", IsSystem, PermissionsCsv, UpdatedAtUtc.ToString("o"), UpdatedBy);
+        string.Join('|', Canonical.Text(Name), Canonical.Text(Description) ?? "", IsSystem, PermissionsCsv, UpdatedAtUtc.ToString("o"), UpdatedBy);
 }
