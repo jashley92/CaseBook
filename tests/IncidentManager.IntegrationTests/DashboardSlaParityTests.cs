@@ -330,7 +330,7 @@ public abstract class DashboardSlaParityTests : IDisposable
             var (start, end) = (Utc(month), Utc(month.AddMonths(1)));
             var opened = cases.Where(s => s.CreatedAtUtc >= start && s.CreatedAtUtc < end).ToList();
             var closed = cases.Where(s => s.ClosedAtUtc is { } c && c >= start && c < end).ToList();
-            int OpenAt(DateTimeOffset t) => cases.Count(s => s.CreatedAtUtc < t && (s.ClosedAtUtc is null || s.ClosedAtUtc >= t));
+            int OpenAt(DateTimeOffset t) => cases.Count(s => s.CreatedAtUtc < t && (s.ClosedAtUtc is null ? !s.IsArchived : s.ClosedAtUtc >= t));
             return new TrendPoint(month.Year, month.Month, opened.Count, closed.Count, OpenAt(end), OpenAt(start),
                 ClassificationCounts.Of(opened.Select(c => c.Classification)),
                 ClassificationCounts.Of(closed.Select(c => c.Classification)));

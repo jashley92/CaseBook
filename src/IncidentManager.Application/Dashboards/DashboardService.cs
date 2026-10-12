@@ -264,15 +264,16 @@ public sealed class DashboardService
         var bounds = monthStarts.Select(m => ZonedMonths.StartUtc(m.Year, m.Month, zone)).ToList();
         var windowStart = bounds[0];
 
-        var carriedOpen = await cases.CountAsync(c => c.CreatedAtUtc < windowStart && c.ClosedAtUtc == null, ct);
+        // BUG-55: an archived case that was never closed is out of the open count, as on the dashboard's Open tile.
+        var carriedOpen = await cases.CountAsync(c => c.CreatedAtUtc < windowStart && c.ClosedAtUtc == null && !c.IsArchived, ct);
         // A closed case's classification is the one it closed with: closing ends reclassification.
         var spans = await cases
             .Where(c => c.CreatedAtUtc >= windowStart || c.ClosedAtUtc >= windowStart)
-            .Select(c => new { c.CreatedAtUtc, c.ClosedAtUtc, c.Classification })
+            .Select(c => new { c.CreatedAtUtc, c.ClosedAtUtc, c.Classification, c.IsArchived })
             .ToListAsync(ct);
 
         int OpenAt(DateTimeOffset t) => carriedOpen
-            + spans.Count(s => s.CreatedAtUtc < t && (s.ClosedAtUtc is null || s.ClosedAtUtc >= t));
+            + spans.Count(s => s.CreatedAtUtc < t && (s.ClosedAtUtc is null ? !s.IsArchived : s.ClosedAtUtc >= t));
 
         return Enumerable.Range(0, months).Select(i =>
         {

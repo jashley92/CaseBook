@@ -79,7 +79,12 @@ public static class MetricsCsv
             var opened = q.Sum(t => t.Opened);
             var closed = q.Sum(t => t.Closed);
             var openAtEnd = q.OrderBy(t => t.Month).Last().OpenAtEnd; // state at the quarter's final month
-            sb.Append(Escape($"{q.Key.Year:D4}-Q{q.Key.Quarter}")).Append(',')
+            // BUG-54: a quarter the trend window only partly covers says so, so its totals aren't read as the quarter's.
+            var months = q.Count();
+            var label = months < 3
+                ? string.Create(CultureInfo.InvariantCulture, $"{q.Key.Year:D4}-Q{q.Key.Quarter} ({months} of 3 months)")
+                : string.Create(CultureInfo.InvariantCulture, $"{q.Key.Year:D4}-Q{q.Key.Quarter}");
+            sb.Append(Escape(label)).Append(',')
               .Append(opened.ToString(CultureInfo.InvariantCulture)).Append(',')
               .Append(closed.ToString(CultureInfo.InvariantCulture)).Append(',')
               .Append(openAtEnd.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
