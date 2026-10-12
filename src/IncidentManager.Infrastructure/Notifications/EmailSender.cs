@@ -100,6 +100,19 @@ public sealed class EmailSender : IEmailSender
         // S4423: encrypt the connection by default (Email:EnableSsl, server-side). Only a deliberately
         // configured relay that does its own TLS turns this off.
         using var client = new SmtpClient(o.SmtpHost, o.SmtpPort) { EnableSsl = o.EnableSsl };
-        await client.SendMailAsync(message, ct);
+        // BUG-99: SmtpClient.Timeout covers only the synchronous Send. A relay that accepts the connection and then stalls
+        // would otherwise hold a reminder scan, or a user's assign or reclassify, until the app shut down.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(SendTimeout);
+        try
+        {
+            await client.SendMailAsync(message, timeout.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new SmtpException($"The mail relay didn't finish accepting the message within {SendTimeout.TotalSeconds:0} seconds.");
+        }
     }
+
+    internal static TimeSpan SendTimeout { get; set; } = TimeSpan.FromSeconds(30);   // settable for a test
 }
