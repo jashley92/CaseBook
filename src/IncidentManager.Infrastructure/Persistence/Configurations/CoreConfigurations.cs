@@ -365,8 +365,8 @@ public sealed class StageGateConfiguration : IEntityTypeConfiguration<StageGate>
         b.Property(x => x.Description).HasMaxLength(2000);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.RowHash).HasMaxLength(64);
-        // At most one active gate per transition; inactive history may accumulate, so the uniqueness
-        // is filtered to active rows (SQL Server) â€” enforced in the service on providers without it.
+        // At most one active gate per transition. BUG-139: that is enforced by StageGateService (an admin-only check
+        // before save), not by this index, which only speeds up finding the active gate for a transition.
         b.HasIndex(x => new { x.Trigger, x.IsActive });
         // Requirements are cascade-owned by the gate row.
         b.HasMany(x => x.Requirements).WithOne().HasForeignKey(x => x.GateId).OnDelete(DeleteBehavior.Cascade);
