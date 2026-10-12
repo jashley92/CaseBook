@@ -68,10 +68,25 @@ public class WordTemplateEngineTests
         using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
         {
             var main = doc.AddMainDocumentPart();
-            main.Document = new Document(new Body(p));
+            main.Document = new Document(new Body(p, new Paragraph(R("{{report.tlp}}"))));
             main.Document.Save();
         }
         return ms.ToArray();
+    }
+
+    [Fact]
+    public void A_template_that_doesnt_print_the_TLP_marking_is_refused(/* BUG-75 */)
+    {
+        using var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
+        {
+            var main = doc.AddMainDocumentPart();
+            main.Document = new Document(new Body(new Paragraph(R("{{case.title}}"))));
+            main.Document.Save();
+        }
+
+        _engine.Check(ms.ToArray()).Problems.Should().ContainSingle(p => p.Contains("{{report.tlp}}") && p.Contains("TLP marking"));
+        _engine.Check(_engine.Starter()).Problems.Should().BeEmpty();
     }
 
     [Fact]
@@ -79,7 +94,7 @@ public class WordTemplateEngineTests
     {
         var inside = DocWith(new Paragraph(R("Case: "), new Hyperlink(R("{{case."), R("title}}")) { Anchor = "top" }));
         _engine.Check(inside).Problems.Should().BeEmpty();
-        Read(_engine.Render(inside, Model())).Body.Should().Be("Case: Credential-phishing wave");
+        Read(_engine.Render(inside, Model())).Body.Should().StartWith("Case: Credential-phishing wave");
 
         var across = DocWith(new Paragraph(R("{{case."), new Hyperlink(R("title}}")) { Anchor = "top" }));
         _engine.Check(across).Problems.Should().Contain(p => p.Contains("{{case.title}}") && p.Contains("Retype it"));

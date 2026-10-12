@@ -194,6 +194,11 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   refused with "Reopen the case to raise its classification", so closing it again runs the close checks for the
   higher class. Lowering it while closed is still allowed.
 
+- **Every Word report template must print `{{report.tlp}}`.** The upload check now refuses a template without it,
+  and a template stored before this upgrade that lacks it is refused when a report is generated from it ("has no
+  {{report.tlp}} field"). Before, a report recorded as TLP:RED could print with no marking. Add the field (the page
+  header is a good place) and replace the template's file under Admin → Report templates.
+
 ### v1.5.1
 
 A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung

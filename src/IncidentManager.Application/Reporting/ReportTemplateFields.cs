@@ -21,6 +21,8 @@ public static partial class ReportTemplateFields
 {
     public const string AttackChainImage = "image.attack_chain";
     public const string EntityGraphImage = "image.entity_graph";
+    /// <summary>BUG-75: the field every template must print, so no report goes out without its TLP marking.</summary>
+    public const string MarkingField = "report.tlp";
 
     [GeneratedRegex(@"\{\{\s*([a-z_]+(?:\.[a-z0-9_]+)+)\s*\}\}", RegexOptions.IgnoreCase)]
     public static partial Regex Placeholder();
@@ -69,7 +71,7 @@ public static partial class ReportTemplateFields
         (new("org.team", "Team name"), m => m.TeamName ?? ""),
         (new("report.type", "\"Incident report\" or \"Post-incident review\", so one template can serve both reports"),
             m => m.IsLessonsLearned ? "Post-incident review" : "Incident report"),
-        (new("report.tlp", "TLP marking, such as TLP:AMBER"), m => m.TlpLabel ?? ""),
+        (new(MarkingField, "TLP marking, such as TLP:AMBER. Every template must have it."), m => m.TlpLabel ?? ""),
         (new("report.sharing", "The TLP sharing sentence"), m => m.SharingLine ?? ""),
         (new("report.defang_note", "The note explaining defanged indicators (blank when not defanged)"), m => m.IndicatorsDefanged ? CaseReportModel.DefangNote : ""),
         (new("report.generated_by", "Who generated the report"), m => m.GeneratedBy),

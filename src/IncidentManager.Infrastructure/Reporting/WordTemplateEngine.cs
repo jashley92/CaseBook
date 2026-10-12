@@ -78,6 +78,10 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
             problems.Add("Unknown field(s): " + string.Join(", ", unknown.Select(n => $"{{{{{n}}}}}")) + ". See the field reference.");
         if (found.Count == 0)
             problems.Add("It has no {{…}} fields. Start from the starter template, or add fields from the field reference.");
+        else if (!found.Contains(ReportTemplateFields.MarkingField))
+            // BUG-75: a report records its TLP; a template that doesn't print it sends a TLP:RED report out unmarked.
+            problems.Add("It has no {{report.tlp}} field, so a report could go out without its TLP marking. " +
+                         "Add {{report.tlp}} (the page header is a good place), as the starter template does.");
         return new TemplateCheck(problems.Distinct().ToList(), found.ToList());
     }
 
