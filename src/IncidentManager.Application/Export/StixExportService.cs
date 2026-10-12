@@ -24,6 +24,33 @@ public sealed class StixExportService
 {
     private const string Spec = "2.1";
 
+    // BUG-41: TLP 2.0 marking definitions, as published by OASIS (cti-stix-common-objects, extension-definition tlp-2.0).
+    private const string Tlp2Extension = "extension-definition--60a3c5c5-0d10-413e-aab3-9e08dde9e88d";
+    private static readonly IReadOnlyDictionary<TlpLevel, (string Id, string Name, string Value)> TlpMarkings =
+        new Dictionary<TlpLevel, (string, string, string)>
+        {
+            [TlpLevel.Clear] = ("marking-definition--94868c89-83c2-464b-929b-a1a8aa3c8487", "TLP:CLEAR", "clear"),
+            [TlpLevel.Green] = ("marking-definition--bab4a63c-aed9-4cf5-a766-dfca5abac2bb", "TLP:GREEN", "green"),
+            [TlpLevel.Amber] = ("marking-definition--55d920b0-5e8b-4f79-9ee9-91f868d9b421", "TLP:AMBER", "amber"),
+            [TlpLevel.AmberStrict] = ("marking-definition--939a9414-2ddd-4d32-a0cd-375ea402b003", "TLP:AMBER+STRICT", "amber+strict"),
+            [TlpLevel.Red] = ("marking-definition--e828b379-4e03-4974-9ac4-e53a884c97c1", "TLP:RED", "red"),
+        };
+
+    private static string[]? MarkingRefs(TlpLevel? tlp) => tlp is { } t ? [TlpMarkings[t].Id] : null;
+
+    private static Dictionary<string, object?> MarkingDefinition(TlpLevel t) => new()
+    {
+        ["type"] = "marking-definition",
+        ["spec_version"] = Spec,
+        ["id"] = TlpMarkings[t].Id,
+        ["created"] = "2022-10-01T00:00:00.000Z",
+        ["name"] = TlpMarkings[t].Name,
+        ["extensions"] = new Dictionary<string, object?>
+        {
+            [Tlp2Extension] = new Dictionary<string, object?> { ["extension_type"] = "property-extension", ["tlp_2_0"] = TlpMarkings[t].Value }
+        },
+    };
+
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
@@ -74,6 +101,7 @@ public sealed class StixExportService
 
         // One SCO per entity; remember the mapped STIX id so relationships can reference it.
         var stixIdByEntity = new Dictionary<Guid, string>();
+        var tlpByEntity = entities.ToDictionary(e => e.Id, e => e.Tlp);
         foreach (var e in entities.OrderBy(e => e.CreatedAtUtc))
         {
             var sco = MapEntity(e);
@@ -98,8 +126,14 @@ public sealed class StixExportService
                 ["target_ref"] = tgt,
                 ["description"] = Nullify(r.Description),
                 ["created_by_ref"] = identityId,
+                // A relationship is as sensitive as the more restricted of its two ends.
+                ["object_marking_refs"] = MarkingRefs(Max(tlpByEntity.GetValueOrDefault(r.SourceEntityId), tlpByEntity.GetValueOrDefault(r.TargetEntityId))),
             }));
         }
+
+        // The marking definitions the bundle uses, so a consumer that doesn't know TLP 2.0 can still read them.
+        var used = entities.Where(e => e.Tlp is not null).Select(e => e.Tlp!.Value).Distinct().Order().ToList();
+        objects.InsertRange(1, used.Select(MarkingDefinition));
 
         // report SDO tying the graph together with the case metadata.
         var objectRefs = objects.Select(o => (string)o["id"]!).ToList();
@@ -119,6 +153,8 @@ public sealed class StixExportService
             ["x_casebook_case_number"] = c.CaseNumber,
             ["x_casebook_classification"] = c.Classification?.ToString(),
             ["x_casebook_severity"] = c.Severity.ToString(),
+            // The report carries the most restricted marking of anything it contains.
+            ["object_marking_refs"] = MarkingRefs(used.Count > 0 ? used.Max() : null),
         }));
 
         var bundle = new Dictionary<string, object?>
@@ -142,6 +178,7 @@ public sealed class StixExportService
         };
         foreach (var (k, v) in props) o[k] = v;
 
+        o["object_marking_refs"] = MarkingRefs(e.Tlp);   // BUG-41: the indicator's TLP, so a TLP:RED IOC isn't shared unmarked
         // Analyst verdict + provenance travel as spec-legal custom properties.
         o["x_casebook_entity_type"] = e.Type.ToString();
         o["x_casebook_disposition"] = e.Disposition.ToString();
@@ -208,6 +245,8 @@ public sealed class StixExportService
         Array.Copy(bytes, g, 16);
         return new Guid(g);
     }
+
+    private static TlpLevel? Max(TlpLevel? a, TlpLevel? b) => a is null ? b : b is null ? a : (TlpLevel)Math.Max((int)a, (int)b);
 
     private static Dictionary<string, object?> Prune(Dictionary<string, object?> o)
     {
