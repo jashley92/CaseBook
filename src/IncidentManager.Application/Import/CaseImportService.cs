@@ -531,7 +531,7 @@ public sealed class CaseImportService
         if (droppedTimeline > 0) p.Warnings.Add(droppedTimeline == 1 ? "1 timeline entry had no description and was skipped." : $"{droppedTimeline} timeline entries had no description and were skipped.");
 
         // Entities (refang/auto-type + dedupe by type+value)
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seen = new Dictionary<string, ImportEntityRow>(StringComparer.OrdinalIgnoreCase);
         var droppedEntities = 0;
         foreach (var e in doc.Entities ?? [])
         {
@@ -551,9 +551,8 @@ public sealed class CaseImportService
 
             var value = IocObservable.Normalize(type, rawValue);
             if (value.Length == 0) { droppedEntities++; continue; }
-            if (!seen.Add($"{(int)type}|{value.ToLowerInvariant()}")) continue; // dedupe
 
-            p.Entities.Add(new ImportEntityRow
+            var row = new ImportEntityRow
             {
                 Type = type,
                 Value = value,
@@ -562,7 +561,19 @@ public sealed class CaseImportService
                 Description = Clamp(e.Description, MaxEntityDescription, "Entity description", p.Warnings),
                 Source = Clamp(e.Source, MaxSource, "Entity source", p.Warnings) ?? p.Origin,
                 Tlp = ParseTlp(e.Tlp, p.Warnings),
-            });
+            };
+            // Dedupe. BUG-170: a value listed twice (a STIX observable and an indicator for it) is one row with what both
+            // say: a verdict over Unknown, a name or description where the first had none, the stricter marking.
+            if (seen.TryGetValue($"{(int)type}|{value.ToLowerInvariant()}", out var first))
+            {
+                if (first.Disposition == EntityDisposition.Unknown) first.Disposition = row.Disposition;
+                first.Label ??= row.Label;
+                first.Description ??= row.Description;
+                if (row.Tlp is { } t && (first.Tlp is null || t > first.Tlp)) first.Tlp = t;
+                continue;
+            }
+            seen[$"{(int)type}|{value.ToLowerInvariant()}"] = row;
+            p.Entities.Add(row);
         }
         if (droppedEntities > 0) p.Warnings.Add(droppedEntities == 1 ? "1 entity had no value and was skipped." : $"{droppedEntities} entities had no value and were skipped.");
 

@@ -122,6 +122,21 @@ public class IocImportConverterTests
     }
 
     [Fact]
+    public void An_observable_and_its_indicator_make_one_row_with_the_indicators_verdict_in_either_order(/* BUG-170 */)
+    {
+        const string sco = """{ "type": "domain-name", "spec_version": "2.1", "id": "domain-name--1", "value": "evil.example" }""";
+        const string ind = """{ "type": "indicator", "spec_version": "2.1", "id": "indicator--1", "name": "Phish kit", "pattern": "[domain-name:value = 'evil.example']", "pattern_type": "stix", "indicator_types": ["malicious-activity"] }""";
+
+        foreach (var objects in new[] { $"{sco}, {ind}", $"{ind}, {sco}" })
+        {
+            var doc = IocImportConverter.Convert($$"""{ "type": "bundle", "id": "bundle--4", "objects": [ {{objects}} ] }""").Document!;
+            var row = CaseImportService.BuildPreviewCore(doc, DateTimeOffset.UtcNow).Entities.Should().ContainSingle().Subject;
+            row.Disposition.Should().Be(EntityDisposition.Malicious);
+            row.Label.Should().Be("Phish kit");
+        }
+    }
+
+    [Fact]
     public void Our_own_ioc_feed_csv_round_trips()
     {
         var feed = IocFeedCsv.Build(
