@@ -36,6 +36,7 @@ public sealed class CaseActionPermissionsTests
         nameof(CaseService.EvaluateGateAsync),
         nameof(CaseService.EvaluateClimbAsync),
         nameof(CaseService.SupersedeExposureAsync),   // BUG-129: what a supersede would expose (read-only)
+        nameof(CaseService.EntityTlpAsync),   // BUG-152: an indicator's own marking (scoped read)
         nameof(CaseService.EvaluateNewCaseGatesAsync),
         nameof(CaseService.FindEntityOverlapsAsync),
         nameof(CaseService.FindOpenCaseMatchesForIocsAsync),
