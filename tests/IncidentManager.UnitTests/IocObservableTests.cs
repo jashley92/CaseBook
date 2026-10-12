@@ -68,6 +68,18 @@ public class IocObservableTests
         IocObservable.Normalize(EntityType.FileName, "report[1].pdf").Should().Be("report[1].pdf");
     }
 
+    [Theory]
+    [InlineData("2001:0db8:0000:0000:0000:0000:0000:0001", "2001:db8::1")]
+    [InlineData("2001:DB8::1", "2001:db8::1")]
+    [InlineData("::ffff:203.0.113.5", "203.0.113.5")]
+    [InlineData("2001:0DB8[:]:1", "2001:db8::1")]   // defanged, then canonical
+    [InlineData("203.0.113.5", "203.0.113.5")]
+    [InlineData("10.0.0.0/8", "10.0.0.0/8")]
+    public void An_ip_address_is_stored_in_one_spelling(string typed, string stored /* BUG-176 */)
+    {
+        IocObservable.Normalize(EntityType.IpAddress, typed).Should().Be(stored);
+    }
+
     [Fact]
     public void A_domain_with_a_trailing_dot_is_stored_without_it(/* BUG-172 */)
     {

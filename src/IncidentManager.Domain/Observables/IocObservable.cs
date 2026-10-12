@@ -80,6 +80,19 @@ public static partial class IocObservable
         return dot > 0 && dot < v.Length - 1 && v.IndexOfAny(['/', ':', '@']) < 0 && FileExtensions.Contains(v[(dot + 1)..]);
     }
 
+    /// <summary>
+    /// BUG-176: one spelling per address, so the same one written two ways dedupes and matches across cases: IPv6 in its
+    /// compressed lower-case form (2001:0db8:0:0:0:0:0:1 is 2001:db8::1), an IPv4-mapped IPv6 address as the IPv4 one
+    /// (::ffff:203.0.113.5 is 203.0.113.5). A dotted-quad IPv4 address, a range or anything else is left as written.
+    /// </summary>
+    private static string CanonicalIp(string v)
+    {
+        if (v.IndexOf(':') < 0 || !System.Net.IPAddress.TryParse(v, out var ip)
+            || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
+            return v;
+        return ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4().ToString() : ip.ToString();
+    }
+
     private static int CountDots(string s)
     {
         var n = 0;
@@ -134,6 +147,7 @@ public static partial class IocObservable
             return live;
         // BUG-172: "evil.com." is the same name as "evil.com" (the trailing dot is the DNS root), so it matches across cases.
         if (type == EntityType.Domain) return Refang(v).TrimEnd('.');
+        if (type == EntityType.IpAddress) return CanonicalIp(Refang(v));
         return IsRefangable(type) ? Refang(v) : v;
     }
 
