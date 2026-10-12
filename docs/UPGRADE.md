@@ -216,6 +216,12 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   `recycling.disallowOverlappingRotation`, so two CaseBook processes never run side by side. `Verify-Install.ps1`
   warns when either isn't set. A recycle still happens on a config change or a crash; the marks cover those.
 
+- **One table migration** (`AlertDeliveries`): a breach-escalation or integrity-alarm email whose send fails is now
+  tried again (after 2, 10 and 30 minutes, then 2 hours). Before, a failure was only logged. One that never goes shows
+  in a banner for administrators and, for a breach escalation, on the case for everyone who can see it ("The breach
+  escalation email to Legal / Privacy wasn't delivered"). An administrator clears it with **Mark handled** once the
+  people it was for have been told another way.
+
 ### v1.5.1
 
 A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung

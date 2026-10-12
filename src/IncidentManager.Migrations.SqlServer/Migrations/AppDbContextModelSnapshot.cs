@@ -171,6 +171,70 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.ToTable("AdGroupRoleMappings", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.AlertDelivery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CaseNumber")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("DeliveredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DismissedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DismissedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset>("FirstFailedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("GaveUpAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("HtmlBody")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Recipients")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("Retries")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("TextBody")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseId");
+
+                    b.ToTable("AlertDeliveries", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.AnalystNote", b =>
                 {
                     b.Property<Guid>("Id")

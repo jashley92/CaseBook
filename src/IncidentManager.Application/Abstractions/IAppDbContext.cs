@@ -45,6 +45,7 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     DbSet<AppUser> Users { get; }
     DbSet<AuditLogEntry> AuditLog { get; }
     DbSet<CaseAccessEvent> CaseAccessEvents { get; }
+    DbSet<AlertDelivery> AlertDeliveries { get; }   // BUG-101
     DbSet<SavedView> SavedViews { get; }
     DbSet<PinnedCase> PinnedCases { get; }
     DbSet<OpenCaseTab> OpenCaseTabs { get; }

@@ -702,6 +702,24 @@ public sealed class NotificationMarkConfiguration : IEntityTypeConfiguration<Not
     }
 }
 
+/// <summary>BUG-101: breach-escalation and integrity-alarm emails whose send failed, for retry and notice.</summary>
+public sealed class AlertDeliveryConfiguration : IEntityTypeConfiguration<AlertDelivery>
+{
+    public void Configure(EntityTypeBuilder<AlertDelivery> b)
+    {
+        b.ToTable("AlertDeliveries");
+        b.Property(x => x.Kind).HasMaxLength(40).IsRequired();
+        b.Property(x => x.CaseNumber).HasMaxLength(200);
+        b.Property(x => x.Recipients).HasMaxLength(4000).IsRequired();
+        b.Property(x => x.Subject).HasMaxLength(1000).IsRequired();
+        b.Property(x => x.HtmlBody).IsRequired();   // nvarchar(max): a composed email
+        b.Property(x => x.TextBody).IsRequired();
+        b.Property(x => x.DismissedBy).HasMaxLength(200);
+        b.Ignore(x => x.RecipientList);
+        b.HasIndex(x => x.CaseId);
+    }
+}
+
 public sealed class UserNotificationPreferenceConfiguration : IEntityTypeConfiguration<UserNotificationPreference>
 {
     public void Configure(EntityTypeBuilder<UserNotificationPreference> b)

@@ -73,6 +73,9 @@ builder.Services.AddHostedService<IntegritySealHostedService>();
 builder.Services.Configure<EvidenceVerifyOptions>(builder.Configuration.GetSection("Integrity:EvidenceVerify"));
 builder.Services.AddHostedService<EvidenceIntegrityHostedService>();
 
+// --- BUG-101: retries the breach-escalation and integrity-alarm emails whose send failed ---
+builder.Services.AddHostedService<CriticalAlertRetryHostedService>();
+
 // --- E-03b: periodic overdue after-action scan (emails item owners a reminder, once per item) ---
 builder.Services.Configure<OverdueScanOptions>(builder.Configuration.GetSection("Notifications:OverdueScan"));
 builder.Services.AddHostedService<OverdueActionItemHostedService>();

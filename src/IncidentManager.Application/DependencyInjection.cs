@@ -64,6 +64,7 @@ public static class DependencyInjection
         // E-03b: overdue after-action scan. Scoped (creates a DbContext per pass, driven by the hosted
         // service); the notify-once tracker is a singleton so "already reminded" survives between passes.
         services.AddScoped<Notifications.OverdueActionItemScanner>();
+        services.AddScoped<Notifications.UndeliveredAlertService>();   // BUG-101
         services.AddSingleton<Notifications.IOverdueActionItemTracker, Notifications.OverdueActionItemTracker>();
         // E-03d: due-soon after-action scan (fires ahead of the deadline). Same shape as the overdue scan;
         // a separate tracker so the "due soon" and "overdue" reminders for one item are independent episodes.

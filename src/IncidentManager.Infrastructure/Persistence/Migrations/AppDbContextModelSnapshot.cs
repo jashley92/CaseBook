@@ -166,6 +166,70 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.ToTable("AdGroupRoleMappings", (string)null);
                 });
 
+            modelBuilder.Entity("IncidentManager.Domain.Entities.AlertDelivery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CaseId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CaseNumber")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("DeliveredAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("DismissedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DismissedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("FirstFailedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("GaveUpAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("HtmlBody")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("NextAttemptAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Recipients")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Retries")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TextBody")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaseId");
+
+                    b.ToTable("AlertDeliveries", (string)null);
+                });
+
             modelBuilder.Entity("IncidentManager.Domain.Entities.AnalystNote", b =>
                 {
                     b.Property<Guid>("Id")

@@ -37,6 +37,7 @@ public static class DependencyInjection
         services.AddSingleton<ICaseNotifications, Notifications.CaseNotifications>();
         services.AddSingleton<IExerciseEscalationPolicy, Notifications.ConfigurationExerciseEscalationPolicy>();   // BUG-100
         services.AddSingleton<INotificationMarks, Notifications.DbNotificationMarks>();   // BUG-95: sent marks survive a restart
+        services.AddSingleton<ICriticalAlertOutbox, Notifications.CriticalAlertOutbox>();   // BUG-101: retried alert emails
         // PROD-02: team-chat (Slack/Teams) broadcast channel. Default is a no-op; the Web project registers
         // the real HTTP-backed ChatWebhookNotifier (it needs IHttpClientFactory), which supersedes this.
         services.AddSingleton<IChatNotifier, Notifications.NullChatNotifier>();

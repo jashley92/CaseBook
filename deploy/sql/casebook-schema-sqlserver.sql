@@ -3031,3 +3031,49 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012154250_AlertDeliveries'
+)
+BEGIN
+    CREATE TABLE [AlertDeliveries] (
+        [Id] uniqueidentifier NOT NULL,
+        [Kind] nvarchar(40) NOT NULL,
+        [CaseId] uniqueidentifier NULL,
+        [CaseNumber] nvarchar(200) NULL,
+        [Recipients] nvarchar(4000) NOT NULL,
+        [Subject] nvarchar(1000) NOT NULL,
+        [HtmlBody] nvarchar(max) NOT NULL,
+        [TextBody] nvarchar(max) NOT NULL,
+        [FirstFailedAtUtc] datetimeoffset NOT NULL,
+        [Retries] int NOT NULL,
+        [NextAttemptAtUtc] datetimeoffset NULL,
+        [DeliveredAtUtc] datetimeoffset NULL,
+        [GaveUpAtUtc] datetimeoffset NULL,
+        [DismissedAtUtc] datetimeoffset NULL,
+        [DismissedBy] nvarchar(200) NULL,
+        CONSTRAINT [PK_AlertDeliveries] PRIMARY KEY ([Id])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012154250_AlertDeliveries'
+)
+BEGIN
+    CREATE INDEX [IX_AlertDeliveries_CaseId] ON [AlertDeliveries] ([CaseId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012154250_AlertDeliveries'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261012154250_AlertDeliveries'', N''10.0.12'');');
+END;
+
+COMMIT;
+GO
+

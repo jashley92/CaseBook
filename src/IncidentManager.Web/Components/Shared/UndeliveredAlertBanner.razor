@@ -1,0 +1,50 @@
+@* BUG-101: breach-escalation and integrity-alarm emails that weren't delivered after every retry. Rendered for
+   Administer users from MainLayout, like the integrity banners. Unlike those it can be cleared, one alert at a time,
+   once an administrator has made sure the people it was for have heard (Mark handled, which records who). *@
+@inject IncidentManager.Application.Notifications.UndeliveredAlertService Alerts
+@inject TimeDisplay TimeDisp
+@inject ToastService Toasts
+
+@if (_alerts.Count > 0)
+{
+    <div class="integrity-alert" role="alert">
+        <span class="bi bi-envelope-exclamation integrity-alert-icon" aria-hidden="true"></span>
+        <div class="integrity-alert-text">
+            <strong>@(_alerts.Count == 1 ? "An alert email wasn't delivered." : $"{_alerts.Count} alert emails weren't delivered.")</strong>
+            They were tried @(IncidentManager.Domain.Entities.AlertDelivery.RetryAfter.Length + 1) times. Tell the people
+            they were for some other way, then mark each one handled.
+            <ul class="mb-0 mt-1 small">
+                @foreach (var a in _alerts)
+                {
+                    <li>
+                        @(a.Kind == IncidentManager.Domain.Entities.AlertDelivery.BreachEscalation ? "Breach escalation" : "Audit-chain integrity alarm")
+                        @if (a.CaseId is { } caseId) { <span>for <a href="@($"cases/{caseId}")"><code>@a.CaseNumber</code></a></span> }
+                        to @string.Join(", ", a.Recipients), first tried @TimeDisp.Short(a.FirstFailedAtUtc).
+                        <button type="button" class="btn btn-sm btn-light py-0 ms-1" @onclick="() => Dismiss(a.Id)">Mark handled</button>
+                    </li>
+                }
+            </ul>
+        </div>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<IncidentManager.Application.Notifications.UndeliveredAlert> _alerts = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _alerts = await Alerts.ListAsync(); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _alerts = []; }   // a banner never breaks the page
+    }
+
+    private async Task Dismiss(Guid id)
+    {
+        try
+        {
+            await Alerts.DismissAsync(id);
+            _alerts = await Alerts.ListAsync();
+            Toasts.Success("Marked handled");
+        }
+        catch (ForbiddenException ex) { Toasts.Error(ex.Message); }
+    }
+}

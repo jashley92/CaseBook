@@ -29,6 +29,7 @@ public sealed class CaseNotifications : ICaseNotifications
     private readonly ISeverityLabels? _severityLabels;
     private readonly ITaxonomyDisplay? _taxonomy;
     private readonly IExerciseEscalationPolicy? _exercise;   // BUG-100
+    private readonly ICriticalAlertOutbox? _alerts;   // BUG-101
 
     // The org's display labels (the same ones the UI shows), so emails and chat never print enum identifiers.
     private string Sev(Severity s) => _severityLabels?.For(s) ?? s.ToString();
@@ -37,8 +38,9 @@ public sealed class CaseNotifications : ICaseNotifications
     public CaseNotifications(IEmailSender email, IEmailComposer composer, IUserDirectory users,
         IConfiguration config, IOptionsMonitor<EmailOptions> options, IChatNotifier chat,
         INotificationPreferenceProvider prefs, ISeverityLabels? severityLabels = null, ITaxonomyDisplay? taxonomy = null,
-        IOrganizationTimeZone? zone = null, IExerciseEscalationPolicy? exercise = null)
+        IOrganizationTimeZone? zone = null, IExerciseEscalationPolicy? exercise = null, ICriticalAlertOutbox? alerts = null)
     {
+        _alerts = alerts;
         _exercise = exercise;
         _zone = zone;
         _severityLabels = severityLabels;
@@ -109,7 +111,9 @@ public sealed class CaseNotifications : ICaseNotifications
                 Subject = ExerciseMarking.Prefix + message.Subject,
                 TextBody = "EXERCISE. This is a tabletop case, not a real breach. No action is needed.\n\n" + message.TextBody,
             };
-        await _email.SendAsync(message, ct);
+        // BUG-101: Legal must hear of a breach. A failed send is retried, and shown if it never goes.
+        if (_alerts is not null) await _alerts.SendAsync(Domain.Entities.AlertDelivery.BreachEscalation, c.Id, c.CaseNumber, message, ct);
+        else await _email.SendAsync(message, ct);
     }
 
     // INV-37: a link straight to one note (the workspace opens the Notes tab and brings it into view).

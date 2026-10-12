@@ -1,0 +1,32 @@
+@* BUG-101: on a case whose breach-escalation email to Legal / Privacy never went (after every retry), say so to
+   everyone who can see the case, so the team doesn't assume Legal knows. An administrator clears it from the banner
+   once it's handled. *@
+@inject IncidentManager.Application.Notifications.UndeliveredAlertService Alerts
+@inject TimeDisplay TimeDisp
+
+@foreach (var a in _alerts)
+{
+    <div class="alert alert-danger d-flex flex-wrap align-items-center gap-2 py-2" role="alert">
+        <span class="bi bi-envelope-exclamation" aria-hidden="true"></span>
+        <span>
+            <strong>The breach escalation email to Legal / Privacy wasn't delivered.</strong>
+            It was tried @(a.Retries + 1) times from @TimeDisp.Short(a.FirstFailedAtUtc). Tell @string.Join(", ", a.Recipients)
+            another way; an administrator then marks it handled.
+        </span>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid CaseId { get; set; }
+
+    private IReadOnlyList<IncidentManager.Application.Notifications.UndeliveredAlert> _alerts = [];
+    private Guid _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (CaseId == _loadedFor) return;
+        _loadedFor = CaseId;
+        try { _alerts = await Alerts.ForCaseAsync(CaseId); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _alerts = []; }
+    }
+}

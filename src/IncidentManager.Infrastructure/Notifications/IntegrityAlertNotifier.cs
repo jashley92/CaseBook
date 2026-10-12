@@ -29,9 +29,13 @@ public sealed class IntegrityAlertNotifier : IIntegrityAlertNotifier
     private readonly ISecurityEventSink _siem;
     private readonly ILogger<IntegrityAlertNotifier> _logger;
 
+    private readonly ICriticalAlertOutbox? _alerts;   // BUG-101
+
     public IntegrityAlertNotifier(IEmailSender email, IEmailComposer composer, IConfiguration config,
-        IOptionsMonitor<EmailOptions> options, ISecurityEventSink siem, ILogger<IntegrityAlertNotifier> logger)
+        IOptionsMonitor<EmailOptions> options, ISecurityEventSink siem, ILogger<IntegrityAlertNotifier> logger,
+        ICriticalAlertOutbox? alerts = null)
     {
+        _alerts = alerts;
         _email = email;
         _composer = composer;
         _config = config;
@@ -75,7 +79,9 @@ public sealed class IntegrityAlertNotifier : IIntegrityAlertNotifier
         try
         {
             var message = await _composer.ComposeAsync("audit-chain-alarm", recipients, tokens, integrityUrl, null, ct);
-            await _email.SendAsync(message, ct);
+            // BUG-101: a failed send is retried, and shown to administrators if it never goes.
+            if (_alerts is not null) await _alerts.SendAsync(Domain.Entities.AlertDelivery.IntegrityAlarm, null, null, message, ct);
+            else await _email.SendAsync(message, ct);
         }
         catch (Exception ex)
         {

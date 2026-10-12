@@ -6,6 +6,8 @@
 @inject TimeDisplay TimeDisp
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 
+<UndeliveredAlertNotice CaseId="Case.Id" />
+
 @if (SinceCount > 0 && !SinceDismissed && LastViewed is { } lastViewed)
 {
     <div class="im-since small mb-2" role="status">
