@@ -583,6 +583,9 @@ public sealed class CaseBriefConfiguration : IEntityTypeConfiguration<CaseBrief>
         b.Property(x => x.ConfirmedBy).HasMaxLength(200);
         b.Property(x => x.RowHash).HasMaxLength(64);
         b.HasIndex(x => x.CaseId);
+        // BUG-113: one current brief per case, even if two revisions race. Keyed on IsCurrent too, so EF orders the old
+        // version's demotion before the new one's insert in the same save.
+        b.HasIndex(x => new { x.CaseId, x.IsCurrent }, "IX_CaseBriefs_OneCurrent").IsUnique().HasFilter("IsCurrent = 1");
     }
 }
 

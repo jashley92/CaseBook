@@ -596,6 +596,10 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("HasCustomNumber")
                         .HasColumnType("INTEGER");
 
@@ -860,6 +864,10 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CaseId");
+
+                    b.HasIndex(new[] { "CaseId", "IsCurrent" }, "IX_CaseBriefs_OneCurrent")
+                        .IsUnique()
+                        .HasFilter("IsCurrent = 1");
 
                     b.ToTable("CaseBriefs", (string)null);
                 });

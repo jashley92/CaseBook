@@ -232,6 +232,11 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   edit of when a transition happened, or an assignment inserted outside CaseBook, is now caught. At the first start
   after the upgrade, existing rows the audit trail records are given their hash; the trail itself isn't changed.
 
+- **One column-and-index migration** (`CaseEditVersion`): two saves to the same case at the same moment no longer
+  both land (two closes, two current briefs). The second is refused with "Someone else just changed this case.
+  Reload to see their change, then try again." A unique index keeps one current brief per case; if a case already
+  has two, the migration keeps the latest current and makes the other an earlier version.
+
 ### v1.5.1
 
 A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung

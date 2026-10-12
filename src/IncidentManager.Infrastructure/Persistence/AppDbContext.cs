@@ -78,13 +78,48 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         ColumnLengthGuard.Check(ChangeTracker);
-        return base.SaveChanges(acceptAllChangesOnSuccess);
+        BumpCaseEditVersions();
+        try { return base.SaveChanges(acceptAllChangesOnSuccess); }
+        catch (DbUpdateException ex) when (IsLostRace(ex)) { throw new Application.Cases.ConcurrentEditException(ex); }
     }
 
-    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         ColumnLengthGuard.Check(ChangeTracker);
-        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        BumpCaseEditVersions();
+        try { return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken); }
+        catch (DbUpdateException ex) when (IsLostRace(ex)) { throw new Application.Cases.ConcurrentEditException(ex); }
+    }
+
+    // BUG-113: the case's edit version didn't match, or (whichever the database checks first) a second current brief.
+    private static bool IsLostRace(DbUpdateException ex) =>
+        ex is DbUpdateConcurrencyException
+        || ex.InnerException?.Message is { } m
+           && (m.Contains("IX_CaseBriefs_OneCurrent", StringComparison.Ordinal)
+               || m.Contains("CaseBriefs.CaseId, CaseBriefs.IsCurrent", StringComparison.Ordinal));
+
+    /// <summary>BUG-113: the case's shadow concurrency token, renewed by every save that changes the case or anything on it.</summary>
+    public const string CaseEditVersion = "EditVersion";
+
+    /// <summary>
+    /// BUG-113: a save that changes a loaded case, or adds, changes or removes anything on it (a status change, a brief),
+    /// renews the case's edit version. EF checks the version the case was loaded with, so of two saves made from the same
+    /// starting point only the first lands; the second is refused instead of closing the case twice or leaving two current
+    /// briefs. A shadow property, so it stays out of the audit trail and the row hash.
+    /// </summary>
+    private void BumpCaseEditVersions()
+    {
+        var cases = ChangeTracker.Entries<Case>().Where(e => e.State is EntityState.Modified or EntityState.Unchanged).ToList();
+        if (cases.Count == 0) return;
+        var touched = new HashSet<Guid>();
+        foreach (var e in ChangeTracker.Entries())
+        {
+            if (e.Entity is Case || e.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted)) continue;
+            if (e.Metadata.FindProperty("CaseId") is not null && e.Property("CaseId").CurrentValue is Guid id) touched.Add(id);
+        }
+        foreach (var c in cases)
+            if (c.State == EntityState.Modified || touched.Contains(c.Entity.Id))
+                c.Property(CaseEditVersion).CurrentValue = Guid.NewGuid();
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

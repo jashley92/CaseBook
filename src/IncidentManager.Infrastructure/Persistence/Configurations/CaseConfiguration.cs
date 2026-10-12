@@ -10,6 +10,8 @@ public sealed class CaseConfiguration : IEntityTypeConfiguration<Case>
     {
         b.ToTable("Cases");
         b.HasKey(c => c.Id);
+        // BUG-113: optimistic concurrency across every write to a case (AppDbContext renews it on each save).
+        b.Property<Guid>(AppDbContext.CaseEditVersion).IsConcurrencyToken();
 
         b.Property(c => c.CaseNumber).HasMaxLength(200).IsRequired();
         // CaseNumber (auto or analyst-chosen) is the primary uniqueness guard, and the only one Complex

@@ -3154,3 +3154,40 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155902_CaseEditVersion'
+)
+BEGIN
+    ALTER TABLE [Cases] ADD [EditVersion] uniqueidentifier NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000';
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155902_CaseEditVersion'
+)
+BEGIN
+    EXEC(N'    UPDATE CaseBriefs SET IsCurrent = 0 WHERE IsCurrent = 1 AND EXISTS (SELECT 1 FROM CaseBriefs o WHERE o.CaseId = CaseBriefs.CaseId AND o.IsCurrent = 1 AND (o.Version > CaseBriefs.Version OR (o.Version = CaseBriefs.Version AND o.Id > CaseBriefs.Id)))');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155902_CaseEditVersion'
+)
+BEGIN
+    EXEC(N'CREATE UNIQUE INDEX [IX_CaseBriefs_OneCurrent] ON [CaseBriefs] ([CaseId], [IsCurrent]) WHERE IsCurrent = 1');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155902_CaseEditVersion'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261012155902_CaseEditVersion'', N''10.0.12'');');
+END;
+
+COMMIT;
+GO
+

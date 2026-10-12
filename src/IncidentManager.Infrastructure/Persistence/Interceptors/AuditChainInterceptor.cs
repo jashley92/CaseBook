@@ -36,6 +36,12 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };
 
+    // BUG-113: a case whose only change is its concurrency token (renewed because something on it changed) isn't a change
+    // to the case: nothing to audit or hash, and the live update names what did change.
+    private static bool OnlyEditVersionBumped(EntityEntry e) =>
+        e.Entity is Case && e.State == EntityState.Modified
+        && e.Properties.Where(p => p.IsModified).All(p => p.Metadata.Name == AppDbContext.CaseEditVersion);
+
     // Freshness stamps bumped by a "touch". An update whose ONLY changed columns are these carries no
     // forensic value — see the skip in Apply.
     private static bool IsTouchOnly(string field) => field is "ModifiedAtUtc" or "ModifiedBy";
@@ -220,7 +226,8 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             .Where(e => e.Entity is Entity
                         && !e.Metadata.IsOwned()
                         && !NotAudited.Contains(e.Entity.GetType())
-                        && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                        && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
+                        && !OnlyEditVersionBumped(e))
             .ToList();
 
         // Record which cases this save touches, to broadcast once it commits (SavedChanges).

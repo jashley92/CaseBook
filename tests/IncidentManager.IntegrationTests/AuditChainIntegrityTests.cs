@@ -120,7 +120,7 @@ public sealed class AuditChainIntegrityTests : IDisposable
         await first.SaveChangesAsync();
         b.Unassign("someone", _user.UserId, now);
         var conflict = async () => await second.SaveChangesAsync();
-        await conflict.Should().ThrowAsync<DbUpdateConcurrencyException>();
+        await conflict.Should().ThrowAsync<IncidentManager.Application.Cases.ConcurrentEditException>();
 
         // A leaked gate would block this forever.
         await using var db3 = NewContext();

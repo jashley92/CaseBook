@@ -601,6 +601,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<Guid>("EditVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("HasCustomNumber")
                         .HasColumnType("bit");
 
@@ -865,6 +869,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CaseId");
+
+                    b.HasIndex(new[] { "CaseId", "IsCurrent" }, "IX_CaseBriefs_OneCurrent")
+                        .IsUnique()
+                        .HasFilter("IsCurrent = 1");
 
                     b.ToTable("CaseBriefs", (string)null);
                 });
