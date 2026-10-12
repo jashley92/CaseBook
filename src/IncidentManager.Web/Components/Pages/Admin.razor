@@ -1243,9 +1243,15 @@
             return;
         }
 
+        // BUG-215: the size is checked up front, so a failure saving the file isn't reported as the file being too big.
+        const long maxBytes = 2 * 1024 * 1024;
+        if (file.Size > maxBytes)
+        {
+            _logoError = "That image is over 2 MB. Choose a smaller file.";
+            return;
+        }
         try
         {
-            const long maxBytes = 2 * 1024 * 1024;
             await using var stream = file.OpenReadStream(maxBytes);
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
@@ -1253,9 +1259,9 @@
             await ReloadKeepingEdits();
             Toasts.Success("Report logo updated.");
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _logoError = "That image is over 2 MB. Choose a smaller file.";
+            _logoError = LogoNotSaved;
         }
         catch (Exception ex) when (ex is ArgumentException)
         {
@@ -1263,9 +1269,17 @@
         }
     }
 
+    private const string LogoNotSaved = "The logo couldn't be saved, so the current one is unchanged. Try again; if it keeps failing, " +
+        "check that the app can write to its branding folder.";
+
     private async Task RemoveLogo()
     {
-        await Branding.ClearLogoAsync();
+        try { await Branding.ClearLogoAsync(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logoError = "The logo couldn't be removed. Try again; if it keeps failing, check that the app can write to its branding folder.";
+            return;
+        }
         await ReloadKeepingEdits();
         Toasts.Info("Report logo removed.");
     }

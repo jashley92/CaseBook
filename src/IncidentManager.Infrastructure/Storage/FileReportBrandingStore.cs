@@ -45,10 +45,26 @@ public sealed class FileReportBrandingStore : IReportBrandingStore
         if (!isPng && !isJpeg)
             throw new ArgumentException("Logo must be a PNG or JPEG image.");
 
-        // Only one logo file exists at a time; clear the other format first.
-        Clear();
-        var target = Path.Combine(_root, isPng ? "logo.png" : "logo.jpg");
-        await File.WriteAllBytesAsync(target, bytes, ct);
+        // BUG-215: written aside and moved into place (a rename), so a failed write leaves the current logo as it was;
+        // only then is the other format, the old logo, removed. Only one logo file exists at a time.
+        Directory.CreateDirectory(_root);
+        var name = isPng ? "logo.png" : "logo.jpg";
+        var aside = Path.Combine(_root, $"{name}.{Guid.NewGuid():N}.staged");
+        try
+        {
+            await File.WriteAllBytesAsync(aside, bytes, ct);
+            File.Move(aside, Path.Combine(_root, name), overwrite: true);
+        }
+        catch
+        {
+            File.Delete(aside);
+            throw;
+        }
+        foreach (var other in KnownFiles.Where(f => f != name))
+        {
+            var path = Path.Combine(_root, other);
+            if (File.Exists(path)) File.Delete(path);
+        }
     }
 
     public Task ClearLogoAsync(CancellationToken ct = default)
