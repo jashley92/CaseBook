@@ -486,7 +486,8 @@ else
 
 @code {
     [SupplyParameterFromQuery(Name = "period")] public string? Period { get; set; }
-    [SupplyParameterFromQuery(Name = "exercises")] public bool Exercises { get; set; }
+    [SupplyParameterFromQuery(Name = "exercises")] public string? ExercisesRaw { get; set; }
+    private bool Exercises => QueryValue.Flag(ExercisesRaw);   // BUG-31: a bad value is ignored, not an error
     [SupplyParameterFromQuery(Name = "from")] public string? From { get; set; }
     [SupplyParameterFromQuery(Name = "to")] public string? To { get; set; }
 

@@ -602,24 +602,33 @@ else
     [SupplyParameterFromQuery(Name = "origin")] public string? QOrigin { get; set; }
     [SupplyParameterFromQuery(Name = "outcome")] public string? QOutcome { get; set; }
     [SupplyParameterFromQuery(Name = "q")] public string? QSearch { get; set; }
-    [SupplyParameterFromQuery(Name = "closed")] public bool QClosed { get; set; }
-    [SupplyParameterFromQuery(Name = "exercises")] public bool QExercises { get; set; }
-    [SupplyParameterFromQuery(Name = "overdue")] public bool QOverdue { get; set; }
-    [SupplyParameterFromQuery(Name = "sla")] public bool QSla { get; set; }
-    [SupplyParameterFromQuery(Name = "notify")] public bool QNotify { get; set; }
-    [SupplyParameterFromQuery(Name = "referred")] public bool QReferred { get; set; }
-    [SupplyParameterFromQuery(Name = "hold")] public bool QHold { get; set; }
+    [SupplyParameterFromQuery(Name = "closed")] public string? QClosedRaw { get; set; }
+    private bool QClosed => QueryValue.Flag(QClosedRaw);   // BUG-31: a bad value is ignored, not an error
+    [SupplyParameterFromQuery(Name = "exercises")] public string? QExercisesRaw { get; set; }
+    private bool QExercises => QueryValue.Flag(QExercisesRaw);
+    [SupplyParameterFromQuery(Name = "overdue")] public string? QOverdueRaw { get; set; }
+    private bool QOverdue => QueryValue.Flag(QOverdueRaw);
+    [SupplyParameterFromQuery(Name = "sla")] public string? QSlaRaw { get; set; }
+    private bool QSla => QueryValue.Flag(QSlaRaw);
+    [SupplyParameterFromQuery(Name = "notify")] public string? QNotifyRaw { get; set; }
+    private bool QNotify => QueryValue.Flag(QNotifyRaw);
+    [SupplyParameterFromQuery(Name = "referred")] public string? QReferredRaw { get; set; }
+    private bool QReferred => QueryValue.Flag(QReferredRaw);
+    [SupplyParameterFromQuery(Name = "hold")] public string? QHoldRaw { get; set; }
+    private bool QHold => QueryValue.Flag(QHoldRaw);
     [SupplyParameterFromQuery(Name = "opened")] public string? QOpened { get; set; }
     [SupplyParameterFromQuery(Name = "scope")] public string? QScope { get; set; }
     [SupplyParameterFromQuery(Name = "assignee")] public string? QAssignee { get; set; }
     [SupplyParameterFromQuery(Name = "assigneeName")] public string? QAssigneeName { get; set; }
     // FR-10: pagination position + page size live in the URL too, so a refresh / dropped circuit / bookmark
     // keeps the reader on the same page instead of snapping back to page 1.
-    [SupplyParameterFromQuery(Name = "page")] public int? QPage { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public string? QPageRaw { get; set; }
+    private int? QPage => QueryValue.Int(QPageRaw);
     // Design review P1: column sort, in the URL like the filters (omitted at the default, newest first).
     [SupplyParameterFromQuery(Name = "sort")] public string? QSort { get; set; }
     [SupplyParameterFromQuery(Name = "dir")] public string? QDir { get; set; }
-    [SupplyParameterFromQuery(Name = "size")] public int? QPageSize { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public string? QPageSizeRaw { get; set; }
+    private int? QPageSize => QueryValue.Int(QPageSizeRaw);
 
     private CasePage? _page;
     private DashboardMetrics? _dash; // caseload summary tiles (same figures as the dashboard)

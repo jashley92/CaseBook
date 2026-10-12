@@ -257,14 +257,18 @@ else
 
     /// <summary>Deep-link a specific entity (from an inline entity tag chip): <c>?entity={guid}</c> opens it in the
     /// entity panel (INV-11) over the current tab, and focuses its row when the Entities tab is open.</summary>
-    [SupplyParameterFromQuery(Name = "entity")] public Guid? QEntity { get; set; }
+    [SupplyParameterFromQuery(Name = "entity")] public string? QEntityRaw { get; set; }
+    private Guid? QEntity => QueryValue.Id(QEntityRaw);   // BUG-31: a bad value is ignored, not an error
     /// <summary>RD-06: an evidence file to open in its panel (a cited-file chip links here).</summary>
-    [SupplyParameterFromQuery(Name = "evidence")] public Guid? QEvidence { get; set; }
+    [SupplyParameterFromQuery(Name = "evidence")] public string? QEvidenceRaw { get; set; }
+    private Guid? QEvidence => QueryValue.Id(QEvidenceRaw);
 
     /// <summary>INV-37: deep-link one note (a mention email's link): <c>?tab=Notes&amp;note={guid}</c> brings it into view.</summary>
-    [SupplyParameterFromQuery(Name = "note")] public Guid? QNote { get; set; }
+    [SupplyParameterFromQuery(Name = "note")] public string? QNoteRaw { get; set; }
+    private Guid? QNote => QueryValue.Id(QNoteRaw);
     /// <summary>RD-20: one record entry to bring into view (a Find result): <c>?tab=Timeline&amp;entry={guid}</c>.</summary>
-    [SupplyParameterFromQuery(Name = "entry")] public Guid? QEntry { get; set; }
+    [SupplyParameterFromQuery(Name = "entry")] public string? QEntryRaw { get; set; }
+    private Guid? QEntry => QueryValue.Id(QEntryRaw);
 
     // RD-11: the case's views and their parts (Workspace/CaseViews); the active part is the routing key.
     private bool _openNotes;

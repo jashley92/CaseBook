@@ -409,8 +409,10 @@ else if (_pending.Count > 0)
 }
 
 @code {
-    [SupplyParameterFromQuery(Name = "into")] public Guid? IntoCaseId { get; set; }
-    [SupplyParameterFromQuery(Name = "pending")] public Guid? PendingId { get; set; }
+    [SupplyParameterFromQuery(Name = "into")] public string? IntoCaseIdRaw { get; set; }
+    private Guid? IntoCaseId => QueryValue.Id(IntoCaseIdRaw);   // BUG-31: a bad value is ignored, not an error
+    [SupplyParameterFromQuery(Name = "pending")] public string? PendingIdRaw { get; set; }
+    private Guid? PendingId => QueryValue.Id(PendingIdRaw);
 
     // PROD-06: the uploaded file's name (provenance for a CSV) and open cases sharing the previewed indicators.
     private string? _fileName;
