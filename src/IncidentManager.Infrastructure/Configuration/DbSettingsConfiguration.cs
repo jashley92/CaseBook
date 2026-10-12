@@ -98,6 +98,11 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                     for (var i = 0; i < lines.Length; i++)
                         data[$"{r.Key}:{i}"] = lines[i];
+                    // BUG-98: the file's own list is indexed the same way, and a longer one would show through past the
+                    // end of this one (a shorter list, or a cleared one, kept the file's extra entries). Blank them;
+                    // the options drop blank entries.
+                    for (var i = lines.Length; i < lines.Length + MaskedListEntries; i++)
+                        data[$"{r.Key}:{i}"] = "";
                 }
                 else
                 {
@@ -123,6 +128,9 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
         RejectedKeys = rejected;
         Data = data;
     }
+
+    /// <summary>How many entries past an administered list's end are blanked over the file's list (BUG-98).</summary>
+    internal const int MaskedListEntries = 100;
 
     // Whether a load has read the table successfully (after which a failed reload keeps what it read).
     private bool _loaded;

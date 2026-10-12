@@ -93,6 +93,29 @@ public sealed class DbSettingsConfigurationTests : IDisposable
     }
 
     [Fact]
+    public async Task An_administered_list_can_be_shorter_than_the_files_or_empty(/* BUG-98 */)
+    {
+        IConfigurationRoot WithFileList() => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Email:LegalDistribution:0"] = "one@insurer.example",
+                ["Email:LegalDistribution:1"] = "two@insurer.example",
+                ["Email:LegalDistribution:2"] = "left@insurer.example",
+            })
+            .Add(new DbSettingsConfigurationSource("Sqlite", Conn))
+            .Build();
+
+        await using (var db = NewContext())
+            await NewService(db).SetAsync("Email:LegalDistribution", "one@insurer.example");
+        WithFileList().GetSection("Email").Get<EmailOptions>()!.LegalDistribution
+            .Should().Equal(["one@insurer.example"], "the file's other two are gone, including the person who left");
+
+        await using (var db = NewContext())
+            await NewService(db).SetAsync("Email:LegalDistribution", "");
+        (WithFileList().GetSection("Email").Get<EmailOptions>() ?? new EmailOptions()).LegalDistribution.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Reload_reflects_a_later_change()
     {
         await using (var db = NewContext())
