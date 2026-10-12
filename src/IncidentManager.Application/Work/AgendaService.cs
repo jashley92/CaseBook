@@ -111,7 +111,7 @@ public sealed class AgendaService
             where a.DueAtUtc != null
                   && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled
             join c in db.Cases.AsNoTracking().ExcludingExercises() on a.CaseId equals c.Id // PROD-43: drills off the digest / calendar feed
-            where !c.IsArchived
+            where !c.IsArchived && c.Phase != CasePhase.Closed   // BUG-103: as the reminders (BUG-12)
                   && (!c.IsRestricted || c.IncidentCommander == userId || c.Assignments.Any(x => x.UserId == userId))
             select new Row(
                 c.Id, c.CaseNumber, c.Title, c.Severity, c.IsRestricted, c.IncidentCommander,
