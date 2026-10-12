@@ -29,7 +29,11 @@
        Placed in the static host head so there is no flash before the branded colours apply. *@
     <style id="im-brand">@((MarkupString)(BrandPalette.BuildCss(Config["Branding:AccentColor"], Config["Branding:InkColor"]) ?? ""))</style>
     <link rel="stylesheet" href="lib/vis-network/vis-network.min.css" />
-    <link rel="icon" type="image/png" href="favicon.png" />
+    @* The CaseBook mark; a white-label instance (X-08) gets it in its brand colours. The PNG is for browsers without
+       SVG icons, and comes first: browsers that take SVG use the last icon they support. *@
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon.png" />
+    <link rel="icon" type="image/svg+xml" href="@(BrandPalette.FaviconDataUri(Config["Branding:AccentColor"], Config["Branding:InkColor"]) ?? "favicon.svg")" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
     <HeadOutlet @rendermode="InteractiveServer" />
 </head>
 

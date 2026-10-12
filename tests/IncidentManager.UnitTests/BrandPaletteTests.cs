@@ -91,6 +91,17 @@ public class BrandPaletteTests
         return (Convert.ToInt32(h[..2], 16), Convert.ToInt32(h.Substring(2, 2), 16), Convert.ToInt32(h.Substring(4, 2), 16));
     }
 
+    [Fact]
+    public void Favicon_follows_the_brand_colours_or_leaves_the_static_one()
+    {
+        BrandPalette.FaviconDataUri(null, " ").Should().BeNull();
+
+        var uri = BrandPalette.FaviconDataUri("#0a7", null)!;
+        uri.Should().StartWith("data:image/svg+xml,");
+        var svg = Uri.UnescapeDataString(uri["data:image/svg+xml,".Length..]);
+        svg.Should().Contain("fill='#00aa77'").And.Contain("fill='#232a33'");   // brand accent on the default ink
+    }
+
     private static double Lin(int v)
     {
         var s = v / 255.0;

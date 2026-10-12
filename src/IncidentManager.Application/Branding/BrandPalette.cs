@@ -80,6 +80,27 @@ public static class BrandPalette
         return sb.ToString();
     }
 
+    /// <summary>
+    /// The CaseBook mark (wwwroot/favicon.svg) in the instance's brand colours, as a data URI for the tab icon,
+    /// or <c>null</c> when neither colour is set so the static favicon stands.
+    /// </summary>
+    public static string? FaviconDataUri(string? accentHex, string? inkHex)
+    {
+        var accent = TryParse(accentHex);
+        var ink = TryParse(inkHex);
+        if (accent is null && ink is null) return null;
+        var a = (accent ?? DefaultAccent).Hex;
+        var k = (ink ?? DefaultInk).Hex;
+        var svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>" +
+                  $"<rect width='32' height='32' rx='7' fill='{k}'/>" +
+                  $"<rect x='9' y='5' width='16' height='22' rx='2.5' fill='{a}'/>" +
+                  $"<rect x='6' y='9' width='5' height='2.4' rx='1.2' fill='{a}'/>" +
+                  $"<rect x='6' y='14.8' width='5' height='2.4' rx='1.2' fill='{a}'/>" +
+                  $"<rect x='6' y='20.6' width='5' height='2.4' rx='1.2' fill='{a}'/>" +
+                  $"<path d='M15.5 5h6v10.5l-3-2.3-3 2.3z' fill='{k}'/></svg>";
+        return "data:image/svg+xml," + Uri.EscapeDataString(svg);
+    }
+
     /// <summary>Parses <c>#rgb</c> / <c>#rrggbb</c> (with or without the hash); null for anything else.</summary>
     public static bool IsValidHex(string? hex) => TryParse(hex) is not null;
 
