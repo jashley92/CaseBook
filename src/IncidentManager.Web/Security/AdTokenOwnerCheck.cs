@@ -62,11 +62,13 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
     private static IEnumerable<string> Candidates(IEnumerable<string> groupSids) =>
         groupSids.SelectMany(sid => RoleClaimsTransformer.NamesForSid(sid).Prepend(sid));
 
+    // BUG-127: an owner id is however the user signed in: DOMAIN\sam under Windows sign-in (WindowsIdentity carries no
+    // name-identifier or UPN claim), a UPN or a SID otherwise. FindByIdentity without a type tries each of those forms.
     [SupportedOSPlatform("windows")]
-    private static AccountGroups? QueryDirectory(string sid)
+    private static AccountGroups? QueryDirectory(string ownerUserId)
     {
         using var ctx = new PrincipalContext(ContextType.Domain);
-        using var user = UserPrincipal.FindByIdentity(ctx, IdentityType.Sid, sid);
+        using var user = UserPrincipal.FindByIdentity(ctx, ownerUserId);
         if (user is null) return null;
         using var groups = user.GetAuthorizationGroups();
         var sids = groups.Select(g => g.Sid?.Value).Where(s => s is not null).Select(s => s!).ToList();
