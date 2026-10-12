@@ -99,8 +99,10 @@ public sealed class AccessLogService : IAccessLogService
 
             using var db = _factory.CreateDbContext();
 
-            // Most recent matching open session for this exact (actor, case, type, target).
-            var existing = await db.CaseAccessEvents
+            // Most recent matching open session for this exact (actor, case, type, target). BUG-154: never for an
+            // export: each is a deliberate pull of its own data (a slice of the access log, a compliance bundle), and most
+            // name no case or target, so folding them kept only the first one's file name.
+            var existing = type == AccessType.Export ? null : await db.CaseAccessEvents
                 .Where(e => e.ActorUserId == actor
                             && e.CaseId == caseId
                             && e.AccessType == type

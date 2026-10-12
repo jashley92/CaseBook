@@ -83,6 +83,23 @@ public sealed class AccessLogPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Each_export_is_its_own_row_with_its_own_file_name(/* BUG-154 */)
+    {
+        NewContext();
+        var svc = NewService();
+
+        await svc.RecordArtifactAsync(AccessType.Export, null, "incident-metrics-20261012-1000.csv");
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(10);
+        await svc.RecordArtifactAsync(AccessType.Export, null, "access-log.csv (start to now, actor jdoe)");
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(5);
+        await svc.RecordArtifactAsync(AccessType.Export, null, "compliance-bundle-2026-Q3.zip");
+
+        using var db = NewContext();
+        (await db.CaseAccessEvents.AsNoTracking().OrderBy(e => e.FirstSeenUtc).Select(e => e.TargetLabel).ToListAsync())
+            .Should().Equal("incident-metrics-20261012-1000.csv", "access-log.csv (start to now, actor jdoe)", "compliance-bundle-2026-Q3.zip");
+    }
+
+    [Fact]
     public async Task Opens_outside_the_window_start_a_second_session()
     {
         NewContext();

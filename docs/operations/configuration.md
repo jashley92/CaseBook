@@ -228,7 +228,7 @@ Classification, phase and other labels are under Administration → Taxonomy (`T
 | Key | Purpose | Default | Edit |
 |---|---|---|---|
 | `Access:LogScope` | Which case opens are logged: `Off`, `RestrictedOnly` or `All`. Artifact downloads and exports are logged whenever logging is on. | `All` | App |
-| `Access:CoalesceWindowMinutes` | Repeated access by the same person within this window is folded into one row with a count (`≤0` means 30) | `30` | App |
+| `Access:CoalesceWindowMinutes` | Repeated access by the same person within this window is folded into one row with a count (`≤0` means 30). Exports are never folded: each is its own row. | `30` | App |
 
 ### 3.12 Email
 

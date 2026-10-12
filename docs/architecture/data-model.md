@@ -350,7 +350,7 @@ All are row-hashed and audited, and are edited in Administration by the `Adminis
 |---|---|---|
 | `AuditLog` (ledger) | `Sequence` (unique, gapless), `AtUtc`, `Actor`, `Action` (0 Create, 1 Update, 2 Delete (named `SoftDelete` through v1.5.1), 15 Export, 16 Evidence transferred, …), `EntityType` (the C# class name), `EntityId`, `CaseNumber`, `EntityLabel`, `Summary`, `BeforeJson`, `AfterJson`, `Reason`, `PrevHash`, `EntryHash` | Append-only. See [integrity.md](integrity.md). |
 | `IntegritySeals` (ledger) | `SealedAtUtc`, `UpToSequence`, `ChainHeadHash`, `SealedBy`, `Algorithm`, `KeyId`, `Signature` | Not audited. Also exported as files. |
-| `CaseAccessEvents` | `ActorUserId`, `CaseId`, `CaseNumber`, `AccessType` (0 case open, 1 evidence download, 2 report download, 3 export), `TargetId`, `TargetLabel`, `WasRestricted`, `FirstSeenUtc`, `LastSeenUtc`, `Count` | The read log. Outside the audit chain; repeated access within the coalesce window increments `Count`. Can be pruned. |
+| `CaseAccessEvents` | `ActorUserId`, `CaseId`, `CaseNumber`, `AccessType` (0 case open, 1 evidence download, 2 report download, 3 export), `TargetId`, `TargetLabel`, `WasRestricted`, `FirstSeenUtc`, `LastSeenUtc`, `Count` | The read log. Outside the audit chain; repeated access within the coalesce window increments `Count` (not exports: each is a row). Can be pruned. |
 
 ## Per-user state and staging (not hashed, not audited)
 
