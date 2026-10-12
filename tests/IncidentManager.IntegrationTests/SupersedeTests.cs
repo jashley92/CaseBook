@@ -62,14 +62,35 @@ public sealed class SupersedeTests : IDisposable
         _user.RoleSet = [AppRole.SysAdmin];   // sees restricted cases
         await db.Cases.Where(c => c.Id == dup).ExecuteUpdateAsync(s => s.SetProperty(c => c.IsRestricted, true));
 
-        (await svc.SupersedeExposureAsync(dup, primary)).Should().Be(1, "the IP is already there; the domain would be copied");
-        (await svc.SupersedeExposureAsync(primary, dup)).Should().BeNull("an unrestricted case into a restricted one exposes nothing");
+        (await svc.SupersedeExposureAsync(dup, primary)).Should().Be(new CaseService.SupersedeExposure(true, false, 1),
+            "the IP is already there; the domain would be copied");
+        (await svc.SupersedeExposureAsync(primary, dup)).Should().Be(new CaseService.SupersedeExposure(false, true, 0),
+            "BUG-160: the restricted kept case's number goes in the duplicate's note");
 
         var act = () => svc.SupersedeAsync(dup, primary, copyIndicators: true, "Same wave");
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*restricted*Confirm*indicators*");
 
         (await svc.SupersedeAsync(dup, primary, copyIndicators: true, "Same wave", acknowledgeExposure: true))
             .IndicatorsCopied.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Between_two_restricted_cases_only_a_kept_case_with_a_team_inside_the_duplicates_exposes_nothing(/* BUG-160 */)
+    {
+        var (db, svc, dup, primary) = await SeedAsync();
+        await using var _ = db;
+        _user.RoleSet = [AppRole.SysAdmin];
+        await db.Cases.ExecuteUpdateAsync(s => s.SetProperty(c => c.IsRestricted, true));
+        await db.Cases.Where(c => c.Id == primary).ExecuteUpdateAsync(s => s.SetProperty(c => c.IncidentCommander, "ic-y"));
+        await db.Cases.Where(c => c.Id == dup).ExecuteUpdateAsync(s => s.SetProperty(c => c.IncidentCommander, "ic-x"));
+
+        (await svc.SupersedeExposureAsync(dup, primary)).Should().Be(new CaseService.SupersedeExposure(true, true, 1),
+            "the kept case's commander isn't on the duplicate's team, and the other way round");
+        await svc.Invoking(s => s.SupersedeAsync(dup, primary, copyIndicators: true, "Same wave"))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*restricted*Confirm*");
+
+        await db.Cases.Where(c => c.Id == dup).ExecuteUpdateAsync(s => s.SetProperty(c => c.IncidentCommander, "ic-y"));
+        (await svc.SupersedeExposureAsync(dup, primary)).Should().BeNull("both teams are the same people");
     }
 
     [Fact]

@@ -136,8 +136,16 @@
         @if (D.SupersedeTargetId is not null && D.SupersedeExposure is { } exposed)
         {
             <div class="alert alert-warning py-2 px-2 small mt-2 mb-0">
-                <p class="mb-1">This case is restricted and <code>@D.SupersedeTargetNumber</code> isn't. Everyone who can see
-                    <code>@D.SupersedeTargetNumber</code> will see this case's number in its note@(D.SupersedeCopy && exposed > 0 ? $", and the {IncidentManager.Application.Common.Plural.Of(exposed, "indicator")} copied across" : "").</p>
+                @if (exposed.DuplicateExposed)
+                {
+                    <p class="mb-1">This case is restricted, and not everyone who can see <code>@D.SupersedeTargetNumber</code> can see
+                        it. They'll all see this case's number in its note@(D.SupersedeCopy && exposed.IndicatorsCopied > 0 ? $", and the {IncidentManager.Application.Common.Plural.Of(exposed.IndicatorsCopied, "indicator")} copied across" : "").</p>
+                }
+                @if (exposed.KeptNumberExposed)
+                {
+                    <p class="mb-1"><code>@D.SupersedeTargetNumber</code> is restricted, and not everyone who can see this case can see
+                        it. They'll all see its number in this case's "Superseded by" note.</p>
+                }
                 <div class="form-check mb-0">
                     <input class="form-check-input" type="checkbox" id="supersede-ack" @bind="D.SupersedeAck" />
                     <label class="form-check-label" for="supersede-ack">I understand; supersede anyway</label>

@@ -1788,24 +1788,45 @@ public sealed class CaseService
     /// </summary>
     /// <summary>
     /// BUG-129: superseding a restricted case into one that isn't puts its number (in the note) and, when copied, its
-    /// indicators in front of everyone who can see the kept case. Returns how many indicators would be copied when that
-    /// applies (the dialog warns and asks for a tick); null when it doesn't.
+    /// indicators in front of everyone who can see the kept case. BUG-160: so does superseding it into a restricted case
+    /// with a different team, and superseding any case into a restricted one puts the kept case's number in the
+    /// duplicate's note, in front of the duplicate's audience. What would be exposed, so the dialog can warn and ask for
+    /// a tick; null when nothing would.
     /// </summary>
-    public async Task<int?> SupersedeExposureAsync(Guid duplicateId, Guid primaryId, CancellationToken ct = default)
+    public async Task<SupersedeExposure?> SupersedeExposureAsync(Guid duplicateId, Guid primaryId, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var cases = await Scoped(db.Cases.AsNoTracking()).Where(c => c.Id == duplicateId || c.Id == primaryId)
-            .Select(c => new { c.Id, c.IsRestricted }).ToListAsync(ct);
-        if (cases.FirstOrDefault(c => c.Id == duplicateId) is not { IsRestricted: true }
-            || cases.FirstOrDefault(c => c.Id == primaryId) is not { IsRestricted: false })
+            .Select(c => new { c.Id, c.IsRestricted, c.IncidentCommander, Team = c.Assignments.Select(a => a.UserId).ToList() })
+            .ToListAsync(ct);
+        if (cases.FirstOrDefault(c => c.Id == duplicateId) is not { } dup || cases.FirstOrDefault(c => c.Id == primaryId) is not { } primary)
             return null;
         var dupValues = await db.CaseEntities.AsNoTracking().Where(e => e.CaseId == duplicateId).Select(e => new { e.Type, e.Value }).ToListAsync(ct);
         var have = await db.CaseEntities.AsNoTracking().Where(e => e.CaseId == primaryId).Select(e => new { e.Type, e.Value }).ToListAsync(ct);
-        return dupValues.Count(d => !have.Any(p => p.Type == d.Type && string.Equals(p.Value, d.Value, StringComparison.OrdinalIgnoreCase)));
+        var copied = dupValues.Count(d => !have.Any(p => p.Type == d.Type && string.Equals(p.Value, d.Value, StringComparison.OrdinalIgnoreCase)));
+        return Exposure(dup.IsRestricted, dup.IncidentCommander, dup.Team, primary.IsRestricted, primary.IncidentCommander, primary.Team, copied);
     }
 
-    /// <param name="acknowledgeExposure">BUG-129: the caller confirmed that a restricted duplicate's number and indicators
-    /// will be visible on an unrestricted kept case (see <see cref="SupersedeExposureAsync"/>).</param>
+    /// <summary>BUG-160: what superseding would show to people who can't see the case it comes from.</summary>
+    public sealed record SupersedeExposure(bool DuplicateExposed, bool KeptNumberExposed, int IndicatorsCopied);
+
+    // A restricted case's audience is its team (plus everyone cleared to see restricted cases, the same for both), so
+    // what goes from one case to the other is exposed unless the other's audience is no wider: restricted, with a team
+    // inside this one's.
+    private static SupersedeExposure? Exposure(bool dupRestricted, string? dupIc, IEnumerable<string> dupTeam,
+        bool primaryRestricted, string? primaryIc, IEnumerable<string> primaryTeam, int copied)
+    {
+        static HashSet<string> TeamOf(string? ic, IEnumerable<string> team) =>
+            team.Append(ic ?? "").Where(u => u.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var dupPeople = TeamOf(dupIc, dupTeam);
+        var primaryPeople = TeamOf(primaryIc, primaryTeam);
+        var dupExposed = dupRestricted && (!primaryRestricted || !primaryPeople.IsSubsetOf(dupPeople));
+        var keptExposed = primaryRestricted && (!dupRestricted || !dupPeople.IsSubsetOf(primaryPeople));
+        return dupExposed || keptExposed ? new SupersedeExposure(dupExposed, keptExposed, copied) : null;
+    }
+
+    /// <param name="acknowledgeExposure">BUG-129/160: the caller confirmed what <see cref="SupersedeExposureAsync"/> said
+    /// would be seen by people who can't see the case it comes from.</param>
     public async Task<SupersedeResult> SupersedeAsync(Guid duplicateId, Guid primaryId, bool copyIndicators, string reason,
         bool acknowledgeExposure = false, CancellationToken ct = default)
     {
@@ -1825,9 +1846,13 @@ public sealed class CaseService
         // BUG-114: as the docs and the workspace say, neither case may be closed (reopen it first).
         if (dup.Phase == CasePhase.Closed || primary.Phase == CasePhase.Closed)
             throw new InvalidOperationException("A closed case can't supersede or be superseded. Reopen it first.");
-        if (dup.IsRestricted && !primary.IsRestricted && !acknowledgeExposure)
-            throw new InvalidOperationException($"This case is restricted and {primary.CaseNumber} isn't. Confirm that its number" +
-                                                (copyIndicators ? " and indicators" : "") + " may be seen by everyone who can see that case.");
+        if (!acknowledgeExposure && Exposure(dup.IsRestricted, dup.IncidentCommander, dup.Assignments.Select(a => a.UserId),
+                primary.IsRestricted, primary.IncidentCommander, primary.Assignments.Select(a => a.UserId), 0) is { } exposed)
+            throw new InvalidOperationException(exposed.DuplicateExposed
+                ? $"This case is restricted, and not everyone who can see {primary.CaseNumber} can see it. Confirm that its number" +
+                  (copyIndicators ? " and indicators" : "") + " may be seen by everyone who can see that case."
+                : $"{primary.CaseNumber} is restricted, and not everyone who can see this case can see it. Confirm that its number " +
+                  "may be seen, in this case's note, by everyone who can see this case.");
         var now = _clock.UtcNow;
 
         // One link per pair: an existing link of another kind ("Related to") becomes "Duplicate of".
