@@ -170,6 +170,10 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ### Next release
 
+- **A brief left current by v1.5.2's clean-up is corrected.** Where two brief saves had raced, v1.5.2 kept one
+  current but could keep the earlier, which then disagreed with the case summary. A data migration makes the later
+  one current (`CaseBriefLatestCurrent`; no schema change).
+
 - **Audit entries are written in format 2.** An entry's reason and its label were each appended to its hash only when
   present, untagged, so the two could be swapped (a correction's reason turned into a label, dropping it from the
   trail) without breaking the chain, and no field was escaped. New entries record `Format = 2`: their canonical

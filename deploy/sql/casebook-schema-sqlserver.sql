@@ -3821,3 +3821,32 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012183715_CaseBriefLatestCurrent'
+)
+BEGIN
+    EXEC(N'    UPDATE CaseBriefs SET IsCurrent = 0 WHERE IsCurrent = 1 AND NOT EXISTS (SELECT 1 FROM CaseBriefs h WHERE h.CaseId = CaseBriefs.CaseId AND h.Version > CaseBriefs.Version) AND EXISTS (SELECT 1 FROM CaseBriefs o WHERE o.CaseId = CaseBriefs.CaseId AND o.IsCurrent = 0 AND o.Version = CaseBriefs.Version AND (o.CreatedAtUtc > CaseBriefs.CreatedAtUtc OR (o.CreatedAtUtc = CaseBriefs.CreatedAtUtc AND o.Id > CaseBriefs.Id)))');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012183715_CaseBriefLatestCurrent'
+)
+BEGIN
+    EXEC(N'    UPDATE CaseBriefs SET IsCurrent = 1 WHERE NOT EXISTS (SELECT 1 FROM CaseBriefs c WHERE c.CaseId = CaseBriefs.CaseId AND c.IsCurrent = 1) AND NOT EXISTS (SELECT 1 FROM CaseBriefs o WHERE o.CaseId = CaseBriefs.CaseId AND (o.Version > CaseBriefs.Version OR (o.Version = CaseBriefs.Version AND (o.CreatedAtUtc > CaseBriefs.CreatedAtUtc OR (o.CreatedAtUtc = CaseBriefs.CreatedAtUtc AND o.Id > CaseBriefs.Id)))))');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012183715_CaseBriefLatestCurrent'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261012183715_CaseBriefLatestCurrent'', N''10.0.12'');');
+END;
+
+COMMIT;
+GO
+
