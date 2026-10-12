@@ -27,7 +27,12 @@
             <kbd class="cmdk-esc">Esc</kbd>
         </div>
         <div class="cmdk-results" id="cmdk-list" role="listbox">
-            @if (_results.Count == 0)
+            @if (_results.Count == 0 && _query.Trim().Length < FindMinChars)
+            {
+                @* BUG-205: Find starts at two characters; one matches nearly everything. *@
+                <div class="cmdk-empty">Type another character to search cases, indicators and records.</div>
+            }
+            else if (_results.Count == 0)
             {
                 <div class="cmdk-empty">No matches for &ldquo;@_query&rdquo;.</div>
             }
@@ -128,6 +133,10 @@
     private int _selected;
     private bool _needFocus;
     private int _searchSeq;
+    // BUG-205: Find runs once typing pauses, from two characters (one matches nearly everything), and a newer keystroke
+    // cancels the search in flight rather than letting it finish unseen.
+    private CancellationTokenSource? _findCts;
+    private const int FindSettleMs = 250, FindMinChars = 2;
     private ElementReference _input;
     private DotNetObjectReference<CommandPalette>? _ref;
     private IReadOnlyList<Cmd> _results = Array.Empty<Cmd>();
@@ -276,12 +285,16 @@
             }
         }
 
-        if (q.Length >= 1)
+        if (q.Length >= FindMinChars)
         {
             var seq = ++_searchSeq;
+            _findCts?.Cancel();
+            _findCts?.Dispose();
+            var cts = _findCts = new CancellationTokenSource();
             try
             {
-                var r = await Finder.FindAsync(q, limit: 5);
+                await Task.Delay(FindSettleMs, cts.Token);
+                var r = await Finder.FindAsync(q, limit: 5, ct: cts.Token);
                 if (seq != _searchSeq) return; // a newer keystroke already superseded this search
                 foreach (var e in r.Entities.Take(3))
                 {
@@ -321,6 +334,7 @@
                     r.Total == 0 ? $"Read as {r.Reading}; nothing matched" : $"Read as {r.Reading}",
                     () => GoTo(find)));
             }
+            catch (OperationCanceledException) { return; }   // a newer keystroke took over
             catch { /* transient — keep the static matches already gathered */ }
         }
 
@@ -441,5 +455,7 @@
         Palette.OpenRequested -= OnOpenRequested;
         try { JS.InvokeVoidAsync("imKeymap.unregister"); } catch { /* circuit already gone */ }
         _ref?.Dispose();
+        _findCts?.Cancel();
+        _findCts?.Dispose();
     }
 }
