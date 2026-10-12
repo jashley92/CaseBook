@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace IncidentManager.Application.Import;
 
@@ -115,6 +116,27 @@ public static class CaseImportJson
     {
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
-        WriteIndented = true
+        WriteIndented = true,
+        Converters = { new UtcUnlessStated() },
     };
+
+    /// <summary>
+    /// BUG-207: the document's times are UTC (the schema and the prompt say so). One written without an offset, a
+    /// producer that dropped the "Z", is read as UTC, not as the server's local time, which shifted every such time
+    /// by the server's offset. One with an offset keeps it. The format is still ISO 8601, as before.
+    /// </summary>
+    internal sealed class UtcUnlessStated : JsonConverter<DateTimeOffset>
+    {
+        public override DateTimeOffset Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType != JsonTokenType.String || !reader.TryGetDateTimeOffset(out var stated))
+                throw new JsonException("A time must be an ISO 8601 date-time in UTC, for example 2026-09-18T13:05:00Z.");
+            return reader.TryGetDateTime(out var plain) && plain.Kind == DateTimeKind.Unspecified
+                ? new DateTimeOffset(DateTime.SpecifyKind(plain, DateTimeKind.Utc))
+                : stated;
+        }
+
+        public override void Write(Utf8JsonWriter writer, DateTimeOffset value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value);
+    }
 }

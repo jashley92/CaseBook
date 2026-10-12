@@ -79,6 +79,23 @@ public sealed class CaseImportTests : IDisposable
         root["$defs"]![def]!["properties"]![prop]!["enum"]!.AsArray().Select(n => n!.GetValue<string>()).ToArray();
 
     [Fact]
+    public void A_time_without_an_offset_is_read_as_UTC_not_server_local(/* BUG-207 */)
+    {
+        var json = """
+            { "format": "casebook-case-import", "schemaVersion": 1, "target": { "newCase": { "title": "T" } },
+              "timeline": [
+                { "occurredAtUtc": "2026-09-19T13:05:00", "description": "no offset" },
+                { "occurredAtUtc": "2026-09-19T13:05:00+02:00", "description": "an offset" },
+                { "occurredAtUtc": "2026-09-19T13:05:00Z", "description": "Z" } ] }
+            """;
+        var timeline = CaseImportService.Parse(json).Document!.Timeline!;
+        timeline[0].OccurredAtUtc.Should().Be(new DateTimeOffset(2026, 9, 19, 13, 5, 0, TimeSpan.Zero));
+        timeline[1].OccurredAtUtc.Should().Be(new DateTimeOffset(2026, 9, 19, 11, 5, 0, TimeSpan.Zero), "a stated offset is kept");
+        timeline[2].OccurredAtUtc.Should().Be(new DateTimeOffset(2026, 9, 19, 13, 5, 0, TimeSpan.Zero));
+        CaseImportService.Parse(json.Replace("2026-09-19T13:05:00Z", "19/09/2026")).Ok.Should().BeFalse("still ISO 8601 only");
+    }
+
+    [Fact]
     public void Parse_rejects_more_items_than_one_import_takes(/* BUG-202 */)
     {
         var entities = string.Join(",", Enumerable.Range(1, CaseImportService.MaxEntities + 1)
