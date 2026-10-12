@@ -69,6 +69,12 @@ public class IocObservableTests
     }
 
     [Fact]
+    public void A_domain_with_a_trailing_dot_is_stored_without_it(/* BUG-172 */)
+    {
+        IocObservable.Normalize(EntityType.Domain, "evil[.]com.").Should().Be("evil.com");
+    }
+
+    [Fact]
     public void A_file_name_defanged_like_a_domain_is_stored_live(/* BUG-171 */)
     {
         IocObservable.DetectType("invoice[.]docm").Should().Be(EntityType.FileName);
@@ -132,6 +138,13 @@ public class IocObservableTests
     [InlineData("Invoice_2026.docm", EntityType.FileName)]
     [InlineData("payload.tar.gz", EntityType.FileName)]
     [InlineData("gov.py", EntityType.Domain)]
+    // BUG-172: punycode, double hyphens, internationalized names and a trailing dot.
+    [InlineData("xn--80ak6aa92e.com", EntityType.Domain)]
+    [InlineData("xn--d1acufc.xn--p1ai", EntityType.Domain)]
+    [InlineData("my--bank.com", EntityType.Domain)]
+    [InlineData("bücher.de", EntityType.Domain)]
+    [InlineData("evil.com.", EntityType.Domain)]
+    [InlineData("-bad.com", EntityType.Other)]
     [InlineData("http://evil.com/a.exe", EntityType.Url)]
     // Fallbacks: bare hostname, account, partial IP, odd-length hex.
     [InlineData("WKS-HR-14", EntityType.Other)]

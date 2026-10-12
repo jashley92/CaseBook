@@ -132,6 +132,8 @@ public static partial class IocObservable
         // "report[dot]final.docx" stay as they are.
         if (type == EntityType.FileName && BracketDotRx().IsMatch(v) && BracketDotRx().Replace(v, ".") is var live && HasFileExtension(live))
             return live;
+        // BUG-172: "evil.com." is the same name as "evil.com" (the trailing dot is the DNS root), so it matches across cases.
+        if (type == EntityType.Domain) return Refang(v).TrimEnd('.');
         return IsRefangable(type) ? Refang(v) : v;
     }
 
@@ -191,5 +193,9 @@ public static partial class IocObservable
     [GeneratedRegex(@"^[a-z][a-z0-9+.\-]*://\S+$", RegexOptions.IgnoreCase)] private static partial Regex UrlRx();
     [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")] private static partial Regex EmailRx();
     [GeneratedRegex(@"^[0-9a-f]+$", RegexOptions.IgnoreCase)] private static partial Regex HexRx();
-    [GeneratedRegex(@"^(?=.{1,253}$)([a-z0-9](-?[a-z0-9])*\.)+[a-z]{2,}$", RegexOptions.IgnoreCase)] private static partial Regex DomainRx();
+    // BUG-172: labels of letters and digits (any script, for internationalized names) with hyphens inside, so punycode
+    // ("xn--80ak6aa92e.com", the "xn--p1ai" TLD) and "my--bank.com" are domains; a trailing dot (how DNS logs print a name)
+    // is allowed, and Normalize drops it.
+    [GeneratedRegex(@"^(?=.{1,253}\.?$)(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+(?:\p{L}{2,63}|xn--[a-z0-9-]{1,59})\.?$",
+        RegexOptions.IgnoreCase)] private static partial Regex DomainRx();
 }
