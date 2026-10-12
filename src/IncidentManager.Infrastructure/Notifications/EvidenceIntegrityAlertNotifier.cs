@@ -32,10 +32,13 @@ public sealed class EvidenceIntegrityAlertNotifier : IEvidenceIntegrityAlertNoti
     private readonly IOptionsMonitor<EmailOptions> _options;
     private readonly ISecurityEventSink _siem;
     private readonly ILogger<EvidenceIntegrityAlertNotifier> _logger;
+    private readonly ICriticalAlertOutbox? _alerts;   // BUG-158
 
     public EvidenceIntegrityAlertNotifier(IEmailSender email, IEmailComposer composer, IConfiguration config,
-        IOptionsMonitor<EmailOptions> options, ISecurityEventSink siem, ILogger<EvidenceIntegrityAlertNotifier> logger)
+        IOptionsMonitor<EmailOptions> options, ISecurityEventSink siem, ILogger<EvidenceIntegrityAlertNotifier> logger,
+        ICriticalAlertOutbox? alerts = null)
     {
+        _alerts = alerts;
         _email = email;
         _composer = composer;
         _config = config;
@@ -76,7 +79,9 @@ public sealed class EvidenceIntegrityAlertNotifier : IEvidenceIntegrityAlertNoti
         try
         {
             var message = await _composer.ComposeAsync("evidence-drift-alarm", recipients, tokens, integrityUrl, htmlTokens, ct);
-            await _email.SendAsync(message, ct);
+            // BUG-158: like the audit-chain alarm (BUG-101), a failed send is retried and shown to administrators if it never goes.
+            if (_alerts is not null) await _alerts.SendAsync(Domain.Entities.AlertDelivery.EvidenceDriftAlarm, null, null, message, ct);
+            else await _email.SendAsync(message, ct);
         }
         catch (Exception ex)
         {

@@ -1,7 +1,7 @@
 namespace IncidentManager.Domain.Entities;
 
 /// <summary>
-/// BUG-101: a breach-escalation or integrity-alarm email whose send failed, kept so it's tried again and, if it never
+/// BUG-101: a breach-escalation or integrity-alarm (audit chain, evidence drift) email whose send failed, kept so it's tried again and, if it never
 /// goes, so people see that it didn't. A row exists only for a failed send. Operational state, deliberately NOT
 /// audited or hash-chained (see the interceptor's NotAudited set): retries update it, and the alarm itself is already
 /// carried by the critical log line and the SIEM event.
@@ -10,6 +10,7 @@ public class AlertDelivery
 {
     public const string BreachEscalation = "BreachEscalation";
     public const string IntegrityAlarm = "IntegrityAlarm";
+    public const string EvidenceDriftAlarm = "EvidenceDriftAlarm";   // BUG-158
 
     /// <summary>How long after the first failure each retry waits. After the last, the send is given up.</summary>
     public static readonly TimeSpan[] RetryAfter =

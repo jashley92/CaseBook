@@ -44,6 +44,33 @@ public class EvidenceIntegrityAlertNotifierTests
         ev.Category.Should().Be("Integrity");
     }
 
+    private sealed class CapturingOutbox : ICriticalAlertOutbox
+    {
+        public List<(string Kind, EmailMessage Message)> Sent { get; } = new();
+        public Task SendAsync(string kind, Guid? caseId, string? caseNumber, EmailMessage message, CancellationToken ct = default)
+        {
+            Sent.Add((kind, message));
+            return Task.CompletedTask;
+        }
+        public Task<int> RetryDueAsync(CancellationToken ct = default) => Task.FromResult(0);
+    }
+
+    [Fact]
+    public async Task The_alarm_goes_through_the_critical_alert_outbox_so_a_failed_send_is_retried(/* BUG-158 */)
+    {
+        var sender = new CapturingEmailSender();
+        var outbox = new CapturingOutbox();
+        var notifier = new EvidenceIntegrityAlertNotifier(sender, TestEmail.Composer(), TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions { IntegrityAlertDistribution = ["secops@example.test"] }),
+            new CapturingSecurityEventSink(), NullLogger<EvidenceIntegrityAlertNotifier>.Instance, outbox);
+
+        await notifier.OnDriftDetectedAsync(Drift());
+
+        outbox.Sent.Should().ContainSingle().Which.Kind.Should().Be(IncidentManager.Domain.Entities.AlertDelivery.EvidenceDriftAlarm);
+        outbox.Sent[0].Message.To.Should().Contain("secops@example.test");
+        sender.Sent.Should().BeEmpty("the outbox sends it");
+    }
+
     [Fact]
     public async Task Emails_the_configured_integrity_distribution_with_the_offender_list()
     {

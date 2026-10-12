@@ -17,7 +17,12 @@
                 @foreach (var a in _alerts)
                 {
                     <li>
-                        @(a.Kind == IncidentManager.Domain.Entities.AlertDelivery.BreachEscalation ? "Breach escalation" : "Audit-chain integrity alarm")
+                        @(a.Kind switch
+                        {
+                            IncidentManager.Domain.Entities.AlertDelivery.BreachEscalation => "Breach escalation",
+                            IncidentManager.Domain.Entities.AlertDelivery.EvidenceDriftAlarm => "Evidence integrity alarm",
+                            _ => "Audit-chain integrity alarm",
+                        })
                         @if (a.CaseId is { } caseId) { <span>for <a href="@($"cases/{caseId}")"><code>@a.CaseNumber</code></a></span> }
                         to @string.Join(", ", a.Recipients), first tried @TimeDisp.Short(a.FirstFailedAtUtc).
                         <button type="button" class="btn btn-sm btn-light py-0 ms-1" @onclick="() => Dismiss(a.Id)">Mark handled</button>
