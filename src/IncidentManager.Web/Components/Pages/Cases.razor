@@ -577,7 +577,7 @@ else
                         <ul class="small mb-0" style="max-height:16rem;overflow:auto">
                             @foreach (var c in selectedItems)
                             {
-                                <li><code>@c.CaseNumber</code> — @c.Title @(c.LegalReferred && _bulkVerb == BulkVerb.Refer ? "· already referred" : "")</li>
+                                <li><code>@c.CaseNumber</code> — @c.Title @(c.LegalReferred && _bulkVerb == BulkVerb.Refer ? "· already referred, skipped (its referral is kept)" : "")</li>
                             }
                         </ul>
                     </div>
@@ -1230,7 +1230,9 @@ else
         var done = 0;
         try
         {
-            foreach (var c in targets)
+            // BUG-162: a case already referred keeps its referral (when, by whom, the contact and note); referring it again
+            // would replace them with this batch's.
+            foreach (var c in targets.Where(c => verb != BulkVerb.Refer || !c.LegalReferred))
             {
                 try
                 {
@@ -1251,6 +1253,9 @@ else
         finally { _bulkBusy = false; }
 
         CloseBulk();
+        var kept = verb == BulkVerb.Refer ? targets.Count(c => c.LegalReferred) : 0;
+        if (kept > 0)
+            Toasts.Info($"{kept} case{(kept == 1 ? " was" : "s were")} already referred and kept {(kept == 1 ? "its" : "their")} referral.");
         if (done > 0)
         {
             Toasts.Success(verb == BulkVerb.Assign
