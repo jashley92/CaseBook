@@ -77,6 +77,13 @@ public sealed class EmailSender : IEmailSender
             _log.LogWarning(ex, "Notification email reached {Delivered} of {RecipientCount} recipient(s); {Failed} address(es) were refused.",
                 to.Count - ex.InnerExceptions.Length, to.Count, ex.InnerExceptions.Length);
         }
+        catch (SmtpFailedRecipientException ex) when (ex is not SmtpFailedRecipientsException && to.Count > 1)
+        {
+            // BUG-149: when exactly one of several addresses is refused, SmtpClient throws the singular exception (after
+            // the others got the message), so it's the same partial delivery as above.
+            _log.LogWarning(ex, "Notification email reached {Delivered} of {RecipientCount} recipient(s); 1 address was refused.",
+                to.Count - 1, to.Count);
+        }
         catch (Exception ex)
         {
             // As above (CWE-359): the exception is the actionable signal for an SMTP problem; the subject and
