@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Security;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
@@ -36,15 +37,20 @@ public sealed class AccessReviewService
 
     private readonly IAppDbContextFactory _factory;
     private readonly IClock _clock;
+    private readonly ICurrentUser _user;
+    private readonly ISecurityEventSink? _siem;
 
-    public AccessReviewService(IAppDbContextFactory factory, IClock clock)
+    public AccessReviewService(IAppDbContextFactory factory, IClock clock, ICurrentUser user, ISecurityEventSink? siem = null)
     {
         _factory = factory;
         _clock = clock;
+        _user = user;
+        _siem = siem;
     }
 
     public async Task<AccessReview> BuildAsync(CancellationToken ct = default)
     {
+        AdminActionPermissions.Require<AccessReviewService>(_user, _siem);   // BUG-22: the page is Administer-gated too
         using var db = _factory.CreateDbContext();
         var roles = await db.Roles.AsNoTracking().ToListAsync(ct);
         var maps = await db.RoleMappings.AsNoTracking().ToListAsync(ct);

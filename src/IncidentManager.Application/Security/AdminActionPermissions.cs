@@ -33,7 +33,7 @@ public static class AdminActionPermissions
         typeof(EmailTemplateAdminService), typeof(NotificationRuleService), typeof(ReportProfileService), typeof(ReportTemplateService),
         typeof(RoleService), typeof(StageGateService), typeof(TaxonomyAdminService), typeof(IntegrityService),
         typeof(Config.ConfigBundleService), typeof(ComplianceBundleService), typeof(IAccessLogService),
-        typeof(ApiTokenService),
+        typeof(ApiTokenService), typeof(AccessReviewService),
     ];
 
     public static readonly IReadOnlyDictionary<string, Permission> Required =
@@ -92,6 +92,7 @@ public static class AdminActionPermissions
 
             // Administrator-only oversight reads: behind Administer pages and endpoints, asserted here as well.
             [Key<ComplianceBundleService>(nameof(ComplianceBundleService.BuildAsync))] = Permission.Administer,
+            [Key<AccessReviewService>(nameof(AccessReviewService.BuildAsync))] = Permission.Administer,
             [Key<IAccessLogService>(nameof(IAccessLogService.QueryAsync))] = Permission.Administer,
             [Key<IAccessLogService>(nameof(IAccessLogService.ActorsAsync))] = Permission.Administer,
             [Key<ApiTokenService>(nameof(ApiTokenService.ListAllAsync))] = Permission.Administer,

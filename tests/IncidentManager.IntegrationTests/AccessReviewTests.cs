@@ -44,6 +44,14 @@ public sealed class AccessReviewTests : IDisposable
             .Options);
 
     [Fact]
+    public async Task Only_an_administrator_can_build_the_review(/* BUG-22 */)
+    {
+        var analyst = new TestCurrentUser { UserId = "an1", RoleSet = [AppRole.Analyst] };
+        await new AccessReviewService(NewFactory(), _clock, analyst).Invoking(s => s.BuildAsync())
+            .Should().ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
+    }
+
+    [Fact]
     public async Task Reports_broad_access_roles_and_restricted_cases()
     {
         await using (var db = NewContext())
@@ -80,7 +88,7 @@ public sealed class AccessReviewTests : IDisposable
 
         await using (var db = NewContext())
         {
-            var review = await new AccessReviewService(NewFactory(), _clock).BuildAsync();
+            var review = await new AccessReviewService(NewFactory(), _clock, _user).BuildAsync();
 
             // Broad access: roles with ViewAllCases / ViewRestricted, with their AD groups.
             review.Broad.Should().Contain(b => b.RoleName == "Manager" && b.ViewAllCases);
