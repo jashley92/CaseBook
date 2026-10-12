@@ -33,9 +33,9 @@ public sealed class EmailSenderRefusedRecipientTests
             while (await reader.ReadLineAsync(ct) is { } line)
             {
                 var cmd = line.ToUpperInvariant();
-                if (cmd.StartsWith("EHLO") || cmd.StartsWith("HELO")) await writer.WriteLineAsync("250 relay.test");
-                else if (cmd.StartsWith("MAIL FROM")) await writer.WriteLineAsync("250 OK");
-                else if (cmd.StartsWith("RCPT TO")) await writer.WriteLineAsync(cmd.Contains("GONE") ? "550 5.1.1 No such user" : "250 OK");
+                if (cmd.StartsWith("EHLO", StringComparison.Ordinal) || cmd.StartsWith("HELO", StringComparison.Ordinal)) await writer.WriteLineAsync("250 relay.test");
+                else if (cmd.StartsWith("MAIL FROM", StringComparison.Ordinal)) await writer.WriteLineAsync("250 OK");
+                else if (cmd.StartsWith("RCPT TO", StringComparison.Ordinal)) await writer.WriteLineAsync(cmd.Contains("GONE", StringComparison.Ordinal) ? "550 5.1.1 No such user" : "250 OK");
                 else if (cmd == "DATA")
                 {
                     await writer.WriteLineAsync("354 Go ahead");
