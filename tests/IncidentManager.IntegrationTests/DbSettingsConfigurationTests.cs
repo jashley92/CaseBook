@@ -1,6 +1,7 @@
 using FluentAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Admin;
+using IncidentManager.Application.Sla;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Configuration;
 using IncidentManager.Infrastructure.Notifications;
@@ -113,6 +114,35 @@ public sealed class DbSettingsConfigurationTests : IDisposable
         await using (var db = NewContext())
             await NewService(db).SetAsync("Email:LegalDistribution", "");
         (WithFileList().GetSection("Email").Get<EmailOptions>() ?? new EmailOptions()).LegalDistribution.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_blanked_SLA_target_is_off_not_the_files_default(/* BUG-192 */)
+    {
+        IConfigurationRoot WithFileTargets() => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Sla:Containment:Critical"] = "4",
+                ["Sla:Resolution:Critical"] = "24",
+                ["Notifications:OverdueScan:IntervalHours"] = "25",
+            })
+            .Add(new DbSettingsConfigurationSource("Sqlite", Conn))
+            .Build();
+
+        await using (var db = NewContext())
+        {
+            await NewService(db).SetAsync("Sla:Containment:Critical", "");   // the hint: "Blank disables the SLA"
+            await NewService(db).SetAsync("Notifications:OverdueScan:IntervalHours", "");
+        }
+        var targets = new IncidentManager.Infrastructure.Sla.ConfigurationSlaTargetsProvider(WithFileTargets()).Current;
+        targets.HoursFor(SlaClock.Containment, Severity.Critical).Should().BeNull();
+        targets.HoursFor(SlaClock.Resolution, Severity.Critical).Should().Be(24, "untouched, so the file's default");
+        WithFileTargets()["Notifications:OverdueScan:IntervalHours"].Should().Be("25", "a blank elsewhere still means the default");
+
+        await using (var db = NewContext())
+            await NewService(db).ResetAsync("Sla:Containment:Critical");
+        new IncidentManager.Infrastructure.Sla.ConfigurationSlaTargetsProvider(WithFileTargets()).Current
+            .HoursFor(SlaClock.Containment, Severity.Critical).Should().Be(4, "reset to default brings the file's back");
     }
 
     [Fact]

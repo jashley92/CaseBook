@@ -13,6 +13,9 @@ public enum SettingKind
 
 /// <summary>Metadata for one administrable operational setting.</summary>
 /// <param name="Key">Configuration key path (e.g. "Email:From"), matching the IConfiguration key it overrides.</param>
+/// <param name="BlankIsOff">BUG-192: a value saved blank means none (an SLA target that's off), so it hides the
+/// appsettings.json default instead of falling back to it. Only for settings read as raw strings: a bound int can't
+/// take an empty value.</param>
 public sealed record SettingDefinition(
     string Key,
     string Label,
@@ -23,7 +26,8 @@ public sealed record SettingDefinition(
     bool CustomEditor = false,
     IReadOnlyList<SettingOption>? Options = null,
     int Min = 0,
-    int? Max = null);
+    int? Max = null,
+    bool BlankIsOff = false);
 
 /// <summary>One allowed value of a fixed-choice text setting, shown as a dropdown instead of a free-text box.</summary>
 public sealed record SettingOption(string Value, string Label);
@@ -168,49 +172,49 @@ public static class SettingsCatalog
             "Hours between full passes. Each pass re-hashes every stored file, so keep it slow. " +
             "A pass also runs at startup. Default 24.", "24"),
         new SettingDefinition("Sla:Containment:Critical", "Containment: Critical (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to containment for Critical cases. Blank disables the SLA for this severity.", "4", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Target hours from detection to containment for Critical cases. Blank disables the SLA for this severity.", "4", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Containment:High", "Containment: High (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to containment for High cases. Blank disables the SLA for this severity.", "12", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Target hours from detection to containment for High cases. Blank disables the SLA for this severity.", "12", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Containment:Medium", "Containment: Medium (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to containment for Medium cases. Blank disables the SLA for this severity.", "24", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Target hours from detection to containment for Medium cases. Blank disables the SLA for this severity.", "24", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Containment:Low", "Containment: Low (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to containment for Low cases. Blank disables the SLA for this severity.", "72", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Target hours from detection to containment for Low cases. Blank disables the SLA for this severity.", "72", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Resolution:Critical", "Resolution: Critical (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to resolution (recovery) for Critical cases. Blank disables the SLA for this severity.", "24", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Target hours from detection to resolution (recovery) for Critical cases. Blank disables the SLA for this severity.", "24", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Resolution:High", "Resolution: High (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to resolution (recovery) for High cases. Blank disables the SLA for this severity.", "72", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Target hours from detection to resolution (recovery) for High cases. Blank disables the SLA for this severity.", "72", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Resolution:Medium", "Resolution: Medium (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to resolution (recovery) for Medium cases. Blank disables the SLA for this severity.", "168", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Target hours from detection to resolution (recovery) for Medium cases. Blank disables the SLA for this severity.", "168", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Resolution:Low", "Resolution: Low (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from detection to resolution (recovery) for Low cases. Blank disables the SLA for this severity.", "336", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Target hours from detection to resolution (recovery) for Low cases. Blank disables the SLA for this severity.", "336", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         // PROD-08: detection SLA (occurred → detected). Blank by default: dwell targets are an org choice.
         new SettingDefinition("Sla:Detection:Critical", "Detection: Critical (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from Occurred to detection for Critical cases, measured only when Occurred is recorded. Blank disables it.", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Target hours from Occurred to detection for Critical cases, measured only when Occurred is recorded. Blank disables it.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Detection:High", "Detection: High (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from Occurred to detection for High cases, measured only when Occurred is recorded. Blank disables it.", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Target hours from Occurred to detection for High cases, measured only when Occurred is recorded. Blank disables it.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Detection:Medium", "Detection: Medium (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from Occurred to detection for Medium cases, measured only when Occurred is recorded. Blank disables it.", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Target hours from Occurred to detection for Medium cases, measured only when Occurred is recorded. Blank disables it.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Detection:Low", "Detection: Low (hours)", "Response SLA", SettingKind.Int,
-            "Target hours from Occurred to detection for Low cases, measured only when Occurred is recorded. Blank disables it.", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Target hours from Occurred to detection for Low cases, measured only when Occurred is recorded. Blank disables it.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:AtRiskThresholdPercent", "At-risk threshold (%)", "Response SLA", SettingKind.Int,
             "Percent of a target that must elapse before an open case is flagged at risk (1–100).", "80", Min: 1, Max: 100),
         // PROD-08: optional per-classification targets — Breach cases only, falling back to the general target.
         new SettingDefinition("Sla:Breach:Containment:Critical", "Breach containment: Critical (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the containment target for Critical cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Overrides the containment target for Critical cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Breach:Containment:High", "Breach containment: High (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the containment target for High cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Overrides the containment target for High cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Breach:Containment:Medium", "Breach containment: Medium (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the containment target for Medium cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Overrides the containment target for Medium cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Breach:Containment:Low", "Breach containment: Low (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the containment target for Low cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Overrides the containment target for Low cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Breach:Resolution:Critical", "Breach resolution: Critical (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the resolution target for Critical cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Overrides the resolution target for Critical cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Breach:Resolution:High", "Breach resolution: High (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the resolution target for High cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Overrides the resolution target for High cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Breach:Resolution:Medium", "Breach resolution: Medium (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the resolution target for Medium cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Overrides the resolution target for Medium cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Breach:Resolution:Low", "Breach resolution: Low (hours)", "Breach SLA overrides", SettingKind.Int,
-            "Overrides the resolution target for Low cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours),
+            "Overrides the resolution target for Low cases Breach cases. Blank uses the general target.", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
 
         // PROD-07 / UX-15: regulatory notification-deadline clock. Off by default; per-jurisdiction timers are
         // managed as reference data in the "Per-jurisdiction rules" editor on the same Regulatory deadlines page.

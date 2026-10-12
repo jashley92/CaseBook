@@ -170,6 +170,11 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ### Next release
 
+- **A blanked SLA target is off, as its hint says.** Clearing a Containment or Resolution hours box saved it blank,
+  but the shipped `appsettings.json` default (4 h, 12 h, …) kept applying, while the Settings page showed it blank. A
+  blank target now means none. **If you cleared one and its cases were still being measured, they stop being
+  measured after the upgrade**; use *Reset to default* to get the default back.
+
 - **Deadline reminders cover every jurisdiction in play.** Only the soonest-due clock was reminded, and a breached
   jurisdiction stays soonest until it's notified, so a second jurisdiction could go at risk and breach with no
   reminder naming it. Each jurisdiction's clock is now reminded as it enters at risk and breached (jurisdictions on

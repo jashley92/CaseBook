@@ -60,7 +60,12 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
 
             foreach (var r in rows)
             {
-                if (r.Value is null) continue;
+                if (r.Value is null)
+                {
+                    // BUG-192: saved blank. Where blank means "off" it hides the file's default; otherwise the default applies.
+                    if (SettingsCatalog.ByKey.TryGetValue(r.Key, out var blank) && blank.BlankIsOff) data[r.Key] = "";
+                    continue;
+                }
 
                 // X-02 taxonomy display labels (Taxonomy:{Kind}:Label:{Member}) share this table but are a
                 // known, non-security key space (cosmetic labels only). Load them so ITaxonomyDisplay reads
