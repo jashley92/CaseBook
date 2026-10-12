@@ -297,6 +297,27 @@ public class CaseTests
     }
 
     [Fact]
+    public void UpdateDetails_rejects_moving_detection_past_closure_notification_or_a_phase_change()
+    {
+        // BUG-39: only containment and resolution were checked, so detection could land after closure (a negative MTTR)
+        // or after the regulators were told.
+        var c = NewCase();
+        c.UpdateDetails("Title", null, null, null, null, Now.AddHours(-10), null, "analyst1", Now);
+        c.ChangePhase(CasePhase.Triage, null, "analyst1", Now.AddHours(-8), effectiveAtUtc: Now.AddHours(-8));
+        var afterPhase = () => c.UpdateDetails("Title", null, null, null, null, Now.AddHours(-7), null, "analyst1", Now);
+        afterPhase.Should().Throw<ArgumentException>().WithMessage("*first changed phase*");
+
+        c.ReportedAtUtc = Now.AddHours(-9);
+        var afterReport = () => c.UpdateDetails("Title", null, null, null, null, Now.AddMinutes(-530), null, "analyst1", Now);
+        afterReport.Should().Throw<ArgumentException>().WithMessage("*regulators were notified*");
+
+        c.ReportedAtUtc = null;
+        c.ClosedAtUtc = Now.AddHours(-9);
+        var afterClose = () => c.UpdateDetails("Title", null, null, null, null, Now.AddMinutes(-530), null, "analyst1", Now);
+        afterClose.Should().Throw<ArgumentException>().WithMessage("*after the case was closed*");
+    }
+
+    [Fact]
     public void UpdateDetails_rejects_initial_activity_more_than_ten_years_before_detection()
     {
         var c = NewCase();

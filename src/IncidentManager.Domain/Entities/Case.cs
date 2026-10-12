@@ -397,6 +397,14 @@ public class Case : AuditableEntity, IHashableEntity
                 throw new ArgumentException("The detected time can't be after the case was contained.");
             if (ResolvedAtUtc is { } resolved && detectedAtUtc > resolved)
                 throw new ArgumentException("The detected time can't be after the case was resolved.");
+            // BUG-39: nor past the other times that count from it.
+            if (ClosedAtUtc is { } closed && detectedAtUtc > closed)
+                throw new ArgumentException("The detected time can't be after the case was closed.");
+            if (ReportedAtUtc is { } reported && detectedAtUtc > reported)
+                throw new ArgumentException("The detected time can't be after regulators were notified.");
+            if (StatusChanges.Where(x => x.From is not null).Select(x => x.EffectiveAt).DefaultIfEmpty(DateTimeOffset.MaxValue).Min()
+                    is var firstMove && detectedAtUtc > firstMove)
+                throw new ArgumentException($"The detected time can't be after the case first changed phase ({firstMove:u}).");
         }
 
         Title = title.Trim();
