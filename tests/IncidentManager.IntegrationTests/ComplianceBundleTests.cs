@@ -57,7 +57,7 @@ public sealed class ComplianceBundleTests : IDisposable
             .Options);
 
     private ComplianceBundleService NewBundleService(AppDbContext db) =>
-        new(NewFactory(), _hasher, _signer, new StubUserDirectory(), new AuditWriter(db, _hasher, _user, _clock), _user, _clock);
+        new(NewFactory(), _hasher, _signer, new StubUserDirectory(), new AuditWriter(NewFactory(), _hasher, _user, _clock), _user, _clock);
 
     private static Dictionary<string, string> Unzip(byte[] bytes)
     {

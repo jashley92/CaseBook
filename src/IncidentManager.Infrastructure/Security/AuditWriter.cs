@@ -9,17 +9,19 @@ namespace IncidentManager.Infrastructure.Security;
 /// Records a privileged non-mutating action (a read/export) into the hash-chained audit log by
 /// appending one <see cref="AuditLogEntry"/> onto the current head. <c>AuditLogEntry</c> is excluded
 /// from the interceptor's own auditing, so saving here appends exactly one link and does not recurse.
+/// BUG-23: each call uses its own context. On the circuit's shared context a failed save left the entry tracked, so
+/// every later append in that session re-sent it and failed on the Sequence index until the page was reloaded.
 /// </summary>
 public sealed class AuditWriter : IAuditWriter
 {
-    private readonly IAppDbContext _db;
+    private readonly IAppDbContextFactory _factory;
     private readonly IHashChainService _hasher;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
 
-    public AuditWriter(IAppDbContext db, IHashChainService hasher, ICurrentUser user, IClock clock)
+    public AuditWriter(IAppDbContextFactory factory, IHashChainService hasher, ICurrentUser user, IClock clock)
     {
-        _db = db;
+        _factory = factory;
         _hasher = hasher;
         _user = user;
         _clock = clock;
@@ -33,7 +35,8 @@ public sealed class AuditWriter : IAuditWriter
         await AuditChainGate.EnterAsync(ct);
         try
         {
-            var head = await _db.AuditLog.AsNoTracking()
+            using var db = _factory.CreateDbContext();
+            var head = await db.AuditLog.AsNoTracking()
                 .OrderByDescending(a => a.Sequence).FirstOrDefaultAsync(ct);
 
             var entry = new AuditLogEntry
@@ -48,8 +51,8 @@ public sealed class AuditWriter : IAuditWriter
             };
             _hasher.ChainAppend(entry, head);
 
-            _db.AuditLog.Add(entry);
-            await _db.SaveChangesAsync(ct);
+            db.AuditLog.Add(entry);
+            await db.SaveChangesAsync(ct);
         }
         finally
         {

@@ -54,7 +54,7 @@ public sealed class EvidenceUploadTests : IDisposable
 
     private EvidenceService NewEvidenceService() =>
         new(NewFactory(), new FileEvidenceStore(Options.Create(new EvidenceStoreOptions { RootPath = _storeDir })),
-            _user, _clock, new AuditWriter(NewContext(), _hasher, _user, _clock));
+            _user, _clock, new AuditWriter(NewFactory(), _hasher, _user, _clock));
 
     private static string Sha256Hex(string content) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant();

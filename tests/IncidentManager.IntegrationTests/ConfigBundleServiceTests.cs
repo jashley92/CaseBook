@@ -54,7 +54,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
             .Options);
 
     private ConfigBundleService NewService(AppDbContext db) =>
-        new(NewFactory(), _signer, new AuditWriter(db, _hasher, _user, _clock), _user, _clock);
+        new(NewFactory(), _signer, new AuditWriter(NewFactory(), _hasher, _user, _clock), _user, _clock);
 
     private async Task SeedConfigAsync(AppDbContext db)
     {
@@ -488,7 +488,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         var sink = new CapturingSecurityEventSink();
         var directory = new CountingDirectory();
         var reloader = new CountingReloader();
-        var svc = new ConfigBundleService(NewFactory(), _signer, new AuditWriter(db, _hasher, _user, _clock), _user, _clock,
+        var svc = new ConfigBundleService(NewFactory(), _signer, new AuditWriter(NewFactory(), _hasher, _user, _clock), _user, _clock,
             reloader, directory, sink);
         var live = await svc.BuildBundleAsync();
         var incoming = live with
@@ -542,7 +542,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
             Options.Create(new ReportTemplateOptions { RootPath = Path.Combine(_workDir, name, "templates") }),
             Options.Create(new ReportBrandingOptions()));
         var factory = new TestDbContextFactory(options);
-        var config = new ConfigBundleService(factory, _signer, new AuditWriter(db, _hasher, _user, _clock), _user, _clock,
+        var config = new ConfigBundleService(factory, _signer, new AuditWriter(factory, _hasher, _user, _clock), _user, _clock,
             templateEngine: _engine, templateStore: store);
         return (factory, store, config);
     }

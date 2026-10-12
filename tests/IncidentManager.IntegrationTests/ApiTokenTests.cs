@@ -57,7 +57,7 @@ public sealed class ApiTokenTests : IDisposable
 
     private ApiTokenService NewService(AppDbContext db, ICurrentUser user) =>
         new(NewFactory(user), user, _clock, new FakeRoleDirectory(),
-            new AuditWriter(db, _hasher, user, _clock));
+            new AuditWriter(NewFactory(user), _hasher, user, _clock));
 
     private static TestCurrentUser Admin() => new() { UserId = "admin1", DisplayName = "Admin One", RoleSet = [AppRole.SysAdmin] };
     private static TestCurrentUser Analyst() => new() { UserId = "analyst1", DisplayName = "Analyst One", RoleSet = [AppRole.Analyst] };
@@ -219,7 +219,7 @@ public sealed class ApiTokenTests : IDisposable
         var owner = Analyst();
         owner.RoleSet = [AppRole.Analyst, AppRole.IncidentCommander];
         var svc = new ApiTokenService(NewFactory(owner), owner, _clock, new FakeRoleDirectory(),
-            new AuditWriter(db, _hasher, owner, _clock), users: mirror);
+            new AuditWriter(NewFactory(owner), _hasher, owner, _clock), users: mirror);
         var created = await svc.CreatePersonalAsync("mine", ["Analyst", "IncidentCommander"], _clock.UtcNow.AddDays(30));
 
         (await svc.AuthenticateAsync(created.Plaintext))!.Permissions.Should().Contain(Permission.ApproveReports);
