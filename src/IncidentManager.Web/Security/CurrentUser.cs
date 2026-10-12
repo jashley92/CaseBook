@@ -35,7 +35,11 @@ public sealed class CurrentUser : ICurrentUser
     {
         get
         {
-            var fromHttp = _http.HttpContext?.User;
+            // BUG-126: inside a circuit the HttpContext is the connection's (the /_blazor WebSocket), whose user is fixed at
+            // connect time; the circuit's auth state is the one S-10 refreshes, so it wins there.
+            var http = _http.HttpContext;
+            var inCircuit = http?.Request.Path.StartsWithSegments("/_blazor") == true;
+            var fromHttp = inCircuit ? null : http?.User;
             if (fromHttp?.Identity?.IsAuthenticated == true) return fromHttp;
             if (_cached is not null) return _cached;
 

@@ -118,4 +118,26 @@ public sealed class SessionPermissionRefreshTests
         (await provider.RevalidateAsync()).Should().BeFalse("nothing further changed");
         provider.Dispose();
     }
+
+    [Fact]
+    public async Task Inside_a_circuit_the_refreshed_principal_wins_over_the_connection_request(/* BUG-126 */)
+    {
+        var d = Standard();
+        var provider = new PermissionRevalidatingAuthStateProvider(
+            new SessionPermissionRefresher(d, windowsMode: true), NullLogger<PermissionRevalidatingAuthStateProvider>.Instance);
+        var signedIn = WindowsUser(d, "SOC-ICs");
+        provider.SetAuthenticationState(Task.FromResult(new AuthenticationState(signedIn)));
+        // The circuit's HttpContext is the /_blazor WebSocket request, carrying the user as they were at connect time.
+        var connection = new DefaultHttpContext { User = signedIn };
+        connection.Request.Path = "/_blazor";
+        var user = new CurrentUser(new HttpContextAccessor { HttpContext = connection }, provider,
+            new ServiceCollection().AddSingleton<IRoleDirectory>(d).BuildServiceProvider());
+        user.Has(Permission.ApproveReports).Should().BeTrue();
+
+        d.Groups.Remove("SOC-ICs");
+        (await provider.RevalidateAsync()).Should().BeTrue();
+
+        user.Has(Permission.ApproveReports).Should().BeFalse("services follow the refreshed principal, not the connection's");
+        provider.Dispose();
+    }
 }
