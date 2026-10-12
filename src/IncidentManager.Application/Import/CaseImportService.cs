@@ -42,7 +42,7 @@ public sealed class CaseImportService
     // BUG-02: the limits below match the database columns, which SQL Server enforces (SQLite doesn't).
     private const int MaxEntityDescription = 4000;
     private const int MaxSource = 200;
-    private const int MaxValue = 1024;
+    private const int MaxValue = 2000;   // BUG-175: CaseEntities.Value
     private const int MaxLabel = 300;
     private const int MaxOwner = 200;
 
@@ -537,7 +537,7 @@ public sealed class CaseImportService
         var droppedEntities = 0;
         foreach (var e in doc.Entities ?? [])
         {
-            var rawValue = Clamp(e.Value, MaxValue, "Entity value", p.Warnings);
+            var rawValue = e.Value?.Trim();
             if (string.IsNullOrWhiteSpace(rawValue)) { droppedEntities++; continue; }
 
             EntityType type;
@@ -553,6 +553,14 @@ public sealed class CaseImportService
 
             var value = IocObservable.Normalize(type, rawValue);
             if (value.Length == 0) { droppedEntities++; continue; }
+            // BUG-175: a cut-short indicator is a different one (a truncated URL still marked Malicious, fed to blocking),
+            // so one longer than the column is left out, after refanging, and named.
+            if (value.Length > MaxValue)
+            {
+                p.Warnings.Add($"An entity value of {value.Length:N0} characters (starting \"{value[..60]}…\") is longer than " +
+                               $"{MaxValue:N0}, the most an indicator holds, so it wasn't imported (a shortened one would be a different indicator).");
+                continue;
+            }
 
             var row = new ImportEntityRow
             {

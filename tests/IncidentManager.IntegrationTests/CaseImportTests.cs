@@ -464,6 +464,23 @@ public sealed class CaseImportTests : IDisposable
             .InTimelineOrder().Select(s => s.Description).Should().Equal("Initial access", "Exfiltration");
     }
 
+    [Fact]
+    public void A_long_indicator_is_kept_whole_up_to_its_column_and_left_out_beyond_it(/* BUG-175 */)
+    {
+        var url1500 = "https://phish.example/" + new string('a', 1478);
+        var url2100 = "hxxps://phish[.]example/" + new string('b', 2076);
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Entities = new() { new() { Value = url1500 }, new() { Value = url2100 } }
+        };
+
+        var p = CaseImportService.BuildPreviewCore(doc, _clock.UtcNow);
+
+        p.Entities.Should().ContainSingle().Which.Value.Should().Be(url1500, "it fits the column, so it isn't cut");
+        p.Warnings.Should().Contain(w => w.Contains("2,098 characters") && w.Contains("wasn't imported"));
+    }
+
     // ── Apply (integration) ──────────────────────────────────────────────────────────────────────
 
     private static CaseImportDocument FullDoc() => new()
