@@ -117,6 +117,20 @@ public sealed class OverdueActionItemScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task On_a_restricted_case_an_owner_off_the_team_is_not_told_the_IC_is(/* BUG-96 */)
+    {
+        var id = SeedCaseWithItems();   // "Overdue open" is owned by analyst1, who isn't on the team
+        using (var db = NewContext())
+            await db.Cases.Where(c => c.Id == id).ExecuteUpdateAsync(u => u.SetProperty(c => c.IsRestricted, true));
+        var notifications = new CapturingNotifications();
+
+        await NewScanner(notifications, new OverdueActionItemTracker()).ScanAndNotifyAsync();
+
+        var item = notifications.Received.Should().ContainSingle().Subject;
+        item.OwnerUserId.Should().BeNull("the reminder names a restricted case they can't open, so it goes to the IC");
+    }
+
+    [Fact]
     public async Task A_second_pass_does_not_re_notify()
     {
         SeedCaseWithItems();

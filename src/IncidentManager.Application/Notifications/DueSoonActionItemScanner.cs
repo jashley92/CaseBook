@@ -17,7 +17,9 @@ public sealed class DueSoonActionItemScanner(
     IAppDbContextFactory factory,
     ICaseNotifications notifications,
     IDueSoonActionItemTracker tracker,
-    IClock clock)
+    IClock clock,
+    IUserDirectory? users = null,
+    IRoleDirectory? roles = null)
 {
     /// <summary>
     /// Scans for items due within <paramref name="leadHours"/> and notifies the not-yet-reminded ones.
@@ -30,16 +32,23 @@ public sealed class DueSoonActionItemScanner(
         using var db = factory.CreateDbContext();
 
         // Join to the case so we can address the owner (else the incident commander) without a second load.
-        var dueSoon = await (
+        var rows = await (
             from a in db.ActionItems.AsNoTracking()
             where a.DueAtUtc != null && a.DueAtUtc >= now && a.DueAtUtc <= horizon
                   && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled
             join c in db.Cases.AsNoTracking().ExcludingExercises() on a.CaseId equals c.Id // PROD-43: skip drills
             where c.Phase != CasePhase.Closed && !c.IsArchived // BUG-12: no reminders for a closed or archived case
-            select new DueSoonActionItem(
-                c.Id, c.CaseNumber, c.Title, c.IncidentCommander,
-                a.Id, a.Title, a.DueAtUtc!.Value, a.Owner))
+            select new
+            {
+                Item = new DueSoonActionItem(c.Id, c.CaseNumber, c.Title, c.IncidentCommander, a.Id, a.Title, a.DueAtUtc!.Value, a.Owner),
+                c.IsRestricted, Team = c.Assignments.Select(x => x.UserId).ToList()
+            })
             .ToListAsync(ct);
+        // BUG-96: on a restricted case, an owner who can't see it isn't told about its task; the IC is instead.
+        var dueSoon = rows.Select(r => r.Item with
+        {
+            OwnerUserId = TaskReminderAudience.Owner(r.IsRestricted, r.Item.IncidentCommanderUserId, r.Team, r.Item.OwnerUserId, users, roles)
+        }).ToList();
 
         // Only alert on items not already reminded for this due date (once per approaching deadline).
         var newly = dueSoon.Where(i => tracker.TryMarkNotified(i.ActionItemId, i.DueAtUtc)).ToList();
