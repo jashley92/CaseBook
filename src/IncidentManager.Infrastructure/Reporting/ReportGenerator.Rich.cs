@@ -102,6 +102,6 @@ public sealed partial class ReportGenerator
         if (italic) rPr.Append(new Italic());
         if (color is not null) rPr.Append(new Color { Val = color });
         rPr.Append(new FontSize { Val = size.ToString(CultureInfo.InvariantCulture) });
-        return new Run(rPr, new Text(text) { Space = SpaceProcessingModeValues.Preserve });
+        return new Run(rPr, new Text(XmlSafe.Clean(text)) { Space = SpaceProcessingModeValues.Preserve });
     }
 }

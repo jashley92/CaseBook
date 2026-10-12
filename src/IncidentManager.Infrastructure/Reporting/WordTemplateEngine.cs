@@ -108,7 +108,7 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
                 var body = main.Document!.Body!;
                 var mark = new Paragraph(new Run(
                     new RunProperties(new Bold(), new Color { Val = "C00000" }),
-                    new Text(banner) { Space = SpaceProcessingModeValues.Preserve }));
+                    new Text(XmlSafe.Clean(banner)) { Space = SpaceProcessingModeValues.Preserve }));
                 body.InsertAt(mark, 0);
             }
             main.Document.Save();
@@ -170,7 +170,7 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         {
             var copy = (OpenXmlElement)block.CloneNode(true);
             Replace(copy, name => ReportTemplateFields.CollectionFor(name) == prefix ? "" : null);
-            if (copy.Descendants<Text>().FirstOrDefault() is { } first) first.Text = emptyText + first.Text;
+            if (copy.Descendants<Text>().FirstOrDefault() is { } first) first.Text = XmlSafe.Clean(emptyText + first.Text);
             block.InsertBeforeSelf(copy);
         }
         block.Remove();
@@ -191,14 +191,14 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
     private static void SetText(Text t, string value)
     {
         var lines = value.Replace("\r\n", "\n").Split('\n');
-        t.Text = lines[0];
+        t.Text = XmlSafe.Clean(lines[0]);
         t.Space = SpaceProcessingModeValues.Preserve;
         OpenXmlElement after = t;
         foreach (var line in lines.Skip(1))
         {
             var br = new Break();
             after.InsertAfterSelf(br);
-            var next = new Text(line) { Space = SpaceProcessingModeValues.Preserve };
+            var next = new Text(XmlSafe.Clean(line)) { Space = SpaceProcessingModeValues.Preserve };
             br.InsertAfterSelf(next);
             after = next;
         }
@@ -238,7 +238,7 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
             var merged = string.Concat(texts.Skip(from).Take(to - from + 1));
             var first = runs[from];
             foreach (var t in first.Elements<Text>().ToList()) t.Remove();
-            first.AppendChild(new Text(merged) { Space = SpaceProcessingModeValues.Preserve });
+            first.AppendChild(new Text(XmlSafe.Clean(merged)) { Space = SpaceProcessingModeValues.Preserve });
             for (var i = from + 1; i <= to; i++) runs[i].Remove();
         }
     }

@@ -357,7 +357,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         for (var i = 0; i < lines.Length; i++)
         {
             if (i > 0) paragraph.AppendChild(new Run(new Break()));
-            paragraph.AppendChild(new Run((RunProperties)runProps.CloneNode(true), new Text(lines[i]) { Space = SpaceProcessingModeValues.Preserve }));
+            paragraph.AppendChild(new Run((RunProperties)runProps.CloneNode(true), new Text(XmlSafe.Clean(lines[i])) { Space = SpaceProcessingModeValues.Preserve }));
         }
         return paragraph;
     }
@@ -372,20 +372,20 @@ public sealed partial class ReportGenerator : IReportGenerator
             new Color { Val = HeadingColor },
             new FontSize { Val = size.ToString(CultureInfo.InvariantCulture) },
             new Underline { Val = UnderlineValues.Single });
-        var run = new Run(runProps, new Text(text) { Space = SpaceProcessingModeValues.Preserve });
+        var run = new Run(runProps, new Text(XmlSafe.Clean(text)) { Space = SpaceProcessingModeValues.Preserve });
         return new Paragraph(new ParagraphProperties(new SpacingBetweenLines { Before = "240", After = "60" }), run);
     }
 
     /// <summary>The report title: Aptos Display, bold, 16 pt.</summary>
     internal static Paragraph Title(string text) =>
         new(new Run(new RunProperties(HeadingFonts(), new Bold(), new FontSize { Val = "32" }),
-            new Text(text) { Space = SpaceProcessingModeValues.Preserve }));
+            new Text(XmlSafe.Clean(text)) { Space = SpaceProcessingModeValues.Preserve }));
 
     /// <summary>An Appendix sub-heading: bold slate, smaller, not underlined.</summary>
     private static Paragraph SubHeading(string text)
     {
         var runProps = new RunProperties(HeadingFonts(), new Bold(), new Color { Val = HeadingColor }, new FontSize { Val = "22" });
-        var run = new Run(runProps, new Text(text) { Space = SpaceProcessingModeValues.Preserve });
+        var run = new Run(runProps, new Text(XmlSafe.Clean(text)) { Space = SpaceProcessingModeValues.Preserve });
         return new Paragraph(new ParagraphProperties(new SpacingBetweenLines { Before = "160", After = "40" }), run);
     }
 
@@ -481,7 +481,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         runProps.Append(new FontSize { Val = size.ToString(CultureInfo.InvariantCulture) });
         return new Paragraph(
             new ParagraphProperties(new Justification { Val = JustificationValues.Center }),
-            new Run(runProps, new Text(text) { Space = SpaceProcessingModeValues.Preserve }));
+            new Run(runProps, new Text(XmlSafe.Clean(text)) { Space = SpaceProcessingModeValues.Preserve }));
     }
 
     internal static Paragraph PageNumberParagraph() => new(

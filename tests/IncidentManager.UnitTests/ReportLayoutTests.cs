@@ -47,6 +47,24 @@ public class ReportLayoutTests
     }
 
     [Fact]
+    public void Control_characters_in_case_text_dont_break_the_report()
+    {
+        // BUG-42: XML 1.0 can't hold most control characters; one from an import (a pasted terminal bell, say) made every
+        // later report for the case fail. They're dropped; the rest of the text prints.
+        var model = new CaseReportModel
+        {
+            Sections = [ReportSection.Summary, ReportSection.AnalystNotes],
+            CaseNumber = "2026-09", Title = "Bell\u0007 in the title", Classification = "Incident", Phase = "Triage",
+            Severity = "Low", Origin = "Internal detection", Summary = "s",
+            Notes = [new ReportNoteItem(System.DateTimeOffset.UnixEpoch, "Dana", "Note\u000B\u0000with a vertical tab\u001B")],
+            GeneratedBy = "tester", GeneratedAtUtc = System.DateTimeOffset.UnixEpoch, ContentHash = new string('a', 64),
+        };
+
+        var xml = WordXml(new ReportGenerator().GenerateWord(model));
+        xml.Should().Contain("Bell in the title").And.Contain("Notewith a vertical tab");
+    }
+
+    [Fact]
     public void A_bang_prefix_hides_a_section_but_keeps_its_position()
     {
         var parsed = ReportLayout.Parse("Summary,!BusinessImpact,EventTimeline");
