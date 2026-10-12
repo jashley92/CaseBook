@@ -337,7 +337,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             case EntityState.Added:
                 return (AuditAction.Create, null, Serialize(e.CurrentValues, e.CurrentValues.Properties), NoFields);
             case EntityState.Deleted:
-                return (AuditAction.SoftDelete, Serialize(e.OriginalValues, e.OriginalValues.Properties), null, NoFields);
+                return (AuditAction.Delete, Serialize(e.OriginalValues, e.OriginalValues.Properties), null, NoFields);
             default:
                 return DescribeUpdate(e);
         }

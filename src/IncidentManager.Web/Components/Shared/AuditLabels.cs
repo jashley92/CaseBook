@@ -9,7 +9,7 @@ public static class AuditLabels
     {
         AuditAction.Create => "Created",
         AuditAction.Update => "Updated",
-        AuditAction.SoftDelete => "Removed",
+        AuditAction.Delete => "Removed",
         AuditAction.Access => "Viewed",
         AuditAction.Login => "Signed in",
         AuditAction.Logout => "Signed out",

@@ -277,7 +277,7 @@ else
             var verb = a.Action switch
             {
                 AuditAction.Create => "created",
-                AuditAction.SoftDelete => "removed",
+                AuditAction.Delete => "removed",
                 _ => "—"
             };
             <span class="text-muted">@verb</span>

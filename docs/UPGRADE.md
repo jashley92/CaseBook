@@ -161,6 +161,12 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ## Notes
 
+### Next release (unreleased)
+
+- **Audit exports name a removed record `Delete`**, not `SoftDelete` (the audit CSV, the compliance bundle). It was always a
+  hard delete; only the name changes, and earlier entries verify unchanged. Update any SIEM or spreadsheet filter that
+  matches `SoftDelete`.
+
 ### v1.5.1
 
 A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung

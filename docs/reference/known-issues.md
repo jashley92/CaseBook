@@ -29,7 +29,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 | Low | Report version numbers are "count + 1" with no unique index. | Two simultaneous generations can share a number. | Unique index or sequence. |
 | Low | Uniqueness of entity values, relationships, case links, active gates and others is enforced only in code. | Concurrent writes can create duplicates. | Unique indexes where possible. |
 | Low | Applying a pending import and marking it applied are separate saves. | If the second fails, the case is written but the import stays pending (re-applying is resume-safe). | One unit of work. |
-| Low | Hard deletes are recorded with audit action `SoftDelete`. | Confusing label. | Rename the label (display only; the stored value stays). |
 | Low | The Program overview flags a brief that predates a decision, handoff, phase, classification or materiality change; the case page also counts timeline entries since the brief. | The overview can miss a brief that's behind only on entries. | Share one freshness query with the case page. |
 
 ## Operations

@@ -18,7 +18,7 @@ Sources of truth: entity classes in `src/IncidentManager.Domain/Entities`, EF ma
 | **Audit columns** | `CreatedAtUtc`/`CreatedBy` (required), `ModifiedAtUtc`/`ModifiedBy` (nullable) on `AuditableEntity` types. **Code sets them**; the interceptor doesn't. |
 | **Row hash** | Types implementing `IHashableEntity` have `RowHash nvarchar(64)`, a SHA-256 of `BuildCanonicalContent()` recomputed on every save. See [integrity.md](integrity.md). |
 | **Audit chain** | Every insert, update and delete of every type *not* in the interceptor's `NotAudited` list writes a chained `AuditLog` row in the same transaction. |
-| **No soft-delete column** | Nothing has `IsDeleted`. Records are either append-only (never removed), archived (`IsArchived`, `IsActive=false`), or hard-deleted (audited, oddly, with action `SoftDelete`). **Cases, timeline entries, notes, evidence, tasks and comments are never deleted.** |
+| **No soft-delete column** | Nothing has `IsDeleted`. Records are either append-only (never removed), archived (`IsArchived`, `IsActive=false`), or hard-deleted (audited with action `Delete`). **Cases, timeline entries, notes, evidence, tasks and comments are never deleted.** |
 | **No query filters, no rowversion** | Need-to-know is applied explicitly by services (`ForUser`). Concurrency uses field "stamps" computed by the domain, compared before saving. |
 | **Long text** | A configured max length over 4000 becomes `nvarchar(max)` on SQL Server, so code enforces it (case summary 8000, notes and timeline text 16000, brief parts 8000). |
 
@@ -348,7 +348,7 @@ All are row-hashed and audited, and are edited in Administration by the `Adminis
 
 | Table | Columns | Rules |
 |---|---|---|
-| `AuditLog` (ledger) | `Sequence` (unique, gapless), `AtUtc`, `Actor`, `Action` (0 Create, 1 Update, 2 delete (named `SoftDelete`), 15 Export, 16 Evidence transferred, …), `EntityType` (the C# class name), `EntityId`, `CaseNumber`, `EntityLabel`, `Summary`, `BeforeJson`, `AfterJson`, `Reason`, `PrevHash`, `EntryHash` | Append-only. See [integrity.md](integrity.md). |
+| `AuditLog` (ledger) | `Sequence` (unique, gapless), `AtUtc`, `Actor`, `Action` (0 Create, 1 Update, 2 Delete (named `SoftDelete` through v1.5.1), 15 Export, 16 Evidence transferred, …), `EntityType` (the C# class name), `EntityId`, `CaseNumber`, `EntityLabel`, `Summary`, `BeforeJson`, `AfterJson`, `Reason`, `PrevHash`, `EntryHash` | Append-only. See [integrity.md](integrity.md). |
 | `IntegritySeals` (ledger) | `SealedAtUtc`, `UpToSequence`, `ChainHeadHash`, `SealedBy`, `Algorithm`, `KeyId`, `Signature` | Not audited. Also exported as files. |
 | `CaseAccessEvents` | `ActorUserId`, `CaseId`, `CaseNumber`, `AccessType` (0 case open, 1 evidence download, 2 report download, 3 export), `TargetId`, `TargetLabel`, `WasRestricted`, `FirstSeenUtc`, `LastSeenUtc`, `Count` | The read log. Outside the audit chain; repeated access within the coalesce window increments `Count`. Can be pruned. |
 

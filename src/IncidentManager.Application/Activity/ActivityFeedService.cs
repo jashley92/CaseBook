@@ -134,7 +134,7 @@ public sealed class ActivityFeedService
         {
             AuditAction.Create => "Added",
             AuditAction.Update => "Updated",
-            AuditAction.SoftDelete => "Removed",
+            AuditAction.Delete => "Removed",
             AuditAction.ClassificationChanged => "Reclassified the case",
             AuditAction.StatusChanged => "Changed the case phase",
             AuditAction.EvidenceUploaded => "Uploaded evidence",
@@ -150,7 +150,7 @@ public sealed class ActivityFeedService
         if (verb is null) return summary ?? action.ToString();
 
         // For the generic verbs, append a friendly entity noun (e.g. "Added a timeline entry").
-        return action is AuditAction.Create or AuditAction.Update or AuditAction.SoftDelete or AuditAction.Access
+        return action is AuditAction.Create or AuditAction.Update or AuditAction.Delete or AuditAction.Access
             ? $"{verb} {FriendlyEntity(entityType)}"
             : verb;
     }

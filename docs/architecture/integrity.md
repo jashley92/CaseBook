@@ -45,7 +45,7 @@ sequenceDiagram
 Each audit row records:
 
 - the sequence number, time and actor (the signed-in user, or `system` for background work);
-- the action: Create, Update, or Delete (recorded under the historical name `SoftDelete`);
+- the action: Create, Update, or Delete (stored as its number, so entries written when it was named `SoftDelete` verify unchanged);
 - the entity type (the C# class name), id, case number and a readable label;
 - for an update, only the changed fields' before and after values;
 - a reason, when the service supplied one (re-dating, editing an entry, a legal hold, a restriction).

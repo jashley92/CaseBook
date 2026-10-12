@@ -34,8 +34,8 @@ public class AuditChangeDetailTests
     {
         AuditChangeDetail.ComposeSummary(AuditAction.Create, "Case", ["Title", "Summary"])
             .Should().Be("Create Case");
-        AuditChangeDetail.ComposeSummary(AuditAction.SoftDelete, "CaseEntity", [])
-            .Should().Be("SoftDelete CaseEntity");
+        AuditChangeDetail.ComposeSummary(AuditAction.Delete, "CaseEntity", [])
+            .Should().Be("Delete CaseEntity");
     }
 
     // --- Changes: the readable before/after diff from the captured JSON ---------------------------------
@@ -150,7 +150,7 @@ public class AuditChangeDetailTests
 
     [Theory]
     [InlineData(AuditAction.Create)]
-    [InlineData(AuditAction.SoftDelete)]
+    [InlineData(AuditAction.Delete)]
     public void Changes_is_empty_for_non_updates(AuditAction action)
     {
         var entry = new AuditLogEntry { Action = action, AfterJson = """{"LegalHold":true}""" };

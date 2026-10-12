@@ -15,7 +15,8 @@ public enum AuditAction
 {
     Create = 0,
     Update = 1,
-    SoftDelete = 2,
+    /// <summary>A record removed (a hard delete). Named SoftDelete through v1.5.1; stored as 2 either way, and the hash uses the number.</summary>
+    Delete = 2,
     Access = 3,
     Login = 4,
     Logout = 5,
