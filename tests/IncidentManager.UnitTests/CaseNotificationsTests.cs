@@ -50,7 +50,7 @@ public class CaseNotificationsTests
     {
         private readonly Dictionary<string, NotificationSuppression> _s = new(StringComparer.OrdinalIgnoreCase);
         public FakePrefs Set(string userId, bool assignment = false, bool overdue = false, bool dueSoon = false)
-        { _s[userId] = new NotificationSuppression(assignment, overdue, dueSoon); return this; }
+        { _s[userId] = new NotificationSuppression(assignment, overdue, dueSoon, Escalation: overdue); return this; }
         public Task<NotificationSuppression> GetAsync(string userId, CancellationToken ct = default) =>
             Task.FromResult(_s.GetValueOrDefault(userId, NotificationSuppression.None));
     }
