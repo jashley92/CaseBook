@@ -268,5 +268,26 @@ public sealed class CaseNumberingPersistenceTests : IDisposable
         next.CaseNumber.Should().Be("2026-02_Phishing");
     }
 
+    [Fact]
+    public async Task Clearing_a_cases_notice_re_arms_its_deadline_reminders(/* BUG-156 */)
+    {
+        await using var db = NewContext();
+        var reminders = new IncidentManager.Application.Notifications.DeadlineReminderTracker();
+        var svc = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+            deadlineReminders: reminders);
+        var c = await svc.CreateAsync(Req("Vendor", Classification.Breach));
+        var other = Guid.NewGuid();
+        var due = _clock.UtcNow.AddHours(20);
+        reminders.TryMarkNotified(c.Id, IncidentManager.Application.Sla.SlaState.AtRisk, due).Should().BeTrue();
+        reminders.TryMarkNotified(other, IncidentManager.Application.Sla.SlaState.AtRisk, due).Should().BeTrue();
+        await svc.MarkReportedAsync(c.Id, _clock.UtcNow);
+
+        await svc.ClearReportedAsync(c.Id);
+
+        reminders.TryMarkNotified(c.Id, IncidentManager.Application.Sla.SlaState.AtRisk, due).Should().BeTrue("its clock runs again");
+        reminders.TryMarkNotified(other, IncidentManager.Application.Sla.SlaState.AtRisk, due).Should().BeFalse("other cases keep theirs");
+    }
+
     public void Dispose() => _connection.Dispose();
 }

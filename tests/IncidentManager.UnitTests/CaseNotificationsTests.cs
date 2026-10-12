@@ -108,6 +108,32 @@ public class CaseNotificationsTests
         sender.Attempts.Should().Equal(["gone@insurer.example"], "those it reached aren't sent it again");
     }
 
+    [Fact]
+    public async Task A_deadline_reminder_nobody_could_be_sent_is_tried_again_and_broadcast_once(/* BUG-156 */)
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new CapturingChatNotifier();
+        var users = new FakeUserDirectory().Add("ic1", "Ina", null);   // no address on file yet
+        var n = new CaseNotifications(sender, TestEmail.Composer(), users, ChatConfig("DeadlineReminders"),
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), chat, new FakePrefs(), sent: new InMemoryNotificationMarks());
+        var c = NewCase();
+        var nobody = new DeadlineReminder(c.Id, c.CaseNumber, c.Title, c.Severity, [],
+            IncidentManager.Application.Sla.SlaState.AtRisk, "NYDFS", Now.AddHours(10), TimeSpan.FromHours(10));
+        var noAddress = nobody with { CaseId = Guid.NewGuid(), RecipientUserIds = ["ic1"] };
+
+        using (var watch = DeliveryWatch.Begin())
+        {
+            await n.OnDeadlineApproachingAsync([nobody, noAddress]);
+            watch.Failed.Should().BeFalse("nothing failed");
+            watch.ShouldRetry(nobody.CaseId.ToString()).Should().BeTrue("no incident commander or assignee yet");
+            watch.ShouldRetry(noAddress.CaseId.ToString()).Should().BeTrue("its commander has no address on file");
+        }
+        sender.Sent.Should().BeEmpty();
+
+        await n.OnDeadlineApproachingAsync([nobody, noAddress]);   // the next scan
+        chat.Sent.Should().ContainSingle("the team channel isn't told twice about the same reminder");
+    }
+
     // --- Breach escalation (E-03) ----------------------------------------------
 
     [Fact]

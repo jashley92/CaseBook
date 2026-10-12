@@ -18,6 +18,9 @@ public interface IDeadlineReminderTracker
 
     /// <summary>BUG-08: un-marks what wasn't delivered, so the next scan sends it again.</summary>
     void Forget(Guid caseId, SlaState band, DateTimeOffset? dueAtUtc);
+
+    /// <summary>BUG-156: un-marks every reminder sent for the case, when its clock runs again (a notice was cleared).</summary>
+    void ForgetCase(Guid caseId);
 }
 
 /// <inheritdoc />
@@ -31,4 +34,11 @@ public sealed class DeadlineReminderTracker(Abstractions.INotificationMarks? mar
     public bool TryMarkNotified(Guid caseId, SlaState band, DateTimeOffset? dueAtUtc) => _marks.TryAdd(Key(caseId, band, dueAtUtc));
 
     public void Forget(Guid caseId, SlaState band, DateTimeOffset? dueAtUtc) => _marks.Remove(Key(caseId, band, dueAtUtc));
+
+    public void ForgetCase(Guid caseId)
+    {
+        var prefix = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"deadline|{caseId:N}|");
+        _marks.RemovePrefix(prefix);
+        _marks.RemovePrefix("to|" + prefix);   // and who each was sent to (BUG-148)
+    }
 }

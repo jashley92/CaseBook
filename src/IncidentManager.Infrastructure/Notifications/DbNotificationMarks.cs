@@ -72,6 +72,21 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
         }
     }
 
+    public void RemovePrefix(string prefix)
+    {
+        lock (_gate) Loaded().RemoveWhere(k => k.StartsWith(prefix, StringComparison.Ordinal));
+        try
+        {
+            using var scope = scopes.CreateScope();
+            using var db = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext();
+            db.NotificationMarks.Where(m => m.Key.StartsWith(prefix)).ExecuteDelete();
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Couldn't clear re-armed notification marks; those reminders may not be sent again until a restart.");
+        }
+    }
+
     public void Confirm(IReadOnlyCollection<string> keys)
     {
         if (keys.Count == 0) return;

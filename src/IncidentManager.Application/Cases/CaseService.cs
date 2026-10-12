@@ -71,6 +71,7 @@ public sealed class CaseService
 {
     private readonly IOrganizationTimeZone? _zone;
     private readonly IExerciseEscalationPolicy? _exercise;   // BUG-100
+    private readonly Notifications.IDeadlineReminderTracker? _deadlineReminders;   // BUG-156
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
@@ -100,8 +101,10 @@ public sealed class CaseService
         IOrganizationTimeZone? zone = null,
         IUserDirectory? users = null,
         IRoleDirectory? roles = null,
-        IExerciseEscalationPolicy? exercise = null)
+        IExerciseEscalationPolicy? exercise = null,
+        Notifications.IDeadlineReminderTracker? deadlineReminders = null)
     {
+        _deadlineReminders = deadlineReminders;
         _exercise = exercise;
         _zone = zone;
         _users = users;
@@ -1102,6 +1105,7 @@ public sealed class CaseService
         else c.ReportedFromNotices(await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(
             db, c.DataElements.Select(d => d.ElementKey), ct), _user.UserId, now);
         await db.SaveChangesAsync(ct);
+        _deadlineReminders?.ForgetCase(id);   // BUG-156: its clock runs again, so it's reminded again
     }
 
     private async Task<Case> LoadWithNoticesAsync(IAppDbContext db, Guid id, CancellationToken ct)
@@ -1119,6 +1123,7 @@ public sealed class CaseService
         var c = await LoadWithNoticesAsync(db, id, ct);
         c.ClearReported(_user.UserId, _clock.UtcNow);   // BUG-09: and every jurisdiction's notice
         await db.SaveChangesAsync(ct);
+        _deadlineReminders?.ForgetCase(id);   // BUG-156: its clock runs again, so it's reminded again
     }
 
     /// <summary>
@@ -1223,8 +1228,10 @@ public sealed class CaseService
             if (c.JurisdictionNotices.Count == 0) c.ClearReported(_user.UserId, now);
         }
         // BUG-09: a data element that brings a new jurisdiction into play reopens the report until that regulator is notified.
+        var wasReported = c.ReportedAtUtc is not null;
         c.ReportedFromNotices(after, _user.UserId, now);
         await db.SaveChangesAsync(ct);
+        if (wasReported && c.ReportedAtUtc is null) _deadlineReminders?.ForgetCase(id);   // BUG-156: reminded again
     }
 
     public async Task AssignAsync(Guid id, string userId, string displayName, CaseAssignmentRole role,

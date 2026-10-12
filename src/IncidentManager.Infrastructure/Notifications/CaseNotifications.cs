@@ -255,6 +255,13 @@ public sealed class CaseNotifications : ICaseNotifications
         return failures == 0;
     }
 
+    // BUG-156: items no recipient could be found for are tried again by the scan, so someone named later gets them.
+    private static void Unreached<T>(IEnumerable<T> items, IEnumerable<List<T>> reached, Func<T, string> key)
+    {
+        var got = reached.SelectMany(l => l).Select(key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        DeliveryWatch.Unreached(items.Select(key).Where(k => !got.Contains(k)));
+    }
+
     // BUG-148: a scheduled reminder that goes to several people is marked per recipient. When one person's send fails,
     // the scan tries the item again, and only those it didn't reach get it again. The address is hashed in the key.
     private List<T> NotYetSentTo<T>(IEnumerable<T> items, Func<T, string> itemKey, string to) =>
@@ -268,6 +275,15 @@ public sealed class CaseNotifications : ICaseNotifications
 
     private static string RecipientKey(string itemKey, string to) =>
         $"to|{itemKey}|{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(to.Trim().ToLowerInvariant())))[..20]}";
+
+    // BUG-156: the team channel is a recipient too, so a reminder the scan tries again isn't broadcast again.
+    private const string ChatRecipient = "chat:team-channel";
+
+    private static string OverdueKey(OverdueActionItem i) =>
+        string.Create(CultureInfo.InvariantCulture, $"overdue|{i.ActionItemId:N}|{i.DueAtUtc.UtcTicks}");
+
+    private static string DueSoonKey(DueSoonActionItem i) =>
+        string.Create(CultureInfo.InvariantCulture, $"duesoon|{i.ActionItemId:N}|{i.DueAtUtc.UtcTicks}");
 
     private static string DeadlineKey(DeadlineReminder r) =>
         string.Create(CultureInfo.InvariantCulture, $"deadline|{r.CaseId:N}|{r.State}|{(r.DueAtUtc ?? DateTimeOffset.MinValue).UtcTicks}");
@@ -283,11 +299,11 @@ public sealed class CaseNotifications : ICaseNotifications
         if (items.Count == 0) return;
 
         // Chat broadcast (PROD-02): one summary to the shared channel, in addition to the per-owner emails.
-        if (ChatOn("OverdueReminders"))
+        if (ChatOn("OverdueReminders") && NotYetSentTo(items, OverdueKey, ChatRecipient) is { Count: > 0 } chatItems)
         {
-            var caseCount = items.Select(i => i.CaseId).Distinct().Count();
+            var caseCount = chatItems.Select(i => i.CaseId).Distinct().Count();
             await _chat.SendAsync(new ChatNotification(
-                $"{Plural.Of(items.Count, "task")} overdue",
+                $"{Plural.Of(chatItems.Count, "task")} overdue",
                 $"Across {Plural.Of(caseCount, "case")}. Owners were emailed where reachable.",
                 OverdueUrl(), ChatUrgency.Alert), ct);
         }
@@ -298,10 +314,11 @@ public sealed class CaseNotifications : ICaseNotifications
         foreach (var item in items)
         {
             var uid = ResolveRecipientUserId(item.OwnerUserId, item.IncidentCommanderUserId);
-            if (uid is null) continue;
+            if (uid is null || string.IsNullOrWhiteSpace(_users.EmailFor(uid))) continue;
             if (!byRecipient.TryGetValue(uid, out var list)) byRecipient[uid] = list = [];
             list.Add(item);
         }
+        Unreached(items, byRecipient.Values, i => i.ActionItemId.ToString());
 
         var overdueUrl = OverdueUrl();
         var overdueMandatory = Mandatory("Overdue");
@@ -447,11 +464,11 @@ public sealed class CaseNotifications : ICaseNotifications
         if (items.Count == 0) return;
 
         // Chat broadcast (PROD-02): one summary to the shared channel, in addition to the per-owner emails.
-        if (ChatOn("DueSoonReminders"))
+        if (ChatOn("DueSoonReminders") && NotYetSentTo(items, DueSoonKey, ChatRecipient) is { Count: > 0 } chatItems)
         {
-            var caseCount = items.Select(i => i.CaseId).Distinct().Count();
+            var caseCount = chatItems.Select(i => i.CaseId).Distinct().Count();
             await _chat.SendAsync(new ChatNotification(
-                $"{Plural.Of(items.Count, "task")} due within {leadHours}h",
+                $"{Plural.Of(chatItems.Count, "task")} due within {leadHours}h",
                 $"Across {Plural.Of(caseCount, "case")}. Owners were emailed where reachable.",
                 AgendaUrl()), ct);
         }
@@ -460,10 +477,11 @@ public sealed class CaseNotifications : ICaseNotifications
         foreach (var item in items)
         {
             var uid = ResolveRecipientUserId(item.OwnerUserId, item.IncidentCommanderUserId);
-            if (uid is null) continue;
+            if (uid is null || string.IsNullOrWhiteSpace(_users.EmailFor(uid))) continue;
             if (!byRecipient.TryGetValue(uid, out var list)) byRecipient[uid] = list = [];
             list.Add(item);
         }
+        Unreached(items, byRecipient.Values, i => i.ActionItemId.ToString());
 
         var agendaUrl = AgendaUrl();
         var dueSoonMandatory = Mandatory("DueSoon");
@@ -494,13 +512,13 @@ public sealed class CaseNotifications : ICaseNotifications
         if (reminders.Count == 0) return;
 
         // Chat broadcast (PROD-02): one urgent summary to the shared channel, alongside the per-recipient emails.
-        if (ChatOn("DeadlineReminders"))
+        if (ChatOn("DeadlineReminders") && NotYetSentTo(reminders, DeadlineKey, ChatRecipient) is { Count: > 0 } chatItems)
         {
-            var caseCount = reminders.Select(r => r.CaseId).Distinct().Count();
-            var breached = reminders.Count(r => r.State == SlaState.Breached);
+            var caseCount = chatItems.Select(r => r.CaseId).Distinct().Count();
+            var breached = chatItems.Count(r => r.State == SlaState.Breached);
             var detail = breached > 0
-                ? $"{breached} past deadline, {reminders.Count - breached} at risk, across {Plural.Of(caseCount, "case")}. Incident commanders and owners were emailed where reachable."
-                : $"{Plural.Of(reminders.Count, "case")} approaching a deadline. Incident commanders and owners were emailed where reachable.";
+                ? $"{breached} past deadline, {chatItems.Count - breached} at risk, across {Plural.Of(caseCount, "case")}. Incident commanders and owners were emailed where reachable."
+                : $"{Plural.Of(chatItems.Count, "case")} approaching a deadline. Incident commanders and owners were emailed where reachable.";
             await _chat.SendAsync(new ChatNotification(
                 "Regulatory notification deadline", detail,
                 CasesUrl(), ChatUrgency.Alert), ct);
@@ -518,6 +536,7 @@ public sealed class CaseNotifications : ICaseNotifications
                 list.Add(r);
             }
         }
+        Unreached(reminders, byRecipient.Values, r => r.CaseId.ToString());
 
         foreach (var (to, list) in byRecipient)
         {

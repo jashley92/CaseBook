@@ -16,6 +16,9 @@ public interface INotificationMarks
 
     /// <summary>Confirms marks claimed inside a batch, once their sends are done.</summary>
     void Confirm(IReadOnlyCollection<string> keys);
+
+    /// <summary>BUG-156: removes every mark whose key starts with <paramref name="prefix"/> (a case's re-armed reminders).</summary>
+    void RemovePrefix(string prefix);
 }
 
 /// <summary>Marks kept in memory only: what a restart forgets. For tests, and the fallback with no database.</summary>
@@ -41,4 +44,9 @@ public sealed class InMemoryNotificationMarks : INotificationMarks
     }
 
     public void Confirm(IReadOnlyCollection<string> keys) { }   // nothing outlives the process to confirm
+
+    public void RemovePrefix(string prefix)
+    {
+        lock (_gate) _keys.RemoveWhere(k => k.StartsWith(prefix, StringComparison.Ordinal));
+    }
 }
