@@ -2533,7 +2533,9 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, caseId, ct);
         var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
                    ?? throw new InvalidOperationException("Task not found.");
-        if (status == ActionItemStatus.Done && item.Status != ActionItemStatus.Done)
+        // BUG-109: no change, nothing to record; Done again would overwrite who completed it and when.
+        if (item.Status == status) return;
+        if (status == ActionItemStatus.Done)
             await EnsureQuestionAnsweredAsync(db, item, ct);
         item.Status = status;
         item.ModifiedBy = _user.UserId;

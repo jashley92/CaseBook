@@ -125,6 +125,21 @@ public sealed class TaskCompletionTests : IDisposable
     }
 
     [Fact]
+    public async Task Setting_a_done_task_to_done_again_keeps_who_and_when(/* BUG-109 */)
+    {
+        var (svc, caseId, taskId) = await CaseWithTask();
+        var at = _clock.UtcNow;
+        await svc.CompleteActionItemAsync(caseId, taskId, at, null, null, doneBy: "jdoe");
+        _clock.UtcNow = _clock.UtcNow.AddHours(2);
+        _user.UserId = "someone-else";
+
+        await svc.SetActionItemStatusAsync(caseId, taskId, ActionItemStatus.Done);
+
+        var task = (await svc.GetDetailAsync(caseId))!.ActionItems.Single();
+        (task.CompletedAtUtc, task.CompletedBy).Should().Be((at, "jdoe"));
+    }
+
+    [Fact]
     public async Task An_edit_keeps_a_task_within_its_limits(/* BUG-50 */)
     {
         var (svc, caseId, taskId) = await CaseWithTask();
