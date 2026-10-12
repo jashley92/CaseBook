@@ -135,7 +135,7 @@ public static class ComplianceBundlePack
     public static string SealsCsv(IReadOnlyList<SealLine> seals)
     {
         var sb = new StringBuilder();
-        sb.Append("UpToSequence,SealedAtUtc,SealedBy,Algorithm,KeyId,ChainHeadHash,SignatureValid,ChainMatches,Signature").Append(Nl);
+        sb.Append("UpToSequence,SealedAtUtc,SealedBy,Algorithm,KeyId,ChainHeadHash,SignatureValid,ChainMatches,Signature,KeyedFromSequence").Append(Nl);
         foreach (var s in seals)
         {
             var seal = s.Seal;
@@ -147,7 +147,8 @@ public static class ComplianceBundlePack
             Field(sb, seal.ChainHeadHash); Comma(sb);
             Field(sb, s.SignatureValid ? "true" : "false"); Comma(sb);
             Field(sb, s.ChainMatches ? "true" : "false"); Comma(sb);
-            Field(sb, seal.Signature);
+            Field(sb, seal.Signature); Comma(sb);
+            Field(sb, seal.KeyedFromSequence?.ToString(CultureInfo.InvariantCulture) ?? "");   // BUG-142
             sb.Append(Nl);
         }
         return sb.ToString();
@@ -205,12 +206,15 @@ public static class ComplianceBundlePack
         Line();
         Line("       UpToSequence, ChainHeadHash, SealedAtUtc, SealedBy");
         Line();
-        Line("   (SealedAtUtc in ISO-8601 'o' form, copied exactly as it appears in seals.csv).");
+        Line("   (SealedAtUtc in ISO-8601 'o' form, copied exactly as it appears in seals.csv). When the");
+        Line("   seal's KeyedFromSequence is filled in, the payload ends with '|keyedfrom|' and that number:");
+        Line("   from that entry on, every audit entry must have a HashKeyId; one without is a break.");
         Line("   Signature parameters: RSASSA-PSS, SHA-256, MGF1 with SHA-256, salt length 32 bytes.");
         Line("   The salt length must be set explicitly: a verifier left at a different salt length");
         Line("   reports a genuine seal as invalid. With OpenSSL 1.1.1 or later (bash), per seal:");
         Line();
         Line("       printf '%s' '<UpToSequence>|<ChainHeadHash>|<SealedAtUtc>|<SealedBy>' > payload.txt");
+        Line("       # with KeyedFromSequence: '<UpToSequence>|<ChainHeadHash>|<SealedAtUtc>|<SealedBy>|keyedfrom|<KeyedFromSequence>'");
         Line("       printf '%s' '<Signature>' | openssl base64 -d -A > seal.sig");
         Line("       openssl dgst -sha256 -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32 \\");
         Line("           -sigopt rsa_mgf1_md:sha256 -verify signing-public-key.pem -signature seal.sig payload.txt");

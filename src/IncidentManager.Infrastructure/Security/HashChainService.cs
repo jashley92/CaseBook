@@ -42,7 +42,7 @@ public sealed class HashChainService : IHashChainService
         if (entry.HashKeyId is not null) Interlocked.Exchange(ref _lastKeyedSequence, entry.Sequence);
     }
 
-    public ChainVerificationResult VerifyChain(IReadOnlyList<AuditLogEntry> orderedEntries)
+    public ChainVerificationResult VerifyChain(IReadOnlyList<AuditLogEntry> orderedEntries, long? keyedFrom = null)
     {
         var prevHash = GenesisPrevHash;
         long expectedSequence = 1;
@@ -58,6 +58,10 @@ public sealed class HashChainService : IHashChainService
                 return ChainVerificationResult.Broken(entry.Sequence,
                     "Previous-hash link doesn't match the prior entry's hash.");
 
+            // BUG-142: a seal recorded that the chain is keyed from here, which survives a restart.
+            if (entry.HashKeyId is null && keyedFrom is { } from && entry.Sequence >= from)
+                return ChainVerificationResult.Broken(entry.Sequence,
+                    $"Entry has the plain hash, but a signed seal records that the chain is keyed from entry #{from}. It was rewritten without the chain key, or the chain key was turned off.");
             if (entry.HashKeyId is null && entry.Sequence == Interlocked.Read(ref _lastKeyedSequence))
                 return ChainVerificationResult.Broken(entry.Sequence,
                     "Entry has the plain hash, but this server wrote it with the chain key. It was rewritten without the chain key.");

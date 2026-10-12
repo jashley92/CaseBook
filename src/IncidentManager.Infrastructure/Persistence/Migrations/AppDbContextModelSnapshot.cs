@@ -1705,6 +1705,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("KeyedFromSequence")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("SealedAtUtc")
                         .HasColumnType("INTEGER");
 

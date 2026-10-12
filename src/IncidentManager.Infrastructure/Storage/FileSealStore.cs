@@ -32,6 +32,7 @@ public sealed class FileSealStore : ISealStore
             seal.SealedBy,
             seal.Algorithm,
             seal.KeyId,
+            seal.KeyedFromSequence,   // BUG-142: part of the signed payload when set
             seal.Signature
         };
 

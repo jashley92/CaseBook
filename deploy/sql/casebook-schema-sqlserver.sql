@@ -3191,3 +3191,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012160816_SealKeyedFrom'
+)
+BEGIN
+    ALTER TABLE [IntegritySeals] ADD [KeyedFromSequence] bigint NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012160816_SealKeyedFrom'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261012160816_SealKeyedFrom'', N''10.0.12'');');
+END;
+
+COMMIT;
+GO
+

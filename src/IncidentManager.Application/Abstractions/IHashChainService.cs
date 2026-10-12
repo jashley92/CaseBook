@@ -32,5 +32,7 @@ public interface IHashChainService
     /// Verifies an ordered audit chain end-to-end, detecting altered records, broken links,
     /// and sequence gaps (insertions/deletions).
     /// </summary>
-    ChainVerificationResult VerifyChain(IReadOnlyList<AuditLogEntry> orderedEntries);
+    /// <param name="keyedFrom">BUG-142: the latest seal's <see cref="IntegritySeal.KeyedFromSequence"/>: from that entry
+    /// on, a plain-hashed entry is a break.</param>
+    ChainVerificationResult VerifyChain(IReadOnlyList<AuditLogEntry> orderedEntries, long? keyedFrom = null);
 }

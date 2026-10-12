@@ -237,6 +237,13 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   Reload to see their change, then try again." A unique index keeps one current brief per case; if a case already
   has two, the migration keeps the latest current and makes the other an earlier version.
 
+- **One column migration** (`SealKeyedFrom`): a seal made while the chain key is on records, under its signature,
+  the entry the chain is keyed from. A rewrite of keyed entries with the plain hash is now caught even after a
+  restart, before any seal covers a keyed entry. Older seals verify unchanged. The compliance bundle's `seals.csv`
+  has a new last column, `KeyedFromSequence`, and `VERIFY.txt` explains the longer payload. **If you enabled the
+  ledger** (`02-Enable-Ledger.sql`), the migration adds the nullable column to the append-only table, which SQL
+  Server allows; use this release's script for any new install.
+
 ### v1.5.1
 
 A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung

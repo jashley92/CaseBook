@@ -201,7 +201,7 @@ public static class SecurityEvents
     /// <c>head=&lt;chain-head hash&gt; key=&lt;key id&gt; sealedAtUtc=&lt;ISO 8601&gt;</c>.
     /// </summary>
     public static SecurityEvent IntegritySealRecorded(long upToSequence, string chainHeadHash, string keyId,
-        DateTimeOffset sealedAtUtc, string actor) => new()
+        DateTimeOffset sealedAtUtc, string actor, long? keyedFrom = null) => new()
     {
         EventId = SecurityEventIds.IntegritySealRecorded,
         Category = "Integrity",
@@ -211,6 +211,7 @@ public static class SecurityEvents
         Actor = actor, TargetType = "IntegritySeal",
         TargetId = upToSequence.ToString(System.Globalization.CultureInfo.InvariantCulture),
         Detail = $"head={chainHeadHash} key={keyId} sealedAtUtc={sealedAtUtc.UtcDateTime.ToString("o", System.Globalization.CultureInfo.InvariantCulture)}"
+                 + (keyedFrom is { } k ? $" keyedFrom={k.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : "")
     };
 
     /// <summary>F-26/F-27: a copy of a seal (export folder, email digest, timestamp) failed. The seal itself is recorded;

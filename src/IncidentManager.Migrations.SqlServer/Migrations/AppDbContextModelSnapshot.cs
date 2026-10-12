@@ -1711,6 +1711,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<long?>("KeyedFromSequence")
+                        .HasColumnType("bigint");
+
                     b.Property<DateTimeOffset>("SealedAtUtc")
                         .HasColumnType("datetimeoffset");
 

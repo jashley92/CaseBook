@@ -78,7 +78,10 @@ template. These are preferences or workflow state, not findings.
 
 ## Seals and continuous verification
 
-A seal is `{ SealedAtUtc, UpToSequence, ChainHeadHash, SealedBy, Algorithm, KeyId, Signature }`, signed with
+A seal is `{ SealedAtUtc, UpToSequence, ChainHeadHash, SealedBy, Algorithm, KeyId, KeyedFromSequence, Signature }`.
+`KeyedFromSequence` (BUG-142, signed when set) is where the chain key starts: the first keyed entry, or the entry
+after the seal when the server keys entries but none is keyed yet. From there on a plain-hashed entry is a break,
+which a restarted server can check before any seal covers a keyed entry. The seal is signed with
 RSA-3072 (RSASSA-PSS, SHA-256; seals from before v1.4.0 used PKCS#1 v1.5 and still verify by the algorithm they
 record). Each seal is checked with the key its `KeyId` names: the current key or a retired one kept for that. If the
 sealed head hash still matches the live entry at `UpToSequence`, all history up to that point is unchanged since

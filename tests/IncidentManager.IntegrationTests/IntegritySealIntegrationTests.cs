@@ -91,6 +91,39 @@ public sealed class IntegritySealIntegrationTests : IDisposable
         result.ChainMatches.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task A_seal_made_while_the_chain_key_is_on_records_where_keying_starts_and_still_verifies(/* BUG-142 */)
+    {
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);   // plain-hashed history
+        var head = await db.AuditLog.MaxAsync(a => a.Sequence);
+        var keyed = new IntegrityService(NewFactory(), _hasher, _signer, _store, _user, _clock, _monitor, _alerts,
+            chainKeys: new OneKey());
+
+        var seal = (await keyed.SealAsync())!;
+        seal.KeyedFromSequence.Should().Be(head + 1, "nothing is keyed yet; this server keys what comes next");
+        (await keyed.VerifySealAsync(seal.Id)).IsValid.Should().BeTrue("the signature covers it");
+
+        // After a restart, an entry written past the seal with the plain hash is a break.
+        db.Notes.Add(new IncidentManager.Domain.Entities.AnalystNote
+        {
+            CaseId = await db.Cases.Select(c => c.Id).FirstAsync(), Body = "plain", CreatedBy = "x", CreatedAtUtc = _clock.UtcNow,
+        });
+        await db.SaveChangesAsync();
+        var result = await keyed.VerifyAsync();
+        result.IsValid.Should().BeFalse();
+        result.Detail.Should().Contain($"keyed from entry #{head + 1}");
+    }
+
+    private sealed class OneKey : IChainKeyring
+    {
+        private static readonly byte[] Secret = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        public string? CurrentKeyId => ChainKeyring.KeyIdOf(Secret);
+        public byte[]? Key(string keyId) => keyId == CurrentKeyId ? Secret : null;
+        public IReadOnlyList<string> KeyIds => [CurrentKeyId!];
+        public string? Source => "test";
+    }
+
     // F-26: each seal goes to the SIEM, which keeps the copy apart from CaseBook's database and servers.
     [Fact]
     public async Task A_seal_is_sent_to_the_siem_and_its_folder_copy_recorded()

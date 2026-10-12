@@ -132,7 +132,7 @@ GO
 IF EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'dbo.IntegritySeals') AND ledger_type = 0)
 BEGIN
     EXEC #AssertColumns N'IntegritySeals',
-        N'Id,SealedAtUtc,UpToSequence,ChainHeadHash,Signature,Algorithm,KeyId,SealedBy';
+        N'Id,SealedAtUtc,UpToSequence,ChainHeadHash,Signature,Algorithm,KeyId,SealedBy,KeyedFromSequence';
 
     BEGIN TRANSACTION;
     EXEC sp_rename N'dbo.IntegritySeals', N'IntegritySeals_PreLedger';
@@ -147,11 +147,12 @@ BEGIN
         [Algorithm] nvarchar(50) NOT NULL,
         [KeyId] nvarchar(100) NOT NULL,
         [SealedBy] nvarchar(200) NOT NULL,
+        [KeyedFromSequence] bigint NULL,
         CONSTRAINT [PK_IntegritySeals] PRIMARY KEY ([Id])
     ) WITH (LEDGER = ON (APPEND_ONLY = ON));
 
-    INSERT INTO dbo.IntegritySeals ([Id],[SealedAtUtc],[UpToSequence],[ChainHeadHash],[Signature],[Algorithm],[KeyId],[SealedBy])
-    SELECT [Id],[SealedAtUtc],[UpToSequence],[ChainHeadHash],[Signature],[Algorithm],[KeyId],[SealedBy]
+    INSERT INTO dbo.IntegritySeals ([Id],[SealedAtUtc],[UpToSequence],[ChainHeadHash],[Signature],[Algorithm],[KeyId],[SealedBy],[KeyedFromSequence])
+    SELECT [Id],[SealedAtUtc],[UpToSequence],[ChainHeadHash],[Signature],[Algorithm],[KeyId],[SealedBy],[KeyedFromSequence]
     FROM dbo.IntegritySeals_PreLedger
     ORDER BY [SealedAtUtc];
 

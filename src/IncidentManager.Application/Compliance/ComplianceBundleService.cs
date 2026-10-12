@@ -44,7 +44,7 @@ public sealed class ComplianceBundleService
         // The whole chain (ordered) — verification depends on every prior link, and it lets us resolve
         // each seal's head hash without extra queries.
         var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync(ct);
-        var chainResult = _hasher.VerifyChain(chain);
+        var chainResult = _hasher.VerifyChain(chain, await Integrity.IntegrityService.KeyedFromAsync(db, ct));   // BUG-142
         var head = chain.Count > 0 ? chain[^1] : null;
         var hashBySequence = chain.ToDictionary(a => a.Sequence, a => a.EntryHash);
 

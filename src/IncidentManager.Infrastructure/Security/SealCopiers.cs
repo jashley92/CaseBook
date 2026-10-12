@@ -46,6 +46,7 @@ public sealed class EmailSealCopier(IEmailSender email, IOptionsMonitor<EmailOpt
             $"Sealed at (UTC)        : {seal.SealedAtUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture)}",
             $"Sealed by              : {seal.SealedBy}",
             $"Algorithm / key id     : {seal.Algorithm} / {seal.KeyId}",
+            $"Keyed from entry       : {(seal.KeyedFromSequence is { } k ? k.ToString(CultureInfo.InvariantCulture) : "(chain key off)")}",
             $"Signature              : {seal.Signature}");
         await email.SendAsync(To, $"CaseBook integrity seal #{seal.UpToSequence}", body, ct);
     }

@@ -27,9 +27,19 @@ public class IntegritySeal : Entity
     public string SealedBy { get; set; } = string.Empty;
 
     /// <summary>
+    /// BUG-142: from this audit entry on, every entry is hashed with the chain key: the first keyed entry, or, when the
+    /// server keys entries but none is keyed yet, the one after this seal. Null when the chain key is off. Signed with the
+    /// rest, so a later rewrite of keyed entries with the plain hash is caught even after a restart, before any seal
+    /// covers a keyed entry.
+    /// </summary>
+    public long? KeyedFromSequence { get; set; }
+
+    /// <summary>
     /// Canonical payload that is signed and later re-verified. Binding sequence, head hash, time and
-    /// signer means none of them can be swapped without invalidating the signature.
+    /// signer means none of them can be swapped without invalidating the signature. BUG-142: "|keyedfrom|N" is appended
+    /// only when set, so seals made before it existed verify as they were signed.
     /// </summary>
     public string BuildCanonicalContent() =>
-        string.Join('|', UpToSequence, ChainHeadHash, SealedAtUtc.ToString("o"), SealedBy);
+        string.Join('|', UpToSequence, ChainHeadHash, SealedAtUtc.ToString("o"), SealedBy)
+        + (KeyedFromSequence is { } k ? "|keyedfrom|" + k.ToString(System.Globalization.CultureInfo.InvariantCulture) : "");
 }

@@ -35,8 +35,10 @@ public sealed class IntegrityService
         ISealStore sealStore, ICurrentUser user, IClock clock, IIntegrityMonitor monitor,
         IIntegrityAlertNotifier alerts, OnDemandVerificationGate? gate = null,
         Security.ISecurityEventSink? siem = null, SealCopyStatus? copies = null,
-        Microsoft.Extensions.Logging.ILogger<IntegrityService>? logger = null, IEnumerable<ISealCopier>? copiers = null)
+        Microsoft.Extensions.Logging.ILogger<IntegrityService>? logger = null, IEnumerable<ISealCopier>? copiers = null,
+        IChainKeyring? chainKeys = null)
     {
+        _chainKeys = chainKeys;
         _copiers = copiers?.ToList() ?? [];
         _siem = siem;
         _copies = copies;
@@ -52,12 +54,18 @@ public sealed class IntegrityService
         _alerts = alerts;
     }
 
+    private readonly IChainKeyring? _chainKeys;   // BUG-142
+
     public async Task<ChainVerificationResult> VerifyAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync(ct);
-        return _hasher.VerifyChain(chain);
+        return _hasher.VerifyChain(chain, await KeyedFromAsync(db, ct));
     }
+
+    /// <summary>BUG-142: where the latest seal says the chain is keyed from (its signature is checked with the seal).</summary>
+    internal static Task<long?> KeyedFromAsync(IAppDbContext db, CancellationToken ct) =>
+        db.IntegritySeals.AsNoTracking().OrderByDescending(s => s.UpToSequence).Select(s => s.KeyedFromSequence).FirstOrDefaultAsync(ct);
 
     /// <summary>
     /// BUG-06: the chain check, then the records themselves (<see cref="RowIntegrityVerifier"/>): each record's
@@ -73,7 +81,7 @@ public sealed class IntegrityService
         {
             using var db = _factory.CreateDbContext();
             var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync(ct);
-            var result = _hasher.VerifyChain(chain);
+            var result = _hasher.VerifyChain(chain, await KeyedFromAsync(db, ct));
             if (!result.IsValid) return result;
             var bad = await RowIntegrityVerifier.VerifyAsync(db, _hasher, chain, ct);
             if (bad is null) return result;
@@ -262,6 +270,10 @@ public sealed class IntegrityService
         var head = await db.AuditLog.AsNoTracking().OrderByDescending(a => a.Sequence).FirstOrDefaultAsync(ct);
         if (head is null) return null;
 
+        // BUG-142: record, under the signature, where the chain is keyed from.
+        var firstKeyed = await db.AuditLog.AsNoTracking().Where(a => a.HashKeyId != null)
+            .OrderBy(a => a.Sequence).Select(a => (long?)a.Sequence).FirstOrDefaultAsync(ct);
+        var keyedFrom = firstKeyed ?? (_chainKeys?.CurrentKeyId is not null ? head.Sequence + 1 : null);
         var seal = new IntegritySeal
         {
             SealedAtUtc = _clock.UtcNow,
@@ -269,7 +281,8 @@ public sealed class IntegrityService
             ChainHeadHash = head.EntryHash,
             SealedBy = _user.UserId,
             Algorithm = _signer.Algorithm,
-            KeyId = _signer.KeyId
+            KeyId = _signer.KeyId,
+            KeyedFromSequence = keyedFrom,
         };
         seal.Signature = _signer.Sign(seal.BuildCanonicalContent());
 
@@ -278,7 +291,7 @@ public sealed class IntegrityService
 
         // F-26: the SIEM's copy, kept apart from CaseBook's database and servers. Emit never blocks or throws.
         _siem?.Emit(Security.SecurityEvents.IntegritySealRecorded(seal.UpToSequence, seal.ChainHeadHash, seal.KeyId,
-            seal.SealedAtUtc, seal.SealedBy));
+            seal.SealedAtUtc, seal.SealedBy, seal.KeyedFromSequence));
 
         // Every other copy is best-effort: a failure must not roll back a persisted seal, but it must be seen.
         await CopyAsync(FolderCopy, () => _sealStore.ExportAsync(seal, ct), seal, ct);

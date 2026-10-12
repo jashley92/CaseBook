@@ -97,6 +97,44 @@ public sealed class ChainKeyTests : IDisposable
     }
 
     [Fact]
+    public void After_a_restart_a_seals_keyed_from_still_catches_every_keyed_entry_stripped(/* BUG-142 */)
+    {
+        // As above, but checked by a restarted server, which no longer remembers what it keyed. The latest seal (made
+        // while the key was on, before any entry was keyed) recorded that the chain is keyed from entry 2.
+        var chain = new List<AuditLogEntry>();
+        var plain = new HashChainService();
+        Append(plain, chain, "before the key");
+        var server = new HashChainService(new Ring(KeyA));
+        Append(server, chain, "after the key");
+        Append(server, chain, "and after");
+        var forged = new List<AuditLogEntry>();
+        foreach (var e in chain)
+        {
+            var copy = new AuditLogEntry { AtUtc = e.AtUtc, Actor = e.Actor, Action = e.Action, EntityType = e.EntityType, Summary = e.Summary };
+            plain.ChainAppend(copy, forged.LastOrDefault());
+            forged.Add(copy);
+        }
+        var restarted = new HashChainService(new Ring(KeyA));
+
+        restarted.VerifyChain(forged).IsValid.Should().BeTrue("without the seal's record nothing gives it away");
+        var result = restarted.VerifyChain(forged, keyedFrom: 2);
+        result.IsValid.Should().BeFalse();
+        result.FirstBrokenSequence.Should().Be(2);
+        result.Detail.Should().Contain("seal records that the chain is keyed from entry #2");
+        restarted.VerifyChain(chain, keyedFrom: 2).IsValid.Should().BeTrue("the genuine chain is keyed from there");
+    }
+
+    [Fact]
+    public void A_seals_keyed_from_is_signed_with_it_and_older_seals_keep_their_payload(/* BUG-142 */)
+    {
+        var seal = new IntegritySeal { UpToSequence = 9, ChainHeadHash = "ab", SealedAtUtc = DateTimeOffset.UnixEpoch, SealedBy = "system" };
+        var old = seal.BuildCanonicalContent();
+        old.Should().Be("9|ab|1970-01-01T00:00:00.0000000+00:00|system");
+        seal.KeyedFromSequence = 4;
+        seal.BuildCanonicalContent().Should().Be(old + "|keyedfrom|4");
+    }
+
+    [Fact]
     public void A_keyed_entry_altered_without_the_key_fails_its_hash()
     {
         var chain = PlainThenKeyed();
