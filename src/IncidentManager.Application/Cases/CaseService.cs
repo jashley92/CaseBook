@@ -195,7 +195,10 @@ public sealed class CaseService
         using var db = _factory.CreateDbContext();
         var q = Scoped(db.Cases.AsNoTracking());
 
-        if (!filter.IncludeClosed && string.IsNullOrEmpty(filter.OutcomeKey)) q = q.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived);
+        // BUG-57: the notification-deadline filter keeps closed cases (closing doesn't answer a regulator, INV-43), so
+        // it lists what the dashboard counts; it leaves out archived ones itself.
+        if (!filter.IncludeClosed && string.IsNullOrEmpty(filter.OutcomeKey) && !filter.NotifyDeadlineOnly)
+            q = q.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived);
         if (filter.OutcomeKey is { Length: > 0 } outcomeKey) q = q.Where(c => c.OutcomeKey == outcomeKey);   // HR-01
         // PROD-43: tabletop/exercise cases stay out of the working queue unless explicitly requested.
         if (!filter.IncludeExercises) q = q.ExcludingExercises();

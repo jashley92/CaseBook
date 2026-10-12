@@ -220,6 +220,12 @@ public sealed class DashboardNotificationTests : IDisposable
         var m = await NewDashboard().GetAsync();
         m.NotifyAwaitingReport.Should().Be(1);
         m.NotifyBreached.Should().Be(1);
+
+        // BUG-57: the case list's deadline filter lists it too, without "include closed".
+        var cases = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(NewContext()),
+            new CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(),
+            new TestSlaTargets(), notifySettings: _settings, notifyRules: new NotificationRuleService(NewFactory(), _user, _clock));
+        (await cases.ListAsync(new CaseFilter { NotifyDeadlineOnly = true })).Items.Should().ContainSingle().Which.Id.Should().Be(closed.Id);
     }
 
     [Fact]
