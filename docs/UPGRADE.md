@@ -170,6 +170,11 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ### Next release
 
+- **One migration adds an audit-log index** (`AuditLogEntityIndex`: `IX_AuditLog_EntityType_EntityId`). Opening a
+  closed case and downloading a report each looked up a record's own audit entries, which scanned the whole audit
+  log. On a large audit log the index takes a moment to build at first start. On a site that enabled the SQL Server
+  ledger it's added to the ledger table in place.
+
 - **The STIX export's identity id is a valid RFC 4122 UUID.** It was derived from the organization name without the
   version and variant bits STIX 2.1 requires, so strict consumers (the OASIS `stix2` library, validators, some TIPs)
   refused the bundle or dropped the identity. It's now a version-5 UUID, which **changes the identity id once**: a

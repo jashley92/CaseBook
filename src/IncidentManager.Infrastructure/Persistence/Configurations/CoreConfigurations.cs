@@ -480,6 +480,9 @@ public sealed class AuditLogEntryConfiguration : IEntityTypeConfiguration<AuditL
         b.HasIndex(x => x.Sequence).IsUnique();
         b.HasIndex(x => x.CaseNumber);
         b.HasIndex(x => x.AtUtc);
+        // BUG-203: a record's own entries (its close, a report's creation) are looked up by type and id, on every
+        // closed-case load and report download; without it, each is a scan of the largest table.
+        b.HasIndex(x => new { x.EntityType, x.EntityId });
     }
 }
 

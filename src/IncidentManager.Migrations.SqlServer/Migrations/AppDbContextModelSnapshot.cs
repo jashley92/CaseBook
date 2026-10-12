@@ -552,6 +552,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.HasIndex("Sequence")
                         .IsUnique();
 
+                    b.HasIndex("EntityType", "EntityId");
+
                     b.ToTable("AuditLog", (string)null);
                 });
 

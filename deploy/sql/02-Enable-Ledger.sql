@@ -118,6 +118,7 @@ BEGIN
 
     CREATE INDEX [IX_AuditLog_AtUtc] ON dbo.AuditLog ([AtUtc]);
     CREATE INDEX [IX_AuditLog_CaseNumber] ON dbo.AuditLog ([CaseNumber]);
+    CREATE INDEX [IX_AuditLog_EntityType_EntityId] ON dbo.AuditLog ([EntityType], [EntityId]);
     CREATE UNIQUE INDEX [IX_AuditLog_Sequence] ON dbo.AuditLog ([Sequence]);
 
     DROP TABLE dbo.AuditLog_PreLedger;
