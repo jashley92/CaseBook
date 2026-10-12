@@ -167,6 +167,12 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   `IX_CaseEntities_CaseId_Type`, carrying `Value` as an included column on SQL Server. The old index's key could
   exceed SQL Server's 1,700-byte limit, so an indicator value over about 840 characters (a long URL or command line)
   failed to save. Rebuilding the index on a large `CaseEntities` table takes a moment at startup; no data changes.
+- **Stage gates apply on every rung climbed, and when filing a case.** A jump (Adverse Event to Breach) passes the
+  Incident gate too, and New case and imports that create a case pass the gates up to the chosen rung. With the default
+  gates, filing an Adverse Event needs a summary, an Incident also an indicator, and a Breach the impact fields, or an
+  override reason recorded with the case. Review the gate definitions under Administration before upgrading if your
+  team files Incidents or Breaches directly.
+- **Archiving** is refused while a regulatory notification deadline is running with no notice recorded.
 - **The integrity check now covers the records**, not only the audit chain: *Verify now* and the background monitor
   also flag a record edited directly in the database, including one whose row hash was recomputed. Checked against
   v1.5.0 data with no false alarms. A DBA fix made with raw SQL on an audited table will now raise the integrity
