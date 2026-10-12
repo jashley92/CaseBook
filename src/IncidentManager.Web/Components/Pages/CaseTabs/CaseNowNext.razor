@@ -174,8 +174,9 @@
             <h2 class="im-nn-h" id="nn-team-h">Team</h2>
             @if (CanEdit)
             {
-                <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick="() => OnAssign.InvokeAsync()">
-                    <span class="bi bi-plus-lg" aria-hidden="true"></span> Assign
+                <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick="() => OnAssign.InvokeAsync()"
+                        title="Add someone to the team, or change a member's role">
+                    <span class="bi bi-person-plus" aria-hidden="true"></span> Add someone
                 </button>
             }
         </div>

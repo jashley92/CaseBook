@@ -284,6 +284,12 @@
                         <li><span>@Users.DisplayFor(a.UserId)</span> <span class="im-bf-sub">@Ui.Label(a.Role)</span></li>
                     }
                 </ul>
+                @if (CanEdit && !Beside && OnAssign.HasDelegate)
+                {
+                    <button type="button" class="btn btn-sm btn-outline-secondary mt-2" @onclick="() => OnAssign.InvokeAsync()">
+                        <span class="bi bi-person-plus me-1" aria-hidden="true"></span>Add someone
+                    </button>
+                }
                 @if (!CanEdit && !Beside) { <div class="im-bf-sub mt-2">Read-only for your role.</div> }
             </section>
         </aside>
@@ -393,6 +399,9 @@
     /// <summary>Opens the page's full gate card, when it has one; "What remains" then points to it instead of
     /// repeating its checks.</summary>
     [Parameter] public EventCallback OnShowGate { get; set; }
+
+    /// <summary>Opens the assign dialog, to add someone to the team (or change a member's role).</summary>
+    [Parameter] public EventCallback OnAssign { get; set; }
 
     private sealed record GateGap(string Action, List<string> Blocking, List<string> Advisory);
 

@@ -206,6 +206,9 @@
         }
         else
         {
+            @* Say the design: one person per save, any number of people per case. *@
+            <p class="small text-muted mb-2">Add people one at a time; a case can have any number of analysts and observers,
+                and one incident commander. Picking someone already on the case changes their role.</p>
             <label class="form-label small" for="ws-assign-user">Person</label>
             <select id="ws-assign-user" class="form-select mb-2" @bind="D.AssignUserId" @bind:after="OnAssignUserChanged">
                 <option value="">Select a person…</option>
@@ -296,7 +299,7 @@
         "unrestrict" => "Lift restriction",
         "materiality" => "Record materiality determination",
         "archive" => "Archive case",
-        "assign" => "Assign someone to this case",
+        "assign" => "Add someone to the team",
         "reopen" => "Reopen case",
         _ => ""
     };

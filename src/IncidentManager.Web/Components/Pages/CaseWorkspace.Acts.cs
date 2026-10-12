@@ -112,7 +112,7 @@ public partial class CaseWorkspace
             list.Add(new("Refer to Legal / Privacy…", "bi-briefcase", () => OpenModalFromPalette("legal")));
             if (_case.Classification is Classification.Incident or Classification.Breach)
                 list.Add(new("Record materiality determination…", "bi-clipboard2-check", () => OpenModalFromPalette("materiality")));
-            list.Add(new("Assign someone to this case…", "bi-person-plus", () => OpenModalFromPalette("assign")));
+            list.Add(new("Add someone to the team (assign)…", "bi-person-plus", () => OpenModalFromPalette("assign")));
             if (_case.Phase == CasePhase.Closed)
                 list.Add(new("Reopen case…", "bi-arrow-counterclockwise", () => OpenModalFromPalette("reopen")));
         }

@@ -87,7 +87,8 @@
 @if (Section == "Briefing")
 {
     <CaseBriefing @ref="_briefing" Case="Case" TaskResults="TaskResults" Notify="_deadlines" Readiness="ReadinessEval" DataElementLabels="_dataElementLabels"
-                  CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" OnShowGate="ShowGate" />
+                  CanEdit="CanEdit" OnChanged="OnChanged" OnGoToTab="OnGoToTab" OnShowSince="OnShowSince" OnShowGate="ShowGate"
+                  OnAssign='() => OnOpenModal.InvokeAsync("assign")' />
 }
 
 <div class="im-ov">
