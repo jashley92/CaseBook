@@ -109,7 +109,7 @@ public sealed class CampaignServiceTests : IDisposable
         var ioc = rollup.SharedIocs[0];
         ioc.Value.Should().Be("185.220.101.47");
         ioc.CaseCount.Should().Be(2);
-        ioc.Disposition.Should().Be(EntityDisposition.Compromised); // strongest verdict wins
+        ioc.Disposition.Should().Be(EntityDisposition.Malicious); // BUG-52: the worst verdict by the indicator library's order
         ioc.CaseNumbers.Should().HaveCount(2);
     }
 

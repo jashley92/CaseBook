@@ -1828,8 +1828,12 @@ public sealed class CaseService
         if (linked.Count > 0) q = q.Where(c => !linked.Contains(c.Id));
         if (!string.IsNullOrWhiteSpace(query))
         {
-            var term = query.Trim();
-            q = q.Where(c => c.CaseNumber.Contains(term) || c.Title.Contains(term));
+            // BUG-51: ignoring case on every provider (SQLite's LIKE via Contains is case-sensitive for non-ASCII and
+            // instr() is case-sensitive outright). ToLower() translates to SQL LOWER(); the invariant overload doesn't.
+            var term = query.Trim().ToLowerInvariant();
+#pragma warning disable CA1304, CA1311
+            q = q.Where(c => c.CaseNumber.ToLower().Contains(term) || c.Title.ToLower().Contains(term));
+#pragma warning restore CA1304, CA1311
         }
 
         return await q.OrderByDescending(c => c.CreatedAtUtc).Take(take)

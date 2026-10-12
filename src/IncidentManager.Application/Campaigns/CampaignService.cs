@@ -134,13 +134,15 @@ public sealed class CampaignService
 
         // Shared IOCs: group entities by type + trimmed value, count the distinct member cases each appears
         // on, and keep only those on more than one case — the pivots that actually connect the campaign.
+        // BUG-52: matched and ranked as the indicator library does: the type's match family, the value ignoring case,
+        // and the worst verdict by the library's order (Malicious above Compromised).
         var sharedIocs = entities
-            .GroupBy(e => new { e.Type, Value = e.Value.Trim() })
+            .GroupBy(e => (Family: IncidentManager.Domain.Observables.IocObservable.MatchFamily(e.Type), Key: e.Value.Trim().ToLowerInvariant()))
             .Select(g => new CampaignIoc(
-                g.Key.Type,
-                g.Key.Value,
+                g.First().Type,
+                g.First().Value.Trim(),
                 g.Select(x => x.Label).FirstOrDefault(l => !string.IsNullOrWhiteSpace(l)),
-                g.Max(x => x.Disposition),                        // strongest verdict wins (Compromised > Malicious > …)
+                g.Select(x => x.Disposition).MaxBy(Intel.IndicatorService.Severity),
                 g.Select(x => x.CaseId).Distinct().Count(),
                 g.Select(x => x.CaseId).Distinct()
                     .Select(id => caseNumbers.TryGetValue(id, out var n) ? n : null)
@@ -148,7 +150,7 @@ public sealed class CampaignService
                     .OrderBy(n => n, StringComparer.Ordinal).ToList()))
             .Where(i => i.CaseCount > 1)
             .OrderByDescending(i => i.CaseCount)
-            .ThenByDescending(i => i.Disposition)
+            .ThenByDescending(i => Intel.IndicatorService.Severity(i.Disposition))
             .ThenBy(i => i.Value, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
