@@ -166,7 +166,8 @@ public sealed partial record FindQuery
     public static (FindReadAs As, EntityType? Type) ReadShape(string text)
     {
         if (text.Length == 0) return (FindReadAs.Nothing, null);
-        if (CaseNumberRx().IsMatch(text)) return (FindReadAs.CaseNumber, null);
+        // BUG-56: a bare date (2026-01-31) is words, not a case number; a Complex Event's number carries its "CE-".
+        if (CaseNumberRx().IsMatch(text) && !IsBareDate(text)) return (FindReadAs.CaseNumber, null);
         if (!text.Contains(' '))
         {
             var t = IocObservable.DetectType(text);
@@ -183,6 +184,10 @@ public sealed partial record FindQuery
     // 2026-124, CE-2026-10-04, 2026-01_Phishing_Wave: a year then a sequence, optionally prefixed.
     [GeneratedRegex(@"^([A-Za-z]{1,6}-)?\d{4}-\d{1,4}(-\d{1,4})?(_\S*)?$")]
     private static partial Regex CaseNumberRx();
+
+    private static bool IsBareDate(string text) =>
+        DateOnly.TryParseExact(text, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out _);
 
     [GeneratedRegex("^[A-Za-z]{2}$")]
     private static partial Regex StateRx();

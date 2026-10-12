@@ -150,6 +150,14 @@ public sealed class FindServiceTests : IDisposable
         number.Cases.Should().ContainSingle().Which.Id.Should().Be(_beta);
     }
 
+    [Theory]
+    [InlineData("2026-01-31", FindReadAs.Words)]
+    [InlineData("CE-2026-01-31", FindReadAs.CaseNumber)]
+    [InlineData("2026-01", FindReadAs.CaseNumber)]
+    [InlineData("2026-01_Phishing_Wave", FindReadAs.CaseNumber)]
+    public void A_bare_date_is_not_read_as_a_case_number(string text, FindReadAs expected /* BUG-56 */) =>
+        FindQuery.ReadShape(text).As.Should().Be(expected);
+
     [Fact]
     public void The_grammar_keeps_phrases_and_unknown_keys_as_words_and_edits_one_filter()
     {
