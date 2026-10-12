@@ -1,6 +1,7 @@
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace IncidentManager.Infrastructure.Security;
 
@@ -27,9 +28,23 @@ public static class ChainKeyStartup
 
     private static async Task<List<string>> KeyIdsInUseAsync(AppDbContext db, CancellationToken ct)
     {
-        // A fresh install has no database or no audit table yet: nothing is keyed.
-        if (!await db.Database.CanConnectAsync(ct)) return [];
-        try { return await db.AuditLog.Where(a => a.HashKeyId != null).Select(a => a.HashKeyId!).Distinct().ToListAsync(ct); }
-        catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or Microsoft.Data.Sqlite.SqliteException) { return []; }
+        // A fresh install has no database or no audit table yet: nothing is keyed. BUG-68: anything else (the server
+        // unreachable, the login refused) stops startup instead, since it can't show that nothing is keyed, and a new
+        // key written now would stay after the database came back.
+        try
+        {
+            var creator = db.GetService<Microsoft.EntityFrameworkCore.Storage.IRelationalDatabaseCreator>();
+            if (!await creator.ExistsAsync(ct)) return [];
+            return await db.AuditLog.Where(a => a.HashKeyId != null).Select(a => a.HashKeyId!).Distinct().ToListAsync(ct);
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 208) { return []; }   // invalid object name
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.Message.Contains("no such table", StringComparison.OrdinalIgnoreCase)) { return []; }
+        catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
+        {
+            throw new InvalidOperationException(
+                "The audit chain key file is missing and the database couldn't be read to check whether existing audit entries " +
+                $"need it ({ex.Message}). CaseBook won't create a new chain key until it can check. Fix the database connection, " +
+                "or restore the key file, and start again.", ex);
+        }
     }
 }

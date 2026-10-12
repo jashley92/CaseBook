@@ -182,6 +182,15 @@ public sealed class ChainKeyTests : IDisposable
             // BUG-26: the new key is saved only once startup sees no keyed entries in the audit log.
             first.NewKeyFile.Should().Be(file);
             File.Exists(file).Should().BeFalse("nothing is written until startup confirms a first start");
+            // BUG-68: a database that can't be reached can't show that nothing is keyed, so no key is made.
+            using (var unreachable = new IncidentManager.Infrastructure.Persistence.AppDbContext(
+                new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<IncidentManager.Infrastructure.Persistence.AppDbContext>()
+                    .UseSqlServer("Server=127.0.0.1,1;Database=CaseBook;Integrated Security=false;User Id=x;Password=y;Connect Timeout=2;TrustServerCertificate=True").Options))
+            {
+                await ((Func<Task>)(() => ChainKeyStartup.EnsureAsync(first, unreachable)))
+                    .Should().ThrowAsync<InvalidOperationException>().WithMessage("*couldn't be read*");
+                File.Exists(file).Should().BeFalse();
+            }
             using (var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:"))
             {
                 connection.Open();
