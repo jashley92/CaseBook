@@ -25,6 +25,7 @@ public interface IAppDbContext : IDisposable, IAsyncDisposable
     DbSet<ActionItem> ActionItems { get; }
     DbSet<ActionItemComment> ActionItemComments { get; }
     DbSet<CaseAssignment> Assignments { get; }
+    DbSet<EvidenceCitation> EvidenceCitations { get; }   // BUG-70: for the record check
     DbSet<CaseEntity> CaseEntities { get; }
     DbSet<EntityRelationship> EntityRelationships { get; }
     DbSet<EntityLayout> EntityLayouts { get; }

@@ -9,6 +9,7 @@ public sealed class ClassificationChangeConfiguration : IEntityTypeConfiguration
     public void Configure(EntityTypeBuilder<ClassificationChange> b)
     {
         b.ToTable("ClassificationChanges");
+        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
         b.Property(x => x.Reason).HasMaxLength(2000);
         b.Property(x => x.ChangedBy).HasMaxLength(200);
         b.HasIndex(x => x.CaseId);
@@ -20,6 +21,7 @@ public sealed class StatusChangeConfiguration : IEntityTypeConfiguration<StatusC
     public void Configure(EntityTypeBuilder<StatusChange> b)
     {
         b.ToTable("StatusChanges");
+        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
         b.Property(x => x.Reason).HasMaxLength(2000);
         b.Property(x => x.OutcomeKey).HasMaxLength(64);   // HR-01
         b.Property(x => x.ChangedBy).HasMaxLength(200);
@@ -32,6 +34,7 @@ public sealed class MaterialityChangeConfiguration : IEntityTypeConfiguration<Ma
     public void Configure(EntityTypeBuilder<MaterialityChange> b)
     {
         b.ToTable("MaterialityChanges");
+        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
         b.Property(x => x.DecisionMaker).HasMaxLength(300);
         b.Property(x => x.Rationale).HasMaxLength(4000);
         b.Property(x => x.ChangedBy).HasMaxLength(200);
@@ -44,6 +47,7 @@ public sealed class SeverityChangeConfiguration : IEntityTypeConfiguration<Sever
     public void Configure(EntityTypeBuilder<SeverityChange> b)
     {
         b.ToTable("SeverityChanges");
+        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
         b.Property(x => x.Reason).HasMaxLength(2000);
         b.Property(x => x.ChangedBy).HasMaxLength(200);
         b.HasIndex(x => x.CaseId);
@@ -153,6 +157,7 @@ public sealed class AssignmentChangeConfiguration : IEntityTypeConfiguration<Ass
     public void Configure(EntityTypeBuilder<AssignmentChange> b)
     {
         b.ToTable("AssignmentChanges");
+        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
         b.Property(x => x.UserId).HasMaxLength(200).IsRequired();
         b.Property(x => x.UserDisplayName).HasMaxLength(200);
         b.Property(x => x.ChangedBy).HasMaxLength(200);
@@ -166,6 +171,7 @@ public sealed class EntityVerdictChangeConfiguration : IEntityTypeConfiguration<
     public void Configure(EntityTypeBuilder<EntityVerdictChange> b)
     {
         b.ToTable("EntityVerdictChanges");
+        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
         b.Property(x => x.EntityLabel).HasMaxLength(400).IsRequired();
         b.Property(x => x.Reason).HasMaxLength(2000);
         b.Property(x => x.ChangedBy).HasMaxLength(200);
@@ -179,6 +185,7 @@ public sealed class CaseAssignmentConfiguration : IEntityTypeConfiguration<CaseA
     public void Configure(EntityTypeBuilder<CaseAssignment> b)
     {
         b.ToTable("CaseAssignments");
+        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
         b.Property(x => x.UserId).HasMaxLength(200).IsRequired();
         b.Property(x => x.UserDisplayName).HasMaxLength(200);
         b.Property(x => x.AssignedBy).HasMaxLength(200);
@@ -555,6 +562,7 @@ public sealed class EvidenceCitationConfiguration : IEntityTypeConfiguration<Evi
         // INV-10. Only the case is a foreign key: a second cascade path through timeline entries would be refused
         // by SQL Server, and evidence is never deleted.
         b.ToTable("EvidenceCitations");
+        b.Property(x => x.RowHash).HasMaxLength(64);   // BUG-70
         b.HasIndex(x => x.CaseId);
         b.HasIndex(x => new { x.TimelineEntryId, x.EvidenceId }).IsUnique();
         b.HasIndex(x => x.EvidenceId);

@@ -7,11 +7,16 @@ namespace IncidentManager.Domain.Entities;
 /// Lets a conclusion point at what it rests on, and an evidence item show what relies on it. An audited case
 /// record in its own right (adding or removing a citation is in the hash-chained audit trail); it isn't folded
 /// into the entry's row hash. When an investigation entry is edited into a new version, its citations move with it.
+/// BUG-70: it has its own row hash and is in the record check.
 /// </summary>
-public class EvidenceCitation : Entity
+public class EvidenceCitation : Entity, IHashableEntity
 {
     /// <summary>The case both sides belong to (scoping and audit attribution).</summary>
     public Guid CaseId { get; set; }
     public Guid TimelineEntryId { get; set; }
     public Guid EvidenceId { get; set; }
+
+    public string? RowHash { get; set; }
+
+    public string BuildCanonicalContent() => string.Join('|', CaseId, TimelineEntryId, EvidenceId);
 }

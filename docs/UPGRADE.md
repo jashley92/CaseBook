@@ -227,6 +227,11 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   entity graph and the attack chain, not only the IOC table). The Report tab says so before you generate. To share the
   report more widely, change that entity's TLP first.
 
+- **One column migration** (`HistoryRowHashes`): status, classification, materiality, severity, assignment and
+  verdict changes, case assignments and evidence citations now carry a row hash and are in the record check. A direct
+  edit of when a transition happened, or an assignment inserted outside CaseBook, is now caught. At the first start
+  after the upgrade, existing rows the audit trail records are given their hash; the trail itself isn't changed.
+
 ### v1.5.1
 
 A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung

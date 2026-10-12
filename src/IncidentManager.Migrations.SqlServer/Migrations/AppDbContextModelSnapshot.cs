@@ -452,6 +452,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<int?>("From")
                         .HasColumnType("int");
 
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<int?>("To")
                         .HasColumnType("int");
 
@@ -771,6 +775,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
 
                     b.Property<int>("Role")
                         .HasColumnType("int");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("UserDisplayName")
                         .IsRequired()
@@ -1260,6 +1268,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<int>("To")
                         .HasColumnType("int");
 
@@ -1433,6 +1445,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<int>("To")
                         .HasColumnType("int");
 
@@ -1535,6 +1551,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
 
                     b.Property<Guid>("EvidenceId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<Guid>("TimelineEntryId")
                         .HasColumnType("uniqueidentifier");
@@ -1777,6 +1797,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<string>("Rationale")
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("To")
                         .HasColumnType("int");
@@ -2311,6 +2335,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<int>("To")
                         .HasColumnType("int");
 
@@ -2438,6 +2466,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<string>("Reason")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("RowHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("To")
                         .HasColumnType("int");

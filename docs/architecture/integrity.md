@@ -114,7 +114,11 @@ flowchart TB
   as removed, a hashed record the chain never recorded (added in the database), and a record the chain recorded
   that is no longer there (deleted in the database) are all flagged. The app records every removal, so a missing
   record means a write outside it. One released migration cleared stage-gate requirement hashes, so a cleared hash
-  on that table isn't flagged; a migration that clears hashes must say so in `RowIntegrityVerifier`. The upgrade
+  on that table isn't flagged; a migration that clears hashes must say so in `RowIntegrityVerifier`. The
+  transition, assignment and citation tables (status, classification, materiality, severity, assignment and verdict
+  changes, case assignments, evidence citations) became hashable later (BUG-70): at startup `RowHashBackfill` gives
+  their rows the trail records a hash, without an audit entry, and in those tables a row the trail never recorded is
+  flagged whether or not it has a hash (so an assignment inserted to gain access to a restricted case shows). The upgrade
   test runs this check on a database upgraded from a release. A new `IHashableEntity`
   must be added to `RowIntegrityVerifier.Tables` (a test fails until it is).
 - **Times are stored in UTC.** The interceptor converts any `DateTimeOffset` with another offset before hashing,

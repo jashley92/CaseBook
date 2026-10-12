@@ -3077,3 +3077,80 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155220_HistoryRowHashes'
+)
+BEGIN
+    ALTER TABLE [StatusChanges] ADD [RowHash] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155220_HistoryRowHashes'
+)
+BEGIN
+    ALTER TABLE [SeverityChanges] ADD [RowHash] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155220_HistoryRowHashes'
+)
+BEGIN
+    ALTER TABLE [MaterialityChanges] ADD [RowHash] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155220_HistoryRowHashes'
+)
+BEGIN
+    ALTER TABLE [EvidenceCitations] ADD [RowHash] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155220_HistoryRowHashes'
+)
+BEGIN
+    ALTER TABLE [EntityVerdictChanges] ADD [RowHash] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155220_HistoryRowHashes'
+)
+BEGIN
+    ALTER TABLE [ClassificationChanges] ADD [RowHash] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155220_HistoryRowHashes'
+)
+BEGIN
+    ALTER TABLE [CaseAssignments] ADD [RowHash] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155220_HistoryRowHashes'
+)
+BEGIN
+    ALTER TABLE [AssignmentChanges] ADD [RowHash] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012155220_HistoryRowHashes'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261012155220_HistoryRowHashes'', N''10.0.12'');');
+END;
+
+COMMIT;
+GO
+

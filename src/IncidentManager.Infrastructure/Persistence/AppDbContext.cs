@@ -27,6 +27,7 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     public DbSet<ActionItem> ActionItems => Set<ActionItem>();
     public DbSet<ActionItemComment> ActionItemComments => Set<ActionItemComment>();
     public DbSet<CaseAssignment> Assignments => Set<CaseAssignment>();
+    public DbSet<EvidenceCitation> EvidenceCitations => Set<EvidenceCitation>();   // BUG-70
     public DbSet<CaseEntity> CaseEntities => Set<CaseEntity>();
     public DbSet<EntityRelationship> EntityRelationships => Set<EntityRelationship>();
     public DbSet<EntityLayout> EntityLayouts => Set<EntityLayout>();

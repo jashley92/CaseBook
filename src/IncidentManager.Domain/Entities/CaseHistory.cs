@@ -3,8 +3,9 @@ using IncidentManager.Domain.Enums;
 
 namespace IncidentManager.Domain.Entities;
 
-/// <summary>Immutable record of a classification transition (AdverseEvent -> Incident -> Breach).</summary>
-public class ClassificationChange : Entity
+/// <summary>Immutable record of a classification transition (AdverseEvent -> Incident -> Breach). BUG-70: hashed and in
+/// the record check, like the rest of the case record, so a direct edit of when it happened is caught.</summary>
+public class ClassificationChange : Entity, IHashableEntity
 {
     public Guid CaseId { get; set; }
 
@@ -21,10 +22,15 @@ public class ClassificationChange : Entity
 
     /// <summary>When the change happened: the effective time if one was given, else the recorded time.</summary>
     public DateTimeOffset EffectiveAt => EffectiveAtUtc ?? ChangedAtUtc;
+
+    public string? RowHash { get; set; }
+
+    public string BuildCanonicalContent() => string.Join('|', CaseId, Canonical.Num(From), Canonical.Num(To), Reason,
+        ChangedBy, Canonical.Time(ChangedAtUtc), Canonical.Time(EffectiveAtUtc));
 }
 
-/// <summary>Immutable record of a lifecycle-phase transition.</summary>
-public class StatusChange : Entity
+/// <summary>Immutable record of a lifecycle-phase transition. BUG-70: hashed (its effective time moves the clocks).</summary>
+public class StatusChange : Entity, IHashableEntity
 {
     public Guid CaseId { get; set; }
     public CasePhase? From { get; set; }
@@ -42,11 +48,16 @@ public class StatusChange : Entity
 
     /// <summary>HR-01: on a change to Closed, the outcome the case was closed with (a <see cref="CaseOutcome"/> key).</summary>
     public string? OutcomeKey { get; set; }
+
+    public string? RowHash { get; set; }
+
+    public string BuildCanonicalContent() => string.Join('|', CaseId, Canonical.Num(From), Canonical.Num(To), Reason,
+        ChangedBy, Canonical.Time(ChangedAtUtc), Canonical.Time(EffectiveAtUtc), OutcomeKey);
 }
 
 /// <summary>Immutable record of a materiality-determination transition (Undetermined → Under review →
 /// Material / Not material). Carries the off-app decision-maker/date/rationale as recorded at the time.</summary>
-public class MaterialityChange : Entity
+public class MaterialityChange : Entity, IHashableEntity
 {
     public Guid CaseId { get; set; }
 
@@ -58,13 +69,18 @@ public class MaterialityChange : Entity
     public string? Rationale { get; set; }
     public string ChangedBy { get; set; } = string.Empty;
     public DateTimeOffset ChangedAtUtc { get; set; }
+
+    public string? RowHash { get; set; }   // BUG-70
+
+    public string BuildCanonicalContent() => string.Join('|', CaseId, Canonical.Num(From), Canonical.Num(To), DecisionMaker,
+        Canonical.Time(DecidedOnUtc), Rationale, ChangedBy, Canonical.Time(ChangedAtUtc));
 }
 
 /// <summary>
 /// INV-31: immutable record of a change to who is on a case — someone assigned, their role changed (including taking
 /// or handing over command), or removed — so "who was in charge at T+26h" is answered by the timeline, not the audit.
 /// </summary>
-public class AssignmentChange : Entity
+public class AssignmentChange : Entity, IHashableEntity
 {
     public Guid CaseId { get; set; }
     public string UserId { get; set; } = string.Empty;
@@ -75,6 +91,11 @@ public class AssignmentChange : Entity
     public CaseAssignmentRole? To { get; set; }
     public string ChangedBy { get; set; } = string.Empty;
     public DateTimeOffset ChangedAtUtc { get; set; }
+
+    public string? RowHash { get; set; }   // BUG-70
+
+    public string BuildCanonicalContent() => string.Join('|', CaseId, UserId, UserDisplayName, Canonical.Num(From),
+        Canonical.Num(To), ChangedBy, Canonical.Time(ChangedAtUtc));
 }
 
 /// <summary>
@@ -82,7 +103,7 @@ public class AssignmentChange : Entity
 /// findings history: when the team reached each conclusion about an account, host or indicator, who, and on what basis.
 /// Written when an existing entity is re-assessed, not when one is first added with a verdict.
 /// </summary>
-public class EntityVerdictChange : Entity
+public class EntityVerdictChange : Entity, IHashableEntity
 {
     public Guid CaseId { get; set; }
     public Guid EntityId { get; set; }
@@ -93,10 +114,15 @@ public class EntityVerdictChange : Entity
     public string? Reason { get; set; }
     public string ChangedBy { get; set; } = string.Empty;
     public DateTimeOffset ChangedAtUtc { get; set; }
+
+    public string? RowHash { get; set; }   // BUG-70
+
+    public string BuildCanonicalContent() => string.Join('|', CaseId, EntityId, EntityLabel, Canonical.Num(From),
+        Canonical.Num(To), Reason, ChangedBy, Canonical.Time(ChangedAtUtc));
 }
 
-/// <summary>Immutable record of a severity change.</summary>
-public class SeverityChange : Entity
+/// <summary>Immutable record of a severity change. BUG-70: hashed.</summary>
+public class SeverityChange : Entity, IHashableEntity
 {
     public Guid CaseId { get; set; }
 
@@ -113,4 +139,9 @@ public class SeverityChange : Entity
 
     /// <summary>When the change happened: the effective time if one was given, else the recorded time.</summary>
     public DateTimeOffset EffectiveAt => EffectiveAtUtc ?? ChangedAtUtc;
+
+    public string? RowHash { get; set; }
+
+    public string BuildCanonicalContent() => string.Join('|', CaseId, Canonical.Num(From), Canonical.Num(To), Reason,
+        ChangedBy, Canonical.Time(ChangedAtUtc), Canonical.Time(EffectiveAtUtc));
 }

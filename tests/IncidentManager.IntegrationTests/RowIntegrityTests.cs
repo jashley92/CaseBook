@@ -150,6 +150,65 @@ public sealed class RowIntegrityTests
         bad!.Detail.Should().Contain("isn't in the audit trail");
     }
 
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Moving_when_a_transition_happened_directly_in_the_database_is_caught(string provider /* BUG-70 */)
+    {
+        using var database = Seeded(provider);
+        await using (var db = database.NewContext())
+        {
+            var id = await db.StatusChanges.Where(s => s.From != null).Select(s => s.Id).FirstAsync();
+            await db.StatusChanges.Where(s => s.Id == id)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.EffectiveAtUtc, _clock.UtcNow.AddDays(-30)));
+        }
+
+        var bad = await VerifyAsync(database);
+        bad!.EntityType.Should().Be(nameof(StatusChange));
+        bad.Detail.Should().Contain("no longer matches its hash");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task An_assignment_inserted_directly_in_the_database_is_caught_with_or_without_a_hash(string provider /* BUG-70 */)
+    {
+        using var database = Seeded(provider);
+        var caseId = Guid.Empty;
+        await using (var db = database.NewContext()) caseId = await db.Cases.Select(c => c.Id).FirstAsync();
+
+        var planted = new CaseAssignment { CaseId = caseId, UserId = "intruder", UserDisplayName = "Intruder",
+            Role = CaseAssignmentRole.Analyst, AssignedAtUtc = _clock.UtcNow, AssignedBy = "intruder" };
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            raw.Assignments.Add(planted);
+            await raw.SaveChangesAsync();
+        }
+        (await VerifyAsync(database))!.Detail.Should().Contain("isn't in the audit trail");
+
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            var hash = _hasher.ComputeRowHash(planted);
+            await raw.Assignments.Where(a => a.Id == planted.Id).ExecuteUpdateAsync(s => s.SetProperty(a => a.RowHash, hash));
+        }
+        (await VerifyAsync(database))!.Detail.Should().Contain("isn't in the audit trail");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task The_upgrade_back_fill_hashes_recorded_rows_and_the_check_then_passes(string provider /* BUG-70 */)
+    {
+        using var database = Seeded(provider);
+        await using (var db = database.NewContext())
+            await db.StatusChanges.ExecuteUpdateAsync(s => s.SetProperty(x => x.RowHash, (string?)null));   // as an upgraded database has them
+
+        await using (var db = database.NewContext())
+        {
+            (await RowHashBackfill.RunAsync(db, _hasher)).Should().BeGreaterThan(0);
+            (await db.StatusChanges.AnyAsync(s => s.RowHash == null)).Should().BeFalse();
+            (await RowHashBackfill.RunAsync(db, _hasher)).Should().Be(0, "once every row has a hash it does nothing");
+        }
+        (await VerifyAsync(database))?.Detail.Should().BeNull();
+    }
+
     [Fact]
     public async Task An_existing_database_passes_when_one_is_named()
     {

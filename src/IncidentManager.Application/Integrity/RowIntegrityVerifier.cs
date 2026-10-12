@@ -51,6 +51,15 @@ public static class RowIntegrityVerifier
         db.AppSettings.AsNoTracking(),
         db.Roles.AsNoTracking(),
         db.RoleMappings.AsNoTracking(),
+        // BUG-70: when things happened and who could see a case, which were outside the check before.
+        db.ClassificationChanges.AsNoTracking(),
+        db.StatusChanges.AsNoTracking(),
+        db.MaterialityChanges.AsNoTracking(),
+        db.SeverityChanges.AsNoTracking(),
+        db.AssignmentChanges.AsNoTracking(),
+        db.EntityVerdictChanges.AsNoTracking(),
+        db.Assignments.AsNoTracking(),
+        db.EvidenceCitations.AsNoTracking(),
     ];
 
     /// <summary>
@@ -79,6 +88,11 @@ public static class RowIntegrityVerifier
                         $"{type} {entity.Id} was removed (audit entry {last.Sequence}) and put back outside CaseBook.");
                 if (row.RowHash is not { Length: > 0 } stored)
                 {
+                    // BUG-70: in the tables made hashable later, a row the trail records was given its hash at upgrade; one
+                    // without a hash that the trail never recorded was added outside CaseBook (an assignment, say).
+                    if (!known && HashedFromUpgrade.Contains(type))
+                        return new RowMismatch(type, entity.Id, null,
+                            $"{type} {entity.Id} isn't in the audit trail: it was added outside CaseBook.");
                     if (last.Hash is not null && !HashClearedByMigration.Contains(type))
                         return new RowMismatch(type, entity.Id, last.Sequence,
                             $"{type} {entity.Id} had its hash removed outside CaseBook (audit entry {last.Sequence} recorded one).");
@@ -114,6 +128,16 @@ public static class RowIntegrityVerifier
     /// type here.
     /// </summary>
     private static readonly HashSet<string> HashClearedByMigration = new(StringComparer.Ordinal) { nameof(StageGateRequirement) };
+
+    /// <summary>
+    /// BUG-70: tables made hashable after release, whose existing rows the startup back-fill (RowHashBackfill) gives a
+    /// hash when the trail records them. Every row in them is in the trail, so one with neither is flagged.
+    /// </summary>
+    private static readonly HashSet<string> HashedFromUpgrade = new(StringComparer.Ordinal)
+    {
+        nameof(ClassificationChange), nameof(StatusChange), nameof(MaterialityChange), nameof(SeverityChange),
+        nameof(AssignmentChange), nameof(EntityVerdictChange), nameof(CaseAssignment), nameof(EvidenceCitation),
+    };
 
     /// <summary>Per record (type, id), the row hash its latest audit entry recorded, that entry's sequence, and whether
     /// it was a removal.</summary>
