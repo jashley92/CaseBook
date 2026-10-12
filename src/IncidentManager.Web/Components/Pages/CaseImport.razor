@@ -190,7 +190,19 @@ else if (_pending.Count > 0)
                         <option value="@CaseOrigin.ThirdParty">Third-party / vendor</option>
                     </select>
                 </div>
+                @if (nc.Origin == CaseOrigin.ThirdParty)
+                {
+                    <div class="col-md-4">
+                        <label class="form-label small mb-1" for="imp-nc-vendor">Vendor</label>
+                        <input id="imp-nc-vendor" class="form-control form-control-sm" maxlength="300" @bind="nc.VendorName" @bind:event="oninput"
+                               placeholder="Who disclosed it" />
+                    </div>
+                }
             </div>
+            @if (nc.Origin == CaseOrigin.ThirdParty && string.IsNullOrWhiteSpace(nc.VendorName))
+            {
+                <div class="form-text text-danger">Name the vendor to create a third-party case.</div>
+            }
             @if (string.IsNullOrWhiteSpace(nc.Title))
             {
                 <div class="form-text text-danger">Enter a title to create the case.</div>
@@ -593,6 +605,7 @@ else if (_pending.Count > 0)
         if (p.Timeline.Any(t => t.Include && t.Type == TimelineEntryType.Decision && string.IsNullOrWhiteSpace(t.Rationale))) return false;
         return p.TargetKind == CaseImportTargetKind.NewCase
             ? p.NewCase is { } nc && !string.IsNullOrWhiteSpace(nc.Title)
+              && (nc.Origin != CaseOrigin.ThirdParty || !string.IsNullOrWhiteSpace(nc.VendorName))   // BUG-117
             : p.ExistingCaseId is not null;
     }
 

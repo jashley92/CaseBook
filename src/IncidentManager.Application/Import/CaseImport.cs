@@ -58,6 +58,9 @@ public sealed class CaseImportNewCase
     /// <summary>The source platform's own id for the event (e.g. the XSIAM incident id) — the case's detection-source
     /// back-link (E-05). Optional; up to 100 characters.</summary>
     public string? DetectionCaseId { get; set; }
+
+    /// <summary>BUG-117: the vendor that disclosed it, required when <see cref="Origin"/> is ThirdParty. Up to 300 characters.</summary>
+    public string? VendorName { get; set; }
 }
 
 /// <summary>One timeline entry to import. <see cref="Kind"/>/<see cref="Type"/> are strings (safe fallback).</summary>

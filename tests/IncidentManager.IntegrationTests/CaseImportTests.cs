@@ -248,6 +248,22 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public void A_third_party_import_carries_its_vendor(/* BUG-117 */)
+    {
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Target = new CaseImportTarget { NewCase = new CaseImportNewCase { Title = "Vendor breach", Origin = "ThirdParty", VendorName = "ClaimStream" } }
+        };
+
+        var nc = CaseImportService.BuildPreviewCore(doc, _clock.UtcNow).NewCase!;
+
+        nc.Origin.Should().Be(CaseOrigin.ThirdParty);
+        nc.VendorName.Should().Be("ClaimStream");
+        new IncidentManager.Application.Cases.CreateCaseValidator().Validate(nc).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
     public void The_xsiam_playbook_sample_imports_cleanly(/* PROD-05 */)
     {
         var root = FindRepoRoot();

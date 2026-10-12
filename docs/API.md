@@ -97,7 +97,8 @@ Minimal example:
 Notes:
 - Set `target.newCase` to open a new case, or `target.caseId` to add to an existing one. A new case with no
   `classification` files as a **Complex Event** (intake) for a person to classify; `newCase.detectionCaseId`
-  carries the source platform's id (for example the XSIAM incident id) as the case's back-link.
+  carries the source platform's id (for example the XSIAM incident id) as the case's back-link. A new case with
+  `origin: "ThirdParty"` needs `newCase.vendorName` (the vendor that disclosed it).
 - Indicators may be **defanged** (`hxxp://`, `1.1.1[.]1`) — CaseBook refangs and auto-types them; the entity
   `type` is optional.
 - `origin` is recorded as the provenance (source) of imported indicators and timeline entries.

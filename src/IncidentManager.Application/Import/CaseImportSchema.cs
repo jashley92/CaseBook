@@ -77,6 +77,7 @@ public static class CaseImportSchema
                         ["dataTypesInvolved"] = Str("Free-text data context (notes). Regulated data elements are recorded in the impact assessment, not here."),
                         ["impactedAssets"] = Str(null),
                         ["detectionCaseId"] = Str("The source platform's id for the event, e.g. the XSIAM incident id (the case's detection-source back-link). Up to 100 characters."),
+                        ["vendorName"] = Str("The vendor that disclosed it. Required when origin is ThirdParty. Up to 300 characters."),
                     },
                 },
                 ["timelineEntry"] = new JsonObject
