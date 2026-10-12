@@ -828,9 +828,7 @@ else
     private DateTimeOffset? ToDueUtc(DateTime? date, TimeOnly? time)
     {
         if (date is not { } d) return null;
-        var wall = DateTime.SpecifyKind(d.Date + (time ?? new TimeOnly(23, 59)).ToTimeSpan(), DateTimeKind.Unspecified);
-        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(wall, TimeDisp.Zone), TimeSpan.Zero); }
-        catch { return new DateTimeOffset(DateTime.SpecifyKind(wall, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
+        return IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(d.Date + (time ?? new TimeOnly(23, 59)).ToTimeSpan(), TimeDisp.Zone);
     }
 
     // PROD-21: multi-select complete.
@@ -936,9 +934,7 @@ else
 
     private DateTimeOffset WallToUtc(DateTime wall)
     {
-        var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
-        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, TimeDisp.Zone), TimeSpan.Zero); }
-        catch { return new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
+        return IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(wall, TimeDisp.Zone);
     }
 
     private async Task MarkSelectedDone()

@@ -428,9 +428,7 @@
     // Wall-clock ⇄ UTC in the viewer's active display zone (U-29), matching the Overview details editor.
     private DateTimeOffset WallToUtc(DateTime wall)
     {
-        var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
-        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, TimeDisp.Zone), TimeSpan.Zero); }
-        catch { return new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
+        return IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(wall, TimeDisp.Zone);
     }
 
     private DateTime UtcToWall(DateTimeOffset utc)

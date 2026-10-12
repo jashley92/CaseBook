@@ -70,8 +70,11 @@ public static class WallClock
     public static DateTimeOffset ToUtc(DateTime wall, TimeZoneInfo zone)
     {
         var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
-        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, zone), TimeSpan.Zero); }
-        catch { return new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); } // DST-invalid wall time: treat as UTC
+        // BUG-40: a wall time in the spring-forward gap (02:30 when clocks jump 02:00 to 03:00) doesn't exist. Read it
+        // with the offset in force just before the gap, so it lands just after the jump (03:30), not hours off as UTC.
+        if (zone.IsInvalidTime(unspecified))
+            return new DateTimeOffset(unspecified, zone.GetUtcOffset(unspecified.AddHours(-3))).ToUniversalTime();
+        return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, zone), TimeSpan.Zero);
     }
 
     public static DateTime ToWall(DateTimeOffset utc, TimeZoneInfo zone) =>

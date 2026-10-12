@@ -583,9 +583,7 @@ else
     private DateTimeOffset? ToTargetUtc(DateTime? date)
     {
         if (date is not { } d) return null;
-        var wall = DateTime.SpecifyKind(d.Date + new TimeSpan(23, 59, 0), DateTimeKind.Unspecified);
-        try { return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(wall, TimeDisp.Zone), TimeSpan.Zero); }
-        catch { return new DateTimeOffset(DateTime.SpecifyKind(wall, DateTimeKind.Utc), TimeSpan.Zero); }
+        return IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(d.Date + new TimeSpan(23, 59, 0), TimeDisp.Zone);
     }
 
     private static string OutcomeHint(ImprovementActionStatus s) => s == ImprovementActionStatus.NotPursued

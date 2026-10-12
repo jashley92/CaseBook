@@ -357,10 +357,7 @@
         _saving = true;
         try
         {
-            var unspecified = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
-            DateTimeOffset utc;
-            try { utc = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(unspecified, TimeDisp.Zone), TimeSpan.Zero); }
-            catch (ArgumentException) { utc = new DateTimeOffset(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), TimeSpan.Zero); }
+            var utc = IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(wall, TimeDisp.Zone);
             await Cases.MarkReportedAsync(Case.Id, utc);
             _marking = false;
             Toasts.Success("Reported milestone recorded");
