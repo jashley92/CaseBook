@@ -659,6 +659,12 @@ public sealed class CaseService
                 isExercise: request.IsExercise);   // PROD-43: fixed at creation
             if (custom is not null) c.AssignCustomNumber(custom, _user.UserId, now);
             else if (isComplexEvent && attempt > 0) c.SetComplexEventNumber(now, attempt + 1);
+            // BUG-53: a Complex Event's number is freed when it's promoted (renumbered), but its audit entries keep it,
+            // and the activity feed, stale-case and closure checks read the audit trail by case number. A new Complex
+            // Event never takes a number the trail already holds, so those entries can't attach to the wrong case.
+            if (isComplexEvent && custom is null)
+                for (var n = attempt + 2; await db.AuditLog.AnyAsync(a => a.CaseNumber == c.CaseNumber, ct); n++)
+                    c.SetComplexEventNumber(now, n);
 
             c.SetInitialSummary(request.Summary, _user.UserId, now);   // INV-36: brief v1 holds it
             c.DetectionCaseId = request.DetectionCaseId;

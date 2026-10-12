@@ -201,5 +201,18 @@ public sealed class CaseNumberingPersistenceTests : IDisposable
         second.CaseNumber.Should().Be("CE-2026-08-08_Odd_Beaconing-2"); // disambiguated, not a reused number
     }
 
+    [Fact]
+    public async Task A_complex_event_number_freed_by_promotion_is_not_reused(/* BUG-53 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var first = await svc.CreateAsync(Req("Odd Beaconing", null));
+        await svc.ReclassifyAsync(first.Id, Classification.AdverseEvent, "Confirmed adverse event");
+
+        var next = await svc.CreateAsync(Req("Odd Beaconing", null));
+
+        next.CaseNumber.Should().Be("CE-2026-08-08_Odd_Beaconing-2", "the first one's audit entries still carry the plain number");
+    }
+
     public void Dispose() => _connection.Dispose();
 }
