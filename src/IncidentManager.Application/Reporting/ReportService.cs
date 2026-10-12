@@ -367,35 +367,44 @@ public sealed class ReportService
         const ReportFormat format = ReportFormat.Word;   // PDF generation was removed; stored PDFs stay readable
         var bytes = rendered ?? _generator.GenerateWord(model);
         const string ext = "docx";
-        var version = await db.Reports.CountAsync(r => r.CaseId == caseId && r.Kind == kind && r.Format == format, ct) + 1;
-        var fileName = kind == ReportKind.LessonsLearned
-            ? $"{caseNumber}_lessons-learned_v{version}.{ext}"
-            : $"{caseNumber}_v{version}.{ext}";
-
-        var stored = await _store.SaveAsync(caseId, fileName, bytes, ct);
-
-        var report = new Report
+        // BUG-16: numbering and storing one at a time, so two generations at once don't share a version (and the
+        // store never overwrites a file, so neither can replace the other's bytes).
+        await VersionGate.WaitAsync(ct);
+        try
         {
-            Tlp = model.Tlp,   // PROD-45
-            TemplateName = template?.Name,       // PROD-47: which template filled it, by value
-            TemplateSha256 = template?.Sha256,
-            CaseId = caseId,
-            Kind = kind,
-            Version = version,
-            Format = format,
-            FileName = fileName,
-            StoragePath = stored.StoragePath,
-            ContentSha256 = stored.Sha256,
-            IsFinal = false,          // always a draft; finalization is the separate ApproveAsync step (E-15)
-            ApprovedBy = null,
-            ApprovedAtUtc = null,
-            CreatedBy = _user.UserId,
-            CreatedAtUtc = now
-        };
-        db.Reports.Add(report);
-        await db.SaveChangesAsync(ct);
-        return report;
+            var version = await db.Reports.CountAsync(r => r.CaseId == caseId && r.Kind == kind && r.Format == format, ct) + 1;
+            var fileName = kind == ReportKind.LessonsLearned
+                ? $"{caseNumber}_lessons-learned_v{version}.{ext}"
+                : $"{caseNumber}_v{version}.{ext}";
+
+            var stored = await _store.SaveAsync(caseId, fileName, bytes, ct);
+
+            var report = new Report
+            {
+                Tlp = model.Tlp,   // PROD-45
+                TemplateName = template?.Name,       // PROD-47: which template filled it, by value
+                TemplateSha256 = template?.Sha256,
+                CaseId = caseId,
+                Kind = kind,
+                Version = version,
+                Format = format,
+                FileName = fileName,
+                StoragePath = stored.StoragePath,
+                ContentSha256 = stored.Sha256,
+                IsFinal = false,          // always a draft; finalization is the separate ApproveAsync step (E-15)
+                ApprovedBy = null,
+                ApprovedAtUtc = null,
+                CreatedBy = _user.UserId,
+                CreatedAtUtc = now
+            };
+            db.Reports.Add(report);
+            await db.SaveChangesAsync(ct);
+            return report;
+        }
+        finally { VersionGate.Release(); }
     }
+
+    private static readonly SemaphoreSlim VersionGate = new(1, 1);
 
     /// <summary>
     /// Approves and finalizes a generated draft (E-15) — stamps the approver + timestamp and marks it

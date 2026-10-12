@@ -26,9 +26,24 @@ public sealed class FileReportStore : IReportStore
         var absDir = Path.Combine(_root, relDir);
         Directory.CreateDirectory(absDir);
 
+        // BUG-16: never overwrite. A stored report is hashed and its row checked against the file, so replacing one
+        // would make an earlier version fail verification; a name that's taken gets a suffix instead.
         var safeName = Path.GetFileName(fileName);
-        var absPath = Path.Combine(absDir, safeName);
-        await File.WriteAllBytesAsync(absPath, content, ct);
+        var stem = Path.GetFileNameWithoutExtension(safeName);
+        var ext = Path.GetExtension(safeName);
+        for (var n = 2; ; n++)
+        {
+            try
+            {
+                await using var fs = new FileStream(Path.Combine(absDir, safeName), FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                await fs.WriteAsync(content, ct);
+                break;
+            }
+            catch (IOException) when (File.Exists(Path.Combine(absDir, safeName)) && n < 1000)
+            {
+                safeName = $"{stem}-{n}{ext}";
+            }
+        }
 
         var hash = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
         return new StoredReport($"{relDir}/{safeName}", hash, content.LongLength);
