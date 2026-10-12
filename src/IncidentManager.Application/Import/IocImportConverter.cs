@@ -93,11 +93,13 @@ public static partial class IocImportConverter
                 case "indicator":
                     var found = PatternObservables(Str(o, "pattern"));
                     if (found.Count == 0) { unparsedPatterns++; break; }
-                    // An indicator SDO is a producer's assertion of badness; carry its name/description.
+                    // An indicator SDO is a producer's assertion about what it matches; carry its name/description,
+                    // and its verdict from indicator_types (BUG-123: an allow-list "benign" entry isn't malicious).
+                    var verdict = IndicatorVerdict(o);
                     foreach (var (t, v) in found)
                         entities.Add(new CaseImportEntity
                         {
-                            Type = t.ToString(), Value = v, Disposition = nameof(EntityDisposition.Malicious),
+                            Type = t.ToString(), Value = v, Disposition = verdict.ToString(),
                             Label = Str(o, "name"), Description = Str(o, "description"),
                         });
                     break;
@@ -338,4 +340,17 @@ public static partial class IocImportConverter
         o.ValueKind == JsonValueKind.Object && o.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
             ? v.GetString()?.Trim() is { Length: > 0 } s ? s : null
             : null;
+
+    // STIX 2.1 indicator-type-ov: "benign" and "compromised" say so; "anomalous-activity" and "unknown" are suspicions;
+    // the rest ("malicious-activity", "attribution", "anonymization", or none given) mean malicious.
+    private static EntityDisposition IndicatorVerdict(JsonElement o)
+    {
+        if (!o.TryGetProperty("indicator_types", out var types) || types.ValueKind != JsonValueKind.Array) return EntityDisposition.Malicious;
+        var set = types.EnumerateArray().Where(t => t.ValueKind == JsonValueKind.String).Select(t => t.GetString()!.ToLowerInvariant()).ToHashSet();
+        if (set.Contains("malicious-activity")) return EntityDisposition.Malicious;
+        if (set.Contains("compromised")) return EntityDisposition.Compromised;
+        if (set.Contains("benign")) return EntityDisposition.Benign;
+        if (set.Contains("anomalous-activity") || set.Contains("unknown")) return EntityDisposition.Suspicious;
+        return EntityDisposition.Malicious;
+    }
 }

@@ -53,6 +53,22 @@ public class IocImportConverterTests
         r.Notes.Should().Contain(n => n.Contains("1 × malware") && n.Contains("1 × relationship"));
     }
 
+    [Theory]
+    [InlineData("benign", "Benign")]
+    [InlineData("anomalous-activity", "Suspicious")]
+    [InlineData("compromised", "Compromised")]
+    [InlineData("malicious-activity", "Malicious")]
+    public void An_indicators_types_set_its_verdict(string indicatorType, string verdict /* BUG-123 */)
+    {
+        var bundle = $$"""
+        { "type": "bundle", "id": "bundle--1", "objects": [
+          { "type": "indicator", "spec_version": "2.1", "id": "indicator--1", "indicator_types": ["{{indicatorType}}"],
+            "pattern": "[domain-name:value = 'updates.example']", "pattern_type": "stix" } ] }
+        """;
+
+        IocImportConverter.Convert(bundle).Document!.Entities!.Single().Disposition.Should().Be(verdict);
+    }
+
     [Fact]
     public void Our_own_ioc_feed_csv_round_trips()
     {
