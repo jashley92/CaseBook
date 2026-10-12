@@ -35,4 +35,18 @@ public interface IHashChainService
     /// <param name="keyedFrom">BUG-142: the latest seal's <see cref="IntegritySeal.KeyedFromSequence"/>: from that entry
     /// on, a plain-hashed entry is a break.</param>
     ChainVerificationResult VerifyChain(IReadOnlyList<AuditLogEntry> orderedEntries, long? keyedFrom = null);
+
+    /// <summary>
+    /// BUG-78: the same check one entry at a time, so a caller can stream the chain rather than hold all of it in memory.
+    /// </summary>
+    IChainVerifier BeginVerify(long? keyedFrom = null);
+}
+
+/// <summary>BUG-78: an audit chain checked as it's read, in sequence order (<see cref="IHashChainService.BeginVerify"/>).</summary>
+public interface IChainVerifier
+{
+    /// <summary>Checks the next entry. False once the chain is broken; later entries aren't checked.</summary>
+    bool Add(AuditLogEntry entry);
+
+    ChainVerificationResult Result { get; }
 }

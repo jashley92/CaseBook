@@ -22,7 +22,7 @@ public static class ComplianceBundlePack
         using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
         {
             AddEntry(zip, "manifest.txt", Manifest(m));
-            AddEntry(zip, "audit-chain.csv", AuditChainCsv(m.Segment));
+            AddEntry(zip, "audit-chain.csv", w => WriteAuditChainCsv(w, m.Segment));   // BUG-78: written straight into the zip
             AddEntry(zip, "seals.csv", SealsCsv(m.Seals));
             AddEntry(zip, "signing-public-key.pem", m.PublicKeyPem);
             foreach (var k in m.RetiredKeys ?? [])
@@ -30,6 +30,13 @@ public static class ComplianceBundlePack
             AddEntry(zip, "VERIFY.txt", VerifyReadme());
         }
         return ms.ToArray();
+    }
+
+    private static void AddEntry(ZipArchive zip, string name, Action<TextWriter> write)
+    {
+        var entry = zip.CreateEntry(name, CompressionLevel.Optimal);
+        using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
+        write(writer);
     }
 
     private static void AddEntry(ZipArchive zip, string name, string content)
@@ -107,10 +114,20 @@ public static class ComplianceBundlePack
 
     public static string AuditChainCsv(IReadOnlyList<AuditLogEntry> entries)
     {
+        using var w = new StringWriter(CultureInfo.InvariantCulture);
+        WriteAuditChainCsv(w, entries);
+        return w.ToString();
+    }
+
+    /// <summary>BUG-78: the audit-chain CSV a row at a time, so a large range isn't built as one string first.</summary>
+    public static void WriteAuditChainCsv(TextWriter w, IReadOnlyList<AuditLogEntry> entries)
+    {
+        w.Write("Sequence,AtUtc,Actor,Action,EntityType,EntityId,CaseNumber,Summary,BeforeJson,AfterJson,PrevHash,EntryHash,Reason,EntityLabel,HashKeyId");
+        w.Write(Nl);
         var sb = new StringBuilder();
-        sb.Append("Sequence,AtUtc,Actor,Action,EntityType,EntityId,CaseNumber,Summary,BeforeJson,AfterJson,PrevHash,EntryHash,Reason,EntityLabel,HashKeyId").Append(Nl);
         foreach (var e in entries)
         {
+            sb.Clear();
             Field(sb, e.Sequence.ToString(CultureInfo.InvariantCulture)); Comma(sb);
             Field(sb, e.AtUtc.ToString("o", CultureInfo.InvariantCulture)); Comma(sb);
             Field(sb, e.Actor); Comma(sb);
@@ -128,8 +145,8 @@ public static class ComplianceBundlePack
             Field(sb, e.EntityLabel ?? ""); Comma(sb);
             Field(sb, e.HashKeyId ?? "");
             sb.Append(Nl);
+            w.Write(sb);
         }
-        return sb.ToString();
     }
 
     public static string SealsCsv(IReadOnlyList<SealLine> seals)

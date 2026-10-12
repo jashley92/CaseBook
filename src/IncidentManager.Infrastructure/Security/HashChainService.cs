@@ -44,11 +44,41 @@ public sealed class HashChainService : IHashChainService
 
     public ChainVerificationResult VerifyChain(IReadOnlyList<AuditLogEntry> orderedEntries, long? keyedFrom = null)
     {
-        var prevHash = GenesisPrevHash;
-        long expectedSequence = 1;
-        long? firstKeyed = null;
-
+        var verifier = BeginVerify(keyedFrom);
         foreach (var entry in orderedEntries)
+            if (!verifier.Add(entry)) break;
+        return verifier.Result;
+    }
+
+    public IChainVerifier BeginVerify(long? keyedFrom = null) => new Verifier(this, keyedFrom);
+
+    // BUG-78: the chain check as a running state, fed one entry at a time.
+    private sealed class Verifier(HashChainService svc, long? keyedFrom) : IChainVerifier
+    {
+        private string _prevHash = GenesisPrevHash;
+        private long _expectedSequence = 1;
+        private long? _firstKeyed;
+
+        public ChainVerificationResult Result { get; private set; } = ChainVerificationResult.Valid;
+
+        public bool Add(AuditLogEntry entry)
+        {
+            if (!Result.IsValid) return false;
+            if (svc.Check(entry, _expectedSequence, _prevHash, keyedFrom, ref _firstKeyed) is { } broken)
+            {
+                Result = broken;
+                return false;
+            }
+            _prevHash = entry.EntryHash;
+            _expectedSequence++;
+            return true;
+        }
+    }
+
+    // One entry against the running state; null when it's sound.
+    private ChainVerificationResult? Check(AuditLogEntry entry, long expectedSequence, string prevHash, long? keyedFrom,
+        ref long? firstKeyed)
+    {
         {
             if (entry.Sequence != expectedSequence)
                 return ChainVerificationResult.Broken(entry.Sequence,
@@ -81,12 +111,9 @@ public sealed class HashChainService : IHashChainService
             if (entry.EntryHash != recomputed)
                 return ChainVerificationResult.Broken(entry.Sequence,
                     "Entry hash doesn't match its content. This record was altered after it was written.");
-
-            prevHash = entry.EntryHash;
-            expectedSequence++;
         }
 
-        return ChainVerificationResult.Valid;
+        return null;
     }
 
     // Plain SHA-256, or HMAC-SHA256 under the key the entry names. Null when that key isn't held.

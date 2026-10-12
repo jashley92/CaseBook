@@ -41,19 +41,28 @@ public sealed class ComplianceBundleService
         using var db = _factory.CreateDbContext();
         if (toUtc < fromUtc) (fromUtc, toUtc) = (toUtc, fromUtc);
 
-        // The whole chain (ordered) — verification depends on every prior link, and it lets us resolve
-        // each seal's head hash without extra queries.
-        var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync(ct);
-        var chainResult = _hasher.VerifyChain(chain, await Integrity.IntegrityService.KeyedFromAsync(db, ct));   // BUG-142
-        var head = chain.Count > 0 ? chain[^1] : null;
-        var hashBySequence = chain.ToDictionary(a => a.Sequence, a => a.EntryHash);
+        var allSeals = await db.IntegritySeals.AsNoTracking().OrderBy(s => s.UpToSequence).ToListAsync(ct);
 
-        // The segment: entries whose timestamp falls within the requested window.
-        var segment = chain.Where(a => a.AtUtc >= fromUtc && a.AtUtc <= toUtc).ToList();
+        // The whole chain is verified (each link depends on every one before it), but BUG-78: it's read as a stream and
+        // checked one entry at a time. Only the range's entries are kept, plus the hash at each sealed sequence.
+        var sealedAt = allSeals.Select(s => s.UpToSequence).ToHashSet();
+        var hashBySequence = new Dictionary<long, string>();
+        var verifier = _hasher.BeginVerify(await Integrity.IntegrityService.KeyedFromAsync(db, ct));   // BUG-142
+        var segment = new List<AuditLogEntry>();
+        long total = 0;
+        (long Sequence, string Hash)? head = null;
+        var checking = true;
+        await foreach (var e in db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).AsAsyncEnumerable().WithCancellation(ct))
+        {
+            total++;
+            if (checking) checking = verifier.Add(e);
+            if (sealedAt.Contains(e.Sequence)) hashBySequence[e.Sequence] = e.EntryHash;
+            if (e.AtUtc >= fromUtc && e.AtUtc <= toUtc) segment.Add(e);   // the segment: entries inside the window
+            head = (e.Sequence, e.EntryHash);
+        }
+        var chainResult = verifier.Result;
         long? firstSeq = segment.Count > 0 ? segment[0].Sequence : null;
         long? lastSeq = segment.Count > 0 ? segment[^1].Sequence : null;
-
-        var allSeals = await db.IntegritySeals.AsNoTracking().OrderBy(s => s.UpToSequence).ToListAsync(ct);
 
         // The covering seal: the earliest seal whose coverage reaches the segment's last entry, so the
         // bundle can attest that the whole range is under seal even if the seal was written later.
@@ -80,12 +89,12 @@ public sealed class ComplianceBundleService
             FromUtc: fromUtc,
             ToUtc: toUtc,
             Segment: segment,
-            TotalChainLength: chain.Count,
+            TotalChainLength: total,
             SegmentFirstSequence: firstSeq,
             SegmentLastSequence: lastSeq,
             ChainResult: chainResult,
             ChainHeadSequence: head?.Sequence,
-            ChainHeadHash: head?.EntryHash,
+            ChainHeadHash: head?.Hash,
             Seals: lines,
             CoveringSeal: covering,
             Algorithm: _signer.Algorithm,

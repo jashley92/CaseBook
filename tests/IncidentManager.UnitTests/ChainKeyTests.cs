@@ -135,6 +135,24 @@ public sealed class ChainKeyTests : IDisposable
     }
 
     [Fact]
+    public void The_chain_checked_one_entry_at_a_time_gives_the_same_answer(/* BUG-78 */)
+    {
+        var chain = PlainThenKeyed();
+        var svc = new HashChainService(new Ring(KeyA));
+        var stream = svc.BeginVerify();
+        chain.ForEach(e => stream.Add(e));
+        stream.Result.Should().Be(svc.VerifyChain(chain));
+
+        chain[1].Summary = "altered";
+        var broken = svc.BeginVerify();
+        broken.Add(chain[0]).Should().BeTrue();
+        broken.Add(chain[1]).Should().BeFalse();
+        broken.Add(chain[2]).Should().BeFalse("nothing after a break is checked");
+        broken.Result.Should().Be(svc.VerifyChain(chain));
+        broken.Result.FirstBrokenSequence.Should().Be(2);
+    }
+
+    [Fact]
     public void A_keyed_entry_altered_without_the_key_fails_its_hash()
     {
         var chain = PlainThenKeyed();
