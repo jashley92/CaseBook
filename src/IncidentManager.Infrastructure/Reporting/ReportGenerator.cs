@@ -160,7 +160,7 @@ public sealed partial class ReportGenerator : IReportGenerator
                 if (m.EntityGraphImage is { } graph)
                     body.AppendChild(BodyPicture(main, graph, "Entity relationship graph", CaseReportModel.EntityGraphAlt));
                 if (!string.IsNullOrWhiteSpace(m.ImpactedAssets))
-                    body.AppendChild(P($"Impacted assets: {m.ImpactedAssets}"));
+                    body.AppendChild(P(ImpactHome(m) ? "Impacted assets: see Business Impact." : $"Impacted assets: {m.ImpactedAssets}"));
                 body.AppendChild(WordTable(
                     ["Type", "Value", "Label", "Disposition", "TLP", "Source"],
                     m.Entities.Select(x => new[] { x.Type, x.Value, x.Label ?? "", x.Disposition, x.Tlp ?? "", x.Source ?? "" })));
@@ -261,9 +261,30 @@ public sealed partial class ReportGenerator : IReportGenerator
         body.AppendChild(P($"Origin: {m.Origin}{(m.VendorName is null ? "" : $" ({m.VendorName})")}", size: 20));
         if (m.DetectionCaseId is not null) body.AppendChild(P($"Detection case: {m.DetectionCaseId}", size: 20));
         if (m.SharingLine is { } sharing) body.AppendChild(P(sharing, size: 20));
+        if (ImpactHome(m))
+        {
+            // BUG-81: said once, in Business Impact; the facts only point there.
+            var held = new[] { m.LegalReferred ? "Legal/Privacy referral" : null, m.LegalHold ? "legal hold" : null,
+                m.DataTypesInvolved is not null ? "data context" : null }.OfType<string>().ToList();
+            if (held.Count > 0) body.AppendChild(P($"{Capitalise(string.Join(", ", held))}: see Business Impact.", size: 20));
+            return;
+        }
         if (m.DataTypesInvolved is not null) body.AppendChild(P($"Data context (analyst notes): {m.DataTypesInvolved}", size: 20));
-        if (m.LegalReferred) body.AppendChild(P($"Legal/Privacy referral recorded. {m.LegalNote}", size: 20));
-        if (m.LegalHold) body.AppendChild(P("Legal hold in effect. Case data must be preserved and not deleted.", size: 20));
+        AppendLegal(body, m, size: 20);
+    }
+
+    /// <summary>
+    /// BUG-81: the legal referral and hold, the data context and the impacted assets are each printed once. Their home
+    /// is Business Impact when the profile includes it; otherwise the facts (and Systems Reviewed for the assets).
+    /// </summary>
+    private static bool ImpactHome(CaseReportModel m) => m.Sections.Contains(ReportSection.BusinessImpact);
+
+    private static string Capitalise(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
+
+    private static void AppendLegal(Body body, CaseReportModel m, int size = 22)
+    {
+        if (m.LegalReferred) body.AppendChild(P($"Legal/Privacy referral recorded. {m.LegalNote}", size: size));
+        if (m.LegalHold) body.AppendChild(P("Legal hold in effect. Case data must be preserved and not deleted.", size: size));
     }
 
     private static void AppendBusinessImpact(Body body, CaseReportModel m)
@@ -275,8 +296,7 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (!string.IsNullOrWhiteSpace(m.AffectedStates)) { body.AppendChild(P($"Affected jurisdictions: {m.AffectedStates}")); any = true; }
         if (!string.IsNullOrWhiteSpace(m.ImpactedAssets)) { body.AppendChild(P($"Impacted assets: {m.ImpactedAssets}")); any = true; }
         if (m.DataTypesInvolved is not null) { body.AppendChild(P($"Data context (analyst notes): {m.DataTypesInvolved}")); any = true; }
-        if (m.LegalReferred) { body.AppendChild(P($"Legal/Privacy referral recorded. {m.LegalNote}")); any = true; }
-        if (m.LegalHold) { body.AppendChild(P("Legal hold in effect. Case data must be preserved and not deleted.")); any = true; }
+        if (m.LegalReferred || m.LegalHold) { AppendLegal(body, m); any = true; }
         if (m.MaterialityStatus is { } ms)
         {
             var by = string.IsNullOrWhiteSpace(m.MaterialityDecisionMaker) ? "" : $" by {m.MaterialityDecisionMaker}";
@@ -314,8 +334,9 @@ public sealed partial class ReportGenerator : IReportGenerator
                 ? $"{label}: {at:u} (approximate: {approx})"   // ST-04
                 : $"{label}: {at:u}"));
         if (m.ChangedAfterClosure is { } after) body.AppendChild(P(after));   // HR-15
-        if (m.LegalReferred) body.AppendChild(P($"Referred to Legal/Privacy. {m.LegalNote}"));
-        if (m.LegalHold) body.AppendChild(P("Legal hold in effect. Case data must be preserved and not deleted."));
+        // BUG-81: the referral and hold are printed in their home section; the outcome points there.
+        if (m.LegalReferred || m.LegalHold)
+            body.AppendChild(P(ImpactHome(m) ? "Legal/Privacy: see Business Impact." : "Legal/Privacy: see the case facts at the top."));
     }
 
     private static void AppendAppendix(Body body, CaseReportModel m)

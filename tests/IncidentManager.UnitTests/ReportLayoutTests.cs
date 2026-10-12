@@ -157,6 +157,31 @@ public class ReportLayoutTests
         xml.Should().Contain("Case content hash");
     }
 
+    [Fact]
+    public void Legal_data_context_and_impacted_assets_print_once_and_other_sections_point_there(/* BUG-81 */)
+    {
+        CaseReportModel Model(params ReportSection[] sections) => new()
+        {
+            Sections = sections,
+            CaseNumber = "2026-09", Title = "Once", Classification = "Breach", Phase = "Recovery",
+            Severity = "High", Origin = "Internal detection", Summary = "s",
+            LegalReferred = true, LegalNote = "LEGAL_MARKER", LegalHold = true,
+            DataTypesInvolved = "DATA_MARKER", ImpactedAssets = "ASSET_MARKER",
+            GeneratedBy = "tester", GeneratedAtUtc = System.DateTimeOffset.UnixEpoch, ContentHash = new string('a', 64),
+        };
+        static int Count(string xml, string s) => (xml.Length - xml.Replace(s, "").Length) / s.Length;
+
+        var all = WordXml(new ReportGenerator().GenerateWord(Model(ReportSection.BusinessImpact, ReportSection.SystemsReviewed, ReportSection.Outcome)));
+        foreach (var marker in new[] { "LEGAL_MARKER", "DATA_MARKER", "ASSET_MARKER", "Legal hold in effect" })
+            Count(all, marker).Should().Be(1, marker);
+        all.Should().Contain("Impacted assets: see Business Impact.").And.Contain("Legal/Privacy: see Business Impact.");
+
+        // Without Business Impact, the facts at the top hold them.
+        var noImpact = WordXml(new ReportGenerator().GenerateWord(Model(ReportSection.SystemsReviewed, ReportSection.Outcome)));
+        foreach (var marker in new[] { "LEGAL_MARKER", "DATA_MARKER", "ASSET_MARKER" })
+            Count(noImpact, marker).Should().Be(1, marker);
+    }
+
     private static string WordXml(byte[] docx)
     {
         using var zip = new ZipArchive(new MemoryStream(docx), ZipArchiveMode.Read);
