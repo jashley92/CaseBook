@@ -30,6 +30,7 @@ public sealed class CaseNotifications : ICaseNotifications
     private readonly ITaxonomyDisplay? _taxonomy;
     private readonly IExerciseEscalationPolicy? _exercise;   // BUG-100
     private readonly ICriticalAlertOutbox? _alerts;   // BUG-101
+    private readonly INotificationMarks? _sent;   // BUG-148
 
     // The org's display labels (the same ones the UI shows), so emails and chat never print enum identifiers.
     private string Sev(Severity s) => _severityLabels?.For(s) ?? s.ToString();
@@ -38,8 +39,10 @@ public sealed class CaseNotifications : ICaseNotifications
     public CaseNotifications(IEmailSender email, IEmailComposer composer, IUserDirectory users,
         IConfiguration config, IOptionsMonitor<EmailOptions> options, IChatNotifier chat,
         INotificationPreferenceProvider prefs, ISeverityLabels? severityLabels = null, ITaxonomyDisplay? taxonomy = null,
-        IOrganizationTimeZone? zone = null, IExerciseEscalationPolicy? exercise = null, ICriticalAlertOutbox? alerts = null)
+        IOrganizationTimeZone? zone = null, IExerciseEscalationPolicy? exercise = null, ICriticalAlertOutbox? alerts = null,
+        INotificationMarks? sent = null)
     {
+        _sent = sent;
         _alerts = alerts;
         _exercise = exercise;
         _zone = zone;
@@ -239,7 +242,8 @@ public sealed class CaseNotifications : ICaseNotifications
     }
 
     // BUG-94: a reminder email to one person, watched so a failure is put down to the items it carried, not the batch.
-    private async Task SendForAsync(EmailMessage message, IEnumerable<string> itemKeys, CancellationToken ct)
+    // True when it was delivered.
+    private async Task<bool> SendForAsync(EmailMessage message, IEnumerable<string> itemKeys, CancellationToken ct)
     {
         int failures;
         using (var send = DeliveryWatch.Begin())
@@ -248,7 +252,31 @@ public sealed class CaseNotifications : ICaseNotifications
             failures = send.Failures;
         }
         if (failures > 0) DeliveryWatch.Attribute(itemKeys, failures);
+        return failures == 0;
     }
+
+    // BUG-148: a scheduled reminder that goes to several people is marked per recipient. When one person's send fails,
+    // the scan tries the item again, and only those it didn't reach get it again. The address is hashed in the key.
+    private List<T> NotYetSentTo<T>(IEnumerable<T> items, Func<T, string> itemKey, string to) =>
+        _sent is null ? items.ToList() : items.Where(i => _sent.TryAdd(RecipientKey(itemKey(i), to))).ToList();
+
+    private void Unsent<T>(IEnumerable<T> items, Func<T, string> itemKey, string to)
+    {
+        if (_sent is null) return;
+        foreach (var i in items) _sent.Remove(RecipientKey(itemKey(i), to));
+    }
+
+    private static string RecipientKey(string itemKey, string to) =>
+        $"to|{itemKey}|{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(to.Trim().ToLowerInvariant())))[..20]}";
+
+    private static string DeadlineKey(DeadlineReminder r) =>
+        string.Create(CultureInfo.InvariantCulture, $"deadline|{r.CaseId:N}|{r.State}|{(r.DueAtUtc ?? DateTimeOffset.MinValue).UtcTicks}");
+
+    private static string StaleKey(StaleCaseReminder r) =>
+        string.Create(CultureInfo.InvariantCulture, $"stale|{r.CaseId:N}|{r.LastActivityAtUtc.UtcTicks}");
+
+    private static string EscalationKey(EscalatedActionItem e) =>
+        string.Create(CultureInfo.InvariantCulture, $"escalation|{e.Item.ActionItemId:N}|{e.Item.DueAtUtc.UtcTicks}|{(int)e.Tier}");
 
     public async Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default)
     {
@@ -347,7 +375,8 @@ public sealed class CaseNotifications : ICaseNotifications
             if (!mandatory && (await _prefs.GetAsync(uid, ct)).Escalation) continue; // the user's overdue opt-out (not a digest: BUG-97)
             var to = _users.EmailFor(uid);
             if (string.IsNullOrWhiteSpace(to)) continue;
-            var ordered = list.OrderBy(i => i.Item.DueAtUtc).ToList();
+            var ordered = NotYetSentTo(list.OrderBy(i => i.Item.DueAtUtc), EscalationKey, to);
+            if (ordered.Count == 0) continue;
             var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["ItemCount"] = ordered.Count.ToString(CultureInfo.InvariantCulture),
@@ -362,7 +391,7 @@ public sealed class CaseNotifications : ICaseNotifications
                     $"due {WebUtility.HtmlEncode(Due(i.Item.DueAtUtc))}, {OverdueSpan(i.HoursOverdue)} overdue)</li>")) + "</ul>",
             };
             var message = await _composer.ComposeAsync("overdue-escalated", [to], tokens, overdueUrl, htmlTokens, ct);
-            await SendForAsync(message, ordered.Select(i => i.Item.ActionItemId.ToString()), ct);
+            if (!await SendForAsync(message, ordered.Select(i => i.Item.ActionItemId.ToString()), ct)) Unsent(ordered, EscalationKey, to);
         }
     }
 
@@ -493,11 +522,11 @@ public sealed class CaseNotifications : ICaseNotifications
         foreach (var (to, list) in byRecipient)
         {
             // A recipient who is both IC and an assignee on the same case would otherwise see it twice.
-            var ordered = list
+            var ordered = NotYetSentTo(list
                 .DistinctBy(r => r.CaseId)
                 .OrderBy(r => r.DueAtUtc ?? DateTimeOffset.MaxValue)
-                .ThenBy(r => r.CaseNumber, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+                .ThenBy(r => r.CaseNumber, StringComparer.OrdinalIgnoreCase), DeadlineKey, to);
+            if (ordered.Count == 0) continue;
 
             // The CTA points at the one case when this recipient's list is a single case, else the case list.
             var cta = ordered.Count == 1 ? CaseUrl(ordered[0].CaseId) : CasesUrl();
@@ -513,7 +542,7 @@ public sealed class CaseNotifications : ICaseNotifications
             };
 
             var message = await _composer.ComposeAsync("notification-deadline", [to], tokens, cta, htmlTokens, ct);
-            await SendForAsync(message, ordered.Select(r => r.CaseId.ToString()), ct);
+            if (!await SendForAsync(message, ordered.Select(r => r.CaseId.ToString()), ct)) Unsent(ordered, DeadlineKey, to);
         }
     }
 
@@ -546,11 +575,11 @@ public sealed class CaseNotifications : ICaseNotifications
 
         foreach (var (to, list) in byRecipient)
         {
-            var ordered = list
+            var ordered = NotYetSentTo(list
                 .DistinctBy(r => r.CaseId)                          // IC who is also an assignee → list once
                 .OrderByDescending(r => r.DaysInactive)
-                .ThenBy(r => r.CaseNumber, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+                .ThenBy(r => r.CaseNumber, StringComparer.OrdinalIgnoreCase), StaleKey, to);
+            if (ordered.Count == 0) continue;
 
             var cta = ordered.Count == 1 ? CaseUrl(ordered[0].CaseId) : CasesUrl();
 
@@ -565,7 +594,7 @@ public sealed class CaseNotifications : ICaseNotifications
             };
 
             var message = await _composer.ComposeAsync("stale-case", [to], tokens, cta, htmlTokens, ct);
-            await SendForAsync(message, ordered.Select(r => r.CaseId.ToString()), ct);
+            if (!await SendForAsync(message, ordered.Select(r => r.CaseId.ToString()), ct)) Unsent(ordered, StaleKey, to);
         }
     }
 

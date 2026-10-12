@@ -67,6 +67,47 @@ public class CaseNotificationsTests
     private static IConfiguration ChatConfig(params string[] onTypes) =>
         TestEmail.Config(onTypes.Select(t => ($"Notifications:Chat:{t}", "true")).ToArray());
 
+    /// <summary>Delivers to every address but one, reporting that one as failed the way the SMTP sender does.</summary>
+    private sealed class OneDeadMailbox(string dead) : IEmailSender
+    {
+        public List<string> Attempts { get; } = new();
+        public Task SendAsync(EmailMessage message, CancellationToken ct = default)
+        {
+            Attempts.AddRange(message.To);
+            if (message.To.Contains(dead)) DeliveryWatch.ReportFailure();
+            return Task.CompletedTask;
+        }
+        public Task SendAsync(IReadOnlyCollection<string> to, string subject, string body, CancellationToken ct = default) =>
+            SendAsync(new EmailMessage(to, subject, body, body), ct);
+    }
+
+    [Fact]
+    public async Task A_retried_deadline_reminder_goes_only_to_the_recipient_it_did_not_reach(/* BUG-148 */)
+    {
+        var sender = new OneDeadMailbox("gone@insurer.example");
+        var users = new FakeUserDirectory().Add("ic1", "Ina", "ina@insurer.example").Add("a1", "Al", "al@insurer.example")
+            .Add("a2", "Gone", "gone@insurer.example");
+        var n = new CaseNotifications(sender, TestEmail.Composer(), users, TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), new NullChatNotifier(), new FakePrefs(),
+            sent: new InMemoryNotificationMarks());
+        var c = NewCase();
+        var reminder = new DeadlineReminder(c.Id, c.CaseNumber, c.Title, c.Severity, ["ic1", "a1", "a2"],
+            IncidentManager.Application.Sla.SlaState.AtRisk, "NYDFS", Now.AddHours(10), TimeSpan.FromHours(10));
+
+        bool retry;
+        using (var watch = DeliveryWatch.Begin())
+        {
+            await n.OnDeadlineApproachingAsync([reminder]);
+            retry = watch.ShouldRetry(c.Id.ToString());
+        }
+        retry.Should().BeTrue("one recipient wasn't reached, so the scan tries the case again");
+        sender.Attempts.Should().BeEquivalentTo(["ina@insurer.example", "al@insurer.example", "gone@insurer.example"]);
+
+        sender.Attempts.Clear();
+        await n.OnDeadlineApproachingAsync([reminder]);   // the next scan
+        sender.Attempts.Should().Equal(["gone@insurer.example"], "those it reached aren't sent it again");
+    }
+
     // --- Breach escalation (E-03) ----------------------------------------------
 
     [Fact]
