@@ -2431,7 +2431,9 @@ public sealed class CaseService
         var text = string.IsNullOrWhiteSpace(result) ? null : result.Trim();
         var by = string.IsNullOrWhiteSpace(doneBy) ? _user.UserId : doneBy.Trim();
         if (by.Length > 200) throw new ArgumentException("Keep \"done by\" to 200 characters or fewer.");
-        if (text is { Length: > 8000 }) throw new ArgumentException("Keep the result to 8,000 characters or fewer.");
+        // BUG-105: the result is kept as "Result: <text>" in a comment column of 8,000.
+        if (text is not null && text.Length > 8000 - TaskResults.Prefix.Length)
+            throw new ArgumentException($"Keep the result to {8000 - TaskResults.Prefix.Length:N0} characters or fewer.");
         if (logAs is not null && text is null)
             throw new ArgumentException("Describe the result to add it to the timeline.");
         if (logAs == TimelineEntryType.Decision)
@@ -2470,7 +2472,7 @@ public sealed class CaseService
                 c.TimelineEntries.Add(new TimelineEntry
                 {
                     CaseId = c.Id, Kind = TimelineKind.Investigation, Type = type, OccurredAtUtc = at,
-                    Description = text, Source = $"Task: {item.Title}", ActionItemId = item.Id,
+                    Description = text, Source = TaskSource(item.Title), ActionItemId = item.Id,
                     CreatedBy = _user.UserId, CreatedAtUtc = now
                 });
         }
@@ -2483,6 +2485,13 @@ public sealed class CaseService
                 CaseNext.Snapshot(c, now, u => _users?.DisplayFor(u) ?? u), _user.UserId, now);
         }
         await db.SaveChangesAsync(ct);
+    }
+
+    // BUG-105: a timeline entry's source is 200 characters and a task title up to 400; the entry links to the task.
+    private static string TaskSource(string title)
+    {
+        var source = $"Task: {title}";
+        return source.Length <= 200 ? source : source[..199] + "…";
     }
 
     private const string QuestionNeedsAnswer =

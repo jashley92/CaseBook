@@ -551,7 +551,7 @@ public sealed class CaseImportService
             DetectedAtUtc = nc?.DetectedAtUtc,
             OccurredAtUtc = nc?.OccurredAtUtc,
             DataTypesInvolved = Clamp(nc?.DataTypesInvolved, MaxLabel, "Data context", warnings),
-            ImpactedAssets = Clamp(nc?.ImpactedAssets, MaxSummary, "Impacted assets", warnings),
+            ImpactedAssets = Clamp(nc?.ImpactedAssets, 4000, "Impacted assets", warnings),   // BUG-105: the column
             DetectionCaseId = Clamp(nc?.DetectionCaseId, 100, "Detection case ID", warnings)
         };
     }

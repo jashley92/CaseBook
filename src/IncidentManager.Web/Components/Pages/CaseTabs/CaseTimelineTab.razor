@@ -337,7 +337,7 @@
                 <div class="row g-2 align-items-end mt-1">
                     <div class="col-md-4">
                         <label class="form-label small mb-0" for="tl-evt-source">Source</label>
-                        <input id="tl-evt-source" class="form-control form-control-sm" @bind="_tlSource" placeholder="@EventSourcePlaceholder" />
+                        <input id="tl-evt-source" class="form-control form-control-sm" maxlength="200" @bind="_tlSource" placeholder="@EventSourcePlaceholder" />
                     </div>
                     @if (_tlEditId is not null)
                     {
@@ -389,7 +389,7 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label small mb-0" for="tl-inv-source">Source</label>
-                        <input id="tl-inv-source" class="form-control form-control-sm" @bind="_tlSource" placeholder="@($"{DetectionLabel}…")" />
+                        <input id="tl-inv-source" class="form-control form-control-sm" maxlength="200" @bind="_tlSource" placeholder="@($"{DetectionLabel}…")" />
                     </div>
                 </div>
                 }

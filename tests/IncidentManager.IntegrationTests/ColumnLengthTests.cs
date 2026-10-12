@@ -80,4 +80,24 @@ public sealed class ColumnLengthTests
         var save = async () => await db.SaveChangesAsync();
         await save.Should().NotThrowAsync();
     }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_value_longer_than_its_column_is_refused_by_name_before_the_database(string provider /* BUG-105 */)
+    {
+        using var database = Open(provider);
+        await using var db = database.NewContext();
+        var now = _clock.UtcNow;
+        var c = Case.Open(2026, 1, "long", "Long values", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, _user.UserId, now);
+        db.Cases.Add(c);
+        await db.SaveChangesAsync();
+
+        var entries = await database.NewContext().AuditLog.CountAsync();
+        c.UpdateDetails(c.Title, c.Summary, new string('x', 101), null, null, c.DetectedAtUtc ?? now, null, _user.UserId, now);
+        var save = async () => await db.SaveChangesAsync();
+
+        await save.Should().ThrowAsync<ArgumentException>().WithMessage("*case detection case id to 100 characters*Nothing was saved*");
+        (await database.NewContext().AuditLog.CountAsync()).Should().Be(entries,
+            "nothing reaches the audit chain");
+    }
 }

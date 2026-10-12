@@ -140,6 +140,19 @@ public sealed class TaskCompletionTests : IDisposable
         (await svc.GetDetailAsync(caseId))!.ActionItems.Single().Title.Should().Be("Block look-alike domains");
     }
 
+    [Fact]
+    public async Task A_long_task_title_still_logs_its_result_to_the_timeline(/* BUG-105 */)
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+        var title = new string('t', 400);
+        await svc.AddActionItemAsync(caseId, title, null, null);
+        var task = (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Title == title);
+
+        await svc.CompleteActionItemAsync(caseId, task.Id, null, "Done it", TimelineEntryType.Containment);
+
+        (await svc.GetDetailAsync(caseId))!.TimelineEntries.Single(e => e.ActionItemId == task.Id).Source!.Length.Should().Be(200);
+    }
+
     // --- INV-13: task kinds ---
 
     [Fact]

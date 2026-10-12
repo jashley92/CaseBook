@@ -116,7 +116,7 @@
                         {
                             <div class="im-nn-doneform">
                                 <label class="form-label small mb-1" for="nn-result-@t.Id">What came of it (optional)</label>
-                                <textarea id="nn-result-@t.Id" class="form-control form-control-sm im-rec" rows="3" maxlength="8000" @bind="_result" @bind:event="oninput"></textarea>
+                                <textarea id="nn-result-@t.Id" class="form-control form-control-sm im-rec" rows="3" maxlength="7992" @bind="_result" @bind:event="oninput"></textarea>
                                 <div class="form-check small mt-1">
                                     <input class="form-check-input" type="checkbox" id="nn-log-@t.Id" @bind="_logIt" disabled="@string.IsNullOrWhiteSpace(_result)" />
                                     <label class="form-check-label" for="nn-log-@t.Id">Put the result on the record too</label>

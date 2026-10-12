@@ -162,9 +162,9 @@
     else if (D.Name == "legal")
     {
         <label class="form-label small" for="legal-contact">Legal contact <span class="text-muted">(optional)</span></label>
-        <input id="legal-contact" class="form-control mb-2" placeholder="Name or team" @bind="D.LegalContact" />
+        <input id="legal-contact" class="form-control mb-2" maxlength="300" placeholder="Name or team" @bind="D.LegalContact" />
         <label class="form-label small" for="legal-note">Regulatory relevance <span class="text-muted">(optional)</span></label>
-        <input id="legal-note" class="form-control" placeholder="e.g. NY NPI" @bind="D.LegalNote" />
+        <input id="legal-note" class="form-control" maxlength="4000" placeholder="e.g. NY NPI" @bind="D.LegalNote" />
     }
     else if (D.Name == "materiality")
     {
@@ -181,13 +181,13 @@
             <option value="@MaterialityStatus.NotMaterial">Not material</option>
         </select>
         <label class="form-label small" for="ws-mat-maker">Decision-maker <span class="text-muted">@(D.MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-        <input id="ws-mat-maker" class="form-control mb-2" placeholder="e.g. Disclosure Committee, General Counsel" @bind="D.MaterialityDecisionMaker" />
+        <input id="ws-mat-maker" class="form-control mb-2" maxlength="300" placeholder="e.g. Disclosure Committee, General Counsel" @bind="D.MaterialityDecisionMaker" />
         <label class="form-label small mb-0" for="ws-mat-date">When it was decided (@TimeDisp.Label) <span class="text-muted">@(D.MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
         <input id="ws-mat-date" type="datetime-local" class="form-control" @bind="D.MaterialityDecidedOn" />
         @* BUG-07: the time matters: a Material call starts the notification clock at this moment, not at midnight. *@
         <div class="form-text mb-2">A Material determination starts the notification clock at this time.</div>
         <label class="form-label small" for="ws-mat-rationale">Rationale <span class="text-muted">@(D.MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-        <textarea id="ws-mat-rationale" class="form-control" rows="2" placeholder="Why the case is or isn't material" @bind="D.MaterialityRationale"></textarea>
+        <textarea id="ws-mat-rationale" class="form-control" rows="2" maxlength="4000" placeholder="Why the case is or isn't material" @bind="D.MaterialityRationale"></textarea>
     }
     else if (D.Name == "archive")
     {

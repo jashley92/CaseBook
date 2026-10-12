@@ -70,7 +70,19 @@ public sealed class AppDbContext : DbContext, IAppDbContext
     /// </summary>
     public string? PendingChangeReason { get; set; }
 
-    // SaveChangesAsync(CancellationToken) is inherited from DbContext and satisfies IAppDbContext.
+    // SaveChangesAsync(CancellationToken) is inherited from DbContext and satisfies IAppDbContext; both save paths below
+    // check column lengths first.
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        ColumnLengthGuard.Check(ChangeTracker);
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        ColumnLengthGuard.Check(ChangeTracker);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
