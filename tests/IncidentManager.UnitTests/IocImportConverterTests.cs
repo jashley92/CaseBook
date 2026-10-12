@@ -99,6 +99,29 @@ public class IocImportConverterTests
     }
 
     [Fact]
+    public void A_revoked_or_expired_indicator_isnt_imported_and_the_preview_says_so(/* BUG-169 */)
+    {
+        const string bundle = """
+        {
+          "type": "bundle", "id": "bundle--3",
+          "objects": [
+            { "type": "indicator", "spec_version": "2.1", "id": "indicator--1", "pattern": "[ipv4-addr:value = '198.51.100.1']",
+              "pattern_type": "stix", "revoked": true },
+            { "type": "indicator", "spec_version": "2.1", "id": "indicator--2", "pattern": "[ipv4-addr:value = '198.51.100.2']",
+              "pattern_type": "stix", "valid_until": "2026-01-01T00:00:00Z" },
+            { "type": "indicator", "spec_version": "2.1", "id": "indicator--3", "pattern": "[ipv4-addr:value = '198.51.100.3']",
+              "pattern_type": "stix", "valid_until": "2027-01-01T00:00:00Z" }
+          ]
+        }
+        """;
+
+        var r = IocImportConverter.Convert(bundle, nowUtc: new DateTimeOffset(2026, 10, 12, 0, 0, 0, TimeSpan.Zero));
+
+        r.Document!.Entities!.Select(e => e.Value).Should().Equal("198.51.100.3");
+        r.Notes.Should().Contain(n => n.Contains("2 STIX indicators were revoked or past their valid_until"));
+    }
+
+    [Fact]
     public void Our_own_ioc_feed_csv_round_trips()
     {
         var feed = IocFeedCsv.Build(

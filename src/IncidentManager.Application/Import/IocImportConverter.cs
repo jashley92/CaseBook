@@ -44,7 +44,8 @@ public static partial class IocImportConverter
             : "This isn't valid JSON. Check the document and try again.";
 
     /// <summary>Sniffs the text and converts it. A CaseBook case-import document is returned as-is (via <see cref="CaseImportService.Parse"/>).</summary>
-    public static IocImportConversion Convert(string? text, string? fileName = null)
+    /// <param name="nowUtc">BUG-169: to tell an expired indicator (<c>valid_until</c> passed); the current time when omitted.</param>
+    public static IocImportConversion Convert(string? text, string? fileName = null, DateTimeOffset? nowUtc = null)
     {
         if (string.IsNullOrWhiteSpace(text))
             return new(ImportSourceFormat.CaseImport, null, "Paste or upload a document first.", []);
@@ -60,7 +61,7 @@ public static partial class IocImportConverter
             {
                 var root = json.RootElement;
                 if (root.ValueKind == JsonValueKind.Object && Str(root, "type") == "bundle")
-                    return FromStix(root);
+                    return FromStix(root, nowUtc ?? DateTimeOffset.UtcNow);
             }
             var parsed = CaseImportService.Parse(trimmed);
             return new(ImportSourceFormat.CaseImport, parsed.Document, parsed.Error, []);
@@ -71,7 +72,7 @@ public static partial class IocImportConverter
 
     // ------------------------------------------------------------------ STIX 2.1
 
-    private static IocImportConversion FromStix(JsonElement bundle)
+    private static IocImportConversion FromStix(JsonElement bundle, DateTimeOffset nowUtc)
     {
         if (!bundle.TryGetProperty("objects", out var objects) || objects.ValueKind != JsonValueKind.Array)
             return new(ImportSourceFormat.StixBundle, null, "This STIX bundle has no objects.", []);
@@ -79,6 +80,7 @@ public static partial class IocImportConverter
         var entities = new List<CaseImportEntity>();
         var skipped = new SortedDictionary<string, int>(StringComparer.Ordinal);
         var unparsedPatterns = 0;
+        var withdrawn = 0;   // BUG-169
         string? producer = null;
         var markings = TlpMarkings(objects);   // BUG-152
 
@@ -92,6 +94,15 @@ public static partial class IocImportConverter
                     producer ??= Str(o, "name");
                     break;
                 case "indicator":
+                    // BUG-169: an indicator its producer revoked (a false positive withdrawn) or that is past valid_until no
+                    // longer asserts anything, and imported as Malicious it would reach the blocking feed.
+                    if ((o.TryGetProperty("revoked", out var rv) && rv.ValueKind == JsonValueKind.True)
+                        || (Str(o, "valid_until") is { } until && DateTimeOffset.TryParse(until, System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.AssumeUniversal, out var u) && u <= nowUtc))
+                    {
+                        withdrawn++;
+                        break;
+                    }
                     var found = PatternObservables(Str(o, "pattern"));
                     if (found.Count == 0) { unparsedPatterns++; break; }
                     // An indicator SDO is a producer's assertion about what it matches; carry its name/description,
@@ -115,6 +126,9 @@ public static partial class IocImportConverter
         }
 
         var notes = new List<string>();
+        if (withdrawn > 0)
+            notes.Add($"{Plural.Of(withdrawn, "STIX indicator")} {(withdrawn == 1 ? "was" : "were")} revoked or past {(withdrawn == 1 ? "its" : "their")} valid_until, " +
+                      $"so {(withdrawn == 1 ? "it wasn't" : "they weren't")} imported.");
         if (unparsedPatterns > 0)
             notes.Add($"{Plural.Of(unparsedPatterns, "STIX indicator pattern")} {(unparsedPatterns == 1 ? "was" : "were")} too complex to read (only simple \"[type:property = 'value']\" comparisons are imported).");
         if (skipped.Count > 0)
