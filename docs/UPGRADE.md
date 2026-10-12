@@ -163,6 +163,19 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ### Next release (unreleased)
 
+- **The installer now locks down the data root.** `Install-CaseBook.ps1` removes what the folder inherits from the
+  volume and grants only SYSTEM, local Administrators and the app identity (Modify on each store). Before, on a
+  default NTFS volume `BUILTIN\Users` could read evidence, reports and the data-protection keys. The upgrade script
+  doesn't change an existing install's permissions; to apply this to one, run in an elevated prompt (with your data
+  root and app identity):
+
+  ```
+  icacls "D:\CaseBook-Data" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "CONTOSO\svc-casebook$:(OI)(CI)RX"
+  ```
+
+  The app identity's Modify grants on the store folders are explicit and stay. Check that a backup agent reading the
+  data root runs as SYSTEM or holds the backup privilege.
+
 - **STIX exports are marked with the default TLP.** An indicator with no TLP of its own now carries
   `Reporting:DefaultTlp` (AMBER unless changed), and the bundle's report object at least that, as the Word report
   already did. Before, such a bundle went out with no marking, which a TIP or partner reads as unrestricted.
