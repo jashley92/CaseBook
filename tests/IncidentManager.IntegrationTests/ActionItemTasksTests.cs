@@ -112,6 +112,29 @@ public sealed class ActionItemTasksTests : IDisposable
     }
 
     [Fact]
+    public async Task An_edit_from_a_stale_copy_does_not_undo_a_colleagues_change(/* BUG-196 */)
+    {
+        var (caseId, taskId) = await SeededCaseWithTaskAsync();
+        await using var db = NewContext();
+        var svc = NewCaseService(db);
+        var opened = (await db.ActionItems.AsNoTracking().FirstAsync(a => a.Id == taskId)).RowHash ?? "";   // B opens the editor
+
+        await svc.SetActionItemStatusAsync(caseId, taskId, ActionItemStatus.Done);   // A completes it
+
+        // B changes only the due date, from a form that still says Open.
+        await svc.Invoking(s => s.UpdateActionItemAsync(caseId, taskId, "Rotate exposed credentials", null,
+                _clock.UtcNow.AddDays(2), ActionItemStatus.Open, null, expectedStamp: opened))
+            .Should().ThrowAsync<StaleEditException>().WithMessage("*changed this task since you opened it*");
+        (await db.ActionItems.AsNoTracking().FirstAsync(a => a.Id == taskId)).Status.Should().Be(ActionItemStatus.Done);
+
+        // From the current copy, the edit goes through.
+        var current = (await db.ActionItems.AsNoTracking().FirstAsync(a => a.Id == taskId)).RowHash ?? "";
+        await svc.UpdateActionItemAsync(caseId, taskId, "Rotate exposed credentials", null,
+            _clock.UtcNow.AddDays(2), ActionItemStatus.Done, null, expectedStamp: current);
+        (await db.ActionItems.AsNoTracking().FirstAsync(a => a.Id == taskId)).DueAtUtc.Should().Be(_clock.UtcNow.AddDays(2));
+    }
+
+    [Fact]
     public async Task An_audited_task_change_names_the_task_and_reads_the_status_in_words()
     {
         var (caseId, taskId) = await SeededCaseWithTaskAsync();

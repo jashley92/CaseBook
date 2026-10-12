@@ -593,9 +593,16 @@ else
         if (NoticeDeadline?.DueAtUtc is not { } deadline) return;
         try
         {
-            await Cases.UpdateActionItemAsync(CaseId, t.Id, t.Title, t.Owner, deadline, t.Status, t.Description, t.Kind);
+            // BUG-196: the row's values are written back, so only if the task is still as shown.
+            await Cases.UpdateActionItemAsync(CaseId, t.Id, t.Title, t.Owner, deadline, t.Status, t.Description, t.Kind,
+                expectedStamp: t.RowHash ?? "");
             await OnChanged.InvokeAsync();
             Toasts.Success($"Due {TimeDisp.Short(deadline)}, by the {NoticeDeadline.JurisdictionCode} deadline");
+        }
+        catch (StaleEditException ex)
+        {
+            Toasts.Error(ex.Message);
+            await OnChanged.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
@@ -701,6 +708,7 @@ else
     // --- Edit a task (all fields, behind the Edit button) — consistent with how IOCs/entities are edited;
     // each save is one audited change (before → after) rather than a separate version chain. ---
     private Guid? _editingTaskId;
+    private string? _editStamp;   // BUG-196: the task's row hash when its edit opened
     private string _editTitle = "";
     private string? _editOwner;
     private string? _editOwnerExternal;
@@ -751,6 +759,7 @@ else
     private void BeginEdit(ActionItem t)
     {
         _editingTaskId = t.Id;
+        _editStamp = t.RowHash ?? "";   // BUG-196
         _editTitle = t.Title;
         _editStatus = t.Status;
         _editCancelReason = null;
@@ -794,10 +803,18 @@ else
         try
         {
             await Cases.UpdateActionItemAsync(CaseId, id, _editTitle, owner,
-                ToDueUtc(_editDueDate, _editDueTime), _editStatus, _editDescription, _editKind, cancelReason: _editCancelReason);
+                ToDueUtc(_editDueDate, _editDueTime), _editStatus, _editDescription, _editKind, cancelReason: _editCancelReason,
+                expectedStamp: _editStamp);
             _editingTaskId = null;
             await OnChanged.InvokeAsync();
             Toasts.Success("Task updated");
+        }
+        catch (StaleEditException ex)
+        {
+            // Their change wins; the editor closes on the reloaded task rather than re-saving over it.
+            _editingTaskId = null;
+            Toasts.Error(ex.Message);
+            await OnChanged.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {

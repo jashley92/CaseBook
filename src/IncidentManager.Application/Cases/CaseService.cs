@@ -1384,15 +1384,21 @@ public sealed class CaseService
     /// Corrects an Event-timeline step in place (attack narrative facts change during an investigation).
     /// The optional <paramref name="reason"/> is recorded on the audit entry.
     /// </summary>
+    /// BUG-196: <paramref name="expectedStamp"/> is the step's row hash when the editor opened (empty for one without);
+    /// a step someone changed since is refused with <see cref="StaleEditException"/>. Null skips the check.
     public async Task EditEventStepAsync(Guid id, Guid entryId, DateTimeOffset occurredAtUtc,
         IEnumerable<MitreTactic> tactics, string? techniqueId, Guid? actorEntityId, Guid? targetEntityId,
         string description, string? source, string? reason = null,
         TimelineEntryType type = TimelineEntryType.Other, StepEnvironment? environment = null, StepTiming? timing = null,
-        CancellationToken ct = default)
+        string? expectedStamp = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        if (expectedStamp is not null && c.TimelineEntries.FirstOrDefault(e => e.Id == entryId) is { } step
+            && !string.Equals(step.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
+            throw new StaleEditException(step.RowHash ?? "", "Someone changed this step since you opened it, so your edit " +
+                "wasn't saved. It has been reloaded with their change; make yours again.");
         c.EditEventStep(entryId, occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, Content.MarkdownService.OneLine(description),
             source, _user.UserId, _clock.UtcNow, type, environment, timing);
         db.PendingChangeReason = reason;
@@ -2696,9 +2702,15 @@ public sealed class CaseService
     /// </summary>
     /// <param name="cancelReason">HR-17: when this edit cancels the task, why (optional); kept as a "Cancelled: …" comment
     /// on the task, so a later reader knows it was dropped on purpose.</param>
+    /// <summary>
+    /// Edits a task. BUG-196: <paramref name="expectedStamp"/> is the task's row hash as the editor (or the row) showed it
+    /// (empty for a task without one); every field is written from the form, so if someone changed the task since, the
+    /// edit is refused with <see cref="StaleEditException"/> rather than silently undoing their change (a completion, an
+    /// owner). Null skips the check.
+    /// </summary>
     public async Task UpdateActionItemAsync(Guid caseId, Guid actionItemId, string title, string? owner,
         DateTimeOffset? dueAtUtc, ActionItemStatus status, string? description, TaskKind? kind = null,
-        string? cancelReason = null, CancellationToken ct = default)
+        string? cancelReason = null, string? expectedStamp = null, CancellationToken ct = default)
     {
         Require();
         var cleanTitle = (title ?? "").Trim();
@@ -2715,6 +2727,9 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, caseId, ct);
         var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
                    ?? throw new InvalidOperationException("Task not found.");
+        if (expectedStamp is not null && !string.Equals(item.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
+            throw new StaleEditException(item.RowHash ?? "", "Someone changed this task since you opened it, so your edit " +
+                "wasn't saved. It has been reloaded with their change; make yours again.");
 
         var wasStatus = item.Status;
         item.Title = cleanTitle;

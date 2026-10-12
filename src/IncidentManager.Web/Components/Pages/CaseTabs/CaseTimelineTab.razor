@@ -1175,6 +1175,7 @@ else
 
     // Timeline editing: the composer form doubles as an editor when an entry is selected.
     private Guid? _tlEditId;
+    private string? _tlEditStamp;   // BUG-196: the step's row hash when its edit opened
     private string? _tlReason;
     private readonly HashSet<Guid> _tlHistoryOpen = new();
 
@@ -1718,6 +1719,7 @@ else
         _evtAttackMode = IsThirdParty && IsAttackStep(e); // edit a vendor attack step as one, a milestone as one
         _evtOurs = e.Environment == StepEnvironment.Ours;
         _tlEditId = e.Id;
+        _tlEditStamp = e.RowHash ?? "";   // BUG-196
         _tlReason = null;
         _tlWhen = UtcToWall(e.OccurredAtUtc);
         _evtActorId = e.ActorEntityId?.ToString() ?? "";
@@ -1758,7 +1760,7 @@ else
             {
                 // BUG-122: a milestone keeps its time as stated (a date, a window) through an edit.
                 await Cases.EditEventStepAsync(CaseId, id, StepWhenUtc(), Array.Empty<MitreTactic>(), null, null, null,
-                    Tagged(_tlDesc)!, _tlSource, _tlReason, type: _evtStage, timing: Timing());
+                    Tagged(_tlDesc)!, _tlSource, _tlReason, type: _evtStage, timing: Timing(), expectedStamp: _tlEditStamp);
             }
             else
             {
@@ -1766,8 +1768,15 @@ else
                 Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
                 await Cases.EditEventStepAsync(CaseId, id, StepWhenUtc(), EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, _tlReason,
-                    environment: StepWhere, timing: Timing());
+                    environment: StepWhere, timing: Timing(), expectedStamp: _tlEditStamp);
             }
+        }
+        catch (StaleEditException ex)
+        {
+            Toasts.Error(ex.Message);
+            await CancelTimelineEdit();
+            await OnChanged.InvokeAsync();
+            return;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {

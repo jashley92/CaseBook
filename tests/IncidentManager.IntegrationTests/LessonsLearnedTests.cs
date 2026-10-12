@@ -147,6 +147,23 @@ public sealed class LessonsLearnedTests : IDisposable
     }
 
     [Fact]
+    public async Task An_action_edit_from_a_stale_copy_is_refused(/* BUG-196 */)
+    {
+        var id = await NewCaseAsync("Stale Case");
+        var svc = Lessons();
+        var actionId = await svc.AddActionAsync(id, Action("Reconcile the vendor inventory"));
+        var opened = (await svc.GetForCaseAsync(id)).Actions.Single().Stamp;
+
+        await svc.UpdateActionAsync(id, actionId, Action("Reconcile the vendor inventory") with
+        {
+            Status = ImprovementActionStatus.Completed, OutcomeNote = "Done; CHG-1."
+        });
+        var stale = () => svc.UpdateActionAsync(id, actionId, Action("Reconcile the vendor inventory, all sites"), opened);
+        await stale.Should().ThrowAsync<StaleEditException>();
+        (await svc.GetForCaseAsync(id)).Actions.Single().Status.Should().Be(ImprovementActionStatus.Completed);
+    }
+
+    [Fact]
     public async Task Writes_need_EditCases_even_without_the_UI()
     {
         var id = await NewCaseAsync("Perm Case");

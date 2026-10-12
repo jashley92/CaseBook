@@ -373,6 +373,7 @@ else
     private ActionForm _new = new();
     private ActionForm _edit = new();
     private Guid? _editingId;
+    private string? _editStamp;   // BUG-196: the action's stamp when its edit opened
 
     private bool NeedsReview => Classification is Domain.Enums.Classification.Incident or Domain.Enums.Classification.Breach;
     private int ActiveActionCount => _view?.Actions.Count(a => a.Status != ImprovementActionStatus.NotPursued) ?? 0;
@@ -550,6 +551,7 @@ else
     private void BeginEdit(ImprovementActionView a)
     {
         _editingId = a.Id;
+        _editStamp = a.Stamp;   // BUG-196
         var inDirectory = a.OwnerId is not null
             && Users.All().Any(u => string.Equals(u.UserId, a.OwnerId, StringComparison.OrdinalIgnoreCase));
         _edit = new ActionForm
@@ -572,11 +574,17 @@ else
         {
             var details = await EditorValue(EditDetailsEditorId(id));
             var outcome = await EditorValue(EditOutcomeEditorId(id));
-            await Lessons.UpdateActionAsync(CaseId, id, ToInput(_edit, details, outcome));
+            await Lessons.UpdateActionAsync(CaseId, id, ToInput(_edit, details, outcome), _editStamp);
             _editingId = null;
             await Load();
             Toasts.Success("Improvement action updated");
             await OnChanged.InvokeAsync();
+        }
+        catch (StaleEditException ex)
+        {
+            _editingId = null;
+            Toasts.Error(ex.Message);
+            await Load();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {

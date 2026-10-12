@@ -19,7 +19,9 @@ public sealed record PostIncidentReviewView(
 public sealed record ImprovementActionView(
     Guid Id, Guid CaseId, string Title, string? RelatedArea, string? Details,
     string? OwnerId, string OwnerName, DateTimeOffset? TargetDateUtc, ImprovementActionStatus Status,
-    DateTimeOffset? ClosedAtUtc, string? OutcomeNote, bool IsPastTarget, DateTimeOffset CreatedAtUtc);
+    DateTimeOffset? ClosedAtUtc, string? OutcomeNote, bool IsPastTarget, DateTimeOffset CreatedAtUtc,
+    // BUG-196: guards concurrent edits (the row hash; empty for one without).
+    string Stamp = "");
 
 /// <summary>Everything the case's Review tab shows. <see cref="Review"/> is null until first saved.</summary>
 public sealed record CaseLessonsView(PostIncidentReviewView? Review, IReadOnlyList<ImprovementActionView> Actions);
@@ -202,7 +204,10 @@ public sealed class LessonsService
     /// Edits an action in one audited change. Moving to a closed status stamps <see cref="ImprovementAction.ClosedAtUtc"/>
     /// (kept if it was already closed); reopening clears it so the action re-enters the open register.
     /// </summary>
-    public async Task UpdateActionAsync(Guid caseId, Guid actionId, ImprovementActionInput input, CancellationToken ct = default)
+    /// BUG-196: <paramref name="expectedStamp"/> is <see cref="ImprovementActionView.Stamp"/> as the editor loaded it; an
+    /// action someone changed since is refused with <see cref="StaleEditException"/>. Null skips the check.
+    public async Task UpdateActionAsync(Guid caseId, Guid actionId, ImprovementActionInput input, string? expectedStamp = null,
+        CancellationToken ct = default)
     {
         Require(Permission.EditCases);
         var v = Validate(input);
@@ -211,6 +216,9 @@ public sealed class LessonsService
         await LoadCaseTrackedAsync(db, caseId, ct);
         var action = await db.ImprovementActions.FirstOrDefaultAsync(a => a.Id == actionId && a.CaseId == caseId, ct)
                      ?? throw new InvalidOperationException("Improvement action not found.");
+        if (expectedStamp is not null && !string.Equals(action.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
+            throw new StaleEditException(action.RowHash ?? "", "Someone changed this improvement action since you opened it, " +
+                "so your edit wasn't saved. It has been reloaded with their change; make yours again.");
 
         var now = _clock.UtcNow;
         action.Title = v.Title;
@@ -362,5 +370,5 @@ public sealed class LessonsService
     private ImprovementActionView ToView(ImprovementAction a, DateTimeOffset now) => new(
         a.Id, a.CaseId, a.Title, a.RelatedArea, a.Details,
         a.Owner, a.Owner is null ? "Unassigned" : _users.DisplayFor(a.Owner), a.TargetDateUtc, a.Status,
-        a.ClosedAtUtc, a.OutcomeNote, a.IsPastTarget(now), a.CreatedAtUtc);
+        a.ClosedAtUtc, a.OutcomeNote, a.IsPastTarget(now), a.CreatedAtUtc, a.RowHash ?? "");
 }
