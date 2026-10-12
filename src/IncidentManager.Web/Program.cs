@@ -127,10 +127,14 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("downloads", httpContext =>
     {
+        // BUG-130: an anonymous request (a calendar client, the import schema) has no user, so it's partitioned by its
+        // feed token, else its address; one noisy client no longer uses up every subscriber's budget.
         var key = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
                   ?? httpContext.User.FindFirstValue(ClaimTypes.Upn)
                   ?? httpContext.User.Identity?.Name
-                  ?? "anonymous";
+                  ?? (httpContext.Request.Query["token"].FirstOrDefault() is { Length: > 0 } feedToken
+                      ? "feed:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(feedToken)))[..16]
+                      : "anon:" + (httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"));
         return RateLimitPartition.GetTokenBucketLimiter(key, _ => new TokenBucketRateLimiterOptions
         {
             TokenLimit = downloadLimits.TokenLimit,
