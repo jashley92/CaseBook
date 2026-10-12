@@ -185,6 +185,31 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_bundle_that_would_remove_the_last_administrator_access_is_refused()
+    {
+        // BUG-17: role edits and deletes keep the S-17 anti-lockout rule; an import overwriting a role didn't.
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        db.RoleMappings.RemoveRange(db.RoleMappings);
+        var admins = new Role { Name = "SOC-Admins", IsSystem = false, UpdatedAtUtc = _clock.UtcNow, UpdatedBy = "t" };
+        admins.SetPermissions([Permission.Administer, Permission.ViewCases], "t", _clock.UtcNow);
+        db.Roles.Add(admins);
+        db.RoleMappings.Add(new AdGroupRoleMapping { AdGroup = "SOC-Admins-Group", RoleName = "SOC-Admins", UpdatedAtUtc = _clock.UtcNow, UpdatedBy = "t" });
+        await db.SaveChangesAsync();
+
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var incoming = live with
+        {
+            Roles = live.Roles.Select(r => r.Name == "SOC-Admins" ? r with { PermissionsCsv = "ViewCases" } : r).ToList()
+        };
+
+        var import = () => svc.ImportAsync(Signed(incoming));
+        await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*last administrator access*");
+        (await db.Roles.AsNoTracking().SingleAsync(r => r.Name == "SOC-Admins")).PermissionsCsv.Should().Contain("Administer");
+    }
+
+    [Fact]
     public async Task Reimporting_an_unchanged_bundle_shows_no_changes()
     {
         await using var db = NewContext();

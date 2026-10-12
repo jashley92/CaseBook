@@ -201,6 +201,7 @@ public sealed partial class ConfigBundleService
 
         // --- Roles (custom only; system roles are code-owned) ---
         var roles = await db.Roles.ToListAsync(ct);
+        var adminBefore = AdministerMapped(roles, await db.RoleMappings.AsNoTracking().ToListAsync(ct));
         foreach (var r in bundle.Roles.Where(r => !r.IsSystem))
         {
             // BUG-18: matched regardless of case, like the role directory, so "sysadmin" is SysAdmin, not a new role.
@@ -234,6 +235,12 @@ public sealed partial class ConfigBundleService
             }
             else unchanged++;
         }
+
+        // BUG-17: the S-17 anti-lockout rule applies to an import too. A bundle whose version of a role drops
+        // Administer must not leave no AD group with administrator access.
+        if (adminBefore && !AdministerMapped(db.Roles.Local, db.RoleMappings.Local))
+            throw new InvalidOperationException("This bundle would remove the last administrator access: no AD group would map to a " +
+                "role with Administer. Grant Administer to a mapped role first, or edit the bundle.");
 
         // --- Case templates (upsert fields + replace steps wholesale) ---
         var templates = await db.CaseTemplates.Include(t => t.Steps).ToListAsync(ct);
@@ -532,4 +539,12 @@ public sealed partial class ConfigBundleService
 
     private static TEnum? ParseEnum<TEnum>(string? value) where TEnum : struct, Enum =>
         Enum.TryParse<TEnum>(value, out var v) ? v : null;
+
+    /// <summary>Whether some AD-group mapping grants a role holding Administer (names matched regardless of case).</summary>
+    private static bool AdministerMapped(IEnumerable<Role> roles, IEnumerable<AdGroupRoleMapping> mappings)
+    {
+        var admin = roles.Where(r => r.GetPermissions().Contains(Permission.Administer)).Select(r => r.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return mappings.Any(m => admin.Contains(m.RoleName));
+    }
 }
