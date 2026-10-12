@@ -21,58 +21,71 @@ namespace IncidentManager.Web.Components.Pages;
 /// </summary>
 public partial class CaseWorkspace
 {
+    // BUG-220: live reloads run one at a time. Two changes landing together each awaited their re-read, so an older read
+    // could land last (a colleague's entry missing until the next change), and both diffed against the same "known"
+    // ids, so each toast claimed both people's additions. The second now waits, reads the case with both, and diffs
+    // against what the first left.
+    private readonly SemaphoreSlim _liveGate = new(1, 1);
+
     private async Task OnCaseChangedAsync(IncidentManager.Application.Abstractions.CaseChange change)
     {
-        var actorId = change.ActorId;
         await InvokeAsync(async () =>
         {
-            if (_accessLost) return; // REL-07: already holding the workspace for a copy-out — don't churn it
-            if (change.CaseId != Id) return; // BUG-05: a late change for the case this view just left
+            await _liveGate.WaitAsync();
+            try { await ApplyChangeAsync(change); }
+            finally { _liveGate.Release(); }
+        });
+    }
 
-            // RD-22: a change to the record, tasks, things, evidence, the brief or the paperwork re-reads only that part
-            // of the case; anything touching the case itself (phase, rung, team, gates…) re-reads the whole case below.
-            var regions = IncidentManager.Application.Cases.CaseRegionMap.Of(change);
-            if (_case is not null && !regions.HasFlag(IncidentManager.Application.Cases.CaseRegions.Whole))
+    private async Task ApplyChangeAsync(IncidentManager.Application.Abstractions.CaseChange change)
+    {
+        var actorId = change.ActorId;
+        if (_accessLost) return; // REL-07: already holding the workspace for a copy-out — don't churn it
+        if (change.CaseId != Id) return; // BUG-05: a late change for the case this view just left
+
+        // RD-22: a change to the record, tasks, things, evidence, the brief or the paperwork re-reads only that part
+        // of the case; anything touching the case itself (phase, rung, team, gates…) re-reads the whole case below.
+        var regions = IncidentManager.Application.Cases.CaseRegionMap.Of(change);
+        if (_case is not null && !regions.HasFlag(IncidentManager.Application.Cases.CaseRegions.Whole))
+        {
+            var known = _knownIds;
+            if (await Cases.RefreshPartsAsync(_case, regions))
             {
-                var known = _knownIds;
-                if (await Cases.RefreshPartsAsync(_case, regions))
-                {
-                    if (regions.HasFlag(IncidentManager.Application.Cases.CaseRegions.Tasks))
-                        _taskResults = await Cases.GetTaskResultsAsync(_case.Id);
-                    _readinessEval = NextGateTrigger() is { } gt ? await LoadGateAsync(gt) : null;   // the gate reads them all
-                    SeedKnownIds();
-                    if (LiveRefreshFor(_activeTab, regions)) _liveRefresh++;
-                    await SetTab(_activeTab);
-                    FlagNewItems(known, actorId);
-                    StateHasChanged();
-                    return;
-                }
-            }
-
-            var hadCase = _case is not null;
-            var prevKnown = _knownIds; // U-30: snapshot before Reload re-seeds, so we can diff what appeared
-
-            // REL-07: a live-collab change can be an archive/restrict that removes this case from under the
-            // viewer. Peek before swapping the view: if it vanished while a composer still holds unsubmitted
-            // text, don't yank the workspace out to the "not found" page (which unmounts the editors and
-            // silently discards the draft — the FR-05 guard only covers navigation). Hold the workspace with
-            // a banner so the viewer can copy the text out first.
-            var refreshed = await Cases.GetDetailAsync(Id);
-            if (refreshed is null && hadCase && await AnyDraftDirtyAsync())
-            {
-                _accessLost = true;
+                if (regions.HasFlag(IncidentManager.Application.Cases.CaseRegions.Tasks))
+                    _taskResults = await Cases.GetTaskResultsAsync(_case.Id);
+                _readinessEval = NextGateTrigger() is { } gt ? await LoadGateAsync(gt) : null;   // the gate reads them all
+                SeedKnownIds();
+                if (LiveRefreshFor(_activeTab, regions)) _liveRefresh++;
+                await SetTab(_activeTab);
+                FlagNewItems(known, actorId);
                 StateHasChanged();
                 return;
             }
+        }
 
-            await ReloadWith(refreshed);
-            await RefreshPermissionsAsync(); // REL-08: demote the UI if this user's access was revoked mid-session
-            _liveRefresh++; // UX-13: signal extracted tabs to re-query the case (an in-progress edit in a
-                            // tab component survives, since the component isn't re-created by a reload)
-            await SetTab(_activeTab); // refresh the visible tab's data
-            FlagNewItems(prevKnown, actorId); // U-30: flash / pulse / toast a collaborator's additions
+        var hadCase = _case is not null;
+        var prevKnown = _knownIds; // U-30: snapshot before Reload re-seeds, so we can diff what appeared
+
+        // REL-07: a live-collab change can be an archive/restrict that removes this case from under the
+        // viewer. Peek before swapping the view: if it vanished while a composer still holds unsubmitted
+        // text, don't yank the workspace out to the "not found" page (which unmounts the editors and
+        // silently discards the draft — the FR-05 guard only covers navigation). Hold the workspace with
+        // a banner so the viewer can copy the text out first.
+        var refreshed = await Cases.GetDetailAsync(Id);
+        if (refreshed is null && hadCase && await AnyDraftDirtyAsync())
+        {
+            _accessLost = true;
             StateHasChanged();
-        });
+            return;
+        }
+
+        await ReloadWith(refreshed);
+        await RefreshPermissionsAsync(); // REL-08: demote the UI if this user's access was revoked mid-session
+        _liveRefresh++; // UX-13: signal extracted tabs to re-query the case (an in-progress edit in a
+                        // tab component survives, since the component isn't re-created by a reload)
+        await SetTab(_activeTab); // refresh the visible tab's data
+        FlagNewItems(prevKnown, actorId); // U-30: flash / pulse / toast a collaborator's additions
+        StateHasChanged();
     }
 
     // RD-22: whether a part that loads its own data needs to re-query for a change to these regions. Working notes stay
