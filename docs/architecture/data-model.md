@@ -385,7 +385,7 @@ stateDiagram-v2
 ```
 
 Every move needs `ChangeClassification` and a reason, and writes a `ClassificationChange`. Only upward moves run
-a gate. The gate is chosen by the **target**: promoting straight to Breach runs only the Breach gate. **There is
+a gate. **Every rung climbed passes its own gate**: promoting straight to Breach passes the Adverse Event and Incident gates on the way, one passage each, and a case filed directly at a rung passes the gates up to it. **There is
 no way back to Complex Event.** Promotion renumbers `CE-…` to `YYYY-NN_…` (using the original year) unless the
 case has a custom number.
 

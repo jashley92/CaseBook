@@ -66,6 +66,35 @@ public sealed record GateEvaluation(
     public static GateEvaluation None(StageGateTrigger t) =>
         new(false, t, null, Array.Empty<GateRequirementResult>());
 
+    /// <summary>
+    /// BUG-60/61: the gates of a climb shown as one checklist. A check that recurs on several rungs (a summary at each)
+    /// is listed once, blocking if any rung blocks on it; attestations are kept, each under its own id, since each
+    /// gate is still passed on its own.
+    /// </summary>
+    public static GateEvaluation Combine(IReadOnlyList<GateEvaluation> gates, StageGateTrigger target)
+    {
+        var live = gates.Where(g => g.GateExists).ToList();
+        if (live.Count == 0) return None(target);
+        if (live.Count == 1) return live[0];
+        var reqs = new List<GateRequirementResult>();
+        var byCheck = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var r in live.SelectMany(g => g.Requirements))
+        {
+            if (r.Kind == GateRequirementKind.MachineCheck && r.CheckKey is { } key)
+            {
+                if (byCheck.TryGetValue(key, out var i))
+                {
+                    if (r.IsBlocking && !reqs[i].IsBlocking) reqs[i] = reqs[i] with { IsBlocking = true };
+                    continue;
+                }
+                byCheck[key] = reqs.Count;
+            }
+            reqs.Add(r with { Order = reqs.Count });
+        }
+        return new GateEvaluation(true, target, string.Join(" + ", live.Select(g => g.GateName)), reqs,
+            live.Max(g => g.CommentaryMinLength), live[^1].Facts);
+    }
+
     /// <summary>Whether passing this gate requires analyst commentary of a minimum length.</summary>
     public bool RequiresCommentary => CommentaryMinLength > 0;
 

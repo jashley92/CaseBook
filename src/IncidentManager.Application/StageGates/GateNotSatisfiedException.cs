@@ -36,6 +36,16 @@ public static class StageGateTriggers
         _ => null
     };
 
+    /// <summary>
+    /// BUG-60/61: the gate of every rung climbed from <paramref name="from"/> (null: intake, or a case being created) up
+    /// to <paramref name="to"/>, lowest first. Adverse Event straight to Breach passes the Incident gate on the way.
+    /// </summary>
+    public static IReadOnlyList<StageGateTrigger> Climb(Classification? from, Classification to) =>
+        Enum.GetValues<Classification>()
+            .Where(r => (from is null || r > from) && r <= to)
+            .Select(ForClassification).Where(t => t is not null).Select(t => t!.Value)
+            .ToList();
+
     public static string Label(StageGateTrigger t) => t switch
     {
         StageGateTrigger.PromoteToAdverseEvent => "Promote to Adverse Event",

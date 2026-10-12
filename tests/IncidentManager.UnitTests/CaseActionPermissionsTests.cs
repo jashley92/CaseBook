@@ -34,6 +34,8 @@ public sealed class CaseActionPermissionsTests
         nameof(CaseService.ListActiveDataElementsAsync),
         nameof(CaseService.DataElementLabelsAsync),
         nameof(CaseService.EvaluateGateAsync),
+        nameof(CaseService.EvaluateClimbAsync),
+        nameof(CaseService.EvaluateNewCaseGatesAsync),
         nameof(CaseService.FindEntityOverlapsAsync),
         nameof(CaseService.FindOpenCaseMatchesForIocsAsync),
         nameof(CaseService.FindCaseHistoryForIocsAsync),   // HR-03: closed "seen before" (scoped read)

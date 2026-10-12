@@ -9,6 +9,13 @@ public interface IStageGateEvaluator
 {
     Task<GateEvaluation> EvaluateAsync(IAppDbContext db, Guid caseId, StageGateTrigger trigger,
         bool summaryProvided = false, CancellationToken ct = default);
+
+    /// <summary>
+    /// BUG-61: a case being created, judged from the object itself (it isn't in the database yet).
+    /// <paramref name="plannedEntities"/> are the indicators filed with it, added right after it's saved.
+    /// </summary>
+    Task<GateEvaluation> EvaluateNewAsync(IAppDbContext db, Domain.Entities.Case unsaved, StageGateTrigger trigger,
+        int plannedEntities = 0, CancellationToken ct = default);
 }
 
 public sealed class StageGateEvaluator : IStageGateEvaluator
@@ -36,7 +43,39 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
 
         var facts = await BuildFactsAsync(db, caseId, ct);
         if (summaryProvided) facts = facts with { HasSummary = true };
+        return Judge(gate, trigger, facts);
+    }
 
+    public async Task<GateEvaluation> EvaluateNewAsync(IAppDbContext db, Domain.Entities.Case c, StageGateTrigger trigger,
+        int plannedEntities = 0, CancellationToken ct = default)
+    {
+        var gate = await db.StageGates.AsNoTracking()
+            .Include(g => g.Requirements)
+            .Where(g => g.IsActive && g.Trigger == trigger)
+            .FirstOrDefaultAsync(ct);
+        if (gate is null || (gate.Requirements.Count == 0 && gate.CommentaryMinLength == 0))
+            return GateEvaluation.None(trigger);
+
+        var entities = c.Entities.Count + plannedEntities;
+        var facts = new GateCaseFacts(
+            HasSummary: !string.IsNullOrWhiteSpace(c.Summary),
+            HasAffectedCount: c.AffectedIndividualsCount is not null,
+            HasDataElements: c.DataElements.Count > 0,
+            HasAffectedStates: !string.IsNullOrWhiteSpace(c.AffectedStates),
+            HasDetectionCaseId: !string.IsNullOrWhiteSpace(c.DetectionCaseId),
+            EntityCount: entities,
+            MaliciousEntityCount: c.Entities.Count(e => e.Disposition == EntityDisposition.Malicious),
+            EvidenceCount: 0,
+            ReportCount: 0,
+            HasIncidentCommander: !string.IsNullOrWhiteSpace(c.IncidentCommander),
+            AffectedIndividualsCount: c.AffectedIndividualsCount ?? 0,
+            Classification: c.Classification,
+            UnknownEntityCount: entities - c.Entities.Count(e => e.Disposition != EntityDisposition.Unknown));
+        return Judge(gate, trigger, facts);
+    }
+
+    private static GateEvaluation Judge(Domain.Entities.StageGate gate, StageGateTrigger trigger, GateCaseFacts facts)
+    {
         var results = gate.Requirements
             .OrderBy(r => r.Order)
             .Select(r => new GateRequirementResult(

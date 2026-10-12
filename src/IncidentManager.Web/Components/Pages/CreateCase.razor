@@ -57,7 +57,7 @@
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label" for="cc-classification">Classification</label>
-                    <InputSelect id="cc-classification" class="form-select" @bind-Value="_request.Classification">
+                    <InputSelect id="cc-classification" class="form-select" @bind-Value="_request.Classification" @bind-Value:after="RefreshGates">
                         <option value="">Complex Event</option>
                         @foreach (var c in Enum.GetValues<Classification>())
                         {
@@ -167,7 +167,7 @@
 
                 <div class="col-12">
                     <label class="form-label" for="cc-summary">Summary</label>
-                    <InputTextArea id="cc-summary" class="form-control" rows="3" @bind-Value="_request.Summary"
+                    <InputTextArea id="cc-summary" class="form-control" rows="3" @bind-Value="_request.Summary" @bind-Value:after="RefreshGates"
                                    placeholder="@(_summaryPrompt ?? "What happened, current status, and immediate impact.")" />
                     @* FR-21: a template's summary shows as grey prompt text (U-47b), never a filled value, so a
                        hurried user can mistake it for content and file an empty summary. Nudge softly (no block). *@
@@ -283,6 +283,17 @@
             </div>
         }
 
+        @* BUG-61: a case filed straight onto a rung passes that rung's gate (and those below it), as reclassifying does. *@
+        @if (_created is null && _gate.Gate is { } gate)
+        {
+            <section class="mb-3" aria-labelledby="nc-gate-h">
+                <h2 class="h6 mb-1" id="nc-gate-h">Filing as @(Ui.Label(_request.Classification)): @gate.GateName</h2>
+                <p class="small text-muted mb-0">The same readiness checks as escalating a case to this rung. Tick what's true;
+                    anything required that's still unmet needs an override reason, which is recorded with the case.</p>
+                <IncidentManager.Web.Components.Pages.Workspace.GateSection Draft="_gate" OnChanged="StateHasChanged" />
+            </section>
+        }
+
         @if (_error is not null)
         {
             @* REL-04: distinguish "couldn't file the case" (red — nothing was created, safe to retry from
@@ -303,7 +314,7 @@
         }
 
         <div class="nc-actions">
-            <button type="submit" class="btn btn-primary" disabled="@(_saving || _checking)">@(_created is null ? "Create case" : "Finish setup")</button>
+            <button type="submit" class="btn btn-primary" disabled="@(_saving || _checking || GateUnresolved)">@(_created is null ? "Create case" : "Finish setup")</button>
             @if (_created is not null)
             {
                 <a class="btn btn-outline-primary" href="cases/@_created.Id">Open case as-is</a>
@@ -369,7 +380,26 @@
         => _linkChoice[caseId] = Enum.TryParse<CaseLinkType>(raw, out var t) ? t : (CaseLinkType?)null;
 
     // FR-04: any edit or re-check clears the "paused for review" state so a stale prompt never lingers.
-    private void OnIndicatorsChanged() => _overlapPrompt = false;
+    private async Task OnIndicatorsChanged()
+    {
+        _overlapPrompt = false;
+        await RefreshGates();   // indicators count toward "at least one entity"
+    }
+
+    // BUG-61: the gates the case would pass if filed as the form stands. Ticks survive a re-check of the same gates.
+    private readonly IncidentManager.Web.Components.Pages.Workspace.TransitionDraft _gate = new();
+
+    private bool GateUnresolved => _created is null && _gate.NeedsOverride && string.IsNullOrWhiteSpace(_gate.Override);
+
+    private async Task RefreshGates()
+    {
+        if (_created is not null) return;
+        _request.PlannedEntityCount = IndicatorLines(_indicators).Count();
+        var eval = await Cases.EvaluateNewCaseGatesAsync(_request);
+        if (eval is not { GateExists: true }) { _gate.UseGate(null); return; }
+        if (_gate.Gate?.GateName == eval.GateName) _gate.Gate = eval;   // same gates: keep the ticks
+        else _gate.UseGate(eval);
+    }
 
     private async Task CheckOverlaps()
     {
@@ -397,6 +427,7 @@
         // first render (U-29 reconfigures TimeDisp, remounting this page via the layout @key), this re-seeds
         // with the correct zone — the user hasn't interacted yet at that point.
         _detectedWall = UtcToWall(DateTimeOffset.UtcNow);
+        await RefreshGates();
     }
 
     // PROD-26: prefill severity/origin from what this user last filed — the highest-frequency form, and a
@@ -434,7 +465,7 @@
     private DateTime UtcToWall(DateTimeOffset utc)
         => DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(utc, TimeDisp.Zone).DateTime, DateTimeKind.Unspecified);
 
-    private void OnTemplateChanged(ChangeEventArgs e)
+    private async Task OnTemplateChanged(ChangeEventArgs e)
     {
         var raw = e.Value?.ToString();
         _selectedTemplate = Guid.TryParse(raw, out var id) ? _templates?.FirstOrDefault(t => t.Id == id) : null;
@@ -443,6 +474,7 @@
         // Quick-fill the structured field defaults (classification/severity) — these are safe to pre-set.
         if (_selectedTemplate.DefaultClassification is { } c) _request.Classification = c;
         if (_selectedTemplate.DefaultSeverity is { } s) _request.Severity = s;
+        await RefreshGates();
 
         // U-47b: the free-text defaults become *placeholder prompts*, not pre-filled values, so a template's
         // generic wording can never be filed verbatim — the analyst must write the real summary/data types.
@@ -552,6 +584,9 @@
             // FR-03: fold the intake timestamps (entered as wall-clock) into the request as UTC.
             _request.DetectedAtUtc = _detectedWall is { } dw ? WallToUtc(dw) : null;
             _request.OccurredAtUtc = _occurredWall is { } ow ? WallToUtc(ow) : null;
+            _request.PlannedEntityCount = IndicatorLines(_indicators).Count();
+            _request.AttestedRequirementIds = _gate.Attested.ToHashSet();
+            _request.OverrideJustification = _gate.NeedsOverride ? _gate.Override?.Trim() : null;
             // REL-04: create exactly once — a retry after a partial-seed failure reuses this case rather
             // than filing a duplicate.
             _created ??= await Cases.CreateAsync(_request);

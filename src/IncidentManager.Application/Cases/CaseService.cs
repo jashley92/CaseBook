@@ -679,10 +679,23 @@ public sealed class CaseService
                 };
             }
 
+            // BUG-61: a case filed straight onto a rung passes the gates up to it, with the same ticks and override.
+            if (request.Classification is { } cls)
+                foreach (var trigger in StageGateTriggers.Climb(null, cls))
+                    await ApplyGateAsync(db, c, trigger, request.AttestedRequirementIds, request.OverrideJustification,
+                        request.OverrideJustification ?? request.Summary, ct,
+                        eval: await _gates.EvaluateNewAsync(db, c, trigger, request.PlannedEntityCount, ct));
+
             db.Cases.Add(c);
             try
             {
                 await db.SaveChangesAsync(ct);
+                if (c.Classification == Classification.Breach)
+                {
+                    // Filed as a Breach: the same alerts as an escalation to one (Legal distribution, SIEM).
+                    await _notifications.OnReclassifiedAsync(c, null, Classification.Breach, ct);
+                    _siem?.Emit(Security.SecurityEvents.BreachEscalated(_user.UserId, _user.UserPrincipalName, c.CaseNumber));
+                }
                 return c;
             }
             catch (DbUpdateException) when (custom is null && attempt < 20)
@@ -784,9 +797,11 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, id, ct);
         var from = c.Classification;
 
-        // Gate only promotions/escalations (up the ladder or off intake) — de-escalations aren't gated.
-        if ((from is null || to > from) && StageGateTriggers.ForClassification(to) is { } trigger)
-            await ApplyGateAsync(db, c, trigger, attestedRequirementIds, overrideJustification, reason, ct);
+        // Gate only promotions/escalations (up the ladder or off intake) — de-escalations aren't gated. BUG-60: every
+        // rung climbed passes its own gate, so a jump to Breach passes the Incident gate too.
+        if (from is null || to > from)
+            foreach (var trigger in StageGateTriggers.Climb(from, to))
+                await ApplyGateAsync(db, c, trigger, attestedRequirementIds, overrideJustification, reason, ct);
 
         var now = _clock.UtcNow;
         c.Reclassify(to, reason, _user.UserId, now, effectiveAtUtc);
@@ -901,6 +916,37 @@ public sealed class CaseService
         return await _gates.EvaluateAsync(db, id, trigger, summaryProvided, ct);
     }
 
+    /// <summary>BUG-60: the gates a reclassification to <paramref name="to"/> passes, as one checklist.</summary>
+    public async Task<GateEvaluation> EvaluateClimbAsync(Guid id, Classification to, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var from = await db.Cases.AsNoTracking().ForUser(_user).Where(x => x.Id == id).Select(x => x.Classification).FirstAsync(ct);
+        var target = StageGateTriggers.ForClassification(to) ?? StageGateTrigger.PromoteToAdverseEvent;
+        if (from is not null && to <= from) return GateEvaluation.None(target);   // de-escalation isn't gated
+        var gates = new List<GateEvaluation>();
+        foreach (var t in StageGateTriggers.Climb(from, to)) gates.Add(await _gates.EvaluateAsync(db, id, t, false, ct));
+        return GateEvaluation.Combine(gates, target);
+    }
+
+    /// <summary>
+    /// BUG-61: the gates a case filed as <paramref name="request"/> would pass, judged from what the form holds (the
+    /// summary, the indicators to be filed), as one checklist; null for a Complex Event, which no gate guards.
+    /// </summary>
+    public async Task<GateEvaluation?> EvaluateNewCaseGatesAsync(CreateCaseRequest request, CancellationToken ct = default)
+    {
+        if (request.Classification is not { } cls) return null;
+        var now = _clock.UtcNow;
+        var c = Case.Open(now.Year, 0, string.IsNullOrWhiteSpace(request.DescriptiveName) ? "New case" : request.DescriptiveName,
+            request.Title, cls, request.Severity, request.Origin, _user.UserId, now, request.IsExercise);
+        c.SetInitialSummary(request.Summary, _user.UserId, now);
+        c.DetectionCaseId = request.DetectionCaseId;
+        using var db = _factory.CreateDbContext();
+        var gates = new List<GateEvaluation>();
+        foreach (var t in StageGateTriggers.Climb(null, cls))
+            gates.Add(await _gates.EvaluateNewAsync(db, c, t, request.PlannedEntityCount, ct));
+        return GateEvaluation.Combine(gates, StageGateTriggers.ForClassification(cls)!.Value);
+    }
+
     /// <summary>
     /// Enforces the stage gate for a transition: evaluates blocking requirements against the case plus the
     /// analyst's attestations, blocks (throws) when any are unmet and no override justification is given,
@@ -908,9 +954,9 @@ public sealed class CaseService
     /// </summary>
     private async Task ApplyGateAsync(IAppDbContext db, Case c, StageGateTrigger trigger,
         IReadOnlySet<Guid>? attestedIds, string? overrideJustification, string? reason, CancellationToken ct,
-        bool summaryProvided = false)
+        bool summaryProvided = false, GateEvaluation? eval = null)
     {
-        var eval = await _gates.EvaluateAsync(db, c.Id, trigger, summaryProvided, ct);
+        eval ??= await _gates.EvaluateAsync(db, c.Id, trigger, summaryProvided, ct);
         if (!eval.GateExists) return;
 
         var attested = attestedIds ?? (IReadOnlySet<Guid>)ImmutableHashSet<Guid>.Empty;

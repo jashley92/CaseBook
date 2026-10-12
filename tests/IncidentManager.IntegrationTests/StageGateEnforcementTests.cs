@@ -287,5 +287,94 @@ public sealed class StageGateEnforcementTests : IDisposable
         }
     }
 
+    /// <summary>An Incident gate whose only (blocking) check is at least one entity on the case.</summary>
+    private static async Task SeedIncidentGateAsync(AppDbContext db, DateTimeOffset now)
+    {
+        var gate = new StageGate
+        {
+            Trigger = StageGateTrigger.EscalateToIncident, Name = "Incident readiness", IsActive = true,
+            CreatedBy = "system", CreatedAtUtc = now
+        };
+        gate.Requirements.Add(new StageGateRequirement
+        {
+            GateId = gate.Id, Order = 0, Kind = GateRequirementKind.MachineCheck,
+            CheckKey = GateCheckKeys.AtLeastOneEntity, Label = "At least one entity", IsBlocking = true
+        });
+        db.StageGates.Add(gate);
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task Jumping_rungs_passes_the_gate_of_each_rung_climbed()
+    {
+        // BUG-60: Adverse Event straight to Breach used to run only the Breach gate.
+        Guid id;
+        await using (var db = NewContext())
+        {
+            await SeedBreachGateAsync(db);
+            await SeedIncidentGateAsync(db, _clock.UtcNow);
+            id = (await NewService(db).CreateAsync(new CreateCaseRequest
+            {
+                DescriptiveName = "Jump", Title = "Jump", Classification = Classification.AdverseEvent,
+                Severity = Severity.High, Origin = CaseOrigin.InternalDetection, Summary = "Seen."
+            })).Id;
+        }
+
+        await using (var db = NewContext())
+        {
+            var svc = NewService(db);
+            var blocked = () => svc.ReclassifyAsync(id, Classification.Breach, "NPI confirmed", new HashSet<Guid> { _attestReqId });
+            (await blocked.Should().ThrowAsync<GateNotSatisfiedException>()).Which.Trigger.Should().Be(StageGateTrigger.EscalateToIncident);
+
+            var combined = await svc.EvaluateClimbAsync(id, Classification.Breach);
+            combined.GateName.Should().Be("Incident readiness + Breach readiness");
+            combined.Requirements.Should().Contain(r => r.CheckKey == GateCheckKeys.AtLeastOneEntity);
+
+            await svc.ReclassifyAsync(id, Classification.Breach, "NPI confirmed", new HashSet<Guid> { _attestReqId },
+                overrideJustification: "Vendor letter received before any indicators");
+        }
+
+        await using var verify = NewContext();
+        (await verify.GatePassages.Where(p => p.CaseId == id).Select(p => p.Trigger).ToListAsync())
+            .Should().BeEquivalentTo([StageGateTrigger.EscalateToIncident, StageGateTrigger.EscalateToBreach]);
+    }
+
+    [Fact]
+    public async Task A_case_filed_straight_onto_a_rung_passes_its_gates()
+    {
+        // BUG-61: creating a case at Incident or Breach ran no gate and recorded no passage.
+        var siem = new CapturingSecurityEventSink();
+        await using var db = NewContext();
+        await SeedIncidentGateAsync(db, _clock.UtcNow);
+        await SeedBreachGateAsync(db);
+        var svc = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new StageGateEvaluator(), new TestSlaTargets(), siem: siem);
+        CreateCaseRequest Req(Classification c) => new()
+        {
+            DescriptiveName = $"Filed {c}", Title = $"Filed {c}", Classification = c, Severity = Severity.High,
+            Origin = CaseOrigin.InternalDetection, Summary = "Reported by the vendor."
+        };
+
+        var noIndicators = () => svc.CreateAsync(Req(Classification.Incident));
+        await noIndicators.Should().ThrowAsync<GateNotSatisfiedException>();
+        var withIndicators = Req(Classification.Incident);
+        withIndicators.PlannedEntityCount = 1;
+        (await svc.EvaluateNewCaseGatesAsync(withIndicators))!.IsSatisfiedBy(new HashSet<Guid>())
+            .Should().BeTrue("the indicators filed with it count");
+
+        var incident = await svc.CreateAsync(withIndicators);
+        (await db.GatePassages.AsNoTracking().SingleAsync(p => p.CaseId == incident.Id)).WasOverridden.Should().BeFalse();
+
+        var breachReq = Req(Classification.Breach);
+        breachReq.PlannedEntityCount = 1;
+        breachReq.AttestedRequirementIds = new HashSet<Guid> { _attestReqId };
+        breachReq.OverrideJustification = "Filed as a Breach on the vendor's notice; counts to follow";
+        var breach = await svc.CreateAsync(breachReq);
+        var passages = await db.GatePassages.AsNoTracking().Where(p => p.CaseId == breach.Id).ToListAsync();
+        passages.Select(p => p.Trigger).Should().BeEquivalentTo([StageGateTrigger.EscalateToIncident, StageGateTrigger.EscalateToBreach]);
+        passages.Single(p => p.Trigger == StageGateTrigger.EscalateToBreach).WasOverridden.Should().BeTrue("the affected count isn't set yet");
+        siem.Events.Should().Contain(e => e.Action == "BreachEscalated");
+    }
+
     public void Dispose() => _connection.Dispose();
 }

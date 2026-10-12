@@ -94,10 +94,17 @@ public partial class CaseWorkspace
 
         a.Transition.UseGate(name switch
         {
-            "reclass" => await LoadGateAsync(CaseFlowGates.Reclassify(_case, a.NewClass)),
+            "reclass" => await LoadClimbGatesAsync(a.NewClass),
             "status" => await LoadGateAsync(CaseFlowGates.Phase(_case, a.NewPhase)),
             _ => null
         });
+    }
+
+    // BUG-60: a reclassification passes the gate of every rung it climbs, shown as one checklist.
+    private async Task<GateEvaluation?> LoadClimbGatesAsync(Classification to)
+    {
+        var eval = await Cases.EvaluateClimbAsync(Id, to);
+        return eval.GateExists ? eval : null;
     }
 
     private async Task<GateEvaluation?> LoadGateAsync(StageGateTrigger? trigger)
@@ -117,9 +124,9 @@ public partial class CaseWorkspace
             await OpenCloseOut();
             return;
         }
-        _action.Transition.UseGate(await LoadGateAsync(which == "reclass"
-            ? CaseFlowGates.Reclassify(_case, _action.NewClass)
-            : CaseFlowGates.Phase(_case, _action.NewPhase)));
+        _action.Transition.UseGate(which == "reclass"
+            ? await LoadClimbGatesAsync(_action.NewClass)
+            : await LoadGateAsync(CaseFlowGates.Phase(_case, _action.NewPhase)));
     }
 
     // --- RD-14: the close-out view (CaseCloseOut); its draft lives here so it survives looking elsewhere ---

@@ -5,6 +5,12 @@ namespace IncidentManager.Application.Cases;
 /// <summary>Request to open a new case.</summary>
 public sealed class CreateCaseRequest
 {
+    // BUG-61: filing straight onto a rung passes that rung's gates (and those below it), as reclassifying does.
+    public IReadOnlySet<Guid>? AttestedRequirementIds { get; set; }
+    public string? OverrideJustification { get; set; }
+    /// <summary>Indicators filed with the case (added just after it's saved), so they count toward its gates.</summary>
+    public int PlannedEntityCount { get; set; }
+
     public string DescriptiveName { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
 

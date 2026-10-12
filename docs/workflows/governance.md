@@ -15,7 +15,7 @@ override. Gates **block or warn; they never move a case by themselves.**
 | `EscalateToBreach` | → Breach (from anything lower) |
 | `CloseCase` | any phase → Closed |
 
-The gate is chosen by the **target**, so promoting a Complex Event straight to Breach runs only the Breach gate.
+**Every rung climbed passes its own gate**, so promoting a Complex Event straight to Breach passes the Adverse Event, Incident and Breach gates, one passage each. The dialog shows them as one checklist, with a check that recurs on several rungs listed once. **A case filed directly at a rung** (New case, or an import that creates one) passes the gates up to that rung the same way: the form shows the checklist, judged from what it holds (the summary, the indicators filed with it), and anything required that's unmet needs an override reason. Filing a Breach sends the same Legal email and SIEM event as escalating to one.
 De-escalation and every other phase change are never gated.
 
 ### Requirements
