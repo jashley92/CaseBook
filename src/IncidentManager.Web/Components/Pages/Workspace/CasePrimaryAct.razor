@@ -1,6 +1,7 @@
-@* RD-03 (RD-27: extracted from CaseWorkspace): the one act the case's state calls for. An unclassified event is
-   promoted (or closed); a closed case is reopened; otherwise the next phase, with "Close the case" once it reaches
-   Post-Incident. Slim is the copy in the one-line bar (out of the tab order; the header's is the one to reach). *@
+@* RD-03 (RD-27: extracted from CaseWorkspace): the one act the case's state calls for. A closed case is reopened;
+   otherwise the next phase, with "Close the case" once it reaches Post-Incident. A complex event moves through the
+   phases too (it can be contained without ever becoming an adverse event), so it gets promotion beside the advance.
+   Slim is the copy in the one-line bar (out of the tab order; the header's is the one to reach). *@
 
 @{
     var c = Case;
@@ -8,9 +9,10 @@
 }
 @if (c.Classification is null && Access.CanReclassify && c.Phase != CasePhase.Closed)
 {
-    <button class="btn btn-sm btn-primary" tabindex="@tab" @onclick='() => OnOpenModal.InvokeAsync("reclass")'>Promote onto the ladder…</button>
+    <button class="btn btn-sm @(Access.CanEdit && CaseFlow.NextPhase(c) is not null ? "btn-outline-primary" : "btn-primary")" tabindex="@tab"
+            title="Classify it as an adverse event, incident or breach" @onclick='() => OnOpenModal.InvokeAsync("reclass")'>Promote onto the ladder…</button>
 }
-else if (Access.CanEdit && c.Phase == CasePhase.Closed)
+@if (Access.CanEdit && c.Phase == CasePhase.Closed)
 {
     <button class="btn btn-sm btn-primary" tabindex="@tab" @onclick='() => OnOpenModal.InvokeAsync("reopen")'>
         <span class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></span>Reopen case…
