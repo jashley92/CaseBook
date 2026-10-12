@@ -26,6 +26,9 @@ public sealed class UserDirectory : IUserDirectory
     private volatile IReadOnlyDictionary<string, UserSummary> _byId =
         new Dictionary<string, UserSummary>(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastTouched = new(StringComparer.OrdinalIgnoreCase);
+    // BUG-218: writers swap the snapshot under this lock (readers take it lock-free), so two sign-ins at once can't each
+    // copy the same old snapshot and lose the other's entry.
+    private readonly object _swap = new();
 
     public UserDirectory(IServiceScopeFactory scopes, ILogger<UserDirectory>? logger = null)
     {
@@ -41,10 +44,11 @@ public sealed class UserDirectory : IUserDirectory
             using var scope = _scopes.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var users = db.Users.AsNoTracking().ToList();
-            _byId = users.ToDictionary(
+            var all = users.ToDictionary(
                 u => u.Sid,
                 u => new UserSummary(u.Sid, u.DisplayName, u.UserPrincipalName, u.Email, u.RolesCsv),
                 StringComparer.OrdinalIgnoreCase);
+            lock (_swap) _byId = all;
         }
         catch
         {
@@ -94,10 +98,11 @@ public sealed class UserDirectory : IUserDirectory
             _lastTouched[userId] = now;
 
             // Refresh just this entry in the snapshot (copy-on-write to stay lock-free for readers).
-            _byId = new Dictionary<string, UserSummary>(_byId, StringComparer.OrdinalIgnoreCase)
-            {
-                [userId] = new UserSummary(userId, displayName, upn, email, rolesCsv)
-            };
+            lock (_swap)
+                _byId = new Dictionary<string, UserSummary>(_byId, StringComparer.OrdinalIgnoreCase)
+                {
+                    [userId] = new UserSummary(userId, displayName, upn, email, rolesCsv)
+                };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
