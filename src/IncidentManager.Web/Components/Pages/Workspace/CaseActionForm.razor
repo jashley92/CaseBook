@@ -137,10 +137,13 @@
         }
         else
         {
+            @* BUG-180: a closed case can't be kept (or superseded), so it's shown but can't be picked. *@
             @foreach (var l in D.SupersedeLinked)
             {
-                <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" @onclick="() => PickSupersedeTarget(l.OtherCaseId, l.OtherCaseNumber)">
-                    <span class="bi bi-link-45deg" aria-hidden="true"></span> @l.OtherCaseNumber <span class="text-muted">(@Ui.CaseLinkLabel(l.Type, l.Outgoing))</span>
+                var closed = l.OtherPhase == CasePhase.Closed;
+                <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" disabled="@closed"
+                        title="@(closed ? "Closed: reopen it to keep it" : null)" @onclick="() => PickSupersedeTarget(l.OtherCaseId, l.OtherCaseNumber)">
+                    <span class="bi bi-link-45deg" aria-hidden="true"></span> @l.OtherCaseNumber <span class="text-muted">(@(closed ? "closed" : Ui.CaseLinkLabel(l.Type, l.Outgoing)))</span>
                 </button>
             }
             <div class="input-group input-group-sm mb-1">
@@ -150,10 +153,12 @@
             </div>
             @foreach (var r in D.SupersedeResults)
             {
-                <button type="button" class="btn btn-sm btn-link d-block text-start p-0 mb-1" @onclick="() => PickSupersedeTarget(r.Id, r.CaseNumber)">
-                    <code>@r.CaseNumber</code> <span class="text-muted">@r.Title</span>
+                var closed = r.Phase == CasePhase.Closed;
+                <button type="button" class="btn btn-sm btn-link d-block text-start p-0 mb-1" disabled="@closed" @onclick="() => PickSupersedeTarget(r.Id, r.CaseNumber)">
+                    <code>@r.CaseNumber</code> <span class="text-muted">@r.Title@(closed ? " · closed: reopen it to keep it" : "")</span>
                 </button>
             }
+            <div class="form-text">A closed case can't be kept. Reopen it first if work continues there.</div>
         }
         <div class="form-check mt-2">
             <input class="form-check-input" type="checkbox" id="supersede-copy" @bind="D.SupersedeCopy" />
