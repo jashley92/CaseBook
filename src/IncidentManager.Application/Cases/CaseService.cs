@@ -70,6 +70,7 @@ public sealed record RelatedCaseSuggestion(Guid CaseId, string CaseNumber, strin
 public sealed class CaseService
 {
     private readonly IOrganizationTimeZone? _zone;
+    private readonly IExerciseEscalationPolicy? _exercise;   // BUG-100
     private readonly IAppDbContextFactory _factory;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
@@ -98,8 +99,10 @@ public sealed class CaseService
         Admin.NotificationRuleService? notifyRules = null,
         IOrganizationTimeZone? zone = null,
         IUserDirectory? users = null,
-        IRoleDirectory? roles = null)
+        IRoleDirectory? roles = null,
+        IExerciseEscalationPolicy? exercise = null)
     {
+        _exercise = exercise;
         _zone = zone;
         _users = users;
         _roles = roles;
@@ -712,7 +715,7 @@ public sealed class CaseService
                 {
                     // Filed as a Breach: the same alerts as an escalation to one (Legal distribution, SIEM).
                     await _notifications.OnReclassifiedAsync(c, null, Classification.Breach, ct);
-                    _siem?.Emit(Security.SecurityEvents.BreachEscalated(_user.UserId, _user.UserPrincipalName, c.CaseNumber));
+                    EmitBreachEscalated(c);
                 }
                 return c;
             }
@@ -844,7 +847,16 @@ public sealed class CaseService
 
         // F-18: a breach escalation is a notable governance signal for the SOC stream.
         if (to == Classification.Breach && from != Classification.Breach)
-            _siem?.Emit(Security.SecurityEvents.BreachEscalated(_user.UserId, _user.UserPrincipalName, c.CaseNumber));
+            EmitBreachEscalated(c);
+    }
+
+    /// <summary>F-18's breach-escalation SIEM event. BUG-100: an exercise's is marked EXERCISE, or not sent when the
+    /// organization keeps exercise escalations inside CaseBook.</summary>
+    private void EmitBreachEscalated(Case c)
+    {
+        if (c.IsExercise && _exercise?.Mode == ExerciseEscalation.Skip) return;
+        var e = Security.SecurityEvents.BreachEscalated(_user.UserId, _user.UserPrincipalName, c.CaseNumber);
+        _siem?.Emit(c.IsExercise ? e with { Detail = ExerciseMarking.SiemDetail } : e);
     }
 
     /// <summary>

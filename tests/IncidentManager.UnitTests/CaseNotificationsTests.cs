@@ -82,6 +82,48 @@ public class CaseNotificationsTests
         sender.Sent[0].Subject.Should().Contain("Breach");
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Tag")]
+    public async Task An_exercise_escalation_is_sent_marked_EXERCISE_by_default(string? mode /* BUG-100 */)
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new CapturingChatNotifier();
+        var config = TestEmail.Config(("Notifications:Chat:BreachEscalations", "true"), ("Notifications:ExerciseEscalation", mode ?? ""));
+        var n = new CaseNotifications(sender, TestEmail.Composer(), new FakeUserDirectory(), config,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions { LegalDistribution = ["legal@insurer.example"] }),
+            chat, new FakePrefs(), exercise: new IncidentManager.Infrastructure.Notifications.ConfigurationExerciseEscalationPolicy(config));
+        var c = Case.Open(2026, 1, "Tabletop", "Ransomware tabletop", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "ic1", Now, isExercise: true);
+
+        await n.OnReclassifiedAsync(c, Classification.Incident, Classification.Breach);
+
+        sender.Sent.Should().ContainSingle().Which.Subject.Should().StartWith("EXERCISE: ");
+        sender.Sent[0].HtmlBody.Should().Contain("not a real breach");
+        sender.Sent[0].TextBody.Should().StartWith("EXERCISE.");
+        chat.Sent.Should().ContainSingle().Which.Title.Should().StartWith("EXERCISE: ");
+    }
+
+    [Fact]
+    public async Task An_exercise_escalation_sends_nothing_when_the_organization_skips_them(/* BUG-100 */)
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new CapturingChatNotifier();
+        var config = TestEmail.Config(("Notifications:Chat:BreachEscalations", "true"), ("Notifications:ExerciseEscalation", "Skip"));
+        var n = new CaseNotifications(sender, TestEmail.Composer(), new FakeUserDirectory(), config,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions { LegalDistribution = ["legal@insurer.example"] }),
+            chat, new FakePrefs(), exercise: new IncidentManager.Infrastructure.Notifications.ConfigurationExerciseEscalationPolicy(config));
+        var c = Case.Open(2026, 1, "Tabletop", "Ransomware tabletop", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "ic1", Now, isExercise: true);
+
+        await n.OnReclassifiedAsync(c, Classification.Incident, Classification.Breach);
+        sender.Sent.Should().BeEmpty();
+        chat.Sent.Should().BeEmpty();
+
+        await n.OnReclassifiedAsync(NewCase(), Classification.Incident, Classification.Breach);
+        sender.Sent.Should().ContainSingle("a real case is never skipped").Which.Subject.Should().NotContain("EXERCISE");
+    }
+
     [Fact]
     public async Task A_non_breach_reclassification_sends_nothing()
     {

@@ -203,6 +203,11 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   `Organization:TimeZone` rather than UTC, so a case opened at 9 pm in New York on 31 December takes that year's number.
   Existing numbers don't change. The materiality "decided on" date in milestones is shown in your display zone.
 
+- **Exercise escalations are marked EXERCISE.** An exercise case escalated to Breach used to send the real Legal
+  email, chat alert and SIEM `BreachEscalated` event unmarked. They now carry "EXERCISE" (the email subject and body,
+  the chat title, the SIEM event's `msg`). To send none of them, set Settings → Notifications → Exercise escalations
+  to "Don't send them". A SIEM rule on event 5503 can exclude exercises by matching `msg` starting `EXERCISE`.
+
 ### v1.5.1
 
 A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung

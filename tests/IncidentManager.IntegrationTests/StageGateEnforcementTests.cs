@@ -374,6 +374,27 @@ public sealed class StageGateEnforcementTests : IDisposable
         passages.Select(p => p.Trigger).Should().BeEquivalentTo([StageGateTrigger.EscalateToIncident, StageGateTrigger.EscalateToBreach]);
         passages.Single(p => p.Trigger == StageGateTrigger.EscalateToBreach).WasOverridden.Should().BeTrue("the affected count isn't set yet");
         siem.Events.Should().Contain(e => e.Action == "BreachEscalated");
+
+        // BUG-100: an exercise filed as a Breach is marked EXERCISE in the SIEM, or sends nothing when the org skips them.
+        var policy = new FakeExercisePolicy();
+        var exerciseSvc = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new StageGateEvaluator(), new TestSlaTargets(), siem: siem, exercise: policy);
+        breachReq.IsExercise = true;
+        breachReq.DescriptiveName = "Tabletop";
+        var before = siem.Events.Count;
+        await exerciseSvc.CreateAsync(breachReq);
+        siem.Events.Skip(before).Should().ContainSingle(e => e.Action == "BreachEscalated")
+            .Which.Detail.Should().StartWith("EXERCISE");
+        policy.Mode = IncidentManager.Application.Abstractions.ExerciseEscalation.Skip;
+        breachReq.DescriptiveName = "Tabletop two";
+        before = siem.Events.Count;
+        await exerciseSvc.CreateAsync(breachReq);
+        siem.Events.Skip(before).Should().NotContain(e => e.Action == "BreachEscalated");
+    }
+
+    private sealed class FakeExercisePolicy : IncidentManager.Application.Abstractions.IExerciseEscalationPolicy
+    {
+        public IncidentManager.Application.Abstractions.ExerciseEscalation Mode { get; set; }
     }
 
     public void Dispose() => _connection.Dispose();

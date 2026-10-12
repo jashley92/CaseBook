@@ -35,6 +35,7 @@ public static class DependencyInjection
         // PROD-16: per-user notification opt-downs, read by the singleton notifier (scope-per-lookup, like UserDirectory).
         services.AddSingleton<Application.Abstractions.INotificationPreferenceProvider, Notifications.NotificationPreferenceProvider>();
         services.AddSingleton<ICaseNotifications, Notifications.CaseNotifications>();
+        services.AddSingleton<IExerciseEscalationPolicy, Notifications.ConfigurationExerciseEscalationPolicy>();   // BUG-100
         // PROD-02: team-chat (Slack/Teams) broadcast channel. Default is a no-op; the Web project registers
         // the real HTTP-backed ChatWebhookNotifier (it needs IHttpClientFactory), which supersedes this.
         services.AddSingleton<IChatNotifier, Notifications.NullChatNotifier>();

@@ -28,6 +28,7 @@ public sealed class CaseNotifications : ICaseNotifications
     private readonly INotificationPreferenceProvider _prefs;
     private readonly ISeverityLabels? _severityLabels;
     private readonly ITaxonomyDisplay? _taxonomy;
+    private readonly IExerciseEscalationPolicy? _exercise;   // BUG-100
 
     // The org's display labels (the same ones the UI shows), so emails and chat never print enum identifiers.
     private string Sev(Severity s) => _severityLabels?.For(s) ?? s.ToString();
@@ -36,8 +37,9 @@ public sealed class CaseNotifications : ICaseNotifications
     public CaseNotifications(IEmailSender email, IEmailComposer composer, IUserDirectory users,
         IConfiguration config, IOptionsMonitor<EmailOptions> options, IChatNotifier chat,
         INotificationPreferenceProvider prefs, ISeverityLabels? severityLabels = null, ITaxonomyDisplay? taxonomy = null,
-        IOrganizationTimeZone? zone = null)
+        IOrganizationTimeZone? zone = null, IExerciseEscalationPolicy? exercise = null)
     {
+        _exercise = exercise;
         _zone = zone;
         _severityLabels = severityLabels;
         _taxonomy = taxonomy;
@@ -67,16 +69,19 @@ public sealed class CaseNotifications : ICaseNotifications
     public async Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default)
     {
         if (to != Classification.Breach || from == Classification.Breach) return;
+        // BUG-100: a tabletop's escalation is marked EXERCISE everywhere it goes, or stays inside CaseBook.
+        if (c.IsExercise && _exercise?.Mode == ExerciseEscalation.Skip) return;
+        var tag = c.IsExercise ? ExerciseMarking.Prefix : "";
 
         // Chat broadcast (PROD-02): independent of the Legal email distribution — the SOC channel should
         // learn of a breach escalation even when no Legal recipients are configured.
         if (ChatOn("BreachEscalations"))
             await _chat.SendAsync(c.IsRestricted
-                ? new ChatNotification("Breach escalation (restricted case)",
+                ? new ChatNotification($"{tag}Breach escalation (restricted case)",
                     "A restricted case was escalated to Breach. Details are limited to its team; open it in CaseBook.",
                     CaseUrl(c.Id), ChatUrgency.Alert)
                 : new ChatNotification(
-                    $"Breach escalation: {c.CaseNumber}",
+                    $"{tag}Breach escalation: {c.CaseNumber}",
                     $"{c.Title} · severity {Sev(c.Severity)}, phase {PhaseName(c.Phase)}.",
                     CaseUrl(c.Id), ChatUrgency.Alert), ct);
 
@@ -93,11 +98,17 @@ public sealed class CaseNotifications : ICaseNotifications
         };
         var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["ReferralNote"] = c.LegalReferral.IsReferred
-                ? "<p>A Legal/Privacy referral is already recorded.</p>" : "",
+            ["ReferralNote"] = (c.IsExercise ? "<p><strong>EXERCISE.</strong> This is a tabletop case, not a real breach. No action is needed.</p>" : "")
+                + (c.LegalReferral.IsReferred ? "<p>A Legal/Privacy referral is already recorded.</p>" : ""),
         };
 
         var message = await _composer.ComposeAsync("breach", options.LegalDistribution, tokens, CaseUrl(c.Id), htmlTokens, ct);
+        if (c.IsExercise)
+            message = message with
+            {
+                Subject = ExerciseMarking.Prefix + message.Subject,
+                TextBody = "EXERCISE. This is a tabletop case, not a real breach. No action is needed.\n\n" + message.TextBody,
+            };
         await _email.SendAsync(message, ct);
     }
 

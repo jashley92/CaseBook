@@ -6,6 +6,7 @@
 @inject TimeDisplay TimeDisp
 @inject ISeverityLabels SevLabels
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
+@inject IncidentManager.Application.Abstractions.IExerciseEscalationPolicy ExercisePolicy
 
 @{ var T = D.Transition; var backdated = T.Backdated(TimeDisp.Zone, Clock.UtcNow); }
 <div class="modal-header">
@@ -21,6 +22,13 @@
         }
         <label class="form-label small" for="ws-reclass-to">@(Case.Classification is null ? "Promote to" : "New classification")</label>
         <select id="ws-reclass-to" class="form-select mb-2" @bind="D.NewClass" @bind:after='() => OnTargetChanged.InvokeAsync("reclass")'>@foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }</select>
+        @if (Case.IsExercise && D.NewClass == Classification.Breach && Case.Classification != Classification.Breach)
+        {
+            @* BUG-100: say what an exercise escalation sends, as the organization chose. *@
+            <div class="alert alert-info py-1 px-2 small mb-2">This is an exercise case. @(ExercisePolicy.Mode == IncidentManager.Application.Abstractions.ExerciseEscalation.Skip
+                ? "Escalating it to Breach sends no Legal email, chat alert or SIEM event."
+                : "The Legal email, chat alert and SIEM event it sends are marked EXERCISE.") An administrator sets this under Settings → Notifications.</div>
+        }
         @if (ClosedAndRaising)
         {
             <div class="alert alert-warning py-1 px-2 small mb-2">This case is closed. Reopen it to raise its classification, so that closing it again runs the close checks for @Ui.Label(D.NewClass). Lowering it is allowed while closed.</div>

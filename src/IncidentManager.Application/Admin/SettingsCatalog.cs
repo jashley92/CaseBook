@@ -128,6 +128,11 @@ public static class SettingsCatalog
         // PROD-02: which notification types are also broadcast to the team chat channel. These only deliver
         // when a chat webhook is configured on the host (Chat:Webhook, server-side); they post to that shared
         // channel and are independent of email. All off by default.
+        // BUG-100: a tabletop escalated to Breach either tests the real alert paths, marked, or stays inside CaseBook.
+        new SettingDefinition("Notifications:ExerciseEscalation", "Exercise escalations", "Notifications", SettingKind.Text,
+            "What an exercise case escalated to Breach sends: the Legal / Privacy email, the chat alert and the SIEM event as for a real case, each marked EXERCISE, or none of them. The escalation is recorded on the case either way.",
+            "Tag",
+            Options: [new("Tag", "Send them, marked EXERCISE"), new("Skip", "Don't send them")]),
         new SettingDefinition("Notifications:Chat:BreachEscalations", "Chat: breach escalations", "Notifications", SettingKind.Bool,
             "Posts Breach escalations to the team chat channel (Slack/Teams), separately from the Legal / Privacy email. Needs a chat webhook on the host (Chat:Webhook).", "false"),
         new SettingDefinition("Notifications:Chat:Assignments", "Chat: assignments", "Notifications", SettingKind.Bool,
