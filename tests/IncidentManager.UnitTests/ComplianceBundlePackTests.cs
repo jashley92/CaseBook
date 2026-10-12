@@ -87,28 +87,42 @@ public class ComplianceBundlePackTests
     public void Every_entry_hash_can_be_recomputed_from_the_csv_by_the_guides_rule()
     {
         var hasher = new IncidentManager.Infrastructure.Security.HashChainService();
-        AuditLogEntry? prev = null;
-        var entries = new List<AuditLogEntry>();
-        foreach (var (reason, label) in new[] { ((string?)null, (string?)null), ("Corrected IOC", null), (null, "Rotate credentials"), ("Why", "What") })
+        // An entry written before format 2, as an upgraded chain starts.
+        var first = new AuditLogEntry { Sequence = 1, AtUtc = DateTimeOffset.UnixEpoch, Actor = "a1", Action = AuditAction.Create,
+            EntityType = "Case", EntityId = "x", Reason = "Old reason" };
+        first.EntryHash = hasher.Hash(first.BuildCanonicalContent() + "|");
+        AuditLogEntry? prev = first;
+        var entries = new List<AuditLogEntry> { first };
+        foreach (var (reason, label) in new[] { ((string?)null, (string?)null), ("Corrected IOC", null), (null, "Rotate credentials"), ("Why", @"a|b\c") })
         {
             var e = new AuditLogEntry { AtUtc = DateTimeOffset.UnixEpoch, Actor = "a1", Action = AuditAction.EvidenceTransferred,
-                EntityType = "Case", EntityId = "x", Reason = reason, EntityLabel = label };
+                EntityType = "Case", EntityId = "x", Summary = "Moved | text", Reason = reason, EntityLabel = label };
             hasher.ChainAppend(e, prev);
             entries.Add(e);
             prev = e;
         }
+        hasher.VerifyChain(entries).IsValid.Should().BeTrue();
 
         var rows = ComplianceBundlePack.AuditChainCsv(entries).Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Skip(1)
             .Select(r => r.Split(',')).ToList();
         var guide = ComplianceBundlePack.VerifyReadme();
 
-        guide.Should().Contain("EvidenceTransferred=16").And.Contain("'|' + Reason").And.Contain("'|' + EntityLabel");
+        guide.Should().Contain("EvidenceTransferred=16").And.Contain("'|' + Reason").And.Contain("'|' + EntityLabel")
+            .And.Contain("\"v2|\"").And.Contain(@"every '|' as '\|'");
+        static string Esc(string s) => s.Replace(@"\", @"\\").Replace("|", @"\|");
         foreach (var c in rows)
         {
             var action = (int)Enum.Parse<AuditAction>(c[3]);
-            var canonical = string.Join('|', c[0], c[1], c[2], action, c[4], c[5], c[6], c[7], c[8], c[9]);
-            if (c[12].Length > 0) canonical += "|" + c[12];
-            if (c[13].Length > 0) canonical += "|" + c[13];
+            string canonical;
+            if (c[15] == "2")   // BUG-184: format 2, as the guide gives it
+                canonical = "v2|" + string.Join('|', c[0], c[1], Esc(c[2]), action, Esc(c[4]), Esc(c[5]), Esc(c[6]), Esc(c[7]), Esc(c[8]),
+                    Esc(c[9]), "reason", Esc(c[12]), "label", Esc(c[13]));
+            else
+            {
+                canonical = string.Join('|', c[0], c[1], c[2], action, c[4], c[5], c[6], c[7], c[8], c[9]);
+                if (c[12].Length > 0) canonical += "|" + c[12];
+                if (c[13].Length > 0) canonical += "|" + c[13];
+            }
             hasher.Hash(canonical + "|" + c[10]).Should().Be(c[11]);
         }
     }

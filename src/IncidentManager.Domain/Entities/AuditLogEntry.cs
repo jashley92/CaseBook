@@ -52,8 +52,24 @@ public class AuditLogEntry : Entity
     /// </summary>
     public string? HashKeyId { get; set; }
 
+    /// <summary>
+    /// BUG-184: the canonical format the entry was hashed in. Null is the first format, where the reason and the label
+    /// are each appended untagged only when present, so (no reason, label X) and (reason X, no label) hash alike, and
+    /// fields aren't escaped. <see cref="CurrentFormat"/> (2) starts with "v2|", escapes '\' and '|' in text fields and
+    /// always ends "|reason|…|label|…". Once an entry is in format 2, every later one must be.
+    /// </summary>
+    public int? Format { get; set; }
+
+    public const int CurrentFormat = 2;
+
     public string BuildCanonicalContent()
     {
+        if (Format >= 2)
+            return Canonical.InFormat(2, () => "v2|" + string.Join('|',
+                Sequence, AtUtc.ToString("o", System.Globalization.CultureInfo.InvariantCulture), Canonical.Text(Actor), (int)Action,
+                Canonical.Text(EntityType), Canonical.Text(EntityId), Canonical.Text(CaseNumber), Canonical.Text(Summary),
+                Canonical.Text(BeforeJson), Canonical.Text(AfterJson), "reason", Canonical.Text(Reason), "label", Canonical.Text(EntityLabel)));
+
         var content = string.Join('|',
             Sequence, AtUtc.ToString("o"), Actor, (int)Action, EntityType, EntityId, CaseNumber, Summary, BeforeJson, AfterJson);
         // A reason is tamper-evident too, but only entries that carry one extend the canonical, so the

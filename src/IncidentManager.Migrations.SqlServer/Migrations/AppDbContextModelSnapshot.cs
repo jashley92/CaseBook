@@ -520,6 +520,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<int?>("Format")
+                        .HasColumnType("int");
+
                     b.Property<string>("HashKeyId")
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");

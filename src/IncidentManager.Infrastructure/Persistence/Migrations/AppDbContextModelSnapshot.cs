@@ -515,6 +515,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("Format")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("HashKeyId")
                         .HasMaxLength(16)
                         .HasColumnType("TEXT");

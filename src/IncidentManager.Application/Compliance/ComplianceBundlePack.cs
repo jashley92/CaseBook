@@ -122,7 +122,7 @@ public static class ComplianceBundlePack
     /// <summary>BUG-78: the audit-chain CSV a row at a time, so a large range isn't built as one string first.</summary>
     public static void WriteAuditChainCsv(TextWriter w, IReadOnlyList<AuditLogEntry> entries)
     {
-        w.Write("Sequence,AtUtc,Actor,Action,EntityType,EntityId,CaseNumber,Summary,BeforeJson,AfterJson,PrevHash,EntryHash,Reason,EntityLabel,HashKeyId");
+        w.Write("Sequence,AtUtc,Actor,Action,EntityType,EntityId,CaseNumber,Summary,BeforeJson,AfterJson,PrevHash,EntryHash,Reason,EntityLabel,HashKeyId,Format");
         w.Write(Nl);
         var sb = new StringBuilder();
         foreach (var e in entries)
@@ -143,7 +143,8 @@ public static class ComplianceBundlePack
             // Reason and EntityLabel are in the hash only when present; a row with neither leaves both blank.
             Field(sb, e.Reason ?? ""); Comma(sb);
             Field(sb, e.EntityLabel ?? ""); Comma(sb);
-            Field(sb, e.HashKeyId ?? "");
+            Field(sb, e.HashKeyId ?? ""); Comma(sb);
+            Field(sb, e.Format?.ToString(CultureInfo.InvariantCulture) ?? "");   // BUG-184
             sb.Append(Nl);
             w.Write(sb);
         }
@@ -194,16 +195,31 @@ public static class ComplianceBundlePack
         Line();
         Line("       EntryHash = SHA-256( canonical + \"|\" + PrevHash )   (lowercase hex)");
         Line();
-        Line("   where canonical is the '|'-joined fields, in this exact order:");
+        Line("   where canonical depends on the row's Format.");
+        Line();
+        Line("   Format 2 (Format = 2):");
+        Line("       canonical = \"v2|\" + the '|'-joined fields, in this exact order:");
+        Line("       Sequence, AtUtc, Actor, Action, EntityType, EntityId, CaseNumber, Summary,");
+        Line("       BeforeJson, AfterJson, \"reason\", Reason, \"label\", EntityLabel");
+        Line("   - In Actor, EntityType, EntityId, CaseNumber, Summary, BeforeJson, AfterJson, Reason and");
+        Line("     EntityLabel, every '\\' is written as '\\\\' and every '|' as '\\|' (backslash first).");
+        Line("   - An empty or absent field contributes an empty string; \"reason\" and \"label\" are the");
+        Line("     literal words, always present.");
+        Line("   - Once a row has Format 2, every later row must too: a blank Format after it is a break.");
+        Line();
+        Line("   First format (Format blank):");
+        Line("       canonical = the '|'-joined fields, in this exact order:");
         Line("       Sequence, AtUtc, Actor, Action, EntityType, EntityId,");
         Line("       CaseNumber, Summary, BeforeJson, AfterJson");
+        Line("   - No escaping. An empty/absent field contributes an empty string.");
+        Line("   - Then, only when the row has one, '|' + Reason; then, only when it has one,");
+        Line("     '|' + EntityLabel (blank in the CSV means absent: nothing is appended).");
+        Line();
+        Line("   In both formats:");
         Line("   - AtUtc is the ISO-8601 round-trip form ('o').");
         Line("   - Action is the integer value of the action:");
         foreach (var chunk in Enum.GetValues<AuditAction>().Select(a => $"{a}={(int)a}").Chunk(4))
             Line("       " + string.Join(", ", chunk));
-        Line("   - An empty/absent field contributes an empty string.");
-        Line("   - Then, only when the row has one, '|' + Reason; then, only when it has one,");
-        Line("     '|' + EntityLabel (blank in the CSV means absent: nothing is appended).");
         Line("   - A row with a HashKeyId was hashed with the organization's secret audit chain key:");
         Line("     EntryHash = HMAC-SHA256(key, canonical + \"|\" + PrevHash). The key isn't in this");
         Line("     bundle, so recompute only the rows without a HashKeyId; CaseBook checks the keyed ones");

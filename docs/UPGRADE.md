@@ -170,6 +170,15 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ### Next release
 
+- **Audit entries are written in format 2.** An entry's reason and its label were each appended to its hash only when
+  present, untagged, so the two could be swapped (a correction's reason turned into a label, dropping it from the
+  trail) without breaking the chain, and no field was escaped. New entries record `Format = 2`: their canonical
+  starts `v2|`, escapes `\` and `|`, and names the reason and label. Earlier entries verify exactly as they were
+  written, and a first-format entry after a format-2 one is a break. One migration adds the nullable
+  `AuditLog.Format` column; on a site that enabled the SQL Server ledger it's added in place. **If you verify
+  compliance bundles with your own script, update it to the format-2 rule in the bundle's VERIFY.txt** (the CSV
+  gains a `Format` column).
+
 - **Skipping Containment is a recorded decision.** Moving a case from New or Triage straight to Eradication,
   Recovery or Post-incident now asks when it was contained, or why containment wasn't needed. Before, such a case
   kept a running containment clock, so it showed as SLA-breached and "not contained" until it closed. "Not needed"

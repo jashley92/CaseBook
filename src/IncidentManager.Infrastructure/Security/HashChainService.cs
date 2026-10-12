@@ -45,6 +45,7 @@ public sealed class HashChainService : IHashChainService
         entry.Sequence = (previous?.Sequence ?? 0) + 1;
         entry.PrevHash = previous?.EntryHash ?? GenesisPrevHash;
         entry.HashKeyId = _keys.CurrentKeyId;
+        entry.Format = AuditLogEntry.CurrentFormat;   // BUG-184
         entry.EntryHash = ComputeEntryHash(entry)!;
         if (entry.HashKeyId is not null) Interlocked.Exchange(ref _lastKeyedSequence, entry.Sequence);
     }
@@ -65,17 +66,26 @@ public sealed class HashChainService : IHashChainService
         private string _prevHash = GenesisPrevHash;
         private long _expectedSequence = 1;
         private long? _firstKeyed;
+        private long? _firstFormat2;   // BUG-184
 
         public ChainVerificationResult Result { get; private set; } = ChainVerificationResult.Valid;
 
         public bool Add(AuditLogEntry entry)
         {
             if (!Result.IsValid) return false;
+            // BUG-184: once entries are in format 2, an entry in the first format is one rewritten to read differently.
+            if (entry.Format is null && _firstFormat2 is { } f2)
+            {
+                Result = ChainVerificationResult.Broken(entry.Sequence,
+                    $"Entry is in the first audit format, but entries have been written in format 2 since #{f2}. It was rewritten.");
+                return false;
+            }
             if (svc.Check(entry, _expectedSequence, _prevHash, keyedFrom, ref _firstKeyed) is { } broken)
             {
                 Result = broken;
                 return false;
             }
+            if (entry.Format is not null) _firstFormat2 ??= entry.Sequence;
             _prevHash = entry.EntryHash;
             _expectedSequence++;
             return true;

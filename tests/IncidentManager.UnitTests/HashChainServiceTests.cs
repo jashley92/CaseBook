@@ -34,6 +34,34 @@ public class HashChainServiceTests
     }
 
     [Fact]
+    public void Swapping_an_entrys_reason_and_label_breaks_the_chain(/* BUG-184 */)
+    {
+        var chain = BuildChain(2);
+        chain[1].Reason = "Corrected the effective time";
+        chain[1].EntryHash = "";
+        _svc.ChainAppend(chain[1], chain[0]);   // as written, with its reason
+        _svc.VerifyChain(chain).IsValid.Should().BeTrue();
+
+        (chain[1].EntityLabel, chain[1].Reason) = (chain[1].Reason, null);   // the reason moved into the label
+
+        _svc.VerifyChain(chain).IsValid.Should().BeFalse("format 2 says which field each value is");
+    }
+
+    [Fact]
+    public void An_entry_in_the_first_format_after_one_in_format_2_is_a_break(/* BUG-184 */)
+    {
+        var chain = BuildChain(3);
+        // Rewritten as a first-format entry and re-hashed, so its own hash and links still hold.
+        chain[2].Format = null;
+        chain[2].EntryHash = _svc.Hash(chain[2].BuildCanonicalContent() + "|" + chain[2].PrevHash);
+
+        var result = _svc.VerifyChain(chain);
+        result.IsValid.Should().BeFalse();
+        result.FirstBrokenSequence.Should().Be(3);
+        chain.Take(2).Should().OnlyContain(e => e.Format == AuditLogEntry.CurrentFormat);
+    }
+
+    [Fact]
     public void ChainAppend_assigns_sequential_positions_and_links_hashes()
     {
         var chain = BuildChain(3);
