@@ -38,6 +38,11 @@ public sealed class EvidenceService
         using var db = _factory.CreateDbContext();
         if (!await db.Cases.AsNoTracking().ForUser(_user).AnyAsync(c => c.Id == caseId, ct))
             throw new InvalidOperationException("Case not found or not accessible.");
+        // BUG-206: what the record can't hold is refused before any bytes are stored.
+        if (description is { Length: > MaxDescriptionLength })
+            throw new ArgumentException($"Keep the description to {MaxDescriptionLength:N0} characters or fewer.");
+        if (fileName is { Length: > MaxFileNameLength })
+            throw new ArgumentException($"That file name is longer than {MaxFileNameLength} characters. Rename the file and upload it again.");
         var stored = await _store.SaveAsync(caseId, content, ct);
 
         var evidence = new Domain.Entities.Evidence
@@ -59,9 +64,17 @@ public sealed class EvidenceService
         });
 
         db.Evidence.Add(evidence);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch
+        {
+            await _store.DiscardUnrecordedAsync(stored.StoragePath);   // BUG-206: no bytes without a record
+            throw;
+        }
         return evidence;
     }
+
+    /// <summary>BUG-206: the record's limits (its columns), checked before a file is stored.</summary>
+    public const int MaxDescriptionLength = 2000, MaxFileNameLength = 500;
 
     /// <summary>
     /// Opens evidence for reading. Need-to-know on the parent case is enforced either way (a restricted

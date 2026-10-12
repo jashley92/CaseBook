@@ -34,16 +34,33 @@ public sealed class FileEvidenceStore : IEvidenceStore
         var absPath = Path.Combine(absDir, fileName);
 
         using var sha = SHA256.Create();
-        await using (var fs = new FileStream(absPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-        await using (var crypto = new CryptoStream(fs, sha, CryptoStreamMode.Write))
+        var created = false;
+        try
         {
+            await using var fs = new FileStream(absPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            created = true;
+            await using var crypto = new CryptoStream(fs, sha, CryptoStreamMode.Write);
             await content.CopyToAsync(crypto, ct);
+        }
+        catch
+        {
+            // BUG-206: an upload cut off part-way (the circuit dropped, the disk filled) leaves no partial file behind.
+            if (created) File.Delete(absPath);
+            throw;
         }
 
         var size = new FileInfo(absPath).Length;
         var hash = Convert.ToHexString(sha.Hash!).ToLowerInvariant();
         var relPath = $"{relDir}/{fileName}";
         return new StoredEvidence(relPath, hash, size);
+    }
+
+    public Task DiscardUnrecordedAsync(string storagePath)
+    {
+        var abs = Path.GetFullPath(Path.Combine(_root, storagePath));
+        var rootPrefix = _root.EndsWith(Path.DirectorySeparatorChar) ? _root : _root + Path.DirectorySeparatorChar;
+        if (abs.StartsWith(rootPrefix, StringComparison.Ordinal)) File.Delete(abs);
+        return Task.CompletedTask;
     }
 
     public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default)

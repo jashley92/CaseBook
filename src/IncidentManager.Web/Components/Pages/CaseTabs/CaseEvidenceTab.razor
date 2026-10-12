@@ -21,7 +21,8 @@
                     </div>
                     <div class="col-md-5">
                         <label class="form-label small mb-0" for="ev-desc">Description</label>
-                        <input id="ev-desc" class="form-control form-control-sm" @bind="_evDesc" disabled="@_busy" />
+                        <input id="ev-desc" class="form-control form-control-sm" @bind="_evDesc" disabled="@_busy"
+                               maxlength="@IncidentManager.Application.Evidence.EvidenceService.MaxDescriptionLength" />
                     </div>
                     <div class="col-md-2">
                         @* REL-03: guard against a double-click (and give feedback on a slow/large upload) — the

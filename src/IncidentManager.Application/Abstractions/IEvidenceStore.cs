@@ -13,4 +13,8 @@ public interface IEvidenceStore
 
     /// <summary>Opens a read stream for previously stored evidence.</summary>
     Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default);
+
+    /// <summary>BUG-206: removes a file just stored whose record couldn't be saved, so no bytes sit in the store
+    /// without a record, custody trail or integrity check. Never for recorded evidence.</summary>
+    Task DiscardUnrecordedAsync(string storagePath) => Task.CompletedTask;
 }

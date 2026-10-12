@@ -159,6 +159,32 @@ public sealed class EvidenceUploadTests : IDisposable
             .Should().BeEquivalentTo("Uploaded", "Downloaded");
     }
 
+    private sealed class CutOffStream : MemoryStream
+    {
+        public CutOffStream() : base(new byte[64 * 1024]) { }
+        public override int Read(Span<byte> buffer) => Position > 0 ? throw new IOException("The connection was cut off.") : base.Read(buffer);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) =>
+            Position > 0 ? throw new IOException("The connection was cut off.") : base.ReadAsync(buffer, ct);
+    }
+
+    [Fact]
+    public async Task An_upload_that_fails_leaves_no_file_in_the_store(/* BUG-206 */)
+    {
+        var (svc, caseId, _) = await SeedEvidenceAsync();
+        int Files() => Directory.EnumerateFiles(_storeDir, "*.bin", SearchOption.AllDirectories).Count();
+        var before = Files();
+
+        // Cut off part-way through the bytes.
+        await svc.Invoking(s => s.UploadAsync(caseId, "big.pcap", "application/octet-stream", new CutOffStream(), null))
+            .Should().ThrowAsync<IOException>();
+        // A description the record can't hold: refused before anything is stored.
+        await using (var s = new MemoryStream(Encoding.UTF8.GetBytes("bytes")))
+            await svc.Invoking(x => x.UploadAsync(caseId, "shot.png", "image/png", s, new string('x', 2001)))
+                .Should().ThrowAsync<ArgumentException>().WithMessage("*2,000 characters*");
+
+        Files().Should().Be(before);
+    }
+
     [Fact]
     public async Task A_download_whose_file_is_missing_records_no_custody_event(/* BUG-197 */)
     {
