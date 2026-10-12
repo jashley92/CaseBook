@@ -1174,11 +1174,21 @@ public sealed class CaseService
         if (expectedStamp is not null && c.ImpactConcurrencyStamp() != expectedStamp)
             throw new StaleEditException(c.ImpactConcurrencyStamp(),
                 "Someone else changed the impact assessment while you were editing. Reload and try again.");
-        c.SetImpactAssessment(affectedIndividualsCount, dataElementKeys, affectedStates, _user.UserId, _clock.UtcNow);
-        // BUG-09: a data element that brings a new jurisdiction into play reopens the report until that regulator is notified.
         await db.JurisdictionNotices.Where(n => n.CaseId == id).ToListAsync(ct);
-        c.ReportedFromNotices(await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(
-            db, c.DataElements.Select(d => d.ElementKey), ct), _user.UserId, _clock.UtcNow);
+        var now = _clock.UtcNow;
+        var before = await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
+        c.SetImpactAssessment(affectedIndividualsCount, dataElementKeys, affectedStates, _user.UserId, now);
+        var after = await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
+        // BUG-104: a case reported as a whole (no notice per jurisdiction: reported before notices were per jurisdiction,
+        // or when none was in play) covered the jurisdictions in play then, and no others. Those become notices at that
+        // time, so one that comes into play now is outstanding until its regulator is notified.
+        if (c.JurisdictionNotices.Count == 0 && c.ReportedAtUtc is { } reported && after.Except(before, StringComparer.OrdinalIgnoreCase).Any())
+        {
+            foreach (var code in before) c.RecordNotice(code, reported, _user.UserId, now);
+            if (c.JurisdictionNotices.Count == 0) c.ClearReported(_user.UserId, now);
+        }
+        // BUG-09: a data element that brings a new jurisdiction into play reopens the report until that regulator is notified.
+        c.ReportedFromNotices(after, _user.UserId, now);
         await db.SaveChangesAsync(ct);
     }
 

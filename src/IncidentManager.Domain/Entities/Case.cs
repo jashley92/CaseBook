@@ -1186,8 +1186,9 @@ public class Case : AuditableEntity, IHashableEntity
     {
         if (JurisdictionNotices.Count == 0) return;
         var byCode = JurisdictionNotices.ToDictionary(n => n.Jurisdiction, n => n.NotifiedAtUtc, StringComparer.OrdinalIgnoreCase);
-        DateTimeOffset? reported = jurisdictionsInPlay.Count > 0 && jurisdictionsInPlay.All(byCode.ContainsKey)
-            ? jurisdictionsInPlay.Max(j => byCode[j])
+        // BUG-104: with nothing in play any more (the data elements re-scoped), the notices already made still stand.
+        DateTimeOffset? reported = jurisdictionsInPlay.Count == 0 ? byCode.Values.Max()
+            : jurisdictionsInPlay.All(byCode.ContainsKey) ? jurisdictionsInPlay.Max(j => byCode[j])
             : null;
         if (reported == ReportedAtUtc) return;
         ReportedAtUtc = reported;

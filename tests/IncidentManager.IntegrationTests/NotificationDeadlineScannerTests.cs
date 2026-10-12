@@ -169,6 +169,40 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
             notifySettings: _settings, notifyRules: new NotificationRuleService(NewFactory(), _user, _clock));
 
     [Fact]
+    public async Task A_case_reported_before_any_jurisdiction_was_in_play_reopens_when_one_comes_in(/* BUG-104 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await using var db = NewContext();
+        var cases = NewCases(db);
+        await cases.UpdateImpactAssessmentAsync(id, 500, [], null);   // nothing in play yet
+        await cases.MarkReportedAsync(id, _clock.UtcNow);
+        var deadlines = NewDeadlines();
+        (await deadlines.EvaluateAsync(id)).ReportedAtUtc.Should().NotBeNull();
+
+        await cases.UpdateImpactAssessmentAsync(id, 500, ["SSN"], "NY");
+
+        var d = await deadlines.EvaluateAsync(id);
+        d.ReportedAtUtc.Should().BeNull("New York came into play after the report, so it wasn't told");
+        d.Statuses.Single(s => s.JurisdictionCode == "NY").IsActive.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Re_scoping_to_nothing_in_play_keeps_the_notices_made(/* BUG-104 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await using var db = NewContext();
+        var cases = NewCases(db);
+        await cases.RecordNoticeAsync(id, "NY", _clock.UtcNow);
+        (await NewDeadlines().EvaluateAsync(id)).ReportedAtUtc.Should().Be(_clock.UtcNow);
+
+        await cases.UpdateImpactAssessmentAsync(id, 500, [], null);
+
+        (await NewDeadlines().EvaluateAsync(id)).ReportedAtUtc.Should().Be(_clock.UtcNow, "the regulator was still notified");
+    }
+
+    [Fact]
     public async Task Each_regulator_is_notified_on_its_own_and_the_case_is_reported_when_all_are()
     {
         // BUG-09: one case-level reported time used to mark every jurisdiction met.
