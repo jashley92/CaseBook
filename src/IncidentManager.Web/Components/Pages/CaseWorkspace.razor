@@ -201,6 +201,7 @@ else
            the preview open across tab switches; _liveRefresh re-lists on collaborator changes; OnCaseChanged
            reloads the case after a profile save / generate so the rest of the workspace stays in sync. *@
         <CaseReportTab CaseId="_case.Id" CaseProfileId="_case.ReportProfileId" State="_reportState"
+                       ContentMarking="IncidentManager.Application.Reporting.ReportMarking.MostRestrictive(_case)"
                        RefreshToken="_liveRefresh" OnCaseChanged="Reload" />
     }
     else if (_activeTab == "Audit")

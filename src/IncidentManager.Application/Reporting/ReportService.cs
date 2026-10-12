@@ -319,6 +319,7 @@ public sealed class ReportService
                 ImprovementActions = model.ImprovementActions,
                 ContentHash = model.ContentHash,
             });
+            model = model with { Tlp = caseModel.Tlp };   // BUG-141: a template can print the case's entities, so its marking too
             used = t;
         }
         progress?.Report(ReportStages.Storing);
@@ -793,7 +794,7 @@ public sealed class ReportService
         return new CaseReportModel
         {
             IndicatorsDefanged = d.Enabled,
-            Tlp = tlp ?? opts.EffectiveDefaultTlp,
+            Tlp = ReportMarking.Effective(tlp ?? opts.EffectiveDefaultTlp, ReportMarking.MostRestrictive(c)),   // BUG-141
             // PROD-45: the actionable list — anything judged malicious or suspicious, whatever its type (a rogue
             // account is an indicator too); compromised/benign/unknown entities stay in Systems Reviewed only.
             Iocs = c.Entities

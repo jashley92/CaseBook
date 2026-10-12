@@ -222,6 +222,11 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   escalation email to Legal / Privacy wasn't delivered"). An administrator clears it with **Mark handled** once the
   people it was for have been told another way.
 
+- **A report is marked at least as restrictively as anything in it.** A report generated at TLP:GREEN on a case with
+  an indicator marked TLP:RED is now marked TLP:RED (the indicator also appears in the relationships appendix, the
+  entity graph and the attack chain, not only the IOC table). The Report tab says so before you generate. To share the
+  report more widely, change that entity's TLP first.
+
 ### v1.5.1
 
 A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung

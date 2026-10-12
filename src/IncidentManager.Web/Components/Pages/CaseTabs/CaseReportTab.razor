@@ -76,6 +76,15 @@
                 </select>
                 <span class="small text-muted">@Tlp.Meaning(_tlp)</span>
             </div>
+            @if (ContentMarking is { } held && held > _tlp)
+            {
+                @* BUG-141: say the design: the report is marked as restrictively as what's in it. *@
+                <div class="small text-warning-emphasis mb-2">
+                    <span class="bi bi-shield-lock" aria-hidden="true"></span>
+                    The report will be marked @Tlp.Label(held): an entity on this case is marked @Tlp.Label(held), and a report
+                    is marked at least as restrictively as anything in it. Change that entity's TLP to share the report more widely.
+                </div>
+            }
 
             <button class="btn btn-sm btn-outline-secondary" @onclick="TogglePreview">
                 <span class="bi bi-eye me-1"></span>@(State.ShowPreview ? "Hide preview" : "Preview")
@@ -138,6 +147,8 @@
     [Parameter] public int RefreshToken { get; set; }
     /// <summary>Invoked after a profile save / generate so the parent reloads the case for the rest of the workspace.</summary>
     [Parameter] public EventCallback OnCaseChanged { get; set; }
+    /// <summary>BUG-141: the most restrictive TLP on the case's entities, which the report's marking is raised to.</summary>
+    [Parameter] public TlpLevel? ContentMarking { get; set; }
 
     private List<Report>? _reports;
     private string? _reportMsg;

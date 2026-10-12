@@ -730,7 +730,7 @@ public sealed class ReportingIntegrationTests : IDisposable
             caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
             var ioc = await cases.AddEntityAsync(caseId, EntityType.Domain, "evil-cdn.test", null, EntityDisposition.Malicious, "C2 domain", null);
             await cases.AddEntityAsync(caseId, EntityType.Host, "FIN-WKS-99", null, EntityDisposition.Compromised, null, null);
-            await cases.SetEntityTlpAsync(caseId, ioc, TlpLevel.Red);
+            await cases.SetEntityTlpAsync(caseId, ioc, TlpLevel.Clear);   // less restrictive than the report: it doesn't raise it
         }
 
         await using (var db = NewContext())
@@ -739,7 +739,7 @@ public sealed class ReportingIntegrationTests : IDisposable
 
             var model = await svc.BuildPreviewModelAsync(caseId, null);
             model.Tlp.Should().Be(TlpLevel.Amber, "AMBER is the default marking");
-            model.Iocs.Should().Contain(i => i.Value == "evil-cdn[.]test" && i.Tlp == "TLP:RED");
+            model.Iocs.Should().Contain(i => i.Value == "evil-cdn[.]test" && i.Tlp == "TLP:CLEAR");
             model.Iocs.Should().NotContain(i => i.Value == "FIN-WKS-99", "a compromised host is a victim, not an indicator");
             // INV-45: the case's tasks, open ones first, soonest due first.
             var openTasks = model.ActionItems.TakeWhile(a => a.Status == "Open").ToList();
@@ -769,6 +769,31 @@ public sealed class ReportingIntegrationTests : IDisposable
             // A different marking is recorded on the report generated with it.
             var amber = await svc.GenerateAsync(caseId, TlpLevel.AmberStrict);
             amber.Tlp.Should().Be(TlpLevel.AmberStrict);
+        }
+    }
+
+    [Fact]
+    public async Task A_report_is_marked_at_least_as_restrictively_as_any_entity_in_it(/* BUG-141 */)
+    {
+        _user.RoleSet = [AppRole.IncidentCommander];
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
+                new CaseNumberGenerator(db), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(),
+                new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+            var ioc = await cases.AddEntityAsync(caseId, EntityType.Domain, "evil-cdn.test", null, EntityDisposition.Malicious, "C2 domain", null);
+            await cases.SetEntityTlpAsync(caseId, ioc, TlpLevel.Red);
+        }
+
+        await using (var db = NewContext())
+        {
+            var svc = NewReportService(db);
+            (await svc.BuildPreviewModelAsync(caseId, null, TlpLevel.Green)).Tlp.Should().Be(TlpLevel.Red);
+            var report = await svc.GenerateAsync(caseId, TlpLevel.Green);
+            report.Tlp.Should().Be(TlpLevel.Red, "a RED indicator is in the appendix, the graph and the attack chain too");
         }
     }
 
