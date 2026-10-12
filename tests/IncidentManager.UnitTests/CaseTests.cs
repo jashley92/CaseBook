@@ -272,6 +272,9 @@ public class CaseTests
         var detected = c.DetectedAtUtc!.Value;
         c.Invoking(x => x.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(2)))
             .Should().Throw<ArgumentException>().WithMessage("*hasn't been through Containment*");
+        c.Invoking(x => x.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(2), containedAtUtc: Now.AddHours(3)))
+            .Should().Throw<ArgumentException>();
+        c.Phase.Should().NotBe(CasePhase.Eradication, "a refused move leaves the case as it was");
 
         c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(2), containedAtUtc: detected.AddHours(1));
         c.ContainedAtUtc.Should().Be(detected.AddHours(1));

@@ -349,7 +349,14 @@ public class Case : AuditableEntity, IHashableEntity
             StatusChanges.Where(x => x.From is not null).Select(x => x.EffectiveAt));
         var at = effective ?? nowUtc;
 
-        // BUG-208: checked before anything changes, against the contained time this move leaves (unless it wasn't needed).
+        // BUG-165 follow-up: checked before anything changes, so a refused move leaves the case as it was.
+        if (skips && containedAtUtc is { } containedAt)
+        {
+            if (containedAt > nowUtc) throw new ArgumentException("When it was contained can't be in the future.");
+            if (DetectedAtUtc is { } det && containedAt < det) throw new ArgumentException("It can't have been contained before it was detected.");
+            if (containedAt > at) throw new ArgumentException("It can't have been contained after this move.");
+        }
+        // BUG-208: likewise, against the contained time this move leaves (unless it wasn't needed).
         if (skipsRecovery && resolvedAtUtc is { } resolvedAt)
         {
             if (resolvedAt > nowUtc) throw new ArgumentException("When it was resolved can't be in the future.");
@@ -371,13 +378,7 @@ public class Case : AuditableEntity, IHashableEntity
 
         // BUG-165: going past Containment without it, the containment milestone is what was said: when it was contained,
         // or that it wasn't needed (the clock stops at this move).
-        if (skips && containedAtUtc is { } contained)
-        {
-            if (contained > nowUtc) throw new ArgumentException("When it was contained can't be in the future.");
-            if (DetectedAtUtc is { } det && contained < det) throw new ArgumentException("It can't have been contained before it was detected.");
-            if (contained > at) throw new ArgumentException("It can't have been contained after this move.");
-            ContainedAtUtc = contained;
-        }
+        if (skips && containedAtUtc is { } contained) ContainedAtUtc = contained;   // checked above
         else if (skips)
         {
             ContainmentNotNeededReason = notNeeded;
