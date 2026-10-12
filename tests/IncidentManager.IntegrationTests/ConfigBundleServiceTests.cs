@@ -671,6 +671,43 @@ public sealed class ConfigBundleServiceTests : IDisposable
         await AssertLessonsDefaultTravels(source, target);
     }
 
+    [Fact]
+    public async Task A_bundle_with_a_template_stored_before_report_tlp_was_required_still_imports(/* BUG-151 */)
+    {
+        var source = NewInstance("pre152");
+        await SeedTemplateDefaultAsync(source.Factory, source.Store);
+        var bundle = await source.Config.BuildBundleAsync();
+        // As exported by v1.5.1: an archived template with no {{report.tlp}}, which uploads then allowed.
+        byte[] unmarked;
+        using (var ms = new MemoryStream())
+        {
+            using (var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Create(ms, DocumentFormat.OpenXml.WordprocessingDocumentType.Document, true))
+            {
+                var main = doc.AddMainDocumentPart();
+                main.Document = new DocumentFormat.OpenXml.Wordprocessing.Document(new DocumentFormat.OpenXml.Wordprocessing.Body(
+                    new DocumentFormat.OpenXml.Wordprocessing.Paragraph(new DocumentFormat.OpenXml.Wordprocessing.Run(
+                        new DocumentFormat.OpenXml.Wordprocessing.Text("{{case.title}}")))));
+                main.Document.Save();
+            }
+            unmarked = ms.ToArray();
+        }
+        var old = bundle.ReportTemplates![0] with
+        {
+            Name = "Old layout", FileName = "old.docx", IsActive = false, LessonsDefault = false,
+            ContentBase64 = Convert.ToBase64String(unmarked),
+            Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(unmarked)),
+        };
+        bundle = bundle with { ReportTemplates = [.. bundle.ReportTemplates!, old] };
+
+        var target = NewInstance("post152");
+        var diff = await target.Config.PreviewAsync(bundle);
+        diff.Warnings.Should().ContainSingle(w => w.Contains("Old layout") && w.Contains("{{report.tlp}}"));
+        await target.Config.ImportAsync(Signed(bundle));
+
+        using var db = target.Factory.CreateDbContext();
+        (await db.ReportTemplates.CountAsync()).Should().Be(2, "the rest of the bundle, and the template, are imported");
+    }
+
     private async Task AssertLessonsDefaultTravels(
         (IAppDbContextFactory Factory, FileReportTemplateStore Store, ConfigBundleService Config) source,
         (IAppDbContextFactory Factory, FileReportTemplateStore Store, ConfigBundleService Config) target)

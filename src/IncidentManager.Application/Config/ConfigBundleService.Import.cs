@@ -79,7 +79,7 @@ public sealed partial class ConfigBundleService
     public async Task<ConfigDiff> PreviewAsync(ConfigBundle incoming, CancellationToken ct = default)
     {
         var live = await BuildBundleAsync(ct);
-        await CheckReportTemplatesAsync(incoming, ct);   // a bad template stops the import here, before the preview
+        var (_, warnings) = await CheckReportTemplatesAsync(incoming, ct);   // a bad template stops the import here, before the preview
         CheckSettings(incoming);                         // so does a setting outside its limits
         var items = new List<ConfigDiffItem>();
 
@@ -104,7 +104,7 @@ public sealed partial class ConfigBundleService
             items.Add(new ConfigDiffItem("Data element", d.Label, change));
         }
 
-        return new ConfigDiff(items);
+        return new ConfigDiff(items, warnings);
     }
 
     // Generic diff by natural key. Compares on the canonical JSON of each item so nested collections
@@ -177,7 +177,7 @@ public sealed partial class ConfigBundleService
         var changedRoles = new List<string>();
         var addedMappings = new List<string>();
 
-        var templateFiles = await CheckReportTemplatesAsync(bundle, ct);
+        var (templateFiles, _) = await CheckReportTemplatesAsync(bundle, ct);
         CheckSettings(bundle);
 
         using var db = _factory.CreateDbContext();
@@ -474,12 +474,16 @@ public sealed partial class ConfigBundleService
     /// PROD-47: checks a bundle's Word templates exactly as an upload is checked (a plain .docx within the size limit,
     /// no macros, embedded objects or externally loaded content, known placeholders only), that each file matches its
     /// recorded SHA-256, and that after the import every report profile's default template exists and is active.
-    /// Returns the decoded files by name. Throws with every problem listed, so nothing is written.
+    /// Returns the decoded files by name. Throws with every problem listed, so nothing is written. BUG-151: a template that
+    /// is safe but won't fill correctly (stored before v1.5.2 without {{report.tlp}}, say) doesn't stop the import, so an
+    /// instance's own export can be restored; it's returned as a warning, and generation refuses an unmarked one.
     /// </summary>
-    private async Task<Dictionary<string, byte[]>> CheckReportTemplatesAsync(ConfigBundle bundle, CancellationToken ct)
+    private async Task<(Dictionary<string, byte[]> Files, List<string> Warnings)> CheckReportTemplatesAsync(ConfigBundle bundle,
+        CancellationToken ct)
     {
         var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-        if (bundle.ReportTemplates is null) return files;   // an older bundle: the library is left alone
+        var warnings = new List<string>();
+        if (bundle.ReportTemplates is null) return (files, warnings);   // an older bundle: the library is left alone
         if (bundle.ReportTemplates.Count > 0 && (_templateEngine is null || _templateStore is null))
             throw new InvalidOperationException("This bundle includes Word templates, but Word templates aren't available on this server.");
 
@@ -502,7 +506,9 @@ public sealed partial class ConfigBundleService
             { problems.Add($"Word template \"{label}\": the file doesn't match its recorded SHA-256."); continue; }
 
             var check = _templateEngine!.Check(bytes);
-            if (!check.Ok) { problems.Add($"Word template \"{label}\": {string.Join(" ", check.Problems)}"); continue; }
+            if (!check.Safe) { problems.Add($"Word template \"{label}\": {string.Join(" ", check.Problems)}"); continue; }
+            if (!check.Ok)
+                warnings.Add($"Word template \"{label}\" is imported, but: {string.Join(" ", check.Problems)} Replace its file before using it.");
             files[t.Name] = bytes;
         }
 
@@ -534,7 +540,7 @@ public sealed partial class ConfigBundleService
 
         if (problems.Count > 0)
             throw new InvalidOperationException("This bundle can't be imported. " + string.Join(" ", problems));
-        return files;
+        return (files, warnings);
     }
 
     private static StageGateRequirement NewRequirement(Guid gateId, ConfigGateRequirement r) => new()

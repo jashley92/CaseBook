@@ -7,7 +7,7 @@ public enum ConfigChange { Add, Update, Unchanged }
 public sealed record ConfigDiffItem(string Section, string Name, ConfigChange Change);
 
 /// <summary>The full preview of applying a bundle: every item classified add / update / unchanged.</summary>
-public sealed record ConfigDiff(IReadOnlyList<ConfigDiffItem> Items)
+public sealed record ConfigDiff(IReadOnlyList<ConfigDiffItem> Items, IReadOnlyList<string>? Warnings = null)
 {
     public int Added => Items.Count(i => i.Change == ConfigChange.Add);
     public int Updated => Items.Count(i => i.Change == ConfigChange.Update);

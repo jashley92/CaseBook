@@ -1,9 +1,18 @@
 namespace IncidentManager.Application.Reporting;
 
-/// <summary>PROD-47: the result of checking an uploaded Word template — what it uses, and anything that rules it out.</summary>
-public sealed record TemplateCheck(IReadOnlyList<string> Problems, IReadOnlyList<string> Placeholders)
+/// <summary>
+/// PROD-47: the result of checking an uploaded Word template — what it uses, and anything that rules it out.
+/// BUG-151: <see cref="FillProblems"/> are the problems among <see cref="Problems"/> that only stop a report filling
+/// correctly (no <c>{{report.tlp}}</c>, a field Word split): an upload is refused for them, but a template stored before
+/// v1.5.2 may have them, so a config bundle still imports it (generation refuses an unmarked one).
+/// </summary>
+public sealed record TemplateCheck(IReadOnlyList<string> Problems, IReadOnlyList<string> Placeholders,
+    IReadOnlyList<string>? FillProblems = null)
 {
     public bool Ok => Problems.Count == 0;
+
+    /// <summary>Nothing unsafe in it (macros, embedded objects, external content, unreadable, unknown fields).</summary>
+    public bool Safe => Problems.All(p => FillProblems?.Contains(p) == true);
 }
 
 /// <summary>

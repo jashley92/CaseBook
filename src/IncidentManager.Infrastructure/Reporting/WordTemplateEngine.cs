@@ -18,6 +18,7 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
     public TemplateCheck Check(byte[] docx)
     {
         var problems = new List<string>();
+        var fill = new List<string>();   // BUG-151: ones that only stop it filling correctly
         var found = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
@@ -63,8 +64,8 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
                         .Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
                     foreach (System.Text.RegularExpressions.Match match in ReportTemplateFields.Placeholder().Matches(p.InnerText))
                         if (!whole.Contains(match.Value))
-                            problems.Add($"{match.Value} is split by a link, a content control or a tracked change, so it can't be filled. " +
-                                         "Retype it in one go (and accept any tracked changes).");
+                            fill.Add($"{match.Value} is split by a link, a content control or a tracked change, so it can't be filled. " +
+                                     "Retype it in one go (and accept any tracked changes).");
                 }
             }
         }
@@ -80,9 +81,10 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
             problems.Add("It has no {{…}} fields. Start from the starter template, or add fields from the field reference.");
         else if (!found.Contains(ReportTemplateFields.MarkingField))
             // BUG-75: a report records its TLP; a template that doesn't print it sends a TLP:RED report out unmarked.
-            problems.Add("It has no {{report.tlp}} field, so a report could go out without its TLP marking. " +
-                         "Add {{report.tlp}} (the page header is a good place), as the starter template does.");
-        return new TemplateCheck(problems.Distinct().ToList(), found.ToList());
+            fill.Add("It has no {{report.tlp}} field, so a report could go out without its TLP marking. " +
+                     "Add {{report.tlp}} (the page header is a good place), as the starter template does.");
+        fill = fill.Distinct().ToList();
+        return new TemplateCheck(problems.Concat(fill).Distinct().ToList(), found.ToList(), fill);
     }
 
     private static IEnumerable<OpenXmlPart> AllParts(OpenXmlPartContainer root)

@@ -105,6 +105,10 @@
 
                 @if (_diff is not null)
                 {
+                    @foreach (var w in _diff.Warnings ?? [])
+                    {
+                        <div class="alert alert-warning py-2 small mb-2"><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>@w</div>
+                    }
                     <p class="mb-1">
                         <span class="im-badge im-b-success">@_diff.Added to add</span>
                         <span class="im-badge im-b-info ms-1">@_diff.Updated to update</span>
