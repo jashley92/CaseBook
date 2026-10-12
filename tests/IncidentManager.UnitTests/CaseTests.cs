@@ -252,6 +252,18 @@ public class CaseTests
     }
 
     [Fact]
+    public void The_detected_time_cant_move_past_a_complex_events_promotion(/* BUG-164 */)
+    {
+        var c = Case.Open(2026, 0, "Beaconing", "Odd beaconing", classification: null, Severity.Medium,
+            CaseOrigin.InternalDetection, "a1", Now);
+        var detected = c.DetectedAtUtc!.Value;
+        c.Reclassify(Classification.Breach, "Data left", "ic1", Now.AddHours(4), effectiveAtUtc: detected.AddHours(1));
+
+        c.Invoking(x => x.UpdateDetails(x.Title, x.Summary, null, null, null, detected.AddHours(2), null, "ic1", Now.AddDays(1)))
+            .Should().Throw<ArgumentException>().WithMessage("*first reclassified*");
+    }
+
+    [Fact]
     public void An_entity_named_on_an_attack_step_is_not_removed(/* BUG-108 */)
     {
         var c = NewCase();

@@ -423,7 +423,9 @@ public class Case : AuditableEntity, IHashableEntity
             // BUG-111: and the rest of what's dated from detection, each of which was checked against it when recorded.
             if (JurisdictionNotices.Select(n => (DateTimeOffset?)n.NotifiedAtUtc).Min() is { } firstNotice && detectedAtUtc > firstNotice)
                 throw new ArgumentException($"The detected time can't be after a regulator was notified ({firstNotice:u}).");
-            if (ClassificationChanges.Where(x => x.From is not null).Select(x => (DateTimeOffset?)x.EffectiveAt).Min() is { } firstReclass
+            // BUG-164: a Complex Event's promotion (From is null, but after the case opened) counts too, as Reclassify dates it.
+            if (ClassificationChanges.Where(x => x.From is not null || x.ChangedAtUtc > CreatedAtUtc)
+                    .Select(x => (DateTimeOffset?)x.EffectiveAt).Min() is { } firstReclass
                 && detectedAtUtc > firstReclass)
                 throw new ArgumentException($"The detected time can't be after the case was first reclassified ({firstReclass:u}).");
             if (SeverityChanges.Where(x => x.From is not null).Select(x => (DateTimeOffset?)x.EffectiveAt).Min() is { } firstSeverity
