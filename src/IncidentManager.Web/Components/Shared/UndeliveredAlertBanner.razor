@@ -4,6 +4,7 @@
 @inject IncidentManager.Application.Notifications.UndeliveredAlertService Alerts
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
+@inject ILogger<UndeliveredAlertBanner> Logger
 @implements IDisposable
 
 @if (_alerts.Count > 0)
@@ -65,5 +66,12 @@
             Toasts.Success("Marked handled");
         }
         catch (ForbiddenException ex) { Toasts.Error(ex.Message); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // BUG-178: the banner sits in the layout, outside the page's error boundary, so an error here would end the
+            // whole session (and the unsaved work in the page below). Say so instead.
+            Logger.LogError(ex, "Couldn't mark an undelivered alert handled.");
+            Toasts.Error("Couldn't mark it handled. Try again in a moment.");
+        }
     }
 }
