@@ -773,7 +773,16 @@ else
 
     private void CancelEdit() => _editingTaskId = null;
 
+    // BUG-93: the same one-at-a-time guard for editing, completing and the bulk "mark done".
     private async Task SaveEdit()
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await SaveEditCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task SaveEditCore()
     {
         if (_editingTaskId is not { } id || string.IsNullOrWhiteSpace(_editTitle)) return;
         var owner = _editOwner switch
@@ -910,6 +919,7 @@ else
 
     private async Task CompleteTask(Guid id)
     {
+        if (_completing) return;
         _completing = true;
         try
         {
@@ -957,6 +967,14 @@ else
     }
 
     private async Task MarkSelectedDone()
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await MarkSelectedDoneCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task MarkSelectedDoneCore()
     {
         if (_selected.Count == 0) return;
         var done = 0;
