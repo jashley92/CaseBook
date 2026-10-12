@@ -91,6 +91,18 @@ public class BrandPaletteTests
         return (Convert.ToInt32(h[..2], 16), Convert.ToInt32(h.Substring(2, 2), 16), Convert.ToInt32(h.Substring(4, 2), 16));
     }
 
+    [Theory]
+    [InlineData("# abcde")]
+    [InlineData("#abcde ")]
+    [InlineData("#ab cd")]
+    [InlineData("# ab")]
+    public void A_colour_with_spaces_inside_is_invalid_not_a_crash(string hex)
+    {
+        BrandPalette.IsValidHex(hex).Should().BeFalse();
+        BrandPalette.BuildCss(hex, hex).Should().BeNull();
+        BrandPalette.FaviconDataUri(hex, null).Should().BeNull();
+    }
+
     [Fact]
     public void Favicon_follows_the_brand_colours_or_leaves_the_static_one()
     {

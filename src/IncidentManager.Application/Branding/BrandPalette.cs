@@ -110,7 +110,8 @@ public static class BrandPalette
         var h = hex.Trim().TrimStart('#');
         if (h.Length == 3) h = string.Concat(h[0], h[0], h[1], h[1], h[2], h[2]);
         if (h.Length != 6) return null;
-        if (!int.TryParse(h, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _)) return null;
+        // BUG-04: hex digits only. HexNumber parsing also allows surrounding spaces, which Convert.ToInt32 rejects.
+        if (!h.All(Uri.IsHexDigit)) return null;
         return new Rgb(
             Convert.ToInt32(h[..2], 16),
             Convert.ToInt32(h.Substring(2, 2), 16),
