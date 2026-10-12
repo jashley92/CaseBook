@@ -35,8 +35,10 @@ public sealed class CaseNotifications : ICaseNotifications
 
     public CaseNotifications(IEmailSender email, IEmailComposer composer, IUserDirectory users,
         IConfiguration config, IOptionsMonitor<EmailOptions> options, IChatNotifier chat,
-        INotificationPreferenceProvider prefs, ISeverityLabels? severityLabels = null, ITaxonomyDisplay? taxonomy = null)
+        INotificationPreferenceProvider prefs, ISeverityLabels? severityLabels = null, ITaxonomyDisplay? taxonomy = null,
+        IOrganizationTimeZone? zone = null)
     {
+        _zone = zone;
         _severityLabels = severityLabels;
         _taxonomy = taxonomy;
         _email = email;
@@ -208,6 +210,19 @@ public sealed class CaseNotifications : ICaseNotifications
         await _email.SendAsync(message, ct);
     }
 
+    private readonly IOrganizationTimeZone? _zone;
+
+    // BUG-102: a due time as people read it, in the organization's zone with its offset ("2026-09-08 23:59 (UTC-04:00)"),
+    // not in UTC, where a task due late in the evening reads as the next day.
+    private string Due(DateTimeOffset t)
+    {
+        if (_zone?.Current is not { } zone) return t.UtcDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC";
+        var local = TimeZoneInfo.ConvertTime(t, zone);
+        var o = local.Offset;
+        return local.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+               + string.Create(CultureInfo.InvariantCulture, $" (UTC{(o < TimeSpan.Zero ? "-" : "+")}{o.Duration():hh\\:mm})");
+    }
+
     // BUG-94: a reminder email to one person, watched so a failure is put down to the items it carried, not the batch.
     private async Task SendForAsync(EmailMessage message, IEnumerable<string> itemKeys, CancellationToken ct)
     {
@@ -329,7 +344,7 @@ public sealed class CaseNotifications : ICaseNotifications
                 ["ItemsList"] = "<ul>" + string.Join("", ordered.Select(i =>
                     $"<li>{WebUtility.HtmlEncode(i.Item.CaseNumber)} — {WebUtility.HtmlEncode(i.Item.Title)} " +
                     $"(owner {WebUtility.HtmlEncode(_users.DisplayFor(i.Item.OwnerUserId ?? i.Item.IncidentCommanderUserId))}; " +
-                    $"due {WebUtility.HtmlEncode(i.Item.DueAtUtc.ToString("u"))}, {OverdueSpan(i.HoursOverdue)} overdue)</li>")) + "</ul>",
+                    $"due {WebUtility.HtmlEncode(Due(i.Item.DueAtUtc))}, {OverdueSpan(i.HoursOverdue)} overdue)</li>")) + "</ul>",
             };
             var message = await _composer.ComposeAsync("overdue-escalated", [to], tokens, overdueUrl, htmlTokens, ct);
             await SendForAsync(message, ordered.Select(i => i.Item.ActionItemId.ToString()), ct);
@@ -562,7 +577,7 @@ public sealed class CaseNotifications : ICaseNotifications
     }
 
     // Composer-rendered safe HTML: every user-supplied field is HTML-encoded here.
-    private static string RenderDigest(UserDigest digest)
+    private string RenderDigest(UserDigest digest)
     {
         var sb = new System.Text.StringBuilder();
         Section(sb, "Overdue", digest.Overdue);
@@ -570,7 +585,7 @@ public sealed class CaseNotifications : ICaseNotifications
         Section(sb, "Due this week", digest.DueThisWeek);
         return sb.ToString();
 
-        static void Section(System.Text.StringBuilder sb, string heading, IReadOnlyList<DigestItem> items)
+        void Section(System.Text.StringBuilder sb, string heading, IReadOnlyList<DigestItem> items)
         {
             if (items.Count == 0) return;
             sb.Append("<p class=\"meta\"><strong>").Append(WebUtility.HtmlEncode(heading))
@@ -578,7 +593,7 @@ public sealed class CaseNotifications : ICaseNotifications
             foreach (var i in items)
                 sb.Append("<li>").Append(WebUtility.HtmlEncode(i.CaseNumber)).Append(" — ")
                   .Append(WebUtility.HtmlEncode(i.TaskTitle))
-                  .Append(" (due ").Append(WebUtility.HtmlEncode(i.DueAtUtc.ToString("u"))).Append(")</li>");
+                  .Append(" (due ").Append(WebUtility.HtmlEncode(Due(i.DueAtUtc))).Append(")</li>");
             sb.Append("</ul>");
         }
     }
@@ -593,12 +608,12 @@ public sealed class CaseNotifications : ICaseNotifications
     }
 
     // Composer-rendered safe HTML: every case-supplied field is HTML-encoded here.
-    private static string RenderDeadlineList(IEnumerable<DeadlineReminder> reminders)
+    private string RenderDeadlineList(IEnumerable<DeadlineReminder> reminders)
     {
         var lis = reminders.Select(r =>
         {
             var standing = r.State == SlaState.Breached ? "past deadline" : "at risk";
-            var due = r.DueAtUtc is { } d ? $", due {d.ToString("u")}" : "";
+            var due = r.DueAtUtc is { } d ? $", due {Due(d)}" : "";
             return $"<li>{WebUtility.HtmlEncode(r.CaseNumber)} — {WebUtility.HtmlEncode(r.CaseTitle)} " +
                    $"({WebUtility.HtmlEncode(r.JurisdictionLabel)}: {standing}{WebUtility.HtmlEncode(due)})</li>";
         });
@@ -606,14 +621,14 @@ public sealed class CaseNotifications : ICaseNotifications
     }
 
     // Composer-rendered safe HTML: every case-supplied field is HTML-encoded here.
-    private static string RenderItemList(IReadOnlyList<OverdueActionItem> items) =>
+    private string RenderItemList(IReadOnlyList<OverdueActionItem> items) =>
         RenderItemList(items.Select(i => (i.CaseNumber, i.Title, i.DueAtUtc)));
 
-    private static string RenderItemList(IEnumerable<(string CaseNumber, string Title, DateTimeOffset DueAtUtc)> items)
+    private string RenderItemList(IEnumerable<(string CaseNumber, string Title, DateTimeOffset DueAtUtc)> items)
     {
         var lis = items.Select(i =>
             $"<li>{WebUtility.HtmlEncode(i.CaseNumber)} — {WebUtility.HtmlEncode(i.Title)} " +
-            $"(due {WebUtility.HtmlEncode(i.DueAtUtc.ToString("u"))})</li>");
+            $"(due {WebUtility.HtmlEncode(Due(i.DueAtUtc))})</li>");
         return "<ul>" + string.Join("", lis) + "</ul>";
     }
 

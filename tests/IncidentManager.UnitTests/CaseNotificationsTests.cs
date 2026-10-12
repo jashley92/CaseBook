@@ -121,6 +121,24 @@ public class CaseNotificationsTests
         sender.Sent[0].To.Should().Contain("new@insurer.example").And.NotContain("old@insurer.example");
     }
 
+    private sealed class NewYork : IncidentManager.Application.Abstractions.IOrganizationTimeZone
+    {
+        public TimeZoneInfo Current { get; } = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+    }
+
+    [Fact]
+    public async Task Reminders_give_the_due_time_in_the_organizations_zone(/* BUG-102 */)
+    {
+        var sender = new CapturingEmailSender();
+        var notifications = new CaseNotifications(sender, TestEmail.Composer(), Team(), TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), new NullChatNotifier(), new FakePrefs(), zone: new NewYork());
+        var dueLateEvening = new DateTimeOffset(2026, 9, 9, 3, 59, 0, TimeSpan.Zero);   // 23:59 on the 8th in New York
+
+        await notifications.OnActionItemsOverdueAsync([Item("owner1") with { DueAtUtc = dueLateEvening }]);
+
+        sender.Sent.Single().HtmlBody.Should().Contain("2026-09-08 23:59 (UTC-04:00)").And.NotContain("2026-09-09");
+    }
+
     // --- Assignment (E-03b) ----------------------------------------------------
 
     // ---- PROD-03: overdue escalation chain ----
