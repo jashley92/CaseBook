@@ -21,6 +21,25 @@ public sealed class ChainKeyring : IChainKeyring
     public IReadOnlyList<string> KeyIds { get; }
     public string? Source { get; }
 
+    /// <summary>
+    /// BUG-26: the key file that wasn't found and the new key made for it, not yet written. Startup writes it only
+    /// once the audit log shows this is a first start (<see cref="ChainKeyStartup"/>); a missing file on a server whose
+    /// log already has keyed entries means the key was lost, and starting with a new one would make every keyed
+    /// entry look tampered with.
+    /// </summary>
+    public string? NewKeyFile { get; private set; }
+    private string? _newKeyRecord;
+
+    /// <summary>Writes the new key's encrypted file (first start only).</summary>
+    public void SaveNewKey()
+    {
+        if (NewKeyFile is not { } path || _newKeyRecord is null) return;
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        File.WriteAllText(path, _newKeyRecord);
+        NewKeyFile = null;
+        _newKeyRecord = null;
+    }
+
     public ChainKeyring(IOptions<SealSigningOptions> options, ISecretProvider? secrets = null)
     {
         var o = options.Value;
@@ -31,11 +50,16 @@ public sealed class ChainKeyring : IChainKeyring
             return;
         }
 
-        var (current, retired, source) = k.Source switch
+        byte[] current;
+        List<byte[]> retired;
+        string source;
+        if (k.Source == ChainKeySource.Certificate)
         {
-            ChainKeySource.Certificate => FromCertificate(k, KeysFolder(o)),
-            _ => FromCyberArk(k, secrets)
-        };
+            (current, retired, source) = FromCertificate(k, KeysFolder(o), out var newFile, out var newRecord);
+            NewKeyFile = newFile;
+            _newKeyRecord = newRecord;
+        }
+        else (current, retired, source) = FromCyberArk(k, secrets);
         CurrentKeyId = KeyIdOf(current);
         _keys[CurrentKeyId] = current;
         foreach (var r in retired) _keys.TryAdd(KeyIdOf(r), r);
@@ -80,8 +104,10 @@ public sealed class ChainKeyring : IChainKeyring
     // The key file is JSON: the thumbprint of the certificate it's encrypted to, and the RSA-OAEP-SHA256 ciphertext.
     private sealed record WrappedKey(string Thumbprint, string Wrapped);
 
-    private static (byte[], List<byte[]>, string) FromCertificate(ChainKeyOptions k, string keysFolder)
+    private static (byte[], List<byte[]>, string) FromCertificate(ChainKeyOptions k, string keysFolder,
+        out string? newKeyFile, out string? newKeyRecord)
     {
+        newKeyFile = newKeyRecord = null;
         var path = string.IsNullOrWhiteSpace(k.WrappedKeyPath) ? Path.Combine(keysFolder, "chain-key.json") : k.WrappedKeyPath;
         var retiredFolder = string.IsNullOrWhiteSpace(k.RetiredWrappedKeysPath) ? Path.Combine(keysFolder, "chain-retired") : k.RetiredWrappedKeysPath;
         using var cert = CertificateLookup.FindRsa(k.CertificateThumbprint, k.StoreLocation, "Integrity:ChainKey");
@@ -91,12 +117,13 @@ public sealed class ChainKeyring : IChainKeyring
             current = Unwrap(path, k.StoreLocation, cert);
         else
         {
-            // First start with the chain key on: make the key and keep only its encrypted form on disk.
+            // First start with the chain key on: make the key; only its encrypted form goes on disk, and only once
+            // startup has confirmed no keyed entries exist (BUG-26).
             current = RandomNumberGenerator.GetBytes(KeyBytes);
             using var pub = cert.GetRSAPublicKey()!;
             var record = new WrappedKey(cert.Thumbprint, Convert.ToBase64String(pub.Encrypt(current, RSAEncryptionPadding.OaepSHA256)));
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-            File.WriteAllText(path, JsonSerializer.Serialize(record));
+            newKeyFile = path;
+            newKeyRecord = JsonSerializer.Serialize(record);
         }
 
         var retired = Directory.Exists(retiredFolder)

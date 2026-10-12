@@ -280,6 +280,10 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var clock = scope.ServiceProvider.GetRequiredService<IClock>();
+    // BUG-26: before anything is appended, a missing chain key file is either a first start (save the new key) or a
+    // lost key (stop, rather than make every keyed entry unverifiable).
+    await IncidentManager.Infrastructure.Security.ChainKeyStartup.EnsureAsync(
+        app.Services.GetRequiredService<IChainKeyring>(), db);
     await DevDataSeeder.InitializeAsync(db, clock, seedDemoData: app.Environment.IsDevelopment(),
         evidence: scope.ServiceProvider.GetService<IEvidenceStore>());
 

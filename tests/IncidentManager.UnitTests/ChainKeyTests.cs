@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
@@ -159,7 +160,7 @@ public sealed class ChainKeyTests : IDisposable
     }
 
     [Fact]
-    public void From_a_certificate_the_key_is_made_once_kept_encrypted_and_read_back()
+    public async Task From_a_certificate_the_key_is_made_once_kept_encrypted_and_read_back()
     {
         using var rsa = RSA.Create(3072);
         using var ephemeral = new CertificateRequest("CN=CaseBook chain key test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pss)
@@ -178,7 +179,42 @@ public sealed class ChainKeyTests : IDisposable
 
             var first = LoadRing(options);
             var file = Path.Combine(_dir, "chain-key.json");
-            File.Exists(file).Should().BeTrue("the key is made on first start and kept encrypted");
+            // BUG-26: the new key is saved only once startup sees no keyed entries in the audit log.
+            first.NewKeyFile.Should().Be(file);
+            File.Exists(file).Should().BeFalse("nothing is written until startup confirms a first start");
+            using (var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:"))
+            {
+                connection.Open();
+                using var db = new IncidentManager.Infrastructure.Persistence.AppDbContext(
+                    new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<IncidentManager.Infrastructure.Persistence.AppDbContext>()
+                        .UseSqlite(connection).Options);
+                db.Database.EnsureCreated();
+                await ChainKeyStartup.EnsureAsync(first, db);
+                File.Exists(file).Should().BeTrue("the key is made on first start and kept encrypted");
+
+                // A lost key file on a server whose log is already keyed stops startup instead of starting a new key.
+                db.AuditLog.Add(new IncidentManager.Domain.Entities.AuditLogEntry
+                {
+                    Sequence = 1, AtUtc = DateTimeOffset.UtcNow, Actor = "t", EntityType = "Case",
+                    PrevHash = "", EntryHash = new string('0', 64), HashKeyId = first.CurrentKeyId
+                });
+                db.SaveChanges();
+                var saved = File.ReadAllText(file);
+                File.Delete(file);
+                var lost = LoadRing(options);
+                await ((Func<Task>)(() => ChainKeyStartup.EnsureAsync(lost, db)))
+                    .Should().ThrowAsync<InvalidOperationException>().WithMessage("*is missing*doesn't hold*");
+                File.Exists(file).Should().BeFalse();
+
+                // A rotation also starts without the file, but the old key is in the retired folder: that's fine.
+                Directory.CreateDirectory(Path.Combine(_dir, "chain-retired"));
+                File.WriteAllText(Path.Combine(_dir, "chain-retired", "old.json"), saved);
+                var rotating = LoadRing(options);
+                await ChainKeyStartup.EnsureAsync(rotating, db);
+                File.Exists(file).Should().BeTrue();
+                File.Delete(Path.Combine(_dir, "chain-retired", "old.json"));
+                File.WriteAllText(file, saved);
+            }
             File.ReadAllText(file).Should().Contain(cert.Thumbprint);
             var second = LoadRing(options);
 
