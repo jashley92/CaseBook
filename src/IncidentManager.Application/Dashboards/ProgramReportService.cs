@@ -171,7 +171,7 @@ public sealed class ProgramReportService
         // BUG-165: a case that didn't need containment has no time to contain and no containment target outcome.
         var rows = await cases.Select(c => new CaseRow(c.Id, c.Classification, c.Severity, c.Phase, c.CreatedAtUtc,
             c.OccurredAtUtc, c.DetectedAtUtc, c.ContainmentNotNeededReason == null ? c.ContainedAtUtc : null, c.ResolvedAtUtc,
-            c.ReportedAtUtc, c.ClosedAtUtc)).ToListAsync(ct);
+            c.ReportedAtUtc, c.ClosedAtUtc, c.IsArchived)).ToListAsync(ct);
         // The child tables filter by a subquery over the same visible cases rather than a list of every id.
         var ids = cases.Select(c => c.Id);
 
@@ -200,7 +200,7 @@ public sealed class ProgramReportService
 
     private sealed record CaseRow(Guid Id, Classification? Classification, Severity Severity, CasePhase Phase,
         DateTimeOffset CreatedAtUtc, DateTimeOffset? OccurredAtUtc, DateTimeOffset? DetectedAtUtc, DateTimeOffset? ContainedAtUtc,
-        DateTimeOffset? ResolvedAtUtc, DateTimeOffset? ReportedAtUtc, DateTimeOffset? ClosedAtUtc);
+        DateTimeOffset? ResolvedAtUtc, DateTimeOffset? ReportedAtUtc, DateTimeOffset? ClosedAtUtc, bool IsArchived);
 
     private sealed record ActionRow(DateTimeOffset CreatedAtUtc, DateTimeOffset? ClosedAtUtc, ImprovementActionStatus Status,
         DateTimeOffset? TargetDateUtc, string? RelatedArea);
@@ -260,7 +260,8 @@ public sealed class ProgramReportService
         return new ProgramSnapshot(
             Opened: opened.Count,
             Closed: rows.Count(r => In(r.ClosedAtUtc)),
-            OpenAtEnd: rows.Count(r => r.CreatedAtUtc < end && (r.ClosedAtUtc is null || r.ClosedAtUtc >= end)),
+            // BUG-211: an archived case that was never closed isn't open, as on the dashboard (BUG-55).
+            OpenAtEnd: rows.Count(r => r.CreatedAtUtc < end && (r.ClosedAtUtc is null ? !r.IsArchived : r.ClosedAtUtc >= end)),
             OpenedByClassification: opened.GroupBy(r => r.Classification)
                 .Select(g => new CountBy<Classification?>(g.Key, g.Count())).OrderBy(x => x.Key is null ? -1 : (int)x.Key).ToList(),
             OpenedBySeverity: opened.GroupBy(r => r.Severity)

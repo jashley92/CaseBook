@@ -98,6 +98,23 @@ public sealed class AgendaServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_closed_cases_tasks_are_off_the_board(/* BUG-211 */)
+    {
+        Seed();
+        await using (var db = NewContext())
+        {
+            var c = Case.Open(2026, 3, "Case C", "Closed case", Classification.Incident, Severity.Low,
+                CaseOrigin.InternalDetection, "ic1", _clock.UtcNow.AddDays(-5));
+            c.ActionItems.Add(new ActionItem { CaseId = c.Id, Title = "Left over", Owner = "analyst1", DueAtUtc = _clock.UtcNow.AddDays(-1) });
+            c.ChangePhase(CasePhase.Closed, "Done", "ic1", _clock.UtcNow.AddDays(-2));
+            db.Cases.Add(c);
+            await db.SaveChangesAsync();
+        }
+
+        (await NewService().GetBoardAsync()).Buckets.SelectMany(b => b.Items).Should().NotContain(i => i.Title == "Left over");
+    }
+
+    [Fact]
     public async Task Board_owner_options_count_visible_items()
     {
         Seed();

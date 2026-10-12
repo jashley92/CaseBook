@@ -134,7 +134,7 @@ public sealed class AgendaService
         from a in db.ActionItems.AsNoTracking()
         where a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled
         join c in db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises() on a.CaseId equals c.Id // PROD-43: drills off the agenda
-        where !c.IsArchived
+        where !c.IsArchived && c.Phase != CasePhase.Closed   // BUG-211: a closed case's tasks aren't work, as in My work and Needs action
         select new Row(
             c.Id, c.CaseNumber, c.Title, c.Severity, c.IsRestricted, c.IncidentCommander,
             a.Id, a.Title, a.DueAtUtc, a.Owner,

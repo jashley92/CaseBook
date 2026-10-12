@@ -133,6 +133,21 @@ public sealed class ProgramReportTests : IDisposable
 
     // The Program overview measures any window the same way, from one read of the cases.
     [Fact]
+    public async Task An_archived_case_that_never_closed_is_not_open_at_the_end(/* BUG-211 */)
+    {
+        await SeedAsync();
+        await using (var db = new AppDbContext(Options()))
+        {
+            var e = Case.Open(2026, 5, "E", "Stale", Classification.Incident, Severity.Low, CaseOrigin.InternalDetection, "ic", Apr(4));
+            e.Archive("admin", Apr(6));
+            db.Cases.Add(e);
+            await db.SaveChangesAsync();
+        }
+
+        (await Service().BuildAsync(Q2)).Current.OpenAtEnd.Should().Be(1, "as on the dashboard (BUG-55)");
+    }
+
+    [Fact]
     public async Task Any_window_is_measured_like_a_quarter()
     {
         await SeedAsync();
