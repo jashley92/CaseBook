@@ -523,9 +523,14 @@ else
             await AccessLog.RecordCaseOpenAsync(_case.Id, _case.CaseNumber, _case.IsRestricted);
             _isPinned = await Shortcuts.IsPinnedAsync(_case.Id); // PROD-20: header star + palette action state
         }
-        _action.NewClass = _case?.Classification ?? Classification.Incident;
-        _action.NewPhase = _case?.Phase ?? CasePhase.Triage;
-        _action.NewSeverity = _case?.Severity ?? Severity.Medium;
+        // BUG-30: a reload under an open dialog (a colleague's change arriving live) keeps what the analyst picked,
+        // which the loaded gate and ticked attestations belong to.
+        if (_action.Name is null)
+        {
+            _action.NewClass = _case?.Classification ?? Classification.Incident;
+            _action.NewPhase = _case?.Phase ?? CasePhase.Triage;
+            _action.NewSeverity = _case?.Severity ?? Severity.Medium;
+        }
         // PROD-07: headline regulatory-notification deadline for the header badge (null when the feature is off).
         _notifyDeadlines = _case is null ? null : await Deadlines.EvaluateAsync(Id);
         // Readiness is computed here and passed to CaseOverviewTab for the stage-readiness card.
