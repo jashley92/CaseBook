@@ -1867,9 +1867,9 @@ public sealed class CaseService
             // BUG-51: ignoring case on every provider (SQLite's LIKE via Contains is case-sensitive for non-ASCII and
             // instr() is case-sensitive outright). ToLower() translates to SQL LOWER(); the invariant overload doesn't.
             var term = query.Trim().ToLowerInvariant();
-#pragma warning disable CA1304, CA1311
+#pragma warning disable CA1304, CA1311, CA1862
             q = q.Where(c => c.CaseNumber.ToLower().Contains(term) || c.Title.ToLower().Contains(term));
-#pragma warning restore CA1304, CA1311
+#pragma warning restore CA1304, CA1311, CA1862
         }
 
         return await q.OrderByDescending(c => c.CreatedAtUtc).Take(take)

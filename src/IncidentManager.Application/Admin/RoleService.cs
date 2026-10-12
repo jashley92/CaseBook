@@ -50,7 +50,9 @@ public sealed class RoleService
         if (Role.NameProblem(name) is { } problem) throw new ArgumentException(problem);
         // BUG-18: role names are matched regardless of case everywhere else, so "sysadmin" is SysAdmin.
         var lower = name.ToLowerInvariant();
+#pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower() to SQL LOWER(); the invariant overload doesn't translate.
         if (await db.Roles.AnyAsync(r => r.Name.ToLower() == lower, ct))
+#pragma warning restore CA1304, CA1311, CA1862
             throw new InvalidOperationException($"A role named '{name}' already exists. Choose a different name.");
 
         var role = new Role { Name = name, Description = description?.Trim(), IsSystem = false };
@@ -112,8 +114,10 @@ public sealed class RoleService
         roleName = (roleName ?? "").Trim();
         if (string.IsNullOrWhiteSpace(adGroup)) throw new ArgumentException("An AD group is required.");
         var roleLower = roleName.ToLowerInvariant();
+#pragma warning disable CA1304, CA1311, CA1862 // as above: translated to SQL LOWER()
         var role = await db.Roles.AsNoTracking().FirstOrDefaultAsync(r => r.Name.ToLower() == roleLower, ct)
                    ?? throw new InvalidOperationException($"No role named '{roleName}'. Reload the page and choose another.");
+#pragma warning restore CA1304, CA1311, CA1862
         roleName = role.Name;   // BUG-18: store the role's own spelling
         if (await db.RoleMappings.AnyAsync(m => m.AdGroup == adGroup && m.RoleName == roleName, ct))
             throw new InvalidOperationException("That mapping already exists.");

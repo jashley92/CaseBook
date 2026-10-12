@@ -216,7 +216,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
         await SeedConfigAsync(db);
         var svc = NewService(db);
         var live = await svc.BuildBundleAsync();
-        var existing = live.RoleMappings.First();
+        var existing = live.RoleMappings[0];
         var incoming = live with
         {
             RoleMappings = live.RoleMappings
