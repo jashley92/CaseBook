@@ -44,6 +44,20 @@ public class IcsWriterTests
     }
 
     [Fact]
+    public void Long_lines_fold_at_75_octets_without_splitting_a_character(/* BUG-212 */)
+    {
+        var title = "[2026-01_Phishing_Wave] " + string.Concat(Enumerable.Repeat("Réinitialiser les identifiants 🔑 ", 12));
+        var ics = IcsWriter.Write("x", [new IcsEvent("i1", Now, title, null, "https://casebook.example/cases/1?tab=Tasks,x", false)], Now);
+
+        foreach (var physical in ics.Split("\r\n"))
+            System.Text.Encoding.UTF8.GetByteCount(physical).Should().BeLessThanOrEqualTo(75, physical);
+        // Unfolding (CRLF + space removed) gives the line back whole.
+        var unfolded = ics.Replace("\r\n ", "");
+        unfolded.Should().Contain("SUMMARY:" + title);
+        unfolded.Should().Contain("URL:https://casebook.example/cases/1?tab=Tasks,x", "a URI isn't text-escaped");
+    }
+
+    [Fact]
     public void Omits_optional_lines_when_absent()
     {
         var ics = IcsWriter.Write("x", [new IcsEvent("i1", Now, "s", null, null, false)], Now);

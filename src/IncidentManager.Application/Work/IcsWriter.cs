@@ -9,8 +9,9 @@ public sealed record IcsEvent(
 
 /// <summary>
 /// Minimal, dependency-free iCalendar (RFC 5545) writer for the agenda calendar feed (E-39). Emits UTC
-/// timestamps only, folds nothing (lines are short), and escapes text per §3.3.11. Kept pure and in the
-/// Application layer so it is unit-testable and reused by the download and the subscribable feed.
+/// timestamps only, escapes text per §3.3.11, and folds lines longer than 75 octets (§3.1; BUG-212: a task title
+/// with its case number runs to hundreds). Kept pure and in the Application layer so it is unit-testable and reused
+/// by the download and the subscribable feed.
 /// </summary>
 public static class IcsWriter
 {
@@ -25,28 +26,50 @@ public static class IcsWriter
         sb.Append("PRODID:").Append(ProdId).Append("\r\n");
         sb.Append("CALSCALE:GREGORIAN\r\n");
         sb.Append("METHOD:PUBLISH\r\n");
-        sb.Append("X-WR-CALNAME:").Append(Escape(calendarName)).Append("\r\n");
+        Line(sb, "X-WR-CALNAME", Escape(calendarName));
 
         var stamp = Stamp(nowUtc);
         foreach (var e in events)
         {
             sb.Append("BEGIN:VEVENT\r\n");
-            sb.Append("UID:").Append(Escape(e.Uid)).Append("\r\n");
+            Line(sb, "UID", Escape(e.Uid));
             sb.Append("DTSTAMP:").Append(stamp).Append("\r\n");
             sb.Append("DTSTART:").Append(Stamp(e.StartUtc)).Append("\r\n");
             // A follow-up item is a point-in-time deadline; give it a nominal 30-minute block.
             sb.Append("DTEND:").Append(Stamp(e.StartUtc.AddMinutes(30))).Append("\r\n");
-            sb.Append("SUMMARY:").Append(Escape(e.Summary)).Append("\r\n");
+            Line(sb, "SUMMARY", Escape(e.Summary));
             if (!string.IsNullOrWhiteSpace(e.Description))
-                sb.Append("DESCRIPTION:").Append(Escape(e.Description!)).Append("\r\n");
+                Line(sb, "DESCRIPTION", Escape(e.Description!));
+            // BUG-212: a URI value, not text, so it isn't text-escaped (a "," or ";" in it would be corrupted).
             if (!string.IsNullOrWhiteSpace(e.Url))
-                sb.Append("URL:").Append(Escape(e.Url!)).Append("\r\n");
+                Line(sb, "URL", e.Url!.Replace("\r", "").Replace("\n", ""));
             if (e.Overdue) sb.Append("CATEGORIES:OVERDUE\r\n");
             sb.Append("END:VEVENT\r\n");
         }
 
         sb.Append("END:VCALENDAR\r\n");
         return sb.ToString();
+    }
+
+    // One content line, folded so no physical line passes 75 octets of UTF-8: each continuation starts with a space.
+    // A character is never split across lines.
+    private static void Line(StringBuilder sb, string name, string value)
+    {
+        const int Limit = 75;
+        var line = name + ":" + value;
+        var used = 0;
+        foreach (var rune in line.EnumerateRunes())
+        {
+            var size = rune.Utf8SequenceLength;
+            if (used + size > Limit)
+            {
+                sb.Append("\r\n ");
+                used = 1;
+            }
+            sb.Append(rune.ToString());
+            used += size;
+        }
+        sb.Append("\r\n");
     }
 
     private static string Stamp(DateTimeOffset t) =>
