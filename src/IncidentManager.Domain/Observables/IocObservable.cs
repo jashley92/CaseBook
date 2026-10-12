@@ -127,6 +127,11 @@ public static partial class IocObservable
     public static string Normalize(EntityType type, string? value)
     {
         var v = (value ?? string.Empty).Trim();
+        // BUG-171: a file name defanged like a domain ("invoice[.]docm") is how it was typed as a file name, so it's kept
+        // live. Only a bracketed dot, and only when what's left ends in a file extension: "report[1].pdf" and
+        // "report[dot]final.docx" stay as they are.
+        if (type == EntityType.FileName && BracketDotRx().IsMatch(v) && BracketDotRx().Replace(v, ".") is var live && HasFileExtension(live))
+            return live;
         return IsRefangable(type) ? Refang(v) : v;
     }
 
@@ -175,6 +180,7 @@ public static partial class IocObservable
     [GeneratedRegex(@"\bfxp(?=:)", RegexOptions.IgnoreCase)] private static partial Regex FxpRx();
     [GeneratedRegex(@"[\[\(\{]\s*(?:\.|dot)\s*[\]\)\}]", RegexOptions.IgnoreCase)] private static partial Regex DotRx();
     [GeneratedRegex(@"[\[\(\{]\s*:\s*[\]\)\}]")] private static partial Regex ColonRx();
+    [GeneratedRegex(@"[\[\(\{]\s*\.\s*[\]\)\}]")] private static partial Regex BracketDotRx();   // BUG-171
     [GeneratedRegex(@"[\[\(\{]\s*/\s*[\]\)\}]")] private static partial Regex SlashRx();
     [GeneratedRegex(@"[\[\(\{]\s*(?:@|at)\s*[\]\)\}]", RegexOptions.IgnoreCase)] private static partial Regex AtRx();
 

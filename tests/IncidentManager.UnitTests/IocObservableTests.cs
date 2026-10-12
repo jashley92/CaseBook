@@ -65,6 +65,16 @@ public class IocObservableTests
         // A filename with the word "dot" or brackets is left intact.
         IocObservable.Normalize(EntityType.FileName, "report[dot]final.docx")
             .Should().Be("report[dot]final.docx");
+        IocObservable.Normalize(EntityType.FileName, "report[1].pdf").Should().Be("report[1].pdf");
+    }
+
+    [Fact]
+    public void A_file_name_defanged_like_a_domain_is_stored_live(/* BUG-171 */)
+    {
+        IocObservable.DetectType("invoice[.]docm").Should().Be(EntityType.FileName);
+        IocObservable.Normalize(EntityType.FileName, "invoice[.]docm").Should().Be("invoice.docm");
+        IocObservable.ParseIndicators("evil[.]zip").Should().ContainSingle()
+            .Which.Should().Be(new IocObservable.ParsedIndicator("evil.zip", EntityType.FileName));
     }
 
     [Fact]
