@@ -129,7 +129,7 @@ the installer set a blank password. Set the identity's password in IIS Manager (
   `migrations-sqlserver.txt` in the release bundle.
 - **Fix:**
   - (1) [UPGRADE.md → resolving a mismatch](../UPGRADE.md#resolving-a-mismatch).
-  - (2) A DBA applies `deploy/sql/casebook-schema-sqlserver.sql` (idempotent), then recycle.
+  - (2) A DBA applies `deploy/sql/casebook-schema-sqlserver.sql` (idempotent; `sqlcmd -I`, since filtered indexes need QUOTED_IDENTIFIER on), then recycle.
   - (4) Restore the pre-upgrade backup the script took, then retry.
 
 > `Upgrade-CaseBook.ps1` from v1.2.1 reported a false *MIGRATION MISMATCH* on every database (a PowerShell

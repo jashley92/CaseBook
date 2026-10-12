@@ -28,10 +28,10 @@ Example: a new optional field on a case.
    $env:IM_MIGRATIONS_PROVIDER = 'SqlServer'
    dotnet ef migrations add <Name> --project src/IncidentManager.Migrations.SqlServer `
      --startup-project src/IncidentManager.Web --context AppDbContext
-   dotnet ef migrations script --idempotent --project src/IncidentManager.Migrations.SqlServer `
-     --startup-project src/IncidentManager.Web --context AppDbContext `
-     --output deploy/sql/casebook-schema-sqlserver.sql
    Remove-Item Env:\IM_MIGRATIONS_PROVIDER
+
+   # The DBA schema script: generated from the migrations, then made re-runnable (CI checks it's current)
+   bash tools/schema/sqlserver-script.sh
    ```
    A new **NOT NULL** column on existing tables needs a default for existing rows. On the ledger tables
    (`AuditLog`, `IntegritySeals`, `ChainOfCustodyEvents`) new columns **must be nullable**, and

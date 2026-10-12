@@ -109,7 +109,7 @@ function Invoke-Sql {
     } else {
         $varArgs = @()
         foreach ($k in $Vars.Keys) { $varArgs += @('-v', ("{0}={1}" -f $k, $Vars[$k])) }
-        & sqlcmd.exe -S $SqlInstance -E -b -C -i $InputFile @varArgs
+        & sqlcmd.exe -S $SqlInstance -E -b -C -I -i $InputFile @varArgs   # -I: QUOTED_IDENTIFIER on, which filtered indexes need
         if ($LASTEXITCODE -ne 0) { throw "sqlcmd failed (exit $LASTEXITCODE) on $InputFile" }
     }
 }

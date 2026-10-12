@@ -139,7 +139,7 @@ migration that shipped in a release tag.
 | `Install-Database.ps1`, `sql/01-Create-Database.sql` | Create the database and the app login |
 | `Install-CaseBook.ps1`, `appsettings.Production.template.json` | Publish (or copy), write production config, create the IIS site, set ACLs |
 | `Upgrade-CaseBook.ps1` | Preflighted, backed-up upgrade with rollback |
-| `sql/casebook-schema-sqlserver.sql` | Idempotent schema script for DBAs (regenerate with every migration) |
+| `sql/casebook-schema-sqlserver.sql` | Idempotent schema script for DBAs (regenerate with every migration: `bash tools/schema/sqlserver-script.sh`) |
 | `Enable-Ledger.ps1`, `Export-LedgerDigest.ps1`, `Verify-LedgerDigests.ps1`, `sql/02-Enable-Ledger.sql`, `lib/CaseBookSql.ps1` | SQL Server ledger |
 
 ## Where do I find…

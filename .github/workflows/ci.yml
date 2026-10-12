@@ -167,6 +167,26 @@ jobs:
           CASEBOOK_TEST_SQL: Server=localhost,1433;User Id=sa;Password=${{ env.SA_PASSWORD }};TrustServerCertificate=True;Encrypt=False
         run: dotnet test tests/IncidentManager.IntegrationTests -c Release --filter "DisplayName~SqlServer" --verbosity minimal
 
+      # BUG-133: the DBA schema script (DbaApplies installs) must match the migrations and apply on an empty database
+      # and again on one it already built. Regenerate it with tools/schema/sqlserver-script.sh.
+      - name: DBA schema script is current and re-runnable
+        env:
+          SA: ${{ env.SA_PASSWORD }}
+          MSSQL: ${{ job.services.mssql.id }}
+        run: |
+          dotnet tool restore
+          bash tools/schema/sqlserver-script.sh "$RUNNER_TEMP/schema.sql"
+          if ! diff -q --strip-trailing-cr "$RUNNER_TEMP/schema.sql" deploy/sql/casebook-schema-sqlserver.sql; then
+            echo "::error::deploy/sql/casebook-schema-sqlserver.sql is out of date. Run: bash tools/schema/sqlserver-script.sh"
+            exit 1
+          fi
+          docker cp deploy/sql/casebook-schema-sqlserver.sql "$MSSQL:/tmp/schema.sql"
+          q() { docker exec "$MSSQL" /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$SA" -b -I "$@"; }
+          q -Q "CREATE DATABASE SchemaScript"
+          q -d SchemaScript -i /tmp/schema.sql > /dev/null
+          q -d SchemaScript -i /tmp/schema.sql > /dev/null
+          q -Q "DROP DATABASE SchemaScript"
+
       - name: Upgrade from recent releases and the first release
         env:
           CASEBOOK_TEST_SQL: Server=localhost,1433;User Id=sa;Password=${{ env.SA_PASSWORD }};TrustServerCertificate=True;Encrypt=False

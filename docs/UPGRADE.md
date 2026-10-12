@@ -163,6 +163,11 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ### Next release (unreleased)
 
+- **DbaApplies installs: the schema script now runs.** `deploy/sql/casebook-schema-sqlserver.sql` failed with
+  "Invalid column name 'TemplateId'" (or 'TemplateFileName' on a re-run), so a DBA-applied install or upgrade stopped
+  part-way. Its data statements now run through `EXEC`, and CI applies the script to an empty database twice. Apply
+  it with `sqlcmd -I` (QUOTED_IDENTIFIER on); `Install-Database.ps1` now passes `-I` when it falls back to sqlcmd.
+
 - **Audit exports name a removed record `Delete`**, not `SoftDelete` (the audit CSV, the compliance bundle). It was always a
   hard delete; only the name changes, and earlier entries verify unchanged. Update any SIEM or spreadsheet filter that
   matches `SoftDelete`.
@@ -338,7 +343,7 @@ home page and the cross-case pages are redesigned, and several pages have moved.
   existing paths (or pass `-DataRoot`). A missing `Integrity:SigningKeyPath` stops the upgrade instead, since a new
   location would orphan the seal signing key; other unset settings are listed as warnings.
 - If your DB is in `DbaApplies` mode (the app account is **not** `db_owner`), the app cannot apply
-  migrations itself — have a DBA apply `deploy/sql/casebook-schema-sqlserver.sql` (idempotent) before
+  migrations itself — have a DBA apply `deploy/sql/casebook-schema-sqlserver.sql` (idempotent; with `sqlcmd -I`) before
   the first request, then run the upgrade with the app already schema-current.
 - Match the runtime: a build targeting .NET 10 needs the **.NET 10 Hosting Bundle** on the server
   (the shared framework, not just the SDK). The preflight checks this and stops with guidance.

@@ -73,13 +73,10 @@ dotnet ef migrations add <Name> `
   --project src/IncidentManager.Migrations.SqlServer `
   --startup-project src/IncidentManager.Web --context AppDbContext
 
-# 2) refresh the DBA schema script
-dotnet ef migrations script --idempotent `
-  --project src/IncidentManager.Migrations.SqlServer `
-  --startup-project src/IncidentManager.Web --context AppDbContext `
-  --output deploy/sql/casebook-schema-sqlserver.sql
-
 Remove-Item Env:\IM_MIGRATIONS_PROVIDER
+
+# 2) refresh the DBA schema script (generated from the migrations, then made re-runnable; CI checks it's current)
+bash tools/schema/sqlserver-script.sh
 ```
 
 Add the matching SQLite migration the normal way (no env var) so dev and prod stay in step.
