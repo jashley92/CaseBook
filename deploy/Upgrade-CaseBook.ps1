@@ -402,7 +402,11 @@ Write-Info "Rollback snapshot: $rollbackDir"
 if ($missingData.Count -gt 0) {
     Write-Step "Adding missing data-folder settings to appsettings.Production.json"
     $liveCfg = Get-Content $prodSettings -Raw | ConvertFrom-Json
-    $rootAcl = if (Test-Path $DataRoot) { Get-Acl $DataRoot } else { $null }
+    # BUG-144: a new store folder gets the app identity's Modify, as the installer grants each store. Copying the data
+    # root's ACL isn't enough: after the BUG-134 lockdown the root gives the app only read.
+    $pool = Get-Item "IIS:\AppPools\$AppPoolName"
+    $appIdentity = if ($pool.processModel.identityType -eq 'SpecificUser' -and $pool.processModel.userName) {
+        $pool.processModel.userName } else { "IIS APPPOOL\$AppPoolName" }
     foreach ($m in $missingData) {
         $value = Join-Path $DataRoot $m.Suffix
         $node = $liveCfg; $parts = $m.Path.Split(':')
@@ -411,12 +415,15 @@ if ($missingData.Count -gt 0) {
             $node = $node.($parts[$i])
         }
         if ($node.PSObject.Properties[$parts[-1]]) { $node.($parts[-1]) = $value } else { $node | Add-Member -NotePropertyName $parts[-1] -NotePropertyValue $value }
-        # A folder setting gets its folder; a file setting (e.g. a key path) gets its parent folder. New folders
-        # take the data root's ACL, which the installer restricted to the app pool identity and admins.
+        # A folder setting gets its folder; a file setting (e.g. a key path) gets its parent folder. New folders inherit
+        # the data root's ACL (SYSTEM, Administrators, the app's read) and add the app's Modify.
         $dir = if ([IO.Path]::GetExtension($value)) { Split-Path -Parent $value } else { $value }
         if (-not (Test-Path $dir)) {
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
-            if ($rootAcl) { Set-Acl -Path $dir -AclObject $rootAcl }
+            $acl = Get-Acl $dir
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $appIdentity, 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+            Set-Acl -Path $dir -AclObject $acl
         }
         Write-Info "$($m.Path) = $value"
     }

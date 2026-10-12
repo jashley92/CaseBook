@@ -169,6 +169,18 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   stopped at `IX_CaseBriefs_OneCurrent`). If that happened, re-run the script (it's idempotent) or apply
   `deploy/sql/casebook-schema-sqlserver.sql` with `sqlcmd -I` yourself.
 
+- **A store folder the upgrade script creates gets the app's write access.** When an upgrade adds a missing
+  data-folder setting it creates the folder; that folder used to copy the data root's permissions, which after the
+  v1.5.2 lockdown give the app only read, so uploads to it failed with "Access denied". It now also grants the app
+  identity Modify, as the installer does for each store. A folder an earlier upgrade created (on an install that began
+  before v1.2.0, typically `report-templates`) may have no grant of its own; after the v1.5.2 `icacls` lockdown, give it
+  one:
+
+  ```
+  icacls "D:\CaseBook-Data
+eport-templates" /grant "CONTOSO\svc-casebook$:(OI)(CI)M"
+  ```
+
 ### v1.5.2
 
 A bug-fix and hardening release with six migrations, applied at startup, and a first start that gives existing
@@ -186,7 +198,8 @@ touch the deployment (the data-root ACL and the app pool's recycling); read the 
   icacls "D:\CaseBook-Data" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "CONTOSO\svc-casebook$:(OI)(CI)RX"
   ```
 
-  The app identity's Modify grants on the store folders are explicit and stay. Check that a backup agent reading the
+  The app identity's Modify grants on the store folders the installer made are explicit and stay (for a folder an
+  upgrade created, see the next release's notes). Check that a backup agent reading the
   data root runs as SYSTEM or holds the backup privilege.
 
 - **STIX exports are marked with the default TLP.** An indicator with no TLP of its own now carries
