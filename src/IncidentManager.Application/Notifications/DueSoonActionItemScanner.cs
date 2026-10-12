@@ -50,7 +50,9 @@ public sealed class DueSoonActionItemScanner(
             OwnerUserId = TaskReminderAudience.Owner(r.IsRestricted, r.Item.IncidentCommanderUserId, r.Team, r.Item.OwnerUserId, users, roles)
         }).ToList();
 
-        // Only alert on items not already reminded for this due date (once per approaching deadline).
+        // Only alert on items not already reminded for this due date (once per approaching deadline). BUG-147: the
+        // marks are kept only if the sends finish.
+        using var marks = NotificationMarkBatch.Begin();
         var newly = dueSoon.Where(i => tracker.TryMarkNotified(i.ActionItemId, i.DueAtUtc)).ToList();
         if (newly.Count > 0)
         {
@@ -64,6 +66,7 @@ public sealed class DueSoonActionItemScanner(
             }
         }
 
+        marks.Complete();
         return newly.Count;
     }
 }

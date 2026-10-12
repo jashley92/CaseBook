@@ -54,6 +54,8 @@ public sealed class NotificationDeadlineScanner(
                 c.Assignments.Select(a => a.UserId).ToList()))
             .ToListAsync(ct);
 
+        // BUG-147: the marks below are kept only if the sends finish.
+        using var marks = NotificationMarkBatch.Begin();
         var reminders = new List<DeadlineReminder>();
         foreach (var cand in candidates.OrderBy(c => c.CaseNumber, StringComparer.Ordinal))
         {
@@ -84,6 +86,7 @@ public sealed class NotificationDeadlineScanner(
             }
         }
 
+        marks.Complete();
         return reminders.Count;
     }
 

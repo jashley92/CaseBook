@@ -3750,3 +3750,32 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012173001_NotificationMarkConfirmed'
+)
+BEGIN
+    ALTER TABLE [NotificationMarks] ADD [ConfirmedAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012173001_NotificationMarkConfirmed'
+)
+BEGIN
+    EXEC(N'    UPDATE NotificationMarks SET ConfirmedAtUtc = SentAtUtc');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012173001_NotificationMarkConfirmed'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261012173001_NotificationMarkConfirmed'', N''10.0.12'');');
+END;
+
+COMMIT;
+GO
+

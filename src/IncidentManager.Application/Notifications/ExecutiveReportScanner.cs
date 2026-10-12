@@ -59,6 +59,7 @@ public sealed class ExecutiveReportScanner(
         if ((now - current.StartUtc(tz)).TotalDays >= SendWindowDays) return false;
 
         var period = current.Previous;
+        using var marks = NotificationMarkBatch.Begin();   // BUG-147: confirmed once the report has gone
         if (!tracker.TryMarkSent(period)) return false;
 
         // BUG-08: a quarter counts as sent only once its report is built and delivered.
@@ -76,6 +77,7 @@ public sealed class ExecutiveReportScanner(
             throw;
         }
         if (watch.Failed) { tracker.Forget(period); return false; }
+        marks.Complete();
         return true;
     }
 

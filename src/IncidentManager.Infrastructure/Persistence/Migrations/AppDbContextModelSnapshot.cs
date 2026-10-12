@@ -1823,6 +1823,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("ConfirmedAtUtc")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("SentAtUtc")
                         .HasColumnType("INTEGER");
 

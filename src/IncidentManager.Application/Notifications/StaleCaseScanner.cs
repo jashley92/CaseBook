@@ -62,6 +62,8 @@ public sealed class StaleCaseScanner(
                 c.Assignments.Select(a => a.UserId).ToList()))
             .ToListAsync(ct);
 
+        // BUG-147: the marks below are kept only if the sends finish.
+        using var marks = NotificationMarkBatch.Begin();
         var reminders = new List<StaleCaseReminder>();
         foreach (var cand in candidates)
         {
@@ -97,6 +99,7 @@ public sealed class StaleCaseScanner(
             }
         }
 
+        marks.Complete();
         return reminders.Count;
     }
 

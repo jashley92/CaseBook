@@ -12,7 +12,9 @@ namespace IncidentManager.Infrastructure.Notifications;
 /// active reminder, digest and the executive report. Read once into memory, then written through. The key is the
 /// table's primary key, so when two app processes overlap (BUG-137) only the one whose insert lands sends; the other
 /// reads the clash as "already sent". If the database can't be reached the mark is kept in memory only and a warning
-/// logged: a reminder sent twice is better than one never sent.
+/// logged: a reminder sent twice is better than one never sent. BUG-147: a mark recorded inside a
+/// <see cref="NotificationMarkBatch"/> is written unconfirmed and confirmed when the scan's sends are done; unconfirmed
+/// marks found at start-up were left by a process that stopped mid-send, and are cleared.
 /// </summary>
 public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock clock, ILogger<DbNotificationMarks> log)
     : INotificationMarks
@@ -29,13 +31,16 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
         {
             if (!Loaded().Add(key)) return false;
         }
+        var batch = NotificationMarkBatch.Current;
         try
         {
             using var scope = scopes.CreateScope();
             using var db = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext();
             PruneIfDue(db);
-            db.NotificationMarks.Add(new NotificationMark { Key = key, SentAtUtc = clock.UtcNow });
+            var now = clock.UtcNow;
+            db.NotificationMarks.Add(new NotificationMark { Key = key, SentAtUtc = now, ConfirmedAtUtc = batch is null ? now : null });
             db.SaveChanges();
+            batch?.Claimed(this, key);
             return true;
         }
         catch (DbUpdateException) when (Exists(key))
@@ -45,6 +50,7 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
         catch (Exception ex)
         {
             log.LogWarning(ex, "Couldn't record a sent notification; a restart may send it again.");
+            batch?.Claimed(this, key);
             return true;
         }
     }
@@ -53,6 +59,7 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
     {
         if (key.Length > NotificationMark.MaxKeyLength) key = key[..NotificationMark.MaxKeyLength];
         lock (_gate) Loaded().Remove(key);
+        NotificationMarkBatch.Current?.Released(this, key);
         try
         {
             using var scope = scopes.CreateScope();
@@ -62,6 +69,24 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
         catch (Exception ex)
         {
             log.LogWarning(ex, "Couldn't clear an undelivered notification's mark; it may not be retried after a restart.");
+        }
+    }
+
+    public void Confirm(IReadOnlyCollection<string> keys)
+    {
+        if (keys.Count == 0) return;
+        try
+        {
+            using var scope = scopes.CreateScope();
+            using var db = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext();
+            var now = clock.UtcNow;
+            foreach (var chunk in keys.Chunk(200))
+                db.NotificationMarks.Where(m => chunk.Contains(m.Key) && m.ConfirmedAtUtc == null)
+                    .ExecuteUpdate(s => s.SetProperty(m => m.ConfirmedAtUtc, now));
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Couldn't confirm sent notifications; a restart may send them again.");
         }
     }
 
@@ -89,6 +114,11 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
             using var scope = scopes.CreateScope();
             using var db = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext();
             PruneIfDue(db);
+            // BUG-147: read once, before this process records anything, so an unconfirmed mark here is a send another
+            // process claimed and never finished. Cleared, so it's sent (twice at worst, rather than never).
+            var stranded = db.NotificationMarks.Where(m => m.ConfirmedAtUtc == null).ExecuteDelete();
+            if (stranded > 0)
+                log.LogWarning("Cleared {Count} notification mark(s) left by a send that didn't finish; they'll be sent again.", stranded);
             _keys = db.NotificationMarks.AsNoTracking().Select(m => m.Key).ToHashSet(StringComparer.Ordinal);
             _keys.UnionWith(_unsaved);
             return _keys;

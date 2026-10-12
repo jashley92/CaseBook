@@ -15,4 +15,10 @@ public class NotificationMark
 
     public string Key { get; set; } = "";
     public DateTimeOffset SentAtUtc { get; set; }
+
+    /// <summary>
+    /// BUG-147: when the scan that recorded the mark finished its sends. Null while the send is in flight; a mark still
+    /// unconfirmed when the app next starts was left by a process that stopped mid-send, and is cleared so it's sent.
+    /// </summary>
+    public DateTimeOffset? ConfirmedAtUtc { get; set; }
 }

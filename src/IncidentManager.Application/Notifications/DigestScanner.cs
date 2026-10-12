@@ -44,7 +44,9 @@ public sealed class DigestScanner(
             if (overdue.Count == 0 && today.Count == 0 && thisWeek.Count == 0)
                 continue; // nothing worth a digest → don't send, and don't consume the period slot
 
-            // Once per period: only mark (and thus consume the slot) when we actually have something to send.
+            // Once per period: only mark (and thus consume the slot) when we actually have something to send. BUG-147:
+            // the mark is kept only if the send finishes.
+            using var marks = NotificationMarkBatch.Begin();
             if (!tracker.TryMarkSent(sub.UserId, sub.Cadence, PeriodKey(sub.Cadence, ZonedDays.Of(now, tz))))
                 continue;
 
@@ -52,6 +54,7 @@ public sealed class DigestScanner(
             using var watch = DeliveryWatch.Begin();
             await notifications.OnDigestAsync(new UserDigest(sub.UserId, sub.Cadence, overdue, today, thisWeek), ct);
             if (watch.Failed) { tracker.Forget(sub.UserId, sub.Cadence, PeriodKey(sub.Cadence, ZonedDays.Of(now, tz))); continue; }
+            marks.Complete();
             sent++;
         }
 

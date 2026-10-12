@@ -56,20 +56,27 @@ public sealed class OverdueActionItemScanner(
             OwnerUserId = TaskReminderAudience.Owner(r.IsRestricted, r.Item.IncidentCommanderUserId, r.Team, r.Item.OwnerUserId, users, roles)
         }).ToList();
 
-        // Only alert on items not already reminded for this due date (once per episode).
-        var newly = overdue.Where(i => tracker.TryMarkNotified(i.ActionItemId, i.DueAtUtc)).ToList();
-        // BUG-08: a reminder or escalation that wasn't delivered is un-marked, so the next scan sends it again.
-        if (newly.Count > 0)
+        // Only alert on items not already reminded for this due date (once per episode). BUG-147: the marks are kept
+        // only if the sends finish.
+        List<OverdueActionItem> newly;
+        using (var notifiedMarks = NotificationMarkBatch.Begin())
         {
-            using var watch = DeliveryWatch.Begin();
-            await notifications.OnActionItemsOverdueAsync(newly, ct);
-            foreach (var i in newly.Where(i => watch.ShouldRetry(i.ActionItemId.ToString())).ToList())
+            newly = overdue.Where(i => tracker.TryMarkNotified(i.ActionItemId, i.DueAtUtc)).ToList();
+            // BUG-08: a reminder or escalation that wasn't delivered is un-marked, so the next scan sends it again.
+            if (newly.Count > 0)
             {
-                tracker.ForgetNotified(i.ActionItemId, i.DueAtUtc);
-                newly.Remove(i);
+                using var watch = DeliveryWatch.Begin();
+                await notifications.OnActionItemsOverdueAsync(newly, ct);
+                foreach (var i in newly.Where(i => watch.ShouldRetry(i.ActionItemId.ToString())).ToList())
+                {
+                    tracker.ForgetNotified(i.ActionItemId, i.DueAtUtc);
+                    newly.Remove(i);
+                }
             }
+            notifiedMarks.Complete();
         }
 
+        using var escalationMarks = NotificationMarkBatch.Begin();
         var escalated = escalation is null ? [] : Escalations(overdue, escalation, now);
         if (escalated.Count > 0)
         {
@@ -80,6 +87,7 @@ public sealed class OverdueActionItemScanner(
             escalated = escalated.Except(retry).ToList();
         }
 
+        escalationMarks.Complete();
         return newly.Count + escalated.Count;
     }
 

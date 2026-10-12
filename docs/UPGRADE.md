@@ -163,6 +163,13 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ### Next release
 
+- **A reminder is recorded as sent only once its send has finished.** v1.5.2 kept the scans' sent marks in the
+  database (BUG-95), but a mark was written before the send, so a scan that stopped part-way (the app shutting down
+  mid-send, or a crash) left marks for reminders that never went out, and they were never sent. A mark is now a claim
+  until the scan's sends finish; a scan that throws drops its claims, and claims left by a process that stopped are
+  cleared at the next start, so those reminders go out (one migration, `NotificationMarks.ConfirmedAtUtc`; existing
+  marks count as sent).
+
 - **A queued import that failed part-way carries on where it stopped.** When applying a submission from the import
   queue failed after writing some items, it went back to the queue (BUG-116) but reopening it re-read the original
   document, so applying it again wrote the summary note, timeline entries and tasks a second time. The reviewed

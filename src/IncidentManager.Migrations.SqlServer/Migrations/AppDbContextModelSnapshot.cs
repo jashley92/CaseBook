@@ -1829,6 +1829,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<DateTimeOffset?>("ConfirmedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset>("SentAtUtc")
                         .HasColumnType("datetimeoffset");
 

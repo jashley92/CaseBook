@@ -61,6 +61,29 @@ public sealed class DueSoonActionItemScannerTests : IDisposable
         }
     }
 
+    private sealed class ThrowingNotifications : ICaseNotifications
+    {
+        public Task OnReclassifiedAsync(Case c, Classification? from, Classification to, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnAssignedAsync(Case c, string a, string b, CaseAssignmentRole role, string by, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnActionItemsOverdueAsync(IReadOnlyList<OverdueActionItem> items, CancellationToken ct = default) => Task.CompletedTask;
+        public Task OnActionItemsDueSoonAsync(IReadOnlyList<DueSoonActionItem> items, int leadHours, CancellationToken ct = default) =>
+            throw new OperationCanceledException("the app is shutting down");
+    }
+
+    [Fact]
+    public async Task A_scan_that_throws_mid_send_keeps_no_marks_so_the_next_scan_sends(/* BUG-147 */)
+    {
+        SeedCaseWithItems();
+        var tracker = new DueSoonActionItemTracker();
+
+        var failed = async () => await NewScanner(new ThrowingNotifications(), tracker).ScanAndNotifyAsync(24);
+        await failed.Should().ThrowAsync<OperationCanceledException>();
+
+        var notifications = new CapturingNotifications();
+        (await NewScanner(notifications, tracker).ScanAndNotifyAsync(24)).Should().Be(1);
+        notifications.Received.Should().ContainSingle().Which.Title.Should().Be("Due soon open");
+    }
+
     private void SeedCaseWithItems()
     {
         using var db = NewContext();

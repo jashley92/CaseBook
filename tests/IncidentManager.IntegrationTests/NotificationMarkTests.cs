@@ -71,6 +71,49 @@ public sealed class NotificationMarkTests : IDisposable
         db.NotificationMarks.Should().ContainSingle("marks older than 180 days are pruned");
     }
 
+    [Fact]
+    public void A_mark_claimed_by_a_scan_is_kept_only_once_the_scan_completes(/* BUG-147 */)
+    {
+        var done = Guid.NewGuid();
+        var abandoned = Guid.NewGuid();
+        var tracker = new StaleCaseTracker(Process());
+
+        using (var batch = Application.Abstractions.NotificationMarkBatch.Begin())
+        {
+            tracker.TryMarkNotified(done, _clock.UtcNow).Should().BeTrue();
+            batch.Complete();
+        }
+        using (Application.Abstractions.NotificationMarkBatch.Begin())
+            tracker.TryMarkNotified(abandoned, _clock.UtcNow).Should().BeTrue();   // the scan threw before completing
+
+        var restarted = new StaleCaseTracker(Process());
+        restarted.TryMarkNotified(done, _clock.UtcNow).Should().BeFalse("its send finished");
+        restarted.TryMarkNotified(abandoned, _clock.UtcNow).Should().BeTrue("its send never finished");
+    }
+
+    [Fact]
+    public async Task A_claim_left_by_a_process_that_stopped_mid_send_is_cleared_at_the_next_start(/* BUG-147 */)
+    {
+        var c = Guid.NewGuid();
+        // A scan claims the mark and the process dies before the send returns: the batch is never completed or disposed.
+        await Task.Run(() =>
+        {
+            Application.Abstractions.NotificationMarkBatch.Begin();
+            new StaleCaseTracker(Process()).TryMarkNotified(c, _clock.UtcNow).Should().BeTrue();
+        });
+        using (var db = _services.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext())
+            db.NotificationMarks.Single().ConfirmedAtUtc.Should().BeNull();
+
+        new StaleCaseTracker(Process()).TryMarkNotified(c, _clock.UtcNow).Should().BeTrue("the restart clears the stranded claim");
+    }
+
+    [Fact]
+    public void A_mark_recorded_outside_a_scan_batch_is_confirmed_at_once()
+    {
+        new DigestTracker(Process()).TryMarkSent("ana", Domain.Enums.DigestCadence.Daily, "2026-10-12").Should().BeTrue();
+        new DigestTracker(Process()).TryMarkSent("ana", Domain.Enums.DigestCadence.Daily, "2026-10-12").Should().BeFalse();
+    }
+
     public void Dispose()
     {
         _services.Dispose();
