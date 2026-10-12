@@ -161,7 +161,10 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ## Notes
 
-### Next release (unreleased)
+### v1.5.1
+
+A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung
+climbed, which changes what New case asks for; read the gate note below before upgrading.
 
 - **One index migration** (`CaseEntityIndexFitsSqlServer`): replaces `IX_CaseEntities_CaseId_Type_Value` with
   `IX_CaseEntities_CaseId_Type`, carrying `Value` as an included column on SQL Server. The old index's key could
