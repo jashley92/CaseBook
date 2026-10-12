@@ -72,6 +72,15 @@ public class ComplianceBundlePackTests
         files["signing-public-key.pem"].Should().Contain("BEGIN PUBLIC KEY");
     }
 
+    [Fact]
+    public void The_guide_warns_that_the_audit_csv_is_unguarded_for_spreadsheets(/* BUG-79 */)
+    {
+        var files = Unzip(ComplianceBundlePack.Zip(Model(ChainVerificationResult.Valid, Seal())));
+
+        files["VERIFY.txt"].Should().Contain("NOT guarded").And.Contain("formulas enabled");
+        files["manifest.txt"].Should().Contain("not in a spreadsheet");
+    }
+
     // An examiner recomputing hashes from audit-chain.csv by VERIFY.txt's rule must get every EntryHash, including
     // rows that carry a reason or an entity label (both are in the hash when present).
     [Fact]

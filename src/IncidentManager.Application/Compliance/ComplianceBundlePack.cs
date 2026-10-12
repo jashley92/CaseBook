@@ -93,6 +93,8 @@ public static class ComplianceBundlePack
         Line("--------");
         Line("manifest.txt            This summary.");
         Line("audit-chain.csv         Every audit entry in range, with per-entry and previous hashes.");
+        Line("                        Byte-exact for verification: read it as text, not in a spreadsheet");
+        Line("                        (see VERIFY.txt).");
         Line("seals.csv               The signed seals covering this range, with verification results.");
         Line("signing-public-key.pem  Public key to independently verify the seal signatures.");
         if (m.RetiredKeys is { Count: > 0 } retired)
@@ -162,6 +164,14 @@ public static class ComplianceBundlePack
         Line("establish that the record is intact and was sealed by our key.");
         Line();
         Line("1) AUDIT CHAIN  (audit-chain.csv)");
+        // BUG-79: every other export guards cells against spreadsheet formulas; this one can't without breaking the hashes.
+        Line("   This file holds every field exactly as it was hashed, so cells are NOT guarded");
+        Line("   against spreadsheet formulas the way CaseBook's other exports are. A field recorded");
+        Line("   from outside (an email subject, a file name) can start with = + - or @. Don't open");
+        Line("   it in Excel or another spreadsheet with formulas enabled: read it with a CSV parser");
+        Line("   or a text editor, or import it into a spreadsheet with every column set to Text.");
+        Line("   Changing a single character (Excel adding a leading apostrophe, say) breaks that row's hash.");
+        Line();
         Line("   Each row is one append-only entry. Its EntryHash is:");
         Line();
         Line("       EntryHash = SHA-256( canonical + \"|\" + PrevHash )   (lowercase hex)");
