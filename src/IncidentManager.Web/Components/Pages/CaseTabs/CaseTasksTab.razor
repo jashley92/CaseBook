@@ -388,7 +388,7 @@ else
                             <div class="row g-2 align-items-end">
                                 <div class="col-md-4">
                                     <label class="form-label small mb-0" for="task-edit-title">Task</label>
-                                    <input id="task-edit-title" class="form-control form-control-sm" @bind="_editTitle" @bind:event="oninput" />
+                                    <input id="task-edit-title" class="form-control form-control-sm" maxlength="@ActionItem.MaxTitleLength" @bind="_editTitle" @bind:event="oninput" />
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label small mb-0" for="task-edit-owner">Owner</label>
@@ -402,7 +402,7 @@ else
                                     </select>
                                     @if (_editOwner == ExternalOwnerSentinel)
                                     {
-                                        <input class="form-control form-control-sm mt-1" aria-label="External owner name" @bind="_editOwnerExternal" @bind:event="oninput"
+                                        <input class="form-control form-control-sm mt-1" maxlength="@ActionItem.MaxOwnerLength" aria-label="External owner name" @bind="_editOwnerExternal" @bind:event="oninput"
                                                placeholder="External owner name" />
                                     }
                                 </div>
@@ -444,7 +444,7 @@ else
                                 }
                                 <div class="col-12">
                                     <label class="form-label small mb-0" for="task-edit-desc">Description <span class="text-muted">(optional)</span></label>
-                                    <textarea id="task-edit-desc" class="form-control form-control-sm" rows="2" @bind="_editDescription" @bind:event="oninput"></textarea>
+                                    <textarea id="task-edit-desc" class="form-control form-control-sm" rows="2" maxlength="@ActionItem.MaxDescriptionLength" @bind="_editDescription" @bind:event="oninput"></textarea>
                                 </div>
                                 <div class="col-12 d-flex gap-2">
                                     <button class="btn btn-sm btn-primary" @onclick="SaveEdit"

@@ -7,6 +7,8 @@ namespace IncidentManager.Domain.Entities;
 public class ActionItem : AuditableEntity, IHashableEntity
 {
     public const int MaxTitleLength = 400;
+    public const int MaxOwnerLength = 200;
+    public const int MaxDescriptionLength = 4000;
 
     public Guid CaseId { get; set; }
     public string Title { get; set; } = string.Empty;

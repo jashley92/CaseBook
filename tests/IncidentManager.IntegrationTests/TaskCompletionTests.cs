@@ -102,6 +102,44 @@ public sealed class TaskCompletionTests : IDisposable
         await noResult.Should().ThrowAsync<ArgumentException>().WithMessage("*result*");
     }
 
+    [Fact]
+    public async Task A_done_or_cancelled_task_cannot_be_completed_again(/* BUG-49 */)
+    {
+        var (svc, caseId, taskId) = await CaseWithTask();
+        var firstAt = _clock.UtcNow;
+        await svc.CompleteActionItemAsync(caseId, taskId, null, "Blocked", null);
+        _clock.UtcNow = _clock.UtcNow.AddHours(1);
+
+        await svc.Invoking(s => s.CompleteActionItemAsync(caseId, taskId, null, "Blocked again", null))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*already done*");
+        var task = (await svc.GetDetailAsync(caseId))!.ActionItems.Single();
+        task.CompletedAtUtc.Should().Be(firstAt);
+        await using (var db = new AppDbContext(Options()))
+            (await db.ActionItemComments.CountAsync(x => x.ActionItemId == taskId)).Should().Be(1);
+
+        await svc.AddActionItemAsync(caseId, "Dropped", null, null);
+        var dropped = (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Title == "Dropped");
+        await svc.SetActionItemStatusAsync(caseId, dropped.Id, ActionItemStatus.Cancelled);
+        await svc.Invoking(s => s.CompleteActionItemAsync(caseId, dropped.Id, null, null, null))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*cancelled*");
+    }
+
+    [Fact]
+    public async Task An_edit_keeps_a_task_within_its_limits(/* BUG-50 */)
+    {
+        var (svc, caseId, taskId) = await CaseWithTask();
+
+        await svc.Invoking(s => s.UpdateActionItemAsync(caseId, taskId, new string('t', 401), null, null, ActionItemStatus.Open, null))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*400*");
+        await svc.Invoking(s => s.UpdateActionItemAsync(caseId, taskId, "Title", new string('o', 201), null, ActionItemStatus.Open, null))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*owner*");
+        await svc.Invoking(s => s.UpdateActionItemAsync(caseId, taskId, "Title", null, null, ActionItemStatus.Open, new string('d', 4001)))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*description*");
+        await svc.Invoking(s => s.SetActionItemOwnerAsync(caseId, taskId, new string('o', 201)))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*owner*");
+        (await svc.GetDetailAsync(caseId))!.ActionItems.Single().Title.Should().Be("Block look-alike domains");
+    }
+
     // --- INV-13: task kinds ---
 
     [Fact]

@@ -2112,6 +2112,7 @@ public sealed class CaseService
         if (title.Length == 0) throw new ArgumentException("Say what needs doing.");
         if (title.Length > ActionItem.MaxTitleLength)
             throw new ArgumentException($"Keep the task to {ActionItem.MaxTitleLength} characters or fewer.");
+        owner = CleanTaskOwner(owner);
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         c.ActionItems.Add(new ActionItem
@@ -2412,6 +2413,10 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, caseId, ct);
         var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
                    ?? throw new InvalidOperationException("Task not found.");
+        // BUG-49: completing records who and when; doing it again would overwrite that and add a second result.
+        if (item.Status == ActionItemStatus.Done) throw new InvalidOperationException("This task is already done.");
+        if (item.Status == ActionItemStatus.Cancelled)
+            throw new InvalidOperationException("This task was cancelled. Reopen it to mark it done.");
         // HR-02: a task that follows up a question in the brief is done when the question has an answer.
         if (item.FollowsUpQuestion && text is null)
             await EnsureQuestionAnsweredAsync(db, item, ct);
@@ -2521,6 +2526,13 @@ public sealed class CaseService
         Require();
         var cleanTitle = (title ?? "").Trim();
         if (string.IsNullOrWhiteSpace(cleanTitle)) throw new ArgumentException("A task needs a title.");
+        // BUG-50: the same limits as adding a task (and the columns), so an edit can't fail on save.
+        if (cleanTitle.Length > ActionItem.MaxTitleLength)
+            throw new ArgumentException($"Keep the task to {ActionItem.MaxTitleLength} characters or fewer.");
+        var cleanOwner = CleanTaskOwner(owner);
+        var cleanDescription = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        if (cleanDescription is { Length: > ActionItem.MaxDescriptionLength })
+            throw new ArgumentException($"Keep the description to {ActionItem.MaxDescriptionLength:N0} characters or fewer.");
 
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, caseId, ct);
@@ -2529,9 +2541,9 @@ public sealed class CaseService
 
         var wasStatus = item.Status;
         item.Title = cleanTitle;
-        item.Owner = string.IsNullOrWhiteSpace(owner) ? null : owner.Trim();
+        item.Owner = cleanOwner;
         item.DueAtUtc = dueAtUtc;
-        item.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        item.Description = cleanDescription;
         if (status == ActionItemStatus.Done && item.Status != ActionItemStatus.Done)
             await EnsureQuestionAnsweredAsync(db, item, ct);
         item.CompletedBy = status == ActionItemStatus.Done ? (item.Status == ActionItemStatus.Done ? item.CompletedBy : _user.UserId) : null;   // HR-02
@@ -2552,6 +2564,15 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    // A task's owner: a directory id or an external name, null for Unassigned. BUG-50: within the column.
+    private static string? CleanTaskOwner(string? owner)
+    {
+        var o = string.IsNullOrWhiteSpace(owner) ? null : owner.Trim();
+        if (o is { Length: > ActionItem.MaxOwnerLength })
+            throw new ArgumentException($"Keep the owner to {ActionItem.MaxOwnerLength} characters or fewer.");
+        return o;
+    }
+
     /// <summary>HR-17: how a cancelled task's reason is kept (a task comment).</summary>
     public const string CancelledPrefix = "Cancelled: ";
 
@@ -2565,7 +2586,7 @@ public sealed class CaseService
         var c = await LoadTrackedAsync(db, caseId, ct);
         var item = c.ActionItems.FirstOrDefault(a => a.Id == actionItemId)
                    ?? throw new InvalidOperationException("Task not found.");
-        item.Owner = string.IsNullOrWhiteSpace(owner) ? null : owner.Trim();
+        item.Owner = CleanTaskOwner(owner);
         item.ModifiedBy = _user.UserId;
         item.ModifiedAtUtc = _clock.UtcNow;
         await db.SaveChangesAsync(ct);
