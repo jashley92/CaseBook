@@ -237,6 +237,9 @@ builder.Services.AddAuthorization(options =>
     options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
 });
 builder.Services.AddCascadingAuthenticationState();
+// BUG-20: with Windows sign-in, a personal API token's owner is checked in AD (enabled, current groups) on use.
+if (useWindows)
+    builder.Services.AddSingleton<IncidentManager.Application.ApiTokens.ITokenOwnerCheck, IncidentManager.Web.Security.AdTokenOwnerCheck>();
 // S-10: re-derive an open session's roles/permissions from the current role directory every couple of minutes, so
 // removing an AD mapping or editing a role reaches signed-in users without them reconnecting.
 builder.Services.AddSingleton(sp => new SessionPermissionRefresher(

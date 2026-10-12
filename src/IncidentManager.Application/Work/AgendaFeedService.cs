@@ -21,9 +21,12 @@ public sealed class AgendaFeedService
     private readonly IAgendaFeedTokens _tokens;
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
+    private readonly ApiTokens.ITokenOwnerCheck? _owners;
 
-    public AgendaFeedService(IAppDbContextFactory factory, IAgendaFeedTokens tokens, ICurrentUser user, IClock clock)
+    public AgendaFeedService(IAppDbContextFactory factory, IAgendaFeedTokens tokens, ICurrentUser user, IClock clock,
+        ApiTokens.ITokenOwnerCheck? owners = null)
     {
+        _owners = owners;
         _factory = factory;
         _tokens = tokens;
         _user = user;
@@ -69,6 +72,9 @@ public sealed class AgendaFeedService
         var row = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Sid == userId, ct);
         if (row?.FeedLinkIssuedAtUtc is not { } current || ToSecond(current) != issued) return null;
         if (string.IsNullOrWhiteSpace(row.RolesCsv)) return null;
+        // BUG-20: like a personal API token, the feed stops when its owner is disabled or holds no CaseBook role in AD.
+        if (_owners is not null && await _owners.CheckAsync(userId, ct) is { } access && (!access.Active || access.Roles.Count == 0))
+            return null;
         return userId;
     }
 

@@ -36,6 +36,7 @@ public sealed class ApiTokenService
     private readonly IAuditWriter _audit;
     private readonly ISecurityEventSink? _siem;
     private readonly IUserDirectory? _users;
+    private readonly ITokenOwnerCheck? _owners;
 
     /// <summary>S-11: the longest a personal token may live — it acts as a person, whose access can change.</summary>
     public static readonly TimeSpan MaxPersonalLifetime = TimeSpan.FromDays(90);
@@ -44,8 +45,10 @@ public sealed class ApiTokenService
     public static readonly TimeSpan MaxSystemLifetime = TimeSpan.FromDays(365);
 
     public ApiTokenService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
-        IRoleDirectory directory, IAuditWriter audit, ISecurityEventSink? siem = null, IUserDirectory? users = null)
+        IRoleDirectory directory, IAuditWriter audit, ISecurityEventSink? siem = null, IUserDirectory? users = null,
+        ITokenOwnerCheck? owners = null)
     {
+        _owners = owners;
         _factory = factory;
         _user = user;
         _clock = clock;
@@ -72,7 +75,15 @@ public sealed class ApiTokenService
         // latest sign-in, per the user mirror). An owner who has lost a role loses it on their tokens too; an owner
         // the directory no longer knows can't authenticate by token at all.
         var roles = row.GetRoles();
-        if (row.Kind == ApiTokenKind.Personal && _users is not null)
+        // BUG-20: ask the directory of record when it can answer, since the mirror only moves when the owner signs in.
+        if (row.Kind == ApiTokenKind.Personal && _owners is not null
+            && await _owners.CheckAsync(row.OwnerUserId, ct) is { } access)
+        {
+            if (!access.Active) return null;
+            roles = roles.Where(access.Roles.Contains).ToList();
+            if (roles.Count == 0) return null;
+        }
+        else if (row.Kind == ApiTokenKind.Personal && _users is not null)
         {
             var owner = _users.Resolve(row.OwnerUserId);
             if (owner is null) return null;

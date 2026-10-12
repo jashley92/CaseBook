@@ -68,7 +68,7 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
 
     /// <summary>The account name(s) for a group SID: "DOMAIN\Group" and the bare "Group". Empty for a
     /// value that isn't a SID (already a name) or that can't be resolved.</summary>
-    private static IEnumerable<string> NamesForSid(string value)
+    internal static IEnumerable<string> NamesForSid(string value)
     {
         if (!value.StartsWith("S-1-", StringComparison.OrdinalIgnoreCase))
             yield break;

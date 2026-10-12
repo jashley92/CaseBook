@@ -265,5 +265,64 @@ public sealed class ApiTokenTests : IDisposable
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
+    /// <summary>Maps the group "SOC-Commanders" to Analyst + IncidentCommander and "SOC-Analysts" to Analyst.</summary>
+    private sealed class GroupRoleDirectory : IRoleDirectory
+    {
+        public IReadOnlySet<Permission> PermissionsForRoles(IEnumerable<string> roleNames) => RoleDefinitions.PermissionsForRoleNames(roleNames);
+        public IReadOnlySet<string> RolesForGroups(IEnumerable<string> adGroups)
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var g in adGroups)
+            {
+                if (g == "S-1-5-21-COMMANDERS") { set.Add("Analyst"); set.Add("IncidentCommander"); }
+                if (g == "S-1-5-21-ANALYSTS") set.Add("Analyst");
+            }
+            return set;
+        }
+        public void Invalidate() { }
+    }
+
+    [Fact]
+    public async Task A_personal_token_follows_its_owners_account_in_AD()
+    {
+        // BUG-20: the mirror only moves when the owner signs in, so a leaver kept their roles on their tokens for up to 90 days.
+        await using var db = NewContext();
+        AdTokenOwnerCheck.AccountGroups? account = new(true, ["S-1-5-21-COMMANDERS"]);
+        var lookups = 0;
+        var adDown = false;
+        var ad = new AdTokenOwnerCheck(new GroupRoleDirectory(), _clock, lookup: _ =>
+        {
+            lookups++;
+            if (adDown) throw new InvalidOperationException("The server is not operational.");
+            return account;
+        });
+        var owner = Analyst();
+        owner.RoleSet = [AppRole.Analyst, AppRole.IncidentCommander];
+        var svc = new ApiTokenService(NewFactory(owner), owner, _clock, new FakeRoleDirectory(),
+            new AuditWriter(NewFactory(owner), _hasher, owner, _clock), users: new MirrorDirectory(), owners: ad);
+        var token = (await svc.CreatePersonalAsync("mine", ["Analyst", "IncidentCommander"], _clock.UtcNow.AddDays(30))).Plaintext;
+
+        (await svc.AuthenticateAsync(token))!.Permissions.Should().Contain(Permission.ApproveReports);
+
+        // Removed from the commanders group: once the cached answer is stale, the token keeps Analyst only.
+        account = new(true, ["S-1-5-21-ANALYSTS"]);
+        (await svc.AuthenticateAsync(token))!.Permissions.Should().Contain(Permission.ApproveReports, "the answer is reused for 15 minutes");
+        lookups.Should().Be(1);
+        _clock.UtcNow += AdTokenOwnerCheck.Fresh;
+        (await svc.AuthenticateAsync(token))!.Permissions.Should().Contain(Permission.EditCases).And.NotContain(Permission.ApproveReports);
+
+        // AD unreachable: the last answer stands for up to a day, then the token is refused rather than trusted.
+        adDown = true;
+        _clock.UtcNow += AdTokenOwnerCheck.Fresh;
+        (await svc.AuthenticateAsync(token)).Should().NotBeNull();
+        _clock.UtcNow += AdTokenOwnerCheck.LastKnownLimit;
+        (await svc.AuthenticateAsync(token)).Should().BeNull();
+
+        // Disabled in AD: refused.
+        adDown = false;
+        account = new(false, ["S-1-5-21-ANALYSTS"]);
+        (await svc.AuthenticateAsync(token)).Should().BeNull();
+    }
+
     public void Dispose() => _connection.Dispose();
 }
