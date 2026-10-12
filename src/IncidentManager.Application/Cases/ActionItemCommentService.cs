@@ -66,6 +66,13 @@ public sealed class ActionItemCommentService
         var text = (body ?? "").Trim();
         if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("A comment can't be empty.");
         if (text.Length > 8000) throw new ArgumentException("A comment must be 8000 characters or fewer.");
+        // BUG-110: a task's recorded result and cancel reason are kept as comments with these openings, so a comment
+        // that starts the same way would pass for one (and answer the brief's question the task follows up).
+        if (text.StartsWith(TaskResults.Prefix.TrimEnd(), StringComparison.OrdinalIgnoreCase)
+            || text.StartsWith(CaseService.CancelledPrefix.TrimEnd(), StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException(
+                "A comment can't start with \"Result:\" or \"Cancelled:\", which is how a task's result and cancel reason are kept. " +
+                "Use Mark done to record a result, or reword the comment.");
 
         using var db = _factory.CreateDbContext();
 

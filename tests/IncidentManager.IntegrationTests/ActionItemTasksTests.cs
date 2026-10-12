@@ -54,6 +54,17 @@ public sealed class ActionItemTasksTests : IDisposable
 
     private ActionItemCommentService NewCommentService() => new(NewFactory(), _user, _clock, _dir);
 
+    [Theory]
+    [InlineData("Result: pending")]
+    [InlineData("cancelled: not needed")]
+    public async Task A_comment_cannot_pass_for_a_result_or_a_cancel_reason(string body /* BUG-110 */)
+    {
+        var (caseId, taskId) = await SeededCaseWithTaskAsync();
+
+        await NewCommentService().Invoking(s => s.AddAsync(caseId, taskId, body))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*Mark done*");
+    }
+
     private async Task<(Guid caseId, Guid taskId)> SeededCaseWithTaskAsync()
     {
         await using var db = NewContext();
