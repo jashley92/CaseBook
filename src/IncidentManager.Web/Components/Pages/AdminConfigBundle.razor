@@ -84,11 +84,22 @@
                 }
                 else
                 {
-                    <div class="alert @(_verification.SignedByThisInstance ? "alert-success" : "alert-info") py-2 mb-2">
+                    <div class="alert @(_verification.SignedByThisInstance ? "alert-success" : "alert-warning") py-2 mb-2">
                         <span class="bi bi-shield-check me-1"></span>Signature valid:
                         @(_verification.SignedByThisInstance ? "signed by this instance" : "signed by another instance")
                         (key <code>@Trunc(_verification.KeyId)</code>). Exported by <strong title="@_verification.ExportedBy">@Users.DisplayFor(_verification.ExportedBy)</strong>
                         from <strong>@_verification.SourceHost</strong> on @_verification.ExportedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC.
+                        @if (!_verification.SignedByThisInstance)
+                        {
+                            @* BUG-19: say what the signature does and doesn't prove, before anyone relies on it. *@
+                            <div class="mt-1">This server doesn't hold that key, so the signature shows the bundle wasn't changed after
+                                it was signed, not who signed it: anyone can sign a bundle with a key of their own, and the exporter,
+                                host and date above are part of what was signed. Import it only if it reached you from a source you trust.</div>
+                            <div class="form-check mt-1">
+                                <input class="form-check-input" type="checkbox" id="cfg-trust" @bind="_sourceTrusted" />
+                                <label class="form-check-label" for="cfg-trust">I got this bundle directly from a source I trust</label>
+                            </div>
+                        }
                     </div>
                 }
 
@@ -119,7 +130,8 @@
                                 </tbody>
                             </table>
                         </div>
-                        <button class="btn btn-sm btn-primary" @onclick="Apply" disabled="@(!_verification.SignatureValid || _applying)">
+                        <button class="btn btn-sm btn-primary" @onclick="Apply"
+                                disabled="@(!_verification.SignatureValid || _applying || (!_verification.SignedByThisInstance && !_sourceTrusted))">
                             <span class="bi bi-check2-circle me-1"></span>Apply import (@IncidentManager.Application.Common.Plural.Of(_diff.Changes.Count, "change"))
                         </button>
                     }
@@ -140,6 +152,7 @@
     private ConfigVerification? _verification;
     private ConfigDiff? _diff;
     private bool _applying;
+    private bool _sourceTrusted;   // BUG-19: required for a bundle signed with a key this server doesn't hold
 
     // Above the 8 MB rule-of-thumb on purpose: the bundle carries the Word template library (up to
     // ReportTemplateService.MaxTemplateBytes each, base64-inflated by a third), and only SysAdmins reach this page.
@@ -181,6 +194,7 @@
         _incoming = null;
         _verification = null;
         _diff = null;
+        _sourceTrusted = false;
     }
 
     private async Task Apply()
@@ -189,7 +203,7 @@
         _applying = true;
         try
         {
-            var result = await Config.ImportAsync(_incoming);
+            var result = await Config.ImportAsync(_incoming, _sourceTrusted);
             Toasts.Success($"Import applied: {result.Added} added, {result.Updated} updated.");
             ClearUpload();
             await LoadAsync();

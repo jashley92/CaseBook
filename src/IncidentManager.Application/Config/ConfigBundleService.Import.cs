@@ -153,7 +153,10 @@ public sealed partial class ConfigBundleService
     /// audited.
     /// </summary>
     /// <exception cref="InvalidOperationException">Not a bundle this app reads, or the signature doesn't verify.</exception>
-    public async Task<ConfigImportResult> ImportAsync(ConfigBundleEnvelope envelope, CancellationToken ct = default)
+    /// <param name="sourceTrusted">BUG-19: the administrator confirms the bundle came from a source they trust. Required when
+    /// it's signed with a key this server doesn't hold: the signature is checked against the key inside the bundle, so it
+    /// proves the bundle wasn't changed after signing, not who signed it.</param>
+    public async Task<ConfigImportResult> ImportAsync(ConfigBundleEnvelope envelope, bool sourceTrusted = false, CancellationToken ct = default)
     {
         // S-18: an import can grant roles and AD mappings, so it's asserted here, not just by the Administer page.
         AdminActionPermissions.Require<ConfigBundleService>(_user, _siem);
@@ -163,6 +166,11 @@ public sealed partial class ConfigBundleService
         if (!SignatureValid(envelope))
             throw new InvalidOperationException(
                 "This bundle's signature doesn't verify, so it was altered after export. Nothing was imported.");
+        var foreignKey = !string.Equals(envelope.KeyId, _signer.KeyId, StringComparison.Ordinal);
+        if (foreignKey && !sourceTrusted)
+            throw new InvalidOperationException(
+                "This bundle is signed with a key this server doesn't hold, so its signature can't show who made it. " +
+                "Confirm it came from a source you trust to import it. Nothing was imported.");
 
         var bundle = envelope.Bundle;
         var changedSettings = new List<string>();
@@ -441,7 +449,8 @@ public sealed partial class ConfigBundleService
 
         await db.SaveChangesAsync(ct);
         await _audit.RecordAsync(AuditAction.Update, "ConfigBundle", null, null,
-            $"Imported configuration bundle ({added} added, {updated} updated, {unchanged} unchanged)", ct);
+            $"Imported configuration bundle ({added} added, {updated} updated, {unchanged} unchanged)" +
+            (foreignKey ? $", signed with key {envelope.KeyId} (not this server's), source confirmed trusted" : ""), ct);
 
         // S-18: take effect now (as the settings and roles pages do) rather than at the next restart, and stream each
         // access-affecting change to the SIEM exactly as the per-item pages would, so an import can't hide one.

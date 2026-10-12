@@ -210,6 +210,30 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_bundle_signed_with_another_key_needs_its_source_confirmed()
+    {
+        // BUG-19: the signature is checked against the key in the bundle, so anyone can re-sign an edited bundle with
+        // their own key and it verifies. It proves the bundle is unchanged since signing, not who made it.
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var incoming = live with { DataElements = live.DataElements.Append(new ConfigDataElement("Passport", "Passport", 20, true, false, "US")).ToList() };
+        var other = new RsaSealSigner(Options.Create(new SealSigningOptions { SigningKeyPath = Path.Combine(_workDir, "other.pem"), AllowKeyGeneration = true }));
+        var envelope = new ConfigBundleEnvelope(ConfigBundleJson.FormatTag, ConfigBundleJson.CurrentSchemaVersion, "test", _clock.UtcNow,
+            "someone", "elsewhere", other.Algorithm, other.KeyId, other.PublicKeyPem, other.Sign(ConfigBundleJson.Canonicalize(incoming)), incoming);
+
+        var untrusted = () => svc.ImportAsync(envelope);
+        await untrusted.Should().ThrowAsync<InvalidOperationException>().WithMessage("*doesn't hold*");
+        (await db.DataElements.AsNoTracking().AnyAsync(e => e.Key == "Passport")).Should().BeFalse();
+
+        await svc.ImportAsync(envelope, sourceTrusted: true);
+        (await db.DataElements.AsNoTracking().AnyAsync(e => e.Key == "Passport")).Should().BeTrue();
+        (await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).LastAsync(a => a.EntityType == "ConfigBundle"))
+            .Summary.Should().Contain(other.KeyId).And.Contain("source confirmed trusted");
+    }
+
+    [Fact]
     public async Task Reimporting_an_unchanged_bundle_shows_no_changes()
     {
         await using var db = NewContext();
