@@ -78,9 +78,9 @@ public sealed class ReportTemplateService
             CreatedBy = _user.UserId,
             CreatedAtUtc = _clock.UtcNow,
         };
-        await store.SaveAsync(t.Id, docx, ct);
+        var staged = await store.StageAsync(t.Id, docx, ct);   // BUG-199: in place only once the row is saved
         db.ReportTemplates.Add(t);
-        await db.SaveChangesAsync(ct);
+        await SaveThenCommitAsync(db, store, staged, ct);
         return new ReportTemplateUpload(check, t.Id);
     }
 
@@ -96,14 +96,26 @@ public sealed class ReportTemplateService
 
         using var db = _factory.CreateDbContext();
         var t = await FindAsync(db, id, ct);
-        await store.SaveAsync(id, docx, ct);
+        var staged = await store.StageAsync(id, docx, ct);   // BUG-199: the live file stays until the new hash is saved
         t.FileName = Path.GetFileName(fileName);
         t.Sha256 = Sha256(docx);
         t.SizeBytes = docx.LongLength;
         t.ModifiedBy = _user.UserId;
         t.ModifiedAtUtc = _clock.UtcNow;
-        await db.SaveChangesAsync(ct);
+        await SaveThenCommitAsync(db, store, staged, ct);
         return check;
+    }
+
+    private static async Task SaveThenCommitAsync(IAppDbContext db, Reporting.IReportTemplateStore store, Reporting.StagedTemplate staged,
+        CancellationToken ct)
+    {
+        try { await db.SaveChangesAsync(ct); }
+        catch
+        {
+            await store.DiscardAsync(staged);
+            throw;
+        }
+        await store.CommitAsync(staged, ct);
     }
 
     /// <summary>Renames a template, or archives/restores it. A profile's default can't be archived.</summary>

@@ -909,6 +909,41 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_template_file_that_differs_from_its_record_is_refused_and_a_report_records_the_file_it_used(/* BUG-199 */)
+    {
+        _user.RoleSet = [AppRole.SysAdmin];
+        var engine = new WordTemplateEngine();
+        var root = Path.Combine(_reportDir, "templates");
+        var templateStore = new FileReportTemplateStore(Options.Create(new ReportTemplateOptions { RootPath = root }),
+            Options.Create(new ReportBrandingOptions()));
+        var templates = new IncidentManager.Application.Admin.ReportTemplateService(NewFactory(), _user, _clock, engine, templateStore);
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+        }
+        var starter = engine.Starter();
+        var id = (await templates.UploadAsync("Case starter", "case.docx", starter)).Id!.Value;
+        Directory.EnumerateFiles(root, "*.staged").Should().BeEmpty("the staged file took the live one's place");
+        var svc = new ReportService(NewFactory(), new ReportGenerator(),
+            new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = _reportDir })), _hasher, _user, _clock,
+            new IncidentManager.Application.Content.MarkdownService(), _reporting,
+            new FileReportBrandingStore(Options.Create(new ReportBrandingOptions { RootPath = Path.Combine(_reportDir, "branding") })),
+            new StubUserDirectory(),
+            new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()),
+            diagrams: new SkiaReportDiagrams(), templates: engine, templateStore: templateStore);
+
+        var report = await svc.GenerateAsync(caseId, template: id);
+        report.TemplateSha256.Should().Be(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(starter)).ToLowerInvariant());
+
+        // The file swapped on disk, outside CaseBook: generation refuses rather than record the wrong template.
+        await File.WriteAllBytesAsync(Path.Combine(root, $"{id:N}.docx"), engine.LessonsStarter());
+        await svc.Invoking(s => s.GenerateAsync(caseId, template: id))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*doesn't match the one recorded*");
+    }
+
+    [Fact]
     public async Task Any_template_fills_either_report_and_lessons_reports_use_the_lessons_default()
     {
         // Templates aren't typed: a lessons template can print case fields, a case template can print the review.

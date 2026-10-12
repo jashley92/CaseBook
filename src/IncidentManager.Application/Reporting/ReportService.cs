@@ -359,6 +359,14 @@ public sealed class ReportService
         }
         var bytes = await _templateStore.GetAsync(tid, ct)
                     ?? throw new InvalidOperationException($"The file for template “{t.Name}” is missing. Ask an administrator to replace it.");
+        // BUG-199: the report records which template filled it, so that's the file recorded for it. One that differs was
+        // changed outside CaseBook, or is being replaced right now. (A template moved from a profile without a recorded
+        // hash has none to check, and the report records the file's.)
+        var actual = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+        if (t.Sha256.Length > 0 && !string.Equals(actual, t.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"The file for template “{t.Name}” doesn't match the one recorded for it: it was " +
+                "changed outside CaseBook, or is being replaced. Try again in a moment; if it persists, ask an administrator to " +
+                "replace the template.");
         // BUG-75: a template stored before the upload check required the marking is refused here, not filled unmarked.
         // BUG-166: one it can fill: a field only in a tracked deletion or split across a link prints nothing or as typed.
         var check = _templates.Check(bytes);
@@ -366,7 +374,7 @@ public sealed class ReportService
             throw new InvalidOperationException($"Template “{t.Name}” has no {{{{report.tlp}}}} field it can fill, so the report would print " +
                                                 "without its TLP marking. Ask an administrator to add it (typed in one go, outside any tracked " +
                                                 "change) and replace the file, or pick another template.");
-        return new ResolvedTemplate(t.Name, t.Sha256, bytes);
+        return new ResolvedTemplate(t.Name, actual, bytes);
     }
 
     private async Task<Report> StoreAsync(IAppDbContext db, Guid caseId, string caseNumber, ReportKind kind,

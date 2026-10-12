@@ -45,4 +45,22 @@ public interface IReportTemplateStore
     Task SaveAsync(Guid templateId, byte[] docx, CancellationToken ct = default);
     Task<byte[]?> GetAsync(Guid templateId, CancellationToken ct = default);
     Task DeleteAsync(Guid templateId, CancellationToken ct = default);
+
+    /// <summary>
+    /// BUG-199: writes a template's new file aside, to take its place only once the change that records it (its hash) is
+    /// saved: <see cref="CommitAsync"/> after the save, <see cref="DiscardAsync"/> if it fails. So a failed save leaves the
+    /// live file as recorded, and a failed write never truncates it.
+    /// </summary>
+    async Task<StagedTemplate> StageAsync(Guid templateId, byte[] docx, CancellationToken ct = default)
+    {
+        await SaveAsync(templateId, docx, ct);
+        return new StagedTemplate(templateId, "");
+    }
+
+    Task CommitAsync(StagedTemplate staged, CancellationToken ct = default) => Task.CompletedTask;
+
+    Task DiscardAsync(StagedTemplate staged) => Task.CompletedTask;
 }
+
+/// <summary>A template file written aside by <see cref="IReportTemplateStore.StageAsync"/>.</summary>
+public sealed record StagedTemplate(Guid TemplateId, string Token);

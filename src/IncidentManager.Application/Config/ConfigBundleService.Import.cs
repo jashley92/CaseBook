@@ -319,6 +319,7 @@ public sealed partial class ConfigBundleService
 
         // --- Word templates (PROD-47; match by name, ignoring case; files were checked above) ---
         var libraryRows = await db.ReportTemplates.ToListAsync(ct);
+        var staged = new List<Reporting.StagedTemplate>();   // BUG-199: put in place only once the import is saved
         var library = libraryRows.ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
         foreach (var t in bundle.ReportTemplates ?? [])
         {
@@ -329,7 +330,7 @@ public sealed partial class ConfigBundleService
                 var created = new ReportTemplate { Name = t.Name, FileName = fileName, IsActive = t.IsActive,
                     IsLessonsDefault = t.LessonsDefault,
                     Sha256 = t.Sha256.ToLowerInvariant(), SizeBytes = bytes.LongLength, CreatedBy = actor, CreatedAtUtc = now };
-                await _templateStore!.SaveAsync(created.Id, bytes, ct);
+                staged.Add(await _templateStore!.StageAsync(created.Id, bytes, ct));
                 db.ReportTemplates.Add(created);
                 library[t.Name] = created;
                 Tally(true, true);
@@ -339,7 +340,7 @@ public sealed partial class ConfigBundleService
                 var fileChanged = !string.Equals(existing.Sha256, t.Sha256, StringComparison.OrdinalIgnoreCase);
                 var changed = fileChanged || existing.Name != t.Name || existing.FileName != fileName
                     || existing.IsActive != t.IsActive || existing.IsLessonsDefault != t.LessonsDefault;
-                if (fileChanged) await _templateStore!.SaveAsync(existing.Id, bytes, ct);
+                if (fileChanged) staged.Add(await _templateStore!.StageAsync(existing.Id, bytes, ct));
                 if (changed) { existing.Name = t.Name; existing.FileName = fileName; existing.IsActive = t.IsActive;
                     existing.IsLessonsDefault = t.LessonsDefault;
                     existing.Sha256 = t.Sha256.ToLowerInvariant(); existing.SizeBytes = bytes.LongLength;
@@ -451,7 +452,13 @@ public sealed partial class ConfigBundleService
             }
         }
 
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch
+        {
+            foreach (var s in staged) await _templateStore!.DiscardAsync(s);
+            throw;
+        }
+        foreach (var s in staged) await _templateStore!.CommitAsync(s, ct);
         await _audit.RecordAsync(AuditAction.Update, "ConfigBundle", null, null,
             $"Imported configuration bundle ({added} added, {updated} updated, {unchanged} unchanged)" +
             (foreignKey ? $", signed with key {envelope.KeyId} (not this server's), source confirmed trusted" : ""), ct);

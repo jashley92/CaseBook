@@ -40,8 +40,35 @@ public sealed class FileReportTemplateStore : IReportTemplateStore
 
     public async Task SaveAsync(Guid templateId, byte[] docx, CancellationToken ct = default)
     {
+        var staged = await StageAsync(templateId, docx, ct);
+        await CommitAsync(staged, ct);
+    }
+
+    // BUG-199: written to a file of its own, then moved over the live one (a rename, so a reader gets the old file or the
+    // new, never a part-written one).
+    public async Task<StagedTemplate> StageAsync(Guid templateId, byte[] docx, CancellationToken ct = default)
+    {
         Directory.CreateDirectory(_root);
-        await File.WriteAllBytesAsync(PathFor(templateId), docx, ct);
+        var aside = Path.Combine(_root, $"{templateId:N}.{Guid.NewGuid():N}.staged");
+        try { await File.WriteAllBytesAsync(aside, docx, ct); }
+        catch
+        {
+            File.Delete(aside);
+            throw;
+        }
+        return new StagedTemplate(templateId, aside);
+    }
+
+    public Task CommitAsync(StagedTemplate staged, CancellationToken ct = default)
+    {
+        File.Move(staged.Token, PathFor(staged.TemplateId), overwrite: true);
+        return Task.CompletedTask;
+    }
+
+    public Task DiscardAsync(StagedTemplate staged)
+    {
+        File.Delete(staged.Token);
+        return Task.CompletedTask;
     }
 
     public async Task<byte[]?> GetAsync(Guid templateId, CancellationToken ct = default)
