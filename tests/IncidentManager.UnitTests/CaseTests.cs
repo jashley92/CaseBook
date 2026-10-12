@@ -132,6 +132,20 @@ public class CaseTests
     }
 
     [Fact]
+    public void An_archived_case_keeps_its_notices(/* BUG-190 */)
+    {
+        var c = Case.Open(2026, 1, "Vendor", "Vendor incident", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "analyst1", Now);
+        c.RecordNotice("NY", Now.AddHours(2), "analyst1", Now.AddHours(2));
+        c.RecordNotice("CA", Now.AddHours(3), "analyst1", Now.AddHours(3));
+        c.Archive("admin1", Now.AddDays(1));
+
+        c.Invoking(x => x.RemoveNotice("CA", "analyst1", Now.AddDays(2)))
+            .Should().Throw<InvalidOperationException>().WithMessage("*archived*Restore it*");
+        c.JurisdictionNotices.Should().HaveCount(2);
+    }
+
+    [Fact]
     public void A_two_person_hold_release_needs_a_reason_and_a_different_approver(/* F-12 */)
     {
         var c = NewCase();

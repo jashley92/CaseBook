@@ -1244,6 +1244,8 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>BUG-09: removes one regulator's notice (a mis-entry).</summary>
     public void RemoveNotice(string jurisdiction, string actor, DateTimeOffset nowUtc)
     {
+        // BUG-190: with another notice left, the reported time follows the notices, so this restarts that clock.
+        EnsureNotArchived("remove a notice");
         var code = (jurisdiction ?? "").Trim().ToUpperInvariant();
         if (JurisdictionNotices.RemoveAll(n => n.Jurisdiction == code) > 0) Touch(actor, nowUtc);
     }
