@@ -512,7 +512,18 @@
         return _fieldErrors.Count == 0;
     }
 
+    // BUG-14: one save at a time. A double-click, or Ctrl+Enter and a click, used to save twice.
+    private bool _inFlight;
+
     private async Task Submit()
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await SubmitCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task SubmitCore()
     {
         _error = null;
         if (_created is null && !CheckRequired()) return;

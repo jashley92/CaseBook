@@ -323,6 +323,7 @@
     // validation in Apply exactly, so the button is disabled precisely when a submit would be rejected.
     private bool PrimaryDisabled()
     {
+        if (_inFlight) return true;
         var t = D.Transition;
         var backdated = t.Backdated(TimeDisp.Zone, Clock.UtcNow);
         return D.Name switch
@@ -350,7 +351,18 @@
         };
     }
 
+    // BUG-14: one save at a time. A double-click, or Ctrl+Enter and a click, used to save twice.
+    private bool _inFlight;
+
     private async Task Apply()
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await ApplyCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task ApplyCore()
     {
         D.Error = null;
         var t = D.Transition;

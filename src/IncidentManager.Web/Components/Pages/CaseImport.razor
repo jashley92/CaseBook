@@ -603,7 +603,7 @@ else if (_pending.Count > 0)
 
     private async Task Apply()
     {
-        if (_preview is not { } p || !CanApply(p)) return;
+        if (_applying || _preview is not { } p || !CanApply(p)) return;   // BUG-14: one apply at a time
         _applying = true;
         _error = null;
         try

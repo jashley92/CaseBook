@@ -661,7 +661,18 @@ else
     private string CommentDraft(Guid taskId) => _commentDrafts.GetValueOrDefault(taskId, "");
     private void SetCommentDraft(Guid taskId, string? text) => _commentDrafts[taskId] = text ?? "";
 
+    // BUG-14: one save at a time. A double-click, or Ctrl+Enter and a click, used to save twice.
+    private bool _inFlight;
+
     private async Task AddComment(Guid taskId)
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await AddCommentCore(taskId); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task AddCommentCore(Guid taskId)
     {
         var body = CommentDraft(taskId);
         if (string.IsNullOrWhiteSpace(body)) return;
@@ -801,6 +812,14 @@ else
     }
 
     private async Task AddTask()
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await AddTaskCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task AddTaskCore()
     {
         if (string.IsNullOrWhiteSpace(_taskTitle)) return;
         // The picker stores a directory user id, "" for unassigned, or the external sentinel (U-45) →
@@ -986,6 +1005,14 @@ else
     }
 
     private async Task ApplyTemplate()
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await ApplyTemplateCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task ApplyTemplateCore()
     {
         if (_applyTemplate is null || _applySelected.Count == 0) return;
         try

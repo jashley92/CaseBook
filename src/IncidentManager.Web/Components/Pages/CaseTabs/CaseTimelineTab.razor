@@ -1604,7 +1604,18 @@ else
         return ev.Id;
     }
 
+    // BUG-14: one save at a time. A double-click, or Ctrl+Enter and a click, used to save twice.
+    private bool _inFlight;
+
     private async Task AddTimeline()
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await AddTimelineCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task AddTimelineCore()
     {
         try { _tlDesc = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
         catch (JSException) { /* editor not mounted; fall back to bound value */ }
@@ -1635,6 +1646,14 @@ else
 
     // Event timeline: an adversary action — ATT&CK tactic(s) + actor→target attribution.
     private async Task AddEventStep()
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await AddEventStepCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task AddEventStepCore()
     {
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = WallToUtc(_tlWhen);
@@ -1718,6 +1737,14 @@ else
     }
 
     private async Task SaveEventEdit()
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await SaveEventEditCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task SaveEventEditCore()
     {
         if (_tlEditId is not { } id || string.IsNullOrWhiteSpace(_tlDesc)) return;
         var whenUtc = WallToUtc(_tlWhen);
@@ -2248,6 +2275,14 @@ else
     }
 
     private async Task SaveCorrection()
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await SaveCorrectionCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task SaveCorrectionCore()
     {
         if (_corr?.Transition is not { } t || _corrWhen is not { } w || string.IsNullOrWhiteSpace(_corrReason)) return;
         _corrSaving = true;
