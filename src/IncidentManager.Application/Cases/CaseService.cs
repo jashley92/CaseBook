@@ -1662,6 +1662,15 @@ public sealed class CaseService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>BUG-152: an indicator's own TLP marking (null when it has none, or isn't on a case the caller can see).</summary>
+    public async Task<TlpLevel?> EntityTlpAsync(Guid id, Guid entityId, CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var visible = Scoped(db.Cases.AsNoTracking()).Where(c => c.Id == id).Select(c => c.Id);
+        return await db.CaseEntities.AsNoTracking().Where(e => e.Id == entityId && visible.Contains(e.CaseId))
+            .Select(e => e.Tlp).FirstOrDefaultAsync(ct);
+    }
+
     /// <summary>PROD-45: sets or clears (null) an indicator's TLP sharing marking.</summary>
     public async Task SetEntityTlpAsync(Guid id, Guid entityId, TlpLevel? tlp, CancellationToken ct = default)
     {

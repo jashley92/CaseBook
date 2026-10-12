@@ -90,6 +90,8 @@ public sealed class ImportEntityRow
     public EntityDisposition Disposition { get; set; } = EntityDisposition.Unknown;
     public string? Description { get; set; }
     public string? Source { get; set; }
+    /// <summary>BUG-152: the marking the document gave it (null: the case's default applies).</summary>
+    public TlpLevel? Tlp { get; set; }
     public string? Warning { get; set; }
 }
 

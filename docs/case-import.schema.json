@@ -262,6 +262,17 @@
         "source": {
           "type": "string",
           "description": "Optional (defaults to the document origin)."
+        },
+        "tlp": {
+          "type": "string",
+          "enum": [
+            "Clear",
+            "Green",
+            "Amber",
+            "AmberStrict",
+            "Red"
+          ],
+          "description": "Optional sharing marking (TLP 2.0); kept on the indicator and in exports."
         }
       }
     },

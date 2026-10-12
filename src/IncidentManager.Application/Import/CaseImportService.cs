@@ -218,8 +218,11 @@ public sealed class CaseImportService
         {
             if (!e.Applied)
             {
-                await _cases.AddEntityAsync(caseId, e.Type, e.Value, e.Label, e.Disposition,
+                var added = await _cases.AddOrMatchEntityAsync(caseId, e.Type, e.Value, e.Label, e.Disposition,
                     e.Description, e.Source ?? origin, ct);
+                // BUG-152: the document's marking is kept, and only ever raises one the case already has.
+                if (e.Tlp is { } tlp && (!added.AlreadyOnCase || await _cases.EntityTlpAsync(caseId, added.Id, ct) is not { } had || had < tlp))
+                    await _cases.SetEntityTlpAsync(caseId, added.Id, tlp, ct);
                 e.Applied = true;
             }
             entities++;
@@ -237,6 +240,19 @@ public sealed class CaseImportService
         }
 
         return new CaseImportResult(caseId, caseNumber, created, notes, timeline, entities, actionItems);
+    }
+
+    /// <summary>BUG-152: a TLP marking as written in a document ("Red", "TLP:RED", "amber+strict"); null when absent.</summary>
+    internal static TlpLevel? ParseTlp(string? raw, List<string> warnings)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var v = raw.Trim();
+        if (v.StartsWith("TLP:", StringComparison.OrdinalIgnoreCase)) v = v[4..];
+        v = v.Replace("+", "", StringComparison.Ordinal).Replace("_", "", StringComparison.Ordinal).Replace(" ", "", StringComparison.Ordinal);
+        if (v.Equals("white", StringComparison.OrdinalIgnoreCase)) return TlpLevel.Clear;   // TLP 1.0
+        if (Enum.TryParse<TlpLevel>(v, ignoreCase: true, out var t) && Enum.IsDefined(t)) return t;
+        warnings.Add($"Unknown TLP marking '{raw}'. The indicator was given none, so the case's default applies.");
+        return null;
     }
 
     // ── Pending imports queue (PROD-33) ──────────────────────────────────────────────────────────
@@ -544,7 +560,8 @@ public sealed class CaseImportService
                 Label = Clamp(e.Label, MaxLabel, "Entity label", p.Warnings),
                 Disposition = ParseEnum(e.Disposition, EntityDisposition.Unknown, "entity disposition", p.Warnings),
                 Description = Clamp(e.Description, MaxEntityDescription, "Entity description", p.Warnings),
-                Source = Clamp(e.Source, MaxSource, "Entity source", p.Warnings) ?? p.Origin
+                Source = Clamp(e.Source, MaxSource, "Entity source", p.Warnings) ?? p.Origin,
+                Tlp = ParseTlp(e.Tlp, p.Warnings),
             });
         }
         if (droppedEntities > 0) p.Warnings.Add(droppedEntities == 1 ? "1 entity had no value and was skipped." : $"{droppedEntities} entities had no value and were skipped.");

@@ -80,6 +80,7 @@ public static partial class IocImportConverter
         var skipped = new SortedDictionary<string, int>(StringComparer.Ordinal);
         var unparsedPatterns = 0;
         string? producer = null;
+        var markings = TlpMarkings(objects);   // BUG-152
 
         foreach (var o in objects.EnumerateArray())
         {
@@ -100,14 +101,14 @@ public static partial class IocImportConverter
                         entities.Add(new CaseImportEntity
                         {
                             Type = t.ToString(), Value = v, Disposition = verdict.ToString(),
-                            Label = Str(o, "name"), Description = Str(o, "description"),
+                            Label = Str(o, "name"), Description = Str(o, "description"), Tlp = MarkingOf(o, markings),
                         });
                     break;
                 case "relationship" or "report" or "marking-definition" or "extension-definition" or "language-content":
                     skipped[type] = skipped.GetValueOrDefault(type) + 1;
                     break;
                 default:
-                    if (FromSco(type, o) is { } e) entities.Add(e);
+                    if (FromSco(type, o) is { } e) { e.Tlp = MarkingOf(o, markings); entities.Add(e); }
                     else skipped[type] = skipped.GetValueOrDefault(type) + 1;
                     break;
             }
@@ -122,6 +123,49 @@ public static partial class IocImportConverter
 
         return Finish(ImportSourceFormat.StixBundle, entities, notes,
             producer is null ? "STIX 2.1 bundle" : $"STIX 2.1 bundle ({producer})", "This STIX bundle has no indicators CaseBook can import.");
+    }
+
+    // BUG-152: the TLP marking-definitions STIX 2.1 defines (TLP 2.0, then TLP 1.0, whose WHITE is CLEAR).
+    private static readonly Dictionary<string, TlpLevel> WellKnownTlp = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["marking-definition--94868c89-83c2-464b-929b-a1a8aa3c8487"] = TlpLevel.Clear,
+        ["marking-definition--bab4a63c-aed9-4cf5-a766-dfca5abac2bb"] = TlpLevel.Green,
+        ["marking-definition--55d920b0-5e8b-4f79-9ee9-91f868d9b421"] = TlpLevel.Amber,
+        ["marking-definition--939a9414-2ddd-4d32-a0cd-375ea402b003"] = TlpLevel.AmberStrict,
+        ["marking-definition--e828b379-4e03-4974-9ac4-e53a884c97c1"] = TlpLevel.Red,
+        ["marking-definition--613f2e26-407d-48c7-9eca-b8e91df99dc9"] = TlpLevel.Clear,
+        ["marking-definition--34098fce-860f-48ae-8e50-ebd3cc5e41da"] = TlpLevel.Green,
+        ["marking-definition--f88d31f6-486f-44da-b317-01333bde0b82"] = TlpLevel.Amber,
+        ["marking-definition--5e57c739-391a-4eb3-b6be-7d15ca92d5ed"] = TlpLevel.Red,
+    };
+
+    /// <summary>
+    /// BUG-152: the TLP marking-definitions a bundle can refer to: the well-known ones, plus any it carries itself (a TLP
+    /// 1.0 <c>definition.tlp</c>, or a name like "TLP:AMBER+STRICT").
+    /// </summary>
+    private static Dictionary<string, TlpLevel> TlpMarkings(JsonElement objects)
+    {
+        var map = new Dictionary<string, TlpLevel>(WellKnownTlp, StringComparer.OrdinalIgnoreCase);
+        foreach (var o in objects.EnumerateArray())
+        {
+            if (o.ValueKind != JsonValueKind.Object || Str(o, "type") != "marking-definition" || Str(o, "id") is not { } id
+                || map.ContainsKey(id)) continue;
+            var named = o.TryGetProperty("definition", out var d) && Str(d, "tlp") is { } tlp ? tlp : Str(o, "name");
+            if ((named is not null && named.Trim().StartsWith("TLP", StringComparison.OrdinalIgnoreCase)) || Str(o, "definition_type") == "tlp")
+                if (CaseImportService.ParseTlp(named, []) is { } level) map[id] = level;
+        }
+        return map;
+    }
+
+    /// <summary>BUG-152: the most restrictive TLP an object's <c>object_marking_refs</c> name, as a TLP level name.</summary>
+    private static string? MarkingOf(JsonElement o, Dictionary<string, TlpLevel> markings)
+    {
+        if (!o.TryGetProperty("object_marking_refs", out var refs) || refs.ValueKind != JsonValueKind.Array) return null;
+        TlpLevel? most = null;
+        foreach (var r in refs.EnumerateArray())
+            if (r.ValueKind == JsonValueKind.String && markings.TryGetValue(r.GetString()!, out var level) && (most is null || level > most))
+                most = level;
+        return most?.ToString();
     }
 
     /// <summary>Maps a STIX cyber-observable (or CaseBook's custom artifact SCO) to an entity, keeping the x_casebook_* round-trip fields.</summary>

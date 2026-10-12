@@ -493,6 +493,47 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public async Task An_imported_indicator_keeps_its_TLP_and_only_raises_one_already_on_the_case(/* BUG-152 */)
+    {
+        Guid caseId, onCase;
+        await using (var db = NewContext())
+        {
+            var cases = NewCaseService(db);
+            caseId = (await cases.CreateAsync(new CreateCaseRequest
+            {
+                DescriptiveName = "Partner", Title = "Partner intel",
+                Classification = Classification.Incident, Severity = Severity.Medium, Origin = CaseOrigin.InternalDetection
+            })).Id;
+            onCase = await cases.AddEntityAsync(caseId, EntityType.Domain, "partner-only.example", null, EntityDisposition.Malicious, null, null);
+            await cases.SetEntityTlpAsync(caseId, onCase, TlpLevel.AmberStrict);
+        }
+
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Entities = new()
+            {
+                new() { Value = "198.51.100.7", Tlp = "TLP:RED" },
+                new() { Value = "partner-only.example", Tlp = "Green" },   // lower than the case has: kept as it is
+                new() { Value = "open.example", Tlp = "Purple" },
+            }
+        };
+        await using (var db = NewContext())
+        {
+            var svc = NewImportService(db);
+            var preview = await svc.BuildPreviewAsync(doc, intoCaseId: caseId);
+            preview.Warnings.Should().Contain(w => w.Contains("Unknown TLP marking 'Purple'"));
+            await svc.ApplyAsync(preview);
+        }
+
+        await using var verify = NewContext();
+        var tlp = await verify.Set<CaseEntity>().Where(e => e.CaseId == caseId).ToDictionaryAsync(e => e.Value, e => e.Tlp);
+        tlp["198.51.100.7"].Should().Be(TlpLevel.Red);
+        tlp["partner-only.example"].Should().Be(TlpLevel.AmberStrict, "an import never lowers a marking");
+        tlp["open.example"].Should().BeNull();
+    }
+
+    [Fact]
     public async Task Apply_into_an_existing_case_adds_items_to_it()
     {
         Guid caseId;

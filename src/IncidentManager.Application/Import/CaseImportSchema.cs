@@ -114,6 +114,7 @@ public static class CaseImportSchema
                         ["disposition"] = EnumOf<EntityDisposition>(),
                         ["description"] = Str(null),
                         ["source"] = Str("Optional (defaults to the document origin)."),
+                        ["tlp"] = EnumOf<TlpLevel>("Optional sharing marking (TLP 2.0); kept on the indicator and in exports."),
                     },
                 },
                 ["actionItem"] = new JsonObject

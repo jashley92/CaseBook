@@ -163,6 +163,11 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ### Next release
 
+- **STIX imports keep TLP markings.** An imported indicator now takes the TLP its `object_marking_refs` name (TLP 2.0
+  or 1.0, or a TLP marking-definition in the bundle; the most restrictive if several), so a partner's TLP:RED intel is
+  no longer exported at the default AMBER. The case-import document gains an optional `tlp` on each entity. An import
+  never lowers a marking an indicator already has on the case.
+
 - **A reminder is recorded as sent only once its send has finished.** v1.5.2 kept the scans' sent marks in the
   database (BUG-95), but a mark was written before the send, so a scan that stopped part-way (the app shutting down
   mid-send, or a crash) left marks for reminders that never went out, and they were never sent. A mark is now a claim

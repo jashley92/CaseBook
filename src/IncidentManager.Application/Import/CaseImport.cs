@@ -91,6 +91,8 @@ public sealed class CaseImportEntity
     public string? Disposition { get; set; }
     public string? Description { get; set; }
     public string? Source { get; set; }
+    /// <summary>BUG-152: the indicator's sharing marking (TLP 2.0: Clear, Green, Amber, AmberStrict, Red).</summary>
+    public string? Tlp { get; set; }
 }
 
 /// <summary>One action item / follow-up to import.</summary>

@@ -348,7 +348,7 @@ else if (_pending.Count > 0)
             <div class="fw-semibold mb-2">Entities <span class="text-muted small">(@p.Entities.Count(r => r.Include) of @p.Entities.Count)</span></div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle">
-                    <thead><tr><th style="width:2rem"></th><th style="width:9rem">Type</th><th>Value</th><th style="width:9rem">Disposition</th><th style="width:10rem">Source</th></tr></thead>
+                    <thead><tr><th style="width:2rem"></th><th style="width:9rem">Type</th><th>Value</th><th style="width:9rem">Disposition</th><th style="width:7rem">TLP</th><th style="width:10rem">Source</th></tr></thead>
                     <tbody>
                         @foreach (var e in p.Entities)
                         {
@@ -360,6 +360,7 @@ else if (_pending.Count > 0)
                                 </td>
                                 <td><input class="form-control form-control-sm font-monospace" aria-label="Value" @bind="e.Value" /></td>
                                 <td><select class="form-select form-select-sm" aria-label="Disposition" @bind="e.Disposition">@foreach (var d in Enum.GetValues<EntityDisposition>()) { <option value="@d">@Ui.Label(d)</option> }</select></td>
+                                <td class="small" title="The document's marking, kept on the indicator. None: the case's default applies.">@(e.Tlp is { } tlp ? IncidentManager.Domain.Enums.Tlp.Label(tlp) : "—")</td>
                                 <td><input class="form-control form-control-sm" aria-label="Source" @bind="e.Source" /></td>
                             </tr>
                         }

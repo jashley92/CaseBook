@@ -70,6 +70,35 @@ public class IocImportConverterTests
     }
 
     [Fact]
+    public void An_objects_TLP_marking_comes_with_it_well_known_or_defined_in_the_bundle(/* BUG-152 */)
+    {
+        const string bundle = """
+        {
+          "type": "bundle", "id": "bundle--2",
+          "objects": [
+            { "type": "marking-definition", "spec_version": "2.1", "id": "marking-definition--0a1b", "definition_type": "tlp",
+              "definition": { "tlp": "amber" } },
+            { "type": "indicator", "spec_version": "2.1", "id": "indicator--1", "pattern": "[ipv4-addr:value = '198.51.100.7']",
+              "pattern_type": "stix", "object_marking_refs": [ "marking-definition--bab4a63c-aed9-4cf5-a766-dfca5abac2bb",
+                                                               "marking-definition--e828b379-4e03-4974-9ac4-e53a884c97c1" ] },
+            { "type": "domain-name", "spec_version": "2.1", "id": "domain-name--1", "value": "partner-only.example",
+              "object_marking_refs": [ "marking-definition--0a1b" ] },
+            { "type": "url", "spec_version": "2.1", "id": "url--1", "value": "https://open.example/x",
+              "object_marking_refs": [ "marking-definition--613f2e26-407d-48c7-9eca-b8e91df99dc9" ] },
+            { "type": "email-addr", "spec_version": "2.1", "id": "email-addr--1", "value": "nobody@unmarked.example" }
+          ]
+        }
+        """;
+
+        var tlp = IocImportConverter.Convert(bundle).Document!.Entities!.ToDictionary(e => e.Value!, e => e.Tlp);
+
+        tlp["198.51.100.7"].Should().Be("Red", "the most restrictive of its markings");
+        tlp["partner-only.example"].Should().Be("Amber", "a TLP 1.0 marking the bundle defines");
+        tlp["https://open.example/x"].Should().Be("Clear", "TLP 1.0 WHITE is CLEAR");
+        tlp["nobody@unmarked.example"].Should().BeNull();
+    }
+
+    [Fact]
     public void Our_own_ioc_feed_csv_round_trips()
     {
         var feed = IocFeedCsv.Build(
