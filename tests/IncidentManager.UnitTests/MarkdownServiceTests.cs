@@ -59,6 +59,24 @@ public class MarkdownServiceTests
         }
     }
 
+    [Theory]
+    [InlineData("<javascript:alert(document.domain)>")]
+    [InlineData("<data:text/html,hi>")]
+    [InlineData("<vbscript:msgbox>")]
+    public void Angle_bracket_autolinks_with_unsafe_schemes_stay_text(string markdown)
+    {
+        // BUG-187: an autolink is its own inline, which the link check didn't visit.
+        foreach (var html in new[] { _md.ToHtml(markdown), _md.ToInlineHtml(markdown) })
+            html.Should().NotContain("href=");
+    }
+
+    [Fact]
+    public void Safe_autolinks_still_link()
+    {
+        _md.ToHtml("<https://example.com/a>").Should().Contain("href=\"https://example.com/a\"");
+        _md.ToHtml("<soc@example.com>").Should().Contain("href=\"mailto:soc@example.com\"");
+    }
+
     [Fact]
     public void Unsafe_image_urls_are_neutralised_too()
     {

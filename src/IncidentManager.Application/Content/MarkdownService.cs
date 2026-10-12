@@ -92,6 +92,10 @@ public sealed class MarkdownService : IMarkdownService
             if (!IsSafeUrl(link.Url))
                 link.Url = "#";
         }
+        // BUG-187: an angle-bracket autolink (<javascript:…>) is its own inline, not a LinkInline. An unsafe one stays
+        // as its text.
+        foreach (var auto in document.Descendants<AutolinkInline>().Where(a => !a.IsEmail && !IsSafeUrl(a.Url)).ToList())
+            auto.ReplaceBy(new LiteralInline(auto.Url));
 
         using var writer = new StringWriter();
         var renderer = new HtmlRenderer(writer);
