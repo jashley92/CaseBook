@@ -89,5 +89,28 @@ public sealed class CaseReopenServiceTests : IDisposable
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
+    [Fact]
+    public async Task Changing_phase_out_of_Closed_needs_a_reason_as_reopen_does(/* BUG-62 */)
+    {
+        var id = SeedClosedCase();
+        _clock.UtcNow = _clock.UtcNow.AddDays(1);
+
+        await using (var db = NewContext())
+        {
+            var act = () => NewService(db).ChangePhaseAsync(id, CasePhase.Eradication, " ");
+            await act.Should().ThrowAsync<ArgumentException>().WithMessage("*reason*Closed*");
+        }
+        await using (var db = NewContext())
+            await NewService(db).ChangePhaseAsync(id, CasePhase.Eradication, "the vendor found a second host");
+
+        await using (var check = NewContext())
+        {
+            var c = await check.Cases.Include(x => x.StatusChanges).FirstAsync(x => x.Id == id);
+            c.Phase.Should().Be(CasePhase.Eradication);
+            c.ClosedAtUtc.Should().BeNull();
+            c.StatusChanges.OrderBy(s => s.ChangedAtUtc).Last().Reason.Should().Be("the vendor found a second host");
+        }
+    }
+
     public void Dispose() => _connection.Dispose();
 }

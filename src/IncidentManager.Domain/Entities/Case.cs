@@ -306,6 +306,9 @@ public class Case : AuditableEntity, IHashableEntity
         if (to == Phase) return;
         if (outcomeKey is not null && to != CasePhase.Closed)
             throw new ArgumentException("An outcome is recorded only when a case is closed.");
+        // BUG-62: leaving Closed is a reopen by another route, so it needs a reason as Reopen does (E-27).
+        if (Phase == CasePhase.Closed && string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("A reason is required to move a case out of Closed.");
 
         var effective = CheckEffective(effectiveAtUtc, nowUtc, "phase",
             StatusChanges.Where(x => x.From is not null).Select(x => x.EffectiveAt));

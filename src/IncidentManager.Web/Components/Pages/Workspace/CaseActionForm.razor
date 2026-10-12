@@ -70,9 +70,14 @@
     {
         <label class="form-label small" for="ws-status">New status</label>
         <select id="ws-status" class="form-select mb-2" @bind="D.NewPhase" @bind:after='() => OnTargetChanged.InvokeAsync("status")'>@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
-        <label class="form-label small" for="ws-status-reason">@(D.NewPhase > Case.Phase ? "What was achieved" : "Reason") <span class="text-muted">@(T.Gate is { RequiresCommentary: true } || backdated ? "(required)" : "(optional)")</span></label>
+        var leavingClosed = Case.Phase == CasePhase.Closed && D.NewPhase != CasePhase.Closed;
+        <label class="form-label small" for="ws-status-reason">@(D.NewPhase > Case.Phase ? "What was achieved" : "Reason") <span class="text-muted">@(T.Gate is { RequiresCommentary: true } || backdated || leavingClosed ? "(required)" : "(optional)")</span></label>
         <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="D.PhaseReason" @bind:event="oninput" />
         <RationaleHint Gate="T.Gate" Text="@D.PhaseReason" />
+        @if (leavingClosed)
+        {
+            <div class="form-text">Moving a case out of Closed reopens it, so it needs a reason, as Reopen does.</div>
+        }
         <WhenItHappened Draft="T" OnChanged="Changed" />
         <TransitionWarnings Case="Case" To="D.NewPhase" Notify="Notify" />
         <GateSection Draft="T" OnFix="OnFix" OnChanged="Changed" />
@@ -356,7 +361,8 @@
                 || t.RationaleError(D.ReclassReason) is not null,
             "status" => (t.NeedsOverride && string.IsNullOrWhiteSpace(t.Override))
                 || t.RationaleError(D.PhaseReason) is not null
-                || t.When is null || (backdated && string.IsNullOrWhiteSpace(D.PhaseReason)),
+                || t.When is null || (backdated && string.IsNullOrWhiteSpace(D.PhaseReason))
+                || (Case.Phase == CasePhase.Closed && D.NewPhase != CasePhase.Closed && string.IsNullOrWhiteSpace(D.PhaseReason)),   // BUG-62
             "severity" => t.When is null || ((backdated || D.NewSeverity > Case.Severity) && string.IsNullOrWhiteSpace(D.SeverityReason)),   // HR-11
             "handoff" => string.IsNullOrWhiteSpace(D.HandoffTo) || string.IsNullOrWhiteSpace(D.HandoffState),
             _ => false
