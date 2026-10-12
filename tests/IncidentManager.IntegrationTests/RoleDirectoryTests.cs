@@ -92,6 +92,10 @@ public sealed class RoleDirectoryTests : IDisposable
             var dup = () => svc.CreateRoleAsync("sysadmin", null, [Permission.ViewCases]);
             await dup.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already exists*");
 
+            // BUG-21: a comma would split one name into two wherever roles are stored as a list.
+            var comma = () => svc.CreateRoleAsync("Readers,SysAdmin", null, [Permission.ViewCases]);
+            await comma.Should().ThrowAsync<ArgumentException>().WithMessage("*comma*");
+
             await svc.AddMappingAsync("SOC-Leads", "analyst");
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             (await db.RoleMappings.SingleAsync(m => m.AdGroup == "SOC-Leads")).RoleName.Should().Be("Analyst", "the role's own spelling is stored");

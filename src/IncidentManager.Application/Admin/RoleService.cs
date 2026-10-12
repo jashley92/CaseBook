@@ -47,7 +47,7 @@ public sealed class RoleService
         AdminActionPermissions.Require<RoleService>(_user, _siem);
         using var db = _factory.CreateDbContext();
         name = (name ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A role name is required.");
+        if (Role.NameProblem(name) is { } problem) throw new ArgumentException(problem);
         // BUG-18: role names are matched regardless of case everywhere else, so "sysadmin" is SysAdmin.
         var lower = name.ToLowerInvariant();
         if (await db.Roles.AnyAsync(r => r.Name.ToLower() == lower, ct))

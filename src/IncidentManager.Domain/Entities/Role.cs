@@ -11,6 +11,16 @@ namespace IncidentManager.Domain.Entities;
 /// </summary>
 public class Role : Entity, IHashableEntity
 {
+    /// <summary>
+    /// BUG-21: why a role name can't be used, or null when it can. Role lists are stored comma-separated (a user's
+    /// roles, a token's roles), so a comma would split one name into two, e.g. "Readers,SysAdmin" into SysAdmin.
+    /// </summary>
+    public static string? NameProblem(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? "A role name is required."
+        : name.Contains(',') ? "A role name can't contain a comma."
+        : name.Any(char.IsControl) ? "A role name can't contain control characters."
+        : null;
+
     /// <summary>Stable identity of the role; matches the name carried in role claims and AD mappings.</summary>
     public string Name { get; set; } = string.Empty;
 

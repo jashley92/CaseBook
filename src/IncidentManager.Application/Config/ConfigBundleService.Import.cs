@@ -208,6 +208,7 @@ public sealed partial class ConfigBundleService
             var existing = roles.FirstOrDefault(x => string.Equals(x.Name, r.Name, StringComparison.OrdinalIgnoreCase));
             if (existing is null)
             {
+                if (Role.NameProblem(r.Name) is { } problem) throw new ArgumentException($"Role '{r.Name}': {problem}");
                 db.Roles.Add(new Role { Name = r.Name, Description = r.Description, IsSystem = false,
                     PermissionsCsv = r.PermissionsCsv, UpdatedAtUtc = now, UpdatedBy = actor });
                 changedRoles.Add(r.Name);
