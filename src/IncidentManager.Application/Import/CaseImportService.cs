@@ -350,36 +350,53 @@ public sealed class CaseImportService
         p.CreatedCaseId is not null || p.SummaryApplied || p.Timeline.Any(t => t.Applied)
         || p.Entities.Any(e => e.Applied) || p.ActionItems.Any(a => a.Applied);
 
+    /// <summary>BUG-198: how old a claim of one's own with no case must be before it can be taken again. Younger, it's an
+    /// apply still running (in another tab, say).</summary>
+    public static readonly TimeSpan StaleClaim = TimeSpan.FromMinutes(30);
+
     /// <summary>
     /// BUG-13: claims a queued submission for this reviewer before anything is applied, in one conditional update, so
-    /// two reviewers (or two tabs) can't both apply it. False when it was already applied or rejected by someone else.
-    /// A reviewer whose apply failed part-way keeps the claim and can retry; the claim is the row marked applied by
-    /// them with no resulting case recorded yet.
+    /// two reviewers (or two tabs) can't both apply it. Returns the claim, which recording the result or releasing it
+    /// must present; null when it's taken (applied, rejected, or being applied, even by this reviewer in another tab:
+    /// BUG-198). A failed apply puts it back in the queue (BUG-116); a claim of this reviewer's left behind anyway (the
+    /// release failed too) can be taken again once it's <see cref="StaleClaim"/> old.
     /// </summary>
-    public async Task<bool> ClaimPendingAsync(Guid pendingId, CancellationToken ct = default)
+    public async Task<DateTimeOffset?> ClaimPendingAsync(Guid pendingId, CancellationToken ct = default)
     {
         RequireEdit();
         using var db = _factory.CreateDbContext();
         var me = _user.UserId;
         var now = _clock.UtcNow;
         var claimed = await VisiblePending(db)
-            .Where(p => p.Id == pendingId && (p.Status == PendingImportStatus.Pending
-                || (p.Status == PendingImportStatus.Applied && p.DecidedBy == me && p.ResolvedCaseId == null)))
+            .Where(p => p.Id == pendingId && p.Status == PendingImportStatus.Pending)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(p => p.Status, PendingImportStatus.Applied)
                 .SetProperty(p => p.DecidedBy, me)
                 .SetProperty(p => p.DecidedAtUtc, now), ct);
-        return claimed == 1;
+        if (claimed == 1) return now;
+
+        var left = await VisiblePending(db).AsNoTracking().Where(p => p.Id == pendingId)
+            .Select(p => new { p.Status, p.DecidedBy, p.ResolvedCaseId, p.DecidedAtUtc }).FirstOrDefaultAsync(ct);
+        if (left is not { Status: PendingImportStatus.Applied, ResolvedCaseId: null } || left.DecidedBy != me
+            || left.DecidedAtUtc is not { } at || now - at < StaleClaim) return null;
+        claimed = await VisiblePending(db)
+            .Where(p => p.Id == pendingId && p.Status == PendingImportStatus.Applied && p.DecidedBy == me
+                        && p.ResolvedCaseId == null && p.DecidedAtUtc == at)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.DecidedAtUtc, now), ct);
+        return claimed == 1 ? now : null;
     }
 
-    /// <summary>Records the case a claimed submission went into (<see cref="ClaimPendingAsync"/> claims it first).</summary>
-    public async Task MarkPendingAppliedAsync(Guid pendingId, CaseImportResult result, CancellationToken ct = default)
+    /// <summary>Records the case a claimed submission went into (<see cref="ClaimPendingAsync"/> claims it first, and
+    /// <paramref name="claim"/> is what it returned; null for a submission applied without a claim).</summary>
+    public async Task MarkPendingAppliedAsync(Guid pendingId, CaseImportResult result, DateTimeOffset? claim = null,
+        CancellationToken ct = default)
     {
         RequireEdit();
         using var db = _factory.CreateDbContext();
         var row = await VisiblePending(db).FirstOrDefaultAsync(p => p.Id == pendingId, ct);
         if (row is null || row.ResolvedCaseId is not null) return;
         if (row.Status != PendingImportStatus.Pending && !(row.Status == PendingImportStatus.Applied && row.DecidedBy == _user.UserId)) return;
+        if (claim is { } mine && row.Status == PendingImportStatus.Applied && row.DecidedAtUtc != mine) return;   // BUG-198: not this claim
         row.Status = PendingImportStatus.Applied;
         row.DecidedBy = _user.UserId;
         row.DecidedAtUtc = _clock.UtcNow;
@@ -395,12 +412,14 @@ public sealed class CaseImportService
     /// carries on into that case rather than creating another. BUG-146: and if it wrote anything, the reviewed preview is
     /// kept with what it wrote, so reopening the submission doesn't write those items again.
     /// </summary>
-    public async Task ReleaseClaimAsync(Guid pendingId, CaseImportPreview preview, CancellationToken ct = default)
+    public async Task ReleaseClaimAsync(Guid pendingId, CaseImportPreview preview, DateTimeOffset? claim = null,
+        CancellationToken ct = default)
     {
         RequireEdit();
         using var db = _factory.CreateDbContext();
         var row = await VisiblePending(db).FirstOrDefaultAsync(p => p.Id == pendingId, ct);
         if (row is not { Status: PendingImportStatus.Applied, ResolvedCaseId: null } || row.DecidedBy != _user.UserId) return;
+        if (claim is { } mine && row.DecidedAtUtc != mine) return;   // BUG-198: another tab's claim, still applying
         row.Status = PendingImportStatus.Pending;
         row.DecidedBy = null;
         row.DecidedAtUtc = null;

@@ -666,6 +666,7 @@ else if (_pending.Count > 0)
         _applying = true;
         _error = null;
         Guid? claimed = null;
+        DateTimeOffset? claim = null;
         try
         {
             if (NewCaseTarget)
@@ -676,14 +677,15 @@ else if (_pending.Count > 0)
                 nc.OverrideJustification = _gate.NeedsOverride ? _gate.Override?.Trim() : null;
             }
             // BUG-13: a queued import is claimed first, so it can't be applied twice.
-            if (_reviewingPendingId is { } claim && !await Import.ClaimPendingAsync(claim))
+            if (_reviewingPendingId is { } pending && (claim = await Import.ClaimPendingAsync(pending)) is null)
             {
-                _error = "This import was already applied or rejected by someone else. Reload the queue to see it.";
+                _error = "This import is being applied (perhaps in another tab), or was already applied or rejected. " +
+                         "Reload the queue to see it.";
                 return;
             }
             claimed = _reviewingPendingId;
             var result = await Import.ApplyAsync(p);
-            if (_reviewingPendingId is { } pid) await Import.MarkPendingAppliedAsync(pid, result);
+            if (_reviewingPendingId is { } pid) await Import.MarkPendingAppliedAsync(pid, result, claim);
             var what = result.CaseCreated ? $"Case {result.CaseNumber} created" : $"Imported into {result.CaseNumber}";
             Toasts.Success($"{what}. {IncidentManager.Application.Common.Plural.Of(result.Total, "item")} imported.");
             Nav.NavigateTo($"cases/{result.CaseId}");
@@ -697,7 +699,7 @@ else if (_pending.Count > 0)
             // BUG-116: back in the queue, so it isn't stranded if this page is left.
             if (claimed is { } c)
             {
-                try { await Import.ReleaseClaimAsync(c, p); }
+                try { await Import.ReleaseClaimAsync(c, p, claim); }
                 catch (Exception releaseEx) { Logger.LogWarning(releaseEx, "Couldn't put a failed import back in the queue."); }
             }
         }

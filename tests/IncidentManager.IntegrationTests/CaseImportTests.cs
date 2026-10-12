@@ -712,14 +712,15 @@ public sealed class CaseImportTests : IDisposable
 
         await using var ctx = NewContext();
         var svc = NewImportService(ctx);
-        (await svc.ClaimPendingAsync(pid)).Should().BeTrue();
-        (await svc.ClaimPendingAsync(pid)).Should().BeTrue("the same reviewer retrying after a failed apply keeps the claim");
+        (await svc.ClaimPendingAsync(pid)).Should().NotBeNull();
+        // BUG-198: the same reviewer's other tab, while the first is still applying.
+        (await svc.ClaimPendingAsync(pid)).Should().BeNull("an apply is in progress");
 
         var someoneElse = _user.UserId;
         _user.UserId = "analyst2";
         try
         {
-            (await svc.ClaimPendingAsync(pid)).Should().BeFalse("another reviewer has it");
+            (await svc.ClaimPendingAsync(pid)).Should().BeNull("another reviewer has it");
             (await svc.RejectPendingAsync(pid, "dup")).Should().BeFalse("BUG-92: the reject says it didn't happen");
         }
         finally { _user.UserId = someoneElse; }
@@ -727,6 +728,33 @@ public sealed class CaseImportTests : IDisposable
         var row = await ctx.Set<PendingImport>().AsNoTracking().FirstAsync(p => p.Id == pid);
         row.Status.Should().Be(PendingImportStatus.Applied, "a claimed import can't be rejected out from under its reviewer");
         row.DecidedBy.Should().Be(someoneElse);
+
+        // A claim left behind (the apply and its release both failed) can be taken again once it's stale.
+        _clock.UtcNow = _clock.UtcNow.Add(CaseImportService.StaleClaim);
+        (await svc.ClaimPendingAsync(pid)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task A_second_tabs_apply_cannot_record_or_release_the_first_tabs_claim(/* BUG-198 */)
+    {
+        Guid pid;
+        await using (var db = NewContext())
+        {
+            var json = FullDocJson();
+            (pid, _) = await NewImportService(db).SubmitAsync(json, CaseImportService.Parse(json).Document!);
+        }
+        await using var ctx = NewContext();
+        var svc = NewImportService(ctx);
+        var preview = (await svc.BuildPreviewForPendingAsync(pid))!;
+        var first = await svc.ClaimPendingAsync(pid);
+
+        await svc.ReleaseClaimAsync(pid, preview, first!.Value.AddTicks(1));   // not this claim
+        (await ctx.Set<PendingImport>().AsNoTracking().FirstAsync(p => p.Id == pid)).Status
+            .Should().Be(PendingImportStatus.Applied, "the first tab is still applying");
+
+        var result = await svc.ApplyAsync(preview);
+        await svc.MarkPendingAppliedAsync(pid, result, first);
+        (await ctx.Set<PendingImport>().AsNoTracking().FirstAsync(p => p.Id == pid)).ResolvedCaseId.Should().Be(result.CaseId);
     }
 
     [Fact]
@@ -745,9 +773,10 @@ public sealed class CaseImportTests : IDisposable
             // Everything is written, then recording the result fails, so the page puts the import back.
             var svc = NewImportService(ctx);
             var preview = (await svc.BuildPreviewForPendingAsync(pid))!;
-            (await svc.ClaimPendingAsync(pid)).Should().BeTrue();
+            var claim = await svc.ClaimPendingAsync(pid);
+            claim.Should().NotBeNull();
             caseId = (await svc.ApplyAsync(preview)).CaseId;
-            await svc.ReleaseClaimAsync(pid, preview);
+            await svc.ReleaseClaimAsync(pid, preview, claim);
 
             var row = await ctx.Set<PendingImport>().AsNoTracking().FirstAsync(p => p.Id == pid);
             row.Status.Should().Be(PendingImportStatus.Pending);
@@ -774,9 +803,10 @@ public sealed class CaseImportTests : IDisposable
             CaseImportService.HasApplied(reopened).Should().BeTrue("the target stays locked to the created case");
             reopened.Warnings.Should().Contain(w => w.Contains("stopped part-way"));
 
-            (await svc.ClaimPendingAsync(pid)).Should().BeTrue();
+            var claim = await svc.ClaimPendingAsync(pid);
+            claim.Should().NotBeNull();
             var result = await svc.ApplyAsync(reopened);
-            await svc.MarkPendingAppliedAsync(pid, result);
+            await svc.MarkPendingAppliedAsync(pid, result, claim);
 
             result.CaseId.Should().Be(caseId);
             (await Counts(again)).Should().Equal(before, "nothing the first apply wrote is written again");
