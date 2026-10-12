@@ -62,6 +62,11 @@ Used only by `POST /api/import/cases` (bearer header).
 - A rejected token is SIEM event 5101 (`ApiTokenRejected`), logged with its 12-character prefix and the source
   address, never the token.
 - Create and revoke are written to the audit chain and SIEM (5404).
+- **With Windows sign-in, a personal token's owner is checked in Active Directory** on use (`AdTokenOwnerCheck`): a
+  missing or disabled account is refused, and the token keeps only the roles the owner's current groups map to. Each
+  answer is reused for 15 minutes; if AD can't be reached, the last answer stands for up to 24 hours, then the token is
+  refused. The calendar feed link follows the same check. Without Windows sign-in the user mirror is used (it updates
+  at each sign-in).
 
 ### Sessions
 

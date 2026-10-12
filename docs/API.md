@@ -20,8 +20,9 @@ Tokens are minted **in-app**, never by the API itself:
   grants **EditCases**). In the audit trail its actions are attributed to `apitoken:<name-as-slug>` (shown with
   the token's name). Maximum lifetime 365 days.
 - **Personal token** (for a user calling the API as themselves): the account menu → *API tokens*. Its
-  permissions are a subset of your own, re-checked against the roles you still hold on every call; actions
-  attribute to you. Maximum lifetime 90 days.
+  permissions are a subset of your own, re-checked against the roles you still hold on every call (in Active
+  Directory, with Windows sign-in: a disabled account's tokens stop working); actions attribute to you. Maximum
+  lifetime 90 days.
 
 Tokens look like `cbk_` followed by 43 characters. They are shown **once** at creation (CaseBook stores only a
 SHA-256 hash), carry a **required expiry**, and can be **revoked** anytime by their creator or an administrator.
