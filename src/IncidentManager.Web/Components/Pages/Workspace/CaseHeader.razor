@@ -4,6 +4,7 @@
 @implements IAsyncDisposable
 @inject CaseService Cases
 @inject ToastService Toasts
+@inject ILogger<CaseHeader> Logger
 
 @* FR-17: wrap so the action group (Advance / Actions) drops below the title on a phone instead of
    overflowing the row and forcing whole-page horizontal scroll. *@
@@ -275,7 +276,9 @@
         }
         catch (Exception ex)
         {
-            _renumberError = ex.Message;
+            // BUG-91: a user error shows as written; anything else is logged and described, not shown raw.
+            _renumberError = IncidentManager.Web.Services.UserFacingError.Describe(ex, Logger, "changing a case number",
+                "Couldn't change the case number. Try again, or pick a different number.");
         }
         finally
         {
