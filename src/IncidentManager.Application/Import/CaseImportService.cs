@@ -276,6 +276,35 @@ public sealed class CaseImportService
     /// the API never writes case state directly. The document is previewed for the response (so the caller
     /// gets the item count + any warnings), then persisted verbatim so a human confirms it later.
     /// </summary>
+    /// <summary>BUG-217: how long an identical resubmission is taken for a retry of one still waiting for review.</summary>
+    public static readonly TimeSpan RetryWindow = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// BUG-217: queues a submission from the API, unless the same submitter sent the identical document within
+    /// <see cref="RetryWindow"/> and it's still waiting for review: a producer's retry after a timeout returns that one
+    /// (<c>AlreadyQueued</c>) rather than queueing a second, which a reviewer could confirm into a second case.
+    /// </summary>
+    public async Task<(Guid Id, CaseImportPreview Preview, bool AlreadyQueued)> SubmitOnceAsync(string rawJson, CaseImportDocument doc,
+        CancellationToken ct = default)
+    {
+        using (var db = _factory.CreateDbContext())
+        {
+            var me = _user.UserId;
+            var length = rawJson.Length;
+            // The length narrows it in the database; the text and the time are compared here.
+            var waiting = await db.PendingImports.AsNoTracking()
+                .Where(p => p.SubmittedBy == me && p.Status == PendingImportStatus.Pending && p.RawJson.Length == length)
+                .Select(p => new { p.Id, p.SubmittedAtUtc, p.RawJson })
+                .ToListAsync(ct);
+            var since = _clock.UtcNow - RetryWindow;
+            if (waiting.Where(p => p.SubmittedAtUtc >= since && string.Equals(p.RawJson, rawJson, StringComparison.Ordinal))
+                    .OrderByDescending(p => p.SubmittedAtUtc).FirstOrDefault() is { } same)
+                return (same.Id, await BuildPreviewAsync(doc, ct: ct), true);
+        }
+        var (id, preview) = await SubmitAsync(rawJson, doc, ct);
+        return (id, preview, false);
+    }
+
     public async Task<(Guid Id, CaseImportPreview Preview)> SubmitAsync(string rawJson, CaseImportDocument doc,
         CancellationToken ct = default)
     {

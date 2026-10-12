@@ -818,15 +818,20 @@ app.MapPost("/api/import/cases", async (
     if (!parsed.Ok)
         return Results.BadRequest(new { error = parsed.Error });
 
-    var (id, preview) = await import.SubmitAsync(json, parsed.Document!, ct);
-    return Results.Created($"/cases/import?pending={id}", new
+    // BUG-217: a retry of a submission still waiting for review returns that one (200), not a second (201).
+    var (id, preview, alreadyQueued) = await import.SubmitOnceAsync(json, parsed.Document!, ct);
+    var body = new
     {
         pendingImportId = id,
         status = "pending",
-        message = "Accepted for review. A human must confirm this import in CaseBook before anything is written.",
+        duplicate = alreadyQueued,
+        message = alreadyQueued
+            ? "Already queued for review: this identical document is waiting to be confirmed, so it wasn't queued again."
+            : "Accepted for review. A human must confirm this import in CaseBook before anything is written.",
         itemCount = preview.IncludedItemCount,
         warnings = preview.Warnings
-    });
+    };
+    return alreadyQueued ? Results.Ok(body) : Results.Created($"/cases/import?pending={id}", body);
 }).RequireAuthorization(new AuthorizeAttribute
 {
     Policy = Policies.EditCases,

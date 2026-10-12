@@ -727,6 +727,27 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_retried_api_submission_is_not_queued_twice(/* BUG-217 */)
+    {
+        await using var db = NewContext();
+        var svc = NewImportService(db);
+        var json = FullDocJson();
+        var doc = CaseImportService.Parse(json).Document!;
+
+        var first = await svc.SubmitOnceAsync(json, doc);
+        var retry = await svc.SubmitOnceAsync(json, doc);
+        retry.AlreadyQueued.Should().BeTrue();
+        retry.Id.Should().Be(first.Id);
+        (await svc.CountPendingAsync()).Should().Be(1);
+
+        // A different document, or the same one a day later, is a new submission.
+        (await svc.SubmitOnceAsync(json.Replace("Phishing", "Vishing"), CaseImportService.Parse(json.Replace("Phishing", "Vishing")).Document!))
+            .AlreadyQueued.Should().BeFalse();
+        _clock.UtcNow = _clock.UtcNow.Add(CaseImportService.RetryWindow).AddMinutes(1);
+        (await svc.SubmitOnceAsync(json, doc)).AlreadyQueued.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Submit_stages_a_pending_import_and_writes_nothing_yet()
     {
         Guid pid;
