@@ -468,7 +468,15 @@ app.MapGet("/agenda/feed.ics", async (string? token, IncidentManager.Application
 app.MapGet("/evidence/{id:guid}", async (Guid id, EvidenceService evidence,
     IncidentManager.Application.Access.IAccessLogService access, CancellationToken ct) =>
 {
-    var (item, stream) = await evidence.OpenAsync(id, recordDownload: true, ct);
+    IncidentManager.Domain.Entities.Evidence item;
+    Stream stream;
+    try { (item, stream) = await evidence.OpenAsync(id, recordDownload: true, ct); }
+    catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+    {
+        // BUG-197: the record is there but its file isn't (the evidence check reports it as missing).
+        return Results.Problem("This evidence file is missing from the evidence store. Nothing was downloaded; " +
+            "ask an administrator to restore it.", statusCode: StatusCodes.Status404NotFound);
+    }
     // C-05: record the sensitive-artifact access (best-effort, out of the tamper-evident chain).
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.EvidenceDownload,
         item.CaseId, item.OriginalFileName, item.Id, ct);

@@ -82,16 +82,25 @@ public sealed class EvidenceService
             .AnyAsync(c => c.Id == evidence.CaseId, ct);
         if (!canAccess) throw new InvalidOperationException("Evidence not found.");
 
+        // BUG-197: the file is opened first, so a download that can't be served (the file missing or unreadable) records
+        // no custody event for bytes that never left the server.
+        var stream = await _store.OpenReadAsync(evidence.StoragePath, ct);
         if (recordDownload)
         {
-            evidence.CustodyEvents.Add(new ChainOfCustodyEvent
+            try
             {
-                EvidenceId = evidence.Id, AtUtc = _clock.UtcNow, Actor = _user.UserId, Action = "Downloaded"
-            });
-            await db.SaveChangesAsync(ct);
+                evidence.CustodyEvents.Add(new ChainOfCustodyEvent
+                {
+                    EvidenceId = evidence.Id, AtUtc = _clock.UtcNow, Actor = _user.UserId, Action = "Downloaded"
+                });
+                await db.SaveChangesAsync(ct);
+            }
+            catch
+            {
+                await stream.DisposeAsync();
+                throw;
+            }
         }
-
-        var stream = await _store.OpenReadAsync(evidence.StoragePath, ct);
         return (evidence, stream);
     }
 

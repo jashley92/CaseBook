@@ -159,6 +159,16 @@ public sealed class EvidenceUploadTests : IDisposable
             .Should().BeEquivalentTo("Uploaded", "Downloaded");
     }
 
+    [Fact]
+    public async Task A_download_whose_file_is_missing_records_no_custody_event(/* BUG-197 */)
+    {
+        var (svc, _, evId) = await SeedEvidenceAsync();
+        foreach (var file in Directory.EnumerateFiles(_storeDir, "*.bin", SearchOption.AllDirectories)) File.Delete(file);
+
+        await svc.Invoking(s => s.OpenAsync(evId, recordDownload: true)).Should().ThrowAsync<FileNotFoundException>();
+        (await svc.GetCustodyAsync(evId)).Select(e => e.Action).Should().Equal("Uploaded");
+    }
+
     private async Task<(EvidenceService Svc, Guid CaseId, Guid EvidenceId)> SeedEvidenceAsync()
     {
         Guid caseId;
