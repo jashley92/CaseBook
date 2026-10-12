@@ -317,6 +317,26 @@ public class CaseTests
     }
 
     [Fact]
+    public void Re_dating_a_move_that_skipped_containment_moves_the_decision_with_it(/* BUG-210 */)
+    {
+        var c = NewCase();
+        c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(6), containmentNotNeededReason: "Never clicked");
+        var move = c.StatusChanges.Single(s => s.To == CasePhase.Eradication);
+
+        c.CorrectTransitionTime(TransitionKind.Phase, move.Id, Now.AddHours(1), "Logged late", "ic1", Now.AddHours(7));
+        c.ContainedAtUtc.Should().Be(Now.AddHours(1), "the decision was made at that move");
+
+        // And a resolution can't be re-dated before a containment that was needed.
+        var d = NewCase();
+        d.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(3));
+        d.ChangePhase(CasePhase.Recovery, null, "ic1", Now.AddHours(5));
+        var recovery = d.StatusChanges.Single(s => s.To == CasePhase.Recovery);
+        d.Invoking(x => x.CorrectTransitionTime(TransitionKind.Phase, recovery.Id, Now.AddHours(2), "x", "ic1", Now.AddHours(6)))
+            .Should().Throw<ArgumentException>();
+        d.ResolvedAtUtc.Should().Be(Now.AddHours(5));
+    }
+
+    [Fact]
     public void Going_past_recovery_without_it_needs_when_it_was_resolved(/* BUG-208 */)
     {
         var c = NewCase();

@@ -1564,15 +1564,23 @@ public class Case : AuditableEntity, IHashableEntity
         if (newEffectiveUtc == old)
             throw new ArgumentException("That's already when it happened.");
 
-        target.Set(newEffectiveUtc == target.ChangedAtUtc ? null : newEffectiveUtc);
-
-        // The milestone this phase change set moves with it.
+        // The milestone this phase change set moves with it. BUG-210: a move past Containment that recorded it as not needed
+        // set the contained time (the decision) to its own time, so that moves too.
+        var (contained, resolved, closed) = (ContainedAtUtc, ResolvedAtUtc, ClosedAtUtc);
         switch (target.To)
         {
-            case CasePhase.Containment when ContainedAtUtc == old: ContainedAtUtc = newEffectiveUtc; break;
-            case CasePhase.Recovery when ResolvedAtUtc == old: ResolvedAtUtc = newEffectiveUtc; break;
-            case CasePhase.Closed when ClosedAtUtc == old: ClosedAtUtc = newEffectiveUtc; break;
+            case CasePhase.Containment when contained == old: contained = newEffectiveUtc; break;
+            case CasePhase.Recovery when resolved == old: resolved = newEffectiveUtc; break;
+            case CasePhase.Closed when closed == old: closed = newEffectiveUtc; break;
         }
+        if (target.To is CasePhase.Eradication or CasePhase.Recovery or CasePhase.PostIncident
+            && ContainmentNotNeededReason is not null && contained == old)
+            contained = newEffectiveUtc;
+        if (ContainmentNotNeededReason is null && contained is { } c && resolved is { } r && r < c)
+            throw new ArgumentException("That would date the resolution before the containment.");
+
+        target.Set(newEffectiveUtc == target.ChangedAtUtc ? null : newEffectiveUtc);
+        (ContainedAtUtc, ResolvedAtUtc, ClosedAtUtc) = (contained, resolved, closed);
 
         var correction = new TransitionTimeCorrection
         {
