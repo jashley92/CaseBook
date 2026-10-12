@@ -241,6 +241,8 @@ public sealed class StixExportService
     // identifier, not a security primitive; there is nothing secret to protect.
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CA5350:Do Not Use Weak Cryptographic Algorithms",
         Justification = "RFC 4122 name-based UUID derivation, not a security use.")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "S4790:Using weak hashing algorithms is security-sensitive",
+        Justification = "RFC 4122 name-based UUID derivation, not a security use.")]
     internal static Guid Deterministic(string ns, string name)
     {
         // BUG-201: a real name-based (v5) UUID, in the URL namespace. STIX 2.1 requires an RFC 4122 UUID, and SHA-1 bytes
