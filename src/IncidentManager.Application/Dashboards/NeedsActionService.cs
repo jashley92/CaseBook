@@ -130,10 +130,11 @@ public sealed class NeedsActionService
             }
         }
 
-        // Overdue tasks, one row per case.
+        // Overdue tasks, one row per case. BUG-163: open cases only, as on the dashboard and in the reminders and agenda
+        // (BUG-12, BUG-103): a closed case's leftover task isn't something to act on here.
         var visible = cases.Select(c => c.Id);
         var overdue = (await db.ActionItems.AsNoTracking()
-                .Where(a => visible.Contains(a.CaseId) && a.DueAtUtc != null
+                .Where(a => openIds.Contains(a.CaseId) && a.DueAtUtc != null
                             && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled)
                 .Select(a => new { a.CaseId, Due = a.DueAtUtc!.Value }).ToListAsync(ct))
             .Where(a => a.Due < now).GroupBy(a => a.CaseId).ToList();

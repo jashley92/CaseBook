@@ -119,6 +119,24 @@ public sealed class DashboardNotificationTests : IDisposable
         na.Clocks.Select(c => c.CaseId).Should().Equal(atRisk.Id, onTrack.Id);
     }
 
+    [Fact]
+    public async Task Needs_action_leaves_out_overdue_tasks_on_closed_cases(/* BUG-163 */)
+    {
+        var now = _clock.UtcNow;
+        var closed = Case.Open(2026, 60, "Done", "Closed with a leftover task", Classification.AdverseEvent, Severity.Low,
+            CaseOrigin.InternalDetection, "a", now.AddDays(-3));
+        closed.ActionItems.Add(new ActionItem { CaseId = closed.Id, Title = "Tidy up", DueAtUtc = now.AddDays(-1),
+            CreatedBy = "a", CreatedAtUtc = now.AddDays(-2) });
+        closed.ChangePhase(CasePhase.Closed, null, "a", now.AddHours(-1));
+        await SeedAsync(closed);
+        var f = NewFactory();
+
+        var na = await new NeedsActionService(f, _user, _clock, new TestSlaTargets(), _settings,
+            new NotificationRuleService(f, _user, _clock)).GetAsync();
+
+        na.Items.Should().NotContain(i => i.Kind == NeedsActionKind.Tasks);
+    }
+
     // Where open cases are: severity within each phase, and how long the longest-waiting one has been in it.
     [Fact]
     public async Task Phase_aging_counts_severity_and_the_longest_time_in_each_phase()
