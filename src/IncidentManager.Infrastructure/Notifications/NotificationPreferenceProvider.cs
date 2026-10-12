@@ -2,6 +2,7 @@ using IncidentManager.Application.Abstractions;
 using IncidentManager.Domain.Enums;
 using IncidentManager.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IncidentManager.Infrastructure.Notifications;
@@ -17,8 +18,16 @@ namespace IncidentManager.Infrastructure.Notifications;
 public sealed class NotificationPreferenceProvider : INotificationPreferenceProvider
 {
     private readonly IServiceScopeFactory _scopes;
+    private readonly IConfiguration? _config;
 
-    public NotificationPreferenceProvider(IServiceScopeFactory scopes) => _scopes = scopes;
+    public NotificationPreferenceProvider(IServiceScopeFactory scopes, IConfiguration? config = null)
+    {
+        _scopes = scopes;
+        _config = config;
+    }
+
+    // BUG-97: a digest only replaces the per-item reminders while digests are being sent (off by default).
+    private bool DigestsOn => _config?.GetValue<bool>("Notifications:DigestScan:Enabled") == true;
 
     public async Task<NotificationSuppression> GetAsync(string userId, CancellationToken ct = default)
     {
@@ -31,11 +40,12 @@ public sealed class NotificationPreferenceProvider : INotificationPreferenceProv
                 .FirstOrDefaultAsync(x => x.UserId == userId, ct);
             if (p is null) return NotificationSuppression.None;
 
-            var onDigest = p.DigestCadence != DigestCadence.Off; // the digest replaces per-item reminders
+            var onDigest = p.DigestCadence != DigestCadence.Off && DigestsOn; // the digest replaces per-item reminders
             return new NotificationSuppression(
                 Assignment: p.SuppressAssignment,
                 Overdue: p.SuppressOverdue || onDigest,
-                DueSoon: p.SuppressDueSoon || onDigest);
+                DueSoon: p.SuppressDueSoon || onDigest,
+                Escalation: p.SuppressOverdue);
         }
         catch
         {

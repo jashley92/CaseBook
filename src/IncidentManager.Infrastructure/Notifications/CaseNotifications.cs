@@ -302,7 +302,7 @@ public sealed class CaseNotifications : ICaseNotifications
         var mandatory = Mandatory("Overdue");
         foreach (var ((uid, audience), list) in byRecipient)
         {
-            if (!mandatory && (await _prefs.GetAsync(uid, ct)).Overdue) continue; // same opt-out as overdue reminders
+            if (!mandatory && (await _prefs.GetAsync(uid, ct)).Escalation) continue; // the user's overdue opt-out (not a digest: BUG-97)
             var to = _users.EmailFor(uid);
             if (string.IsNullOrWhiteSpace(to)) continue;
             var ordered = list.OrderBy(i => i.Item.DueAtUtc).ToList();

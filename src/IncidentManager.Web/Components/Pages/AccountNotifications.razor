@@ -26,6 +26,12 @@ else
             One email summarizing your overdue tasks and those due today or this week, instead of a separate
             reminder for each.
         </p>
+        @if (!DigestsOn)
+        {
+            @* BUG-97: say it, since a choice here then changes nothing: the individual reminders below keep coming. *@
+            <div class="alert alert-info small py-2">Digests aren't being sent on this server yet (an administrator turns them
+                on under Settings, Notifications). Until then you get the individual reminders below, whatever you pick here.</div>
+        }
         <div class="mb-1">
             @foreach (var c in new[] { DigestCadence.Off, DigestCadence.Daily, DigestCadence.Weekly })
             {
@@ -46,7 +52,7 @@ else
         <p class="text-muted small mb-3">
             Turn off the reminders you don't want. Breach escalations to Legal / Privacy are a compliance
             obligation and are always sent.
-            @if (_cadence != DigestCadence.Off)
+            @if (_cadence != DigestCadence.Off && DigestsOn)
             {
                 <span class="d-block mt-1"><span class="bi bi-info-circle me-1" aria-hidden="true"></span>
                     Your digest already covers overdue and due-soon tasks, so you can turn those off here.</span>
@@ -111,6 +117,7 @@ else
 
 @code {
     private DigestCadence _cadence = DigestCadence.Off;
+    private bool DigestsOn => Config.GetValue<bool>("Notifications:DigestScan:Enabled");
     private bool _receiveAssignment = true, _receiveOverdue = true, _receiveDueSoon = true;
     private bool _mandAssignment, _mandOverdue, _mandDueSoon;
     private bool _loaded;

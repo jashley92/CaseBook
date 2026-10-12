@@ -5,7 +5,9 @@ namespace IncidentManager.Application.Abstractions;
 /// the digest overlay is already folded in (a digest subscriber's per-item overdue/due-soon are treated as
 /// suppressed, since the digest covers them). Admin "mandatory" policy is applied by the caller, not here.
 /// </summary>
-public sealed record NotificationSuppression(bool Assignment, bool Overdue, bool DueSoon)
+/// <param name="Escalation">BUG-97: overdue escalations about other people's tasks, which the digest doesn't cover, so only
+/// the user's own opt-out from overdue reminders turns them off.</param>
+public sealed record NotificationSuppression(bool Assignment, bool Overdue, bool DueSoon, bool Escalation = false)
 {
     public static readonly NotificationSuppression None = new(false, false, false);
 }

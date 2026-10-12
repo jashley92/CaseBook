@@ -230,7 +230,9 @@ public sealed class DigestScannerTests : IDisposable
     }
 
     private IncidentManager.Infrastructure.Notifications.NotificationPreferenceProvider NewProvider() =>
-        new(new ScopeFactory(NewContext));
+        new(new ScopeFactory(NewContext), Microsoft.Extensions.Configuration.MemoryConfigurationBuilderExtensions.AddInMemoryCollection(
+            new Microsoft.Extensions.Configuration.ConfigurationBuilder(),   // digests on (BUG-97)
+            new Dictionary<string, string?> { ["Notifications:DigestScan:Enabled"] = "true" }).Build());
 
     [Fact]
     public async Task Provider_returns_nothing_suppressed_when_there_is_no_preference_row()
