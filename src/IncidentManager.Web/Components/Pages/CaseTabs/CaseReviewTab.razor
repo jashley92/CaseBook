@@ -303,6 +303,16 @@ else
         </select>
         <span class="small text-muted">@Tlp.Meaning(_tlp)</span>
     </div>
+    @if (UsesWordTemplate && Entities?.Where(e => e.Tlp is not null).Max(e => e.Tlp) is { } held && held > _tlp)
+    {
+        @* BUG-182: say the design, as the Report tab does (BUG-141): a Word template can print the case's entities, so its
+           report is marked as restrictively as they are. The built-in layout prints none, so it isn't raised. *@
+        <div class="small text-warning-emphasis mb-2">
+            <span class="bi bi-shield-lock" aria-hidden="true"></span>
+            The report will be marked @Tlp.Label(held): it's filled from a Word template, which can print this case's
+            entities, and one is marked @Tlp.Label(held). Pick the built-in layout, or change that entity's TLP, to share it more widely.
+        </div>
+    }
     <div class="d-flex gap-2 mb-2">
         <button class="btn btn-sm btn-primary" @onclick="GenerateReport" disabled="@(_saving || _job?.Busy == true)">Generate draft</button>
     </div>
@@ -595,6 +605,11 @@ else
     private TlpLevel? _tlpChoice;   // null = the admin default
     // The Word template for the next draft: "" = the lessons-learned default, Guid.Empty = built-in, else that template.
     private string _wordTemplate = "";
+
+    // The lessons default when none is picked; Guid.Empty is the built-in layout.
+    private bool UsesWordTemplate => Guid.TryParse(_wordTemplate, out var tid)
+        ? tid != Guid.Empty
+        : _templates?.Any(t => t.IsLessonsDefault) == true;
     private List<IncidentManager.Application.Admin.ReportTemplateView>? _templates;
     private TlpLevel _tlp => _tlpChoice ?? ReportingOpts.CurrentValue.EffectiveDefaultTlp;
 
