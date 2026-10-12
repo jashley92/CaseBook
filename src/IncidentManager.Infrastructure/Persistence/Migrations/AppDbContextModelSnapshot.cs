@@ -407,7 +407,7 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("RolesCsv")
                         .IsRequired()
-                        .HasMaxLength(400)
+                        .HasMaxLength(4000)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Sid")

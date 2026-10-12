@@ -170,6 +170,11 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ### Next release
 
+- **One migration widens the user mirror's role list** (`UserRolesWider`: `Users.RolesCsv` from 400 to 4,000
+  characters). A user with several long-named roles overflowed it, the update failed silently on every request, and
+  the mirror kept their old roles, which decide who a restricted case's notifications reach. Such a failure is now
+  logged too.
+
 - **Skipping Recovery says when it was resolved.** Moving a case to Post-incident without going through Recovery
   never set its resolved time, so its resolution clock ran on: SLA-breached on the list and dashboard, and "not
   resolved" in Needs action. The move now asks when it was resolved. Cases that already skipped Recovery are

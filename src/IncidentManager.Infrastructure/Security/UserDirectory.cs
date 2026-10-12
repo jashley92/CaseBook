@@ -4,6 +4,8 @@ using IncidentManager.Domain.Entities;
 using IncidentManager.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace IncidentManager.Infrastructure.Security;
 
@@ -16,15 +18,19 @@ namespace IncidentManager.Infrastructure.Security;
 public sealed class UserDirectory : IUserDirectory
 {
     private static readonly TimeSpan RefreshWindow = TimeSpan.FromMinutes(30);
+    // BUG-216: after a failed write, how long before that user's is tried again (not on every request).
+    private static readonly TimeSpan RetryAfterFailure = TimeSpan.FromMinutes(5);
 
     private readonly IServiceScopeFactory _scopes;
+    private readonly ILogger<UserDirectory> _logger;
     private volatile IReadOnlyDictionary<string, UserSummary> _byId =
         new Dictionary<string, UserSummary>(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastTouched = new(StringComparer.OrdinalIgnoreCase);
 
-    public UserDirectory(IServiceScopeFactory scopes)
+    public UserDirectory(IServiceScopeFactory scopes, ILogger<UserDirectory>? logger = null)
     {
         _scopes = scopes;
+        _logger = logger ?? NullLogger<UserDirectory>.Instance;
         Invalidate();
     }
 
@@ -93,9 +99,12 @@ public sealed class UserDirectory : IUserDirectory
                 [userId] = new UserSummary(userId, displayName, upn, email, rolesCsv)
             };
         }
-        catch
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Directory maintenance must never fail a request; a later touch will retry.
+            // Directory maintenance must never fail a request; a later touch will retry. BUG-216: but not silently, since
+            // the mirror's roles feed who a restricted case's notifications reach, and not on every request.
+            _logger.LogWarning(ex, "Couldn't update the user directory entry for {UserId}; its roles there may be out of date.", userId);
+            _lastTouched[userId] = DateTimeOffset.UtcNow - RefreshWindow + RetryAfterFailure;
         }
     }
 

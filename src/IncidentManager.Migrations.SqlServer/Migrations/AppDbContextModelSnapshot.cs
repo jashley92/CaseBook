@@ -412,8 +412,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
 
                     b.Property<string>("RolesCsv")
                         .IsRequired()
-                        .HasMaxLength(400)
-                        .HasColumnType("nvarchar(400)");
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("Sid")
                         .IsRequired()

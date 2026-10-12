@@ -457,7 +457,7 @@ public sealed class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
         b.Property(x => x.UserPrincipalName).HasMaxLength(200);
         b.Property(x => x.DisplayName).HasMaxLength(200);
         b.Property(x => x.Email).HasMaxLength(300);
-        b.Property(x => x.RolesCsv).HasMaxLength(400);
+        b.Property(x => x.RolesCsv).HasMaxLength(4000);   // BUG-216: several roles of up to 100 characters each
         b.HasIndex(x => x.Sid).IsUnique();
     }
 }
