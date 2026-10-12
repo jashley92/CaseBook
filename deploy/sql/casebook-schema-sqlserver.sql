@@ -3729,3 +3729,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012172622_PendingImportResume'
+)
+BEGIN
+    ALTER TABLE [PendingImports] ADD [ResumeJson] nvarchar(max) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261012172622_PendingImportResume'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261012172622_PendingImportResume'', N''10.0.12'');');
+END;
+
+COMMIT;
+GO
+

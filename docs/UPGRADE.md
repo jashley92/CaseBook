@@ -163,6 +163,11 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ### Next release
 
+- **A queued import that failed part-way carries on where it stopped.** When applying a submission from the import
+  queue failed after writing some items, it went back to the queue (BUG-116) but reopening it re-read the original
+  document, so applying it again wrote the summary note, timeline entries and tasks a second time. The reviewed
+  preview is now kept with what it wrote (a new `PendingImports.ResumeJson` column; one migration, applied at startup).
+
 - **DbaApplies installs: `Install-Database.ps1 -ApplySchema` now applies the schema with `sqlcmd -I` too.** v1.5.2 added
   `-I` only to the database-creation step, so on a host without the SqlServer PowerShell module the schema step still
   ran with QUOTED_IDENTIFIER off and stopped at the first filtered index (a fresh install got no schema; an upgrade

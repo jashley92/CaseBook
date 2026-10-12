@@ -782,6 +782,7 @@ public sealed class PendingImportConfiguration : IEntityTypeConfiguration<Pendin
         b.Property(x => x.DecidedBy).HasMaxLength(200);
         b.Property(x => x.DecisionNote).HasMaxLength(2000);
         b.Property(x => x.ResolvedCaseNumber).HasMaxLength(200);
+        // BUG-146: unbounded like RawJson (the reviewed preview holds the same document).
         // The queue reads Pending, newest first.
         b.HasIndex(x => new { x.Status, x.SubmittedAtUtc });
     }

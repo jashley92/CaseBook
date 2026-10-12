@@ -308,10 +308,29 @@ public sealed class CaseImportService
             .FirstOrDefaultAsync(p => p.Id == pendingId && p.Status == PendingImportStatus.Pending, ct);
         if (row is null) return null;
 
+        // BUG-146: an apply that failed part-way left the reviewed preview, marked with what it wrote.
+        if (row.ResumeJson is { } resume && JsonSerializer.Deserialize<CaseImportPreview>(resume, ResumeJsonOptions) is { } resumed)
+        {
+            resumed.Warnings.Add("An earlier apply of this import stopped part-way. The items already written are marked and " +
+                                 "won't be written again; applying carries on into the same case.");
+            return resumed;
+        }
+
         var parsed = Parse(row.RawJson);
         if (!parsed.Ok) return null; // validated at submit, so this is defensive
         return await BuildPreviewAsync(parsed.Document!, intoCaseId: row.TargetCaseId, ct: ct);
     }
+
+    // The preview's lists are get-only, so they're filled in place.
+    private static readonly JsonSerializerOptions ResumeJsonOptions = new()
+    {
+        PreferredObjectCreationHandling = System.Text.Json.Serialization.JsonObjectCreationHandling.Populate,
+    };
+
+    /// <summary>Whether an apply of <paramref name="p"/> has written anything (a case, the summary note or any row).</summary>
+    public static bool HasApplied(CaseImportPreview p) =>
+        p.CreatedCaseId is not null || p.SummaryApplied || p.Timeline.Any(t => t.Applied)
+        || p.Entities.Any(e => e.Applied) || p.ActionItems.Any(a => a.Applied);
 
     /// <summary>
     /// BUG-13: claims a queued submission for this reviewer before anything is applied, in one conditional update, so
@@ -348,15 +367,17 @@ public sealed class CaseImportService
         row.DecidedAtUtc = _clock.UtcNow;
         row.ResolvedCaseId = result.CaseId;
         row.ResolvedCaseNumber = result.CaseNumber;
+        row.ResumeJson = null;
         await db.SaveChangesAsync(ct);
     }
 
     /// <summary>
     /// BUG-116: puts a claimed submission back in the queue when its apply failed, so it isn't left marked applied with
     /// no case. If the apply had already created the case, the submission now targets it, so a retry (by anyone)
-    /// carries on into that case rather than creating another.
+    /// carries on into that case rather than creating another. BUG-146: and if it wrote anything, the reviewed preview is
+    /// kept with what it wrote, so reopening the submission doesn't write those items again.
     /// </summary>
-    public async Task ReleaseClaimAsync(Guid pendingId, Guid? createdCaseId, CancellationToken ct = default)
+    public async Task ReleaseClaimAsync(Guid pendingId, CaseImportPreview preview, CancellationToken ct = default)
     {
         RequireEdit();
         using var db = _factory.CreateDbContext();
@@ -365,7 +386,10 @@ public sealed class CaseImportService
         row.Status = PendingImportStatus.Pending;
         row.DecidedBy = null;
         row.DecidedAtUtc = null;
-        if (createdCaseId is { } created) row.TargetCaseId = created;
+        if (preview.CreatedCaseId is { } created) row.TargetCaseId = created;
+        else if (preview is { TargetKind: CaseImportTargetKind.ExistingCase, ExistingCaseId: { } into } && HasApplied(preview))
+            row.TargetCaseId = into;
+        if (HasApplied(preview)) row.ResumeJson = JsonSerializer.Serialize(preview, ResumeJsonOptions);
         await db.SaveChangesAsync(ct);
     }
 

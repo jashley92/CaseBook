@@ -607,8 +607,7 @@ else if (_pending.Count > 0)
     }
 
     // BUG-120: once a case was created, or any item applied, the rest of the import follows it.
-    private static bool TargetLocked(CaseImportPreview p) =>
-        p.CreatedCaseId is not null || p.Timeline.Any(t => t.Applied) || p.Entities.Any(e => e.Applied);
+    private static bool TargetLocked(CaseImportPreview p) => CaseImportService.HasApplied(p);
 
     private static bool CanApply(CaseImportPreview p)
     {
@@ -697,7 +696,7 @@ else if (_pending.Count > 0)
             // BUG-116: back in the queue, so it isn't stranded if this page is left.
             if (claimed is { } c)
             {
-                try { await Import.ReleaseClaimAsync(c, p.CreatedCaseId); }
+                try { await Import.ReleaseClaimAsync(c, p); }
                 catch (Exception releaseEx) { Logger.LogWarning(releaseEx, "Couldn't put a failed import back in the queue."); }
             }
         }

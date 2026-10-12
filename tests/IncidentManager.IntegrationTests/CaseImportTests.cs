@@ -649,7 +649,7 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
-    public async Task A_failed_apply_puts_the_import_back_in_the_queue_aimed_at_any_case_it_created(/* BUG-116 */)
+    public async Task A_failed_apply_puts_the_import_back_in_the_queue_and_reopening_it_writes_nothing_twice(/* BUG-116, BUG-146 */)
     {
         Guid pid;
         await using (var db = NewContext())
@@ -658,17 +658,49 @@ public sealed class CaseImportTests : IDisposable
             (pid, _) = await NewImportService(db).SubmitAsync(json, CaseImportService.Parse(json).Document!);
         }
 
-        await using var ctx = NewContext();
-        var svc = NewImportService(ctx);
-        (await svc.ClaimPendingAsync(pid)).Should().BeTrue();
-        var created = Guid.NewGuid();
-        await svc.ReleaseClaimAsync(pid, created);
+        Guid caseId;
+        await using (var ctx = NewContext())
+        {
+            // Everything is written, then recording the result fails, so the page puts the import back.
+            var svc = NewImportService(ctx);
+            var preview = (await svc.BuildPreviewForPendingAsync(pid))!;
+            (await svc.ClaimPendingAsync(pid)).Should().BeTrue();
+            caseId = (await svc.ApplyAsync(preview)).CaseId;
+            await svc.ReleaseClaimAsync(pid, preview);
 
-        var row = await ctx.Set<PendingImport>().AsNoTracking().FirstAsync(p => p.Id == pid);
-        row.Status.Should().Be(PendingImportStatus.Pending);
-        row.DecidedBy.Should().BeNull();
-        row.TargetCaseId.Should().Be(created, "a retry carries on into the case the first try created");
-        (await svc.ListPendingAsync()).Should().Contain(p => p.Id == pid);
+            var row = await ctx.Set<PendingImport>().AsNoTracking().FirstAsync(p => p.Id == pid);
+            row.Status.Should().Be(PendingImportStatus.Pending);
+            row.DecidedBy.Should().BeNull();
+            row.TargetCaseId.Should().Be(caseId, "a retry carries on into the case the first try created");
+            (await svc.ListPendingAsync()).Should().Contain(p => p.Id == pid);
+        }
+
+        async Task<int[]> Counts(AppDbContext db) =>
+        [
+            await db.Set<Case>().CountAsync(),
+            await db.Set<AnalystNote>().CountAsync(n => n.CaseId == caseId),
+            await db.Set<TimelineEntry>().CountAsync(t => t.CaseId == caseId),
+            await db.Set<ActionItem>().CountAsync(a => a.CaseId == caseId),
+            await db.Set<CaseEntity>().CountAsync(e => e.CaseId == caseId),
+        ];
+
+        await using (var again = NewContext())
+        {
+            var before = await Counts(again);
+            var svc = NewImportService(again);
+            var reopened = (await svc.BuildPreviewForPendingAsync(pid))!;
+            reopened.CreatedCaseId.Should().Be(caseId);
+            CaseImportService.HasApplied(reopened).Should().BeTrue("the target stays locked to the created case");
+            reopened.Warnings.Should().Contain(w => w.Contains("stopped part-way"));
+
+            (await svc.ClaimPendingAsync(pid)).Should().BeTrue();
+            var result = await svc.ApplyAsync(reopened);
+            await svc.MarkPendingAppliedAsync(pid, result);
+
+            result.CaseId.Should().Be(caseId);
+            (await Counts(again)).Should().Equal(before, "nothing the first apply wrote is written again");
+            (await again.Set<PendingImport>().AsNoTracking().FirstAsync(p => p.Id == pid)).ResumeJson.Should().BeNull();
+        }
     }
 
     [Fact]

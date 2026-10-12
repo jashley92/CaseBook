@@ -40,4 +40,11 @@ public class PendingImport : Entity
     /// <summary>The case the import was applied into (set on <see cref="PendingImportStatus.Applied"/>).</summary>
     public Guid? ResolvedCaseId { get; set; }
     public string? ResolvedCaseNumber { get; set; }
+
+    /// <summary>
+    /// BUG-146: the reviewed preview, with what was already written, when an apply failed part-way and the submission went
+    /// back to the queue. Reopening it carries on from there instead of re-reading <see cref="RawJson"/>, which would
+    /// write the summary note, timeline entries and tasks a second time. Cleared once it's applied.
+    /// </summary>
+    public string? ResumeJson { get; set; }
 }
