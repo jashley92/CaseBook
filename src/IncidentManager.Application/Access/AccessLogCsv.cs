@@ -36,4 +36,23 @@ public static class AccessLogCsv
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// BUG-132: the access-log entry for an export of the access log itself: the file name and the filter it was run
+    /// with, so a review can see who pulled which slice. Kept to the 500-character target label.
+    /// </summary>
+    public static string ExportLabel(string fileName, AccessLogFilter f)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        var parts = new List<string>
+        {
+            $"{f.FromUtc?.UtcDateTime.ToString("yyyy-MM-dd", inv) ?? "start"} to {f.ToUtc?.UtcDateTime.ToString("yyyy-MM-dd", inv) ?? "now"}"
+        };
+        if (!string.IsNullOrWhiteSpace(f.Actor)) parts.Add($"actor {f.Actor}");
+        if (!string.IsNullOrWhiteSpace(f.CaseNumber)) parts.Add($"case {f.CaseNumber}");
+        if (f.AccessType is { } t) parts.Add($"type {t}");
+        if (f.RestrictedOnly) parts.Add("restricted only");
+        var label = $"{fileName} ({string.Join(", ", parts)})";
+        return label.Length <= 500 ? label : label[..499] + "…";
+    }
 }

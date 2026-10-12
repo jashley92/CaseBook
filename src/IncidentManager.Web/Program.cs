@@ -694,6 +694,9 @@ app.MapGet("/export/access-log.csv", async (
     var rows = await access.QueryAsync(filter, take: 100_000, ct);
     var csv = IncidentManager.Application.Access.AccessLogCsv.Build(rows, clock.UtcNow);
     var fileName = $"access-log-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
+    // BUG-132: pulling the access log is itself an access, recorded with the slice that was pulled.
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null,
+        IncidentManager.Application.Access.AccessLogCsv.ExportLabel(fileName, filter), null, ct);
     return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads");
 

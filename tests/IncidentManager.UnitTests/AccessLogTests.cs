@@ -76,3 +76,20 @@ public class AccessCoalescerTests
         AccessCoalescer.ShouldCoalesce(Now.AddMinutes(1), Now, Window).Should().BeFalse();
     }
 }
+
+public class AccessLogExportLabelTests
+{
+    [Fact]
+    public void An_access_log_export_is_labelled_with_the_slice_it_pulled(/* BUG-132 */)
+    {
+        var f = new AccessLogFilter
+        {
+            Actor = "jdoe", RestrictedOnly = true,
+            FromUtc = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero)
+        };
+
+        AccessLogCsv.ExportLabel("access-log.csv", f)
+            .Should().Be("access-log.csv (2026-09-01 to now, actor jdoe, restricted only)");
+        AccessLogCsv.ExportLabel("a.csv", new AccessLogFilter { Actor = new string('x', 600) }).Length.Should().Be(500);
+    }
+}
