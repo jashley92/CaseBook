@@ -287,7 +287,7 @@ $map = @{
     '__PUBLIC_HOSTNAME__'      = $Hostname
     '__SQL_INSTANCE__'         = $SqlInstance
     '__DB_NAME__'              = $DbName
-    '__DATA_ROOT__'            = ($DataRoot -replace '\\','\\')   # JSON-escape backslashes
+    '__DATA_ROOT__'            = $DataRoot
     '__SMTP_HOST__'            = $SmtpHost
     '__MAIL_DOMAIN__'          = $MailDomain
     '__AD_GROUP_ANALYSTS__'    = $AdGroupAnalysts
@@ -303,15 +303,27 @@ $map = @{
     '__CHAIN_KEY_SECRET__'     = $ChainKeySecret
     '__CHAIN_KEY_THUMBPRINT__' = ($ChainKeyThumbprint -replace '\s','')
 }
-foreach ($k in $map.Keys) { $json = $json.Replace($k, $map[$k]) }
+# Every placeholder sits inside a JSON string, so every value is JSON-escaped. A named instance (SQLHOST\PROD) or a
+# DOMAIN\Group name would otherwise be an invalid escape, or silently turn into a tab or carriage return.
+function ConvertTo-JsonStringBody([string] $v) {
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($ch in $v.ToCharArray()) {
+        if ($ch -eq [char]'\') { [void]$sb.Append('\\') }
+        elseif ($ch -eq [char]'"') { [void]$sb.Append('\"') }
+        elseif ([int]$ch -lt 0x20) { [void]$sb.Append(('\u{0:x4}' -f [int]$ch)) }
+        else { [void]$sb.Append($ch) }
+    }
+    $sb.ToString()
+}
+foreach ($k in $map.Keys) { $json = $json.Replace($k, (ConvertTo-JsonStringBody ([string]$map[$k]))) }
 # Guard against a genuinely-unsubstituted value: check only the known placeholder keys, so descriptive
 # text in the template (which may itself mention the token format) can never false-positive.
 $leftover = @($map.Keys | Where-Object { $json.Contains($_) })
 if ($leftover.Count) { throw "Unsubstituted placeholder(s) remain in the config: $($leftover -join ', ')" }
+# Confirm it parses before writing it.
+try { $null = $json | ConvertFrom-Json } catch { throw "The generated appsettings.Production.json isn't valid JSON: $($_.Exception.Message)" }
 $prodSettings = Join-Path $SitePath 'appsettings.Production.json'
 $json | Set-Content -Path $prodSettings -Encoding utf8
-# Confirm it parses.
-$null = $json | ConvertFrom-Json
 
 # --- 4. NTFS ACLs: grant the app-pool identity least privilege ----------------
 Write-Step "Granting NTFS rights to $AppPoolIdentity"
