@@ -212,6 +212,8 @@ public abstract class DashboardSlaParityTests : IDisposable
                 if (rng.Next(2) == 0) c.ContainedAtUtc = Reach(SlaClock.Containment, detected, 120);
                 if (rng.Next(2) == 0) c.ResolvedAtUtc = Reach(SlaClock.Resolution, c.ContainedAtUtc ?? detected, 900);
                 if (rng.Next(4) == 0) c.ReportedAtUtc = Hours(detected, 200);
+                // BUG-189: some skipped containment as not needed (the clock stops, but it's neither met nor missed).
+                if (c.ContainedAtUtc is not null && i % 7 == 0) c.ContainmentNotNeededReason = "Nothing to contain";
             }
 
             var p = phases[rng.Next(phases.Length)];
@@ -302,20 +304,22 @@ public abstract class DashboardSlaParityTests : IDisposable
         int atRisk = 0, breached = 0, cMet = 0, cMissed = 0, rMet = 0, rMissed = 0, dMet = 0, dMissed = 0;
         foreach (var r in cases)
         {
-            var (cont, res) = SlaPolicy.Breakdown(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification);
+            var (cont, res) = SlaPolicy.Breakdown(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification,
+                r.ContainmentNotNeededReason is not null);
             var det = SlaPolicy.EvaluateDetection(r.Severity, r.OccurredAtUtc, r.DetectedAtUtc, targets);
             if (det.State == SlaState.Met) dMet++; else if (det.State == SlaState.Missed) dMissed++;
             if (cont.State == SlaState.Met) cMet++; else if (cont.State == SlaState.Missed) cMissed++;
             if (res.State == SlaState.Met) rMet++; else if (res.State == SlaState.Missed) rMissed++;
             if (r.Phase != CasePhase.Closed && !r.IsArchived)
             {
-                var head = SlaPolicy.Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification).State;
+                var head = SlaPolicy.Evaluate(r.Severity, r.Phase, r.DetectedAtUtc, r.ContainedAtUtc, r.ResolvedAtUtc, targets, now, r.Classification,
+                    r.ContainmentNotNeededReason is not null).State;
                 if (head == SlaState.Breached) breached++; else if (head == SlaState.AtRisk) atRisk++;
             }
         }
 
         static double? Mean(IEnumerable<double> hours) => hours.Any() ? Math.Round(hours.Average(), 1) : null;
-        var meanContain = Mean(cases.Where(c => c.ContainedAtUtc != null && c.DetectedAtUtc != null)
+        var meanContain = Mean(cases.Where(c => c.ContainedAtUtc != null && c.DetectedAtUtc != null && c.ContainmentNotNeededReason == null)
             .Select(c => (c.ContainedAtUtc!.Value - c.DetectedAtUtc!.Value).TotalHours));
         var meanResolve = Mean(cases.Where(c => c.ResolvedAtUtc != null && c.DetectedAtUtc != null)
             .Select(c => (c.ResolvedAtUtc!.Value - c.DetectedAtUtc!.Value).TotalHours));

@@ -131,7 +131,7 @@
                 $"Notification to {nh.JurisdictionLabel} ({nh.WindowHours} h)" + (nh.DueAtUtc is { } dd ? $", due {TimeDisp.Short(dd)}" : ""));
         }
         var sla = SlaPolicy.Evaluate(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
-            Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification);
+            Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification, Case.ContainmentNotNeededReason is not null);
         if (sla.State is SlaState.OnTrack or SlaState.AtRisk or SlaState.Breached)
         {
             var label = sla.Clock switch { SlaClock.Containment => "Contain", SlaClock.Resolution => "Resolve", SlaClock.Detection => "Detect", _ => "SLA" };

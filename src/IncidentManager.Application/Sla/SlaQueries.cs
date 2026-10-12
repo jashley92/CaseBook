@@ -50,6 +50,12 @@ public static class SlaQueries
 
         // Met: reached no later than start + target (SlaPolicy: reached <= due). A null elapsed (not reached) never counts.
         var compare = met ? Expression.LessThanOrEqual(elapsed.Body, target) : Expression.GreaterThan(elapsed.Body, target);
+        // BUG-189: one that didn't need containment is neither met nor missed (as in Judged), though its clock stopped.
+        if (clock == SlaClock.Containment)
+        {
+            Expression<Func<Case, bool>> needed = x => x.ContainmentNotNeededReason == null;
+            compare = Expression.AndAlso(new Rebind(needed.Parameters[0], c).Visit(needed.Body), compare);
+        }
         return Expression.Lambda<Func<Case, bool>>(compare, c);
     }
 

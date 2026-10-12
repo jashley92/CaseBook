@@ -466,7 +466,8 @@ public sealed class CaseService
                 Math.Max(0, c.Assignments.Count(a => a.Role != CaseAssignmentRole.Observer) - 1),
                 c.Assignments.Where(a => a.Role != CaseAssignmentRole.Observer)
                     .OrderBy(a => a.Role).ThenBy(a => a.AssignedAtUtc)
-                    .Select(a => a.UserId).FirstOrDefault());
+                    .Select(a => a.UserId).FirstOrDefault(),
+                c.ContainmentNotNeededReason != null);
 
     /// <summary>
     /// Design review P3: the case preview panel's summary, scoped like every read (null when the case doesn't exist
@@ -481,7 +482,8 @@ public sealed class CaseService
             {
                 c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, c.Severity, c.IsRestricted,
                 Referred = c.LegalReferral.IsReferred, c.LegalHold, c.IsExercise, Materiality = c.Materiality.Status,
-                c.CreatedAtUtc, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.Summary
+                c.CreatedAtUtc, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.Summary,
+                NotNeeded = c.ContainmentNotNeededReason != null
             })
             .FirstOrDefaultAsync(ct);
         if (head is null) return null;
@@ -535,7 +537,7 @@ public sealed class CaseService
         return new CasePreview(head.Id, head.CaseNumber, head.Title, head.Classification, head.Phase, head.Severity,
             head.IsRestricted, head.Referred, head.LegalHold, head.IsExercise, head.Materiality,
             head.CreatedAtUtc, head.DetectedAtUtc, head.ContainedAtUtc, head.ResolvedAtUtc, head.Summary,
-            open.Count, next, latest, indicators, entities.Count, team);
+            open.Count, next, latest, indicators, entities.Count, team, head.NotNeeded);
     }
 
     /// <summary>

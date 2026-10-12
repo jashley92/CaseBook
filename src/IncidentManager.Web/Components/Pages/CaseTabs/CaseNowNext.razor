@@ -13,7 +13,7 @@
 @{
     var now = Clock.UtcNow;
     var (contain, resolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
-        Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification);
+        Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification, Case.ContainmentNotNeededReason is not null);
     var open = CaseNext.Open(Case, now);
 }
 
@@ -77,8 +77,7 @@
         {
             <div class="im-nn-ob small text-muted" title="@notNeeded">Containment not needed</div>
         }
-        @foreach (var st in new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget
-                     && !(Case.ContainmentNotNeededReason is not null && s.Clock == SlaClock.Containment)))
+        @foreach (var st in new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget))
         {
             <div class="im-nn-ob">
                 <ClockMark State="st.State" Label="@(st.Clock is { } k ? Ui.SlaClockLabel(k) : "SLA")" Detail="@Ui.SlaShort(st)"

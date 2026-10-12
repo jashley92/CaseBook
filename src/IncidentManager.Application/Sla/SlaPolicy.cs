@@ -102,10 +102,11 @@ public static class SlaPolicy
     public static SlaStatus Evaluate(
         Severity severity, CasePhase phase,
         DateTimeOffset? detectedAtUtc, DateTimeOffset? containedAtUtc, DateTimeOffset? resolvedAtUtc,
-        SlaTargets targets, DateTimeOffset nowUtc, Classification? classification = null)
+        SlaTargets targets, DateTimeOffset nowUtc, Classification? classification = null, bool containmentNotNeeded = false)
     {
         var (containment, resolution) =
-            Breakdown(severity, phase, detectedAtUtc, containedAtUtc, resolvedAtUtc, targets, nowUtc, classification);
+            Breakdown(severity, phase, detectedAtUtc, containedAtUtc, resolvedAtUtc, targets, nowUtc, classification,
+                containmentNotNeeded);
 
         // An open clock takes precedence — containment is chased before resolution.
         if (containment.IsActive) return containment;
@@ -120,10 +121,12 @@ public static class SlaPolicy
     /// Both clocks evaluated independently, for a workspace view that shows containment and resolution
     /// side by side. Each is <see cref="SlaStatus.None"/> when that clock has no configured target.
     /// </summary>
+    /// BUG-189: with <paramref name="containmentNotNeeded"/> (a recorded decision, BUG-165) containment has no target to
+    /// meet or miss.
     public static (SlaStatus Containment, SlaStatus Resolution) Breakdown(
         Severity severity, CasePhase phase,
         DateTimeOffset? detectedAtUtc, DateTimeOffset? containedAtUtc, DateTimeOffset? resolvedAtUtc,
-        SlaTargets targets, DateTimeOffset nowUtc, Classification? classification = null)
+        SlaTargets targets, DateTimeOffset nowUtc, Classification? classification = null, bool containmentNotNeeded = false)
     {
         // Informational carries no SLA, and every clock is measured from detection.
         if (severity == Severity.Informational || detectedAtUtc is not { } start)
@@ -132,7 +135,7 @@ public static class SlaPolicy
         // A closed case that never reached a milestone has nothing left to chase (its clock is abandoned).
         var abandoned = phase == CasePhase.Closed;
 
-        var containment = EvaluateClock(SlaClock.Containment, start, containedAtUtc, abandoned,
+        var containment = containmentNotNeeded ? SlaStatus.None : EvaluateClock(SlaClock.Containment, start, containedAtUtc, abandoned,
             targets.HoursFor(SlaClock.Containment, severity, classification), targets.AtRiskThresholdPercent, nowUtc);
         var resolution = EvaluateClock(SlaClock.Resolution, start, resolvedAtUtc, abandoned,
             targets.HoursFor(SlaClock.Resolution, severity, classification), targets.AtRiskThresholdPercent, nowUtc);

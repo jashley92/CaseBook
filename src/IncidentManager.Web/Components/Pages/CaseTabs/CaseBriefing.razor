@@ -233,10 +233,9 @@
                 <h3 id="@(IdPrefix)ob" class="im-cap">Obligations</h3>
                 @{
                     var (contain, resolve) = SlaPolicy.Breakdown(Case.Severity, Case.Phase, Case.DetectedAtUtc, Case.ContainedAtUtc,
-                        Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification);
+                        Case.ResolvedAtUtc, SlaProvider.Current, now, Case.Classification, Case.ContainmentNotNeededReason is not null);
                     // BUG-165: a case recorded as not needing containment has no containment target to meet or miss.
-                    var slas = new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget
-                        && !(Case.ContainmentNotNeededReason is not null && s.Clock == SlaClock.Containment)).ToList();
+                    var slas = new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget).ToList();
                 }
                 @if (Notify is { HasClock: true } n)
                 {

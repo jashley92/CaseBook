@@ -78,7 +78,9 @@ public sealed record CaseListItem(
     // nobody but observers is assigned. OtherAssignees counts the remaining analysts/commanders.
     string? OwnerName = null,
     int OtherAssignees = 0,
-    string? OwnerUserId = null);
+    string? OwnerUserId = null,
+    // BUG-189: containment was recorded as not needed, so it has no target to meet or miss.
+    bool ContainmentNotNeeded = false);
 
 /// <summary>Filter for listing cases.</summary>
 public sealed class CaseFilter
@@ -145,7 +147,8 @@ public sealed record CasePreview(
     bool IsRestricted, bool LegalReferred, bool LegalHold, bool IsExercise, MaterialityStatus Materiality,
     DateTimeOffset CreatedAtUtc, DateTimeOffset? DetectedAtUtc, DateTimeOffset? ContainedAtUtc, DateTimeOffset? ResolvedAtUtc,
     string? Summary, int OpenTasks, CasePreviewTask? NextTask, CasePreviewEntry? Latest,
-    IReadOnlyList<CasePreviewIndicator> Indicators, int IndicatorCount, IReadOnlyList<CasePreviewPerson> Team);
+    IReadOnlyList<CasePreviewIndicator> Indicators, int IndicatorCount, IReadOnlyList<CasePreviewPerson> Team,
+    bool ContainmentNotNeeded = false);
 
 public sealed record CasePreviewTask(string Title, string? Owner, DateTimeOffset? DueAtUtc);
 public sealed record CasePreviewEntry(string Description, DateTimeOffset OccurredAtUtc, TimelineKind Kind);
