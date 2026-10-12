@@ -64,9 +64,13 @@ ELSE
     PRINT 'Database [$(DbName)] already exists - leaving as-is.';
 GO
 
-ALTER DATABASE [$(DbName)] SET RECOVERY FULL;
--- Snapshot isolation eases the read-heavy dashboards without blocking writers.
-ALTER DATABASE [$(DbName)] SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;
+IF (SELECT recovery_model_desc FROM sys.databases WHERE name = N'$(DbName)') <> N'FULL'
+    ALTER DATABASE [$(DbName)] SET RECOVERY FULL;
+-- Snapshot isolation eases the read-heavy dashboards without blocking writers. Switching it on needs the database to
+-- itself, so ROLLBACK IMMEDIATE ends open transactions: only done when it is off, so a re-run against a live
+-- database leaves running work alone.
+IF (SELECT is_read_committed_snapshot_on FROM sys.databases WHERE name = N'$(DbName)') = 0
+    ALTER DATABASE [$(DbName)] SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;
 GO
 
 -- 2) Server login for the app-pool identity (Windows auth) ----------------------
