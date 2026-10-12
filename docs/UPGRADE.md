@@ -168,12 +168,46 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
-### Next release
+### v1.5.4
+
+A bug-fix release with two migrations, applied at startup (an audit-log index, which takes a moment on a large audit
+log, and a wider user-role column). Two changes need a look before upgrading: a bare AD group name now maps only that
+group in the server's own domain, and a blanked SLA target is now off. Visible to the team: deadline reminders name
+every jurisdiction, skipping Recovery asks when it was resolved, Markdown images show as links, and stale task edits
+are refused instead of undoing a colleague's change. Read the notes below before upgrading.
+
+- **A bare AD group name maps only that group in the server's own domain.** A mapping written `SOC-AppAdmins` used
+  to match a group of that name in any domain the server trusts, so whoever could create groups in a child or
+  trusted domain could make one and get its role. It now matches the server's domain (and local or built-in groups)
+  only. **If people from another domain sign in through a mapping by bare name, rewrite it as `OTHER\Group`** in
+  Administration → Roles & access before upgrading, or they lose that role.
+
+- **A blanked SLA target is off, as its hint says.** Clearing a Containment or Resolution hours box saved it blank,
+  but the shipped `appsettings.json` default (4 h, 12 h, …) kept applying, while the Settings page showed it blank. A
+  blank target now means none. **If you cleared one and its cases were still being measured, they stop being
+  measured after the upgrade**; use *Reset to default* to get the default back.
+
+- **The import API is stricter about what it takes, and kinder to retries.** A document now carries up to 2,000
+  indicators, 1,000 timeline entries and 500 tasks (split a bigger one); a time without an offset is read as UTC, as
+  the schema says, not as the server's local time; a chunked body over 5 MiB gets 413; an unexpected error gets
+  `500 { error, ref }` instead of a redirect to an HTML page; and an identical document resent by the same token
+  while the first is still waiting for review returns that one (`200`, `duplicate: true`) rather than queueing it
+  twice. **Check producers (SOAR, XSIAM playbooks) that send offset-less times or very large documents.**
+
+- **One migration adds an audit-log index** (`AuditLogEntityIndex`: `IX_AuditLog_EntityType_EntityId`). Opening a
+  closed case and downloading a report each looked up a record's own audit entries, which scanned the whole audit
+  log. On a large audit log the index takes a moment to build at first start. On a site that enabled the SQL Server
+  ledger it's added to the ledger table in place.
 
 - **One migration widens the user mirror's role list** (`UserRolesWider`: `Users.RolesCsv` from 400 to 4,000
   characters). A user with several long-named roles overflowed it, the update failed silently on every request, and
   the mirror kept their old roles, which decide who a restricted case's notifications reach. Such a failure is now
   logged too.
+
+- **Deadline reminders cover every jurisdiction in play.** Only the soonest-due clock was reminded, and a breached
+  jurisdiction stays soonest until it's notified, so a second jurisdiction could go at risk and breach with no
+  reminder naming it. Each jurisdiction's clock is now reminded as it enters at risk and breached (jurisdictions on
+  the same deadline share one line). Reminders already sent aren't sent again.
 
 - **Skipping Recovery says when it was resolved.** Moving a case to Post-incident without going through Recovery
   never set its resolved time, so its resolution clock ran on: SLA-breached on the list and dashboard, and "not
@@ -181,31 +215,10 @@ values). Restore the pre-upgrade database backup together with the previous bina
   unchanged: their resolution clock runs until they close (closing stops it), or until one is moved to Recovery,
   which records that move's time as when it was resolved (a move can't be dated before the case's previous one).
 
-- **One migration adds an audit-log index** (`AuditLogEntityIndex`: `IX_AuditLog_EntityType_EntityId`). Opening a
-  closed case and downloading a report each looked up a record's own audit entries, which scanned the whole audit
-  log. On a large audit log the index takes a moment to build at first start. On a site that enabled the SQL Server
-  ledger it's added to the ledger table in place.
-
 - **The STIX export's identity id is a valid RFC 4122 UUID.** It was derived from the organization name without the
   version and variant bits STIX 2.1 requires, so strict consumers (the OASIS `stix2` library, validators, some TIPs)
   refused the bundle or dropped the identity. It's now a version-5 UUID, which **changes the identity id once**: a
   platform that keyed on the old one sees a new author for later exports.
-
-- **A blanked SLA target is off, as its hint says.** Clearing a Containment or Resolution hours box saved it blank,
-  but the shipped `appsettings.json` default (4 h, 12 h, …) kept applying, while the Settings page showed it blank. A
-  blank target now means none. **If you cleared one and its cases were still being measured, they stop being
-  measured after the upgrade**; use *Reset to default* to get the default back.
-
-- **Deadline reminders cover every jurisdiction in play.** Only the soonest-due clock was reminded, and a breached
-  jurisdiction stays soonest until it's notified, so a second jurisdiction could go at risk and breach with no
-  reminder naming it. Each jurisdiction's clock is now reminded as it enters at risk and breached (jurisdictions on
-  the same deadline share one line). Reminders already sent aren't sent again.
-
-- **A bare AD group name maps only that group in the server's own domain.** A mapping written `SOC-AppAdmins` used
-  to match a group of that name in any domain the server trusts, so whoever could create groups in a child or
-  trusted domain could make one and get its role. It now matches the server's domain (and local or built-in groups)
-  only. **If people from another domain sign in through a mapping by bare name, rewrite it as `OTHER\Group`** in
-  Administration → Roles & access before upgrading, or they lose that role.
 
 ### v1.5.3
 
