@@ -105,7 +105,7 @@ else
     <div class="ws-body @(PaneShown ? "ws-body-pane" : "")">
     @if (PhoneNowNext)
     {
-        <CaseNowNext Show="@(_phoneTab == "Now" ? "now" : "next")" Case="_case" TaskResults="_taskResults" Notify="_notifyDeadlines" Readiness="_readinessEval" CanEdit="_canEdit"
+        <CaseNowNext @key="_case.Id" Show="@(_phoneTab == "Now" ? "now" : "next")" Case="_case" TaskResults="_taskResults" Notify="_notifyDeadlines" Readiness="_readinessEval" CanEdit="_canEdit"
                      OnChanged="Reload" OnGoToTab="async t => { _phoneTab = null; await SetTab(t); }" OnShowSince="ShowSinceAt" OnOpenEntity="OpenEntity"
                      OnFocusTask='async id => { _phoneTab = null; await FocusItem(("Tasks", id)); }' OnAddTask="async () => { _phoneTab = null; await AddTaskFromPane(); }"
                      OnShowReadiness="ShowReadiness" OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
@@ -220,7 +220,7 @@ else
     @* RD-04: Now and Next beside every tab, where there's room. *@
     @if (PaneShown)
     {
-        <CaseNowNext @ref="_nowNext" Case="_case" TaskResults="_taskResults" Notify="_notifyDeadlines" Readiness="_readinessEval" CanEdit="_canEdit"
+        <CaseNowNext @key="_case.Id" @ref="_nowNext" Case="_case" TaskResults="_taskResults" Notify="_notifyDeadlines" Readiness="_readinessEval" CanEdit="_canEdit"
                      OnChanged="Reload" OnGoToTab="SetTab" OnShowSince="ShowSinceAt" OnOpenEntity="OpenEntity"
                      OnFocusTask='id => FocusItem(("Tasks", id))' OnAddTask="AddTaskFromPane" OnShowReadiness="ShowReadiness"
                      OnAssign='() => OpenModal("assign")' OnUnassign="UnassignFromPanel" />
@@ -293,7 +293,7 @@ else
 
     // RD-27: the open action dialog and what's been typed into it (one for the page's life, so a cancelled dialog's
     // text is still there when it's reopened), and a close-out in progress.
-    private readonly CaseActionDraft _action = new();
+    private CaseActionDraft _action = new();
     private readonly CloseOutDraft _closeOut = new();
 
 
@@ -341,7 +341,9 @@ else
     private bool _canAdmin;
     private IDisposable? _caseSub;
     private Guid _subscribedTo;   // the case _caseSub listens to
-    private string TabBodyKey => $"{Id}/{_activeTab}";
+    // BUG-84: keyed on the loaded case, not the route id: while B loads, the page renders once more with A's data, and a
+    // tab created then would keep A's data. Keying on _case means B's tab is only created once B has loaded.
+    private string TabBodyKey => $"{_case?.Id}/{_activeTab}";
     private (string Message, string Verb, Func<Task> OnConfirm)? _confirm;
 
     // UX-13: the extracted Entities tab raises this to use the parent-owned confirm dialog.
@@ -352,7 +354,7 @@ else
 
     // Audit (UX-13: the tab is extracted to CaseAuditTab; this state persists its filters across re-mounts).
     private bool _canViewAll;
-    private readonly CaseAuditFilter _auditFilter = new();
+    private CaseAuditFilter _auditFilter = new();
     // Bumped whenever a collaborator changes the case, so extracted tabs (audit) re-query live.
     private int _liveRefresh;
 
@@ -453,6 +455,9 @@ else
             if (_subscribedTo != Guid.Empty)
             {
                 CloseModal();
+                // BUG-86/87: what was typed in a dialog, and the audit filter, belong to the last case.
+                _action = new();
+                _auditFilter = new();
                 _confirm = null;
                 _accessLost = false;
                 _permissionLost = false;
