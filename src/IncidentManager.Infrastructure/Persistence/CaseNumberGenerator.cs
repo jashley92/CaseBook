@@ -4,9 +4,10 @@ using Microsoft.EntityFrameworkCore;
 namespace IncidentManager.Infrastructure.Persistence;
 
 /// <summary>
-/// Allocates the next per-year IRP sequence — the max over classified (IRP-ladder) auto-numbered cases,
-/// plus one. Classified cases never de-classify, so the counter only grows and a sequence is never reused;
-/// Complex Events are date-numbered and excluded. The partial unique <c>(Year, Sequence)</c> index guards
+/// Allocates the next per-year IRP sequence — the max over classified (IRP-ladder) cases, plus one. Classified
+/// cases never de-classify, so the counter only grows and a sequence is never reused; Complex Events are
+/// date-numbered and excluded. BUG-145: a case renumbered to a custom number keeps its sequence and still counts,
+/// so renaming the latest case doesn't free its sequence (a case numbered custom from the start has none). The partial unique <c>(Year, Sequence)</c> index guards
 /// against duplicates under concurrency; callers retry on the rare conflict.
 /// </summary>
 public sealed class CaseNumberGenerator : ICaseNumberGenerator
@@ -18,7 +19,7 @@ public sealed class CaseNumberGenerator : ICaseNumberGenerator
     public async Task<int> NextSequenceAsync(int year, CancellationToken ct = default)
     {
         var max = await _db.Cases
-            .Where(c => c.Year == year && c.Classification != null && !c.HasCustomNumber)
+            .Where(c => c.Year == year && c.Classification != null)
             .Select(c => (int?)c.Sequence)
             .MaxAsync(ct);
         return (max ?? 0) + 1;

@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Domain.Enums;
@@ -230,6 +230,42 @@ public sealed class CaseNumberingPersistenceTests : IDisposable
         var next = await svc.CreateAsync(Req("Odd Beaconing", null));
 
         next.CaseNumber.Should().Be("CE-2026-08-08_Odd_Beaconing-2", "the first one's audit entries still carry the plain number");
+    }
+
+    [Fact]
+    public async Task A_number_freed_by_a_renumber_can_not_be_taken_by_another_case(/* BUG-145 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var a = await svc.CreateAsync(Req("Insider", Classification.Incident));
+        var b = await svc.CreateAsync(Req("Phish", Classification.Incident));
+        var freed = a.CaseNumber;
+        await svc.RenumberAsync(a.Id, freed + "_ACME");
+
+        (await svc.IsCaseNumberAvailableAsync(freed)).Should().BeFalse("A's audit entries still carry the number");
+        var renumber = async () => await svc.RenumberAsync(b.Id, freed);
+        (await renumber.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*used before by another case*");
+        var other = Req("Other", Classification.Incident);
+        other.CaseNumber = freed;
+        var create = async () => await svc.CreateAsync(other);
+        await create.Should().ThrowAsync<InvalidOperationException>();
+
+        // A case can go back to its own former number.
+        await svc.RenumberAsync(a.Id, freed);
+        (await db.Cases.AsNoTracking().FirstAsync(c => c.Id == a.Id)).CaseNumber.Should().Be(freed);
+    }
+
+    [Fact]
+    public async Task Renaming_the_latest_case_does_not_free_its_sequence(/* BUG-145 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var a = await svc.CreateAsync(Req("Phishing", Classification.Incident));
+        await svc.RenumberAsync(a.Id, "2026-01_Phishing_ACME");
+
+        var next = await svc.CreateAsync(Req("Phishing", Classification.Incident));
+
+        next.CaseNumber.Should().Be("2026-02_Phishing");
     }
 
     public void Dispose() => _connection.Dispose();

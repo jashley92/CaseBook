@@ -189,7 +189,7 @@
                     @* FR-22: flag a collision here instead of only on submit. *@
                     @if (_numberAvailable == false)
                     {
-                        <div class="form-text text-danger"><span class="bi bi-x-circle me-1" aria-hidden="true"></span>“@(_request.CaseNumber?.Trim())” is already in use. Pick another or leave it blank.</div>
+                        <div class="form-text text-danger"><span class="bi bi-x-circle me-1" aria-hidden="true"></span>“@(_request.CaseNumber?.Trim())” is in use, or was used before by another case (its audit trail keeps the number). Pick another or leave it blank.</div>
                     }
                     else if (_numberAvailable == true)
                     {

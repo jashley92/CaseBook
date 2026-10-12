@@ -33,7 +33,7 @@
             @* FR-22: flag a collision as the analyst types, not only when they click Save. *@
             @if (_renumberAvailable == false)
             {
-                <div class="text-danger small mb-2"><span class="bi bi-x-circle me-1" aria-hidden="true"></span>“@_editNumber?.Trim()” is already in use.</div>
+                <div class="text-danger small mb-2"><span class="bi bi-x-circle me-1" aria-hidden="true"></span>“@_editNumber?.Trim()” is in use, or was used before by another case (its audit trail keeps the number).</div>
             }
             else if (_renumberAvailable == true)
             {

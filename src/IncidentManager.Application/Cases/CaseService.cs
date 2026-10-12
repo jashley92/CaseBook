@@ -189,9 +189,26 @@ public sealed class CaseService
         if (string.IsNullOrEmpty(n)) return true;
         if (n.Length > 200) return false;
         using var db = _factory.CreateDbContext();
-        return !await db.Cases.AsNoTracking()
-            .AnyAsync(x => (exceptCaseId == null || x.Id != exceptCaseId) && x.CaseNumber == n, ct);
+        return !await NumberTakenAsync(db, n, exceptCaseId, ct);
     }
+
+    /// <summary>
+    /// Whether <paramref name="number"/> belongs to a case other than <paramref name="caseId"/>: another case has it, or
+    /// the audit trail holds entries under it that aren't this case's. BUG-145: audit entries keep the number a case had
+    /// when they were written, and the Audit tab, its export and the activity feed find them by number, so a number freed
+    /// by a renumber can't be taken by another case (it would show the first case's history, restricted or not).
+    /// </summary>
+    private static async Task<bool> NumberTakenAsync(IAppDbContext db, string number, Guid? caseId, CancellationToken ct)
+    {
+        if (await db.Cases.AnyAsync(x => (caseId == null || x.Id != caseId) && x.CaseNumber == number, ct)) return true;
+        var own = caseId?.ToString();
+        if (own is not null && await db.AuditLog.AnyAsync(a => a.CaseNumber == number && a.EntityType == "Case" && a.EntityId == own, ct))
+            return false;   // this case's own former number
+        return await db.AuditLog.AnyAsync(a => a.CaseNumber == number, ct);
+    }
+
+    private static string NumberTakenMessage(string number) =>
+        $"Case number '{number}' is already in use, or was used before by another case (its audit trail keeps it).";
 
     public async Task<CasePage> ListAsync(CaseFilter filter, CancellationToken ct = default)
     {
@@ -653,8 +670,8 @@ public sealed class CaseService
         {
             using var db = _factory.CreateDbContext();
 
-            if (custom is not null && await db.Cases.AnyAsync(x => x.CaseNumber == custom, ct))
-                throw new InvalidOperationException($"Case number '{custom}' is already in use.");
+            if (custom is not null && await NumberTakenAsync(db, custom, null, ct))
+                throw new InvalidOperationException(NumberTakenMessage(custom));
 
             // IRP items draw a per-year sequence (advanced by the attempt offset so a retry moves past a
             // taken number); Complex Events are date-numbered (no sequence) and disambiguate with a "-N"
@@ -757,8 +774,8 @@ public sealed class CaseService
             ?? throw new InvalidOperationException("A case number is required.");
         if (n == c.CaseNumber) return;
 
-        if (await db.Cases.AnyAsync(x => x.Id != id && x.CaseNumber == n, ct))
-            throw new InvalidOperationException($"Case number '{n}' is already in use.");
+        if (await NumberTakenAsync(db, n, id, ct))
+            throw new InvalidOperationException(NumberTakenMessage(n));
 
         c.AssignCustomNumber(n, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
@@ -837,8 +854,8 @@ public sealed class CaseService
         if (from is null && !c.HasCustomNumber)
         {
             var seq = await _caseNumbers.NextSequenceAsync(c.Year, ct);
-            while (await db.Cases.AnyAsync(x => x.CaseNumber == Case.FormatCaseNumber(c.Year, seq, c.DescriptiveName), ct))
-                seq++;
+            while (await NumberTakenAsync(db, Case.FormatCaseNumber(c.Year, seq, c.DescriptiveName), c.Id, ct))
+                seq++;   // BUG-145: nor one the audit trail holds for another case
             c.RenumberToIrp(seq, _user.UserId, now);
         }
 
