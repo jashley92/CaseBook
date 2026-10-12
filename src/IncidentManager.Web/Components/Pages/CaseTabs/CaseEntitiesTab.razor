@@ -365,7 +365,7 @@ else
                                         title="Where it appears on this case and on others">Details</button>
                                 <AuthorizeView Policy="@Policies.EditCases" Context="rm">
                                     <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEntityEdit(e)">Edit</button>
-                                    <button class="btn btn-sm btn-outline-danger" @onclick='() => Confirm($"Remove entity {e.Value}? Its relationships are removed too. (An entity an attack step names as actor or target can't be removed until the step changes.)", () => RemoveEntity(e.Id))'>Remove</button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick='() => Confirm($"Remove entity {e.Value}? Its relationships are removed too. (An entity an attack step names as actor or target stays until the step changes.)", () => RemoveEntity(e.Id))'>Remove</button>
                                 </AuthorizeView>
                             </td>
                         </tr>
