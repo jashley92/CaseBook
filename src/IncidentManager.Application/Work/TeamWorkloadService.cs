@@ -39,7 +39,8 @@ public sealed class TeamWorkloadService
                 c.Assignments
                     .Where(a => a.Role != CaseAssignmentRole.Observer)
                     .Select(a => new WorkloadWorker(a.UserId, a.UserDisplayName, a.Role == CaseAssignmentRole.IncidentCommander))
-                    .ToList()))
+                    .ToList(),
+                c.Classification))
             .ToListAsync(ct);
 
         return TeamWorkloadBuilder.Build(rows, _sla.Current, _clock.UtcNow);

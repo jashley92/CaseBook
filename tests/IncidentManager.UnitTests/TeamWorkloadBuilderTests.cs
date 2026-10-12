@@ -37,6 +37,22 @@ public class TeamWorkloadBuilderTests
     }
 
     [Fact]
+    public void A_breach_is_held_to_its_own_SLA_target()
+    {
+        // BUG-45: the team view dropped the Breach override, so a Breach past its 4h target counted as on track here
+        // while the case list showed it breached.
+        var targets = new SlaTargets(
+            new Dictionary<(SlaClock, Severity), int> { [(SlaClock.Containment, Severity.High)] = 24 }, 80,
+            new Dictionary<(SlaClock, Severity), int> { [(SlaClock.Containment, Severity.High)] = 4 });
+        var row = new WorkloadCaseRow(Severity.High, CasePhase.Triage, Now.AddHours(-10), null, null, Now,
+            [Analyst("u1", "Alex")], Classification.Breach);
+
+        TeamWorkloadBuilder.Build([row], targets, Now).Analysts.Single().SlaBreached.Should().Be(1);
+        TeamWorkloadBuilder.Build([row with { Classification = Classification.Incident }], targets, Now)
+            .Analysts.Single().SlaBreached.Should().Be(0, "an Incident is held to the 24h target");
+    }
+
+    [Fact]
     public void A_case_with_no_workers_lands_in_the_unassigned_queue()
     {
         var rows = new[] { Row(Severity.Medium, Now) };

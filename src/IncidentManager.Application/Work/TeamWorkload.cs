@@ -14,7 +14,8 @@ public sealed record WorkloadCaseRow(
     DateTimeOffset? ContainedAtUtc,
     DateTimeOffset? ResolvedAtUtc,
     DateTimeOffset LastActivityUtc,
-    IReadOnlyList<WorkloadWorker> Workers);
+    IReadOnlyList<WorkloadWorker> Workers,
+    Classification? Classification = null);   // BUG-45: a Breach can have its own SLA targets
 
 /// <summary>One analyst's open caseload, broken down by severity and SLA/stale pressure.</summary>
 public sealed record AnalystLoad(
@@ -70,7 +71,7 @@ public static class TeamWorkloadBuilder
         foreach (var row in rows)
         {
             var slaState = SlaPolicy
-                .Evaluate(row.Severity, row.Phase, row.DetectedAtUtc, row.ContainedAtUtc, row.ResolvedAtUtc, targets, nowUtc)
+                .Evaluate(row.Severity, row.Phase, row.DetectedAtUtc, row.ContainedAtUtc, row.ResolvedAtUtc, targets, nowUtc, row.Classification)
                 .State;
             var isStale = row.LastActivityUtc < staleBefore;
 
