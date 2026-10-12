@@ -117,6 +117,12 @@ public class IocObservableTests
     [InlineData("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", EntityType.FileHash)] // SHA-256 (64)
     // Domain (dotted labels, alpha TLD).
     [InlineData("evil.example.com", EntityType.Domain)]
+    // BUG-124: a common file extension reads as a file name, not a TLD; a script-extension country code stays a domain.
+    [InlineData("svchost.exe", EntityType.FileName)]
+    [InlineData("Invoice_2026.docm", EntityType.FileName)]
+    [InlineData("payload.tar.gz", EntityType.FileName)]
+    [InlineData("gov.py", EntityType.Domain)]
+    [InlineData("http://evil.com/a.exe", EntityType.Url)]
     // Fallbacks: bare hostname, account, partial IP, odd-length hex.
     [InlineData("WKS-HR-14", EntityType.Other)]
     [InlineData("CONTOSO\\jdoe", EntityType.Other)]

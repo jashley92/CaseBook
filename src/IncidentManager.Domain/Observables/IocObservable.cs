@@ -54,8 +54,30 @@ public static partial class IocObservable
             return EntityType.IpAddress;
         // MD5 / SHA-1 / SHA-256 are fixed-length hex strings.
         if (v.Length is 32 or 40 or 64 && HexRx().IsMatch(v)) return EntityType.FileHash;
+        // BUG-124: svchost.exe and invoice.docm have the shape of a domain; a common file extension reads as a file
+        // name. The analyst can still pick Domain for the rare real one (a .zip domain, say).
+        if (HasFileExtension(v)) return EntityType.FileName;
         if (DomainRx().IsMatch(v)) return EntityType.Domain;
         return EntityType.Other;
+    }
+
+    /// <summary>
+    /// File extensions seen on indicators that would otherwise read as a top-level domain. Country codes that are also
+    /// script extensions (.py, .sh, .ps) are left out: those are real domains often enough.
+    /// </summary>
+    public static readonly IReadOnlySet<string> FileExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "exe", "dll", "sys", "scr", "cpl", "ocx", "drv", "bat", "cmd", "ps1", "psm1", "psd1", "vbs", "vbe", "js",
+        "jse", "wsf", "wsh", "hta", "lnk", "msi", "msp", "msix", "appx", "iso", "img", "vhd", "vhdx", "doc",
+        "docx", "docm", "dot", "dotm", "xls", "xlsx", "xlsm", "xlsb", "xll", "xlam", "ppt", "pptx", "pptm", "pdf", "rtf",
+        "one", "zip", "rar", "7z", "gz", "tgz", "tar", "cab", "jar", "apk", "dmg", "pkg", "elf", "bin", "dat", "tmp",
+        "ini", "cfg", "log", "txt", "csv", "json", "xml", "html", "htm", "svg", "eml", "msg", "chm", "reg", "inf",
+    };
+
+    private static bool HasFileExtension(string v)
+    {
+        var dot = v.LastIndexOf('.');
+        return dot > 0 && dot < v.Length - 1 && v.IndexOfAny(['/', ':', '@']) < 0 && FileExtensions.Contains(v[(dot + 1)..]);
     }
 
     private static int CountDots(string s)

@@ -155,6 +155,8 @@
                     <p class="text-muted small mb-2">
                         Paste IOCs one per line, or separated by commas or semicolons. Defanged values
                         (<code>hxxp</code>, <code>[.]</code>) are refanged, types are detected and duplicates dropped.
+                        A value ending in a file extension (<code>svchost.exe</code>, <code>invoice.docm</code>) is read as a
+                        file name; pick Domain in the list for the rare domain that ends that way.
                         Review the list, then add them in one step. For a STIX 2.1 bundle or IOC CSV file,
                         <a href="@($"cases/import?into={CaseId}")">import it into this case</a> instead.
                     </p>
