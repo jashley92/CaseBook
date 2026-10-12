@@ -672,7 +672,9 @@ app.MapGet("/export/case-audit.csv", async (
     var csv = IncidentManager.Application.Integrity.AuditCsv.Build(rows, clock.UtcNow, @case);
     var safe = @case.Replace('/', '-').Replace('\\', '-');
     var fileName = $"case-audit-{safe}-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
-    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
+    // BUG-155: logged against the case, so the access log's case and "restricted only" filters find it.
+    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, await cases.FindIdByNumberAsync(@case, ct),
+        fileName, null, ct);
     return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv", fileName);
 }).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("downloads");
 
