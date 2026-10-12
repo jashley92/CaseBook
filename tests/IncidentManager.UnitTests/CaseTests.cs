@@ -213,6 +213,23 @@ public class CaseTests
     }
 
     [Fact]
+    public void The_detected_time_cant_move_past_a_regulator_notice_or_a_completed_task(/* BUG-111 */)
+    {
+        var c = NewCase();
+        var detected = c.DetectedAtUtc!.Value;
+        c.RecordNotice("NY", detected.AddHours(2), "ic1", Now.AddHours(3));
+
+        c.Invoking(x => x.UpdateDetails(x.Title, x.Summary, null, null, null, detected.AddHours(5), null, "ic1", Now.AddDays(1)))
+            .Should().Throw<ArgumentException>().WithMessage("*regulator was notified*");
+
+        var other = NewCase();
+        other.ActionItems.Add(new ActionItem { CaseId = other.Id, Title = "Block", Status = ActionItemStatus.Done,
+            CompletedAtUtc = other.DetectedAtUtc!.Value.AddHours(1), CreatedBy = "a1", CreatedAtUtc = Now });
+        other.Invoking(x => x.UpdateDetails(x.Title, x.Summary, null, null, null, x.DetectedAtUtc!.Value.AddHours(2), null, "ic1", Now.AddDays(1)))
+            .Should().Throw<ArgumentException>().WithMessage("*task was completed*");
+    }
+
+    [Fact]
     public void An_entity_named_on_an_attack_step_is_not_removed(/* BUG-108 */)
     {
         var c = NewCase();

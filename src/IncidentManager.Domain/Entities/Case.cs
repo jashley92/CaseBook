@@ -408,6 +408,17 @@ public class Case : AuditableEntity, IHashableEntity
             if (StatusChanges.Where(x => x.From is not null).Select(x => x.EffectiveAt).DefaultIfEmpty(DateTimeOffset.MaxValue).Min()
                     is var firstMove && detectedAtUtc > firstMove)
                 throw new ArgumentException($"The detected time can't be after the case first changed phase ({firstMove:u}).");
+            // BUG-111: and the rest of what's dated from detection, each of which was checked against it when recorded.
+            if (JurisdictionNotices.Select(n => (DateTimeOffset?)n.NotifiedAtUtc).Min() is { } firstNotice && detectedAtUtc > firstNotice)
+                throw new ArgumentException($"The detected time can't be after a regulator was notified ({firstNotice:u}).");
+            if (ClassificationChanges.Where(x => x.From is not null).Select(x => (DateTimeOffset?)x.EffectiveAt).Min() is { } firstReclass
+                && detectedAtUtc > firstReclass)
+                throw new ArgumentException($"The detected time can't be after the case was first reclassified ({firstReclass:u}).");
+            if (SeverityChanges.Where(x => x.From is not null).Select(x => (DateTimeOffset?)x.EffectiveAt).Min() is { } firstSeverity
+                && detectedAtUtc > firstSeverity)
+                throw new ArgumentException($"The detected time can't be after the severity first changed ({firstSeverity:u}).");
+            if (ActionItems.Select(a => a.CompletedAtUtc).Min() is { } firstDone && detectedAtUtc > firstDone)
+                throw new ArgumentException($"The detected time can't be after a task was completed ({firstDone:u}).");
         }
 
         Title = title.Trim();

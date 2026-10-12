@@ -1148,7 +1148,7 @@ public sealed class CaseService
     {
         Require();
         using var db = _factory.CreateDbContext();
-        var c = await LoadTrackedAsync(db, id, ct);
+        var c = await LoadWithNoticesAsync(db, id, ct);   // BUG-111: the detected time is checked against each notice
         // FR-06: expected-value optimistic-concurrency. If the details fields changed since the editor was
         // opened, refuse rather than silently clobbering the other author's edit (last-write-wins).
         if (expectedStamp is not null && c.DetailsConcurrencyStamp() != expectedStamp)
