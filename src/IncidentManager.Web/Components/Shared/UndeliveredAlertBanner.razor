@@ -4,6 +4,7 @@
 @inject IncidentManager.Application.Notifications.UndeliveredAlertService Alerts
 @inject TimeDisplay TimeDisp
 @inject ToastService Toasts
+@implements IDisposable
 
 @if (_alerts.Count > 0)
 {
@@ -36,11 +37,24 @@
 @code {
     private IReadOnlyList<IncidentManager.Application.Notifications.UndeliveredAlert> _alerts = [];
 
+    // BUG-177: an alert is given up about 2h40m after its first failure, usually while this page is already open, and
+    // another administrator may mark one handled; so the list is read again every couple of minutes.
+    private static readonly TimeSpan RefreshEvery = TimeSpan.FromMinutes(2);
+    private Timer? _refresh;
+
     protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _refresh = new Timer(_ => _ = InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); }), null, RefreshEvery, RefreshEvery);
+    }
+
+    private async Task LoadAsync()
     {
         try { _alerts = await Alerts.ListAsync(); }
         catch (Exception ex) when (ex is not OperationCanceledException) { _alerts = []; }   // a banner never breaks the page
     }
+
+    public void Dispose() => _refresh?.Dispose();
 
     private async Task Dismiss(Guid id)
     {

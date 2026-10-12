@@ -3,6 +3,7 @@
    once it's handled. *@
 @inject IncidentManager.Application.Notifications.UndeliveredAlertService Alerts
 @inject TimeDisplay TimeDisp
+@implements IDisposable
 
 @foreach (var a in _alerts)
 {
@@ -22,11 +23,29 @@
     private IReadOnlyList<IncidentManager.Application.Notifications.UndeliveredAlert> _alerts = [];
     private Guid _loadedFor;
 
+    // BUG-177: the escalation is given up hours after it first failed, while the case is open in front of the team, and
+    // cleared when an administrator marks it handled; so it's read again every couple of minutes.
+    private static readonly TimeSpan RefreshEvery = TimeSpan.FromMinutes(2);
+    private Timer? _refresh;
+
     protected override async Task OnParametersSetAsync()
     {
         if (CaseId == _loadedFor) return;
         _loadedFor = CaseId;
-        try { _alerts = await Alerts.ForCaseAsync(CaseId); }
+        await LoadAsync();
+        _refresh ??= new Timer(_ => _ = InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); }), null, RefreshEvery, RefreshEvery);
+    }
+
+    private async Task LoadAsync()
+    {
+        var id = _loadedFor;
+        try
+        {
+            var alerts = await Alerts.ForCaseAsync(id);
+            if (id == _loadedFor) _alerts = alerts;   // not one read for the case before a switch
+        }
         catch (Exception ex) when (ex is not OperationCanceledException) { _alerts = []; }
     }
+
+    public void Dispose() => _refresh?.Dispose();
 }
