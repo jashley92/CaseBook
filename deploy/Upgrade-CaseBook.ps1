@@ -369,14 +369,16 @@ New-Item -ItemType Directory -Force -Path $BackupRoot | Out-Null
 if (-not $SkipDbBackup) {
     Write-Step "Backing up the database (server-side, default backup directory)"
     $bakName = "$DbName-preupgrade-$stamp.bak"
+    # BUG-135: COPY_ONLY, so this extra full backup doesn't become the base of the scheduled differentials (they'd
+    # need this file to restore, wherever it ends up).
     try {
-        Invoke-SqlNonQuery "BACKUP DATABASE [$DbName] TO DISK = N'$bakName' WITH INIT, COMPRESSION, NAME = N'CaseBook pre-upgrade $stamp';" 600
+        Invoke-SqlNonQuery "BACKUP DATABASE [$DbName] TO DISK = N'$bakName' WITH COPY_ONLY, INIT, COMPRESSION, NAME = N'CaseBook pre-upgrade $stamp';" 600
         $bakDir = [string](Invoke-SqlScalar "SELECT CAST(SERVERPROPERTY('InstanceDefaultBackupPath') AS nvarchar(4000))")
         Write-Info "DB backup: $(if ($bakDir) { Join-Path $bakDir $bakName } else { $bakName })"
     } catch {
         # COMPRESSION isn't supported on every edition -- retry without it before giving up.
         try {
-            Invoke-SqlNonQuery "BACKUP DATABASE [$DbName] TO DISK = N'$bakName' WITH INIT, NAME = N'CaseBook pre-upgrade $stamp';" 600
+            Invoke-SqlNonQuery "BACKUP DATABASE [$DbName] TO DISK = N'$bakName' WITH COPY_ONLY, INIT, NAME = N'CaseBook pre-upgrade $stamp';" 600
             Write-Info "DB backup written (uncompressed): $bakName"
         } catch { throw "Database backup failed ($($_.Exception.Message)). Fix it, or re-run with -SkipDbBackup if your backup is handled externally." }
     }
