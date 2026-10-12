@@ -1855,11 +1855,14 @@ public sealed class CaseService
                   "may be seen, in this case's note, by everyone who can see this case.");
         var now = _clock.UtcNow;
 
-        // One link per pair: an existing link of another kind ("Related to") becomes "Duplicate of".
-        var existing = await db.CaseLinks.FirstOrDefaultAsync(l =>
-            (l.CaseId == duplicateId && l.RelatedCaseId == primaryId) || (l.CaseId == primaryId && l.RelatedCaseId == duplicateId), ct);
-        var linked = existing is { Type: CaseLinkType.DuplicateOf } && existing.CaseId == duplicateId;
-        if (existing is not null && !linked) db.CaseLinks.Remove(existing);
+        // A "Related to" link between the two becomes "Duplicate of". BUG-161: a "Part of campaign" link stays: the campaign
+        // views walk those links, so removing it would drop cases linked through the duplicate out of the campaign.
+        var existing = await db.CaseLinks.Where(l =>
+            (l.CaseId == duplicateId && l.RelatedCaseId == primaryId) || (l.CaseId == primaryId && l.RelatedCaseId == duplicateId))
+            .ToListAsync(ct);
+        var linked = existing.Any(l => l.Type == CaseLinkType.DuplicateOf && l.CaseId == duplicateId);
+        db.CaseLinks.RemoveRange(existing.Where(l => l.Type != CaseLinkType.PartOfCampaign
+            && !(l.Type == CaseLinkType.DuplicateOf && l.CaseId == duplicateId)));
         if (!linked)
             db.CaseLinks.Add(new CaseLink
             {

@@ -94,6 +94,21 @@ public sealed class SupersedeTests : IDisposable
     }
 
     [Fact]
+    public async Task Superseding_keeps_a_part_of_campaign_link_between_the_two(/* BUG-161 */)
+    {
+        var (db, svc, dup, primary) = await SeedAsync();
+        await using var _ = db;
+        db.CaseLinks.Add(new CaseLink { CaseId = primary, RelatedCaseId = dup, Type = CaseLinkType.PartOfCampaign, CreatedBy = "analyst1", CreatedAtUtc = _clock.UtcNow });
+        db.CaseLinks.Add(new CaseLink { CaseId = dup, RelatedCaseId = primary, Type = CaseLinkType.RelatedTo, CreatedBy = "analyst1", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+
+        await svc.SupersedeAsync(dup, primary, copyIndicators: false, "Filed twice");
+
+        (await db.CaseLinks.AsNoTracking().Select(l => l.Type).OrderBy(t => t).ToListAsync())
+            .Should().Equal(CaseLinkType.DuplicateOf, CaseLinkType.PartOfCampaign);
+    }
+
+    [Fact]
     public async Task Superseding_links_copies_missing_indicators_and_notes_both_cases_without_closing()
     {
         var (db, svc, dup, primary) = await SeedAsync();
