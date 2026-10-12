@@ -608,6 +608,12 @@ else if (_pending.Count > 0)
         _error = null;
         try
         {
+            // BUG-13: a queued import is claimed first, so it can't be applied twice.
+            if (_reviewingPendingId is { } claim && !await Import.ClaimPendingAsync(claim))
+            {
+                _error = "This import was already applied or rejected by someone else. Reload the queue to see it.";
+                return;
+            }
             var result = await Import.ApplyAsync(p);
             if (_reviewingPendingId is { } pid) await Import.MarkPendingAppliedAsync(pid, result);
             var what = result.CaseCreated ? $"Case {result.CaseNumber} created" : $"Imported into {result.CaseNumber}";

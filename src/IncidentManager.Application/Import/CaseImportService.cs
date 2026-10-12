@@ -304,13 +304,36 @@ public sealed class CaseImportService
         return await BuildPreviewAsync(parsed.Document!, intoCaseId: row.TargetCaseId, ct: ct);
     }
 
-    /// <summary>Marks a queued submission applied, recording the reviewer and the resulting case.</summary>
+    /// <summary>
+    /// BUG-13: claims a queued submission for this reviewer before anything is applied, in one conditional update, so
+    /// two reviewers (or two tabs) can't both apply it. False when it was already applied or rejected by someone else.
+    /// A reviewer whose apply failed part-way keeps the claim and can retry; the claim is the row marked applied by
+    /// them with no resulting case recorded yet.
+    /// </summary>
+    public async Task<bool> ClaimPendingAsync(Guid pendingId, CancellationToken ct = default)
+    {
+        RequireEdit();
+        using var db = _factory.CreateDbContext();
+        var me = _user.UserId;
+        var now = _clock.UtcNow;
+        var claimed = await VisiblePending(db)
+            .Where(p => p.Id == pendingId && (p.Status == PendingImportStatus.Pending
+                || (p.Status == PendingImportStatus.Applied && p.DecidedBy == me && p.ResolvedCaseId == null)))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(p => p.Status, PendingImportStatus.Applied)
+                .SetProperty(p => p.DecidedBy, me)
+                .SetProperty(p => p.DecidedAtUtc, now), ct);
+        return claimed == 1;
+    }
+
+    /// <summary>Records the case a claimed submission went into (<see cref="ClaimPendingAsync"/> claims it first).</summary>
     public async Task MarkPendingAppliedAsync(Guid pendingId, CaseImportResult result, CancellationToken ct = default)
     {
         RequireEdit();
         using var db = _factory.CreateDbContext();
         var row = await VisiblePending(db).FirstOrDefaultAsync(p => p.Id == pendingId, ct);
-        if (row is null || row.Status != PendingImportStatus.Pending) return;
+        if (row is null || row.ResolvedCaseId is not null) return;
+        if (row.Status != PendingImportStatus.Pending && !(row.Status == PendingImportStatus.Applied && row.DecidedBy == _user.UserId)) return;
         row.Status = PendingImportStatus.Applied;
         row.DecidedBy = _user.UserId;
         row.DecidedAtUtc = _clock.UtcNow;

@@ -526,6 +526,36 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_pending_import_can_be_claimed_by_one_reviewer_only()
+    {
+        // BUG-13: two reviewers (or two tabs) used to both apply it, creating two cases.
+        Guid pid;
+        await using (var db = NewContext())
+        {
+            var json = FullDocJson();
+            (pid, _) = await NewImportService(db).SubmitAsync(json, CaseImportService.Parse(json).Document!);
+        }
+
+        await using var ctx = NewContext();
+        var svc = NewImportService(ctx);
+        (await svc.ClaimPendingAsync(pid)).Should().BeTrue();
+        (await svc.ClaimPendingAsync(pid)).Should().BeTrue("the same reviewer retrying after a failed apply keeps the claim");
+
+        var someoneElse = _user.UserId;
+        _user.UserId = "analyst2";
+        try
+        {
+            (await svc.ClaimPendingAsync(pid)).Should().BeFalse("another reviewer has it");
+            await svc.RejectPendingAsync(pid, "dup");
+        }
+        finally { _user.UserId = someoneElse; }
+
+        var row = await ctx.Set<PendingImport>().AsNoTracking().FirstAsync(p => p.Id == pid);
+        row.Status.Should().Be(PendingImportStatus.Applied, "a claimed import can't be rejected out from under its reviewer");
+        row.DecidedBy.Should().Be(someoneElse);
+    }
+
+    [Fact]
     public async Task Confirming_a_pending_import_applies_it_and_marks_it_applied()
     {
         Guid pid;
