@@ -141,7 +141,7 @@ public static partial class IocImportConverter
         if (mapped is not { Value: { Length: > 0 } value } m) return null;
 
         // Our own export carries the precise entity type (e.g. Host behind x-casebook-artifact) and the verdict.
-        var type = Enum.TryParse<EntityType>(Str(o, "x_casebook_entity_type"), true, out var t) ? t : m.Type;
+        var type = ImportEnums.TryName<EntityType>(Str(o, "x_casebook_entity_type"), out var t) ? t : m.Type;
         return new CaseImportEntity
         {
             Type = type.ToString(), Value = value,
@@ -261,7 +261,7 @@ public static partial class IocImportConverter
         "host" or "device" or "endpoint" => nameof(EntityType.Host),
         "process" or "commandline" => nameof(EntityType.Process),
         "registrykey" or "registry" or "regkey" => nameof(EntityType.RegistryKey),
-        var other => Enum.TryParse<EntityType>(other, true, out var t) ? t.ToString() : null,
+        var other => ImportEnums.TryName<EntityType>(other, out var t) ? t.ToString() : null,
     };
 
     private static string? CsvDisposition(string raw) => raw.Trim().ToLowerInvariant() switch

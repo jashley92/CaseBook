@@ -475,7 +475,7 @@ public sealed class CaseImportService
             EntityType type;
             if (string.IsNullOrWhiteSpace(e.Type))
                 type = IocObservable.DetectType(rawValue);
-            else if (Enum.TryParse<EntityType>(e.Type, ignoreCase: true, out var parsed))
+            else if (ImportEnums.TryName<EntityType>(e.Type, out var parsed))
                 type = parsed;
             else
             {
@@ -534,10 +534,10 @@ public sealed class CaseImportService
                 || trimmed.Equals("None", StringComparison.OrdinalIgnoreCase)
                 || trimmed.Equals("null", StringComparison.OrdinalIgnoreCase))
                 classification = null;
-            else if (Enum.TryParse<Classification>(trimmed, ignoreCase: true, out var c))
+            else if (ImportEnums.TryName<Classification>(trimmed, out var c))
                 classification = c;
             else
-                warnings.Add($"Unknown classification '{rawCls}'. Using Adverse Event instead.");
+                warnings.Add($"Unknown classification '{rawCls}'. Filing it as a Complex Event, to be classified by a person.");
         }
 
         return new CreateCaseRequest
@@ -571,7 +571,7 @@ public sealed class CaseImportService
         where TEnum : struct, Enum
     {
         if (string.IsNullOrWhiteSpace(raw)) return fallback;
-        if (Enum.TryParse<TEnum>(raw.Trim(), ignoreCase: true, out var v) && Enum.IsDefined(v)) return v;
+        if (ImportEnums.TryName<TEnum>(raw, out var v)) return v;
         warnings.Add($"Unknown {field} '{raw}'. Using {fallback} instead.");
         return fallback;
     }

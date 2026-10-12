@@ -226,6 +226,27 @@ public sealed class CaseImportTests : IDisposable
         p.Warnings.Should().Contain(w => w.Contains("Bogus"));
     }
 
+    [Theory]
+    [InlineData("AdverseEvent,Incident")]   // flags 1|2 would read as Breach
+    [InlineData("7")]                        // no such rung
+    [InlineData("2")]                        // a number, even one that exists, isn't a name
+    public void An_enum_value_must_be_a_name(string classification /* BUG-115 */)
+    {
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Target = new CaseImportTarget { NewCase = new CaseImportNewCase { Title = "t", Classification = classification, Severity = "9" } },
+            Entities = new() { new() { Type = "99", Value = "203.0.113.9" } }
+        };
+
+        var p = CaseImportService.BuildPreviewCore(doc, _clock.UtcNow);
+
+        p.NewCase!.Classification.Should().BeNull("an unknown classification files a Complex Event, with a warning");
+        p.NewCase.Severity.Should().Be(Severity.Medium);
+        p.Entities.Single().Type.Should().Be(EntityType.IpAddress, "an unknown type is detected from the value");
+        p.Warnings.Should().Contain(w => w.Contains(classification));
+    }
+
     [Fact]
     public void The_xsiam_playbook_sample_imports_cleanly(/* PROD-05 */)
     {
