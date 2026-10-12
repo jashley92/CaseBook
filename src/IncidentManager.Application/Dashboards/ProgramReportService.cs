@@ -327,6 +327,16 @@ public sealed class ProgramReportService
         }
         Row("Regulatory", "Cases classified as breach", c.BreachesOpened.ToString(inv), p.BreachesOpened.ToString(inv));
         Row("Regulatory", "Reported to regulators", c.ReportedToRegulators.ToString(inv), p.ReportedToRegulators.ToString(inv));
+        // BUG-77: the figures the page shows, so the board or exam pack CSV has them too.
+        Row("Regulatory", "Notices inside their window %", c.NoticesPercent?.ToString(inv) ?? "", p.NoticesPercent?.ToString(inv) ?? "");
+        Row("Regulatory", "Notices inside / outside their window", $"{c.NoticesMet} / {c.NoticesMissed}", $"{p.NoticesMet} / {p.NoticesMissed}");
+        foreach (var s in c.ContainmentBySeverity ?? [])
+        {
+            var ps = p.ContainmentBySeverity?.FirstOrDefault(x => x.Severity == s.Severity);
+            Row("Containment by severity", $"{sevLabel(s.Severity)} met / missed" + (s.TargetHours is { } h ? $" (target {h} h)" : ""),
+                $"{s.Met} / {s.Missed}", ps is null ? "" : $"{ps.Met} / {ps.Missed}");
+        }
+        Row("Post-incident", "Closed cases with a review", c.ClosedWithReview.ToString(inv), p.ClosedWithReview.ToString(inv));
         Row("Post-incident", "Reviews recorded", c.ReviewsRecorded.ToString(inv), p.ReviewsRecorded.ToString(inv));
         Row("Post-incident", "Improvement actions opened", c.ActionsOpened.ToString(inv), p.ActionsOpened.ToString(inv));
         Row("Post-incident", "Improvement actions completed", c.ActionsCompleted.ToString(inv), p.ActionsCompleted.ToString(inv));
@@ -335,6 +345,8 @@ public sealed class ProgramReportService
         Row("Post-incident", "Past target at quarter end", c.ActionsPastTargetAtEnd.ToString(inv), p.ActionsPastTargetAtEnd.ToString(inv));
         foreach (var a in c.ActionAreas)
             Row("Improvement areas (opened)", a.Key, a.Count.ToString(inv), "");
+        foreach (var a in c.OpenActionAreas ?? [])
+            Row("Improvement areas (open at quarter end)", a.Key, a.Count.ToString(inv), "");
         foreach (var t in r.TopTechniques)
             Row("ATT&CK techniques (cases)", $"{t.TechniqueId} {t.Name}", t.Cases.ToString(inv), "");
         return sb.ToString();
