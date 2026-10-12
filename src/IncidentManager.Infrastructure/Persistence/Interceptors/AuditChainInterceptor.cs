@@ -43,14 +43,23 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     private readonly IClock _clock;
     private readonly ICaseChangeNotifier _notifier;
 
-    // Cases touched by the in-flight save, with what changed on each (RD-22), captured before commit and broadcast
-    // once it succeeds.
-    private readonly Dictionary<Guid, List<CaseChangeItem>> _pendingCaseIds = new();
+    // BUG-27: per-save state, kept per context. The scoped factory gives every context it makes in a circuit this one
+    // interceptor, and those saves can interleave at an await, so one shared field let an unaudited save clear another
+    // save's pending broadcast or release the gate it held. A context runs one save at a time.
+    private sealed class SaveState
+    {
+        // Cases touched by the in-flight save, with what changed on each (RD-22), captured before commit and
+        // broadcast once it succeeds.
+        public readonly Dictionary<Guid, List<CaseChangeItem>> PendingCaseIds = new();
 
-    // REL-05: true when this save acquired the process-wide audit-chain gate in SavingChanges and must
-    // release it on completion (success, failure, or cancellation). The interceptor is scoped, so a
-    // context runs one save at a time — a single instance field is enough.
-    private bool _gateHeld;
+        // REL-05: true when this save acquired the process-wide audit-chain gate in SavingChanges and must release
+        // it on completion (success, failure, or cancellation).
+        public bool GateHeld;
+    }
+
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<DbContext, SaveState> _states = new();
+
+    private SaveState StateOf(DbContext ctx) => _states.GetOrCreateValue(ctx);
 
     public AuditChainInterceptor(IHashChainService hasher, ICurrentUser user, IClock clock, ICaseChangeNotifier notifier)
     {
@@ -62,16 +71,16 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 
     public override int SavedChanges(SaveChangesCompletedEventData eventData, int result)
     {
-        ReleaseGate();
-        PublishPending();
+        ReleaseGate(eventData.Context);
+        PublishPending(eventData.Context);
         return base.SavedChanges(eventData, result);
     }
 
     public override ValueTask<int> SavedChangesAsync(
         SaveChangesCompletedEventData eventData, int result, CancellationToken ct = default)
     {
-        ReleaseGate();
-        PublishPending();
+        ReleaseGate(eventData.Context);
+        PublishPending(eventData.Context);
         return base.SavedChangesAsync(eventData, result, ct);
     }
 
@@ -79,15 +88,15 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     // drop the pending broadcast — nothing committed).
     public override void SaveChangesFailed(DbContextErrorEventData eventData)
     {
-        ReleaseGate();
-        _pendingCaseIds.Clear();
+        ReleaseGate(eventData.Context);
+        Drop(eventData.Context);
         base.SaveChangesFailed(eventData);
     }
 
     public override Task SaveChangesFailedAsync(DbContextErrorEventData eventData, CancellationToken ct = default)
     {
-        ReleaseGate();
-        _pendingCaseIds.Clear();
+        ReleaseGate(eventData.Context);
+        Drop(eventData.Context);
         return base.SaveChangesFailedAsync(eventData, ct);
     }
 
@@ -95,30 +104,30 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     // SaveChangesFailed, so the gate must be released here as well.
     public override InterceptionResult ThrowingConcurrencyException(ConcurrencyExceptionEventData eventData, InterceptionResult result)
     {
-        ReleaseGate();
-        _pendingCaseIds.Clear();
+        ReleaseGate(eventData.Context);
+        Drop(eventData.Context);
         return base.ThrowingConcurrencyException(eventData, result);
     }
 
     public override ValueTask<InterceptionResult> ThrowingConcurrencyExceptionAsync(
         ConcurrencyExceptionEventData eventData, InterceptionResult result, CancellationToken ct = default)
     {
-        ReleaseGate();
-        _pendingCaseIds.Clear();
+        ReleaseGate(eventData.Context);
+        Drop(eventData.Context);
         return base.ThrowingConcurrencyExceptionAsync(eventData, result, ct);
     }
 
     public override void SaveChangesCanceled(DbContextEventData eventData)
     {
-        ReleaseGate();
-        _pendingCaseIds.Clear();
+        ReleaseGate(eventData.Context);
+        Drop(eventData.Context);
         base.SaveChangesCanceled(eventData);
     }
 
     public override Task SaveChangesCanceledAsync(DbContextEventData eventData, CancellationToken ct = default)
     {
-        ReleaseGate();
-        _pendingCaseIds.Clear();
+        ReleaseGate(eventData.Context);
+        Drop(eventData.Context);
         return base.SaveChangesCanceledAsync(eventData, ct);
     }
 
@@ -129,25 +138,31 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         try { AppendChain(context, prepared); }
         catch
         {
-            ReleaseGate();
-            _pendingCaseIds.Clear();
+            ReleaseGate(context);
+            Drop(context);
             throw;
         }
     }
 
-    private void ReleaseGate()
+    private void ReleaseGate(DbContext? ctx)
     {
-        if (!_gateHeld) return;
-        _gateHeld = false;
+        if (ctx is null || !_states.TryGetValue(ctx, out var st) || !st.GateHeld) return;
+        st.GateHeld = false;
         AuditChainGate.Exit();
     }
 
-    private void PublishPending()
+    private void Drop(DbContext? ctx)
     {
+        if (ctx is not null && _states.TryGetValue(ctx, out var st)) st.PendingCaseIds.Clear();
+    }
+
+    private void PublishPending(DbContext? ctx)
+    {
+        if (ctx is null || !_states.TryGetValue(ctx, out var st)) return;
         // The actor is whoever this unit of work belongs to — used by viewers to attribute the change (U-30).
         var actorId = _user.UserId;
-        foreach (var (id, items) in _pendingCaseIds) _notifier.Publish(new CaseChange(id, actorId, items));
-        _pendingCaseIds.Clear();
+        foreach (var (id, items) in st.PendingCaseIds) _notifier.Publish(new CaseChange(id, actorId, items));
+        st.PendingCaseIds.Clear();
     }
 
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
@@ -160,7 +175,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                 // REL-05: hold the gate from the head read through commit (released in the completion
                 // callbacks) so a concurrent append can't read the same head and fork the chain.
                 AuditChainGate.Enter();
-                _gateHeld = true;
+                StateOf(eventData.Context).GateHeld = true;
                 AppendOrRelease(eventData.Context, prepared);
             }
         }
@@ -176,7 +191,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             if (prepared is not null)
             {
                 await AuditChainGate.EnterAsync(ct);
-                _gateHeld = true;
+                StateOf(eventData.Context).GateHeld = true;
                 AppendOrRelease(eventData.Context, prepared);
             }
         }
@@ -207,12 +222,13 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             .ToList();
 
         // Record which cases this save touches, to broadcast once it commits (SavedChanges).
-        _pendingCaseIds.Clear();
+        var pending = StateOf(ctx).PendingCaseIds;
+        pending.Clear();
         foreach (var e in auditable)
         {
             var cid = e.Entity is Case cse ? cse.Id : TryGetCaseId(e);
             if (cid is not { } id) continue;
-            if (!_pendingCaseIds.TryGetValue(id, out var items)) _pendingCaseIds[id] = items = [];
+            if (!pending.TryGetValue(id, out var items)) pending[id] = items = [];
             items.Add(new CaseChangeItem(e.Entity.GetType().Name, ((Entity)e.Entity).Id, e.State switch
             {
                 EntityState.Added => CaseChangeOp.Added, EntityState.Deleted => CaseChangeOp.Deleted, _ => CaseChangeOp.Modified

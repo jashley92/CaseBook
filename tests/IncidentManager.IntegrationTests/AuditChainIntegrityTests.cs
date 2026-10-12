@@ -9,6 +9,7 @@ using IncidentManager.Infrastructure.Realtime;
 using IncidentManager.Infrastructure.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit;
 
 namespace IncidentManager.IntegrationTests;
@@ -150,6 +151,60 @@ public sealed class AuditChainIntegrityTests : IDisposable
         entries.Should().OnlyContain(e => e.EntityLabel == null || e.EntityLabel.Length <= 300);
         entries.Should().Contain(e => e.EntityLabel != null && e.EntityLabel.EndsWith('…'));
         _hasher.VerifyChain(entries).IsValid.Should().BeTrue();
+    }
+
+    private sealed class CapturingNotifier : ICaseChangeNotifier
+    {
+        public List<Guid> Published { get; } = [];
+        public void Publish(Guid caseId, string actorId) => Published.Add(caseId);
+        public IDisposable Subscribe(Guid caseId, Func<string, Task> onChanged) => new CaseChangeNotifier().Subscribe(caseId, onChanged);
+        public IDisposable SubscribeAll(Func<Guid, string, Task> onAnyChanged) => new CaseChangeNotifier().SubscribeAll(onAnyChanged);
+    }
+
+    /// <summary>Runs another context's save in the middle of this one's, as interleaved saves in a circuit do.</summary>
+    private sealed class MidSave(Func<Task> during) : SaveChangesInterceptor
+    {
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken ct = default)
+        {
+            await during();
+            return result;
+        }
+    }
+
+    [Fact]
+    public async Task An_interleaved_save_on_another_context_doesnt_take_this_saves_broadcast_or_gate()
+    {
+        // BUG-27: the circuit's factory hands every context one interceptor; its per-save state was a single field.
+        var notifier = new CapturingNotifier();
+        var shared = new AuditChainInterceptor(_hasher, _user, _clock, notifier);
+        var now = _clock.UtcNow;
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            var seeded = Case.Open(2026, 1, "interleave", "Interleave", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, _user.UserId, now);
+            db.Cases.Add(seeded);
+            await db.SaveChangesAsync();
+            caseId = seeded.Id;
+        }
+
+        await using var other = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).AddInterceptors(shared).Options);
+        await using var main = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection)
+            .AddInterceptors(shared, new MidSave(async () =>
+            {
+                other.PinnedCases.Add(new PinnedCase { UserId = _user.UserId, CaseId = caseId, PinnedAtUtc = now });   // not audited
+                await other.SaveChangesAsync();
+            })).Options);
+
+        var c = await main.Cases.SingleAsync(x => x.Id == caseId);
+        c.Title = "Renamed";
+        await main.SaveChangesAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        notifier.Published.Should().Contain(caseId, "the audited save's change is still broadcast");
+        // And the gate is free for the next save (an early release would have let this one race, not hang; a leak would hang).
+        await using var next = NewContext();
+        (await next.Cases.SingleAsync(x => x.Id == caseId)).Title = "Again";
+        await next.SaveChangesAsync().WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     public void Dispose() => _connection.Dispose();
