@@ -213,6 +213,27 @@ public class CaseTests
     }
 
     [Fact]
+    public void An_entity_named_on_an_attack_step_is_not_removed(/* BUG-108 */)
+    {
+        var c = NewCase();
+        var host = c.AddEntity(EntityType.Host, "FIN-WKS-07", null, EntityDisposition.Compromised, null, null, "a1", Now);
+        var spare = c.AddEntity(EntityType.IpAddress, "203.0.113.9", null, EntityDisposition.Malicious, null, null, "a1", Now);
+        c.TimelineEntries.Add(new TimelineEntry
+        {
+            CaseId = c.Id, Kind = TimelineKind.Event, Type = TimelineEntryType.Detection, OccurredAtUtc = Now,
+            Description = "Beacon", TargetEntityId = host.Id, CreatedBy = "a1", CreatedAtUtc = Now
+        });
+        c.ActionItems.Add(new ActionItem { CaseId = c.Id, Title = "Block it", AboutRef = $"entity:{spare.Id}", CreatedBy = "a1", CreatedAtUtc = Now });
+
+        c.Invoking(x => x.RemoveEntity(host.Id, "a1", Now)).Should().Throw<InvalidOperationException>().WithMessage("*attack step*");
+        c.Entities.Should().Contain(host);
+
+        c.RemoveEntity(spare.Id, "a1", Now);
+        c.Entities.Should().NotContain(spare);
+        c.ActionItems.Single().AboutRef.Should().BeNull("the task stays, no longer pointing at the removed entity");
+    }
+
+    [Fact]
     public void A_case_downgraded_after_a_determination_can_revise_it(/* BUG-59 */)
     {
         var c = NewCase();

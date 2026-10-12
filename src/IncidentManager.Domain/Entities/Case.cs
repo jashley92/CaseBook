@@ -1305,6 +1305,22 @@ public class Case : AuditableEntity, IHashableEntity
     {
         var entity = Entities.FirstOrDefault(e => e.Id == entityId);
         if (entity is null) return;
+        // BUG-108: an attack step that names it as actor or target would silently lose that (or the save would fail on
+        // the foreign key), so the steps are changed first.
+        var named = TimelineEntries.Count(t => t.ActorEntityId == entityId || t.TargetEntityId == entityId);
+        if (named > 0)
+            throw new InvalidOperationException(
+                $"{(named == 1 ? "An attack step names" : $"{named} attack steps name")} this entity as actor or target. " +
+                "Change the step first, so the attack record keeps saying who did what to what.");
+
+        // A task about it stays, no longer pointing at it.
+        var about = $"{ActionItem.AboutEntity}:{entityId}";
+        foreach (var t in ActionItems.Where(a => string.Equals(a.AboutRef, about, StringComparison.OrdinalIgnoreCase)))
+        {
+            t.AboutRef = null;
+            t.ModifiedBy = actor;
+            t.ModifiedAtUtc = nowUtc;
+        }
 
         EntityRelationships.RemoveAll(r => r.SourceEntityId == entityId || r.TargetEntityId == entityId);
         EntityLayouts.RemoveAll(l => l.EntityId == entityId);
