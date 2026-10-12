@@ -105,15 +105,30 @@ public sealed class DbSettingsConfigurationProvider : ConfigurationProvider
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // The AppSettings table may not exist yet (first run, pre-migration). Fall back silently
-            // to the file/env configuration; a later Reload() picks the overrides up once migrated.
+            LastLoadError = ex.Message;
+            // BUG-29: a failed Reload() (the database briefly unreachable) keeps the overrides already loaded, rather
+            // than reverting every administered setting to its file default until the next successful reload.
+            if (_loaded) return;
+            // The AppSettings table may not exist yet (first run, pre-migration). Fall back to the file/env
+            // configuration; a later Reload() picks the overrides up once migrated.
+            RejectedKeys = rejected;
+            Data = data;
+            return;
         }
 
+        LastLoadError = null;
+        _loaded = true;
         RejectedKeys = rejected;
         Data = data;
     }
+
+    // Whether a load has read the table successfully (after which a failed reload keeps what it read).
+    private bool _loaded;
+
+    /// <summary>BUG-29: why the last load failed, or null when it succeeded.</summary>
+    public static string? LastLoadError { get; private set; }
 
     private AppDbContext BuildContext()
     {

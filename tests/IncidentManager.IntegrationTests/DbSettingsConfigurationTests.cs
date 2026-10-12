@@ -59,6 +59,21 @@ public sealed class DbSettingsConfigurationTests : IDisposable
             .Build();
 
     [Fact]
+    public async Task A_reload_that_cannot_read_the_table_keeps_the_overrides(/* BUG-29 */)
+    {
+        await using (var db = NewContext())
+            await NewService(db).SetAsync("Email:From", "soc@insurer.example");
+        var config = BuildConfig();
+        config["Email:From"].Should().Be("soc@insurer.example");
+
+        await using (var db = NewContext())
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE AppSettings RENAME TO AppSettingsGone");
+        config.Reload();
+
+        config["Email:From"].Should().Be("soc@insurer.example", "a failed reload must not revert to the file default");
+    }
+
+    [Fact]
     public async Task Db_override_wins_over_file_and_list_settings_rebuild_into_arrays()
     {
         await using (var db = NewContext())
