@@ -110,7 +110,7 @@ public partial class CaseWorkspace
             list.Add(new("Change severity…", "bi-thermometer-half", () => OpenModalFromPalette("severity")));
             list.Add(new("Change phase…", "bi-signpost-split", () => OpenModalFromPalette("status")));
             list.Add(new("Refer to Legal / Privacy…", "bi-briefcase", () => OpenModalFromPalette("legal")));
-            if (_case.Classification is Classification.Incident or Classification.Breach)
+            if (_case.MaterialityApplies)
                 list.Add(new("Record materiality determination…", "bi-clipboard2-check", () => OpenModalFromPalette("materiality")));
             list.Add(new("Add someone to the team (assign)…", "bi-person-plus", () => OpenModalFromPalette("assign")));
             if (_case.Phase == CasePhase.Closed)

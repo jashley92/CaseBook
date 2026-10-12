@@ -558,7 +558,9 @@ public class Case : AuditableEntity, IHashableEntity
     public void RecordMateriality(MaterialityStatus status, string? decisionMaker, DateTimeOffset? decidedOnUtc,
         string? rationale, string actor, DateTimeOffset nowUtc)
     {
-        if (Classification is null or Domain.Enums.Classification.AdverseEvent)
+        // BUG-59: a case downgraded to an Adverse Event keeps the determination made while it was an Incident (it's a
+        // record), and can revise it, since a Material call still runs the notification clock.
+        if (!MaterialityApplies)
             throw new InvalidOperationException("Materiality is determined only for Incidents and Breaches.");
         if (decidedOnUtc is { } future && future > nowUtc)
             throw new ArgumentException("The decision date can't be in the future.");
@@ -1623,7 +1625,7 @@ public class Case : AuditableEntity, IHashableEntity
         + (OutcomeKey is { Length: > 0 } outcome ? "|outcome|" + outcome : "");
 
     public static string FormatCaseNumber(int year, int sequence, string descriptiveName)
-        => $"{year:0000}-{sequence:00}_{descriptiveName}";
+        => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{year:0000}-{sequence:00}_{descriptiveName}");
 
     /// <summary>
     /// The Complex Event number: a "CE-" prefix + the creation date + slug (e.g.
@@ -1632,9 +1634,18 @@ public class Case : AuditableEntity, IHashableEntity
     /// second Complex Event with the same descriptor on the same day.
     /// </summary>
     public static string FormatComplexEventNumber(DateTimeOffset date, string descriptiveName, int disambiguator = 1)
-        => disambiguator <= 1
-            ? $"CE-{date:yyyy-MM-dd}_{descriptiveName}"
-            : $"CE-{date:yyyy-MM-dd}_{descriptiveName}-{disambiguator}";
+    {
+        // BUG-59: a Gregorian date on any server culture.
+        var day = date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        return disambiguator <= 1
+            ? $"CE-{day}_{descriptiveName}"
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"CE-{day}_{descriptiveName}-{disambiguator}");
+    }
+
+    /// <summary>Whether a materiality determination can be recorded: an Incident or Breach, or a case downgraded from
+    /// one that already carries a determination (BUG-59).</summary>
+    public bool MaterialityApplies => Classification is Domain.Enums.Classification.Incident or Domain.Enums.Classification.Breach
+        || (Classification == Domain.Enums.Classification.AdverseEvent && Materiality.Status != MaterialityStatus.Undetermined);
 
     /// <summary>Turns free text into an identifier-safe slug for the case number.</summary>
     public static string Slug(string s)

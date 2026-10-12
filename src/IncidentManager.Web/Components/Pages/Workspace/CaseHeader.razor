@@ -90,7 +90,7 @@
                            analyst who owns the case's timeline/data is the one who records it — so it needs
                            EditCases, not ManageLegal (which only Legal/Privacy hold, and Legal doesn't use the
                            app). The determination stays hash-chained/audited, so who made the call is on record. *@
-                        @if (Case.Classification is Classification.Incident or Classification.Breach)
+                        @if (Case.MaterialityApplies)
                         {
                             <button class="dropdown-item" @onclick='() => Open("materiality")'>Record materiality determination…</button>
                         }

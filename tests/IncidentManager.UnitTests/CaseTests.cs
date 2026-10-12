@@ -213,6 +213,31 @@ public class CaseTests
     }
 
     [Fact]
+    public void A_case_downgraded_after_a_determination_can_revise_it(/* BUG-59 */)
+    {
+        var c = NewCase();
+        c.Reclassify(Classification.Incident, "confirmed", "ic1", Now);
+        c.RecordMateriality(MaterialityStatus.Material, "Committee", Now, "npi exposed", "legal1", Now.AddHours(1));
+        c.Reclassify(Classification.AdverseEvent, "turned out contained", "ic1", Now.AddHours(2));
+
+        c.MaterialityApplies.Should().BeTrue("a Material call still runs the notification clock");
+        c.RecordMateriality(MaterialityStatus.NotMaterial, "Committee", Now.AddHours(2), "no npi after all", "legal1", Now.AddHours(3));
+        c.Materiality.Status.Should().Be(MaterialityStatus.NotMaterial);
+    }
+
+    [Fact]
+    public void Case_numbers_use_the_gregorian_calendar_on_any_culture(/* BUG-59 */)
+    {
+        var was = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("th-TH");
+            Case.FormatComplexEventNumber(new DateTimeOffset(2026, 8, 8, 0, 0, 0, TimeSpan.Zero), "X").Should().Be("CE-2026-08-08_X");
+        }
+        finally { System.Globalization.CultureInfo.CurrentCulture = was; }
+    }
+
+    [Fact]
     public void RecordMateriality_final_call_requires_decision_maker_date_and_rationale()
     {
         var c = NewCase();
