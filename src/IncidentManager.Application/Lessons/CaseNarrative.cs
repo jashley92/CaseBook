@@ -135,7 +135,10 @@ public static class CaseNarrative
     private static string Day(DateTimeOffset t) => t.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static string Span(TimeSpan s) =>
-        s.TotalDays >= 2 ? $"{s.TotalDays:0.#} days" : s.TotalHours >= 1 ? $"{s.TotalHours:0.#} hours" : $"{Math.Max(1, s.TotalMinutes):0} minutes";
+        // BUG-83: "1.5 days" on any server culture, not "1,5 days".
+        s.TotalDays >= 2 ? s.TotalDays.ToString("0.#", CultureInfo.InvariantCulture) + " days"
+        : s.TotalHours >= 1 ? s.TotalHours.ToString("0.#", CultureInfo.InvariantCulture) + " hours"
+        : Math.Max(1, s.TotalMinutes).ToString("0", CultureInfo.InvariantCulture) + " minutes";
 
     private static string Article(string word) => ("aeiou".Contains(char.ToLowerInvariant(word[0])) ? "an " : "a ") + word;
 
