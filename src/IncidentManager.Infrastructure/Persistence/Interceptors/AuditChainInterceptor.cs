@@ -230,6 +230,13 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             app.PendingChangeReason = null;
         }
 
+        // BUG-25: store every time in UTC. Canonicals print times with their offset, and SQLite reads them back as UTC,
+        // so a time saved with another offset would hash differently once reloaded. Owned value objects are included.
+        foreach (var e in ctx.ChangeTracker.Entries().Where(x => x.State is EntityState.Added or EntityState.Modified))
+            foreach (var p in e.Properties)
+                if (p.CurrentValue is DateTimeOffset t && t.Offset != TimeSpan.Zero)
+                    p.CurrentValue = t.ToUniversalTime();
+
         // Refresh row hashes for changed hashable entities (before snapshotting for audit). These are
         // per-row canonicals, independent of the chain head, so they don't need the gate.
         foreach (var e in auditable)
@@ -357,6 +364,20 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                 before[key] = target.State == EntityState.Added ? DefaultOf(p.Metadata.ClrType) : p.OriginalValue;
                 after[key] = target.State == EntityState.Deleted ? null : p.CurrentValue;
                 names.Add(key);
+            }
+        }
+
+        // BUG-06: the row hash is set after change detection ran, so it never shows as modified. Record it on every
+        // update (the integrity check compares a record with the hash its latest entry holds), and count a change to
+        // it as a real change: a case whose data elements changed has only a touched row, but a new hash.
+        if (e.Entity is IHashableEntity hashable && e.Metadata.FindProperty(nameof(IHashableEntity.RowHash)) is not null)
+        {
+            var was = e.OriginalValues[nameof(IHashableEntity.RowHash)] as string;
+            after[nameof(IHashableEntity.RowHash)] = hashable.RowHash;
+            if (!string.Equals(was, hashable.RowHash, StringComparison.Ordinal) && !names.Contains(nameof(IHashableEntity.RowHash)))
+            {
+                before[nameof(IHashableEntity.RowHash)] = was;
+                names.Add(nameof(IHashableEntity.RowHash));
             }
         }
 

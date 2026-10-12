@@ -20,6 +20,7 @@
 #   SQLCMD             command that runs sqlcmd against that server (default: "sqlcmd"), e.g.
 #                      "docker exec casebook-sql /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P ..."
 #   UPGRADE_TEST_PORT  local port for the app under test (default 5199)
+#   UPGRADE_TEST_KEEP_DB  set to 1 to keep the upgraded database afterwards (its name is printed), for inspection
 set -euo pipefail
 
 from_ref="${1:?usage: upgrade-path.sh <from-ref> [<to-ref>]}"
@@ -46,7 +47,9 @@ sql() { MSYS_NO_PATHCONV=1 $SQLCMD -b -h -1 -W -Q "SET NOCOUNT ON; $1" | tr -d '
 
 cleanup() {
   [[ -n "$app_pid" ]] && kill "$app_pid" 2>/dev/null || true
-  sql "IF DB_ID('$db') IS NOT NULL BEGIN ALTER DATABASE [$db] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$db]; END" >/dev/null 2>&1 || true
+  if [[ "${UPGRADE_TEST_KEEP_DB:-}" = "1" ]]; then log "Kept database [$db]"; else
+    sql "IF DB_ID('$db') IS NOT NULL BEGIN ALTER DATABASE [$db] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$db]; END" >/dev/null 2>&1 || true
+  fi
   for wt in "$work"/*/; do [[ -d "$wt" ]] && git -C "$repo" worktree remove --force "$wt" >/dev/null 2>&1 || true; done
   rm -rf "$work"
 }

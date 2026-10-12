@@ -49,6 +49,7 @@ public sealed class AdminActionPermissionsTests
         K<StageGateService>(nameof(StageGateService.GetAsync)),
         K<TaxonomyAdminService>(nameof(TaxonomyAdminService.GetEffectiveAsync)),
         K<IntegrityService>(nameof(IntegrityService.VerifyAsync)),
+        K<IntegrityService>(nameof(IntegrityService.VerifyChainAndRecordsAsync)),
         K<IntegrityService>(nameof(IntegrityService.VerifyAndTrackAsync)),
         K<IntegrityService>(nameof(IntegrityService.VerifyOnDemandAsync)),
         K<IntegrityService>(nameof(IntegrityService.VerifyLatestSealAsync)),

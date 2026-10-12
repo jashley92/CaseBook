@@ -60,6 +60,21 @@ public sealed class IntegrityService
     }
 
     /// <summary>
+    /// BUG-06: the chain check, then the records themselves (<see cref="RowIntegrityVerifier"/>): each record's
+    /// content against its hash, and that hash against the one the chain last recorded for it.
+    /// </summary>
+    public async Task<ChainVerificationResult> VerifyChainAndRecordsAsync(CancellationToken ct = default)
+    {
+        using var db = _factory.CreateDbContext();
+        var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync(ct);
+        var result = _hasher.VerifyChain(chain);
+        if (!result.IsValid) return result;
+        return await RowIntegrityVerifier.VerifyAsync(db, _hasher, chain, ct) is { } bad
+            ? ChainVerificationResult.Broken(bad.LastSequence ?? 0, bad.Detail)
+            : result;
+    }
+
+    /// <summary>
     /// Verifies the chain, records the outcome for the app-wide integrity banner, and — on the first
     /// detection of a break — fires the alarm (SIEM/critical log + email). Used by the background monitor
     /// and by the manual "Verify now" action, so any detection path raises the same alert exactly once
@@ -74,7 +89,7 @@ public sealed class IntegrityService
 
     public async Task<ChainVerificationResult> VerifyAndTrackAsync(CancellationToken ct = default)
     {
-        var result = await VerifyAsync(ct);
+        var result = await VerifyChainAndRecordsAsync(ct);
 
         // VerifyAsync is the unkeyed self-consistency check — a tamperer who recomputes every hash would
         // pass it. The signed seals are the independent anchor, but they were only ever checked on demand

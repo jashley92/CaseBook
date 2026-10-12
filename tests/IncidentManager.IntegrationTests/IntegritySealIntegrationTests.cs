@@ -230,7 +230,8 @@ public sealed class IntegritySealIntegrationTests : IDisposable
         var svc = NewService(db);
 
         // An intact chain raises no alarm and reports valid.
-        (await svc.VerifyAndTrackAsync()).IsValid.Should().BeTrue();
+        var intact = await svc.VerifyAndTrackAsync();
+        intact.IsValid.Should().BeTrue(intact.Detail);
         _alerts.Fired.Should().BeEmpty();
         _monitor.Current!.IsValid.Should().BeTrue();
 

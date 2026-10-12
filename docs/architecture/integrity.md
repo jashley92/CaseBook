@@ -105,6 +105,14 @@ flowchart TB
 - The alarm fires once per broken episode (`IntegrityMonitor` is shared by the job and every session's banner)
   and goes out of band, so deleting rows can't also suppress it.
 - *Verify now* on the Integrity page runs the same check (at most once a minute, shared between users).
+- **The check covers the records too** (`RowIntegrityVerifier`, after the chain and seal pass). Each hashable record
+  must still produce its stored `RowHash`, which catches a field edited in the database, and that hash must be the
+  one the record's latest audit entry recorded, which catches an edit whose author also recomputed `RowHash`. Every
+  update entry for a hashable record carries its `RowHash`. Records with no `RowHash` yet, and records whose latest
+  entry was written before update entries carried it, get the first check only. A new `IHashableEntity`
+  must be added to `RowIntegrityVerifier.Tables` (a test fails until it is).
+- **Times are stored in UTC.** The interceptor converts any `DateTimeOffset` with another offset before hashing,
+  since canonicals print the offset and SQLite reads times back as UTC.
 - **The signing key is generated only in Development.** Elsewhere a missing key file stops startup; provision it
   first ([OPERATIONS.md §2](../OPERATIONS.md#2-integrity-signing-key-management-f-05b)).
 - A failed copy to the export folder leaves the seal in place, logs a warning, emits SIEM event 5005 and shows in
