@@ -35,6 +35,7 @@ public sealed class DueSoonActionItemScanner(
             where a.DueAtUtc != null && a.DueAtUtc >= now && a.DueAtUtc <= horizon
                   && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled
             join c in db.Cases.AsNoTracking().ExcludingExercises() on a.CaseId equals c.Id // PROD-43: skip drills
+            where c.Phase != CasePhase.Closed && !c.IsArchived // BUG-12: no reminders for a closed or archived case
             select new DueSoonActionItem(
                 c.Id, c.CaseNumber, c.Title, c.IncidentCommander,
                 a.Id, a.Title, a.DueAtUtc!.Value, a.Owner))

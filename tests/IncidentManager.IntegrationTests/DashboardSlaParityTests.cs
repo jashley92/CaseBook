@@ -319,7 +319,7 @@ public abstract class DashboardSlaParityTests : IDisposable
             .Select(c => (c.ContainedAtUtc!.Value - c.DetectedAtUtc!.Value).TotalHours));
         var meanResolve = Mean(cases.Where(c => c.ResolvedAtUtc != null && c.DetectedAtUtc != null)
             .Select(c => (c.ResolvedAtUtc!.Value - c.DetectedAtUtc!.Value).TotalHours));
-        var overdue = cases.SelectMany(c => c.ActionItems).Count(a => a.IsOverdue(now));
+        var overdue = cases.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived).SelectMany(c => c.ActionItems).Count(a => a.IsOverdue(now));
 
         // Calendar months in the organization's zone, each as the UTC instant its local midnight falls on.
         var localNow = TimeZoneInfo.ConvertTime(now, zone);

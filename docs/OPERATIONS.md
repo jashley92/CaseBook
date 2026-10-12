@@ -339,7 +339,7 @@ change, like the rest of the data root.
       assigned to a case); **Overdue after-action reminders** (a slow background scan — like AutoSeal /
       EvidenceVerify — that emails each item's owner, or the case's incident commander as a fallback, once
       when it passes its due date); **Due-soon after-action reminders** (the same, once as an item enters its
-      lead window). Escalation to Breach also emails the **Legal/Privacy distribution** if set. All off/empty by
+      lead window). Neither reminds for a task on a closed or archived case. Escalation to Breach also emails the **Legal/Privacy distribution** if set. All off/empty by
       default; the scans are read-only and never touch the audit chain, and pick up a toggle change within a few
       minutes. To go live, the sequence is: **Send email** on → **From address** set → enable the triggers you
       want (populate the Legal distribution for breach alerts). The **Delivery readiness** panel at the top of

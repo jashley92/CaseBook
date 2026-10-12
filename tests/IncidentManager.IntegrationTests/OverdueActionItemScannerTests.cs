@@ -99,6 +99,23 @@ public sealed class OverdueActionItemScannerTests : IDisposable
         notifications.Received[0].OwnerUserId.Should().Be("analyst1");
     }
 
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task A_closed_or_archived_case_gets_no_reminders(bool closed, bool archived /* BUG-12 */)
+    {
+        var id = SeedCaseWithItems();
+        using (var db = NewContext())
+        {
+            if (closed) await db.Cases.Where(c => c.Id == id).ExecuteUpdateAsync(u => u.SetProperty(c => c.Phase, CasePhase.Closed));
+            if (archived) await db.Cases.Where(c => c.Id == id).ExecuteUpdateAsync(u => u.SetProperty(c => c.IsArchived, true));
+        }
+        var notifications = new CapturingNotifications();
+
+        (await NewScanner(notifications, new OverdueActionItemTracker()).ScanAndNotifyAsync()).Should().Be(0);
+        notifications.Received.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task A_second_pass_does_not_re_notify()
     {

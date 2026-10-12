@@ -173,8 +173,8 @@ public sealed class DashboardService
         // Legal referral lives in a grouped (owned) property that EF can't read inside the single-scan aggregate.
         var legalReferred = await open.CountAsync(c => c.LegalReferral.IsReferred, ct);
 
-        // Overdue tasks, on the caller's visible, non-exercise cases only.
-        var overdue = await cases.SelectMany(c => c.ActionItems).CountAsync(a =>
+        // Overdue tasks, on the caller's visible, non-exercise open cases only (BUG-12).
+        var overdue = await open.SelectMany(c => c.ActionItems).CountAsync(a =>
             a.DueAtUtc != null && a.DueAtUtc < now
             && a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled, ct);
 
