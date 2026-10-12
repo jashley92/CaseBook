@@ -84,7 +84,10 @@ public partial class CaseWorkspace
             var m = _case.Materiality;
             a.MaterialityStatus = m.Status == MaterialityStatus.Undetermined ? MaterialityStatus.UnderReview : m.Status;
             a.MaterialityDecisionMaker = m.DecisionMaker;
-            a.MaterialityDecidedOn = m.DecidedOnUtc?.UtcDateTime.Date;
+            // BUG-07: a date and time in the viewer's zone; a new determination defaults to now.
+            var decided = m.DecidedOnUtc ?? Clock.UtcNow;
+            var wall = WallClock.ToWall(decided, TimeDisp.Zone);
+            a.MaterialityDecidedOn = wall.AddSeconds(-wall.Second).AddMilliseconds(-wall.Millisecond);
             a.MaterialityRationale = m.Rationale;
             a.MaterialityBaseline = _case.MaterialityConcurrencyStamp(); // REL-02: optimistic-concurrency baseline
         }

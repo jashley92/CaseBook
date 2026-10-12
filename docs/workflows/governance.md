@@ -89,7 +89,7 @@ Configure them in Administration → Stage gates.
 | | |
 |---|---|
 | **Trigger** | Actions → *Record materiality determination…* (shown on Incidents and Breaches only) |
-| **Fields** | Status (Under review, Material, Not material); for a final status: **decision maker**, **decision date** and **rationale** (all required) |
+| **Fields** | Status (Under review, Material, Not material); for a final status: **decision maker**, **when it was decided** (date and time, in your zone) and **rationale** (all required) |
 | **Behind the scenes** | `CaseService.RecordMaterialityAsync` → `Case.RecordMateriality`. A status change also writes a `MaterialityChange`. |
 | **Permission** | `EditCases` |
 | **Errors** | "A final determination must record who made the decision." and similar for date and rationale; the date can't be in the future; only on an Incident or Breach |
@@ -103,7 +103,7 @@ The feature is **off** by default (`Compliance:NotificationDeadlines:Enabled`).
 flowchart LR
     DE["Data elements recorded on the case<br/>(e.g. SSN → jurisdictions US, NY)"] --> J["Jurisdictions in play"]
     J --> R["Each jurisdiction's window<br/>(Administration → Regulatory deadlines;<br/>else the default window, 72 h)"]
-    S["Start: materiality 'Material' decision date<br/>(or detection, by setting)"] --> D["Deadline per jurisdiction"]
+    S["Start: when the materiality 'Material' decision was made<br/>(or detection, by setting)"] --> D["Deadline per jurisdiction"]
     R --> D
     D --> UI["Briefing table · header clock · Next ·<br/>dashboard · reminder emails"]
     MR["Mark reported to regulators"] --> Stop["All clocks stop"]
@@ -112,7 +112,7 @@ flowchart LR
 - **Which deadlines apply**: the union of notification jurisdictions on the data elements recorded in the case's
   impact assessment. Each jurisdiction's window comes from its notification rule (NY and US, 72 hours, are
   seeded) or the default window.
-- **When the clock starts**: the materiality decision date (`Determination`, the default) or detection
+- **When the clock starts**: the moment the materiality decision was made (`Determination`, the default) or detection
   (`Detection`, for Breach cases).
 - **Mark reported**: Next → *Mark reported…*, or Briefing → *Mark reported to regulators*, with the time it was done (can be backdated; not
   future, not before detection). `CaseService.MarkReportedAsync`. One reported time **stops every

@@ -41,6 +41,7 @@ public sealed class CaseActionDraft
     public string? HoldReleaseReason { get; set; }   // F-12
     public MaterialityStatus MaterialityStatus { get; set; } = MaterialityStatus.UnderReview;
     public string? MaterialityDecisionMaker { get; set; }
+    /// <summary>BUG-07: when the decision was made, as a wall time in the display zone (a datetime-local input).</summary>
     public DateTime? MaterialityDecidedOn { get; set; }
     public string? MaterialityRationale { get; set; }
     public string? MaterialityBaseline { get; set; }

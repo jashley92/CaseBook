@@ -182,8 +182,10 @@
         </select>
         <label class="form-label small" for="ws-mat-maker">Decision-maker <span class="text-muted">@(D.MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
         <input id="ws-mat-maker" class="form-control mb-2" placeholder="e.g. Disclosure Committee, General Counsel" @bind="D.MaterialityDecisionMaker" />
-        <label class="form-label small" for="ws-mat-date">Decision date <span class="text-muted">@(D.MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-        <input id="ws-mat-date" type="date" class="form-control mb-2" @bind="D.MaterialityDecidedOn" />
+        <label class="form-label small mb-0" for="ws-mat-date">When it was decided (@TimeDisp.Label) <span class="text-muted">@(D.MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
+        <input id="ws-mat-date" type="datetime-local" class="form-control" @bind="D.MaterialityDecidedOn" />
+        @* BUG-07: the time matters: a Material call starts the notification clock at this moment, not at midnight. *@
+        <div class="form-text mb-2">A Material determination starts the notification clock at this time.</div>
         <label class="form-label small" for="ws-mat-rationale">Rationale <span class="text-muted">@(D.MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
         <textarea id="ws-mat-rationale" class="form-control" rows="2" placeholder="Why the case is or isn't material" @bind="D.MaterialityRationale"></textarea>
     }
@@ -423,8 +425,7 @@
                     done = "Referred to Legal / Privacy";
                     break;
                 case "materiality":
-                    DateTimeOffset? decidedOn = D.MaterialityDecidedOn is { } d
-                        ? new DateTimeOffset(DateTime.SpecifyKind(d.Date, DateTimeKind.Utc)) : null;
+                    DateTimeOffset? decidedOn = D.MaterialityDecidedOn is { } d ? WallClock.ToUtc(d, TimeDisp.Zone) : null;
                     await Cases.RecordMaterialityAsync(id, D.MaterialityStatus, D.MaterialityDecisionMaker, decidedOn,
                         D.MaterialityRationale, D.MaterialityBaseline);
                     done = $"Materiality recorded: {Ui.Label(D.MaterialityStatus)}";
