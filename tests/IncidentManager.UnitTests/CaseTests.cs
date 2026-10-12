@@ -300,6 +300,32 @@ public class CaseTests
     }
 
     [Fact]
+    public void Going_past_recovery_without_it_needs_when_it_was_resolved(/* BUG-208 */)
+    {
+        var c = NewCase();
+        c.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(1));
+        c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(2));
+        c.SkipsRecovery(CasePhase.PostIncident).Should().BeTrue();
+        c.Invoking(x => x.ChangePhase(CasePhase.PostIncident, null, "ic1", Now.AddHours(4)))
+            .Should().Throw<ArgumentException>().WithMessage("*hasn't been through Recovery*");
+        c.Invoking(x => x.ChangePhase(CasePhase.PostIncident, null, "ic1", Now.AddHours(4), resolvedAtUtc: Now.AddHours(5)))
+            .Should().Throw<ArgumentException>();   // after the move (and in the future)
+        c.Invoking(x => x.ChangePhase(CasePhase.PostIncident, null, "ic1", Now.AddHours(4), resolvedAtUtc: Now.AddMinutes(30)))
+            .Should().Throw<ArgumentException>().WithMessage("*before it was contained*");
+
+        c.ChangePhase(CasePhase.PostIncident, null, "ic1", Now.AddHours(4), resolvedAtUtc: Now.AddHours(3));
+        c.ResolvedAtUtc.Should().Be(Now.AddHours(3), "the resolution clock stops when it was resolved");
+
+        // Through Recovery, or closing straight away, there's nothing to say.
+        var through = NewCase();
+        through.ChangePhase(CasePhase.Recovery, null, "ic1", Now.AddHours(1), containmentNotNeededReason: "Nothing to contain");
+        through.SkipsRecovery(CasePhase.PostIncident).Should().BeFalse();
+        through.Invoking(x => x.ChangePhase(CasePhase.PostIncident, null, "ic1", Now.AddHours(2), resolvedAtUtc: Now.AddHours(1)))
+            .Should().Throw<ArgumentException>().WithMessage("*only when a case goes past Recovery*");
+        NewCase().SkipsRecovery(CasePhase.Closed).Should().BeFalse();
+    }
+
+    [Fact]
     public void The_detected_time_cant_move_past_a_complex_events_promotion(/* BUG-164 */)
     {
         var c = Case.Open(2026, 0, "Beaconing", "Odd beaconing", classification: null, Severity.Medium,

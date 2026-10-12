@@ -120,6 +120,14 @@
                     case out of time-to-contain.</div>
             </fieldset>
         }
+        @if (Case.SkipsRecovery(D.NewPhase))
+        {
+            @* BUG-208: going past Recovery without it says when it was resolved. *@
+            <label class="form-label small mt-2" for="ws-resolved-at">When it was resolved <span class="text-muted">(required)</span></label>
+            <input id="ws-resolved-at" type="datetime-local" class="form-control form-control-sm" @bind="D.ResolvedAt" @bind:event="oninput" />
+            <div class="form-text">This case hasn't been through Recovery. Say when it was resolved, so the resolution SLA stops at the
+                right time.</div>
+        }
         <TransitionWarnings Case="Case" To="D.NewPhase" Notify="Notify" />
         <GateSection Draft="T" OnFix="OnFix" OnChanged="Changed" />
     }
@@ -442,7 +450,8 @@
                 || t.RationaleError(D.PhaseReason) is not null
                 || t.When is null || (backdated && string.IsNullOrWhiteSpace(D.PhaseReason))
                 || (Case.Phase == CasePhase.Closed && D.NewPhase != CasePhase.Closed && string.IsNullOrWhiteSpace(D.PhaseReason))   // BUG-62
-                || (Case.SkipsContainment(D.NewPhase) && !ContainmentSaid),   // BUG-165
+                || (Case.SkipsContainment(D.NewPhase) && !ContainmentSaid)   // BUG-165
+                || (Case.SkipsRecovery(D.NewPhase) && D.ResolvedAt is null),   // BUG-208
             "severity" => t.When is null || ((backdated || D.NewSeverity > Case.Severity) && string.IsNullOrWhiteSpace(D.SeverityReason)),   // HR-11
             "handoff" => string.IsNullOrWhiteSpace(D.HandoffTo) || string.IsNullOrWhiteSpace(D.HandoffState),
             _ => false
@@ -506,9 +515,10 @@
                             ? new CaseService.ContainmentDecision(
                                 D.WasContained == true && D.ContainedAt is { } ca ? WallClock.ToUtc(ca, TimeDisp.Zone) : null,
                                 D.WasContained == false ? D.ContainmentNotNeededReason : null)
-                            : null);
+                            : null,
+                        resolvedAtUtc: Case.SkipsRecovery(D.NewPhase) && D.ResolvedAt is { } ra ? WallClock.ToUtc(ra, TimeDisp.Zone) : null);
                     D.PhaseReason = null;
-                    (D.WasContained, D.ContainedAt, D.ContainmentNotNeededReason) = (null, null, null);
+                    (D.WasContained, D.ContainedAt, D.ContainmentNotNeededReason, D.ResolvedAt) = (null, null, null, null);
                     done = $"Phase changed to {Ui.Label(D.NewPhase)}";
                     break;
                 case "supersede":

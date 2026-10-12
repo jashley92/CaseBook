@@ -31,6 +31,9 @@ public sealed class CaseActionDraft
     public bool? WasContained { get; set; }
     public DateTime? ContainedAt { get; set; }
     public string? ContainmentNotNeededReason { get; set; }
+
+    /// <summary>BUG-208: going past Recovery without it, when it was resolved (a wall time in the display zone).</summary>
+    public DateTime? ResolvedAt { get; set; }
     public Severity NewSeverity { get; set; } = Severity.Medium;
     public string? SeverityReason { get; set; }
     public string? ReopenReason { get; set; }

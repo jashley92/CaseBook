@@ -889,10 +889,11 @@ public sealed class CaseService
 
     /// <param name="containment">BUG-165: when moving past Containment without it, when it was contained or why it
     /// wasn't needed.</param>
+    /// <param name="resolvedAtUtc">BUG-208: when moving past Recovery without it, when it was resolved.</param>
     public async Task ChangePhaseAsync(Guid id, CasePhase to, string? reason,
         IReadOnlySet<Guid>? attestedRequirementIds = null, string? overrideJustification = null,
         DateTimeOffset? effectiveAtUtc = null, CaseClosing? closing = null, ContainmentDecision? containment = null,
-        CancellationToken ct = default)
+        DateTimeOffset? resolvedAtUtc = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
@@ -926,7 +927,7 @@ public sealed class CaseService
         else RequireReasonIfBackdated(effectiveAtUtc, reason);
 
         c.ChangePhase(to, reason, _user.UserId, now, effectiveAtUtc, outcomeKey,
-            containment?.ContainedAtUtc, containment?.NotNeededReason);
+            containment?.ContainedAtUtc, containment?.NotNeededReason, resolvedAtUtc);
         await db.SaveChangesAsync(ct);
     }
 

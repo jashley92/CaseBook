@@ -112,7 +112,8 @@ public sealed class ReportingIntegrationTests : IDisposable
                 Severity = Severity.High, Origin = CaseOrigin.InternalDetection, DetectedAtUtc = _clock.UtcNow, OccurredAtUtc = began
             })).Id;
             await cases.ChangePhaseAsync(caseId, CasePhase.PostIncident, "Recovered; review under way",
-                containment: new IncidentManager.Application.Cases.CaseService.ContainmentDecision(null, "The sessions had already expired"));
+                containment: new IncidentManager.Application.Cases.CaseService.ContainmentDecision(null, "The sessions had already expired"),
+                resolvedAtUtc: _clock.UtcNow);   // BUG-208: past Recovery too
         }
 
         await using (var db = NewContext())

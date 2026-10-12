@@ -321,9 +321,16 @@ public class Case : AuditableEntity, IHashableEntity
     /// <param name="containmentNotNeededReason">BUG-165: or why containment wasn't needed.</param>
     public void ChangePhase(CasePhase to, string? reason, string actor, DateTimeOffset nowUtc,
         DateTimeOffset? effectiveAtUtc = null, string? outcomeKey = null,
-        DateTimeOffset? containedAtUtc = null, string? containmentNotNeededReason = null)
+        DateTimeOffset? containedAtUtc = null, string? containmentNotNeededReason = null, DateTimeOffset? resolvedAtUtc = null)
     {
         if (to == Phase) return;
+        // BUG-208: going past Recovery without it says when it was resolved, as skipping Containment says when it was
+        // contained: otherwise the resolution clock runs on through the post-incident review.
+        var skipsRecovery = SkipsRecovery(to);
+        if (!skipsRecovery && resolvedAtUtc is not null)
+            throw new ArgumentException("When it was resolved is recorded only when a case goes past Recovery without it.");
+        if (skipsRecovery && resolvedAtUtc is null)
+            throw new ArgumentException("This case hasn't been through Recovery. Say when it was resolved.");
         var notNeeded = string.IsNullOrWhiteSpace(containmentNotNeededReason) ? null : containmentNotNeededReason.Trim();
         var skips = SkipsContainment(to);
         if (!skips && (containedAtUtc is not null || notNeeded is not null))
@@ -341,6 +348,16 @@ public class Case : AuditableEntity, IHashableEntity
         var effective = CheckEffective(effectiveAtUtc, nowUtc, "phase",
             StatusChanges.Where(x => x.From is not null).Select(x => x.EffectiveAt));
         var at = effective ?? nowUtc;
+
+        // BUG-208: checked before anything changes, against the contained time this move leaves (unless it wasn't needed).
+        if (skipsRecovery && resolvedAtUtc is { } resolvedAt)
+        {
+            if (resolvedAt > nowUtc) throw new ArgumentException("When it was resolved can't be in the future.");
+            if (DetectedAtUtc is { } det && resolvedAt < det) throw new ArgumentException("It can't have been resolved before it was detected.");
+            var containedBy = skips ? containedAtUtc : ContainmentNotNeededReason is null ? ContainedAtUtc : null;
+            if (containedBy is { } cb && resolvedAt < cb) throw new ArgumentException("It can't have been resolved before it was contained.");
+            if (resolvedAt > at) throw new ArgumentException("It can't have been resolved after this move.");
+        }
 
         var from = Phase;
         Phase = to;
@@ -367,6 +384,8 @@ public class Case : AuditableEntity, IHashableEntity
             ContainedAtUtc = at;
         }
 
+        if (skipsRecovery && resolvedAtUtc is { } resolved) ResolvedAtUtc = resolved;   // BUG-208, checked above
+
         switch (to)
         {
             case CasePhase.Containment: ContainedAtUtc ??= at; break;
@@ -390,6 +409,14 @@ public class Case : AuditableEntity, IHashableEntity
     public bool SkipsContainment(CasePhase to) =>
         Phase < CasePhase.Containment && to is CasePhase.Eradication or CasePhase.Recovery or CasePhase.PostIncident
         && ContainedAtUtc is null && ContainmentNotNeededReason is null;
+
+    /// <summary>
+    /// BUG-208: whether moving to <paramref name="to"/> goes past Recovery without it: from before Recovery to
+    /// Post-incident, with no resolved time. Closing straight away doesn't (closing stops the clocks), and neither does a
+    /// case already resolved.
+    /// </summary>
+    public bool SkipsRecovery(CasePhase to) =>
+        Phase < CasePhase.Recovery && to == CasePhase.PostIncident && ResolvedAtUtc is null;
 
     /// <summary>
     /// Reopens a closed case (E-27): moves it back to the phase it held before closure (or Recovery if that

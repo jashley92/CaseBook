@@ -170,6 +170,11 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ### Next release
 
+- **Skipping Recovery says when it was resolved.** Moving a case to Post-incident without going through Recovery
+  never set its resolved time, so its resolution clock ran on: SLA-breached on the list and dashboard, and "not
+  resolved" in Needs action. The move now asks when it was resolved. Cases that already skipped Recovery are
+  unchanged; to stop one's clock, move it to Recovery with the time it was resolved as when it happened, then on.
+
 - **One migration adds an audit-log index** (`AuditLogEntityIndex`: `IX_AuditLog_EntityType_EntityId`). Opening a
   closed case and downloading a report each looked up a record's own audit entries, which scanned the whole audit
   log. On a large audit log the index takes a moment to build at first start. On a site that enabled the SQL Server
