@@ -56,6 +56,20 @@ public sealed class NotificationMarkTests : IDisposable
     }
 
     [Fact]
+    public void A_mark_the_other_process_won_and_then_cleared_is_sent_by_this_one(/* BUG-157 */)
+    {
+        var first = new DigestTracker(Process());
+        var second = new DigestTracker(Process());
+        second.TryMarkSent("someone", Domain.Enums.DigestCadence.Daily, "2026-10-11");   // loads its view of the table
+
+        first.TryMarkSent("ana", Domain.Enums.DigestCadence.Daily, "2026-10-12").Should().BeTrue();
+        second.TryMarkSent("ana", Domain.Enums.DigestCadence.Daily, "2026-10-12").Should().BeFalse();
+        first.Forget("ana", Domain.Enums.DigestCadence.Daily, "2026-10-12");   // its send failed
+
+        second.TryMarkSent("ana", Domain.Enums.DigestCadence.Daily, "2026-10-12").Should().BeTrue("the next scan here sends it");
+    }
+
+    [Fact]
     public void An_undelivered_mark_is_forgotten_across_restarts_and_old_marks_are_pruned()
     {
         var c = Guid.NewGuid();

@@ -45,7 +45,10 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
         }
         catch (DbUpdateException) when (Exists(key))
         {
-            return false;   // another process recorded it first, and sends it
+            // Another process recorded it first, and sends it. BUG-157: the table, not this process's copy, says so: if
+            // that send fails and the other process clears the mark, the next scan here records it and sends.
+            lock (_gate) Loaded().Remove(key);
+            return false;
         }
         catch (Exception ex)
         {
