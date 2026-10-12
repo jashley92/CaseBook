@@ -334,6 +334,22 @@ function Grant-Ntfs($path, $rights) {
     $acl.AddAccessRule($rule)
     Set-Acl -Path $path -AclObject $acl
 }
+# BUG-134: the data root holds evidence, reports, keys and the data-protection ring, so it keeps nothing inherited
+# from the volume (on a default NTFS volume BUILTIN\Users can read, and on C: Authenticated Users can modify). Only
+# SYSTEM and local Administrators (by SID, so any OS language) plus the app identity; the subfolders inherit this.
+function Protect-DataRoot($path) {
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'
+    $none = [System.Security.AccessControl.PropagationFlags]::None
+    foreach ($sid in 'S-1-5-18', 'S-1-5-32-544') {
+        $who = New-Object System.Security.Principal.SecurityIdentifier($sid)
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($who, 'FullControl', $inherit, $none, 'Allow')))
+    }
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($AppPoolIdentity, 'ReadAndExecute', $inherit, $none, 'Allow')))
+    Set-Acl -Path $path -AclObject $acl
+}
+Protect-DataRoot $DataRoot
 Grant-Ntfs $SitePath 'ReadAndExecute'                       # app binaries: read/execute only
 foreach ($d in $dataDirs) { Grant-Ntfs $d 'Modify' }        # stores the app reads/writes
 # H-07: on SQL Server (production) every file store — DB, evidence, reports, branding, keys, seals,
