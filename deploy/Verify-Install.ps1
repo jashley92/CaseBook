@@ -127,7 +127,8 @@ if ($ConfigFile) {
         $sp = ([string]$cfg.SitePath).TrimEnd('\')
         $dr = ([string]$cfg.DataRoot).TrimEnd('\')
         if ($sp -and $dr) {
-            if ($dr.ToLower().StartsWith($sp.ToLower())) { Bad "DataRoot '$dr' is inside SitePath '$sp' - keep case evidence OFF the web root" }
+            # BUG-140: inside means the same folder or under it (D:\inetpub\casebookdata isn't inside D:\inetpub\casebook).
+            if ($dr -ieq $sp -or $dr.ToLower().StartsWith($sp.ToLower() + '\')) { Bad "DataRoot '$dr' is inside SitePath '$sp' - keep case evidence OFF the web root" }
             else { Ok "SitePath and DataRoot are separate" }
         }
         foreach ($p in @($cfg.SitePath, $cfg.DataRoot)) {
