@@ -163,6 +163,13 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ### Next release
 
+- **History rows' hashes are recorded in the audit trail.** v1.5.2 gave existing status, classification, materiality,
+  severity, assignment and verdict changes, case assignments and evidence citations their row hash but wrote it only
+  to the row, so deleting one, or editing it and recomputing its hash, still passed the record check. At the first
+  start after this upgrade each such row's hash is recorded as an audited change (actor: the system), once; from then
+  on a deleted, cleared or re-hashed history row is caught. A row that no longer matches the hash v1.5.2 gave it isn't
+  recorded, and the record check reports it.
+
 - **STIX imports keep TLP markings.** An imported indicator now takes the TLP its `object_marking_refs` name (TLP 2.0
   or 1.0, or a TLP marking-definition in the bundle; the most restrictive if several), so a partner's TLP:RED intel is
   no longer exported at the default AMBER. The case-import document gains an optional `tlp` on each entity. An import
@@ -273,7 +280,8 @@ touch the deployment (the data-root ACL and the app pool's recycling); read the 
 - **One column migration** (`HistoryRowHashes`): status, classification, materiality, severity, assignment and
   verdict changes, case assignments and evidence citations now carry a row hash and are in the record check. A direct
   edit of when a transition happened, or an assignment inserted outside CaseBook, is now caught. At the first start
-  after the upgrade, existing rows the audit trail records are given their hash; the trail itself isn't changed.
+  after the upgrade, existing rows the audit trail records are given their hash; the trail itself isn't changed (so
+  until the next release records those hashes, an edit whose author also recomputed the hash isn't caught).
 
 - **One column-and-index migration** (`CaseEditVersion`): two saves to the same case at the same moment no longer
   both land (two closes, two current briefs). The second is refused with "Someone else just changed this case.

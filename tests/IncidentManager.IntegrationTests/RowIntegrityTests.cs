@@ -192,21 +192,93 @@ public sealed class RowIntegrityTests
         (await VerifyAsync(database))!.Detail.Should().Contain("isn't in the audit trail");
     }
 
+    // As a database upgraded from before v1.5.2 has its status changes: no row hash, and entries that never recorded one.
+    // (Rewriting the entries breaks their own hashes, so these tests check the records, not the chain's links.)
+    private async Task AsBeforeTheUpgradeAsync(TestDatabase database, bool hashedByV152 = false)
+    {
+        await using var raw = new AppDbContext(database.OptionsWithoutInterceptors);
+        foreach (var entry in await raw.AuditLog.Where(a => a.EntityType == nameof(StatusChange) && a.AfterJson != null).ToListAsync())
+        {
+            var after = System.Text.Json.Nodes.JsonNode.Parse(entry.AfterJson!)!.AsObject();
+            after.Remove("RowHash");
+            entry.AfterJson = after.ToJsonString();
+        }
+        await raw.SaveChangesAsync();
+        if (!hashedByV152)
+            await raw.StatusChanges.ExecuteUpdateAsync(s => s.SetProperty(x => x.RowHash, (string?)null));
+    }
+
+    private async Task<RowIntegrityVerifier.RowMismatch?> VerifyRecordsAsync(TestDatabase database)
+    {
+        await using var db = database.NewContext();
+        var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+        return await RowIntegrityVerifier.VerifyAsync(db, _hasher, chain);
+    }
+
     [Theory]
     [MemberData(nameof(Providers))]
-    public async Task The_upgrade_back_fill_hashes_recorded_rows_and_the_check_then_passes(string provider /* BUG-70 */)
+    public async Task The_upgrade_back_fill_hashes_recorded_rows_in_the_chain_and_the_check_then_passes(string provider /* BUG-70, BUG-153 */)
     {
         using var database = Seeded(provider);
-        await using (var db = database.NewContext())
-            await db.StatusChanges.ExecuteUpdateAsync(s => s.SetProperty(x => x.RowHash, (string?)null));   // as an upgraded database has them
+        await AsBeforeTheUpgradeAsync(database);
 
         await using (var db = database.NewContext())
         {
             (await RowHashBackfill.RunAsync(db, _hasher)).Should().BeGreaterThan(0);
             (await db.StatusChanges.AnyAsync(s => s.RowHash == null)).Should().BeFalse();
-            (await RowHashBackfill.RunAsync(db, _hasher)).Should().Be(0, "once every row has a hash it does nothing");
+            (await RowHashBackfill.RunAsync(db, _hasher)).Should().Be(0, "once every row is recorded it does nothing");
         }
-        (await VerifyAsync(database))?.Detail.Should().BeNull();
+        (await VerifyRecordsAsync(database))?.Detail.Should().BeNull();
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task After_the_back_fill_a_deleted_or_rehashed_history_row_is_caught(string provider /* BUG-153 */)
+    {
+        using var database = Seeded(provider);
+        await AsBeforeTheUpgradeAsync(database);
+        await using (var db = database.NewContext()) await RowHashBackfill.RunAsync(db, _hasher);
+
+        Guid edited, deleted;
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            var rows = await raw.StatusChanges.OrderBy(x => x.Id).Take(2).ToListAsync();
+            (edited, deleted) = (rows[0].Id, rows[1].Id);
+            rows[0].EffectiveAtUtc = rows[0].EffectiveAt.AddHours(-6);   // moved, and its hash recomputed to match
+            rows[0].RowHash = _hasher.ComputeRowHash(rows[0]);
+            await raw.SaveChangesAsync();
+        }
+        var bad = await VerifyRecordsAsync(database);
+        bad!.Id.Should().Be(edited);
+        bad.Detail.Should().Contain("doesn't match its last recorded change");
+
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            await raw.StatusChanges.Where(x => x.Id == edited).ExecuteDeleteAsync();
+            await raw.StatusChanges.Where(x => x.Id == deleted).ExecuteDeleteAsync();
+        }
+        (await VerifyRecordsAsync(database))!.Detail.Should().Contain("is missing");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Rows_v152_hashed_without_recording_are_recorded_unless_they_no_longer_match(string provider /* BUG-153 */)
+    {
+        using var database = Seeded(provider);
+        await AsBeforeTheUpgradeAsync(database, hashedByV152: true);
+        Guid changed;
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            changed = await raw.StatusChanges.OrderBy(x => x.Id).Select(x => x.Id).FirstAsync();
+            await raw.StatusChanges.Where(x => x.Id == changed).ExecuteUpdateAsync(s => s.SetProperty(x => x.Reason, "edited"));
+        }
+
+        await using (var db = database.NewContext())
+            (await RowHashBackfill.RunAsync(db, _hasher)).Should().Be(await db.StatusChanges.CountAsync() - 1);
+
+        var bad = await VerifyRecordsAsync(database);
+        bad!.Id.Should().Be(changed, "the edited row isn't recorded with its new content");
+        bad.Detail.Should().Contain("no longer matches its hash");
     }
 
     [Theory]

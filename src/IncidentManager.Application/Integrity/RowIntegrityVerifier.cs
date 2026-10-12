@@ -96,6 +96,11 @@ public static class RowIntegrityVerifier
                     if (last.Hash is not null && !HashClearedByMigration.Contains(type))
                         return new RowMismatch(type, entity.Id, last.Sequence,
                             $"{type} {entity.Id} had its hash removed outside CaseBook (audit entry {last.Sequence} recorded one).");
+                    // BUG-153: the start-up back-fill gives every recorded row in these tables a hash, so one without is a
+                    // hash cleared outside CaseBook (to be re-hashed from edited content at the next start).
+                    if (HashedFromUpgrade.Contains(type))
+                        return new RowMismatch(type, entity.Id, last.Sequence,
+                            $"{type} {entity.Id} had its hash removed outside CaseBook (every recorded row has one since the upgrade).");
                     continue;   // written before row hashes existed
                 }
                 if (!known)
@@ -115,7 +120,10 @@ public static class RowIntegrityVerifier
         // no longer in its table was deleted outside CaseBook: the app records every removal.
         foreach (var ((type, id), last) in recorded)
         {
-            if (last.Deleted || last.Hash is null || !checkedTypes.Contains(type) || present.Contains((type, id))) continue;
+            // BUG-153: in the tables made hashable later, every row is in the trail, so a missing one counts even when its
+            // latest entry predates row hashes.
+            if (last.Deleted || (last.Hash is null && !HashedFromUpgrade.Contains(type)) || !checkedTypes.Contains(type)
+                || present.Contains((type, id))) continue;
             return new RowMismatch(type, Guid.TryParse(id, out var g) ? g : Guid.Empty, last.Sequence,
                 $"{type} {id} is missing: the audit trail records it (entry {last.Sequence}) but it was deleted outside CaseBook.");
         }
