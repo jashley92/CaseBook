@@ -161,7 +161,12 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
 
 ## Notes
 
-### Next release (unreleased)
+### v1.5.2
+
+A bug-fix and hardening release with six migrations, applied at startup, and a first start that gives existing
+history rows their row hash. Several changes are visible to the team (a reason to leave Closed, reopen before raising
+a closed case, report TLP raised to its most restrictive content, `{{report.tlp}}` required in Word templates) and two
+touch the deployment (the data-root ACL and the app pool's recycling); read the notes below before upgrading.
 
 - **The installer now locks down the data root.** `Install-CaseBook.ps1` removes what the folder inherits from the
   volume and grants only SYSTEM, local Administrators and the app identity (Modify on each store). Before, on a
