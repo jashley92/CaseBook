@@ -52,6 +52,9 @@ public abstract class TestDatabase : IDisposable
 
     public AppDbContext NewContext() => new(Options);
 
+    /// <summary>The same database with no interceptors: writes that bypass the audit chain, as a DBA's would.</summary>
+    public DbContextOptions<AppDbContext> OptionsWithoutInterceptors => Configure(new DbContextOptionsBuilder<AppDbContext>()).Options;
+
     public TestDbContextFactory Factory() => new(Options);
 
     public abstract void Dispose();

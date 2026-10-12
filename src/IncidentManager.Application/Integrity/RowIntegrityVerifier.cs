@@ -12,6 +12,8 @@ namespace IncidentManager.Application.Integrity;
 /// hash (catches an edit made directly in the database) and that hash is the one the chain last recorded for it
 /// (catches an edit whose author also recomputed the row hash, since the chain is linked and can be keyed and sealed).
 /// Rows from before row hashes existed, and rows whose chain entries predate them, are skipped rather than flagged.
+/// BUG-64/65: a row whose hash was cleared while the chain holds one, a row the chain last recorded as deleted, a hashed
+/// row the chain never recorded, and a row the chain recorded that is no longer there are all flagged too.
 /// </summary>
 public static class RowIntegrityVerifier
 {
@@ -59,14 +61,32 @@ public static class RowIntegrityVerifier
         IReadOnlyList<AuditLogEntry> chain, CancellationToken ct = default)
     {
         var recorded = LastRecordedHashes(chain);
+        var checkedTypes = new HashSet<string>(StringComparer.Ordinal);
+        var present = new HashSet<(string, string)>();
         foreach (var table in Tables(db))
         {
+            checkedTypes.Add(table.ElementType.Name);
             await foreach (var row in table.AsAsyncEnumerable().WithCancellation(ct))
             {
-                if (row.RowHash is not { Length: > 0 } stored) continue;   // written before row hashes existed
                 var entity = (Entity)row;
                 var type = row.GetType().Name;
-                recorded.TryGetValue((type, entity.Id.ToString()), out var last);
+                var key = (type, entity.Id.ToString());
+                present.Add(key);
+                var known = recorded.TryGetValue(key, out var last);
+
+                if (known && last.Deleted)
+                    return new RowMismatch(type, entity.Id, last.Sequence,
+                        $"{type} {entity.Id} was removed (audit entry {last.Sequence}) and put back outside CaseBook.");
+                if (row.RowHash is not { Length: > 0 } stored)
+                {
+                    if (last.Hash is not null && !HashClearedByMigration.Contains(type))
+                        return new RowMismatch(type, entity.Id, last.Sequence,
+                            $"{type} {entity.Id} had its hash removed outside CaseBook (audit entry {last.Sequence} recorded one).");
+                    continue;   // written before row hashes existed
+                }
+                if (!known)
+                    return new RowMismatch(type, entity.Id, null,
+                        $"{type} {entity.Id} isn't in the audit trail: it was added outside CaseBook.");
 
                 if (!string.Equals(hasher.ComputeRowHash(row), stored, StringComparison.OrdinalIgnoreCase))
                     return new RowMismatch(type, entity.Id, last.Sequence,
@@ -76,16 +96,35 @@ public static class RowIntegrityVerifier
                         $"{type} {entity.Id} doesn't match its last recorded change (audit entry {last.Sequence}): it was rewritten outside CaseBook.");
             }
         }
+
+        // A record the chain last recorded as created or changed (with a row hash, so after row hashes existed) that is
+        // no longer in its table was deleted outside CaseBook: the app records every removal.
+        foreach (var ((type, id), last) in recorded)
+        {
+            if (last.Deleted || last.Hash is null || !checkedTypes.Contains(type) || present.Contains((type, id))) continue;
+            return new RowMismatch(type, Guid.TryParse(id, out var g) ? g : Guid.Empty, last.Sequence,
+                $"{type} {id} is missing: the audit trail records it (entry {last.Sequence}) but it was deleted outside CaseBook.");
+        }
         return null;
     }
 
-    /// <summary>Per record (type, id), the row hash its latest audit entry recorded, and that entry's sequence.</summary>
-    private static Dictionary<(string Type, string Id), (string? Hash, long Sequence)> LastRecordedHashes(IReadOnlyList<AuditLogEntry> chain)
+    /// <summary>
+    /// Types a released migration rewrote and cleared the row hash of (ClosureGateHonestChecks, on stage-gate
+    /// requirements), so a cleared hash there isn't a sign of tampering. A migration that clears row hashes must add its
+    /// type here.
+    /// </summary>
+    private static readonly HashSet<string> HashClearedByMigration = new(StringComparer.Ordinal) { nameof(StageGateRequirement) };
+
+    /// <summary>Per record (type, id), the row hash its latest audit entry recorded, that entry's sequence, and whether
+    /// it was a removal.</summary>
+    private static Dictionary<(string Type, string Id), (string? Hash, long Sequence, bool Deleted)> LastRecordedHashes(IReadOnlyList<AuditLogEntry> chain)
     {
-        var map = new Dictionary<(string, string), (string?, long)>();
+        var map = new Dictionary<(string, string), (string?, long, bool)>();
         foreach (var e in chain)
         {
-            if (e.EntityId is not { } id || e.AfterJson is not { } after) continue;
+            if (e.EntityId is not { } id) continue;
+            if (e.Action == Domain.Enums.AuditAction.Delete) { map[(e.EntityType, id)] = (null, e.Sequence, true); continue; }
+            if (e.AfterJson is not { } after) continue;
             // The latest entry decides. Entries written before every update recorded the row hash don't carry it, and
             // a record whose latest entry is one of those is checked against its own hash only.
             string? hash = null;
@@ -98,7 +137,7 @@ public static class RowIntegrityVerifier
                 }
                 catch (JsonException) { /* not a snapshot this check reads; the chain check covers the entry itself */ }
             }
-            map[(e.EntityType, id)] = (hash, e.Sequence);
+            map[(e.EntityType, id)] = (hash, e.Sequence, false);
         }
         return map;
     }

@@ -137,4 +137,8 @@ audit_after="$(sql "SELECT COUNT(*) FROM [$db].dbo.AuditLog")"
 [[ "$cases_after" -eq "$cases_before" ]] || fail "case count changed across the upgrade ($cases_before -> $cases_after)"
 [[ "$audit_after" -ge "$audit_before" ]] || fail "audit rows lost across the upgrade ($audit_before -> $audit_after)"
 
+# The upgraded records pass the integrity check's record rules (BUG-64/65): no false alarm on real release data.
+log "Checking the upgraded records against the audit trail"
+CASEBOOK_VERIFY_SQL="$conn" dotnet test "$to_dir/tests/IncidentManager.IntegrationTests" --nologo -v q   --filter "FullyQualifiedName~An_existing_database_passes_when_one_is_named" >"$work/verify.log" 2>&1   || { grep -E "Expected|Failed " "$work/verify.log" | head -10; fail "the upgraded records fail the integrity check"; }
+
 log "PASS $from_ref -> ${to_ref:-working tree}: $(echo "$expected" | wc -l | tr -d ' ') migrations applied, $cases_after cases and $audit_after audit rows preserved"

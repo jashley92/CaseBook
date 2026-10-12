@@ -99,6 +99,68 @@ public sealed class RowIntegrityTests
         bad.Detail.Should().Contain("last recorded change");
     }
 
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task An_edit_that_clears_the_row_hash_is_caught(string provider /* BUG-64 */)
+    {
+        using var database = Seeded(provider);
+        await using (var db = database.NewContext())
+        {
+            var id = await db.Cases.Select(c => c.Id).FirstAsync();
+            await db.Cases.Where(c => c.Id == id).ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Title, "Nothing to see here").SetProperty(c => c.RowHash, (string?)null));
+        }
+
+        var bad = await VerifyAsync(database);
+        bad!.Detail.Should().Contain("hash removed");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_record_deleted_directly_in_the_database_is_caught(string provider /* BUG-65 */)
+    {
+        using var database = Seeded(provider);
+        await using (var db = database.NewContext())
+        {
+            var id = await db.Notes.Select(n => n.Id).FirstAsync();
+            await db.Notes.Where(n => n.Id == id).ExecuteDeleteAsync();
+        }
+
+        var bad = await VerifyAsync(database);
+        bad!.EntityType.Should().Be(nameof(AnalystNote));
+        bad.Detail.Should().Contain("is missing");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_record_added_directly_in_the_database_is_caught(string provider /* BUG-65 */)
+    {
+        using var database = Seeded(provider);
+        await using (var db = database.NewContext())
+        {
+            var caseId = await db.Cases.Select(c => c.Id).FirstAsync();
+            var note = new AnalystNote { CaseId = caseId, Body = "Planted", CreatedBy = "x", CreatedAtUtc = _clock.UtcNow };
+            note.RowHash = _hasher.ComputeRowHash(note);
+            await using var raw = new AppDbContext(database.OptionsWithoutInterceptors);
+            raw.Notes.Add(note);
+            await raw.SaveChangesAsync();
+        }
+
+        var bad = await VerifyAsync(database);
+        bad!.Detail.Should().Contain("isn't in the audit trail");
+    }
+
+    [Fact]
+    public async Task An_existing_database_passes_when_one_is_named()
+    {
+        // Upgrade test hook: tools/upgrade-test/upgrade-path.sh sets CASEBOOK_VERIFY_SQL to the upgraded database, so an
+        // upgrade from a real release is checked for false alarms. Does nothing otherwise.
+        if (Environment.GetEnvironmentVariable("CASEBOOK_VERIFY_SQL") is not { Length: > 0 } conn) return;
+        await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(conn).Options);
+        var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+        (await RowIntegrityVerifier.VerifyAsync(db, _hasher, chain))?.Detail.Should().BeNull();
+    }
+
     [Fact]
     public void Every_hashable_table_is_checked()
     {

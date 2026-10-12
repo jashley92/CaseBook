@@ -109,7 +109,13 @@ flowchart TB
   must still produce its stored `RowHash`, which catches a field edited in the database, and that hash must be the
   one the record's latest audit entry recorded, which catches an edit whose author also recomputed `RowHash`. Every
   update entry for a hashable record carries its `RowHash`. Records with no `RowHash` yet, and records whose latest
-  entry was written before update entries carried it, get the first check only. A new `IHashableEntity`
+  entry was written before update entries carried it, get the first check only. The records are also reconciled
+  with the chain: a record whose `RowHash` was cleared while the chain holds one, a record the chain last recorded
+  as removed, a hashed record the chain never recorded (added in the database), and a record the chain recorded
+  that is no longer there (deleted in the database) are all flagged. The app records every removal, so a missing
+  record means a write outside it. One released migration cleared stage-gate requirement hashes, so a cleared hash
+  on that table isn't flagged; a migration that clears hashes must say so in `RowIntegrityVerifier`. The upgrade
+  test runs this check on a database upgraded from a release. A new `IHashableEntity`
   must be added to `RowIntegrityVerifier.Tables` (a test fails until it is).
 - **Times are stored in UTC.** The interceptor converts any `DateTimeOffset` with another offset before hashing,
   since canonicals print the offset and SQLite reads times back as UTC.
