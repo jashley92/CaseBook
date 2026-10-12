@@ -126,15 +126,21 @@ if (-not $SqlInstance -or -not $DbName) {
 # A dedicated connection string for our own preflight/backup work (Windows auth, tolerant of a self-signed cert).
 $adminConn = "Server=$SqlInstance;Database=$DbName;Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True;Application Name=CaseBook-Upgrade;"
 
+# BUG-138: a binding is "IP:port:host"; a site on a port other than the scheme's default is probed on that port.
+function Get-BindingUrl($binding, $scheme, $defaultPort) {
+    $parts = $binding.bindingInformation -split ':'
+    $hostHeader = if ($parts[-1]) { $parts[-1] } else { 'localhost' }
+    $port = if ($parts.Length -ge 3) { $parts[-2] } else { '' }
+    $portPart = if ($port -and $port -ne "$defaultPort") { ":$port" } else { '' }
+    return "${scheme}://$hostHeader$portPart/"
+}
 if (-not $HealthUrl) {
     $https = Get-WebBinding -Name $SiteName -Protocol https -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($https) {
-        $hostHeader = ($https.bindingInformation -split ':')[-1]
-        $HealthUrl = if ($hostHeader) { "https://$hostHeader/" } else { "https://localhost/" }
+        $HealthUrl = Get-BindingUrl $https 'https' 443
     } else {
         $http = Get-WebBinding -Name $SiteName -Protocol http -ErrorAction SilentlyContinue | Select-Object -First 1
-        $hostHeader = if ($http) { ($http.bindingInformation -split ':')[-1] } else { 'localhost' }
-        $HealthUrl = "http://$hostHeader/"
+        $HealthUrl = if ($http) { Get-BindingUrl $http 'http' 80 } else { 'http://localhost/' }
     }
 }
 Write-Info "Site path : $SitePath"
