@@ -172,10 +172,11 @@ public class Case : AuditableEntity, IHashableEntity
 
     /// <summary>Opens a new case, seeding the initial classification and status history. A null
     /// <paramref name="classification"/> opens the case as a <b>Complex Event</b> (pre-triage intake);
-    /// it enters the ladder later via <see cref="Reclassify"/>.</summary>
+    /// it enters the ladder later via <see cref="Reclassify"/>. <paramref name="numberDate"/> (BUG-112) is the moment
+    /// on the organization's wall clock that dates a Complex Event's number; it defaults to <paramref name="nowUtc"/>.</summary>
     public static Case Open(int year, int sequence, string descriptiveName, string title,
         Classification? classification, Severity severity, CaseOrigin origin,
-        string actor, DateTimeOffset nowUtc, bool isExercise = false)
+        string actor, DateTimeOffset nowUtc, bool isExercise = false, DateTimeOffset? numberDate = null)
     {
         var c = new Case
         {
@@ -196,7 +197,7 @@ public class Case : AuditableEntity, IHashableEntity
         // never mix with IRP-ladder items and there is no sequence to reuse; a promotion later renumbers
         // into the sequence-based IRP scheme. IRP items use the per-year sequence.
         c.CaseNumber = classification is null
-            ? FormatComplexEventNumber(nowUtc, c.DescriptiveName)
+            ? FormatComplexEventNumber(numberDate ?? nowUtc, c.DescriptiveName)
             : FormatCaseNumber(year, sequence, c.DescriptiveName);
         // Only record an initial classification when the case opens on the ladder; a Complex Event
         // records its first classification when it is later promoted.

@@ -75,6 +75,24 @@ public sealed class CaseNumberingPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Numbers_take_the_organizations_calendar_date_not_the_utc_one(/* BUG-112 */)
+    {
+        _clock.UtcNow = new DateTimeOffset(2027, 1, 1, 2, 0, 0, TimeSpan.Zero);   // 21:00 on 31 December in New York
+        await using var db = NewContext();
+        var svc = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+            zone: new NewYork());
+
+        (await svc.CreateAsync(Req("Late", Classification.Incident))).CaseNumber.Should().Be("2026-01_Late");
+        (await svc.CreateAsync(Req("Eve", null))).CaseNumber.Should().Be("CE-2026-12-31_Eve");
+    }
+
+    private sealed class NewYork : IOrganizationTimeZone
+    {
+        public TimeZoneInfo Current { get; } = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+    }
+
+    [Fact]
     public async Task Promoting_a_complex_event_renumbers_it_into_the_irp_scheme()
     {
         Guid id;

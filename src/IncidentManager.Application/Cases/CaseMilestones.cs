@@ -59,8 +59,13 @@ public sealed partial record MilestoneLabels(
     Func<CasePhase, string> Phase,
     Func<MaterialityStatus, string> Materiality,
     Func<string, string>? Outcome = null,
-    Func<EntityDisposition, string>? Disposition = null)
+    Func<EntityDisposition, string>? Disposition = null,
+    Func<DateTimeOffset, string>? Day = null)
 {
+    /// <summary>BUG-112: a calendar date as the reader's zone has it (the UI passes one); the UTC date otherwise.</summary>
+    public string DayLabel(DateTimeOffset at) =>
+        Day?.Invoke(at) ?? at.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
     /// <summary>HR-05: a verdict's label (admin-customizable when supplied, else the member name).</summary>
     public string DispositionLabel(EntityDisposition d) => Disposition?.Invoke(d) ?? d.ToString();
 
@@ -167,7 +172,7 @@ public static class CaseMilestones
         foreach (var x in c.MaterialityChanges)
         {
             var decided = x.DecisionMaker is { Length: > 0 } who
-                ? $"Decided by {who}" + (x.DecidedOnUtc is { } on ? $" on {on.UtcDateTime:yyyy-MM-dd}" : "") + "."
+                ? $"Decided by {who}" + (x.DecidedOnUtc is { } on ? $" on {labels.DayLabel(on)}" : "") + "."
                 : null;
             var detail = string.Join(" ", new[] { decided, Blank(x.Rationale) }.Where(s => s is not null));
             list.Add(new CaseMilestone($"mat:{x.Id}", x.ChangedAtUtc, MilestoneKind.Materiality,

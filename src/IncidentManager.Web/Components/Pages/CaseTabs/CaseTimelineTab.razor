@@ -2550,7 +2550,7 @@ else
     private IReadOnlyList<CaseMilestone> Milestones() => CaseMilestones.Project(Case, new MilestoneLabels(
         c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m),
         k => OutcomeLabels.GetValueOrDefault(k) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(k),
-        d => Ui.Label(d)));
+        d => Ui.Label(d), t => TimeDisp.DateOnly(t)));
 
     // Interleave entries and milestones by when they happened; the entry list arrives already ordered.
     private List<TlRow> MergeRows(IEnumerable<TimelineEntry> entries, IEnumerable<CaseMilestone> milestones)

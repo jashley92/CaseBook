@@ -627,7 +627,10 @@ public sealed class CaseService
         await _createValidator.ValidateAndThrowAsync(request, ct);
 
         var now = _clock.UtcNow;
-        var year = now.Year;
+        // BUG-112: the number's year and a Complex Event's date are the organization's calendar, so a case opened at
+        // 9 pm in New York on 31 December takes that year's number, not the next.
+        var local = OrgLocal(now);
+        var year = local.Year;
         var custom = NormalizeCaseNumber(request.CaseNumber);
 
         // FR-03: capture the detection time at intake (drives the SLA clock + dwell). Defaults to filing time
@@ -659,15 +662,15 @@ public sealed class CaseService
                 : 0;
             var c = Case.Open(year, seq, request.DescriptiveName, request.Title,
                 request.Classification, request.Severity, request.Origin, _user.UserId, now,
-                isExercise: request.IsExercise);   // PROD-43: fixed at creation
+                isExercise: request.IsExercise, numberDate: local);   // PROD-43: fixed at creation
             if (custom is not null) c.AssignCustomNumber(custom, _user.UserId, now);
-            else if (isComplexEvent && attempt > 0) c.SetComplexEventNumber(now, attempt + 1);
+            else if (isComplexEvent && attempt > 0) c.SetComplexEventNumber(local, attempt + 1);
             // BUG-53: a Complex Event's number is freed when it's promoted (renumbered), but its audit entries keep it,
             // and the activity feed, stale-case and closure checks read the audit trail by case number. A new Complex
             // Event never takes a number the trail already holds, so those entries can't attach to the wrong case.
             if (isComplexEvent && custom is null)
                 for (var n = attempt + 2; await db.AuditLog.AnyAsync(a => a.CaseNumber == c.CaseNumber, ct); n++)
-                    c.SetComplexEventNumber(now, n);
+                    c.SetComplexEventNumber(local, n);
 
             c.SetInitialSummary(request.Summary, _user.UserId, now);   // INV-36: brief v1 holds it
             c.DetectionCaseId = request.DetectionCaseId;
@@ -723,6 +726,9 @@ public sealed class CaseService
             }
         }
     }
+
+    /// <summary>BUG-112: <paramref name="utc"/> as the organization's wall clock (UTC when no zone is configured).</summary>
+    private DateTimeOffset OrgLocal(DateTimeOffset utc) => _zone is null ? utc : TimeZoneInfo.ConvertTime(utc, _zone.Current);
 
     /// <summary>Trims/validates an analyst-supplied case number; null when none was given.</summary>
     private static string? NormalizeCaseNumber(string? raw)
@@ -952,7 +958,7 @@ public sealed class CaseService
     {
         if (request.Classification is not { } cls) return null;
         var now = _clock.UtcNow;
-        var c = Case.Open(now.Year, 0, string.IsNullOrWhiteSpace(request.DescriptiveName) ? "New case" : request.DescriptiveName,
+        var c = Case.Open(OrgLocal(now).Year, 0, string.IsNullOrWhiteSpace(request.DescriptiveName) ? "New case" : request.DescriptiveName,
             request.Title, cls, request.Severity, request.Origin, _user.UserId, now, request.IsExercise);
         c.SetInitialSummary(request.Summary, _user.UserId, now);
         c.DetectionCaseId = request.DetectionCaseId;

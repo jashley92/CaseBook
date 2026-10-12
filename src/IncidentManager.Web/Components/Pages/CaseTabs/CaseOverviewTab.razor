@@ -968,7 +968,7 @@
     {
         var labels = new MilestoneLabels(c => Ui.Label(c), s => SevLabels.For(s), p => Ui.Label(p), m => Ui.Label(m),
             k => OutcomeLabels.GetValueOrDefault(k) ?? IncidentManager.Application.Admin.CaseOutcomeCatalog.Label(k),
-            d => Ui.Label(d));
+            d => Ui.Label(d), t => TimeDisp.DateOnly(t));
         var milestones = CaseMilestones.Project(Case, labels)
             .Where(m => RecentMilestones.Contains(m.Kind))
             .Select(m => new RecentItem(m.AtUtc, m.Flagged ? "bi-flag-fill im-ov-flag" : "bi-flag", "Milestone",

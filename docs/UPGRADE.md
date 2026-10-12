@@ -199,6 +199,10 @@ migrations were recorded, restore the pre-upgrade backup before retrying so sche
   {{report.tlp}} field"). Before, a report recorded as TLP:RED could print with no marking. Add the field (the page
   header is a good place) and replace the template's file under Admin → Report templates.
 
+- **Case numbers use the organization's calendar.** A new case's year, and a Complex Event's date, now come from
+  `Organization:TimeZone` rather than UTC, so a case opened at 9 pm in New York on 31 December takes that year's number.
+  Existing numbers don't change. The materiality "decided on" date in milestones is shown in your display zone.
+
 ### v1.5.1
 
 A bug-fix release with two migrations, applied at startup. Stage gates now apply when filing a case and on every rung
