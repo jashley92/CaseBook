@@ -71,12 +71,21 @@ public sealed class IntegrityService
         CancellationToken ct)
     {
         var verifier = _hasher.BeginVerify(await KeyedFromAsync(db, ct));
-        await foreach (var e in db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).AsAsyncEnumerable().WithCancellation(ct))
+        await ReadOnAsync(db, verifier, records, after: null, ct);
+        return verifier.Result;
+    }
+
+    // The chain's entries after a sequence (all of them for null), checked and collected as they're read.
+    private static async Task ReadOnAsync(IAppDbContext db, IChainVerifier verifier, RowIntegrityVerifier.ChainRecords? records,
+        long? after, CancellationToken ct)
+    {
+        var q = db.AuditLog.AsNoTracking();
+        if (after is { } from) q = q.Where(a => a.Sequence > from);
+        await foreach (var e in q.OrderBy(a => a.Sequence).AsAsyncEnumerable().WithCancellation(ct))
         {
             if (!verifier.Add(e)) break;
             records?.Add(e);
         }
-        return verifier.Result;
     }
 
     /// <summary>BUG-142: where the latest seal says the chain is keyed from (its signature is checked with the seal).</summary>
@@ -89,23 +98,20 @@ public sealed class IntegrityService
     /// </summary>
     public async Task<ChainVerificationResult> VerifyChainAndRecordsAsync(CancellationToken ct = default)
     {
-        // BUG-66: the chain is read before the tables, so a save landing in between makes a record look changed outside
-        // CaseBook. A mismatch is only reported when a fresh read finds the same record failing again; a real edit
-        // stays, a save in progress doesn't.
-        RowIntegrityVerifier.RowMismatch? previous = null;
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            using var db = _factory.CreateDbContext();
-            var records = new RowIntegrityVerifier.ChainRecords();
-            var result = await StreamChainAsync(db, records, ct);
-            if (!result.IsValid) return result;
-            var bad = await RowIntegrityVerifier.VerifyAsync(db, _hasher, records, ct);
-            if (bad is null) return result;
-            if (previous is not null && previous.EntityType == bad.EntityType && previous.Id == bad.Id)
-                return ChainVerificationResult.Broken(bad.LastSequence ?? 0, bad.Detail);
-            previous = bad;
-        }
-        return ChainVerificationResult.Broken(previous!.LastSequence ?? 0, previous.Detail);
+        // BUG-66/BUG-194: the chain is read before the tables, so a save landing in between makes a record look added,
+        // changed or removed outside CaseBook. A record that fails is checked again after reading the entries written
+        // since (their links checked too), and reported only if it still fails: a real edit stays, a save in progress
+        // doesn't, however many saves land during the check.
+        using var db = _factory.CreateDbContext();
+        var records = new RowIntegrityVerifier.ChainRecords();
+        var verifier = _hasher.BeginVerify(await KeyedFromAsync(db, ct));
+        await ReadOnAsync(db, verifier, records, after: null, ct);
+        if (!verifier.Result.IsValid) return verifier.Result;
+
+        var bad = await RowIntegrityVerifier.VerifyAsync(db, _hasher, records,
+            new RowIntegrityVerifier.Recheck(t => ReadOnAsync(db, verifier, records, records.Head ?? 0, t)), ct);
+        if (!verifier.Result.IsValid) return verifier.Result;   // an entry written since broke the chain
+        return bad is null ? verifier.Result : ChainVerificationResult.Broken(bad.LastSequence ?? 0, bad.Detail);
     }
 
     /// <summary>

@@ -71,73 +71,124 @@ public static class RowIntegrityVerifier
     {
         var recorded = new ChainRecords();
         foreach (var e in chain) recorded.Add(e);
-        return VerifyAsync(db, hasher, recorded, ct);
+        return VerifyAsync(db, hasher, recorded, ct: ct);
     }
 
     /// <summary>
+    /// BUG-194: how a record that looks wrong is looked at again. The chain is read before the tables, so a save that
+    /// lands in between makes its record look added, changed or removed outside CaseBook. <see cref="CatchUp"/> reads
+    /// the entries written since into the records (checking their links). The records are re-read once the scan is done.
+    /// </summary>
+    public sealed record Recheck(Func<CancellationToken, Task> CatchUp);
+
+    // A save in progress settles in one catch-up; a record still failing after a few is what's stored.
+    private const int Catchups = 3;
+
+    /// <summary>
     /// The same check against <paramref name="recorded"/>, which the caller built while streaming the chain (BUG-195), so
-    /// the audit log is never held in memory.
+    /// the audit log is never held in memory. With <paramref name="recheck"/>, a record that fails is checked again
+    /// against the entries written since (BUG-194), and reported only if it still fails.
     /// </summary>
     public static async Task<RowMismatch?> VerifyAsync(IAppDbContext db, IHashChainService hasher,
-        ChainRecords recorded, CancellationToken ct = default)
+        ChainRecords recorded, Recheck? recheck = null, CancellationToken ct = default)
     {
-        var checkedTypes = new HashSet<string>(StringComparer.Ordinal);
+        var tables = Tables(db).ToList();
+        var tableOf = new Dictionary<string, int>(StringComparer.Ordinal);
         var present = new HashSet<(string, string)>();
-        foreach (var table in Tables(db))
+        var suspects = new List<(int Table, Guid Id, RowMismatch Bad)>();
+        for (var i = 0; i < tables.Count; i++)
         {
-            checkedTypes.Add(table.ElementType.Name);
-            await foreach (var row in table.AsAsyncEnumerable().WithCancellation(ct))
+            tableOf[tables[i].ElementType.Name] = i;
+            await foreach (var row in tables[i].AsAsyncEnumerable().WithCancellation(ct))
             {
                 var entity = (Entity)row;
-                var type = row.GetType().Name;
-                var key = (type, entity.Id.ToString());
-                present.Add(key);
-                var known = recorded.TryGet(key, out var last);
-
-                if (known && last.Deleted)
-                    return new RowMismatch(type, entity.Id, last.Sequence,
-                        $"{type} {entity.Id} was removed (audit entry {last.Sequence}) and put back outside CaseBook.");
-                if (row.RowHash is not { Length: > 0 } stored)
-                {
-                    // BUG-70: in the tables made hashable later, a row the trail records was given its hash at upgrade; one
-                    // without a hash that the trail never recorded was added outside CaseBook (an assignment, say).
-                    if (!known && HashedFromUpgrade.Contains(type))
-                        return new RowMismatch(type, entity.Id, null,
-                            $"{type} {entity.Id} isn't in the audit trail: it was added outside CaseBook.");
-                    if (last.Hash is not null && !HashClearedByMigration.Contains(type))
-                        return new RowMismatch(type, entity.Id, last.Sequence,
-                            $"{type} {entity.Id} had its hash removed outside CaseBook (audit entry {last.Sequence} recorded one).");
-                    // BUG-153: the start-up back-fill gives every recorded row in these tables a hash, so one without is a
-                    // hash cleared outside CaseBook (to be re-hashed from edited content at the next start).
-                    if (HashedFromUpgrade.Contains(type))
-                        return new RowMismatch(type, entity.Id, last.Sequence,
-                            $"{type} {entity.Id} had its hash removed outside CaseBook (every recorded row has one since the upgrade).");
-                    continue;   // written before row hashes existed
-                }
-                if (!known)
-                    return new RowMismatch(type, entity.Id, null,
-                        $"{type} {entity.Id} isn't in the audit trail: it was added outside CaseBook.");
-
-                if (!hasher.RowHashMatches(row, stored))   // BUG-24: in the format the hash was written in
-                    return new RowMismatch(type, entity.Id, last.Sequence,
-                        $"{type} {entity.Id} was changed outside CaseBook: its content no longer matches its hash.");
-                if (last.Hash is { } chained && !string.Equals(chained, stored, StringComparison.OrdinalIgnoreCase))
-                    return new RowMismatch(type, entity.Id, last.Sequence,
-                        $"{type} {entity.Id} doesn't match its last recorded change (audit entry {last.Sequence}): it was rewritten outside CaseBook.");
+                present.Add((row.GetType().Name, entity.Id.ToString()));
+                if (Check(row, recorded, hasher) is not { } bad) continue;
+                if (recheck is null) return bad;
+                suspects.Add((i, entity.Id, bad));   // looked at again once the scan is done
             }
         }
 
         // A record the chain last recorded as created or changed (with a row hash, so after row hashes existed) that is
         // no longer in its table was deleted outside CaseBook: the app records every removal.
-        foreach (var ((type, id), last) in recorded.All)
+        var missing = recorded.All.Where(r => IsMissing(r.Key, r.Value, tableOf, present)).Select(r => r.Key).ToList();
+        if (recheck is null)
+            return missing.Select(k => Missing(k, recorded)).FirstOrDefault();
+
+        // BUG-194: each catch-up reads the entries written since, then re-reads what still looks wrong. A save in
+        // progress settles; a record still failing after the last is what's stored.
+        for (var n = 0; n < Catchups && (suspects.Count > 0 || missing.Count > 0); n++)
         {
-            // BUG-153: in the tables made hashable later, every row is in the trail, so a missing one counts even when its
-            // latest entry predates row hashes.
-            if (last.Deleted || (last.Hash is null && !HashedFromUpgrade.Contains(type)) || !checkedTypes.Contains(type)
-                || present.Contains((type, id))) continue;
-            return new RowMismatch(type, Guid.TryParse(id, out var g) ? g : Guid.Empty, last.Sequence,
-                $"{type} {id} is missing: the audit trail records it (entry {last.Sequence}) but it was deleted outside CaseBook.");
+            await recheck.CatchUp(ct);
+            var still = new List<(int Table, Guid Id, RowMismatch Bad)>();
+            foreach (var (table, id, _) in suspects)
+                if (await Reread(db, table, id, ct) is { } again && Check(again, recorded, hasher) is { } bad)   // gone since: the removal decides
+                    still.Add((table, id, bad));
+            suspects = still;
+            var gone = new List<(string Type, string Id)>();
+            foreach (var key in missing)
+                if (recorded.TryGet(key, out var last) && IsMissing(key, last, tableOf, present)
+                    && (!Guid.TryParse(key.Id, out var gid) || await Reread(db, tableOf[key.Type], gid, ct) is null))
+                    gone.Add(key);
+            missing = gone;
         }
+        return suspects.Count > 0 ? suspects[0].Bad : missing.Select(k => Missing(k, recorded)).FirstOrDefault();
+    }
+
+    private static RowMismatch Missing((string Type, string Id) key, ChainRecords recorded)
+    {
+        recorded.TryGet(key, out var last);
+        return new RowMismatch(key.Type, Guid.TryParse(key.Id, out var g) ? g : Guid.Empty, last.Sequence,
+            $"{key.Type} {key.Id} is missing: the audit trail records it (entry {last.Sequence}) but it was deleted outside CaseBook.");
+    }
+
+    // BUG-153: in the tables made hashable later, every row is in the trail, so a missing one counts even when its latest
+    // entry predates row hashes.
+    private static bool IsMissing((string Type, string Id) key, (string? Hash, long Sequence, bool Deleted) last,
+        Dictionary<string, int> tableOf, HashSet<(string, string)> present) =>
+        !last.Deleted && (last.Hash is not null || HashedFromUpgrade.Contains(key.Type)) && tableOf.ContainsKey(key.Type)
+        && !present.Contains(key);
+
+    // One record re-read by id from its table (index into Tables), with what its hash covers.
+    private static Task<IHashableEntity?> Reread(IAppDbContext db, int table, Guid id, CancellationToken ct) =>
+        Tables(db).ElementAt(table).Where(r => ((Entity)(object)r).Id == id).FirstOrDefaultAsync(ct);
+
+    private static RowMismatch? Check(IHashableEntity row, ChainRecords recorded, IHashChainService hasher)
+    {
+        var entity = (Entity)row;
+        var type = row.GetType().Name;
+        var known = recorded.TryGet((type, entity.Id.ToString()), out var last);
+
+        if (known && last.Deleted)
+            return new RowMismatch(type, entity.Id, last.Sequence,
+                $"{type} {entity.Id} was removed (audit entry {last.Sequence}) and put back outside CaseBook.");
+        if (row.RowHash is not { Length: > 0 } stored)
+        {
+            // BUG-70: in the tables made hashable later, a row the trail records was given its hash at upgrade; one
+            // without a hash that the trail never recorded was added outside CaseBook (an assignment, say).
+            if (!known && HashedFromUpgrade.Contains(type))
+                return new RowMismatch(type, entity.Id, null,
+                    $"{type} {entity.Id} isn't in the audit trail: it was added outside CaseBook.");
+            if (last.Hash is not null && !HashClearedByMigration.Contains(type))
+                return new RowMismatch(type, entity.Id, last.Sequence,
+                    $"{type} {entity.Id} had its hash removed outside CaseBook (audit entry {last.Sequence} recorded one).");
+            // BUG-153: the start-up back-fill gives every recorded row in these tables a hash, so one without is a
+            // hash cleared outside CaseBook (to be re-hashed from edited content at the next start).
+            if (HashedFromUpgrade.Contains(type))
+                return new RowMismatch(type, entity.Id, last.Sequence,
+                    $"{type} {entity.Id} had its hash removed outside CaseBook (every recorded row has one since the upgrade).");
+            return null;   // written before row hashes existed
+        }
+        if (!known)
+            return new RowMismatch(type, entity.Id, null,
+                $"{type} {entity.Id} isn't in the audit trail: it was added outside CaseBook.");
+
+        if (!hasher.RowHashMatches(row, stored))   // BUG-24: in the format the hash was written in
+            return new RowMismatch(type, entity.Id, last.Sequence,
+                $"{type} {entity.Id} was changed outside CaseBook: its content no longer matches its hash.");
+        if (last.Hash is { } chained && !string.Equals(chained, stored, StringComparison.OrdinalIgnoreCase))
+            return new RowMismatch(type, entity.Id, last.Sequence,
+                $"{type} {entity.Id} doesn't match its last recorded change (audit entry {last.Sequence}): it was rewritten outside CaseBook.");
         return null;
     }
 

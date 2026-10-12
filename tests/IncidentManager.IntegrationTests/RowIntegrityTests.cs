@@ -61,6 +61,80 @@ public sealed class RowIntegrityTests
         (await VerifyAsync(database))?.Detail.Should().BeNull();
     }
 
+    // BUG-194: the records as the chain stood when it was read, and the record check against them, optionally with the
+    // re-check that reads the entries written since.
+    private async Task<(RowIntegrityVerifier.ChainRecords Records, IncidentManager.Application.Abstractions.IChainVerifier Chain)> ReadChainAsync(
+        TestDatabase database)
+    {
+        await using var db = database.NewContext();
+        var records = new RowIntegrityVerifier.ChainRecords();
+        var chain = _hasher.BeginVerify();
+        await foreach (var e in db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).AsAsyncEnumerable())
+        {
+            chain.Add(e).Should().BeTrue();
+            records.Add(e);
+        }
+        return (records, chain);
+    }
+
+    private async Task<RowIntegrityVerifier.RowMismatch?> CheckRecordsAsync(TestDatabase database,
+        (RowIntegrityVerifier.ChainRecords Records, IncidentManager.Application.Abstractions.IChainVerifier Chain) read, bool recheck)
+    {
+        await using var db = database.NewContext();
+        var again = recheck
+            ? new RowIntegrityVerifier.Recheck(async ct =>
+            {
+                var from = read.Records.Head ?? 0;
+                await foreach (var e in db.AuditLog.AsNoTracking().Where(a => a.Sequence > from).OrderBy(a => a.Sequence).AsAsyncEnumerable())
+                {
+                    read.Chain.Add(e).Should().BeTrue();
+                    read.Records.Add(e);
+                }
+            })
+            : null;
+        return await RowIntegrityVerifier.VerifyAsync(db, _hasher, read.Records, again);
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Saves_landing_during_the_check_are_not_reported_as_tampering(string provider /* BUG-194 */)
+    {
+        using var database = Seeded(provider);
+        var read = await ReadChainAsync(database);
+
+        // After the chain was read: a record added, one changed and one removed, each by CaseBook.
+        await using (var db = database.NewContext())
+        {
+            var c = await db.Cases.FirstAsync();
+            db.Notes.Add(new AnalystNote { CaseId = c.Id, Body = "Added during the check", CreatedBy = "t", CreatedAtUtc = _clock.UtcNow });
+            (await db.TimelineEntries.Include(t => t.Tactics).FirstAsync()).Description = "Changed during the check";
+            db.Notes.Remove(await db.Notes.OrderBy(n => n.CreatedAtUtc).FirstAsync());
+            await db.SaveChangesAsync();
+        }
+
+        (await CheckRecordsAsync(database, read, recheck: false)).Should().NotBeNull("against the stale records, they look tampered");
+        (await CheckRecordsAsync(database, read, recheck: true))?.Detail.Should().BeNull("each is in the entries written since");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task A_real_edit_is_still_caught_when_saves_land_during_the_check(string provider /* BUG-194 */)
+    {
+        using var database = Seeded(provider);
+        var read = await ReadChainAsync(database);
+        await using (var db = database.NewContext())
+        {
+            (await db.TimelineEntries.Include(t => t.Tactics).OrderBy(t => t.Id).FirstAsync()).Description = "A save in progress";
+            await db.SaveChangesAsync();
+            var other = await db.TimelineEntries.OrderBy(t => t.Id).Skip(1).Select(t => t.Id).FirstAsync();
+            await db.TimelineEntries.Where(t => t.Id == other).ExecuteUpdateAsync(s => s.SetProperty(t => t.Description, "Nothing happened."));
+        }
+
+        var bad = await CheckRecordsAsync(database, read, recheck: true);
+        bad.Should().NotBeNull();
+        bad!.Detail.Should().Contain("no longer matches its hash");
+    }
+
     [Theory]
     [MemberData(nameof(Providers))]
     public async Task An_edit_made_directly_in_the_database_is_caught(string provider)
