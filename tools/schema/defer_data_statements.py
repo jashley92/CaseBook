@@ -1,13 +1,13 @@
 """Runs each data statement in an EF idempotent SQL Server script through EXEC (BUG-133; see sqlserver-script.sh).
 
-Usage: defer_data_statements.py <ef-script> <output>
+Usage: defer_data_statements.py < <ef-script> > <output>
+
+A filter (stdin to stdout) rather than taking paths, so it opens nothing itself; the caller chooses both files.
 """
 import re
 import sys
 
-src, dst = sys.argv[1], sys.argv[2]
-with open(src, encoding='utf-8-sig') as f:
-    text = f.read().replace('\r\n', '\n')
+text = sys.stdin.buffer.read().decode('utf-8-sig').replace('\r\n', '\n')
 
 # A guarded block: IF NOT EXISTS (... MigrationId ...) BEGIN <body> END;. A data statement there (INSERT, UPDATE,
 # DELETE, MERGE) comes from migrationBuilder.Sql; EF's schema statements (CREATE, ALTER, DROP, the DECLARE before a
@@ -31,6 +31,5 @@ def wrap(m):
 
 fixed = GUARD.sub(wrap, text)
 # Written as EF writes it on Windows (BOM, CRLF), the form checked in.
-with open(dst, 'w', encoding='utf-8-sig', newline='\r\n') as f:
-    f.write(fixed)
-print(f"wrote {dst} ({wrapped} data statement(s) run through EXEC)")
+sys.stdout.buffer.write(fixed.replace('\n', '\r\n').encode('utf-8-sig'))
+print(f"{wrapped} data statement(s) run through EXEC", file=sys.stderr)

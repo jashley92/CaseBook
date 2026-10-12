@@ -23,4 +23,5 @@ IM_MIGRATIONS_PROVIDER=SqlServer dotnet ef migrations script --idempotent ${CASE
   --output "$raw" >/dev/null
 
 py="$(command -v python3 || command -v python)"
-"$py" "$repo/tools/schema/defer_data_statements.py" "$raw" "$out"
+"$py" "$repo/tools/schema/defer_data_statements.py" < "$raw" > "$out"
+echo "wrote $out"
