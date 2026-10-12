@@ -81,6 +81,7 @@ public sealed partial class ConfigBundleService
         var live = await BuildBundleAsync(ct);
         var (_, warnings) = await CheckReportTemplatesAsync(incoming, ct);   // a bad template stops the import here, before the preview
         CheckSettings(incoming);                         // so does a setting outside its limits
+        CheckNaturalKeys(incoming);                      // and two items that differ only in case
         var items = new List<ConfigDiffItem>();
 
         Diff("Setting", incoming.Settings.Where(IsImportableSetting), live.Settings, s => s.Key, items);
@@ -96,7 +97,7 @@ public sealed partial class ConfigBundleService
         Diff("Case outcome", incoming.CaseOutcomes ?? [], live.CaseOutcomes ?? [], o => o.Key, items);
 
         // Data elements match on Key (codes are per-instance), so compare a code-agnostic shape.
-        var liveByKey = live.DataElements.ToDictionary(e => e.Key, StringComparer.Ordinal);
+        var liveByKey = live.DataElements.ToDictionary(e => e.Key, StringComparer.OrdinalIgnoreCase);
         foreach (var d in incoming.DataElements)
         {
             var change = !liveByKey.TryGetValue(d.Key, out var l) ? ConfigChange.Add
@@ -112,7 +113,8 @@ public sealed partial class ConfigBundleService
     private static void Diff<T>(string section, IEnumerable<T> incoming, IEnumerable<T> live,
         Func<T, string> key, List<ConfigDiffItem> acc) where T : notnull
     {
-        var byKey = new Dictionary<string, string>(StringComparer.Ordinal);
+        // BUG-200: natural keys match regardless of case, as the database's unique indexes do on SQL Server.
+        var byKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var l in live) byKey[key(l)] = Canon(l);
         foreach (var i in incoming)
         {
@@ -142,6 +144,27 @@ public sealed partial class ConfigBundleService
             .OfType<string>().ToList();
         if (problems.Count > 0)
             throw new ArgumentException("This bundle can't be imported: " + string.Join(" ", problems));
+    }
+
+    // BUG-200: items match live ones by name or key regardless of case (SQL Server's unique indexes ignore it), so two in
+    // one bundle that differ only in case would both land on the same row. Throws with each such pair.
+    private static void CheckNaturalKeys(ConfigBundle bundle)
+    {
+        var problems = new List<string>();
+        void Check<T>(string section, IEnumerable<T>? items, Func<T, string?> key)
+        {
+            foreach (var g in (items ?? []).Select(key).OfType<string>().GroupBy(k => k, StringComparer.OrdinalIgnoreCase)
+                         .Where(g => g.Distinct(StringComparer.Ordinal).Count() > 1))
+                problems.Add($"{section} \"{string.Join("\" and \"", g.Distinct(StringComparer.Ordinal))}\" differ only in case.");
+        }
+        Check("Case templates", bundle.CaseTemplates, t => t.Name);
+        Check("Stage gates", bundle.StageGates, g => g.Name);
+        Check("Report profiles", bundle.ReportProfiles, p => p.Name);
+        Check("Data elements", bundle.DataElements, d => d.Key);
+        Check("Notification rules", bundle.NotificationRules, r => r.Code);
+        Check("Case outcomes", bundle.CaseOutcomes, o => o.Key);
+        if (problems.Count > 0)
+            throw new ArgumentException("This bundle can't be imported: " + string.Join(" ", problems) + " Rename one, then export again.");
     }
 
     /// <summary>
@@ -179,6 +202,7 @@ public sealed partial class ConfigBundleService
 
         var (templateFiles, _) = await CheckReportTemplatesAsync(bundle, ct);
         CheckSettings(bundle);
+        CheckNaturalKeys(bundle);
 
         using var db = _factory.CreateDbContext();
         var now = _clock.UtcNow;
@@ -261,7 +285,7 @@ public sealed partial class ConfigBundleService
         {
             var cls = ParseEnum<Classification>(t.DefaultClassification);
             var sev = ParseEnum<Severity>(t.DefaultSeverity);
-            var existing = templates.FirstOrDefault(x => x.Name == t.Name);
+            var existing = templates.FirstOrDefault(x => string.Equals(x.Name, t.Name, StringComparison.OrdinalIgnoreCase));   // BUG-200
             if (existing is null)
             {
                 var created = new CaseTemplate { Name = t.Name, Description = t.Description, IsActive = t.IsActive,
@@ -294,7 +318,7 @@ public sealed partial class ConfigBundleService
         foreach (var g in bundle.StageGates)
         {
             if (ParseEnum<StageGateTrigger>(g.Trigger) is not { } trigger) continue; // skip an unknown transition
-            var existing = gates.FirstOrDefault(x => x.Name == g.Name);
+            var existing = gates.FirstOrDefault(x => string.Equals(x.Name, g.Name, StringComparison.OrdinalIgnoreCase));
             if (existing is null)
             {
                 var created = new StageGate { Trigger = trigger, IsActive = g.IsActive, Name = g.Name,
@@ -365,7 +389,7 @@ public sealed partial class ConfigBundleService
         var profiles = await db.ReportProfiles.ToListAsync(ct);
         foreach (var p in bundle.ReportProfiles)
         {
-            var existing = profiles.FirstOrDefault(x => x.Name == p.Name);
+            var existing = profiles.FirstOrDefault(x => string.Equals(x.Name, p.Name, StringComparison.OrdinalIgnoreCase));
             if (existing is null)
             {
                 db.ReportProfiles.Add(new ReportProfile { Name = p.Name, Description = p.Description, IsActive = p.IsActive,
@@ -390,7 +414,7 @@ public sealed partial class ConfigBundleService
         var outcomeRows = await db.CaseOutcomes.ToListAsync(ct);
         foreach (var o in bundle.CaseOutcomes ?? [])
         {
-            var existing = outcomeRows.FirstOrDefault(x => x.Key == o.Key);
+            var existing = outcomeRows.FirstOrDefault(x => string.Equals(x.Key, o.Key, StringComparison.OrdinalIgnoreCase));
             if (existing is null)
             {
                 db.CaseOutcomes.Add(new CaseOutcome { Key = o.Key, Label = o.Label, Description = o.Description,
@@ -411,7 +435,7 @@ public sealed partial class ConfigBundleService
         var elements = await db.DataElements.ToListAsync(ct);
         foreach (var d in bundle.DataElements)
         {
-            var existing = elements.FirstOrDefault(x => x.Key == d.Key);
+            var existing = elements.FirstOrDefault(x => string.Equals(x.Key, d.Key, StringComparison.OrdinalIgnoreCase));
             if (existing is null)
             {
                 db.DataElements.Add(new DataElement { Key = d.Key, Label = d.Label,
@@ -434,7 +458,7 @@ public sealed partial class ConfigBundleService
         var rules = await db.NotificationRules.ToListAsync(ct);
         foreach (var r in bundle.NotificationRules ?? [])
         {
-            var existing = rules.FirstOrDefault(x => x.Code == r.Code);
+            var existing = rules.FirstOrDefault(x => string.Equals(x.Code, r.Code, StringComparison.OrdinalIgnoreCase));
             if (existing is null)
             {
                 db.NotificationRules.Add(new NotificationRule { Code = r.Code, Label = r.Label,

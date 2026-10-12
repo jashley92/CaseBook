@@ -276,6 +276,30 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Items_named_differently_only_in_case_update_the_live_one(/* BUG-200 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var profile = live.ReportProfiles[0];
+        var incoming = live with
+        {
+            ReportProfiles = live.ReportProfiles.Select(p => p == profile ? p with { Name = p.Name.ToUpperInvariant() } : p).ToList()
+        };
+
+        var diff = await svc.PreviewAsync(incoming);
+        var upper = profile.Name.ToUpperInvariant();
+        diff.Items.Single(i => i.Section == "Report profile" && i.Name == upper)
+            .Change.Should().Be(ConfigChange.Update, "it's the same profile: SQL Server's unique index ignores case");
+        await svc.ImportAsync(Signed(incoming));
+        (await db.ReportProfiles.AsNoTracking().CountAsync()).Should().Be(live.ReportProfiles.Count);
+
+        var twice = live with { ReportProfiles = live.ReportProfiles.Append(profile with { Name = profile.Name.ToLowerInvariant() }).ToList() };
+        await svc.Invoking(s => s.PreviewAsync(twice)).Should().ThrowAsync<ArgumentException>().WithMessage("*differ only in case*");
+    }
+
+    [Fact]
     public async Task Import_adds_new_items_and_updates_changed_ones()
     {
         await using var db = NewContext();
