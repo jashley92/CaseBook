@@ -431,6 +431,17 @@ public sealed class ReportService
     public async Task<Report> ApproveAsync(Guid reportId, CancellationToken ct = default)
     {
         if (!_user.Has(Permission.ApproveReports)) throw new Security.ForbiddenException(Permission.ApproveReports);
+        // WF-40: one approval at a time, read and written under the gate, so two approvers clicking together can't both
+        // pass the "already final" check and leave the second's name over the first's (the app runs as one instance).
+        await ApproveGate.WaitAsync(ct);
+        try { return await ApproveCoreAsync(reportId, ct); }
+        finally { ApproveGate.Release(); }
+    }
+
+    private static readonly SemaphoreSlim ApproveGate = new(1, 1);
+
+    private async Task<Report> ApproveCoreAsync(Guid reportId, CancellationToken ct)
+    {
         using var db = _factory.CreateDbContext();
         var report = await db.Reports.FirstOrDefaultAsync(r => r.Id == reportId, ct)
                      ?? throw new InvalidOperationException("Report not found.");

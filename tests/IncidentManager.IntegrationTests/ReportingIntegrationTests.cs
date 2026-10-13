@@ -482,6 +482,25 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task Two_approvals_at_once_approve_the_report_once(/* WF-40 */)
+    {
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);
+        var svc = NewReportService(db);
+        var caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+        var report = await svc.GenerateAsync(caseId);
+        _user.RoleSet = [AppRole.IncidentCommander];
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 2).Select(_ => Task.Run(async () =>
+        {
+            try { await svc.ApproveAsync(report.Id); return true; }
+            catch (InvalidOperationException) { return false; }
+        })));
+
+        results.Count(ok => ok).Should().Be(1, "the second sees the report already final");
+    }
+
+    [Fact]
     public async Task A_generated_report_is_a_draft_until_approved_and_its_stored_hash_matches_the_record()
     {
         await using var db = NewContext();
