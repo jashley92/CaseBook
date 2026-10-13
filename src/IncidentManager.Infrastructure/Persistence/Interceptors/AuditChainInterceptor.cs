@@ -218,10 +218,6 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         var actor = _user.IsAuthenticated ? _user.UserId : "system";
         var now = _clock.UtcNow;
 
-        // Map tracked cases by id so child-entity audit lines can carry the case number.
-        var caseNumbers = ctx.ChangeTracker.Entries<Case>()
-            .ToDictionary(e => e.Entity.Id, e => e.Entity.CaseNumber);
-
         var auditable = ctx.ChangeTracker.Entries()
             .Where(e => e.Entity is Entity
                         && !e.Metadata.IsOwned()
@@ -229,6 +225,9 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                         && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
                         && !OnlyEditVersionBumped(e))
             .ToList();
+
+        // Map cases by id so child-entity audit lines can carry the case number.
+        var (caseNumbers, evidenceCases) = CaseNumbersFor(ctx, auditable);
 
         // Record which cases this save touches, to broadcast once it commits (SavedChanges).
         var pending = StateOf(ctx).PendingCaseIds;
@@ -270,7 +269,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                 hashable.RowHash = _hasher.ComputeRowHash(hashable);
         }
 
-        return new PreparedAudit(auditable, caseNumbers, actor, now, reason);
+        return new PreparedAudit(auditable, caseNumbers, evidenceCases, actor, now, reason);
     }
 
     /// <summary>
@@ -280,7 +279,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     /// </summary>
     private void AppendChain(DbContext ctx, PreparedAudit p)
     {
-        var (auditable, caseNumbers, actor, now, reason) = p;
+        var (auditable, caseNumbers, evidenceCases, actor, now, reason) = p;
 
         var head = ctx.Set<AuditLogEntry>().AsNoTracking().OrderByDescending(a => a.Sequence).FirstOrDefault();
         var newEntries = new List<AuditLogEntry>(auditable.Count);
@@ -303,7 +302,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                 continue;
 
             string? caseNumber = entity is Case c ? c.CaseNumber
-                : TryGetCaseId(e) is { } cid && caseNumbers.TryGetValue(cid, out var cn) ? cn
+                : CaseIdOf(e, evidenceCases) is { } cid && caseNumbers.TryGetValue(cid, out var cn) ? cn
                 : null;
 
             var entry = new AuditLogEntry
@@ -337,6 +336,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     private sealed record PreparedAudit(
         IReadOnlyList<EntityEntry> Auditable,
         IReadOnlyDictionary<Guid, string> CaseNumbers,
+        IReadOnlyDictionary<Guid, Guid> EvidenceCases,
         string Actor,
         DateTimeOffset Now,
         string? Reason);
@@ -431,6 +431,38 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         }
         return JsonSerializer.Serialize(map, Json);
     }
+
+    /// <summary>
+    /// REV-02: the case number for every case this save's entries belong to. Cases tracked by the save are read from
+    /// the tracker; any other (a service that checked the case without tracking it, such as an evidence upload or a
+    /// report) is looked up, so the line still carries its case number and appears in that case's trail. A chain-of-
+    /// custody event belongs to its evidence's case.
+    /// </summary>
+    private static (Dictionary<Guid, string> Numbers, Dictionary<Guid, Guid> EvidenceCases) CaseNumbersFor(
+        DbContext ctx, IReadOnlyList<EntityEntry> auditable)
+    {
+        var numbers = ctx.ChangeTracker.Entries<Case>().ToDictionary(e => e.Entity.Id, e => e.Entity.CaseNumber);
+        var evidenceCases = ctx.ChangeTracker.Entries<Evidence>().ToDictionary(e => e.Entity.Id, e => e.Entity.CaseId);
+        if (auditable.Count == 0) return (numbers, evidenceCases);
+
+        var unknownEvidence = auditable.Select(e => e.Entity).OfType<ChainOfCustodyEvent>().Select(c => c.EvidenceId)
+            .Where(id => !evidenceCases.ContainsKey(id)).Distinct().ToList();
+        if (unknownEvidence.Count > 0)
+            foreach (var row in ctx.Set<Evidence>().AsNoTracking().IgnoreQueryFilters().Where(v => unknownEvidence.Contains(v.Id))
+                         .Select(v => new { v.Id, v.CaseId }).ToList())
+                evidenceCases[row.Id] = row.CaseId;
+
+        var unknownCases = auditable.Where(e => e.Entity is not Case).Select(e => CaseIdOf(e, evidenceCases)).OfType<Guid>()
+            .Where(id => !numbers.ContainsKey(id)).Distinct().ToList();
+        if (unknownCases.Count > 0)
+            foreach (var row in ctx.Set<Case>().AsNoTracking().IgnoreQueryFilters().Where(c => unknownCases.Contains(c.Id))
+                         .Select(c => new { c.Id, c.CaseNumber }).ToList())
+                numbers[row.Id] = row.CaseNumber;
+        return (numbers, evidenceCases);
+    }
+
+    private static Guid? CaseIdOf(EntityEntry e, IReadOnlyDictionary<Guid, Guid> evidenceCases) =>
+        TryGetCaseId(e) ?? (e.Entity is ChainOfCustodyEvent c && evidenceCases.TryGetValue(c.EvidenceId, out var id) ? id : null);
 
     private static Guid? TryGetCaseId(EntityEntry e)
     {

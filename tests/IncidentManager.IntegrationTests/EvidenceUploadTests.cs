@@ -60,6 +60,29 @@ public sealed class EvidenceUploadTests : IDisposable
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant();
 
     [Fact]
+    public async Task An_upload_is_audited_under_its_case_number(/* REV-02 */)
+    {
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+        }
+
+        await using (var stream = new MemoryStream(Encoding.UTF8.GetBytes("alpha")))
+            await NewEvidenceService().UploadAsync(caseId, "a.txt", "text/plain", stream, null);
+
+        await using (var db = NewContext())
+        {
+            var lines = await db.AuditLog.AsNoTracking()
+                .Where(a => a.EntityType == "Evidence" || a.EntityType == "ChainOfCustodyEvent").ToListAsync();
+            lines.Should().Contain(a => a.EntityType == "Evidence");
+            lines.Should().OnlyContain(a => a.CaseNumber == "2026-01_Phishing_Wave",
+                "the case wasn't tracked by the upload, but its trail still has to show it");
+        }
+    }
+
+    [Fact]
     public async Task Dropping_multiple_files_yields_independent_hashed_custody_tracked_evidence()
     {
         Guid caseId;
