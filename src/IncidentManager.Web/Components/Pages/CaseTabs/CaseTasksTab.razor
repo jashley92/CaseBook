@@ -491,7 +491,8 @@ else
                                     }
                                 </ul>
                             }
-                            <AuthorizeView Policy="@Policies.EditCases">
+                            @* REV-29 / S-16: discussion is open to everyone who can see the case, view-only roles included. *@
+                            <AuthorizeView Policy="@Policies.ViewCases">
                                 <div class="d-flex align-items-start gap-2">
                                     <textarea class="form-control form-control-sm" rows="2" placeholder="Add a comment…"
                                               aria-label="@($"Comment on task: {t.Title}")"
