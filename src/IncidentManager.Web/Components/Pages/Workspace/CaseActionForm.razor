@@ -23,6 +23,11 @@
         }
         <label class="form-label small" for="ws-reclass-to">@(Case.Classification is null ? "Promote to" : "New classification")</label>
         <select id="ws-reclass-to" class="form-select mb-2" @bind="D.NewClass" @bind:after='() => OnTargetChanged.InvokeAsync("reclass")'>@foreach (var c in Enum.GetValues<Classification>()) { <option value="@c">@Ui.Label(c)</option> }</select>
+        @if (D.NewClass == Case.Classification)
+        {
+            @* REV-33: applying what the case already is changes nothing, so it isn't offered. *@
+            <div class="form-text mb-2">That's its classification now. Pick a different one to change it.</div>
+        }
         @if (Case.IsExercise && D.NewClass == Classification.Breach && Case.Classification != Classification.Breach)
         {
             @* BUG-100: say what an exercise escalation sends, as the organization chose. *@
@@ -75,6 +80,11 @@
     {
         <label class="form-label small" for="ws-severity">New severity</label>
         <select id="ws-severity" class="form-select mb-2" @bind="D.NewSeverity">@foreach (var s in Enum.GetValues<Severity>()) { <option value="@s">@SevLabels.For(s)</option> }</select>
+        @if (D.NewSeverity == Case.Severity)
+        {
+            @* REV-33: applying what the case already is changes nothing, so it isn't offered. *@
+            <div class="form-text mb-2">That's its severity now. Pick a different one to change it.</div>
+        }
         var raising = D.NewSeverity > Case.Severity;
         <input class="form-control" maxlength="500" placeholder="@(raising ? "Why is it going up? (required)" : backdated ? "Reason (required when recording later)" : "Reason (optional)")" aria-label="Reason" @bind="D.SeverityReason" @bind:event="oninput" />
         <WhenItHappened Draft="T" OnChanged="Changed" />
@@ -83,6 +93,11 @@
     {
         <label class="form-label small" for="ws-status">New status</label>
         <select id="ws-status" class="form-select mb-2" @bind="D.NewPhase" @bind:after='() => OnTargetChanged.InvokeAsync("status")'>@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
+        @if (D.NewPhase == Case.Phase)
+        {
+            @* REV-33: applying what the case already is changes nothing, so it isn't offered. *@
+            <div class="form-text mb-2">That's its phase now. Pick a different one to change it.</div>
+        }
         var leavingClosed = Case.Phase == CasePhase.Closed && D.NewPhase != CasePhase.Closed;
         <label class="form-label small" for="ws-status-reason">@(D.NewPhase > Case.Phase ? "What was achieved" : "Reason") <span class="text-muted">@(T.Gate is { RequiresCommentary: true } || backdated || leavingClosed ? "(required)" : "(optional)")</span></label>
         <input id="ws-status-reason" class="form-control" maxlength="2000" placeholder="e.g. containment verified across all affected hosts" @bind="D.PhaseReason" @bind:event="oninput" />
@@ -457,16 +472,16 @@
                     || string.IsNullOrWhiteSpace(D.MaterialityRationale)),
             // Reclass always needs a reason; both gated dialogs need an override justification when a blocking
             // requirement is unmet, and a long-enough rationale when the gate requires commentary.
-            "reclass" => ClosedAndRaising || string.IsNullOrWhiteSpace(D.ReclassReason) || t.When is null
+            "reclass" => D.NewClass == Case.Classification || ClosedAndRaising || string.IsNullOrWhiteSpace(D.ReclassReason) || t.When is null
                 || (t.NeedsOverride && string.IsNullOrWhiteSpace(t.Override))
                 || t.RationaleError(D.ReclassReason) is not null,
-            "status" => (t.NeedsOverride && string.IsNullOrWhiteSpace(t.Override))
+            "status" => D.NewPhase == Case.Phase || (t.NeedsOverride && string.IsNullOrWhiteSpace(t.Override))
                 || t.RationaleError(D.PhaseReason) is not null
                 || t.When is null || (backdated && string.IsNullOrWhiteSpace(D.PhaseReason))
                 || (Case.Phase == CasePhase.Closed && D.NewPhase != CasePhase.Closed && string.IsNullOrWhiteSpace(D.PhaseReason))   // BUG-62
                 || (Case.SkipsContainment(D.NewPhase) && !ContainmentSaid)   // BUG-165
                 || (Case.SkipsRecovery(D.NewPhase) && D.ResolvedAt is null),   // BUG-208
-            "severity" => t.When is null || ((backdated || D.NewSeverity > Case.Severity) && string.IsNullOrWhiteSpace(D.SeverityReason)),   // HR-11
+            "severity" => D.NewSeverity == Case.Severity || t.When is null || ((backdated || D.NewSeverity > Case.Severity) && string.IsNullOrWhiteSpace(D.SeverityReason)),   // HR-11
             "handoff" => string.IsNullOrWhiteSpace(D.HandoffTo) || string.IsNullOrWhiteSpace(D.HandoffState),
             _ => false
         };
