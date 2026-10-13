@@ -195,9 +195,17 @@
         _reports = await Reports.ListAsync(CaseId);
         State.Profiles ??= await ReportProfiles.ListActiveAsync();
         _templates ??= await ReportTemplates.ListActiveAsync();
-        _selectedProfileId = CaseProfileId;
-        _profileDirty = false;
+        // REV-30: a live change from a colleague reloads the reports, but a profile picked and not yet saved stays picked
+        // (and previewed). Only the saved choice moving, or nothing picked, re-seeds it.
+        if (!_profileDirty || _seededFrom != CaseProfileId)
+        {
+            _selectedProfileId = CaseProfileId;
+            _profileDirty = false;
+        }
+        _seededFrom = CaseProfileId;
     }
+
+    private Guid? _seededFrom;
 
     private async Task OnProfileChanged(ChangeEventArgs e)
     {
