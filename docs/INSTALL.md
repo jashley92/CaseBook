@@ -192,6 +192,11 @@ Or pass every value directly instead of a config file:
   -AdGroupAppAdmins  CONTOSO\SOC-AppAdmins
 ```
 
+- **Running it again** repairs an install: it stops the app pool before publishing over the site, and keeps the
+  existing `appsettings.Production.json` (which may hold changes made since: CyberArk, retired chain keys, seal
+  copies, alert lists), writing the newly generated one beside it as `appsettings.Production.json.new`. Pass
+  `-ReplaceSettings` to overwrite it. To **update** an installed app, use `Upgrade-CaseBook.ps1` (REV-71).
+
 - **Group names**: give each as `DOMAIN\Group`. A bare name maps only a group in the web server's own domain, so
   groups in another domain of the forest would map nobody. The installer writes a bare name it can resolve with
   its domain, and notes a group from another domain than the server's.
