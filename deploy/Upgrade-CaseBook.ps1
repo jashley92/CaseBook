@@ -103,6 +103,7 @@ $stamp     = Get-Date -Format 'yyyyMMdd-HHmmss'
 # --- 1. Resolve the live deployment from IIS + appsettings.Production.json -----
 Write-Step "Resolving the '$SiteName' deployment"
 Import-Module WebAdministration -ErrorAction Stop
+. (Join-Path $deployDir 'lib\CaseBookIis.ps1')   # REV-72: Stop-CaseBookAppPool
 $site = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
 if (-not $site) { throw "IIS site '$SiteName' not found. Pass -SiteName, or use Install-CaseBook.ps1 for a first install." }
 
@@ -439,8 +440,9 @@ if ($missingData.Count -gt 0) {
 
 # --- 6. Deploy ---------------------------------------------------------------
 Write-Step "Stopping app pool '$AppPoolName'"
-if ((Get-WebAppPoolState -Name $AppPoolName).Value -ne 'Stopped') { Stop-WebAppPool -Name $AppPoolName }
-Start-Sleep -Seconds 3   # let the worker exit and release the DLL locks
+# REV-72: until the worker has exited and let go of the DLLs, not a fixed few seconds: a busy server's worker can take
+# far longer (open circuits, background jobs), and the copy then failed part way and went into rollback.
+Stop-CaseBookAppPool -Name $AppPoolName
 
 # BUG-183: what the database has applied before the new build runs, so a rollback can tell whether it migrated.
 $appliedBeforeDeploy = @()
@@ -527,8 +529,8 @@ if (-not $started -or ($lastStatus -ge 500)) {
             ForEach-Object { Write-Host "    [$($_.TimeCreated)] $($_.Message.Split([Environment]::NewLine)[0])" -ForegroundColor Red }
     } catch {}
     Write-Warn2 "Rolling back to the previous build."
-    Stop-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 3
+    try { Stop-CaseBookAppPool -Name $AppPoolName }   # REV-72
+    catch { Write-Warn2 $_.Exception.Message }
     Restore-PreviousBuild "the new build didn't start"
     # BUG-183: if the new build recorded migrations, the previous build would run against a schema (and records) it
     # doesn't know: from v1.5.2 on, row hashes and seals are in formats older builds read as tampered. Leave the pool
