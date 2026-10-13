@@ -312,9 +312,9 @@
                        confirmed, remediation) is the response type carried on the step. *@
                     <div class="row g-2 align-items-start">
                         <div class="col-md-4">
-                            <label class="form-label small mb-0" for="tl-disc-when">Occurred (@TimeDisp.Label)</label>
-                            <input id="tl-disc-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
-                            @TimeNudges()
+                            @* REV-24: a milestone's time can be stated as a date, a window or not at all (an imported vendor
+                               summary), so the editor shows the same choice the attack step does; a date edited here is kept. *@
+                            @StepWhenField(disclosure: true)
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small mb-0" for="tl-disc-stage">Milestone</label>
@@ -1049,6 +1049,7 @@ else
     // ST-01: an attack step's time as stated: the precision, the date (or a window's first date) and last date, and
     // for a step with no stated time, the step it comes after ("" = first).
     private TimePrecision _tlPrecision = TimePrecision.Exact;
+    private TimePrecision? _tlEditPrecision;   // REV-24: the precision of the step being edited, as it was stored
     private DateTime _tlDay = DateTime.UtcNow.Date;
     private DateTime _tlUntilDay = DateTime.UtcNow.Date.AddDays(1);
     private string _tlAfter = "";
@@ -1674,7 +1675,6 @@ else
     private async Task AddEventStepCore()
     {
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
-        var whenUtc = WallToUtc(_tlWhen);
         var disclosure = IsThirdParty && !_evtAttackMode;
         Guid? shotId;
         try
@@ -1682,8 +1682,9 @@ else
             shotId = await UploadTimelineShotAsync();
             if (disclosure)
             {
-                await Cases.AddEventStepAsync(CaseId, whenUtc, Array.Empty<MitreTactic>(), null, null, null,
-                    Tagged(_tlDesc)!, _tlSource, evidenceId: shotId, type: _evtStage, followUps: FollowUps());
+                // REV-24: as stated in the composer (a date, a window), like an attack step.
+                await Cases.AddEventStepAsync(CaseId, StepWhenUtc(), Array.Empty<MitreTactic>(), null, null, null,
+                    Tagged(_tlDesc)!, _tlSource, evidenceId: shotId, type: _evtStage, followUps: FollowUps(), timing: Timing());
             }
             else
             {
@@ -1746,6 +1747,7 @@ else
         _evtTactic = e.Tactics.Select(t => t.Tactic).FirstOrDefault();
         _evtStage = e.Type;   // E-32: vendor-disclosure stage for a third-party case
         _tlPrecision = e.OccurredPrecision ?? TimePrecision.Exact;
+        _tlEditPrecision = _tlPrecision;
         // A stated date is kept as a UTC calendar date; an exact time's date is the one the user sees (BUG-34), so
         // switching the edit to Date only starts from it.
         _tlDay = _tlPrecision == TimePrecision.Exact ? _tlWhen.Date : e.OccurredAtUtc.UtcDateTime.Date;
@@ -1776,8 +1778,10 @@ else
             if (IsThirdParty && !_evtAttackMode)
             {
                 // BUG-122: a milestone keeps its time as stated (a date, a window) through an edit.
+                // REV-24: a milestone with no stated time stays where it is (Timing() would put it first in the chain).
+                var timing = _tlPrecision == TimePrecision.NotStated ? new StepTiming(TimePrecision.NotStated) : Timing();
                 await Cases.EditEventStepAsync(CaseId, id, StepWhenUtc(), Array.Empty<MitreTactic>(), null, null, null,
-                    Tagged(_tlDesc)!, _tlSource, _tlReason, type: _evtStage, timing: Timing(), expectedStamp: _tlEditStamp);
+                    Tagged(_tlDesc)!, _tlSource, _tlReason, type: _evtStage, timing: timing, expectedStamp: _tlEditStamp);
             }
             else
             {
@@ -1844,7 +1848,7 @@ else
         _tlEditId = null; _tlReason = null; ClearDecision();
         _tlDesc = ""; _tlSource = null; _evtTechnique = ""; _evtActorId = ""; _evtTargetId = ""; _actorPrev = ""; _targetPrev = "";
         _evtTactic = MitreTactic.Unspecified; _evtAttackMode = false; // FR-24: back to the default disclosure composer
-        _tlPrecision = TimePrecision.Exact; _tlAfter = "";
+        _tlPrecision = TimePrecision.Exact; _tlAfter = ""; _tlEditPrecision = null;
         if (_draft is { } d)
         {
             RestoreDraft(d);
@@ -2128,14 +2132,19 @@ else
     private List<TimelineEntry> AttackSteps() => Case.TimelineEntries
         .Where(x => x.IsCurrent && IncidentManager.Application.Cases.EventSteps.IsAttack(Case, x)).InTimelineOrder().ToList();
 
-    private RenderFragment StepWhenField() => @<text>
+    // REV-24: the disclosure milestones aren't in the attack chain, so for them "Not stated" isn't placed after an attack
+    // step: it's offered only for a milestone that already has no stated time, and it keeps its place.
+    private RenderFragment StepWhenField(bool disclosure = false) => @<text>
         <label class="form-label small mb-0" for="tl-atk-prec">Occurred</label>
         <select id="tl-atk-prec" class="form-select form-select-sm" @bind="_tlPrecision" @bind:after="PrecisionChanged">
             <option value="@TimePrecision.Exact">Date and time (@TimeDisp.Label)</option>
             <option value="@TimePrecision.Day">Date only</option>
             <option value="@TimePrecision.Window">Between two dates</option>
             <option value="@TimePrecision.OnOrBefore">On or before a date</option>
-            <option value="@TimePrecision.NotStated">Not stated</option>
+            @if (!disclosure || _tlEditPrecision == TimePrecision.NotStated)
+            {
+                <option value="@TimePrecision.NotStated">Not stated</option>
+            }
         </select>
         @switch (_tlPrecision)
         {
@@ -2153,6 +2162,9 @@ else
                     <span class="small text-muted">to</span>
                     <input id="tl-atk-until" type="date" class="form-control form-control-sm" aria-label="Last date" @bind="_tlUntilDay" />
                 </div>
+                break;
+            case TimePrecision.NotStated when disclosure:
+                <div class="form-text small mb-0">It keeps its place in the disclosure.</div>
                 break;
             case TimePrecision.NotStated:
                 <select id="tl-atk-after" class="form-select form-select-sm mt-1" aria-label="Comes after" @bind="_tlAfter">
