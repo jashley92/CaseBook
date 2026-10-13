@@ -440,13 +440,27 @@ $appliedBeforeDeploy = @()
 try { $appliedBeforeDeploy = @(Invoke-SqlColumn "IF OBJECT_ID('dbo.__EFMigrationsHistory') IS NOT NULL SELECT MigrationId FROM dbo.__EFMigrationsHistory") }
 catch { Write-Warn2 "Couldn't read the migration history before deploying: $($_.Exception.Message)" }
 
+# BUG-250: a rollback copy that fails (often the same locked DLL that failed the deploy) leaves a mix of old and new
+# files. Say so and leave the pool stopped, rather than start it and report the previous build restored.
+function Restore-PreviousBuild([string] $why) {
+    & robocopy $rollbackDir $SitePath /MIR /XF appsettings.Production.json /XD logs /R:5 /W:3 /NFL /NDL /NJH /NJS /NP | Out-Null
+    $restoreRc = $LASTEXITCODE
+    if ($restoreRc -ge 8) {
+        Stop-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
+        throw ("Upgrade failed ($why), and restoring the previous build's files failed too (robocopy exit $restoreRc), so " +
+               "the site folder holds a mix of old and new files. The app pool is left STOPPED. Copy the snapshot " +
+               "$rollbackDir over $SitePath (keep appsettings.Production.json and logs), then start the app pool. " +
+               "If the new build applied migrations, restore the pre-upgrade DB backup first (docs/UPGRADE.md).")
+    }
+}
+
 Write-Step "Deploying new binaries (preserving appsettings.Production.json + logs)"
 # /MIR removes stale files from the prior version; /XF + /XD keep the production config and logs.
 & robocopy $appSrc $SitePath /MIR /XF appsettings.Production.json VERSION.txt.bak /XD logs /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
 $rc = $LASTEXITCODE
 if ($rc -ge 8) {
     Write-Warn2 "Deploy copy failed (robocopy exit $rc) -- rolling back binaries."
-    & robocopy $rollbackDir $SitePath /MIR /XF appsettings.Production.json /XD logs /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
+    Restore-PreviousBuild "the deploy copy failed (robocopy exit $rc)"
     Start-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
     throw "Upgrade aborted during file copy; the previous build was restored."
 }
@@ -489,7 +503,7 @@ if (-not $started -or ($lastStatus -ge 500)) {
     Write-Warn2 "Rolling back to the previous build."
     Stop-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
-    & robocopy $rollbackDir $SitePath /MIR /XF appsettings.Production.json /XD logs /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
+    Restore-PreviousBuild "the new build didn't start"
     # BUG-183: if the new build recorded migrations, the previous build would run against a schema (and records) it
     # doesn't know: from v1.5.2 on, row hashes and seals are in formats older builds read as tampered. Leave the pool
     # stopped until the database backup is restored.
