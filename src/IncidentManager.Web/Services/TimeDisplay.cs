@@ -41,12 +41,16 @@ public sealed class TimeDisplay
     /// <summary>Push the browser-detected zone and stored mode into this circuit.</summary>
     public void Configure(string? ianaZoneId, TimeDisplayMode mode, bool twelveHourClock = false)
     {
+        var before = (Zone.Id, TwelveHourClock);
         BrowserZoneId = ianaZoneId;
         _zone = Resolve(ianaZoneId);
         Mode = mode;
         TwelveHourClock = twelveHourClock;
         Initialized = true;
-        Changed?.Invoke();
+        // REV-21: the layout redraws the page on Changed, which drops anything typed and builds every component again.
+        // Reading the browser's preference at the start of each circuit mostly confirms the UTC default; only a display
+        // that actually differs is worth that.
+        if ((Zone.Id, TwelveHourClock) != before) Changed?.Invoke();
     }
 
     /// <summary>Flip the display mode (the zone stays whatever was last detected).</summary>

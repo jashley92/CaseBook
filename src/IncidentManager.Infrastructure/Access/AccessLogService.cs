@@ -42,10 +42,29 @@ public sealed class AccessLogService : IAccessLogService
     public Task RecordCaseOpenAsync(Guid caseId, string caseNumber, bool wasRestricted, bool stillOpen = false,
         CancellationToken ct = default)
     {
+        // REV-21: one open of a page builds the workspace more than once (the prerender, then the live page, and again if
+        // the layout redraws it), each a fresh component that can't know the others recorded it. The same person opening
+        // the same case within a few seconds is that one open: not another SIEM event, not another view in the count.
+        if (_user.IsAuthenticated && SameOpen(_user.UserId, caseId, _clock.UtcNow)) return Task.CompletedTask;
         // F-18: stream every access event (independent of the C-05 store's coalescing/scope). BUG-243: an open, not
         // every reload of a case already open.
         if (!stillOpen) EmitSiem(AccessType.CaseOpen, caseNumber, wasRestricted, targetId: null, label: null);
         return RecordAsync(AccessType.CaseOpen, caseId, caseNumber, wasRestricted, targetId: null, label: null, ct);
+    }
+
+    internal static readonly TimeSpan SameOpenWindow = TimeSpan.FromSeconds(15);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string User, Guid Case), DateTimeOffset> RecentOpens = new();
+
+    // True when this person's last recorded open of this case was moments ago; otherwise remembers this one.
+    private static bool SameOpen(string user, Guid caseId, DateTimeOffset now)
+    {
+        var key = (user, caseId);
+        if (RecentOpens.TryGetValue(key, out var last) && now - last < SameOpenWindow && now >= last) return true;
+        RecentOpens[key] = now;
+        if (RecentOpens.Count > 2048)
+            foreach (var old in RecentOpens.Where(kv => now - kv.Value > SameOpenWindow).Select(kv => kv.Key).ToList())
+                RecentOpens.TryRemove(old, out _);
+        return false;
     }
 
     public async Task RecordArtifactAsync(AccessType type, Guid? caseId, string? label, Guid? targetId = null,

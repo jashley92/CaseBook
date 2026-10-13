@@ -55,6 +55,21 @@ public class TimeDisplayTests
     }
 
     [Fact]
+    public void Configuring_the_display_it_already_shows_raises_no_change(/* REV-21 */)
+    {
+        var t = new TimeDisplay();
+        var changed = 0;
+        t.Changed += () => changed++;
+
+        t.Configure("America/New_York", TimeDisplayMode.Utc);   // a browser on UTC mode: the default, nothing to redraw
+        changed.Should().Be(0);
+        t.Configure("America/New_York", TimeDisplayMode.Local);
+        changed.Should().Be(1);
+        t.Configure("America/New_York", TimeDisplayMode.Local, twelveHourClock: true);
+        changed.Should().Be(2);
+    }
+
+    [Fact]
     public void Positive_offset_zone_labels_with_a_plus_sign()
     {
         var t = new TimeDisplay();

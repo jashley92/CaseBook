@@ -242,6 +242,22 @@ public sealed class AccessLogPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task The_same_open_built_twice_in_moments_is_one_open(/* REV-21 */)
+    {
+        NewContext();
+        var caseId = SeedCase(restricted: true);
+        var svc = NewService();
+        await svc.RecordCaseOpenAsync(caseId, "2026-01_Alpha", wasRestricted: true);   // the prerender
+        _clock.UtcNow = _clock.UtcNow.AddSeconds(2);
+        await NewService().RecordCaseOpenAsync(caseId, "2026-01_Alpha", wasRestricted: true);   // the live page, a fresh component
+
+        _siem.Events.Count(e => e.EventId == SecurityEventIds.RestrictedCaseAccessed).Should().Be(1);
+        _user.RoleSet = [AppRole.SysAdmin];
+        (await svc.QueryAsync(new AccessLogFilter { AccessType = AccessType.CaseOpen })).Should().ContainSingle()
+            .Which.Count.Should().Be(1);
+    }
+
+    [Fact]
     public async Task Access_emits_the_matching_security_event_to_the_siem_stream()
     {
         NewContext();

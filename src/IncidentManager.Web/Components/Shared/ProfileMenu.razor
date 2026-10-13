@@ -130,7 +130,19 @@
                             @onclick="() => SetClock(true)">12h</button>
                 </span>
             </div>
-            <div class="profile-seg-hint">Local is @TimeDisp.LocalLabel. Reports, exports and the audit trail always stay in 24-hour UTC.</div>
+            <div class="profile-seg-hint">Local is @TimeDisp.LocalLabel. Reports, exports and the audit trail always stay in 24-hour UTC.
+                Changing either redraws the page, so save what you're typing first.</div>
+            @if (_pendingTimeChange is not null)
+            {
+                @* REV-21: the redraw clears what's typed, so a composer holding unsaved text asks first. *@
+                <div class="profile-seg-hint" role="alert">
+                    You have text in a composer that isn't saved. Redrawing the page clears it.
+                    <div class="d-flex gap-2 mt-1">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="KeepTyping">Keep my text</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="ChangeAnyway">Change anyway</button>
+                    </div>
+                </div>
+            }
 
             <button type="button" class="profile-item" role="menuitem" @onclick="() => _about = !_about" aria-expanded="@Ui.Aria(_about)">
                 <span class="bi bi-info-circle" aria-hidden="true"></span>
@@ -240,9 +252,37 @@
         catch (JSException) { }
     }
 
+    // REV-21: a change of time display redraws the page (every component is built again, in the new zone), which clears
+    // unsaved composer text. With some, the change waits for a yes.
+    private Func<Task>? _pendingTimeChange;
+
+    private async Task<bool> HoldForUnsavedAsync(Func<Task> change)
+    {
+        bool dirty;
+        try { dirty = await JS.InvokeAsync<bool>("markdownEditor.anyDirty"); }
+        catch { dirty = false; }   // can't tell: don't obstruct
+        if (!dirty) return false;
+        _pendingTimeChange = change;
+        return true;
+    }
+
+    private void KeepTyping() => _pendingTimeChange = null;
+
+    private async Task ChangeAnyway()
+    {
+        var change = _pendingTimeChange;
+        _pendingTimeChange = null;
+        _confirmedRedraw = true;
+        try { if (change is not null) await change(); }
+        finally { _confirmedRedraw = false; }
+    }
+
+    private bool _confirmedRedraw;
+
     private async Task SetClock(bool twelveHour)
     {
         if (TimeDisp.TwelveHourClock == twelveHour) return;
+        if (!_confirmedRedraw && await HoldForUnsavedAsync(() => SetClock(twelveHour))) return;
         TimeDisp.SetClock(twelveHour);
         try { await JS.InvokeVoidAsync("imTime.setClock", twelveHour ? "12" : "24"); }
         catch { /* preference just won't persist across reloads */ }
@@ -253,6 +293,7 @@
     private async Task SetTimeZone(TimeDisplayMode next)
     {
         if (TimeDisp.Mode == next) return;
+        if (!_confirmedRedraw && await HoldForUnsavedAsync(() => SetTimeZone(next))) return;
         if (next == TimeDisplayMode.Local && TimeDisp.BrowserZoneId is null)
         {
             try { TimeDisp.Configure(await JS.InvokeAsync<string>("imTime.zone"), next); }
