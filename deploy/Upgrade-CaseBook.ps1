@@ -147,6 +147,13 @@ Write-Info "Site path : $SitePath"
 Write-Info "App pool  : $AppPoolName"
 Write-Info "Database  : $DbName on $SqlInstance"
 Write-Info "Health URL: $HealthUrl"
+# BUG-249: the warm-up asks the app itself. Windows Auth answers anonymous requests to the site with 401 from IIS,
+# before the app runs, so a 401 there didn't prove the new build started. /api is anonymous at the IIS level (the
+# installer carves it out for API tokens) and the import schema is served by the app with no sign-in: a 200 from it
+# means the app is up.
+$siteBase = ([Uri]$HealthUrl).GetLeftPart([UriPartial]::Authority)
+$ProbeUrl = "$siteBase/api/import/cases/schema"
+Write-Info "Probe URL : $ProbeUrl"
 
 # Small SQL helpers over System.Data.SqlClient (present in Windows PowerShell 5.1 -- no module needed).
 function Invoke-SqlScalar([string]$query) {
@@ -474,21 +481,40 @@ Start-WebAppPool -Name $AppPoolName
 
 # --- 7. Warm up (applies pending migrations) + verify ------------------------
 Write-Step "Warming up (the first request applies pending migrations)"
-# Windows Auth answers anonymous requests with 401 -- that still proves the app STARTED. A 5xx or a
-# connection failure means it did not. Tolerate a self-signed cert during this local probe.
+# BUG-249: only a 200 from the app's own anonymous endpoint proves it started; a 5xx or a connection failure means it
+# didn't. Tolerate a self-signed cert during this local probe.
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 $deadline = (Get-Date).AddSeconds($WarmupTimeoutSec)
-$started = $false; $lastStatus = $null
+$started = $false; $lastStatus = $null; $authGated = $false
 while ((Get-Date) -lt $deadline) {
     try {
-        $resp = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 30 -UseDefaultCredentials
+        $resp = Invoke-WebRequest -Uri $ProbeUrl -UseBasicParsing -TimeoutSec 30
         $lastStatus = [int]$resp.StatusCode; $started = $true; break
     } catch {
         $code = $null
         if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
-        if ($code -in 401,403) { $lastStatus = $code; $started = $true; break }        # up, just auth-gated
         if ($code -ge 500) { $lastStatus = $code; break }                              # started but crashed
+        if ($code -in 401,403) { $lastStatus = $code; $authGated = $true; break }       # IIS, not the app (see below)
         Start-Sleep -Seconds 3                                                          # still starting / not yet listening
+    }
+}
+if ($authGated) {
+    # /api isn't anonymous on this site (installed before the API carve-out, or changed since), so IIS answered for
+    # the app. Ask the site root as a signed-in user instead: a page there is the app's own answer.
+    Write-Warn2 "$ProbeUrl answered $lastStatus (IIS, not the app). Probing $HealthUrl as the signed-in user instead."
+    try {
+        $resp = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 30 -UseDefaultCredentials
+        $lastStatus = [int]$resp.StatusCode; $started = $true
+    } catch {
+        $code = $null
+        if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+        $lastStatus = $code
+        if ($code -in 401,403) {
+            Write-Warn2 ("Couldn't prove the new build started: both probes were answered by Windows authentication. " +
+                         "Open $HealthUrl in a browser now; if it fails, run this script's rollback steps by hand " +
+                         "(docs/UPGRADE.md). Carving /api out of Windows Auth (Install-CaseBook.ps1) makes the probe definite.")
+            $started = $true
+        }
     }
 }
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
