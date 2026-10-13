@@ -11,6 +11,7 @@
 @inject ISeverityLabels SevLabels
 @inject TimeDisplay TimeDisp
 @inject IJSRuntime JS
+@inject ICurrentUser CurrentUser
 
 <PageTitle>New case</PageTitle>
 
@@ -59,11 +60,20 @@
                     <label class="form-label" for="cc-classification">Classification</label>
                     <InputSelect id="cc-classification" class="form-select" @bind-Value="_request.Classification" @bind-Value:after="RefreshGates">
                         <option value="">Complex Event</option>
-                        @foreach (var c in Enum.GetValues<Classification>())
+                        @if (CanClassify)
                         {
-                            <option value="@c">@Ui.Label(c)</option>
+                            @foreach (var c in Enum.GetValues<Classification>())
+                            {
+                                <option value="@c">@Ui.Label(c)</option>
+                            }
                         }
                     </InputSelect>
+                    @if (!CanClassify)
+                    {
+                        @* REV-14: say why the other rungs aren't offered. *@
+                        <div class="form-text">Your role files Complex Events. Someone who can change a case's classification
+                            promotes it onto the ladder.</div>
+                    }
                 </div>
                 <div class="col-md-4">
                     <label class="form-label" for="cc-severity">Severity</label>
@@ -420,6 +430,8 @@
             _linkChoice.Remove(id);
     }
 
+    private bool CanClassify => CurrentUser.Has(Permission.ChangeClassification);   // REV-14
+
     protected override async Task OnInitializedAsync()
     {
         _templates = await Templates.ListActiveAsync();
@@ -472,7 +484,7 @@
         if (_selectedTemplate is null) return;
 
         // Quick-fill the structured field defaults (classification/severity) — these are safe to pre-set.
-        if (_selectedTemplate.DefaultClassification is { } c) _request.Classification = c;
+        if (_selectedTemplate.DefaultClassification is { } c && CanClassify) _request.Classification = c;
         if (_selectedTemplate.DefaultSeverity is { } s) _request.Severity = s;
         await RefreshGates();
 

@@ -649,6 +649,10 @@ public sealed class CaseService
     public async Task<Case> CreateAsync(CreateCaseRequest request, CancellationToken ct = default)
     {
         Require();
+        // REV-14: filing straight onto the ladder is a classification, as promoting a Complex Event is. Without it, a role
+        // that can't escalate a case to Breach could file one as a Breach.
+        if (request.Classification is not null && !_user.Has(Permission.ChangeClassification))
+            throw new ForbiddenException(Permission.ChangeClassification, nameof(CreateAsync));
         await _createValidator.ValidateAndThrowAsync(request, ct);
 
         var now = _clock.UtcNow;

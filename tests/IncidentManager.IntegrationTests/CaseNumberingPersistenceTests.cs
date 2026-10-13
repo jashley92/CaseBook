@@ -58,6 +58,18 @@ public sealed class CaseNumberingPersistenceTests : IDisposable
     };
 
     [Fact]
+    public async Task Filing_onto_the_ladder_needs_the_classification_permission(/* REV-14 */)
+    {
+        await using var db = NewContext();
+        _user.PermissionSet = [Permission.ViewCases, Permission.EditCases];   // a custom role without ChangeClassification
+        var svc = NewService(db);
+
+        var breach = async () => await svc.CreateAsync(Req("Exfil", Classification.Breach));
+        await breach.Should().ThrowAsync<IncidentManager.Application.Security.ForbiddenException>();
+        (await svc.CreateAsync(Req("Odd", null))).CaseNumber.Should().StartWith("CE-", "a Complex Event is still theirs to file");
+    }
+
+    [Fact]
     public async Task Complex_events_are_date_numbered_and_irp_cases_are_sequence_numbered()
     {
         await using var db = NewContext();

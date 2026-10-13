@@ -95,7 +95,7 @@ ones ([decision 0003](../decisions/0003-permissions-as-code-atoms.md)).
 | `ViewCases` | Use the app and see cases within need-to-know |
 | `ViewAllCases` | See every case, including restricted ones; dashboard and team workload |
 | `EditCases` | Create cases and change their content |
-| `ChangeClassification` | Promote, escalate or de-escalate; re-date a classification change |
+| `ChangeClassification` | Promote, escalate or de-escalate; re-date a classification change; file a case already on the ladder (an Adverse Event or above) rather than as a Complex Event (REV-14) |
 | `ApproveReports` | Approve a report as final |
 | `ViewRestricted` | See every restricted case; lift a restriction |
 | `ManageLegal` | Legal referral, legal hold and its release |

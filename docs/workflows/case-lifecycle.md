@@ -186,7 +186,7 @@ case can still be edited.
 | Action | Permission |
 |---|---|
 | Open, edit, phase, severity, assign, hand off, timeline, entities, evidence, notes, tasks, brief, links, supersede, restrict, materiality, mark reported | `EditCases` |
-| Promote, escalate, de-escalate; re-date a classification change | `ChangeClassification` |
+| Promote, escalate, de-escalate; re-date a classification change; file a case straight onto the ladder | `ChangeClassification` |
 | Refer to Legal; place or release a legal hold | `ManageLegal` |
 | Archive, restore | `Administer` |
 | Comment on a task | `ViewCases` |
