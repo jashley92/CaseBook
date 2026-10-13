@@ -35,8 +35,23 @@ window.imIdle = (function () {
         }
         if (idleFor >= idleMs) {
             stopTimer();
-            if (ref) { try { ref.invokeMethodAsync('OnIdleTimeout'); } catch (e) { /* circuit gone */ } }
+            if (ref) {
+                try {
+                    var call = ref.invokeMethodAsync('OnIdleTimeout');
+                    if (call && call.catch) call.catch(lockFromClient);   // the circuit is gone: lock from here
+                } catch (e) { lockFromClient(); }
+            }
+            // REV-63: the server-side lock needs a live circuit. With it down (an app-pool restart, a dropped network) the
+            // call never lands, and the case stayed readable behind the reconnect overlay. If the page is still here a
+            // few seconds later, the browser locks it itself.
+            setTimeout(lockFromClient, 5000);
         }
+    }
+
+    // Leave for the session-expired page, past the unsaved-changes prompt (a deliberate security teardown, FR-05).
+    function lockFromClient() {
+        try { if (window.markdownEditor) window.markdownEditor.suppressUnloadGuard(); } catch (e) { /* best effort */ }
+        window.location.replace(new URL('session-expired', document.baseURI).href);
     }
 
     function addListeners() {

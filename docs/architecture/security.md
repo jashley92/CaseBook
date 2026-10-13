@@ -80,6 +80,9 @@ Used only by `POST /api/import/cases` (bearer header).
 - **Idle lock** (`Security:IdleTimeoutMinutes`, default 15): after inactivity, a 60-second warning, then the
   circuit is torn down and the user lands on `/session-expired`. With Windows auth, *Resume* signs them straight
   back in; it's a screen lock, not a credential check. *Lock now* in the account menu does the same.
+  If the connection to the server is down at the deadline (an app-pool restart, a dropped network), the browser
+  leaves for `/session-expired` itself a few seconds later, so the case isn't left readable behind the reconnect
+  overlay (REV-63).
 - The data-protection keyring (antiforgery, circuit state) must persist (`DataProtection:KeyPath`), or every
   app-pool recycle disconnects everyone.
 
