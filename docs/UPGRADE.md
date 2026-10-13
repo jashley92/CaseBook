@@ -168,7 +168,12 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
-### Next release
+### v1.5.6
+
+A bug-fix release with one migration, applied at startup (a row hash on API tokens). Four things need a look before
+or right after upgrading: seal copies on disk are named differently, two settings are now bounded, filing a case
+straight onto the ladder needs Change classification, and **an API token the integrity banner flags after the upgrade
+was added outside CaseBook**. Read the notes below before upgrading.
 
 - **A case's Audit tab and audit CSV now include what was recorded under its earlier numbers.** A promotion out of
   Complex Event (or a renumber) used to cut the trail at that point. Evidence uploads, report generate/approve and case
