@@ -113,7 +113,11 @@ public sealed class RoleService
             && !await AdministerRemainsWithoutAsync(db, roleName: role.Name, exceptMappingId: null, ct))
             throw new InvalidOperationException("Can't delete this role: it holds the last administrator access. Grant Administer to another role first.");
 
-        var mappings = await db.RoleMappings.Where(m => m.RoleName == role.Name).ToListAsync(ct);
+        // WF-46: every mapping to it, whatever the casing (SQLite compares case-sensitively; role names match ignoring case).
+        var lower = role.Name.ToLowerInvariant();
+#pragma warning disable CA1304, CA1311, CA1862 // translated to SQL LOWER()
+        var mappings = await db.RoleMappings.Where(m => m.RoleName.ToLower() == lower).ToListAsync(ct);
+#pragma warning restore CA1304, CA1311, CA1862
         db.RoleMappings.RemoveRange(mappings);
         db.Roles.Remove(role);
         await db.SaveChangesAsync(ct);

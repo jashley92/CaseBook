@@ -329,7 +329,7 @@ public sealed class ConfigBundleServiceTests : IDisposable
             new ConfigSetting(IncidentManager.Application.Admin.TaxonomyCatalog.HiddenKey(kind.Id, m.Value), "true"))] };
         await ((Func<Task>)(() => svc.PreviewAsync(hideAll))).Should().ThrowAsync<ArgumentException>().WithMessage("*at least one must stay visible*");
 
-        var template = live.StageGates.First();
+        var template = live.StageGates[0];
         var zeroGate = new ConfigStageGate(template.Trigger, false, "Imported evidence gate", null,
             [new ConfigGateRequirement(0, "MachineCheck", GateCheckKeys.AtLeastOneEvidence, 0, "Evidence attached", true)], -5);
         var numbered = live with

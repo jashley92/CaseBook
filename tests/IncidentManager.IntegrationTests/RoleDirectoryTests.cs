@@ -164,6 +164,27 @@ public sealed class RoleDirectoryTests : IDisposable
     }
 
     [Fact]
+    public async Task Deleting_a_role_removes_its_mappings_whatever_their_casing(/* WF-46 */)
+    {
+        await SeedAsync(new RoleMappingOptions());
+        using (var seed = Scope())
+        {
+            var svc = seed.ServiceProvider.GetRequiredService<RoleService>();
+            await svc.CreateRoleAsync("Responders", null, [Permission.ViewCases]);
+            var db = seed.ServiceProvider.GetRequiredService<AppDbContext>();
+            // As a config bundle stored it before WF-45: the bundle's spelling of the role.
+            db.RoleMappings.Add(new IncidentManager.Domain.Entities.AdGroupRoleMapping { AdGroup = "SOC-Responders", RoleName = "responders", UpdatedAtUtc = _clock.UtcNow, UpdatedBy = "admin1" });
+            await db.SaveChangesAsync();
+        }
+
+        using var scope = Scope();
+        var roles = scope.ServiceProvider.GetRequiredService<RoleService>();
+        await roles.DeleteRoleAsync((await roles.ListRolesAsync()).Single(r => r.Name == "Responders").Id);
+
+        (await roles.ListMappingsAsync()).Should().NotContain(m => m.AdGroup == "SOC-Responders");
+    }
+
+    [Fact]
     public async Task Cannot_remove_the_last_administrator_mapping()
     {
         await SeedAsync(new RoleMappingOptions { Groups = new() { ["SysAdmin"] = ["SOC-AppAdmins"] } });
