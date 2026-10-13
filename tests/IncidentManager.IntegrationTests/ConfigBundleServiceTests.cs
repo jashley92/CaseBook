@@ -278,6 +278,25 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_bundle_item_the_admin_pages_would_refuse_is_refused(/* REV-49 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+
+        var zeroWindow = live with { NotificationRules = [new ConfigNotificationRule("ny", "New York", 0, true, false)] };
+        await ((Func<Task>)(() => svc.PreviewAsync(zeroWindow))).Should().ThrowAsync<ArgumentException>().WithMessage("*window must be 1 to*");
+        var noOutcomes = live with { CaseOutcomes = (live.CaseOutcomes ?? []).Select(o => o with { IsActive = false }).ToList() };
+        if (noOutcomes.CaseOutcomes!.Count > 0)
+            await ((Func<Task>)(() => svc.ImportAsync(Signed(noOutcomes), sourceTrusted: true))).Should().ThrowAsync<ArgumentException>()
+                .WithMessage("*no case outcome active*");
+
+        await svc.ImportAsync(Signed(live with { NotificationRules = [new ConfigNotificationRule("ny", "New York", 72, true, false)] }));
+        (await db.NotificationRules.AsNoTracking().Select(r => r.Code).ToListAsync()).Should().Contain("NY", "codes are upper-case, as the page saves them");
+    }
+
+    [Fact]
     public async Task A_bundle_that_leaves_two_active_gates_on_one_transition_is_refused(/* BUG-237 */)
     {
         await using var db = NewContext();

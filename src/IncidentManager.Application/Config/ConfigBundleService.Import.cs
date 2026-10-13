@@ -120,6 +120,7 @@ public sealed partial class ConfigBundleService
         CheckSettings(incoming);                         // so does a setting outside its limits
         CheckNaturalKeys(incoming);                      // and two items that differ only in case
         CheckSingleActiveGates(incoming, live);          // and a second active gate on one transition
+        CheckItems(incoming, live);                      // and an item the admin pages would refuse
         var items = new List<ConfigDiffItem>();
 
         Diff("Setting", incoming.Settings.Where(IsImportableSetting), live.Settings, s => s.Key, items);
@@ -205,6 +206,37 @@ public sealed partial class ConfigBundleService
                 " A transition has one active gate. Deactivate one (here or in the bundle's source), then try again.");
     }
 
+    // REV-49: S-18 says a bundle mustn't write what the admin pages would refuse; CheckSettings did that for settings only.
+    // The rest came in as given: a notification rule with a window of 0 (every case it triggers past its deadline at once,
+    // reminders sent) or a lower-case code (which, on SQLite, let the page add the upper-case one beside it, and the rule
+    // set then threw on the duplicate), blank labels, and outcomes all inactive (no case could be closed).
+    private static void CheckItems(ConfigBundle incoming, ConfigBundle live)
+    {
+        var problems = new List<string>();
+        foreach (var r in incoming.NotificationRules ?? [])
+        {
+            var code = (r.Code ?? "").Trim();
+            if (code.Length is 0 or > NotificationRuleService.MaxCodeLength)
+                problems.Add($"A notification rule's code must be 1 to {NotificationRuleService.MaxCodeLength} characters (\"{code}\").");
+            if (string.IsNullOrWhiteSpace(r.Label) || r.Label.Trim().Length > NotificationRuleService.MaxLabelLength)
+                problems.Add($"Notification rule {code} needs a label of 1 to {NotificationRuleService.MaxLabelLength} characters.");
+            if (r.WindowHours is <= 0 or > NotificationRuleService.MaxWindowHours)
+                problems.Add($"Notification rule {code}'s window must be 1 to {NotificationRuleService.MaxWindowHours} hours (it's {r.WindowHours}).");
+        }
+        if ((incoming.CaseOutcomes ?? []).Any(o => string.IsNullOrWhiteSpace(o.Label)))
+            problems.Add("Every case outcome needs a label.");
+        if (incoming.DataElements.Any(d => string.IsNullOrWhiteSpace(d.Label)))
+            problems.Add("Every data element needs a label.");
+        if (incoming.CaseOutcomes is { Count: > 0 } outcomes)
+        {
+            var active = (live.CaseOutcomes ?? []).ToDictionary(o => o.Key, o => o.IsActive, StringComparer.OrdinalIgnoreCase);
+            foreach (var o in outcomes) active[o.Key] = o.IsActive;
+            if (!active.Values.Any(a => a)) problems.Add("It would leave no case outcome active, so no case could be closed.");
+        }
+        if (problems.Count > 0)
+            throw new ArgumentException("This bundle can't be imported: " + string.Join(" ", problems));
+    }
+
     private static void CheckNaturalKeys(ConfigBundle bundle)
     {
         static IEnumerable<string> Check<T>(string section, IEnumerable<T>? items, Func<T, string?> key) =>
@@ -260,7 +292,9 @@ public sealed partial class ConfigBundleService
         var (templateFiles, _) = await CheckReportTemplatesAsync(bundle, ct);
         CheckSettings(bundle);
         CheckNaturalKeys(bundle);
-        CheckSingleActiveGates(bundle, await BuildBundleAsync(ct));
+        var liveBefore = await BuildBundleAsync(ct);
+        CheckSingleActiveGates(bundle, liveBefore);
+        CheckItems(bundle, liveBefore);
 
         using var db = _factory.CreateDbContext();
         var now = _clock.UtcNow;
@@ -530,7 +564,8 @@ public sealed partial class ConfigBundleService
             var existing = rules.FirstOrDefault(x => string.Equals(x.Code, r.Code, StringComparison.OrdinalIgnoreCase));
             if (existing is null)
             {
-                db.NotificationRules.Add(new NotificationRule { Code = r.Code, Label = r.Label,
+                // REV-49: codes are upper-case, as the page saves them.
+                db.NotificationRules.Add(new NotificationRule { Code = r.Code.Trim().ToUpperInvariant(), Label = r.Label.Trim(),
                     WindowHours = r.WindowHours, IsActive = r.IsActive, IsSystem = r.IsSystem,
                     CreatedBy = actor, CreatedAtUtc = now });
                 Tally(true, true);

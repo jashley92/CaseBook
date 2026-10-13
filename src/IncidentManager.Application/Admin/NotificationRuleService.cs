@@ -23,8 +23,8 @@ public sealed record NotificationRuleView(
 /// </summary>
 public sealed class NotificationRuleService
 {
-    private const int MaxLabelLength = 200;
-    private const int MaxCodeLength = 16;
+    public const int MaxLabelLength = 200;
+    public const int MaxCodeLength = 16;
     public const int MaxWindowHours = 24 * 365; // a year — a sane ceiling, well above any real deadline
 
     private readonly IAppDbContextFactory _factory;
