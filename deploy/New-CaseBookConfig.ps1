@@ -96,7 +96,10 @@ Write-Host ""
 Write-Host "Web host / IIS" -ForegroundColor Cyan
 $SitePath = Ask -Prompt 'Web root (site path)' -Default 'D:\inetpub\casebook' -Required
 $DataRoot = Ask -Prompt 'Data root (evidence/keys/reports - OUTSIDE the web root)' -Default 'E:\CaseBookData' -Required
-if ($DataRoot.TrimEnd('\').ToLower().StartsWith($SitePath.TrimEnd('\').ToLower())) {
+# REV-80: inside means the same folder or under it, as Verify-Install judges it (BUG-140): D:\inetpub\casebookdata isn't
+# inside D:\inetpub\casebook.
+$sp = $SitePath.TrimEnd('\'); $dr = $DataRoot.TrimEnd('\')
+if ($dr -ieq $sp -or $dr.ToLower().StartsWith($sp.ToLower() + '\')) {
     Write-Host "    WARNING: the data root is inside the web root. Keep case evidence OFF the web root." -ForegroundColor Yellow
 }
 $Hostname = Ask -Prompt 'Public hostname (host header)' -Default 'casebook.contoso.com' -Required `
