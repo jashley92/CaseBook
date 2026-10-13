@@ -200,7 +200,7 @@
         if (!Guid.TryParse(evidenceId, out var id) || Case.Evidence.FirstOrDefault(e => e.Id == id) is not { } ev) return;
         var name = ev.OriginalFileName.Replace("[", "(").Replace("]", ")");
         var current = (_draft.GetValueOrDefault(KnownKey) ?? "").TrimEnd();
-        IncidentManager.Application.Content.TagText.Remember(_refs, name, $"evidence:{id}");   // BUG-121: after any earlier [[name]]
+        IncidentManager.Application.Content.TagText.Remember(RefsOf(KnownKey), name, $"evidence:{id}");   // BUG-121: after any earlier [[name]]
         _draft[KnownKey] = (current.Length == 0 ? "- " : current + " ") + $"[[{name}]]";
     }
     private const string NextKey = "next";
@@ -219,10 +219,23 @@
     private bool _adding;
     private Guid? _openedFrom;
     private readonly Dictionary<string, string?> _draft = new();
-    private readonly Dictionary<string, string> _refs = new(StringComparer.Ordinal);
+    // WF-28: each part's link targets on their own. FromEditable counts a label's tags per text, so one list shared by every
+    // part (with the summary read twice) gave the n-th tag in Open questions the n-th target of the whole brief: saving
+    // unchanged could turn an entity tag into an evidence link.
+    private readonly Dictionary<string, Dictionary<string, string>> _refs = new(StringComparer.Ordinal);
 
-    private string? Linked(string key) => IncidentManager.Application.Content.TagText.FromEditable(
-        _draft.GetValueOrDefault(key), _refs, Case.Entities.Select(e => (e.Id, e.Label, e.Value)));
+    private Dictionary<string, string> RefsOf(string key) =>
+        _refs.TryGetValue(key, out var r) ? r : _refs[key] = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    // A part's own targets first; a tag moved in from another part keeps that part's first target for its label.
+    private string? Linked(string key)
+    {
+        var refs = new Dictionary<string, string>(RefsOf(key), StringComparer.Ordinal);
+        foreach (var (label, targets) in _refs.Where(r => r.Key != key).SelectMany(r => r.Value))
+            refs.TryAdd(label, targets.Split('|')[0]);
+        return IncidentManager.Application.Content.TagText.FromEditable(
+            _draft.GetValueOrDefault(key), refs, Case.Entities.Select(e => (e.Id, e.Label, e.Value)));
+    }
 
     /// <summary>Opens the editor (also used by the close gate's "Fix" for a missing summary).</summary>
     public void BeginEdit()
@@ -232,10 +245,10 @@
         _openedFrom = cur?.Id;
         // Entity tags and evidence citations show as [[name]] in the plain boxes, and turn back into links on save.
         _refs.Clear();
-        foreach (var p in Parts.Where(p => p.Editable))
-            _draft[p.Key] = cur is null ? null : IncidentManager.Application.Content.TagText.ToEditable(p.Get(cur), _refs);
+        foreach (var p in Parts.Where(p => p.Editable && p.Key != SummaryKey))
+            _draft[p.Key] = cur is null ? null : IncidentManager.Application.Content.TagText.ToEditable(p.Get(cur), RefsOf(p.Key));
         // The case's own summary is the current one (a version recorded before INV-36 may hold other text).
-        _draft[SummaryKey] = IncidentManager.Application.Content.TagText.ToEditable(Case.Summary, _refs);
+        _draft[SummaryKey] = IncidentManager.Application.Content.TagText.ToEditable(Case.Summary, RefsOf(SummaryKey));
         _error = null;
         _editing = true;
         StateHasChanged();
