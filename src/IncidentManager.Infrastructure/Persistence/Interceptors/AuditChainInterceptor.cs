@@ -41,6 +41,12 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         e.Entity is Case && e.State == EntityState.Modified
         && e.Properties.Where(p => p.IsModified).All(p => p.Metadata.Name == AppDbContext.CaseEditVersion);
 
+    // REV-05: every token-authenticated API call stamps LastUsedAtUtc, which the token's row hash leaves out. Drop that
+    // save here rather than in Apply's touch skip, so it never waits on the process-wide gate or reads the chain head.
+    private static bool OnlyTokenUseStamped(EntityEntry e) =>
+        e.Entity is ApiToken && e.State == EntityState.Modified
+        && e.Properties.Where(p => p.IsModified).All(p => p.Metadata.Name == nameof(ApiToken.LastUsedAtUtc));
+
     // Freshness stamps bumped by a "touch". An update whose ONLY changed columns are these carries no
     // forensic value — see the skip in Apply.
     // REV-05: an API token's per-call last-used time too: a token is chained now, and every API call stamps it.
@@ -228,7 +234,8 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                         && !e.Metadata.IsOwned()
                         && !NotAudited.Contains(e.Entity.GetType())
                         && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
-                        && !OnlyEditVersionBumped(e))
+                        && !OnlyEditVersionBumped(e)
+                        && !OnlyTokenUseStamped(e))
             .ToList();
 
         // Map cases by id so child-entity audit lines can carry the case number.

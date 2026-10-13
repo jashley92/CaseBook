@@ -24,8 +24,8 @@ public sealed record ApiTokenCreated(ApiTokenView Token, string Plaintext);
 /// PROD-34: issues, lists, revokes and validates API tokens. Personal tokens attribute to their owning user;
 /// system tokens are named machine identities an admin grants roles. Only a SHA-256 hash is stored; the
 /// plaintext is returned once at creation. Permissions derive from the token's roles via <see cref="IRoleDirectory"/>.
-/// Create/revoke are recorded to the audit trail and the SIEM stream (the token entity itself is NotAudited so
-/// per-call last-used updates don't spam the hash chain).
+/// Create/revoke go to the SIEM stream; the token row is hash-chained (REV-05), so the interceptor records them in the
+/// audit trail in the same save. The per-call last-used stamp is left out of the chain.
 /// </summary>
 public sealed class ApiTokenService
 {
