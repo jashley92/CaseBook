@@ -100,7 +100,16 @@ SELECT MAX(backup_finish_date) FROM msdb.dbo.backupset WHERE database_name = @db
     if ($notLedger.Count -gt 0 -or $summary.Count -lt 3) { throw 'Not every table reports APPEND_ONLY_LEDGER_TABLE. See the output above.' }
 
     if ($DigestPath) {
+        $global:LASTEXITCODE = 0
         & (Join-Path $scriptDir 'Export-LedgerDigest.ps1') -SqlInstance $SqlInstance -DbName $DbName -DigestPath $DigestPath -SqlCredential $SqlCredential
+        # REV-76: Export-LedgerDigest ends with exit 1 when it can't save the digest (an unwritable WORM share, say). The
+        # ledger is on by now (that can't be undone), but without this first digest there's nothing to verify it
+        # against, so the run says so and fails rather than reporting success.
+        if ($LASTEXITCODE -ne 0) {
+            throw ("The ledger IS enabled on [$DbName], but its first digest wasn't saved to $DigestPath (Export-LedgerDigest " +
+                   "exit $LASTEXITCODE). Fix the share, then run Export-LedgerDigest.ps1 now: until a digest is kept, the " +
+                   "ledger can't be verified.")
+        }
     } else {
         Write-Host '    No -DigestPath given. Run Export-LedgerDigest.ps1 now and on a schedule; without digests the ledger can''t be verified.' -ForegroundColor Yellow
     }
