@@ -679,7 +679,8 @@ notable (an upgrade, a restore, an examination).
 SQL Server recomputes every ledger row and transaction hash and checks them against the digests. **OK** means no
 ledger row changed since the digests were taken. **FAIL** (exit 1) names the table and transaction: treat it as
 a possible tampering incident, preserve the database, backups and digests, and compare against the app's own
-chain check and seals (§2). Run it monthly, before an examination, and whenever the in-app chain check fails,
+chain check and seals (§2). **Couldn't verify** (exit 2) means the check didn't finish (SQL Server unreachable,
+sign-in or permission refused, a timeout): it isn't a tamper finding; fix the cause and run it again. Run it monthly, before an examination, and whenever the in-app chain check fails,
 and keep the output with your NYDFS Part 500 evidence.
 
 ### 7.4 Upgrades and schema changes

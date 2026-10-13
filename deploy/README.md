@@ -19,7 +19,7 @@ All scripts need Windows PowerShell 5.1 and run with Windows integrated authenti
 | `sql/01-Create-Database.sql` | The DDL the DB installer runs (database, recovery model, login/user, grants). |
 | `Enable-Ledger.ps1` | *(Recommended, one-way)* Turn on the SQL Server ledger for the audit log, seals and custody events (E-10). Requires a full backup from the last 24 h. See **[../docs/OPERATIONS.md](../docs/OPERATIONS.md) §7**. |
 | `Export-LedgerDigest.ps1` | Save a ledger digest to `LedgerDigestPath` (schedule daily; exit 1 on failure). |
-| `Verify-LedgerDigests.ps1` | Verify the ledger tables against the saved digests (exit 1 = possible tampering). |
+| `Verify-LedgerDigests.ps1` | Verify the ledger tables against the saved digests (exit 1 = possible tampering; 2 = couldn't run the check). |
 | `lib/CaseBookSql.ps1` | SqlClient helpers the ledger scripts share (no SqlServer module or sqlcmd needed). |
 | `lib/CaseBookAdGroups.ps1` | Resolves the role groups to `DOMAIN\Group` for the installers (a bare name maps only the web server's domain). |
 | `sql/02-Enable-Ledger.sql` | The DDL `Enable-Ledger.ps1` runs. |

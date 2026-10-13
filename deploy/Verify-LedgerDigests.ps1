@@ -12,7 +12,9 @@
     Run it monthly, before an examination, and whenever the audit chain check in the app fails. Keep the
     output with your NYDFS 500 evidence.
 
-    Exit code 0 when verified, 1 when verification fails or can't run.
+    Exit code 0 when verified; 1 when the ledger doesn't match the digests (treat as possible tampering); 2 when the
+    check couldn't run (SQL Server unreachable, sign-in or permission refused, a timeout, no digests): fix that and
+    run it again. A run that couldn't complete proves nothing either way.
 
 .PARAMETER ConfigFile
     Optional casebook.config.psd1; fills SqlInstance, DbName and LedgerDigestPath.
@@ -60,22 +62,32 @@ try {
     Write-Host "    Oldest: $($files[0].Name)" -ForegroundColor Gray
     Write-Host "    Newest: $($files[-1].Name)" -ForegroundColor Gray
 
+    # BUG-251: connecting is outside the verification, so an unreachable server or a refused sign-in reads as "couldn't
+    # verify", not as tampering.
     $conn = New-CaseBookSqlConnection -SqlInstance $SqlInstance -DbName $DbName -SqlCredential $SqlCredential
     try {
         [void](Invoke-CaseBookSqlScalar -Connection $conn -Sql 'EXEC sys.sp_verify_database_ledger @digests' -Parameters @{ '@digests' = $json })
+    } catch {
+        # PowerShell wraps the SqlException (MethodInvocationException); unwrap it for SQL Server's details.
+        $ex = $_.Exception
+        while ($ex -and -not ($ex -is [System.Data.SqlClient.SqlException])) { $ex = $ex.InnerException }
+        if (-not $ex) { throw }
+        # Ledger verification reports a mismatch with its own errors (37xxx). Anything else (permission denied, a
+        # timeout, a dropped connection) means the check didn't finish.
+        $ledgerErrors = @($ex.Errors | Where-Object { $_.Number -ge 37300 -and $_.Number -le 37499 })
+        if ($ledgerErrors.Count -gt 0) {
+            Write-Host '  [FAIL] Ledger verification FAILED. Treat as a possible tampering incident and preserve the database and digests.' -ForegroundColor Red
+            foreach ($e in $ex.Errors) { Write-Host "         $($e.Number): $($e.Message)" -ForegroundColor Red }
+            exit 1
+        }
+        Write-Host "  [FAIL] Couldn't complete the verification (this isn't a tamper finding): fix the cause and run it again." -ForegroundColor Yellow
+        foreach ($e in $ex.Errors) { Write-Host "         $($e.Number): $($e.Message)" -ForegroundColor Yellow }
+        exit 2
     } finally { $conn.Close() }
 
     Write-Host '  [ OK ] Ledger verified: no ledger row changed since the digests were taken.' -ForegroundColor Green
     exit 0
-} catch [System.Data.SqlClient.SqlException] {
-    Write-Host '  [FAIL] Ledger verification FAILED. Treat as a possible tampering incident and preserve the database and digests.' -ForegroundColor Red
-    # PowerShell wraps the SqlException (MethodInvocationException); unwrap it for SQL Server's details.
-    $ex = $_.Exception
-    while ($ex -and -not ($ex -is [System.Data.SqlClient.SqlException])) { $ex = $ex.InnerException }
-    if ($ex) { foreach ($e in $ex.Errors) { Write-Host "         $($e.Message)" -ForegroundColor Red } }
-    else { Write-Host "         $($_.Exception.Message)" -ForegroundColor Red }
-    exit 1
 } catch {
-    Write-Host "  [FAIL] Couldn't verify: $($_.Exception.Message)" -ForegroundColor Red
-    exit 1
+    Write-Host "  [FAIL] Couldn't verify (this isn't a tamper finding): $($_.Exception.Message)" -ForegroundColor Yellow
+    exit 2
 }
