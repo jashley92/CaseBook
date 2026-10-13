@@ -109,7 +109,10 @@ jobs:
 
       # H-05: fail the build on any known-vulnerable NuGet package (direct or transitive), so a
       # supply-chain advisory can't land silently. Deprecated packages are reported but not fatal.
+      # REV-78: shell: bash runs with pipefail, so a scan that fails (the vulnerability data unreachable, say) fails the
+      # step instead of piping its error through tee into "No vulnerable packages".
       - name: Vulnerable package scan (H-05)
+        shell: bash
         run: |
           echo "Scanning for vulnerable packages (including transitive)…"
           dotnet list package --vulnerable --include-transitive 2>&1 | tee vulnerable.log
