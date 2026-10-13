@@ -143,7 +143,7 @@
             </div>
         </div>
         <div class="card-footer d-flex gap-2">
-            <button class="btn btn-sm btn-primary" @onclick="Save">Save</button>
+            <button class="btn btn-sm btn-primary" @onclick="Save" disabled="@_saving">Save</button>
             <button class="btn btn-sm btn-outline-secondary" @onclick="() => _edit = null">Cancel</button>
         </div>
     </div>
@@ -292,7 +292,18 @@ else
         (_edit.Requirements[i], _edit.Requirements[j]) = (_edit.Requirements[j], _edit.Requirements[i]);
     }
 
+    // REV-31: a double click on Save for a new gate created two active gates for the same transition.
+    private bool _saving;
+
     private async Task Save()
+    {
+        if (_edit is null || _saving) return;
+        _saving = true;
+        try { await SaveCore(); }
+        finally { _saving = false; }
+    }
+
+    private async Task SaveCore()
     {
         if (_edit is null) return;
 

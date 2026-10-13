@@ -277,6 +277,7 @@
 
     private async Task Done(ActionItem t)
     {
+        if (_saving) return;   // REV-31: one save at a time (a click and Ctrl+Enter, or a double click)
         _saving = true;
         _doneError = null;
         try

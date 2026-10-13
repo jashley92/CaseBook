@@ -247,7 +247,17 @@ else
         _editNoteBody = "";
     }
 
+    private bool _inFlight;   // REV-31: one save at a time
+
     private async Task SaveNoteEdit()
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await SaveNoteEditCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task SaveNoteEditCore()
     {
         if (_editNoteId is not { } noteId) return;
         try { _editNoteBody = await JS.InvokeAsync<string>("markdownEditor.getValue", NoteEditEditorId(noteId)); }

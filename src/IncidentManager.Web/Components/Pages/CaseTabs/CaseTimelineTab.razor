@@ -1828,6 +1828,14 @@ else
 
     private async Task SaveInvestigationEdit()
     {
+        if (_inFlight) return;   // REV-31: a second click (or Ctrl+Enter) while the first save runs
+        _inFlight = true;
+        try { await SaveInvestigationEditCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task SaveInvestigationEditCore()
+    {
         if (_tlEditId is not { } id) return;
         try { _tlDesc = await JS.InvokeAsync<string>("markdownEditor.getValue", InvEditorId); }
         catch (JSException) { /* fall back to bound value */ }

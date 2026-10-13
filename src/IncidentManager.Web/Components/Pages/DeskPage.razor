@@ -378,10 +378,13 @@
         if (e.Key == "Enter") await AddQuickTask();
     }
 
+    private bool _adding;   // REV-31: Enter twice (or Enter and a click) added the task twice
+
     private async Task AddQuickTask()
     {
         var title = _newTaskTitle.Trim();
-        if (string.IsNullOrWhiteSpace(title) || _newTaskCaseId == Guid.Empty) return;
+        if (string.IsNullOrWhiteSpace(title) || _newTaskCaseId == Guid.Empty || _adding) return;
+        _adding = true;
         try
         {
             await Cases.AddActionItemAsync(_newTaskCaseId, title, CurrentUser.UserId, null);
@@ -394,6 +397,7 @@
         {
             Toasts.Error(ex.Message);
         }
+        finally { _adding = false; }
     }
 
     private async Task MarkDone(DeskTask t)

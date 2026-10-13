@@ -85,7 +85,7 @@
             {
                 <div class="alert alert-danger small py-2 mb-0" role="alert">@coErr</div>
             }
-            <button type="button" class="btn btn-primary" disabled="@Draft.CloseDisabled" @onclick="Close">Close the case</button>
+            <button type="button" class="btn btn-primary" disabled="@(Draft.CloseDisabled || _inFlight)" @onclick="Close">Close the case</button>
             <button type="button" class="btn btn-link btn-sm text-danger p-0" @onclick="() => OnLeave.InvokeAsync(true)">Discard the draft</button>
         </aside>
     </div>
@@ -106,7 +106,17 @@
     // A child changed the draft (a tick, the justification, the time): re-render so Close reflects it.
     private void Changed() { }
 
+    private bool _inFlight;   // REV-31: one close at a time
+
     private async Task Close()
+    {
+        if (_inFlight) return;
+        _inFlight = true;
+        try { await CloseCore(); }
+        finally { _inFlight = false; }
+    }
+
+    private async Task CloseCore()
     {
         Draft.Error = null;
         var t = Draft.Transition;

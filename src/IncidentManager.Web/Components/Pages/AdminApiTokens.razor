@@ -97,7 +97,7 @@
             </div>
         </div>
         <div class="card-footer d-flex gap-2">
-            <button class="btn btn-sm btn-primary" @onclick="CreateToken">Create token</button>
+            <button class="btn btn-sm btn-primary" @onclick="CreateToken" disabled="@_minting">Create token</button>
             <button class="btn btn-sm btn-outline-secondary" @onclick="() => _creating = false">Cancel</button>
         </div>
     </div>
@@ -185,8 +185,13 @@ else
         if (on) _selectedRoles.Add(role); else _selectedRoles.Remove(role);
     }
 
+    // REV-31: a double click minted two live tokens, and the first one's secret was never shown.
+    private bool _minting;
+
     private async Task CreateToken()
     {
+        if (_minting) return;
+        _minting = true;
         try
         {
             var expiry = new DateTimeOffset(DateTime.SpecifyKind(_expiresDate, DateTimeKind.Utc), TimeSpan.Zero);
@@ -200,6 +205,7 @@ else
         {
             Toasts.Error(ex.Message);
         }
+        finally { _minting = false; }
     }
 
     private async Task Revoke(ApiTokenView t)

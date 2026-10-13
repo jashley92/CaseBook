@@ -477,7 +477,7 @@ else
     /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — save whichever edit is open.</summary>
     public async Task SubmitAsync()
     {
-        if (!CanEdit) return;
+        if (!CanEdit || _saving) return;   // REV-31: the button is disabled while saving; the shortcut isn't
         if (_editingReview) await SaveReview();
         else if (_editingId is not null) await SaveEdit();
         else if (!string.IsNullOrWhiteSpace(_new.Title)) await AddAction();
@@ -499,6 +499,7 @@ else
 
     private async Task SaveReview()
     {
+        if (_saving) return;   // REV-31: one save at a time (a click and Ctrl+Enter, or a double click)
         _saving = true;
         try
         {
@@ -529,6 +530,7 @@ else
     private async Task AddAction()
     {
         if (string.IsNullOrWhiteSpace(_new.Title)) return;
+        if (_saving) return;   // REV-31: one save at a time (a click and Ctrl+Enter, or a double click)
         _saving = true;
         try
         {
@@ -569,6 +571,7 @@ else
     private async Task SaveEdit()
     {
         if (_editingId is not { } id) return;
+        if (_saving) return;   // REV-31: one save at a time (a click and Ctrl+Enter, or a double click)
         _saving = true;
         try
         {

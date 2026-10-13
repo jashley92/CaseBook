@@ -65,7 +65,7 @@
         </div>
     }
     <div class="mt-3">
-        <button class="btn btn-sm btn-primary" @onclick="CreateToken" disabled="@(_myRoles.Length == 0)">
+        <button class="btn btn-sm btn-primary" @onclick="CreateToken" disabled="@(_myRoles.Length == 0 || _minting)">
             <span class="bi bi-key me-1"></span>Create token
         </button>
     </div>
@@ -143,8 +143,13 @@ else
         if (on) _selectedRoles.Add(role); else _selectedRoles.Remove(role);
     }
 
+    // REV-31: a double click minted two live tokens, and the first one's secret was never shown.
+    private bool _minting;
+
     private async Task CreateToken()
     {
+        if (_minting) return;
+        _minting = true;
         try
         {
             var expiry = new DateTimeOffset(DateTime.SpecifyKind(_expiresDate, DateTimeKind.Utc), TimeSpan.Zero);
@@ -158,6 +163,7 @@ else
         {
             Toasts.Error(ex.Message);
         }
+        finally { _minting = false; }
     }
 
     private async Task Revoke(ApiTokenView t)

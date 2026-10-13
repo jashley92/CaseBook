@@ -262,6 +262,7 @@
 
     private async Task Save()
     {
+        if (_saving) return;   // REV-31: one save at a time (a click and Ctrl+Enter, or a double click)
         _saving = true;
         _error = null;
         try
