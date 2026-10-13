@@ -12,6 +12,8 @@
 @inject TimeDisplay TimeDisp
 @inject IJSRuntime JS
 @inject ICurrentUser CurrentUser
+@inject IOrganizationTimeZone OrgZone
+@inject IClock Clock
 
 <PageTitle>New case</PageTitle>
 
@@ -521,7 +523,8 @@
     {
         get
         {
-            var now = DateTimeOffset.UtcNow;
+            // REV-39: the organization's calendar date and year, as the number itself is given (BUG-112).
+            var now = TimeZoneInfo.ConvertTime(Clock.UtcNow, OrgZone.Current);
             var slug = Case.Slug(SlugSource(_request.Title));
             return _request.Classification is null
                 ? Case.FormatComplexEventNumber(now, slug)
