@@ -281,6 +281,37 @@ public sealed class RowIntegrityTests
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task A_token_edited_before_the_upgrade_isnt_signed_off(string provider /* WF-43 */)
+    {
+        using var database = Seeded(provider);
+        Guid revived, regranted, honest;
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            var r = Token("Revived", "SysAdmin", _clock.UtcNow);    // revoked in CaseBook, switched back on in the database
+            var g = Token("Regranted", "SysAdmin", _clock.UtcNow);  // issued as Analyst, given SysAdmin in the database
+            var h = Token("Honest", "Analyst", _clock.UtcNow);
+            (revived, regranted, honest) = (r.Id, g.Id, h.Id);
+            raw.ApiTokens.AddRange(r, g, h);
+            await raw.SaveChangesAsync();
+        }
+        var audit = new AuditWriter(database.Factory(), _hasher, _user, _clock);
+        string Created(string name, string roles) =>
+            $"Created System API token '{name}' (roles: {roles}; expires {_clock.UtcNow.AddDays(30):u})";
+        await audit.RecordAsync(AuditAction.Create, nameof(ApiToken), revived.ToString(), null, Created("Revived", "SysAdmin"));
+        await audit.RecordAsync(AuditAction.Update, nameof(ApiToken), revived.ToString(), null, "Revoked System API token 'Revived'");
+        await audit.RecordAsync(AuditAction.Create, nameof(ApiToken), regranted.ToString(), null, Created("Regranted", "Analyst"));
+        await audit.RecordAsync(AuditAction.Create, nameof(ApiToken), honest.ToString(), null, Created("Honest", "Analyst"));
+
+        await using (var db = database.NewContext())
+            (await RowHashBackfill.RunAsync(db, _hasher)).Should().Be(1, "only the token that matches its trail is recorded");
+
+        await using var check = new AppDbContext(database.OptionsWithoutInterceptors);
+        (await check.ApiTokens.AsNoTracking().Where(t => t.RowHash != null).Select(t => t.Id).ToListAsync()).Should().Equal(honest);
+        (await VerifyAsync(database))!.Detail.Should().Contain("ApiToken");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task A_record_added_directly_in_the_database_is_caught(string provider /* BUG-65 */)
     {
         using var database = Seeded(provider);
