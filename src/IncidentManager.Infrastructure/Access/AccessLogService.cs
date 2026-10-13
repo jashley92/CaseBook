@@ -159,10 +159,12 @@ public sealed class AccessLogService : IAccessLogService
             q = q.Where(e => e.AccessType == t);
         if (filter.RestrictedOnly)
             q = q.Where(e => e.WasRestricted);
+        // WF-44: a session is in the range when it overlaps it. One left open and reloaded runs on past the end of the day it
+        // began, and judged by its last moment alone it dropped out of the day it was opened.
         if (filter.FromUtc is { } from)
             q = q.Where(e => e.LastSeenUtc >= from);
         if (filter.ToUtc is { } to)
-            q = q.Where(e => e.LastSeenUtc <= to);
+            q = q.Where(e => e.FirstSeenUtc <= to);
 
         return await q.OrderByDescending(e => e.LastSeenUtc).Take(take).ToListAsync(ct);
     }

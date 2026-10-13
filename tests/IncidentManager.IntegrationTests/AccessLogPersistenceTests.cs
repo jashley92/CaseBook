@@ -191,6 +191,28 @@ public sealed class AccessLogPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_session_that_began_in_the_range_and_ran_past_it_is_in_the_range(/* WF-44 */)
+    {
+        NewContext();
+        var caseId = SeedCase();
+        var svc = NewService();
+        var start = _clock.UtcNow;   // Monday noon
+        await svc.RecordCaseOpenAsync(caseId, "2026-01_Alpha", wasRestricted: false);
+        for (var i = 0; i < 60; i++)   // left open and reloaded every 20 minutes, into Tuesday
+        {
+            _clock.UtcNow = _clock.UtcNow.AddMinutes(20);
+            await svc.RecordCaseOpenAsync(caseId, "2026-01_Alpha", wasRestricted: false);
+        }
+
+        _user.RoleSet = [AppRole.SysAdmin];
+        var day = new DateTimeOffset(start.UtcDateTime.Date, TimeSpan.Zero);
+        var monday = await svc.QueryAsync(new AccessLogFilter { FromUtc = day, ToUtc = day.AddDays(1).AddTicks(-1) });
+        monday.Should().ContainSingle().Which.FirstSeenUtc.Should().Be(start);
+        (await svc.QueryAsync(new AccessLogFilter { FromUtc = start.AddDays(3) })).Should().BeEmpty();
+        (await svc.QueryAsync(new AccessLogFilter { ToUtc = start.AddMinutes(-1) })).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Query_filters_by_actor_and_access_type()
     {
         NewContext();
