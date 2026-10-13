@@ -170,7 +170,10 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
             var stranded = db.NotificationMarks.Where(m => m.ConfirmedAtUtc == null).ExecuteDelete();
             if (stranded > 0)
                 log.LogWarning("Cleared {Count} notification mark(s) left by a send that didn't finish; they'll be sent again.", stranded);
-            _keys = db.NotificationMarks.AsNoTracking().Select(m => m.Key).ToHashSet(StringComparer.Ordinal);
+            // WF-22: each mark's time is when it was last renewed, so a scan after a restart renews only those due.
+            var loaded = db.NotificationMarks.AsNoTracking().Select(m => new { m.Key, m.SentAtUtc }).ToList();
+            _keys = loaded.Select(m => m.Key).ToHashSet(StringComparer.Ordinal);
+            foreach (var m in loaded) _renewed[m.Key] = m.SentAtUtc;
             _keys.UnionWith(_unsaved);
             return _keys;
         }
