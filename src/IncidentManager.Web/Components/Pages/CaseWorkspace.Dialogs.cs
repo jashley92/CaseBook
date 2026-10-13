@@ -84,8 +84,12 @@ public partial class CaseWorkspace
             var m = _case.Materiality;
             a.MaterialityStatus = m.Status == MaterialityStatus.Undetermined ? MaterialityStatus.UnderReview : m.Status;
             a.MaterialityDecisionMaker = m.DecisionMaker;
-            // BUG-07: a date and time in the viewer's zone; a new determination defaults to now.
-            var decided = m.DecidedOnUtc ?? Clock.UtcNow;
+            // BUG-07: a date and time in the viewer's zone; a new determination defaults to now. BUG-227: so does one
+            // still under review, whose call hasn't been made yet: an older time kept from then would date the decision
+            // (and start the notification clock) from when the review began.
+            var decided = m.Status is MaterialityStatus.Material or MaterialityStatus.NotMaterial
+                ? m.DecidedOnUtc ?? Clock.UtcNow
+                : Clock.UtcNow;
             var wall = WallClock.ToWall(decided, TimeDisp.Zone);
             a.MaterialityDecidedOn = wall.AddSeconds(-wall.Second).AddMilliseconds(-wall.Millisecond);
             a.MaterialityRationale = m.Rationale;

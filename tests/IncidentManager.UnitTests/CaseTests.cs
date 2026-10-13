@@ -427,8 +427,9 @@ public class CaseTests
         c.Reclassify(Classification.Incident, "confirmed", "ic1", Now);
 
         // Interim "under review" needs no provenance.
-        c.RecordMateriality(MaterialityStatus.UnderReview, null, null, null, "legal1", Now.AddHours(1));
+        c.RecordMateriality(MaterialityStatus.UnderReview, null, Now.AddMinutes(30), null, "legal1", Now.AddHours(1));
         c.Materiality.Status.Should().Be(MaterialityStatus.UnderReview);
+        c.Materiality.DecidedOnUtc.Should().BeNull("only a call has a decision time (BUG-227)");
 
         // A material / not-material call must name who decided, when, and why.
         var missing = () => c.RecordMateriality(MaterialityStatus.Material, "  ", Now, "npi exfiltrated", "legal1", Now.AddHours(2));

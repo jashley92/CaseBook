@@ -663,6 +663,9 @@ public class Case : AuditableEntity, IHashableEntity
         if (!MaterialityApplies)
             throw new InvalidOperationException("Materiality is determined only for Incidents and Breaches.");
         EnsureNotArchived("record its materiality");
+        // BUG-227: only a call (Material / Not material) has a decision time. One stored while under review was offered
+        // back as the decision time when the call was made, dating the notification clock from when the review began.
+        if (status is not (MaterialityStatus.Material or MaterialityStatus.NotMaterial)) decidedOnUtc = null;
         if (decidedOnUtc is { } future && future > nowUtc)
             throw new ArgumentException("The decision date can't be in the future.");
         // BUG-209: a decision about what was found can't come before it was found (it would start the clock early).
