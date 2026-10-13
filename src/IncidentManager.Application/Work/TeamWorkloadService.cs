@@ -31,17 +31,24 @@ public sealed class TeamWorkloadService
     {
         using var db = _factory.CreateDbContext();
 
-        var rows = await db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises() // PROD-43: exclude drills
+        var rows = (await db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises() // PROD-43: exclude drills
             .Where(c => c.Phase != CasePhase.Closed && !c.IsArchived)
-            .Select(c => new WorkloadCaseRow(
-                c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc,
-                c.ModifiedAtUtc ?? c.CreatedAtUtc,
-                c.Assignments
+            .Select(c => new
+            {
+                c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc, c.CreatedAtUtc,
+                // REV-15: last activity is the newest audit entry for the case, as the stale-case reminder reads it. The
+                // case row's modified time doesn't move for notes, timeline entries, tasks or hand-offs.
+                LastAudit = db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber).Max(a => (DateTimeOffset?)a.AtUtc),
+                Workers = c.Assignments
                     .Where(a => a.Role != CaseAssignmentRole.Observer)
                     .Select(a => new WorkloadWorker(a.UserId, a.UserDisplayName, a.Role == CaseAssignmentRole.IncidentCommander))
                     .ToList(),
-                c.Classification))
-            .ToListAsync(ct);
+                c.Classification
+            })
+            .ToListAsync(ct))
+            .Select(c => new WorkloadCaseRow(c.Severity, c.Phase, c.DetectedAtUtc, c.ContainedAtUtc, c.ResolvedAtUtc,
+                c.LastAudit is { } a && a > c.CreatedAtUtc ? a : c.CreatedAtUtc, c.Workers, c.Classification))
+            .ToList();
 
         return TeamWorkloadBuilder.Build(rows, _sla.Current, _clock.UtcNow);
     }

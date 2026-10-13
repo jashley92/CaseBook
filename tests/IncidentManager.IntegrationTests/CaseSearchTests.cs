@@ -59,6 +59,26 @@ public sealed class CaseSearchTests : IDisposable
 
     // The dashboard trend's month drill-in lists the same cases the bar counted: months in the reporting time zone.
     [Fact]
+    public async Task Updated_and_stale_follow_the_latest_work_on_the_case(/* REV-15 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var older = await svc.CreateAsync(new CreateCaseRequest { DescriptiveName = "Older", Title = "Older", Classification = Classification.Incident,
+            Severity = Severity.Medium, Origin = CaseOrigin.InternalDetection });
+        _clock.UtcNow = _clock.UtcNow.AddDays(1);
+        await svc.CreateAsync(new CreateCaseRequest { DescriptiveName = "Newer", Title = "Newer", Classification = Classification.Incident,
+            Severity = Severity.Medium, Origin = CaseOrigin.InternalDetection });
+        _clock.UtcNow = _clock.UtcNow.AddDays(9);
+        await svc.AddNoteAsync(older.Id, "Still working this.");   // a note doesn't touch the case row
+
+        (await svc.ListAsync(new CaseFilter { Sort = CaseSort.Updated })).Items.Select(i => i.Title).Should().Equal("Older", "Newer");
+
+        var workload = await new IncidentManager.Application.Work.TeamWorkloadService(NewFactory(), _user, _clock, new TestSlaTargets()).GetAsync();
+        workload.Unassigned.Open.Should().Be(2);
+        workload.Unassigned.Stale.Should().Be(1, "only the case nobody has touched in 9 days is stale");
+    }
+
+    [Fact]
     public async Task Opened_month_drill_in_uses_the_reporting_time_zone()
     {
         await using (var db = NewContext())

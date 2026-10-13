@@ -345,7 +345,7 @@ public sealed class CaseService
         }
         else
         {
-            items = await Ordered(q, filter.Sort, filter.SortDescending)
+            items = await Ordered(db, q, filter.Sort, filter.SortDescending)
                 .Skip((page - 1) * size)
                 .Take(size)
                 .Select(ListItem)
@@ -420,7 +420,7 @@ public sealed class CaseService
         return (start > 0 ? "…" : "") + line[start..end].Trim() + (end < line.Length ? "…" : "");
     }
 
-    private static IQueryable<Case> Ordered(IQueryable<Case> q, CaseSort sort, bool desc) => sort switch
+    private static IQueryable<Case> Ordered(IAppDbContext db, IQueryable<Case> q, CaseSort sort, bool desc) => sort switch
     {
         CaseSort.Severity => desc
             ? q.OrderByDescending(c => c.Severity).ThenByDescending(c => c.CreatedAtUtc)
@@ -429,9 +429,11 @@ public sealed class CaseService
             ? q.OrderByDescending(c => c.Phase).ThenByDescending(c => c.Severity)
             : q.OrderBy(c => c.Phase).ThenByDescending(c => c.Severity),
         CaseSort.CaseNumber => desc ? q.OrderByDescending(c => c.CaseNumber) : q.OrderBy(c => c.CaseNumber),
+        // REV-15: the latest work on the case, from its audit trail. The case row's own modified time doesn't move for a
+        // note, a timeline entry, a task or a hand-off.
         CaseSort.Updated => desc
-            ? q.OrderByDescending(c => c.ModifiedAtUtc ?? c.CreatedAtUtc)
-            : q.OrderBy(c => c.ModifiedAtUtc ?? c.CreatedAtUtc),
+            ? q.OrderByDescending(c => db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber).Max(a => (DateTimeOffset?)a.AtUtc) ?? c.CreatedAtUtc)
+            : q.OrderBy(c => db.AuditLog.Where(a => a.CaseNumber == c.CaseNumber).Max(a => (DateTimeOffset?)a.AtUtc) ?? c.CreatedAtUtc),
         _ => desc ? q.OrderByDescending(c => c.CreatedAtUtc) : q.OrderBy(c => c.CreatedAtUtc),
     };
 
