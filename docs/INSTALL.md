@@ -115,9 +115,8 @@ this host" (e.g. the web-host cert when run on the SQL box).
 
 > The answers file names AD groups, hosts, and the service account — treat it as sensitive and
 > don't commit it. It holds **no passwords**: a gMSA is passwordless, and for a normal service
-> account you pass `-AppPoolCredential (Get-Credential)` to the installer, which prompts securely.
-> **Without that parameter the installer doesn't prompt**: it sets a blank password and the app pool won't
-> start.
+> account you pass `-AppPoolCredential (Get-Credential)` to the installer. Without it, the installer asks for the
+> password before it changes anything, and stops if none is given (REV-70).
 
 ---
 

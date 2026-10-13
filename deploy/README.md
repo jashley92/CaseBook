@@ -39,7 +39,7 @@ answers file (a parameter you also pass wins). Generate the file once, copy it t
 ```
 
 The answers file holds **no passwords** (a gMSA is passwordless; a normal service account's password is
-passed with `-AppPoolCredential (Get-Credential)`; without it the installer sets a blank password and the pool won't start). It names AD groups/hosts/account, so treat it as sensitive and don't commit it.
+passed with `-AppPoolCredential (Get-Credential)`, or the installer asks for it before changing anything). It names AD groups/hosts/account, so treat it as sensitive and don't commit it.
 
 ## Two ways the schema gets created
 
