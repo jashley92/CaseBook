@@ -50,8 +50,8 @@ reminders, digests, the calendar feed, the IOC feed and cross-case suggestions.
 | **Permission** | `EditCases` |
 | **Errors** | "This isn't a CaseBook case-import document (expected "format": "casebook-case-import")." · a newer schema version than the server supports · "A decision on the timeline needs its why. Add it, or change the entry's type." |
 
-> **Discrepancy:** an *unrecognized* classification value warns "Using Adverse Event instead." but the case is
-> actually opened as a **Complex Event**.
+An *unrecognized* classification value is said back ("Filing it as a Complex Event") and the case opens as a
+**Complex Event**.
 
 ### From the API (pending imports)
 
