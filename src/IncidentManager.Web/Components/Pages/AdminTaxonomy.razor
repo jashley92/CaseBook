@@ -113,6 +113,7 @@ else
         public required string Description { get; init; }
         public required bool AllowVisibilityOrder { get; init; }
         public required List<MemberEdit> Members { get; init; }
+        public required IReadOnlyList<string> OriginalOrder { get; init; }   // REV-28: as loaded
     }
 
     private List<KindEdit>? _kinds;
@@ -122,12 +123,21 @@ else
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
-    private async Task LoadAsync()
+    private async Task LoadAsync() => _kinds = (await Taxonomy.GetEffectiveAsync()).Select(ToEdit).ToList();
+
+    // REV-28: after saving one card, only that card is reloaded; the others keep what's being typed in them.
+    private async Task ReloadKind(string kindId)
     {
-        var kinds = await Taxonomy.GetEffectiveAsync();
-        _kinds = kinds.Select(k => new KindEdit
+        if (_kinds is null) return;
+        var fresh = (await Taxonomy.GetEffectiveAsync()).FirstOrDefault(k => k.Id == kindId);
+        var i = _kinds.FindIndex(k => k.Id == kindId);
+        if (fresh is not null && i >= 0) _kinds[i] = ToEdit(fresh);
+    }
+
+    private static KindEdit ToEdit(IncidentManager.Application.Admin.TaxonomyKindView k) => new()
         {
             Id = k.Id,
+            OriginalOrder = k.Members.Select(m => m.Value).ToList(),
             Title = k.Title,
             Description = k.Description,
             AllowVisibilityOrder = k.AllowVisibilityOrder,
@@ -140,8 +150,7 @@ else
                 OriginalOverride = m.Override,
                 OriginalHidden = m.Hidden,
             }).ToList()
-        }).ToList();
-    }
+        };
 
     private void Move(KindEdit kind, int index, int delta)
     {
@@ -158,9 +167,11 @@ else
 
         try
         {
-            if (kind.AllowVisibilityOrder)
+            // REV-28: only when this card's order or hidden set changed. Sending the loaded ones back with a label edit
+            // reverted whatever another admin had hidden or reordered since.
+            var ordered = kind.Members.Select(m => m.Value).ToList();
+            if (kind.AllowVisibilityOrder && (!ordered.SequenceEqual(kind.OriginalOrder) || kind.Members.Any(m => m.Hidden != m.OriginalHidden)))
             {
-                var ordered = kind.Members.Select(m => m.Value).ToList();
                 var hidden = kind.Members.Where(m => m.Hidden).Select(m => m.Value).ToList();
                 await Taxonomy.SetVisibilityOrderAsync(kindId, ordered, hidden);
             }
@@ -179,7 +190,7 @@ else
             return;
         }
 
-        await LoadAsync();
+        await ReloadKind(kindId);
         Toasts.Success($"Saved {kind.Title}.");
     }
 }

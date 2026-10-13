@@ -39,7 +39,12 @@ else
                             class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(t.Id == _selectedId ? "active" : "")"
                             @onclick="() => Select(t.Id)">
                         <span>@t.Title</span>
-                        @if (t.IsOverridden)
+                        @if (_drafts.ContainsKey(t.Id) || (t.Id == _selectedId && Unsaved))
+                        {
+                            @* REV-28: switching templates keeps what was typed; this says which have unsaved edits. *@
+                            <span class="im-badge im-b-warn">Unsaved</span>
+                        }
+                        else if (t.IsOverridden)
                         {
                             <span class="im-badge im-b-info">Customized</span>
                         }
@@ -132,14 +137,20 @@ else
         if (_views.Count > 0) await Select(_views[0].Id);
     }
 
+    // REV-28: what was typed into a template not yet saved, by template, so moving to another one doesn't lose it.
+    private readonly Dictionary<string, (string Subject, string Body)> _drafts = new();
+
+    private bool Unsaved => Selected is { } v && (_subject != v.EffectiveSubject || _body != v.EffectiveBody);
+
     private async Task Select(string id)
     {
+        if (Unsaved) _drafts[_selectedId] = (_subject, _body);
+        else _drafts.Remove(_selectedId);
         _selectedId = id;
         _error = null;
         var v = Selected;
         if (v is null) return;
-        _subject = v.EffectiveSubject;
-        _body = v.EffectiveBody;
+        (_subject, _body) = _drafts.Remove(id, out var draft) ? draft : (v.EffectiveSubject, v.EffectiveBody);
         await UpdatePreview();
     }
 

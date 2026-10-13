@@ -136,6 +136,9 @@ else
         public string Label { get; set; } = "";
         public string? NotificationJurisdictions { get; set; }
         public bool IsNew => Id is null;
+        public string OriginalLabel { get; init; } = "";        // REV-28: as loaded
+        public string? OriginalJurisdictions { get; init; }
+        public bool Edited => IsNew || Label != OriginalLabel || NotificationJurisdictions != OriginalJurisdictions;
     }
 
     private List<Row>? _active;
@@ -148,7 +151,8 @@ else
     {
         var all = await DataElements.ListAllAsync();
         _active = all.Where(e => e.IsActive)
-            .Select(e => new Row { Id = e.Id, Stamp = e.RowHash, IsSystem = e.IsSystem, Label = e.Label, NotificationJurisdictions = e.NotificationJurisdictions })
+            .Select(e => new Row { Id = e.Id, Stamp = e.RowHash, IsSystem = e.IsSystem, Label = e.Label, NotificationJurisdictions = e.NotificationJurisdictions,
+                                   OriginalLabel = e.Label, OriginalJurisdictions = e.NotificationJurisdictions })
             .ToList();
         _archived = all.Where(e => !e.IsActive).ToList();
     }
@@ -195,7 +199,20 @@ else
             Toasts.Error(ex.Message);
             return;
         }
-        await LoadAsync();
+        await ReloadKeepingEdits();
         Toasts.Info(ok);
+    }
+
+    // REV-28: archiving, restoring or deleting one element reloads the list, but the rows being edited (and their order,
+    // and any added) are kept as they are, with the stamps they were opened with.
+    private async Task ReloadKeepingEdits()
+    {
+        var before = _active ?? [];
+        await LoadAsync();
+        var fresh = (_active ?? []).ToDictionary(r => r.Id!.Value);
+        var kept = before.Where(r => r.IsNew || fresh.ContainsKey(r.Id!.Value))
+            .Select(r => r.IsNew || r.Edited ? r : fresh[r.Id!.Value]).ToList();
+        kept.AddRange(fresh.Values.Where(r => before.All(b => b.Id != r.Id)));   // one just restored
+        _active = kept;
     }
 }
