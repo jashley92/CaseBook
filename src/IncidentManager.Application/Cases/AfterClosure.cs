@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
@@ -39,8 +40,15 @@ public static class AfterClosure
         var closedAt = await db.AuditLog.AsNoTracking()
             .Where(a => a.EntityType == "StatusChange" && a.EntityId == closeId)
             .Select(a => (DateTimeOffset?)a.AtUtc).FirstOrDefaultAsync(ct) ?? close.ChangedAtUtc;
+        // WF-49: under every number the case has held (REV-01): an entry carries the number at save time, so renumbering a
+        // closed case hid the changes made before it under the old number.
+        var id = caseId.ToString();
+        var numbers = await db.AuditLog.AsNoTracking()
+            .Where(a => a.EntityType == nameof(Case) && a.EntityId == id && a.CaseNumber != null)
+            .Select(a => a.CaseNumber!).Distinct().ToListAsync(ct);
+        if (!numbers.Contains(c.CaseNumber)) numbers.Add(c.CaseNumber);
         var rows = await db.AuditLog.AsNoTracking()
-            .Where(a => a.CaseNumber == c.CaseNumber && a.AtUtc > closedAt && !NotTheCaseRecord.Contains(a.EntityType))
+            .Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber) && a.AtUtc > closedAt && !NotTheCaseRecord.Contains(a.EntityType))
             .Select(a => new { a.AtUtc, a.Actor })
             .ToListAsync(ct);
         return new AfterClosureChanges(rows.Select(r => r.AtUtc).Distinct().Count(),

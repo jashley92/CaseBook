@@ -144,6 +144,11 @@ public sealed class CaseOutcomeTests : IDisposable
         after.People.Should().ContainSingle();
         after.LastAtUtc.Should().Be(_clock.UtcNow);
 
+        // WF-49: renumbering the closed case keeps the changes made under its earlier number.
+        _clock.UtcNow = _clock.UtcNow.AddHours(1);
+        await svc.RenumberAsync(id, "IR-2026-007");
+        (await AfterClosure.QueryAsync(db, id))!.Count.Should().Be(3, "the two earlier saves and the renumber");
+
         var c = (await svc.GetDetailAsync(id))!;
         var entry = c.TimelineEntries.Single(e => e.Source == "AP");
         (entry.CreatedAtUtc > c.ClosureRecordedAtUtc).Should().BeTrue("the timeline marks it added after closure");
