@@ -1072,7 +1072,10 @@ public sealed class CaseService
                     $"Gate '{eval.GateName}' requires an override justification of at least {min} characters.");
         }
 
-        var detail = GateDetail.Summarize(eval, attested);
+        // WF-15: a date in "shown: …" is written as the checklist writes it (yyyy-MM-dd), on the organization's calendar,
+        // not as a UTC "4 Oct 2026" the analyst never saw.
+        var detail = GateDetail.Summarize(eval, attested,
+            d => OrgLocal(d).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
         // The reason is the analyst's rationale for the transition; keep it on the passage so the gate
         // record is self-contained for an examiner.
         c.RecordGatePassage(trigger, overridden, overrideJustification, reason, detail, _user.UserId, _clock.UtcNow);

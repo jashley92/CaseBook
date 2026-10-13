@@ -64,4 +64,17 @@ public class GateFactsTests
         GateDetail.Summarize(eval, new HashSet<Guid> { a.RequirementId })
             .Should().Contain("[MET] Evidence preserved and chain of custody complete (attest; shown: 1 evidence file · custody log on it)");
     }
+
+    [Fact]
+    public void A_shown_date_is_written_as_the_caller_says(/* WF-15 */)
+    {
+        var a = Attest("Post-incident review complete");
+        var ny = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        // Saved 3 Oct 21:00 in New York, which is 4 Oct in UTC.
+        var eval = new GateEvaluation(true, StageGateTrigger.CloseCase, "Closure readiness", [a], 0,
+            Base with { ReviewRecordedAtUtc = new DateTimeOffset(2026, 10, 4, 1, 0, 0, TimeSpan.Zero), NoActionsIdentified = true });
+
+        GateDetail.Summarize(eval, new HashSet<Guid> { a.RequirementId }, d => TimeZoneInfo.ConvertTime(d, ny).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture))
+            .Should().Contain("shown: Review recorded 2026-10-03 · no actions identified");
+    }
 }

@@ -148,7 +148,9 @@ public static class GateFacts
 /// <summary>Builds the tamper-evident detail string stored on a <c>GatePassage</c>.</summary>
 public static class GateDetail
 {
-    public static string Summarize(GateEvaluation eval, IReadOnlySet<Guid> attestedIds)
+    /// <param name="date">WF-15: how a date in a shown fact is written, as the checklist showed it (the caller passes the
+    /// organization's day); UTC "d MMM yyyy" when not given.</param>
+    public static string Summarize(GateEvaluation eval, IReadOnlySet<Guid> attestedIds, Func<DateTimeOffset, string>? date = null)
     {
         var sb = new StringBuilder();
         sb.Append("Gate '").Append(eval.GateName).Append("': ");
@@ -158,7 +160,7 @@ public static class GateDetail
             var status = met ? "MET" : (r.IsBlocking ? "UNMET(OVERRIDDEN)" : "UNMET(advisory)");
             var kind = r.Kind == GateRequirementKind.Attestation ? "attest" : "check";
             // HR-12: what was in front of the analyst when they attested.
-            return eval.FactFor(r) is { } fact ? $"[{status}] {r.Label} ({kind}; shown: {fact})" : $"[{status}] {r.Label} ({kind})";
+            return eval.FactFor(r, date) is { } fact ? $"[{status}] {r.Label} ({kind}; shown: {fact})" : $"[{status}] {r.Label} ({kind})";
         });
         sb.Append(string.Join("; ", parts));
         return sb.ToString();
