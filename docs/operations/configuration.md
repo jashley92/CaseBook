@@ -116,6 +116,7 @@ Columns:
 | `Logging:LogLevel:*` | Standard ASP.NET Core log levels | json: `Information`; prod template: `Warning` | Server | |
 | `Security:IdleTimeoutMinutes` | Lock an idle session after N minutes, up to 1,440 (a day; a larger value is held to it); `0` disables. The warning appears 60 seconds before (or at half the timeout if that's shorter). | `15` | App | |
 | `RateLimiting:Downloads:TokenLimit` / `TokensPerPeriod` / `PeriodSeconds` | Per-user token bucket on downloads, exports, the import API and the agenda feed. Over budget gets **429** with `Retry-After` and SIEM event 5306. | `40` / `40` / `60` | Server | |
+| `RateLimiting:Thumbnails:TokenLimit` / `TokensPerPeriod` / `PeriodSeconds` | Per-user token bucket on evidence thumbnails (the timeline's inline images), which aren't logged as downloads but are still evidence (REV-62). Over budget gets **429**. | `300` / `300` / `60` | Server | |
 
 ### 3.2 Database
 

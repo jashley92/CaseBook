@@ -124,9 +124,25 @@ builder.Services.AddSingleton<IncidentManager.Application.Abstractions.IChatNoti
 // (RateLimiting:Downloads); a rejection is streamed to the SIEM (EventId 5306) and logged. ---
 var downloadLimits = builder.Configuration.GetSection("RateLimiting:Downloads").Get<DownloadRateLimitOptions>()
     ?? new DownloadRateLimitOptions();
+// REV-62: evidence thumbnails (the timeline's inline images) aren't logged as downloads (S-03), but they're still evidence
+// bytes, so they're capped per user too, on a budget a page full of screenshots doesn't reach.
+var thumbnailLimits = builder.Configuration.GetSection("RateLimiting:Thumbnails").Get<DownloadRateLimitOptions>()
+    ?? new DownloadRateLimitOptions { TokenLimit = 300, TokensPerPeriod = 300, PeriodSeconds = 60 };
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("thumbnails", httpContext =>
+        RateLimitPartition.GetTokenBucketLimiter(
+            httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? httpContext.User.Identity?.Name ?? "anon", _ => new TokenBucketRateLimiterOptions
+            {
+                TokenLimit = thumbnailLimits.TokenLimit,
+                TokensPerPeriod = thumbnailLimits.TokensPerPeriod,
+                ReplenishmentPeriod = TimeSpan.FromSeconds(Math.Max(1, thumbnailLimits.PeriodSeconds)),
+                QueueLimit = 0,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                AutoReplenishment = true
+            }));
 
     options.AddPolicy("downloads", httpContext =>
     {
@@ -518,7 +534,7 @@ app.MapGet("/evidence/{id:guid}/inline", async (Guid id, EvidenceService evidenc
     }
     stream.Position = 0; // rewind past the sniffed header before streaming the file
     return Results.File(stream, sniffed); // sniffed type, no download name => inline rendering
-}).RequireAuthorization(Policies.ViewCases);
+}).RequireAuthorization(Policies.ViewCases).RequireRateLimiting("thumbnails");   // REV-62
 
 // --- Report download ---
 app.MapGet("/reports/{id:guid}", async (Guid id, IncidentManager.Application.Reporting.ReportService reports,
