@@ -192,6 +192,24 @@ public class WordTemplateEngineTests
     }
 
     [Fact]
+    public void A_template_with_a_field_that_loads_or_runs_something_is_rejected(/* WF-39 */)
+    {
+        static Run Fc(FieldCharValues t) => new(new FieldChar { FieldCharType = t });
+        static Run Code(string c) => new(new FieldCode(c) { Space = SpaceProcessingModeValues.Preserve });
+        // INCLUDETEXT split across two runs, as Word writes it. A PAGE field is harmless.
+        var split = DocWith(new Paragraph(Fc(FieldCharValues.Begin), Code(" INCLUDE"), Code("TEXT \"https://files.example/x.docx\" "),
+            Fc(FieldCharValues.Separate), R("x"), Fc(FieldCharValues.End)));
+        _engine.Check(split).Problems.Should().Contain(p => p.Contains("INCLUDETEXT"));
+
+        var dde = DocWith(new Paragraph(new SimpleField(R("x")) { Instruction = "DDEAUTO cmd.exe \"/c calc\"" }));
+        _engine.Check(dde).Problems.Should().Contain(p => p.Contains("DDEAUTO"));
+
+        var page = DocWith(new Paragraph(Fc(FieldCharValues.Begin), Code(" PAGE "), Fc(FieldCharValues.Separate), R("1"), Fc(FieldCharValues.End),
+            new Run(new Text(" HYPERLINK in text isn't a field"))));
+        _engine.Check(page).Problems.Should().BeEmpty();
+    }
+
+    [Fact]
     public void A_template_that_loads_outside_content_is_rejected()
     {
         var bytes = Doc(["{{case.title}}"]);

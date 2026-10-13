@@ -45,6 +45,15 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
             if (external.Count > 0)
                 problems.Add($"It loads content from outside the document ({string.Join(", ", external)}). Embed pictures instead " +
                              "of linking them, and detach any attached template (File → Options → Add-ins → Templates).");
+            // WF-39: fields that fetch or run something when the file is opened or updated (DDEAUTO, INCLUDETEXT,
+            // INCLUDEPICTURE…) need no relationship part, and an altChunk imports another document's content.
+            if (parts.OfType<AlternativeFormatImportPart>().Any())
+                problems.Add("It imports another document's content (an altChunk). Paste the content in instead.");
+            var risky = parts.Select(p => p.RootElement).OfType<OpenXmlElement>().SelectMany(FieldInstructions)
+                .Select(i => i.Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToUpperInvariant())
+                .Where(w => w is not null && RiskyFields.Contains(w)).Distinct().ToList();
+            if (risky.Count > 0)
+                problems.Add($"It has fields that load or run something when opened ({string.Join(", ", risky)}). Remove them.");
 
             foreach (var (root, inBody) in Roots(main))
             {
@@ -88,6 +97,34 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
                      "Add {{report.tlp}} (the page header is a good place), as the starter template does.");
         fill = fill.Distinct().ToList();
         return new TemplateCheck(problems.Concat(fill).Distinct().ToList(), found.ToList(), fill, fillable.ToList());
+    }
+
+    private static readonly HashSet<string> RiskyFields = new(StringComparer.OrdinalIgnoreCase)
+        { "DDE", "DDEAUTO", "INCLUDE", "INCLUDETEXT", "INCLUDEPICTURE", "IMPORT", "LINK", "DATABASE", "MACROBUTTON", "AUTOTEXT", "AUTOTEXTLIST" };
+
+    // Each field's instruction: a simple field's attribute, or a complex field's instrText runs from its begin to its separate
+    // (or end), joined, so an instruction Word split across runs is read whole. Nested fields are read separately.
+    private static IEnumerable<string> FieldInstructions(OpenXmlElement root)
+    {
+        foreach (var f in root.Descendants<SimpleField>())
+            if (f.Instruction?.Value is { } i) yield return i.Trim();
+        var open = new Stack<System.Text.StringBuilder?>();
+        foreach (var e in root.Descendants())
+        {
+            if (e is FieldChar fc)
+            {
+                var kind = fc.FieldCharType?.Value;
+                if (kind == FieldCharValues.Begin) open.Push(new System.Text.StringBuilder());
+                else if (kind == FieldCharValues.Separate && open.Count > 0)
+                {
+                    if (open.Pop() is { } done) yield return done.ToString().Trim();
+                    open.Push(null);   // the field's result, until its end
+                }
+                else if (kind == FieldCharValues.End && open.Count > 0 && open.Pop() is { } ended) yield return ended.ToString().Trim();
+            }
+            else if (e is FieldCode code && open.Count > 0 && open.Peek() is { } sb) sb.Append(code.Text);
+        }
+        while (open.Count > 0) if (open.Pop() is { } left) yield return left.ToString().Trim();
     }
 
     private static IEnumerable<OpenXmlPart> AllParts(OpenXmlPartContainer root)
