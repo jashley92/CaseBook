@@ -203,7 +203,12 @@ values). Restore the pre-upgrade database backup together with the previous bina
   exit before copying files. Both probe over TLS 1.2 on Windows PowerShell 5.1. `Enable-Ledger.ps1` fails when the first
   digest couldn't be saved, and judges the last backup's age on the SQL host's clock.
 
-- No migrations.
+- **API tokens are chained and checked like other records.** One migration adds a row hash to `ApiTokens`. At the first
+  start, each token the audit trail's own Create entry names is recorded with its hash. A token row that no entry names
+  was added outside CaseBook, and the integrity check now flags it: **if the banner shows one after upgrading, treat it
+  as a possible tampering incident** (it can grant API access) and revoke it.
+
+- One migration, applied at startup (`ApiTokenRowHash`).
 
 ### v1.5.5
 

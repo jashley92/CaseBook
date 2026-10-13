@@ -60,6 +60,9 @@ public static class RowIntegrityVerifier
         db.EntityVerdictChanges.AsNoTracking(),
         db.Assignments.AsNoTracking(),
         db.EvidenceCitations.AsNoTracking(),
+        // REV-05: who the API lets in. A token row inserted in the database would otherwise be an admin identity no
+        // check flagged.
+        db.ApiTokens.AsNoTracking(),
     ];
 
     /// <summary>
@@ -207,6 +210,7 @@ public static class RowIntegrityVerifier
     {
         nameof(ClassificationChange), nameof(StatusChange), nameof(MaterialityChange), nameof(SeverityChange),
         nameof(AssignmentChange), nameof(EntityVerdictChange), nameof(CaseAssignment), nameof(EvidenceCitation),
+        nameof(ApiToken),   // REV-05: every token CaseBook issued has a Create entry, so one with neither was added outside it
     };
 
     /// <summary>

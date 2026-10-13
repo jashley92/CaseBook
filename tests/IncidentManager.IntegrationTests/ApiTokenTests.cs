@@ -56,8 +56,7 @@ public sealed class ApiTokenTests : IDisposable
             .Options);
 
     private ApiTokenService NewService(AppDbContext db, ICurrentUser user) =>
-        new(NewFactory(user), user, _clock, new FakeRoleDirectory(),
-            new AuditWriter(NewFactory(user), _hasher, user, _clock));
+        new(NewFactory(user), user, _clock, new FakeRoleDirectory());
 
     private static TestCurrentUser Admin() => new() { UserId = "admin1", DisplayName = "Admin One", RoleSet = [AppRole.SysAdmin] };
     private static TestCurrentUser Analyst() => new() { UserId = "analyst1", DisplayName = "Analyst One", RoleSet = [AppRole.Analyst] };
@@ -71,23 +70,22 @@ public sealed class ApiTokenTests : IDisposable
         public void Invalidate() { }
     }
 
-    private sealed class FailingAudit : IAuditWriter
-    {
-        public Task RecordAsync(AuditAction action, string entityType, string? entityId, string? caseNumber,
-            string summary, CancellationToken ct = default) => throw new TimeoutException("audit write timed out");
-    }
-
     [Fact]
-    public async Task A_token_whose_audit_line_fails_is_not_left_live(/* REV-06 */)
+    public async Task A_token_is_chained_with_its_hash_in_the_same_save_and_use_isnt_audited(/* REV-05, REV-06 */)
     {
         await using var db = NewContext();
-        var admin = Admin();
-        var svc = new ApiTokenService(NewFactory(admin), admin, _clock, new FakeRoleDirectory(), new FailingAudit());
+        var svc = NewService(db, Admin());
+        var created = await svc.CreateSystemAsync("XSIAM", ["Analyst"], _clock.UtcNow.AddDays(30));
+        var row = await db.ApiTokens.AsNoTracking().SingleAsync();
 
-        var create = async () => await svc.CreateSystemAsync("XSIAM", ["Analyst"], _clock.UtcNow.AddDays(30));
+        var entry = await db.AuditLog.AsNoTracking().SingleAsync(a => a.EntityType == nameof(ApiToken) && a.EntityId == row.Id.ToString());
+        entry.Action.Should().Be(AuditAction.Create);
+        entry.AfterJson.Should().Contain(row.RowHash!, "the chain holds the row's hash, which the record check compares")
+            .And.NotContain(row.TokenHash, "the lookup key for the secret isn't copied into the trail");
 
-        await create.Should().ThrowAsync<TimeoutException>();
-        (await db.ApiTokens.AsNoTracking().CountAsync()).Should().Be(0);
+        var before = await db.AuditLog.CountAsync();
+        (await svc.AuthenticateAsync(created.Plaintext)).Should().NotBeNull();
+        (await db.AuditLog.CountAsync()).Should().Be(before, "a call's last-used stamp isn't an audited change");
     }
 
     [Fact]
@@ -251,8 +249,7 @@ public sealed class ApiTokenTests : IDisposable
         mirror.Roles["analyst1"] = "Analyst,IncidentCommander";
         var owner = Analyst();
         owner.RoleSet = [AppRole.Analyst, AppRole.IncidentCommander];
-        var svc = new ApiTokenService(NewFactory(owner), owner, _clock, new FakeRoleDirectory(),
-            new AuditWriter(NewFactory(owner), _hasher, owner, _clock), users: mirror);
+        var svc = new ApiTokenService(NewFactory(owner), owner, _clock, new FakeRoleDirectory(), users: mirror);
         var created = await svc.CreatePersonalAsync("mine", ["Analyst", "IncidentCommander"], _clock.UtcNow.AddDays(30));
 
         (await svc.AuthenticateAsync(created.Plaintext))!.Permissions.Should().Contain(Permission.ApproveReports);
@@ -331,8 +328,7 @@ public sealed class ApiTokenTests : IDisposable
         });
         var owner = Analyst();
         owner.RoleSet = [AppRole.Analyst, AppRole.IncidentCommander];
-        var svc = new ApiTokenService(NewFactory(owner), owner, _clock, new FakeRoleDirectory(),
-            new AuditWriter(NewFactory(owner), _hasher, owner, _clock), users: new MirrorDirectory(), owners: ad);
+        var svc = new ApiTokenService(NewFactory(owner), owner, _clock, new FakeRoleDirectory(), users: new MirrorDirectory(), owners: ad);
         var token = (await svc.CreatePersonalAsync("mine", ["Analyst", "IncidentCommander"], _clock.UtcNow.AddDays(30))).Plaintext;
 
         (await svc.AuthenticateAsync(token))!.Permissions.Should().Contain(Permission.ApproveReports);

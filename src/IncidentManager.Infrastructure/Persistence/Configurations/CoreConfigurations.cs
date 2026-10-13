@@ -768,6 +768,7 @@ public sealed class ApiTokenConfiguration : IEntityTypeConfiguration<ApiToken>
         b.Property(x => x.Prefix).HasMaxLength(20);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
         b.Property(x => x.RevokedBy).HasMaxLength(200);
+        b.Property(x => x.RowHash).HasMaxLength(70);   // REV-05
         b.HasIndex(x => x.TokenHash).IsUnique(); // the lookup key
         b.HasIndex(x => x.CreatedBy);
     }

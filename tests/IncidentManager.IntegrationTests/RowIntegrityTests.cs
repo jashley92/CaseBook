@@ -205,6 +205,80 @@ public sealed class RowIntegrityTests
         bad.Detail.Should().Contain("is missing");
     }
 
+    private static ApiToken Token(string name, string roles, DateTimeOffset now) => new()
+    {
+        Name = name, Kind = ApiTokenKind.System, OwnerUserId = "apitoken:" + name.ToLowerInvariant(), OwnerDisplayName = name,
+        RolesCsv = roles, TokenHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Guid.NewGuid().ToByteArray())),
+        Prefix = "cbk_x", CreatedBy = "admin1", CreatedAtUtc = now, ExpiresAtUtc = now.AddDays(30),
+    };
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task An_api_token_inserted_or_regranted_in_the_database_is_caught(string provider /* REV-05 */)
+    {
+        // Minted with a secret of the inserter's choosing, admin roles, no trace in the trail: hashed or not, it's caught.
+        foreach (var hashIt in new[] { false, true })
+        {
+            using var database = Seeded(provider);
+            await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+            {
+                var forged = Token("Backdoor", "SysAdmin", _clock.UtcNow);
+                if (hashIt) forged.RowHash = _hasher.ComputeRowHash(forged);
+                raw.ApiTokens.Add(forged);
+                await raw.SaveChangesAsync();
+            }
+            (await VerifyAsync(database))!.Detail.Should().Contain("ApiToken").And.Contain("isn't in the audit trail");
+        }
+
+        // One CaseBook issued, then given more roles directly in the database.
+        using var issued = Seeded(provider);
+        Guid id;
+        await using (var db = issued.NewContext())
+        {
+            var t = Token("XSIAM", "Analyst", _clock.UtcNow);
+            db.ApiTokens.Add(t);
+            await db.SaveChangesAsync();
+            id = t.Id;
+        }
+        (await VerifyAsync(issued))?.Detail.Should().BeNull("an issued token passes");
+        await using (var raw = new AppDbContext(issued.OptionsWithoutInterceptors))
+        {
+            var t = await raw.ApiTokens.SingleAsync(x => x.Id == id);
+            t.RolesCsv = "SysAdmin";
+            await raw.SaveChangesAsync();
+        }
+        (await VerifyAsync(issued))!.Detail.Should().Contain("ApiToken").And.Contain("changed outside CaseBook");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public async Task Tokens_issued_before_they_were_chained_are_recorded_and_a_forged_one_isnt(string provider /* REV-05 */)
+    {
+        using var database = Seeded(provider);
+        Guid issued;
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            // As v1.5.5 and earlier left them: no row hash, and only the service's own Create line in the trail.
+            var old = Token("Old", "Analyst", _clock.UtcNow);
+            issued = old.Id;
+            raw.ApiTokens.AddRange(old, Token("Forged", "SysAdmin", _clock.UtcNow));
+            await raw.SaveChangesAsync();
+        }
+        await new AuditWriter(database.Factory(), _hasher, _user, _clock)
+            .RecordAsync(AuditAction.Create, nameof(ApiToken), issued.ToString(), null, "Created System API token 'Old'");
+
+        await using (var db = database.NewContext())
+            (await RowHashBackfill.RunAsync(db, _hasher)).Should().Be(1, "only the token the trail names is recorded");
+
+        (await VerifyAsync(database))!.Detail.Should().Contain("isn't in the audit trail", "the forged one is still caught");
+        await using (var raw = new AppDbContext(database.OptionsWithoutInterceptors))
+        {
+            raw.ApiTokens.Remove(await raw.ApiTokens.SingleAsync(t => t.Name == "Forged"));
+            await raw.SaveChangesAsync();
+        }
+        (await VerifyAsync(database))?.Detail.Should().BeNull("the issued token passes once it's recorded");
+    }
+
     [Theory]
     [MemberData(nameof(Providers))]
     public async Task A_record_added_directly_in_the_database_is_caught(string provider /* BUG-65 */)

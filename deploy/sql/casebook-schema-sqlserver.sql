@@ -3925,3 +3925,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261013040758_ApiTokenRowHash'
+)
+BEGIN
+    ALTER TABLE [ApiTokens] ADD [RowHash] nvarchar(70) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261013040758_ApiTokenRowHash'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261013040758_ApiTokenRowHash'', N''10.0.12'');');
+END;
+
+COMMIT;
+GO
+

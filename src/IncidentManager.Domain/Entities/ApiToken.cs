@@ -10,10 +10,11 @@ namespace IncidentManager.Domain.Entities;
 /// the plaintext is shown once at creation and never persisted. Permissions derive from the token's granted
 /// role names at call time.
 ///
-/// Workflow/security state, NOT hash-chained as an entity (per-call <see cref="LastUsedAtUtc"/> updates would
-/// spam the chain) — instead create/revoke are recorded to the audit trail explicitly by the service.
+/// REV-05: hash-chained like other records, so a token row written or edited in the database (an admin identity minted
+/// with a chosen secret) is caught by the record check. Its hash covers everything that decides what the token can do;
+/// the per-call <see cref="LastUsedAtUtc"/> is left out, and an update that only moves it isn't audited.
 /// </summary>
-public class ApiToken : Entity
+public class ApiToken : Entity, IHashableEntity
 {
     /// <summary>A label; for a system token it also identifies the integration in the audit trail.</summary>
     public string Name { get; set; } = "";
@@ -46,6 +47,13 @@ public class ApiToken : Entity
     public string? RevokedBy { get; set; }
 
     public DateTimeOffset? LastUsedAtUtc { get; set; }
+
+    public string? RowHash { get; set; }   // REV-05
+
+    public string BuildCanonicalContent() => string.Join('|',
+        Canonical.Text(Name), Canonical.Num(Kind), Canonical.Text(OwnerUserId), Canonical.Text(OwnerDisplayName),
+        Canonical.Text(RolesCsv), TokenHash, Prefix, Canonical.Text(CreatedBy), Canonical.Time(CreatedAtUtc),
+        Canonical.Time(ExpiresAtUtc), Canonical.Time(RevokedAtUtc), Canonical.Text(RevokedBy));
 
     /// <summary>Usable right now: not revoked and not past its expiry.</summary>
     public bool IsActive(DateTimeOffset now) => RevokedAtUtc is null && ExpiresAtUtc > now;

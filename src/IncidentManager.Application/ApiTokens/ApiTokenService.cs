@@ -33,7 +33,6 @@ public sealed class ApiTokenService
     private readonly ICurrentUser _user;
     private readonly IClock _clock;
     private readonly IRoleDirectory _directory;
-    private readonly IAuditWriter _audit;
     private readonly ISecurityEventSink? _siem;
     private readonly IUserDirectory? _users;
     private readonly ITokenOwnerCheck? _owners;
@@ -45,7 +44,7 @@ public sealed class ApiTokenService
     public static readonly TimeSpan MaxSystemLifetime = TimeSpan.FromDays(365);
 
     public ApiTokenService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
-        IRoleDirectory directory, IAuditWriter audit, ISecurityEventSink? siem = null, IUserDirectory? users = null,
+        IRoleDirectory directory, ISecurityEventSink? siem = null, IUserDirectory? users = null,
         ITokenOwnerCheck? owners = null)
     {
         _owners = owners;
@@ -53,7 +52,6 @@ public sealed class ApiTokenService
         _user = user;
         _clock = clock;
         _directory = directory;
-        _audit = audit;
         _siem = siem;
         _users = users;
     }
@@ -149,22 +147,11 @@ public sealed class ApiTokenService
             CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow, ExpiresAtUtc = expiresAtUtc
         };
 
+        // REV-05: the token is chained like any record, so its Create entry (with its roles, expiry and row hash) is written
+        // in the same save: there's no live credential without its audit line (REV-06).
         using var db = _factory.CreateDbContext();
         db.ApiTokens.Add(row);
         await db.SaveChangesAsync(ct);
-
-        try
-        {
-            await _audit.RecordAsync(AuditAction.Create, nameof(ApiToken), row.Id.ToString(), null,
-                $"Created {kind} API token '{name}' (roles: {row.RolesCsv}; expires {expiresAtUtc:u})", ct);
-        }
-        catch
-        {
-            // REV-06: no live credential without its audit line. Nobody has seen the plaintext yet, so remove the row.
-            db.ApiTokens.Remove(row);
-            await db.SaveChangesAsync(CancellationToken.None);
-            throw;
-        }
         _siem?.Emit(SecurityEvents.ApiTokenChanged("ApiTokenCreated", _user.UserId, _user.UserPrincipalName,
             $"{name} ({kind})"));
 
@@ -207,10 +194,7 @@ public sealed class ApiTokenService
 
         row.RevokedAtUtc = _clock.UtcNow;
         row.RevokedBy = _user.UserId;
-        await db.SaveChangesAsync(ct);
-
-        await _audit.RecordAsync(AuditAction.Update, nameof(ApiToken), row.Id.ToString(), null,
-            $"Revoked {row.Kind} API token '{row.Name}'", ct);
+        await db.SaveChangesAsync(ct);   // REV-05: chained, with the revocation in the same save
         _siem?.Emit(SecurityEvents.ApiTokenChanged("ApiTokenRevoked", _user.UserId, _user.UserPrincipalName,
             $"{row.Name} ({row.Kind})"));
     }

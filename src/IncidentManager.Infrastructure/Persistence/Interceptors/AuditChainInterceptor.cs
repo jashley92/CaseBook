@@ -29,7 +29,6 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         typeof(PinnedCase), // PROD-20 per-user pinned favourites — convenience state, not case data
         typeof(OpenCaseTab), // RD-21 per-user open workspace tabs — convenience state, not case data
         typeof(PendingImport), // PROD-33 inbound import staging queue — the apply writes are audited, not the draft
-        typeof(ApiToken), // PROD-34 API tokens — create/revoke are audited explicitly; per-call last-used isn't chained
         typeof(UserNotificationPreference), // PROD-39 per-user digest cadence — personal preference, not case data
         typeof(UserDisplayPreference) // per-user theme / sidebar / time / density — display preference, not case data
     ];
@@ -44,7 +43,13 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 
     // Freshness stamps bumped by a "touch". An update whose ONLY changed columns are these carries no
     // forensic value — see the skip in Apply.
-    private static bool IsTouchOnly(string field) => field is "ModifiedAtUtc" or "ModifiedBy";
+    // REV-05: an API token's per-call last-used time too: a token is chained now, and every API call stamps it.
+    private static bool IsTouchOnly(string field) => field is "ModifiedAtUtc" or "ModifiedBy" or nameof(ApiToken.LastUsedAtUtc);
+
+    // REV-05: the trail records a token's hash (its row hash covers it), not the hash itself, which is the lookup key for
+    // the secret and would otherwise travel in every audit export.
+    private static object? Shown(Microsoft.EntityFrameworkCore.Metadata.IProperty p, object? value) =>
+        p.DeclaringType.ClrType == typeof(ApiToken) && p.Name == nameof(ApiToken.TokenHash) ? "(not recorded)" : value;
 
     private readonly IHashChainService _hasher;
     private readonly ICurrentUser _user;
@@ -375,8 +380,8 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 
         foreach (var p in e.Properties.Where(p => p.IsModified && !p.Metadata.IsShadowProperty()))
         {
-            before[p.Metadata.Name] = p.OriginalValue;
-            after[p.Metadata.Name] = p.CurrentValue;
+            before[p.Metadata.Name] = Shown(p.Metadata, p.OriginalValue);
+            after[p.Metadata.Name] = Shown(p.Metadata, p.CurrentValue);
             names.Add(p.Metadata.Name);
         }
 
@@ -432,7 +437,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         foreach (var p in props)
         {
             if (p.IsShadowProperty()) continue;
-            map[p.Name] = values[p.Name];
+            map[p.Name] = Shown(p, values[p.Name]);
         }
         return JsonSerializer.Serialize(map, Json);
     }
@@ -504,6 +509,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         CaseAssignment asg => string.IsNullOrWhiteSpace(asg.UserDisplayName) ? asg.UserId : asg.UserDisplayName,
         CaseTechnique tech => tech.TechniqueId,
         JurisdictionNotice n => $"Notice to {n.Jurisdiction}",
+        ApiToken t => $"{t.Name} ({t.Kind})",   // REV-05
         _ => null
     };
 

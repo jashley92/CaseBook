@@ -342,7 +342,7 @@ All are row-hashed and audited, and are edited in Administration by the `Adminis
 | `Users` | — | `Sid` (unique: the user id), `DisplayName`, `UserPrincipalName`, `Email`, `RolesCsv`, `LastSeenUtc`, `FeedLinkIssuedAtUtc` | A mirror updated on sign-in (at most every 30 minutes per user). Used for names, pickers, notifications and checking what other people can see. |
 | `Roles` | H, A | `Name` (unique), `Description`, `IsSystem`, `PermissionsCsv` (permission **names**) | System roles are re-synced to code on every start and can't be edited. The last role with `Administer` can't lose it. |
 | `AdGroupRoleMappings` | H, A | `AdGroup`, `RoleName` (no FK) | Unique pair. Seeded from configuration only when empty. |
-| `ApiTokens` | — (create and revoke are written to the audit chain explicitly) | `Name`, `Kind` (0 personal, 1 system), `OwnerUserId`, `OwnerDisplayName`, `RolesCsv`, `Prefix`, `TokenHash` (SHA-256, unique), `ExpiresAtUtc`, `RevokedAtUtc`, `RevokedBy`, `LastUsedAtUtc` | The token itself is never stored. Revocation is one-way. |
+| `ApiTokens` | H, A (REV-05: the hash leaves out `LastUsedAtUtc`; the trail records `TokenHash` as "(not recorded)") | `Name`, `Kind` (0 personal, 1 system), `OwnerUserId`, `OwnerDisplayName`, `RolesCsv`, `Prefix`, `TokenHash` (SHA-256, unique), `ExpiresAtUtc`, `RevokedAtUtc`, `RevokedBy`, `LastUsedAtUtc` | The token itself is never stored. Revocation is one-way. |
 
 ## Integrity and telemetry
 

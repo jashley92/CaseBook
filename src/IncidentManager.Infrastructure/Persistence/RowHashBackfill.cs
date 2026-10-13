@@ -25,7 +25,10 @@ public static class RowHashBackfill
         + await FillAsync(db, db.AssignmentChanges, hasher, ct)
         + await FillAsync(db, db.EntityVerdictChanges, hasher, ct)
         + await FillAsync(db, db.Assignments, hasher, ct)
-        + await FillAsync(db, db.EvidenceCitations, hasher, ct);
+        + await FillAsync(db, db.EvidenceCitations, hasher, ct)
+        // REV-05: tokens issued before they were chained have the service's own Create (and Revoke) entries, without a
+        // hash: each such token is recorded with its hash. A token row no entry names gets none, and the check flags it.
+        + await FillAsync(db, db.ApiTokens, hasher, ct);
 
     private static async Task<int> FillAsync<T>(AppDbContext db, DbSet<T> set, IHashChainService hasher, CancellationToken ct)
         where T : Entity, IHashableEntity

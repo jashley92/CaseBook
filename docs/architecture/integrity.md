@@ -79,11 +79,17 @@ is never earlier than the one before it (BUG-167), so a time range is a run of c
 | `CaseAccessEvents` (the read log) | High volume and prunable; must not disturb the record. |
 | `Users` (mirror), `EntityLayout` (graph positions), `SavedViews`, `PinnedCases`, display and notification preferences | Cosmetic or per-user state. |
 | `PendingImports` | Staging; applying an import goes through normal audited writes. |
-| `ApiTokens` | `LastUsedAtUtc` changes on every call; create and revoke are chained explicitly. |
 
 Some fields are also deliberately left out of row hashes: a case's custom-number flag, report profile and
 legal-hold release request; an entity's TLP and pin; evidence description and storage path; a report profile's
 template. These are preferences or workflow state, not findings.
+
+API tokens are chained and checked like other records (REV-05), since a token row decides who the API lets in: one
+inserted in the database (an admin identity with a secret of the inserter's choosing) or given more roles there is
+flagged. A token's hash covers everything that decides what it can do; its per-call `LastUsedAtUtc` is left out, and
+an update that only moves it isn't audited. The trail records the token's row hash, not its `TokenHash` (the lookup
+key for the secret). Tokens issued before this were recorded with their hash at the first start after upgrading,
+those the trail's own Create entries name; a token row no entry names is flagged.
 
 ## Seals and continuous verification
 
