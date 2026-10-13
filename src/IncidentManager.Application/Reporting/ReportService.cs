@@ -380,6 +380,12 @@ public sealed class ReportService
         // BUG-75: a template stored before the upload check required the marking is refused here, not filled unmarked.
         // BUG-166: one it can fill: a field only in a tracked deletion or split across a link prints nothing or as typed.
         var check = _templates.Check(bytes);
+        // WF-39 follow-up: a template stored before the upload check refused fields that load or run something (DDEAUTO,
+        // INCLUDEPICTURE…) is refused here too, not copied into every report sent outside the SOC.
+        if (!check.Safe)
+            throw new InvalidOperationException($"Template “{t.Name}” can't be used: " +
+                string.Join(" ", check.Problems.Where(p => check.FillProblems?.Contains(p) != true)) +
+                " Ask an administrator to fix the file and replace it, or pick another template.");
         if (!(check.Fillable ?? check.Placeholders).Contains(ReportTemplateFields.MarkingField, StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Template “{t.Name}” has no {{{{report.tlp}}}} field it can fill, so the report would print " +
                                                 "without its TLP marking. Ask an administrator to add it (typed in one go, outside any tracked " +

@@ -1042,6 +1042,51 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_stored_template_with_a_field_that_runs_something_isnt_used(/* WF-39 follow-up */)
+    {
+        _user.RoleSet = [AppRole.SysAdmin];
+        var engine = new WordTemplateEngine();
+        var templateStore = new FileReportTemplateStore(Options.Create(new ReportTemplateOptions { RootPath = Path.Combine(_reportDir, "templates") }),
+            Options.Create(new ReportBrandingOptions()));
+        Guid caseId, templateId;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+            var templates = new IncidentManager.Application.Admin.ReportTemplateService(NewFactory(), _user, _clock, engine, templateStore);
+            templateId = (await templates.UploadAsync("Old house style", "old.docx", engine.Starter())).Id!.Value;
+        }
+
+        // As a file stored before the check refused it: the starter with a DDEAUTO field added, and its hash recorded.
+        byte[] risky;
+        using (var ms = new MemoryStream())
+        {
+            ms.Write(engine.Starter());
+            using (var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, true))
+                doc.MainDocumentPart!.Document!.Body!.PrependChild(new DocumentFormat.OpenXml.Wordprocessing.Paragraph(
+                    new DocumentFormat.OpenXml.Wordprocessing.SimpleField(new DocumentFormat.OpenXml.Wordprocessing.Run()) { Instruction = "DDEAUTO cmd.exe \"/c calc\"" }));
+            risky = ms.ToArray();
+        }
+        await templateStore.SaveAsync(templateId, risky);
+        await using (var db = NewContext())
+        {
+            var row = await db.ReportTemplates.SingleAsync(t => t.Id == templateId);
+            row.Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(risky)).ToLowerInvariant();
+            await db.SaveChangesAsync();
+        }
+
+        var store = new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = _reportDir }));
+        var branding = new FileReportBrandingStore(Options.Create(new ReportBrandingOptions { RootPath = Path.Combine(_reportDir, "branding") }));
+        var svc = new ReportService(NewFactory(), new ReportGenerator(), store, _hasher, _user, _clock,
+            new IncidentManager.Application.Content.MarkdownService(), _reporting, branding, new StubUserDirectory(),
+            new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()),
+            templates: engine, templateStore: templateStore);
+
+        await svc.Invoking(s => s.GenerateAsync(caseId, template: templateId)).Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*can't be used*DDEAUTO*");
+    }
+
+    [Fact]
     public async Task Any_template_fills_either_report_and_lessons_reports_use_the_lessons_default()
     {
         // Templates aren't typed: a lessons template can print case fields, a case template can print the review.
