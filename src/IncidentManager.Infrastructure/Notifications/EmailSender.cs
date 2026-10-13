@@ -66,23 +66,27 @@ public sealed class EmailSender : IEmailSender
             return;
         }
 
+        // REV-47: only the addresses that parse are sent to (BUG-241 skips the rest), so "some got it" is judged against
+        // those. Against the whole list, a relay refusing every address it was actually given read as a partial delivery:
+        // never retried, no undelivered banner, and a breach email to Legal lost.
+        var sent = to.Count(a => MailAddress.TryCreate(a, out _));
         try
         {
             await DeliverAsync(o, to, subject, textBody, htmlBody, ct);
         }
-        catch (SmtpFailedRecipientsException ex) when (ex.InnerExceptions.Length < to.Count)
+        catch (SmtpFailedRecipientsException ex) when (ex.InnerExceptions.Length < sent)
         {
             // BUG-94: the relay took the message for the other recipients. Sending it again would repeat it to all of
             // them (the executive report went out every hour for a week over one closed mailbox), so it isn't retried.
             _log.LogWarning(ex, "Notification email reached {Delivered} of {RecipientCount} recipient(s); {Failed} address(es) were refused.",
-                to.Count - ex.InnerExceptions.Length, to.Count, ex.InnerExceptions.Length);
+                sent - ex.InnerExceptions.Length, sent, ex.InnerExceptions.Length);
         }
-        catch (SmtpFailedRecipientException ex) when (ex is not SmtpFailedRecipientsException && to.Count > 1)
+        catch (SmtpFailedRecipientException ex) when (ex is not SmtpFailedRecipientsException && sent > 1)
         {
             // BUG-149: when exactly one of several addresses is refused, SmtpClient throws the singular exception (after
             // the others got the message), so it's the same partial delivery as above.
             _log.LogWarning(ex, "Notification email reached {Delivered} of {RecipientCount} recipient(s); 1 address was refused.",
-                to.Count - 1, to.Count);
+                sent - 1, sent);
         }
         catch (Exception ex)
         {

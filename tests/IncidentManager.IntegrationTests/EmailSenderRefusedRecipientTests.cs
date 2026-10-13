@@ -77,6 +77,12 @@ public sealed class EmailSenderRefusedRecipientTests
             await sender.SendAsync(new EmailMessage(["gone1@example.test"], "Reminder", "<p>r</p>", "r"));
             watch.Failed.Should().BeTrue("a send that reached nobody is a failure");
         }
+        using (var watch = DeliveryWatch.Begin())
+        {
+            // REV-47: one address that doesn't parse (skipped), one the relay refuses: nobody got it.
+            await sender.SendAsync(new EmailMessage(["legal corp.example", "gone1@example.test"], "Breach", "<p>b</p>", "b"));
+            watch.Failed.Should().BeTrue("the only address sent to was refused, so it's retried and shown as undelivered");
+        }
         await stop.CancelAsync();
         try { await relay; } catch (OperationCanceledException) { }
     }
