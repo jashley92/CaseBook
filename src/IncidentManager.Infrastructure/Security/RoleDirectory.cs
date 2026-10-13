@@ -21,6 +21,10 @@ public sealed class RoleDirectory : IRoleDirectory
     private volatile Snapshot _snapshot = Snapshot.Empty;
     private readonly object _reload = new();
     private Timer? _retry;
+    // BUG-225: each load is numbered when it starts; a read that finishes after a newer one has been stored is dropped,
+    // so a slow reload (the retry timer's, or one of two saves at once) can't put back permissions a later change removed.
+    private long _requested;
+    private long _applied;
 
     /// <summary>BUG-193: how often a failed reload is tried again.</summary>
     internal static TimeSpan RetryEvery { get; set; } = TimeSpan.FromSeconds(30);
@@ -38,7 +42,11 @@ public sealed class RoleDirectory : IRoleDirectory
 
     public void Invalidate()
     {
-        if (TryLoad(out var error)) return;
+        if (TryLoad(out var error))
+        {
+            ClearRetryIfCurrent();
+            return;
+        }
         // BUG-193: the change is saved, but sessions and tokens still resolve the previous roles and mappings, so a
         // revoked grant would stay in force with nothing said. Say so, and keep trying until it takes.
         _logger.LogCritical(error, "The role directory couldn't reload from the database: role and AD-group mapping " +
@@ -50,12 +58,21 @@ public sealed class RoleDirectory : IRoleDirectory
     private void Retry()
     {
         if (!TryLoad(out _)) return;
+        if (ClearRetryIfCurrent())
+            _logger.LogWarning("The role directory reloaded: role and AD-group mapping changes are in effect.");
+    }
+
+    // The retry stops (and IsCurrent says so) only once the newest load asked for has been stored: a retry's read that
+    // finished after a later change's failed load isn't that change.
+    private bool ClearRetryIfCurrent()
+    {
         lock (_reload)
         {
-            _retry?.Dispose();
+            if (_retry is null || _applied != Interlocked.Read(ref _requested)) return false;
+            _retry.Dispose();
             _retry = null;
+            return true;
         }
-        _logger.LogWarning("The role directory reloaded: role and AD-group mapping changes are in effect.");
     }
 
     private sealed record Snapshot(
@@ -70,6 +87,7 @@ public sealed class RoleDirectory : IRoleDirectory
     private bool TryLoad(out Exception? error)
     {
         error = null;
+        var generation = Interlocked.Increment(ref _requested);
         try
         {
             using var scope = _scopes.CreateScope();
@@ -95,7 +113,14 @@ public sealed class RoleDirectory : IRoleDirectory
                     g => (IReadOnlySet<string>)g.Select(x => x.RoleName).ToHashSet(StringComparer.OrdinalIgnoreCase),
                     StringComparer.OrdinalIgnoreCase);
 
-            lock (_reload) _snapshot = new Snapshot(rolePermissions, groupRoles);
+            lock (_reload)
+            {
+                if (generation > _applied)
+                {
+                    _snapshot = new Snapshot(rolePermissions, groupRoles);
+                    _applied = generation;
+                }
+            }
             return true;
         }
         catch (Exception ex)
