@@ -1001,6 +1001,47 @@ public sealed class ReportingIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_templates_diagram_is_drawn_whatever_the_profiles_sections(/* WF-41 */)
+    {
+        _user.RoleSet = [AppRole.SysAdmin];
+        var engine = new WordTemplateEngine();
+        var templateStore = new FileReportTemplateStore(Options.Create(new ReportTemplateOptions { RootPath = Path.Combine(_reportDir, "templates") }),
+            Options.Create(new ReportBrandingOptions()));
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+            var templates = new IncidentManager.Application.Admin.ReportTemplateService(NewFactory(), _user, _clock, engine, templateStore);
+            var starterId = (await templates.UploadAsync("Starter", "starter.docx", engine.Starter())).Id!.Value;
+            var profiles = new IncidentManager.Application.Admin.ReportProfileService(NewFactory(), _user, _clock);
+            // Event Timeline and Systems Reviewed off: the built-in layout draws no pictures for this profile.
+            var profileId = await profiles.CreateAsync(new IncidentManager.Application.Admin.ReportProfileInput("Brief", null, true, 9,
+                "Summary,Outcome,!EventTimeline,!SystemsReviewed", starterId));
+            var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock,
+                new CaseNumberGenerator(db), new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(),
+                new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+            await cases.SetReportProfileAsync(caseId, profileId);
+        }
+
+        var store = new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = _reportDir }));
+        var branding = new FileReportBrandingStore(Options.Create(new ReportBrandingOptions { RootPath = Path.Combine(_reportDir, "branding") }));
+        var svc = new ReportService(NewFactory(), new ReportGenerator(), store, _hasher, _user, _clock,
+            new IncidentManager.Application.Content.MarkdownService(), _reporting, branding, new StubUserDirectory(),
+            new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()),
+            diagrams: new SkiaReportDiagrams(), templates: engine, templateStore: templateStore);
+
+        var report = await svc.GenerateAsync(caseId);
+        report.TemplateName.Should().Be("Starter");
+        var (_, stream) = await svc.OpenAsync(report.Id);
+        using var ms = new MemoryStream();
+        await using (stream) await stream.CopyToAsync(ms);
+        ms.Position = 0;
+        using var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(ms, false);
+        doc.MainDocumentPart!.ImageParts.Should().NotBeEmpty("the template asks for the attack chain");
+    }
+
+    [Fact]
     public async Task Any_template_fills_either_report_and_lessons_reports_use_the_lessons_default()
     {
         // Templates aren't typed: a lessons template can print case fields, a case template can print the review.

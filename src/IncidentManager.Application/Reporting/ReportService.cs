@@ -240,7 +240,7 @@ public sealed class ReportService
         {
             // A template may use any field, the review's included (the admin decides what it prints), so it's filled
             // from the case model with the review added. The built-in layout never prints the review.
-            rendered = _templates!.Render(t.Bytes, await WithReviewAsync(db, c, model, ct));
+            rendered = _templates!.Render(t.Bytes, ForTemplate(c, await WithReviewAsync(db, c, model, ct)));
             used = t;
         }
 
@@ -320,7 +320,7 @@ public sealed class ReportService
             var full = await LoadFullCaseAsync(db, caseId, ct) ?? throw new InvalidOperationException("Case not found.");
             var sections = await ResolveSectionsAsync(db, full.ReportProfileId, ct);
             var (elemSummary, triggers) = await ImpactElementsAsync(db, full, ct);
-            var caseModel = BuildModel(full, now, await _branding.GetLogoAsync(ct), sections, elemSummary, triggers, tlp, await ExtrasAsync(db, full.Id, ct));
+            var caseModel = ForTemplate(full, BuildModel(full, now, await _branding.GetLogoAsync(ct), sections, elemSummary, triggers, tlp, await ExtrasAsync(db, full.Id, ct)));
             rendered = _templates!.Render(t.Bytes, caseModel with
             {
                 Kind = ReportKind.LessonsLearned,
@@ -578,6 +578,22 @@ public sealed class ReportService
     private static string HashBytes(byte[] bytes) =>
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
 
+    /// <summary>
+    /// WF-41: a template decides what it prints, so its {{image.*}} fields get their pictures whatever the profile's
+    /// sections are (the built-in layout draws them only with Event Timeline / Systems Reviewed); left out, they went
+    /// silently blank beside the tables they illustrate.
+    /// </summary>
+    private CaseReportModel ForTemplate(Case c, CaseReportModel m)
+    {
+        if (m.AttackChainImages.Count > 0 && m.EntityGraphImage is not null) return m;
+        var d = ReportDefanger.For(c.Entities, _reporting.CurrentValue.DefangIndicators);
+        return m with
+        {
+            AttackChainImages = m.AttackChainImages.Count > 0 ? m.AttackChainImages : AttackChainImages(c, d),
+            EntityGraphImage = m.EntityGraphImage ?? EntityGraphImage(c, d),
+        };
+    }
+
     /// <summary>PROD-46: the attack chain drawn across tactic lanes — first-party cases with at least one mapped tactic.</summary>
     private IReadOnlyList<byte[]> AttackChainImages(Case c, ReportDefanger d)
     {
@@ -658,7 +674,7 @@ public sealed class ReportService
         var sections = await ResolveSectionsAsync(db, selectedProfileId, ct);
         var (elemSummary, triggers) = await ImpactElementsAsync(db, c, ct);
         var model = BuildModel(c, _clock.UtcNow, logo, sections, elemSummary, triggers, tlp, await ExtrasAsync(db, c.Id, ct));
-        return (t.Name, _templates!.Render(t.Bytes, await WithReviewAsync(db, c, model, ct)));
+        return (t.Name, _templates!.Render(t.Bytes, ForTemplate(c, await WithReviewAsync(db, c, model, ct))));
     }
 
     // Records the report reads beside the case aggregate: each task's latest result (HR-02) and outcome labels (HR-01).
