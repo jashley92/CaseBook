@@ -990,8 +990,11 @@ public sealed class CaseService
     public async Task<GateEvaluation> EvaluateClimbAsync(Guid id, Classification to, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var from = await db.Cases.AsNoTracking().ForUser(_user).Where(x => x.Id == id).Select(x => x.Classification).FirstAsync(ct);
         var target = StageGateTriggers.ForClassification(to) ?? StageGateTrigger.PromoteToAdverseEvent;
+        // REV-19: a case that's gone or not visible is no gate to pass, as EvaluateGateAsync answers (BUG-46), not a throw.
+        var row = await db.Cases.AsNoTracking().ForUser(_user).Where(x => x.Id == id).Select(x => new { x.Classification }).FirstOrDefaultAsync(ct);
+        if (row is null) return GateEvaluation.None(target);
+        var from = row.Classification;
         if (from is not null && to <= from) return GateEvaluation.None(target);   // de-escalation isn't gated
         var gates = new List<GateEvaluation>();
         foreach (var t in StageGateTriggers.Climb(from, to)) gates.Add(await _gates.EvaluateAsync(db, id, t, false, ct));
