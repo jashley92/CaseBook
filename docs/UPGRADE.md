@@ -168,6 +168,12 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.5.9
+
+A maintenance release with no migration and nothing to check. The start-up back-fill and the recheck after a data
+element's jurisdictions change read a case's data elements and notices in separate queries, and the STIX pattern check
+on imports has a time limit.
+
 ### v1.5.8
 
 A bug-fix release with one migration, applied at startup (`PendingImportHash`: a hash column on `PendingImports`). Things to check:
