@@ -252,6 +252,11 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         {
             reason = string.IsNullOrWhiteSpace(app.PendingChangeReason) ? null : app.PendingChangeReason.Trim();
             app.PendingChangeReason = null;
+            // REV-03: the audit lines are added after ColumnLengthGuard has run, so their reason is checked here: SQLite
+            // would keep a longer one and SQL Server would refuse the whole save.
+            if (reason is { Length: > MaxReason })
+                throw new ArgumentException(
+                    $"Keep the reason for the change to {MaxReason:N0} characters or fewer (it's {reason.Length:N0}). Nothing was saved.");
         }
 
         // BUG-25: store every time in UTC. Canonicals print times with their offset, and SQLite reads them back as UTC,
@@ -318,7 +323,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                 EntityLabel = Cap(LabelFor(entity), MaxEntityLabel),
                 // Name the fields that actually moved (e.g. "Update Case — Legal hold") so the trail reads as
                 // what changed, not just that "something" did. The full before/after is in the JSON below.
-                Summary = AuditChangeDetail.ComposeSummary(action, type, changedFields),
+                Summary = Cap(AuditChangeDetail.ComposeSummary(action, type, changedFields), MaxSummary),
                 BeforeJson = before,
                 AfterJson = after,
                 // A correction reason only makes sense against an in-place update, not a create/delete.
@@ -480,6 +485,8 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     /// </summary>
     // BUG-02: the label column is nvarchar(300). It's set before the entry is hashed, so the stored label is the hashed one.
     private const int MaxEntityLabel = 300;
+    private const int MaxSummary = 2000;   // REV-03: AuditLog column lengths
+    internal const int MaxReason = 2000;
 
     private static string? Cap(string? s, int max) => s is null || s.Length <= max ? s : s[..(max - 1)] + "…";
 

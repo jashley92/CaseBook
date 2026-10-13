@@ -35,7 +35,7 @@
             <div class="alert alert-warning py-1 px-2 small mb-2">This case is closed. Reopen it to raise its classification, so that closing it again runs the close checks for @Ui.Label(D.NewClass). Lowering it is allowed while closed.</div>
         }
         <label class="form-label small" for="ws-reclass-reason">Reason <span class="text-muted">(required)</span></label>
-        <input id="ws-reclass-reason" class="form-control" placeholder="e.g. new evidence confirms data was exfiltrated" @bind="D.ReclassReason" @bind:event="oninput" />
+        <input id="ws-reclass-reason" class="form-control" maxlength="2000" placeholder="e.g. new evidence confirms data was exfiltrated" @bind="D.ReclassReason" @bind:event="oninput" />
         <RationaleHint Gate="T.Gate" Text="@D.ReclassReason" />
         <WhenItHappened Draft="T" OnChanged="Changed" />
         <GateSection Draft="T" OnFix="OnFix" OnChanged="Changed" />
@@ -85,7 +85,7 @@
         <select id="ws-status" class="form-select mb-2" @bind="D.NewPhase" @bind:after='() => OnTargetChanged.InvokeAsync("status")'>@foreach (var p in Enum.GetValues<CasePhase>()) { <option value="@p">@Ui.Label(p)</option> }</select>
         var leavingClosed = Case.Phase == CasePhase.Closed && D.NewPhase != CasePhase.Closed;
         <label class="form-label small" for="ws-status-reason">@(D.NewPhase > Case.Phase ? "What was achieved" : "Reason") <span class="text-muted">@(T.Gate is { RequiresCommentary: true } || backdated || leavingClosed ? "(required)" : "(optional)")</span></label>
-        <input id="ws-status-reason" class="form-control" placeholder="e.g. containment verified across all affected hosts" @bind="D.PhaseReason" @bind:event="oninput" />
+        <input id="ws-status-reason" class="form-control" maxlength="2000" placeholder="e.g. containment verified across all affected hosts" @bind="D.PhaseReason" @bind:event="oninput" />
         <RationaleHint Gate="T.Gate" Text="@D.PhaseReason" />
         @if (leavingClosed)
         {
@@ -173,7 +173,7 @@
             <label class="form-check-label small" for="supersede-copy">Copy this case's indicators to the kept case (ones already there are skipped)</label>
         </div>
         <label class="form-label small mt-2" for="supersede-reason">Why it's a duplicate</label>
-        <textarea id="supersede-reason" class="form-control" rows="2" @bind="D.SupersedeReason" @bind:event="oninput"
+        <textarea id="supersede-reason" class="form-control" rows="2" maxlength="2000" @bind="D.SupersedeReason" @bind:event="oninput"
                   placeholder="e.g. Same phishing wave; the user report and the SIEM alert were filed separately"></textarea>
         @if (D.SupersedeTargetId is not null && D.SupersedeExposure is { } exposed)
         {
@@ -298,7 +298,7 @@
     {
         <p class="small text-muted mb-2">Reopen <code>@Case.CaseNumber</code>? It returns to the phase it was in before closing and the closure time is cleared. Closing it again re-runs the close gate.</p>
         <label class="form-label small" for="ws-reopen-reason">Reason <span class="text-muted">(required)</span></label>
-        <input id="ws-reopen-reason" class="form-control" placeholder="Why is this case being reopened?" @bind="D.ReopenReason" @bind:event="oninput" />
+        <input id="ws-reopen-reason" class="form-control" maxlength="2000" placeholder="Why is this case being reopened?" @bind="D.ReopenReason" @bind:event="oninput" />
     }
     else if (D.Name == "assign")
     {

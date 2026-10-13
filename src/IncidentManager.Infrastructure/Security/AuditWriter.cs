@@ -51,7 +51,8 @@ public sealed class AuditWriter : IAuditWriter
                 EntityType = entityType,
                 EntityId = entityId,
                 CaseNumber = caseNumber,
-                Summary = summary
+                // REV-03: a summary can quote user text (a transfer's details); keep it within the column.
+                Summary = summary.Length <= 2000 ? summary : summary[..1999] + "…"
             };
             _hasher.ChainAppend(entry, head);
 

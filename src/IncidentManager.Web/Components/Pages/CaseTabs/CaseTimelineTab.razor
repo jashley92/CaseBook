@@ -343,7 +343,7 @@
                     {
                         <div class="col-md-4">
                             <label class="form-label small mb-0" for="tl-evt-reason">Reason for change <span class="text-muted">(optional)</span></label>
-                            <input id="tl-evt-reason" class="form-control form-control-sm" @bind="_tlReason" placeholder="e.g. corrected source IP" />
+                            <input id="tl-evt-reason" class="form-control form-control-sm" maxlength="2000" @bind="_tlReason" placeholder="e.g. corrected source IP" />
                         </div>
                     }
                     <div class="col d-flex justify-content-end align-items-end gap-2">
@@ -437,7 +437,7 @@
                     {
                         <div class="mt-2">
                             <label class="form-label small mb-0" for="tl-inv-reason">Reason for change <span class="text-muted">(optional)</span></label>
-                            <input id="tl-inv-reason" class="form-control form-control-sm" @bind="_tlReason" placeholder="e.g. clarified meeting outcome" />
+                            <input id="tl-inv-reason" class="form-control form-control-sm" maxlength="2000" @bind="_tlReason" placeholder="e.g. clarified meeting outcome" />
                         </div>
                     }
                     @if (_tlEditId is null && _special != ComposerMode.Note) { @ThenSection() }

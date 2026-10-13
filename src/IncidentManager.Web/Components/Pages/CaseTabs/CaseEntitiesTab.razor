@@ -126,7 +126,7 @@
                 <div class="col-md-6">
                     @* HR-05: a verdict raised to Malicious or Compromised is a finding, so it needs a one-line why. *@
                     <label class="form-label small mb-0" for="ent-reason">@(VerdictNeedsReason ? "Why is it " + Ui.Label(_enDisposition).ToLowerInvariant() + "?" : "Reason for change") <span class="text-muted">@(VerdictNeedsReason ? "(required; kept with the verdict on the timeline)" : "(optional)")</span></label>
-                    <input id="ent-reason" class="form-control form-control-sm" @bind="_enReason" placeholder="e.g. re-assessed as benign after review" />
+                    <input id="ent-reason" class="form-control form-control-sm" maxlength="2000" @bind="_enReason" placeholder="e.g. re-assessed as benign after review" />
                 </div>
                 <div class="col-md-6 d-flex justify-content-end align-items-end gap-2">
                     <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEntityEdit">Cancel</button>

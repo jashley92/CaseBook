@@ -208,6 +208,22 @@ public sealed class RecordEditingPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_reason_too_long_for_the_audit_line_is_refused_on_every_provider(/* REV-03 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+        await svc.AddTimelineEntryAsync(id, TimelineKind.Investigation, TimelineEntryType.Analysis, _clock.UtcNow, "Notes.", "Analyst");
+        var entryId = (await svc.GetDetailAsync(id))!.TimelineEntries.Single(t => t.Kind == TimelineKind.Investigation).Id;
+
+        var edit = async () => await svc.EditInvestigationEntryAsync(id, entryId, TimelineEntryType.Analysis, _clock.UtcNow,
+            "Notes, revised.", "Analyst", reason: new string('r', 2001));
+
+        (await edit.Should().ThrowAsync<ArgumentException>()).WithMessage("*2,000 characters*Nothing was saved*");
+        (await svc.GetDetailAsync(id))!.TimelineEntries.Where(t => t.Kind == TimelineKind.Investigation).Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task Editing_an_investigation_entry_supersedes_it_with_a_new_version_and_chain_stays_valid()
     {
         Guid id, entryId;
