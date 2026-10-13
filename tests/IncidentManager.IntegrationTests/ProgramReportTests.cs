@@ -180,6 +180,9 @@ public sealed class ProgramReportTests : IDisposable
         var year = OverviewWindows.For(OverviewPeriod.Last12Months, now, TimeZoneInfo.Utc);
         year.Current.StartUtc.Should().Be(new DateTimeOffset(2025, 11, 1, 0, 0, 0, TimeSpan.Zero));
         year.Previous.StartUtc.Should().Be(new DateTimeOffset(2024, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        // REV-55: the same span a year earlier, up to the same point in the month, not twelve whole months.
+        year.Previous.EndUtc.Should().Be(now.AddYears(-1));
+        (year.Previous.EndUtc - year.Previous.StartUtc).TotalDays.Should().BeApproximately((now - year.Current.StartUtc).TotalDays, 1);
 
         // A custom range: both days included, compared with the same number of days just before it.
         var custom = OverviewWindows.ForRange(new DateOnly(2026, 7, 1), new DateOnly(2026, 9, 30), now, TimeZoneInfo.Utc);

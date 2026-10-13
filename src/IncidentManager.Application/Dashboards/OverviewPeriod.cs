@@ -94,8 +94,12 @@ public sealed record OverviewWindows(ProgramWindow Current, ProgramWindow Previo
                     new(now.AddDays(-60), now.AddDays(-30), "the 30 days before"), months);
             case OverviewPeriod.Last12Months:
                 var start = MonthStart(thisMonth.AddMonths(-11));
+                // REV-55: the current window is eleven whole months and this month so far, so it's compared with the same
+                // span a year earlier (up to the same point in that month), not twelve whole months, which skewed every
+                // volume comparison down by the part of this month still to come.
+                var sameAYearAgo = MonthStart(thisMonth.AddMonths(-12)) + (now - MonthStart(thisMonth));
                 return new(new(start, now, "the last 12 months"),
-                    new(MonthStart(thisMonth.AddMonths(-23)), start, "the 12 months before"), months);
+                    new(MonthStart(thisMonth.AddMonths(-23)), sameAYearAgo, "the same months a year before"), months);
             default:
                 var quarter = ProgramPeriod.Containing(now, zone);
                 return new(new(quarter.StartUtc(zone), now, $"{quarter.Label} to date"),
