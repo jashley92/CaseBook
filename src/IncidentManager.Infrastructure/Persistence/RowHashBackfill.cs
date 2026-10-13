@@ -39,7 +39,7 @@ public static partial class RowHashBackfill
     /// </summary>
     internal static bool TokenMatchesTrail(ApiToken row, IReadOnlyList<(AuditAction Action, string? Summary)> trail)
     {
-        if (trail.LastOrDefault() is { Summary: { } last } && last.StartsWith("Revoked ", StringComparison.Ordinal) && row.RevokedAtUtc is null)
+        if (trail.Count > 0 && trail[^1] is { Summary: { } last } && last.StartsWith("Revoked ", StringComparison.Ordinal) && row.RevokedAtUtc is null)
             return false;
         var created = trail.FirstOrDefault(e => e.Action == AuditAction.Create && e.Summary is not null).Summary;
         if (created is null) return true;
