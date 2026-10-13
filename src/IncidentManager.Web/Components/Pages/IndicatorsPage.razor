@@ -203,7 +203,7 @@
         if (EntityId is not null && _library is { Rows.Count: 1 }) _expanded.Add(RowKey(_library.Rows[0]));
     }
 
-    private async Task Load()
+    private async Task Load(CancellationToken ct = default)
     {
         var (scope, type) = _typeKey switch
         {
@@ -211,7 +211,7 @@
             "all" => (IndicatorTypeScope.AllTypes, null),
             var k => (IndicatorTypeScope.AllTypes, Enum.TryParse<EntityType>(k, out var t) ? t : (EntityType?)null),
         };
-        _library = await Indicators.SearchAsync(new IndicatorFilter(_search, scope, type, _sharedOnly, _disposition, _includeExercises));
+        _library = await Indicators.SearchAsync(new IndicatorFilter(_search, scope, type, _sharedOnly, _disposition, _includeExercises), ct);
     }
 
     private const int CasesShown = 10;
@@ -246,9 +246,13 @@
         _searchDebounce?.Dispose();
         _searchDebounce = new CancellationTokenSource();
         var token = _searchDebounce.Token;
-        try { await Task.Delay(250, token); }
-        catch (TaskCanceledException) { return; }
-        await Load();
+        // BUG-253: the token goes to the search too, so a query a newer keystroke superseded stops instead of running on.
+        try
+        {
+            await Task.Delay(250, token);
+            await Load(token);
+        }
+        catch (OperationCanceledException) { }
     }
 
     public void Dispose()

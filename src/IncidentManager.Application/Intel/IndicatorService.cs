@@ -96,13 +96,15 @@ public sealed class IndicatorService
         }
         else if (filter.Scope == IndicatorTypeScope.Indicators) entities = entities.Where(e => IocTypes.Contains(e.Type));
 
+        // BUG-253: the summary counts the whole library, so every visible occurrence is read, but narrowly: case numbers
+        // and titles (the widest columns, repeated on every row) are read afterwards for the rows shown only.
         var raw = await (
             from e in entities
             join c in cases on e.CaseId equals c.Id
             select new
             {
                 e.Type, e.Value, e.Disposition, e.CreatedAtUtc,
-                c.Id, c.CaseNumber, c.Title, c.Classification, c.Phase, c.IsExercise
+                c.Id, c.Classification, c.Phase, c.IsExercise
             }).ToListAsync(ct);
 
         // Group in memory: case-insensitive value, and DateTimeOffset aggregation stays off SQLite (F-08).
@@ -115,7 +117,7 @@ public sealed class IndicatorService
                     {
                         // One line per case: the worst verdict and earliest sighting on that case.
                         var worst = cg.OrderByDescending(x => Severity(x.Disposition)).First();
-                        return new IndicatorCase(cg.Key, worst.CaseNumber, worst.Title, worst.Classification,
+                        return new IndicatorCase(cg.Key, "", "", worst.Classification,
                             worst.Phase, worst.Disposition, cg.Min(x => x.CreatedAtUtc), worst.IsExercise);
                     })
                     .OrderByDescending(c => c.AddedAtUtc)
@@ -150,7 +152,15 @@ public sealed class IndicatorService
             Malicious: all.Count(r => r.WorstDisposition == EntityDisposition.Malicious),
             InOpenCases: all.Count(r => r.OpenCaseCount > 0));
 
-        return new IndicatorLibrary(summary, ordered.Take(MaxRows).ToList(), ordered.Count > MaxRows);
+        var shown = ordered.Take(MaxRows).ToList();
+        var shownCases = shown.SelectMany(r => r.Cases.Select(c => c.CaseId)).Distinct().ToList();
+        var names = await db.Cases.AsNoTracking().Where(c => shownCases.Contains(c.Id))
+            .Select(c => new { c.Id, c.CaseNumber, c.Title }).ToDictionaryAsync(c => c.Id, ct);
+        shown = shown.Select(r => r with
+        {
+            Cases = r.Cases.Select(c => names.TryGetValue(c.CaseId, out var n) ? c with { CaseNumber = n.CaseNumber, Title = n.Title } : c).ToList()
+        }).ToList();
+        return new IndicatorLibrary(summary, shown, ordered.Count > MaxRows);
     }
 
     /// <summary>
