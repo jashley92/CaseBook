@@ -278,6 +278,21 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task The_preview_leaves_out_a_gate_for_a_transition_this_version_lacks(/* REV-54 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var future = live.StageGates[0] with { Name = "Future gate", Trigger = "EscalateToSomethingNew", IsActive = false };
+
+        var diff = await svc.PreviewAsync(live with { StageGates = live.StageGates.Append(future).ToList() });
+
+        diff.Items.Should().NotContain(i => i.Name == "Future gate");
+        diff.Warnings.Should().Contain(w => w.Contains("Future gate") && w.Contains("won't be imported"));
+    }
+
+    [Fact]
     public async Task A_bundle_item_the_admin_pages_would_refuse_is_refused(/* REV-49 */)
     {
         await using var db = NewContext();

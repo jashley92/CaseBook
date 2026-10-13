@@ -127,7 +127,12 @@ public sealed partial class ConfigBundleService
         Diff("Role", incoming.Roles.Where(r => !r.IsSystem), live.Roles, r => r.Name, items);
         Diff("AD mapping", incoming.RoleMappings, live.RoleMappings, m => $"{m.AdGroup} → {m.RoleName}", items);
         Diff("Case template", incoming.CaseTemplates, live.CaseTemplates, t => t.Name, items);
-        Diff("Stage gate", incoming.StageGates, live.StageGates, g => g.Name, items);
+        // REV-54: a gate for a transition this version doesn't know is skipped on import, so the preview doesn't count it.
+        var unknownGates = incoming.StageGates.Where(g => ParseEnum<StageGateTrigger>(g.Trigger) is null).Select(g => g.Name).ToList();
+        Diff("Stage gate", incoming.StageGates.Where(g => ParseEnum<StageGateTrigger>(g.Trigger) is not null), live.StageGates, g => g.Name, items);
+        if (unknownGates.Count > 0)
+            warnings.Add($"{Common.Plural.Of(unknownGates.Count, "stage gate")} won't be imported: \"{string.Join("\", \"", unknownGates)}\" " +
+                         "guard a transition this version of CaseBook doesn't have.");
         Diff("Word template", incoming.ReportTemplates ?? [], live.ReportTemplates ?? [], t => t.Name, items);
         Diff("Report profile", incoming.ReportProfiles, live.ReportProfiles, p => p.Name, items);
         // Notification rules match on their portable jurisdiction Code (null when importing a pre-v2 bundle).
