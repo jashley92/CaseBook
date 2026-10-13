@@ -55,6 +55,26 @@ public sealed class AuditChangeVerbosityTests : IDisposable
 
 
     [Fact]
+    public async Task Bulk_assign_leaves_a_case_the_person_is_already_on_as_it_is(/* REV-26 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var c = await svc.CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "Lead", Title = "Lead case", Classification = Classification.Incident, Severity = Severity.Medium,
+            Origin = CaseOrigin.InternalDetection
+        });
+        await svc.AssignAsync(c.Id, "dana", "Dana", CaseAssignmentRole.IncidentCommander);
+
+        (await svc.AddAssigneeAsync(c.Id, "dana", "Dana", CaseAssignmentRole.Analyst)).Should().BeFalse();
+        (await svc.AddAssigneeAsync(c.Id, "sam", "Sam", CaseAssignmentRole.Analyst)).Should().BeTrue();
+
+        var detail = (await svc.GetDetailAsync(c.Id))!;
+        detail.IncidentCommander.Should().Be("dana", "the bulk assign didn't demote the incident commander");
+        detail.Assignments.Should().Contain(a => a.UserId == "sam" && a.Role == CaseAssignmentRole.Analyst);
+    }
+
+    [Fact]
     public async Task Placing_a_legal_hold_records_what_changed()
     {
         await using var db = NewContext();

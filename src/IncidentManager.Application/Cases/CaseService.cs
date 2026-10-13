@@ -1266,11 +1266,23 @@ public sealed class CaseService
     }
 
     public async Task AssignAsync(Guid id, string userId, string displayName, CaseAssignmentRole role,
-        CancellationToken ct = default)
+        CancellationToken ct = default) => await AssignCoreAsync(id, userId, displayName, role, onlyIfAbsent: false, nameof(AssignAsync), ct);
+
+    /// <summary>
+    /// REV-26: the Cases list's bulk assign. It adds the person where they aren't on the case yet, and leaves a case they
+    /// are already on as it is: changing their role there could demote an incident commander, or (assigning them as an
+    /// analyst where they're the IC) leave the case with none. False when they were already on it.
+    /// </summary>
+    public Task<bool> AddAssigneeAsync(Guid id, string userId, string displayName, CaseAssignmentRole role,
+        CancellationToken ct = default) => AssignCoreAsync(id, userId, displayName, role, onlyIfAbsent: true, nameof(AddAssigneeAsync), ct);
+
+    private async Task<bool> AssignCoreAsync(Guid id, string userId, string displayName, CaseAssignmentRole role,
+        bool onlyIfAbsent, string action, CancellationToken ct)
     {
-        Require();
+        Require(action);
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        if (onlyIfAbsent && c.Assignments.Any(a => a.UserId == userId)) return false;
         // BUG-128: on a restricted case the incident commander can lift the restriction, so naming one is held to those
         // who could lift it already: the current incident commander or someone cleared for restricted cases.
         if (c.IsRestricted && role == CaseAssignmentRole.IncidentCommander
@@ -1283,6 +1295,7 @@ public sealed class CaseService
 
         // E-03b: tell the assignee (out of band; never fails the assignment).
         await _notifications.OnAssignedAsync(c, userId, displayName, role, _user.UserId, ct);
+        return true;
     }
 
     public async Task UnassignAsync(Guid id, string userId, CancellationToken ct = default)

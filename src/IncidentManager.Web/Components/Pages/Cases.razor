@@ -533,7 +533,10 @@ else
                                     </select>
                                 </div>
                             </div>
-                            <div class="form-text">Adds this person to each selected case. Existing assignees stay on.</div>
+                            @* REV-26: say what bulk assign does and doesn't change. *@
+                            <div class="form-text">Adds this person to each selected case they aren't on yet; a case they're
+                                already on keeps their role there. Existing assignees stay on@(_bulkAssignRole == CaseAssignmentRole.IncidentCommander
+                                    ? ", and a current incident commander stays on as an analyst" : "").</div>
                         }
                         else
                         {
@@ -1228,6 +1231,7 @@ else
         var verb = _bulkVerb;
         var toName = BulkToName();
         var done = 0;
+        var alreadyOn = 0;
         try
         {
             // BUG-162: a case already referred keeps its referral (when, by whom, the contact and note); referring it again
@@ -1237,7 +1241,9 @@ else
                 try
                 {
                     if (verb == BulkVerb.Assign)
-                        await CaseSvc.AssignAsync(c.Id, _bulkAssignToId, toName, _bulkAssignRole);
+                    {
+                        if (!await CaseSvc.AddAssigneeAsync(c.Id, _bulkAssignToId, toName, _bulkAssignRole)) { alreadyOn++; continue; }
+                    }
                     else
                         await CaseSvc.ReferToLegalAsync(c.Id,
                             string.IsNullOrWhiteSpace(_bulkReferContact) ? null : _bulkReferContact.Trim(),
@@ -1256,6 +1262,8 @@ else
         var kept = verb == BulkVerb.Refer ? targets.Count(c => c.LegalReferred) : 0;
         if (kept > 0)
             Toasts.Info($"{kept} case{(kept == 1 ? " was" : "s were")} already referred and kept {(kept == 1 ? "its" : "their")} referral.");
+        if (alreadyOn > 0)
+            Toasts.Info($"{toName} was already on {alreadyOn} of the cases, which kept {toName}'s role there.");
         if (done > 0)
         {
             Toasts.Success(verb == BulkVerb.Assign
