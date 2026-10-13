@@ -34,7 +34,24 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Restore
-        run: dotnet restore
+        run: |
+          dotnet restore
+          dotnet tool restore
+
+      # REV-77: the same gates as CI, on the tagged commit itself. A tag can sit on a commit CI never ran (a docs-only
+      # commit skips CI) or one whose CI failed, and a bundle with un-migrated model changes fails to start on upgrade.
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Test
+        run: dotnet test --no-build -c Release --verbosity minimal
+
+      - name: No un-migrated model changes (SQL Server + SQLite)
+        run: |
+          IM_MIGRATIONS_PROVIDER=SqlServer dotnet ef migrations has-pending-model-changes --no-build --configuration Release \
+            --project src/IncidentManager.Migrations.SqlServer --startup-project src/IncidentManager.Web --context AppDbContext
+          dotnet ef migrations has-pending-model-changes --no-build --configuration Release \
+            --project src/IncidentManager.Infrastructure --startup-project src/IncidentManager.Web --context AppDbContext
 
       # Framework-dependent, portable publish (no RID) — the same shape Install-CaseBook.ps1
       # produces, so the app runs under IIS in-process with the .NET 10 Hosting Bundle.
