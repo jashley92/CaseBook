@@ -130,6 +130,11 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("downloads", httpContext =>
     {
+        // REV-61: the limiter runs before the endpoint's passive-load filter, so a planted <img> or a cross-site frame
+        // spent the viewer's tokens on requests then refused, and enough of them locked the viewer out and raised 5306
+        // events in their name. A request the endpoint will refuse anyway isn't counted.
+        if (IncidentManager.Web.Security.PassiveLoadGuard.WillBeRefused(httpContext))
+            return RateLimitPartition.GetNoLimiter("refused-passive");
         // BUG-130: an anonymous request (a calendar client, the import schema) has no user, so it's partitioned by its
         // feed token, else its address; one noisy client no longer uses up every subscriber's budget.
         var key = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)

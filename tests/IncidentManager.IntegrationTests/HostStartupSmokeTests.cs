@@ -22,8 +22,9 @@ public sealed class HostStartupSmokeTests : IDisposable
     private static readonly TimeSpan Limit = TimeSpan.FromSeconds(90);
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "casebook-host-smoke", Guid.NewGuid().ToString("N"));
 
-    private WebApplicationFactory<Program> Factory() => new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+    private WebApplicationFactory<Program> Factory(params (string Key, string Value)[] settings) => new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
     {
+        foreach (var (k, v) in settings) b.UseSetting(k, v);
         b.UseEnvironment("Development");   // dev sign-in + demo seed, into the temp database below
         // UseSetting (not ConfigureAppConfiguration) so Program.cs sees these while it is still building services:
         // it reads the connection string for the DB-backed settings source before Build().
@@ -97,6 +98,28 @@ public sealed class HostStartupSmokeTests : IDisposable
             (await client.SendAsync(typed)).StatusCode.Should().Be(HttpStatusCode.OK);
 
             (await client.GetAsync("/export/iocs.csv")).StatusCode.Should().Be(HttpStatusCode.OK);
+        });
+    }
+
+    [Fact]
+    public async Task Refused_passive_loads_dont_spend_the_download_budget(/* REV-61 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory(("RateLimiting:Downloads:TokenLimit", "2"), ("RateLimiting:Downloads:TokensPerPeriod", "1"),
+                ("RateLimiting:Downloads:PeriodSeconds", "3600"));
+            using var client = factory.CreateClient();
+
+            for (var i = 0; i < 5; i++)   // a page full of planted <img> tags
+            {
+                using var asImage = new HttpRequestMessage(HttpMethod.Get, "/export/iocs.csv");
+                asImage.Headers.Add("Sec-Fetch-Dest", "image");
+                (await client.SendAsync(asImage)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            }
+
+            (await client.GetAsync("/export/iocs.csv")).StatusCode.Should().Be(HttpStatusCode.OK, "the viewer's own download still has its budget");
+            (await client.GetAsync("/export/iocs.csv")).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await client.GetAsync("/export/iocs.csv")).StatusCode.Should().Be(HttpStatusCode.TooManyRequests, "the budget itself still applies");
         });
     }
 

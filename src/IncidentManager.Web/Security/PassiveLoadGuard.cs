@@ -27,10 +27,19 @@ public static class PassiveLoadGuard
         (request.Headers["Sec-Fetch-Dest"].ToString() is { Length: > 0 } dest && Passive.Contains(dest))
         || (request.Headers["Sec-Fetch-Site"].ToString() is { Length: > 0 } site && OtherSite.Contains(site));
 
+    /// <summary>REV-61: marks an endpoint that refuses passive loads, so the download rate limit (which runs before the
+    /// endpoint's filter) doesn't spend a token on a request the endpoint is about to refuse.</summary>
+    public sealed class RefusesPassiveLoads;
+    private static readonly RefusesPassiveLoads Marker = new();
+
+    /// <summary>Whether this request is one the endpoint it's for will refuse as a passive or cross-site load.</summary>
+    public static bool WillBeRefused(HttpContext http) =>
+        http.GetEndpoint()?.Metadata.GetMetadata<RefusesPassiveLoads>() is not null && IsPassive(http.Request);
+
     // With a body, so the status-code page doesn't turn it into the access-denied redirect and an AuthorizationDenied event:
     // the person wasn't refused anything they asked for.
     public static TBuilder RefusePassiveLoads<TBuilder>(this TBuilder builder) where TBuilder : IEndpointConventionBuilder =>
-        builder.AddEndpointFilter(async (context, next) => IsPassive(context.HttpContext.Request)
+        builder.WithMetadata(Marker).AddEndpointFilter(async (context, next) => IsPassive(context.HttpContext.Request)
             ? Results.Text("Downloads open only from a link or button in CaseBook (or a typed or bookmarked address), " +
                            "not from another site or as an image, script or frame on a page.",
                 statusCode: StatusCodes.Status403Forbidden)
