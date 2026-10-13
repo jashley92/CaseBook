@@ -133,12 +133,11 @@ if ($CertificateThumbprint -eq '') {
 # --- AD role groups -----------------------------------------------------------
 Write-Host ""
 Write-Host "AD security groups mapped to the five roles (your real group names)" -ForegroundColor Cyan
+. (Join-Path $PSScriptRoot 'lib\CaseBookAdGroups.ps1')
 function Ask-Group([string] $role, [string] $default) {
-    $g = Ask -Prompt "$role group" -Default $default -Required
-    if (-not (Test-AccountResolves "$env:USERDOMAIN\$g") -and -not (Test-AccountResolves $g)) {
-        Write-Host "    NOTE: couldn't resolve group '$g' from here - confirm the name exists in AD." -ForegroundColor Yellow
-    }
-    return $g
+    # BUG-224: stored as DOMAIN\Group (the group's own domain), since a bare name maps only the web server's domain.
+    $g = Ask -Prompt "$role group (Group or DOMAIN\Group)" -Default $default -Required
+    return ConvertTo-CaseBookGroupName $role $g
 }
 $AdGroupAnalysts   = Ask-Group 'Analysts'            'SOC-Analysts'
 $AdGroupCommanders = Ask-Group 'Incident Commanders' 'SOC-IncidentCommanders'

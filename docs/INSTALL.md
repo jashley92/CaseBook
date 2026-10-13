@@ -186,12 +186,16 @@ Or pass every value directly instead of a config file:
   -Hostname  casebook.contoso.com `
   -SqlInstance SQLHOST\PROD -DbName CaseBook `
   -CertificateThumbprint AABBCCDDEEFF00112233445566778899AABBCCDD `
-  -AdGroupAnalysts   SOC-Analysts `
-  -AdGroupCommanders SOC-IncidentCommanders `
-  -AdGroupLeadership SOC-Leadership `
-  -AdGroupLegal      Legal-Privacy `
-  -AdGroupAppAdmins  SOC-AppAdmins
+  -AdGroupAnalysts   CONTOSO\SOC-Analysts `
+  -AdGroupCommanders CONTOSO\SOC-IncidentCommanders `
+  -AdGroupLeadership CONTOSO\SOC-Leadership `
+  -AdGroupLegal      CONTOSO\Legal-Privacy `
+  -AdGroupAppAdmins  CONTOSO\SOC-AppAdmins
 ```
+
+- **Group names**: give each as `DOMAIN\Group`. A bare name maps only a group in the web server's own domain, so
+  groups in another domain of the forest would map nobody. The installer writes a bare name it can resolve with
+  its domain, and notes a group from another domain than the server's.
 
 - **gMSA**: omit `-AppPoolCredential`. **Domain service account**: add
   `-AppPoolCredential (Get-Credential)` and you'll be prompted securely (no password on the command line

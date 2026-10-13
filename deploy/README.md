@@ -21,6 +21,7 @@ All scripts need Windows PowerShell 5.1 and run with Windows integrated authenti
 | `Export-LedgerDigest.ps1` | Save a ledger digest to `LedgerDigestPath` (schedule daily; exit 1 on failure). |
 | `Verify-LedgerDigests.ps1` | Verify the ledger tables against the saved digests (exit 1 = possible tampering). |
 | `lib/CaseBookSql.ps1` | SqlClient helpers the ledger scripts share (no SqlServer module or sqlcmd needed). |
+| `lib/CaseBookAdGroups.ps1` | Resolves the role groups to `DOMAIN\Group` for the installers (a bare name maps only the web server's domain). |
 | `sql/02-Enable-Ledger.sql` | The DDL `Enable-Ledger.ps1` runs. |
 | `sql/casebook-schema-sqlserver.sql` | Idempotent full-schema script for DBAs who apply the schema by hand (`-SchemaMode DbaApplies`). |
 

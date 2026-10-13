@@ -52,7 +52,8 @@
     binding is created and you are warned to terminate TLS in front.
 
 .PARAMETER AdGroupAnalysts / Commanders / Leadership / Legal / AppAdmins
-    Real AD security-group names mapped to the five application roles.
+    Real AD security-group names mapped to the five application roles, as DOMAIN\Group (a bare name is
+    qualified with the domain it resolves to here; BUG-224).
 
 .PARAMETER SmtpHost / MailDomain
     Optional email settings (email stays disabled until enabled in-app).
@@ -78,8 +79,8 @@
         -SitePath D:\inetpub\casebook -DataRoot E:\CaseBookData `
         -Hostname casebook.contoso.com -SqlInstance SQLHOST\PROD -DbName CaseBook `
         -CertificateThumbprint AABBCC... `
-        -AdGroupAnalysts SOC-Analysts -AdGroupCommanders SOC-IncidentCommanders `
-        -AdGroupLeadership SOC-Leadership -AdGroupLegal Legal-Privacy -AdGroupAppAdmins SOC-AppAdmins
+        -AdGroupAnalysts CONTOSO\SOC-Analysts -AdGroupCommanders CONTOSO\SOC-IncidentCommanders `
+        -AdGroupLeadership CONTOSO\SOC-Leadership -AdGroupLegal CONTOSO\Legal-Privacy -AdGroupAppAdmins CONTOSO\SOC-AppAdmins
 #>
 [CmdletBinding()]
 param(
@@ -279,6 +280,18 @@ if ($SkipPublish) {
 Write-Step "Creating ACL-restricted data root at $DataRoot"
 $dataDirs = @('evidence-store','report-output','branding','report-templates','keys','seals','ops','dp-keys') | ForEach-Object { Join-Path $DataRoot $_ }
 foreach ($d in @($DataRoot) + $dataDirs) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
+
+# --- 2b. AD role groups as DOMAIN\Group ---------------------------------------
+# BUG-224: a bare group name maps only that group in this server's own domain (BUG-188). Groups in another domain
+# (SOC groups in CORP, web server in a resource domain) would map nobody, SysAdmin included, so each is written with
+# the domain it resolves to here.
+. (Join-Path $deployDir 'lib\CaseBookAdGroups.ps1')
+Write-Step "Resolving the AD role groups"
+$AdGroupAnalysts   = ConvertTo-CaseBookGroupName 'Analysts'            $AdGroupAnalysts   -OnWebServer
+$AdGroupCommanders = ConvertTo-CaseBookGroupName 'Incident Commanders' $AdGroupCommanders -OnWebServer
+$AdGroupLeadership = ConvertTo-CaseBookGroupName 'Leadership'          $AdGroupLeadership -OnWebServer
+$AdGroupLegal      = ConvertTo-CaseBookGroupName 'Legal/Privacy'       $AdGroupLegal      -OnWebServer
+$AdGroupAppAdmins  = ConvertTo-CaseBookGroupName 'App Admins'          $AdGroupAppAdmins  -OnWebServer
 
 # --- 3. appsettings.Production.json from template -----------------------------
 Write-Step "Writing appsettings.Production.json"

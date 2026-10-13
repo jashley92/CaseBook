@@ -49,11 +49,13 @@
     AppPoolName = 'CaseBook'          # IIS app-pool name
 
     # --- AD security groups mapped to the five application roles (your real group names) ---
-    AdGroupAnalysts   = 'SOC-Analysts'
-    AdGroupCommanders = 'SOC-IncidentCommanders'
-    AdGroupLeadership = 'SOC-Leadership'
-    AdGroupLegal      = 'Legal-Privacy'
-    AdGroupAppAdmins  = 'SOC-AppAdmins'
+    # Write DOMAIN\Group. A bare name maps only a group in the web server's own domain; the installer qualifies
+    # one it can resolve.
+    AdGroupAnalysts   = 'CONTOSO\SOC-Analysts'
+    AdGroupCommanders = 'CONTOSO\SOC-IncidentCommanders'
+    AdGroupLeadership = 'CONTOSO\SOC-Leadership'
+    AdGroupLegal      = 'CONTOSO\Legal-Privacy'
+    AdGroupAppAdmins  = 'CONTOSO\SOC-AppAdmins'
 
     # --- Optional email (stays disabled until turned on in-app under Administration -> Settings) ---
     SmtpHost    = ''                  # e.g. 'smtp.contoso.com'
