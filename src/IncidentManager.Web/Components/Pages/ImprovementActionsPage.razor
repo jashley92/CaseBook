@@ -7,6 +7,7 @@
 @using IncidentManager.Application.Lessons
 @inject LessonsService Lessons
 @inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
 @implements IDisposable
 
 <PageTitle>Improvement actions</PageTitle>
@@ -97,7 +98,7 @@
                             else { @a.OwnerName }
                         </td>
                         <td class="text-nowrap">
-                            @TimeDisp.DateOnly(a.TargetDateUtc)
+                            @TimeDisp.Day(a.TargetDateUtc, OrgZone.Current)   @* WF-64 *@
                             @if (a.IsPastTarget) { <span class="im-badge im-b-warn ms-1">Past target</span> }
                         </td>
                         <td class="text-nowrap">

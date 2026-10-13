@@ -14,6 +14,7 @@
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @inject ISeverityLabels SevLabels
@@ -193,7 +194,7 @@ else
                         else { @a.OwnerName }
                     </td>
                     <td class="text-nowrap">
-                        @TimeDisp.DateOnly(a.TargetDateUtc)
+                        @TimeDisp.Day(a.TargetDateUtc, OrgZone.Current)
                         @if (a.IsPastTarget) { <span class="im-badge im-b-warn ms-1">Past target date</span> }
                     </td>
                     <td class="text-nowrap"><ImprovementActionStatusBadge Status="a.Status" /></td>
@@ -561,7 +562,7 @@ else
             Title = a.Title, Area = a.RelatedArea,
             Owner = a.OwnerId is null ? "" : inDirectory ? a.OwnerId : OwnerSelect.ExternalSentinel,
             OwnerExternal = inDirectory ? null : a.OwnerId,
-            Target = a.TargetDateUtc is { } t ? TimeZoneInfo.ConvertTime(t, TimeDisp.Zone).Date : null,
+            Target = a.TargetDateUtc is { } t ? IncidentManager.Web.Components.Pages.Workspace.DayValues.DayOf(t, TimeDisp.Zone, OrgZone.Current) : null,   // WF-64
             Status = a.Status, DetailsSeed = a.Details, OutcomeSeed = a.OutcomeNote
         };
     }
@@ -604,7 +605,7 @@ else
     private DateTimeOffset? ToTargetUtc(DateTime? date)
     {
         if (date is not { } d) return null;
-        return IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(d.Date + new TimeSpan(23, 59, 0), TimeDisp.Zone);
+        return IncidentManager.Web.Components.Pages.Workspace.DayValues.ToUtc(d, null, TimeDisp.Zone, OrgZone.Current);   // WF-64
     }
 
     private static string OutcomeHint(ImprovementActionStatus s) => s == ImprovementActionStatus.NotPursued

@@ -14,6 +14,7 @@
 @inject IncidentManager.Application.Content.IMarkdownService Md
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 @inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @inject ISeverityLabels SevLabels
@@ -1322,7 +1323,7 @@ else
             Tasks: _fuTasks.Where(t => !string.IsNullOrWhiteSpace(t.Title))
                 .Select(t => new FollowUpTask(t.Title, string.IsNullOrWhiteSpace(t.Owner) ? null : t.Owner, t.Kind,
                     // WF-24: a bare due date means by the end of that day (23:59 in the viewer's zone), as on the Tasks tab (F-20).
-                    t.Due is { } d ? WallToUtc(d.Date + new TimeSpan(23, 59, 0)) : null)).ToList(),
+                    t.Due is { } d ? IncidentManager.Web.Components.Pages.Workspace.DayValues.ToUtc(d, null, TimeDisp.Zone, OrgZone.Current) : null)).ToList(),   // WF-64
             Question: _fuQuestionOpen ? Tagged(_fuQuestion) : null, QuestionTask: _fuQuestionTask,   // WF-25: [[tags]] as Question mode
             KnownLine: _fuKnownOpen ? _fuKnown : null,
             LinkCaseId: _fuLinkOpen ? _fuLink?.Id : null, LinkType: _fuLinkType);

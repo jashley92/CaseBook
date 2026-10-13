@@ -28,6 +28,23 @@ public class WallClockTests
     }
 
     [Fact]
+    public void A_bare_date_is_the_end_of_that_day_on_the_organizations_calendar(/* WF-64 */)
+    {
+        var london = TimeZoneInfo.FindSystemTimeZoneById("Europe/London");
+        // Picked as 15 Oct by someone in New York, for a London organization.
+        var due = DayValues.ToUtc(new DateTime(2026, 10, 15), null, NewYork, london);
+
+        due.Should().Be(new DateTimeOffset(2026, 10, 15, 22, 59, 0, TimeSpan.Zero), "23:59 in London (BST)");
+        TimeZoneInfo.ConvertTime(due, london).Date.Should().Be(new DateTime(2026, 10, 15), "the report prints the day picked");
+        DayValues.FromUtc(due, NewYork, london).Should().Be((new DateTime(2026, 10, 15), (TimeOnly?)null), "it reopens as a bare date");
+
+        // With a time, the time is the viewer's, as before.
+        var timed = DayValues.ToUtc(new DateTime(2026, 10, 15), new TimeOnly(9, 0), NewYork, london);
+        timed.Should().Be(new DateTimeOffset(2026, 10, 15, 13, 0, 0, TimeSpan.Zero));
+        DayValues.FromUtc(timed, NewYork, london).Should().Be((new DateTime(2026, 10, 15), (TimeOnly?)new TimeOnly(9, 0)));
+    }
+
+    [Fact]
     public void An_ordinary_time_converts_with_the_zones_offset()
     {
         WallClock.ToUtc(new DateTime(2026, 7, 1, 9, 0, 0), NewYork)

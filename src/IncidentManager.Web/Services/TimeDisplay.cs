@@ -144,4 +144,9 @@ public sealed class TimeDisplay
     public string DateOnly(DateTimeOffset ts) => $"{ToZone(ts):yyyy-MM-dd}";
 
     public string DateOnly(DateTimeOffset? ts, string dash = "—") => ts is { } t ? DateOnly(t) : dash;
+
+    /// <summary>WF-64: a due date or target as the day it stands for: a bare date on the organization's calendar
+    /// (<see cref="Components.Pages.Workspace.DayValues"/>), else its date in the active zone.</summary>
+    public string Day(DateTimeOffset? ts, TimeZoneInfo organization, string dash = "—") =>
+        ts is { } t ? $"{Components.Pages.Workspace.DayValues.DayOf(t, Zone, organization):yyyy-MM-dd}" : dash;
 }

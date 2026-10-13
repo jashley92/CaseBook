@@ -9,6 +9,7 @@
 @inject IClock Clock
 @inject IncidentManager.Application.Abstractions.ICurrentUser CurrentUser
 @inject TimeDisplay TimeDisp
+@inject IncidentManager.Application.Abstractions.IOrganizationTimeZone OrgZone
 @inject ToastService Toasts
 
 <AuthorizeView Policy="@Policies.EditCases">
@@ -775,11 +776,7 @@ else
         else { _editOwner = ExternalOwnerSentinel; _editOwnerExternal = t.Owner; }
         // Seed the due date/time in the viewer's active display zone (what they see is what they picked).
         if (t.DueAtUtc is { } due)
-        {
-            var wall = TimeZoneInfo.ConvertTime(due, TimeDisp.Zone);
-            _editDueDate = wall.Date;
-            _editDueTime = TimeOnly.FromTimeSpan(wall.TimeOfDay);
-        }
+            (_editDueDate, _editDueTime) = IncidentManager.Web.Components.Pages.Workspace.DayValues.FromUtc(due, TimeDisp.Zone, OrgZone.Current);   // WF-64
         else { _editDueDate = null; _editDueTime = null; }
     }
 
@@ -876,7 +873,8 @@ else
     private DateTimeOffset? ToDueUtc(DateTime? date, TimeOnly? time)
     {
         if (date is not { } d) return null;
-        return IncidentManager.Web.Components.Pages.Workspace.WallClock.ToUtc(d.Date + (time ?? new TimeOnly(23, 59)).ToTimeSpan(), TimeDisp.Zone);
+        // WF-64: a bare date is the end of that day on the organization's calendar; a time is the viewer's.
+        return IncidentManager.Web.Components.Pages.Workspace.DayValues.ToUtc(d, time, TimeDisp.Zone, OrgZone.Current);
     }
 
     // PROD-21: multi-select complete.
