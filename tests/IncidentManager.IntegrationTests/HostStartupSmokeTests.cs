@@ -81,6 +81,21 @@ public sealed class HostStartupSmokeTests : IDisposable
             asDocument.Headers.Add("Sec-Fetch-Dest", "document");
             (await client.SendAsync(asDocument)).StatusCode.Should().Be(HttpStatusCode.OK);
 
+            // BUG-222: a frame, or a load another site starts, runs with the viewer's Windows sign-in too.
+            using var asFrame = new HttpRequestMessage(HttpMethod.Get, "/export/iocs.csv");
+            asFrame.Headers.Add("Sec-Fetch-Dest", "iframe");
+            (await client.SendAsync(asFrame)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            using var fromElsewhere = new HttpRequestMessage(HttpMethod.Get, "/export/iocs.csv");
+            fromElsewhere.Headers.Add("Sec-Fetch-Dest", "document");
+            fromElsewhere.Headers.Add("Sec-Fetch-Site", "cross-site");
+            (await client.SendAsync(fromElsewhere)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            using var typed = new HttpRequestMessage(HttpMethod.Get, "/export/iocs.csv");
+            typed.Headers.Add("Sec-Fetch-Dest", "document");
+            typed.Headers.Add("Sec-Fetch-Site", "none");
+            (await client.SendAsync(typed)).StatusCode.Should().Be(HttpStatusCode.OK);
+
             (await client.GetAsync("/export/iocs.csv")).StatusCode.Should().Be(HttpStatusCode.OK);
         });
     }
