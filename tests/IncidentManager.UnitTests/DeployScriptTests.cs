@@ -38,6 +38,20 @@ public partial class DeployScriptTests
             .Should().BeEmpty("every sqlcmd.exe call that runs a .sql file needs -I");
     }
 
+    [Fact]
+    public void The_shipped_web_config_lets_api_reach_the_app(/* BUG-261 */)
+    {
+        // The SDK's default web.config wraps the aspNetCore handler in <location inheritInChildApplications="false">, and
+        // IIS doesn't carry it into the <location path="CaseBook/api"> the installer adds, so /api went to IIS's
+        // StaticFile handler (404). CaseBook ships its own web.config so publish adds the handler outside any wrapper.
+        var webConfig = File.ReadAllText(Path.Combine(RepoRoot(), "src", "IncidentManager.Web", "web.config"));
+        var withoutComments = Regex.Replace(webConfig, "<!--.*?-->", "", RegexOptions.Singleline);
+
+        withoutComments.Should().Contain("<system.webServer>");
+        withoutComments.Should().NotContain("<location");
+        withoutComments.Should().NotContain("inheritInChildApplications");
+    }
+
     [GeneratedRegex(@"sqlcmd(\.exe)?\b.*\s-i\s", RegexOptions.None)]
     private static partial Regex SqlcmdWithInputFile();
 
