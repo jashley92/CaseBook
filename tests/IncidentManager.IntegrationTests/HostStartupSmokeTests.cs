@@ -123,6 +123,21 @@ public sealed class HostStartupSmokeTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task A_download_of_something_that_isnt_there_is_a_404(/* REV-64 */)
+    {
+        await RunWithin(Limit, async () =>
+        {
+            await using var factory = Factory();
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+            var id = Guid.NewGuid();
+
+            (await client.GetAsync($"/evidence/{id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await client.GetAsync($"/evidence/{id}/inline")).StatusCode.Should().Be(HttpStatusCode.NotFound, "an <img>, not the error page");
+            (await client.GetAsync($"/reports/{id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        });
+    }
+
     private static async Task RunWithin(TimeSpan limit, Func<Task> body)
     {
         var work = Task.Run(body);

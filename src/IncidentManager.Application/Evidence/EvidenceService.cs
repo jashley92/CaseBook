@@ -89,11 +89,11 @@ public sealed class EvidenceService
     {
         using var db = _factory.CreateDbContext();
         var evidence = await db.Evidence.FirstOrDefaultAsync(e => e.Id == evidenceId, ct)
-                       ?? throw new InvalidOperationException("Evidence not found.");
+                       ?? throw new Common.NotFoundException("Evidence not found.");
 
         var canAccess = await db.Cases.AsNoTracking().ForUser(_user)
             .AnyAsync(c => c.Id == evidence.CaseId, ct);
-        if (!canAccess) throw new InvalidOperationException("Evidence not found.");
+        if (!canAccess) throw new Common.NotFoundException("Evidence not found.");
 
         // BUG-197: the file is opened first, so a download that can't be served (the file missing or unreadable) records
         // no custody event for bytes that never left the server.

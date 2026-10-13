@@ -498,6 +498,7 @@ app.MapGet("/evidence/{id:guid}", async (Guid id, EvidenceService evidence,
     IncidentManager.Domain.Entities.Evidence item;
     Stream stream;
     try { (item, stream) = await evidence.OpenAsync(id, recordDownload: true, ct); }
+    catch (IncidentManager.Application.Common.NotFoundException) { return Results.NotFound(); }   // REV-64: gone, or not theirs to see
     catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
     {
         // BUG-197: the record is there but its file isn't (the evidence check reports it as missing).
@@ -518,7 +519,14 @@ app.MapGet("/evidence/{id:guid}", async (Guid id, EvidenceService evidence,
 // or fabricate custody entries. The explicit Download button remains the logged, custody-recorded access.
 app.MapGet("/evidence/{id:guid}/inline", async (Guid id, EvidenceService evidence, CancellationToken ct) =>
 {
-    var (_, stream) = await evidence.OpenAsync(id, recordDownload: false, ct);
+    Stream stream;
+    // REV-64: an unknown or invisible id, or a thumbnail whose file is missing, is a 404 (it's an <img>), not an
+    // unhandled error logged on every render and redirected to the HTML error page.
+    try { (_, stream) = await evidence.OpenAsync(id, recordDownload: false, ct); }
+    catch (Exception ex) when (ex is IncidentManager.Application.Common.NotFoundException or FileNotFoundException or DirectoryNotFoundException)
+    {
+        return Results.NotFound();
+    }
 
     // S-04: this path renders bytes in the browser (no attachment disposition), so trust the ACTUAL
     // bytes, not the stored/client Content-Type. Sniff the header and serve only a genuine raster image,
@@ -542,6 +550,12 @@ app.MapGet("/reports/{id:guid}", async (Guid id, IncidentManager.Application.Rep
 {
     (IncidentManager.Domain.Entities.Report, Stream) opened;
     try { opened = await reports.OpenAsync(id, ct); }
+    catch (IncidentManager.Application.Common.NotFoundException) { return Results.NotFound(); }   // REV-64
+    catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+    {
+        return Results.Problem("This report's file is missing from the report store. Nothing was downloaded; " +
+            "generate the report again, or ask an administrator to restore it.", statusCode: StatusCodes.Status404NotFound);
+    }
     catch (IncidentManager.Application.Reporting.ReportService.ReportFileAlteredException ex)
     {
         // BUG-69: never hand over bytes that don't match what was generated; say why instead.

@@ -546,7 +546,7 @@ public sealed class ReportingIntegrationTests : IDisposable
         // An unrelated analyst (not the IC, not assigned) must not reach the report by GUID.
         _user.UserId = "outsider";
         _user.RoleSet = [AppRole.Analyst];
-        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.OpenAsync(report.Id));
+        await Assert.ThrowsAsync<IncidentManager.Application.Common.NotFoundException>(() => svc.OpenAsync(report.Id));   // REV-64: a 404, as for one that isn't there
         // Nor learn, through hash verification, that it exists: the same "not found" as a missing report.
         (await Assert.ThrowsAsync<InvalidOperationException>(() => svc.VerifyFileAsync(report.Id)))
             .Message.Should().Be((await Assert.ThrowsAsync<InvalidOperationException>(() => svc.VerifyFileAsync(Guid.NewGuid()))).Message);

@@ -455,13 +455,13 @@ public sealed class ReportService
     {
         using var db = _factory.CreateDbContext();
         var report = await db.Reports.AsNoTracking().FirstOrDefaultAsync(r => r.Id == reportId, ct)
-                     ?? throw new InvalidOperationException("Report not found.");
+                     ?? throw new Common.NotFoundException("Report not found.");
 
         // Enforce need-to-know on the parent case: a restricted case's report must not be reachable
         // by GUID alone. Same "not found" message so we don't leak its existence.
         var canAccess = await db.Cases.AsNoTracking().ForUser(_user)
             .AnyAsync(c => c.Id == report.CaseId, ct);
-        if (!canAccess) throw new InvalidOperationException("Report not found.");
+        if (!canAccess) throw new Common.NotFoundException("Report not found.");
         if (!await FileMatchesAsync(db, report, ct)) throw new ReportFileAlteredException(AlteredMessage);
 
         var stream = await _store.OpenReadAsync(report.StoragePath, ct);
