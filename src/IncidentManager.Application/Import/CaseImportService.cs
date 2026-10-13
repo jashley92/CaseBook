@@ -313,14 +313,15 @@ public sealed class CaseImportService
         using (var db = _factory.CreateDbContext())
         {
             var me = _user.UserId;
-            var length = rawJson.Length;
-            // The length narrows it in the database; the text and the time are compared here.
+            var since = _clock.UtcNow - RetryWindow;
+            // The submitter and the retry window narrow it in the database; the text is compared here. REV-57: not by its
+            // length there: SQL Server's LEN ignores trailing spaces, so a retried body ending in one never matched (it did
+            // on SQLite) and was queued a second time.
             var waiting = await db.PendingImports.AsNoTracking()
-                .Where(p => p.SubmittedBy == me && p.Status == PendingImportStatus.Pending && p.RawJson.Length == length)
+                .Where(p => p.SubmittedBy == me && p.Status == PendingImportStatus.Pending && p.SubmittedAtUtc >= since)
                 .Select(p => new { p.Id, p.SubmittedAtUtc, p.RawJson })
                 .ToListAsync(ct);
-            var since = _clock.UtcNow - RetryWindow;
-            if (waiting.Where(p => p.SubmittedAtUtc >= since && string.Equals(p.RawJson, rawJson, StringComparison.Ordinal))
+            if (waiting.Where(p => string.Equals(p.RawJson, rawJson, StringComparison.Ordinal))
                     .OrderByDescending(p => p.SubmittedAtUtc).FirstOrDefault() is { } same)
                 return (same.Id, await BuildPreviewAsync(doc, ct: ct), true);
         }

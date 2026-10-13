@@ -766,6 +766,12 @@ public sealed class CaseImportTests : IDisposable
         retry.Id.Should().Be(first.Id);
         (await svc.CountPendingAsync()).Should().Be(1);
 
+        // REV-57: a body ending in spaces too (SQL Server's LEN ignores them; ReviewProviderTests runs this on SQL Server).
+        var spaced = json + "  ";
+        var once = await svc.SubmitOnceAsync(spaced, doc);
+        (await svc.SubmitOnceAsync(spaced, doc)).Id.Should().Be(once.Id);
+        (await svc.CountPendingAsync()).Should().Be(2);
+
         // A different document, or the same one a day later, is a new submission.
         (await svc.SubmitOnceAsync(json.Replace("Phishing", "Vishing"), CaseImportService.Parse(json.Replace("Phishing", "Vishing")).Document!))
             .AlreadyQueued.Should().BeFalse();
