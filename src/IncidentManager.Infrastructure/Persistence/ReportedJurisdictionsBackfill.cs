@@ -13,7 +13,7 @@ public static class ReportedJurisdictionsBackfill
 {
     public static async Task<int> RunAsync(AppDbContext db, CancellationToken ct = default)
     {
-        var cases = await db.Cases.Include(c => c.DataElements).Include(c => c.JurisdictionNotices)
+        var cases = await db.Cases.AsSplitQuery().Include(c => c.DataElements).Include(c => c.JurisdictionNotices)   // S8733
             .Where(c => c.ReportedAtUtc != null && c.ReportedJurisdictions == null)
             .ToListAsync(ct);
         foreach (var c in cases)

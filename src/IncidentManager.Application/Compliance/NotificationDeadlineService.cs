@@ -161,7 +161,7 @@ public sealed class NotificationDeadlineService
         DateTimeOffset now, CancellationToken ct = default)
     {
         if (elementKeys.Count == 0) return;
-        var cases = await db.Cases
+        var cases = await db.Cases.AsSplitQuery()   // S8733: two collections, one query each
             .Include(c => c.DataElements).Include(c => c.JurisdictionNotices)
             .Where(c => c.ReportedAtUtc == null && !c.IsArchived && c.JurisdictionNotices.Any()
                         && c.DataElements.Any(d => elementKeys.Contains(d.ElementKey)))
