@@ -40,8 +40,9 @@ public sealed class CaseNotifications : ICaseNotifications
         IConfiguration config, IOptionsMonitor<EmailOptions> options, IChatNotifier chat,
         INotificationPreferenceProvider prefs, ISeverityLabels? severityLabels = null, ITaxonomyDisplay? taxonomy = null,
         IOrganizationTimeZone? zone = null, IExerciseEscalationPolicy? exercise = null, ICriticalAlertOutbox? alerts = null,
-        INotificationMarks? sent = null)
+        INotificationMarks? sent = null, IncidentManager.Application.ApiTokens.ITokenOwnerCheck? owners = null)
     {
+        _owners = owners;
         _sent = sent;
         _alerts = alerts;
         _exercise = exercise;
@@ -55,6 +56,30 @@ public sealed class CaseNotifications : ICaseNotifications
         _options = options;
         _chat = chat;
         _prefs = prefs;
+    }
+
+    private readonly IncidentManager.Application.ApiTokens.ITokenOwnerCheck? _owners;
+
+    /// <summary>
+    /// REV-50: the managers to send escalations and the executive report to. The user mirror holds the roles each person
+    /// had when they last signed in, so a manager who was demoted or left (and never signs in again) stayed on both lists,
+    /// receiving restricted-case task titles and program figures. Where the directory can say (Windows sign-in), each is
+    /// checked now: an inactive account, or one whose groups no longer map to Manager, is left out.
+    /// </summary>
+    private async Task<List<string>> ManagersAsync(CancellationToken ct)
+    {
+        var mirrored = _users.All()
+            .Where(u => u.RolesCsv.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Contains(nameof(AppRole.Manager), StringComparer.OrdinalIgnoreCase))
+            .Select(u => u.UserId)
+            .ToList();
+        if (_owners is null) return mirrored;
+        var current = new List<string>(mirrored.Count);
+        foreach (var id in mirrored)
+            if (await _owners.CheckAsync(id, ct) is not { } access
+                || (access.Active && access.Roles.Contains(nameof(AppRole.Manager), StringComparer.OrdinalIgnoreCase)))
+                current.Add(id);   // the directory can't say (null): the mirror stands, as before
+        return current;
     }
 
     // PROD-16: has this user opted out of a personal notification type — unless the org marks it mandatory?
@@ -356,12 +381,8 @@ public sealed class CaseNotifications : ICaseNotifications
                 OverdueUrl(), ChatUrgency.Alert), ct);
         }
 
-        // Managers = everyone the directory holds with the Manager role (a sign-in snapshot of AD groups).
-        var managers = _users.All()
-            .Where(u => u.RolesCsv.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                .Contains(nameof(AppRole.Manager), StringComparer.OrdinalIgnoreCase))
-            .Select(u => u.UserId)
-            .ToList();
+        // Managers = everyone holding the Manager role, checked against the directory where it can say (REV-50).
+        var managers = await ManagersAsync(ct);
 
         // (recipient, audience) → items. The IC step skips an IC who was already the first reminder's recipient.
         var byRecipient = new Dictionary<(string Uid, string Audience), List<EscalatedActionItem>>();
@@ -414,10 +435,8 @@ public sealed class CaseNotifications : ICaseNotifications
 
     public async Task OnExecutiveReportAsync(IncidentManager.Application.Dashboards.ProgramReport report, CancellationToken ct = default)
     {
-        var to = _users.All()
-            .Where(u => u.RolesCsv.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                .Contains(nameof(AppRole.Manager), StringComparer.OrdinalIgnoreCase))
-            .Select(u => _users.EmailFor(u.UserId))
+        var to = (await ManagersAsync(ct))   // REV-50
+            .Select(id => _users.EmailFor(id))
             .Where(e => !string.IsNullOrWhiteSpace(e))
             .Select(e => e!)
             .Distinct(StringComparer.OrdinalIgnoreCase)

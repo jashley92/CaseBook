@@ -346,6 +346,31 @@ public class CaseNotificationsTests
         sender.Sent[0].HtmlBody.Should().Contain("Cases opened").And.Contain(">12<").And.Contain("75%").And.Contain("2.5 h");
     }
 
+    private sealed class Directory(Dictionary<string, IncidentManager.Application.ApiTokens.OwnerAccess?> now)
+        : IncidentManager.Application.ApiTokens.ITokenOwnerCheck
+    {
+        public Task<IncidentManager.Application.ApiTokens.OwnerAccess?> CheckAsync(string ownerUserId, CancellationToken ct = default) =>
+            Task.FromResult(now.GetValueOrDefault(ownerUserId));
+    }
+
+    [Fact]
+    public async Task A_manager_the_directory_no_longer_holds_as_one_gets_no_escalation_or_report(/* REV-50 */)
+    {
+        var sender = new CapturingEmailSender();
+        var directory = new Directory(new()
+        {
+            ["mgr1"] = new(true, new HashSet<string> { "Analyst" }),   // demoted since their last sign-in
+            ["mgr2"] = null,                                            // the directory can't say: the mirror stands
+        });
+        var notifications = new CaseNotifications(sender, TestEmail.Composer(), Team(), TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), new NullChatNotifier(), new FakePrefs(), owners: directory);
+
+        await notifications.OnActionItemsEscalatedAsync(
+            [new EscalatedActionItem(Item("owner1"), OverdueEscalationTier.Managers, 130)]);
+
+        sender.Sent.SelectMany(m => m.To).Should().Equal("max@insurer.example");
+    }
+
     [Fact]
     public async Task Assignment_emails_the_assignee_when_enabled()
     {
