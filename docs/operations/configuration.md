@@ -213,7 +213,7 @@ target off.
 |---|---|---|---|
 | `Compliance:NotificationDeadlines:Enabled` | Master switch for the deadline clock, its dashboard block and the case panel | `false` | App |
 | `…:StartBasis` | When the clock starts: `Determination` (the materiality determination) or `Detection` | `Determination` | App |
-| `…:DefaultWindowHours` | Window for jurisdictions with no rule | `72` | App |
+| `…:DefaultWindowHours` | Window for jurisdictions with no rule, 1 to 8,760 hours (a value outside that falls back to 72) | `72` | App |
 | `…:AtRiskThresholdPercent` | When a deadline shows "at risk" | `80` | App |
 
 Per-jurisdiction windows are reference data (Administration → Regulatory deadlines), not settings.

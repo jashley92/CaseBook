@@ -231,7 +231,8 @@ public static class SettingsCatalog
             "Detection starts it at detection, for Breach-classified cases.", "Determination",
             Options: [new("Determination", "Materiality determination"), new("Detection", "Detection")]),
         new SettingDefinition("Compliance:NotificationDeadlines:DefaultWindowHours", "Default window (hours)", "Deadline clock", SettingKind.Int,
-            "Window used for any triggered jurisdiction without its own rule below.", "72"),
+            "Window used for any triggered jurisdiction without its own rule below (1 to 8,760 hours, as a rule's window is).", "72",
+            Min: 1, Max: NotificationRuleService.MaxWindowHours),   // REV-48
         new SettingDefinition("Compliance:NotificationDeadlines:AtRiskThresholdPercent", "At-risk threshold (%)", "Deadline clock", SettingKind.Int,
             "Percent of a jurisdiction's window that must elapse before its deadline is flagged at risk (1–100).", "80", Min: 1, Max: 100),
 

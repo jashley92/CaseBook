@@ -65,6 +65,18 @@ public class SettingsCatalogTests
             .Should().NotBeEmpty().And.OnlyContain(d => d.Max == IncidentManager.Application.Sla.SlaPolicy.MaxTargetHours);
 
     [Theory]
+    [InlineData("Compliance:NotificationDeadlines:DefaultWindowHours", "1", "8760", "0", "8761")]   // REV-48
+    [InlineData("Security:IdleTimeoutMinutes", "0", "1440", "-1", "1441")]                         // REV-46
+    public void Bounded_settings_refuse_values_outside_their_range(string key, string low, string high, string under, string over)
+    {
+        var def = SettingsCatalog.ByKey[key];
+        SettingsCatalog.Normalize(def, low).Should().Be(low);
+        SettingsCatalog.Normalize(def, high).Should().Be(high);
+        foreach (var bad in new[] { under, over, "100000000" })
+            ((Action)(() => SettingsCatalog.Normalize(def, bad))).Should().Throw<ArgumentException>(bad);
+    }
+
+    [Theory]
     [InlineData("Sla:AtRiskThresholdPercent")]
     [InlineData("Compliance:NotificationDeadlines:AtRiskThresholdPercent")]
     public void At_risk_thresholds_must_be_1_to_100(string key)

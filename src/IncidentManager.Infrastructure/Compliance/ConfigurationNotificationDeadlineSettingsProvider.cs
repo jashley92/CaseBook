@@ -27,7 +27,9 @@ public sealed class ConfigurationNotificationDeadlineSettingsProvider : INotific
                 ? b : NotificationStartBasis.Determination;
 
             var defaultWindow = _config.GetValue<int?>(Prefix + "DefaultWindowHours") ?? 72;
-            if (defaultWindow <= 0) defaultWindow = 72;
+            // REV-48: within the rules' own limits. A huge value from the file put every deadline past year 9999 and threw in
+            // each calculation (dashboards, case lists, the scanner).
+            if (defaultWindow is <= 0 or > Application.Admin.NotificationRuleService.MaxWindowHours) defaultWindow = 72;
 
             var pct = _config.GetValue<int?>(Prefix + "AtRiskThresholdPercent")
                       ?? NotificationDeadlinePolicy.DefaultAtRiskThresholdPercent;
