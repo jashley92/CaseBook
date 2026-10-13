@@ -79,7 +79,7 @@ public sealed class UpdateCheckService : IDisposable
         _logger = logger;
         _time = time ?? TimeProvider.System;
         _running = running ?? AppVersionInfo.Current;
-        _releaseBuild = running is not null || AppVersionInfo.IsReleaseBuild;
+        _releaseBuild = AppVersionInfo.IsRelease(_running);
     }
 
     /// <summary>Raised after each check, so an open page can redraw.</summary>

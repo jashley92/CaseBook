@@ -26,7 +26,10 @@ public static class AppVersionInfo
     public static string? Commit { get; } = ParseCommit(Informational);
 
     /// <summary>True for a build the release workflow stamped; false for a local or unversioned build.</summary>
-    public static bool IsReleaseBuild => Current is { } v && v != Unversioned;
+    public static bool IsReleaseBuild => IsRelease(Current);
+
+    /// <summary>True for a release version; false for null or the unversioned 1.0.0 of a local build.</summary>
+    public static bool IsRelease(Version? version) => version is { } v && v != Unversioned;
 
     /// <summary>For people: "1.6.0 (a1b2c3d)", or "development build (a1b2c3d)".</summary>
     public static string Display

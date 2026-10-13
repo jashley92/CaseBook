@@ -62,11 +62,12 @@ public sealed class UpdateCheckServiceTests
     [Fact]
     public async Task A_development_build_makes_no_request()
     {
-        // A local build reads 1.0.0 (no version stamped): nothing meaningful to compare.
+        // A local build reads 1.0.0 (no version stamped): nothing meaningful to compare. Passed in, since the build running
+        // the tests may itself be stamped (the release workflow's is).
         var handler = new StubHandler(HttpStatusCode.OK, TwoNewer, null);
         var svc = new UpdateCheckService(new StubFactory(handler),
             new TestOptionsMonitor<UpdateCheckOptions>(new UpdateCheckOptions { CheckEnabled = true }),
-            NullLogger<UpdateCheckService>.Instance);
+            NullLogger<UpdateCheckService>.Instance, running: new Version(1, 0, 0));
 
         (await svc.CheckAsync()).State.Should().Be(UpdateState.DevBuild);
         handler.Requests.Should().BeEmpty();
