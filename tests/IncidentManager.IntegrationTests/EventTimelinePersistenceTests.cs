@@ -52,6 +52,41 @@ public sealed class EventTimelinePersistenceTests : IDisposable
         new(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
 
 
+    /// <summary>Counts what's stored and discarded.</summary>
+    private sealed class CountingStore : IncidentManager.Application.Abstractions.IEvidenceStore
+    {
+        public int Saved, Discarded;
+        public Task<IncidentManager.Application.Abstractions.StoredEvidence> SaveAsync(Guid caseId, Stream content, CancellationToken ct = default)
+        {
+            Saved++;
+            return Task.FromResult(new IncidentManager.Application.Abstractions.StoredEvidence($"{caseId}/{Saved}", new string('b', 64), content.Length));
+        }
+        public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default) => Task.FromResult<Stream>(new MemoryStream());
+        public Task DiscardUnrecordedAsync(string storagePath) { Discarded++; return Task.CompletedTask; }
+    }
+
+    [Fact]
+    public async Task A_refused_step_leaves_no_screenshot_evidence(/* WF-31 */)
+    {
+        await using var db = NewContext();
+        var store = new CountingStore();
+        var svc = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(), new NoOpCaseNotifications(),
+            new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(), evidenceStore: store);
+        var c = await svc.CreateAsync(new CreateCaseRequest { DescriptiveName = "Shot", Title = "Shot", Classification = Classification.Incident,
+            Severity = Severity.High, Origin = CaseOrigin.InternalDetection });
+        var shot = new CaseService.Screenshot("pasted.png", "image/png", [1, 2, 3]);
+
+        var refused = () => svc.AddEventStepAsync(c.Id, _clock.UtcNow, [MitreTactic.Execution], "T15", null, null, "Ran a script", null, screenshot: shot);
+        await refused.Should().ThrowAsync<ArgumentException>();
+        store.Saved.Should().Be(0, "nothing is stored for a step that's refused");
+        (await db.Evidence.AsNoTracking().CountAsync(e => e.CaseId == c.Id)).Should().Be(0);
+
+        var id = await svc.AddEventStepAsync(c.Id, _clock.UtcNow, [MitreTactic.Execution], "T1059", null, null, "Ran a script", null, screenshot: shot);
+        var ev = await db.Evidence.AsNoTracking().Include(e => e.CustodyEvents).SingleAsync(e => e.CaseId == c.Id);
+        (await db.TimelineEntries.AsNoTracking().SingleAsync(e => e.Id == id)).EvidenceId.Should().Be(ev.Id);
+        ev.CustodyEvents.Should().ContainSingle(x => x.Action == "Uploaded");
+    }
+
     [Fact]
     public async Task A_step_cannot_attach_another_cases_evidence()
     {

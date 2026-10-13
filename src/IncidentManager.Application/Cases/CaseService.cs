@@ -102,8 +102,10 @@ public sealed class CaseService
         IUserDirectory? users = null,
         IRoleDirectory? roles = null,
         IExerciseEscalationPolicy? exercise = null,
-        Notifications.IDeadlineReminderTracker? deadlineReminders = null)
+        Notifications.IDeadlineReminderTracker? deadlineReminders = null,
+        IEvidenceStore? evidenceStore = null)
     {
+        _evidenceStore = evidenceStore;
         _deadlineReminders = deadlineReminders;
         _exercise = exercise;
         _zone = zone;
@@ -121,6 +123,54 @@ public sealed class CaseService
         _gates = gates;
         _sla = sla;
         _siem = siem;
+    }
+
+    private readonly IEvidenceStore? _evidenceStore;   // WF-31
+
+    /// <summary>WF-31: a screenshot pasted into the composer, stored as evidence with the entry it illustrates.</summary>
+    public sealed record Screenshot(string FileName, string ContentType, byte[] Bytes, string? Description = "Pasted into the timeline");
+
+    /// <summary>
+    /// WF-31: stores <paramref name="shot"/> and records it as evidence on the case, linked to <paramref name="entry"/>, in
+    /// the same save as the entry. Called once the entry has passed every check, so a refused entry leaves no evidence
+    /// (which can't be removed once recorded). Returns the stored path, to discard if the save itself fails.
+    /// </summary>
+    private async Task<string?> AttachScreenshotAsync(IAppDbContext db, Guid caseId, TimelineEntry entry, Screenshot? shot,
+        CancellationToken ct)
+    {
+        if (shot is null) return null;
+        if (_evidenceStore is null) throw new InvalidOperationException("Screenshots can't be stored on this server.");
+        if (shot.FileName.Length > Evidence.EvidenceService.MaxFileNameLength)
+            throw new ArgumentException($"That file name is longer than {Evidence.EvidenceService.MaxFileNameLength} characters.");
+        await using var content = new MemoryStream(shot.Bytes, writable: false);
+        var stored = await _evidenceStore.SaveAsync(caseId, content, ct);
+        var now = _clock.UtcNow;
+        var evidence = new Domain.Entities.Evidence
+        {
+            CaseId = caseId, OriginalFileName = shot.FileName,
+            ContentType = string.IsNullOrWhiteSpace(shot.ContentType) ? "application/octet-stream" : shot.ContentType,
+            SizeBytes = stored.SizeBytes, Sha256 = stored.Sha256, StoragePath = stored.StoragePath, Description = shot.Description,
+            CreatedBy = _user.UserId, CreatedAtUtc = now
+        };
+        evidence.CustodyEvents.Add(new ChainOfCustodyEvent
+        {
+            EvidenceId = evidence.Id, AtUtc = now, Actor = _user.UserId,
+            Action = "Uploaded", Details = $"{stored.SizeBytes} bytes; sha256={stored.Sha256}"
+        });
+        db.Evidence.Add(evidence);
+        entry.EvidenceId = evidence.Id;
+        return stored.StoragePath;
+    }
+
+    // WF-31: the save that records a screenshot with its entry; a failed save leaves no file without a record (BUG-206).
+    private async Task SaveWithScreenshotAsync(IAppDbContext db, string? storedPath, CancellationToken ct)
+    {
+        try { await db.SaveChangesAsync(ct); }
+        catch
+        {
+            if (storedPath is not null) await _evidenceStore!.DiscardUnrecordedAsync(storedPath);
+            throw;
+        }
     }
 
     /// <summary>Applies need-to-know scoping to a case query for the current user.</summary>
@@ -1106,7 +1156,7 @@ public sealed class CaseService
         static int Rank(Classification? k) => k is null ? 0 : (int)k.Value + 1;
         static string Words(Classification? k) => k switch
         {
-            null => "Complex Event", Classification.AdverseEvent => "Adverse Event", var v => v.ToString()
+            null => "Complex Event", Classification.AdverseEvent => "Adverse Event", Classification v => v.ToString()
         };
     }
 
@@ -1358,7 +1408,7 @@ public sealed class CaseService
     public async Task<Guid> AddTimelineEntryAsync(Guid id, TimelineKind kind, TimelineEntryType type,
         DateTimeOffset occurredAtUtc, string description, string? source, Guid? evidenceId = null,
         DecisionDetails? decision = null, bool imported = false, EntryFollowUps? followUps = null, StepTiming? timing = null,
-        CancellationToken ct = default)
+        Screenshot? screenshot = null, CancellationToken ct = default)
     {
         Require();
         // BUG-119: the same rules as the composer: something to say, and an event step is one line.
@@ -1383,7 +1433,8 @@ public sealed class CaseService
         if (kind == TimelineKind.Event) c.PlaceNewEventStep(entry, occurredAtUtc, timing);
         c.TimelineEntries.Add(entry);
         if (followUps is not null) await ApplyFollowUpsAsync(db, c, entry, followUps, ct);
-        await db.SaveChangesAsync(ct);
+        var shot = await AttachScreenshotAsync(db, c.Id, entry, screenshot, ct);   // WF-31: only once the entry has passed
+        await SaveWithScreenshotAsync(db, shot, ct);
         return entry.Id;
     }
 
@@ -1500,7 +1551,7 @@ public sealed class CaseService
     public async Task<Guid> AddEventStepAsync(Guid id, DateTimeOffset occurredAtUtc, IEnumerable<MitreTactic> tactics,
         string? techniqueId, Guid? actorEntityId, Guid? targetEntityId, string description, string? source,
         Guid? evidenceId = null, TimelineEntryType type = TimelineEntryType.Other, EntryFollowUps? followUps = null,
-        StepEnvironment? environment = null, StepTiming? timing = null, CancellationToken ct = default)
+        StepEnvironment? environment = null, StepTiming? timing = null, Screenshot? screenshot = null, CancellationToken ct = default)
     {
         Require();
         followUps?.Validate();
@@ -1511,7 +1562,8 @@ public sealed class CaseService
         var step = c.AddEventStep(occurredAtUtc, tactics, techniqueId, actorEntityId, targetEntityId, Content.MarkdownService.OneLine(description), source,
             _user.UserId, _clock.UtcNow, evidenceId, type, environment, timing);
         if (followUps is not null) await ApplyFollowUpsAsync(db, c, step, followUps, ct);
-        await db.SaveChangesAsync(ct);
+        var shot = await AttachScreenshotAsync(db, c.Id, step, screenshot, ct);   // WF-31
+        await SaveWithScreenshotAsync(db, shot, ct);
         return step.Id;
     }
 

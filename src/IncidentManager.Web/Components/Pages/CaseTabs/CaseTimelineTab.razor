@@ -1063,7 +1063,6 @@ else
     private byte[]? _tlShotBytes;
     // The staged screenshot's evidence id once uploaded, so a retry after a failed save links the same file
     // instead of uploading a second copy.
-    private Guid? _tlShotEvidenceId;
     private string? _tlShotName;
     private string _tlShotType = "image/png";
 
@@ -1597,7 +1596,6 @@ else
             using var ms = new MemoryStream();
             await s.CopyToAsync(ms);
             _tlShotBytes = ms.ToArray();
-            _tlShotEvidenceId = null;
             _tlShotName = f.Name;
             _tlShotType = string.IsNullOrWhiteSpace(f.ContentType) ? "image/png" : f.ContentType;
         }
@@ -1608,21 +1606,15 @@ else
         }
     }
 
-    private void ClearTimelineShot() { _tlShotBytes = null; _tlShotName = null; _tlShotEvidenceId = null; }
+    private void ClearTimelineShot() { _tlShotBytes = null; _tlShotName = null; }
 
     private string TlShotDataUri() =>
         _tlShotBytes is null ? "" : $"data:{_tlShotType};base64,{Convert.ToBase64String(_tlShotBytes)}";
 
-    // Uploads the staged screenshot as hashed, chain-of-custody evidence and returns its id to link.
-    private async Task<Guid?> UploadTimelineShotAsync()
-    {
-        if (_tlShotBytes is null) return null;
-        if (_tlShotEvidenceId is { } uploaded) return uploaded;
-        await using var s = new MemoryStream(_tlShotBytes);
-        var ev = await Evidence.UploadAsync(CaseId, _tlShotName ?? "pasted-screenshot.png", _tlShotType, s, "Pasted into the timeline");
-        _tlShotEvidenceId = ev.Id;
-        return ev.Id;
-    }
+    // WF-31: the staged screenshot goes with the entry, stored as hashed, chain-of-custody evidence in the same save, so a
+    // refused entry leaves no evidence behind.
+    private CaseService.Screenshot? TimelineShot() => _tlShotBytes is null ? null
+        : new CaseService.Screenshot(_tlShotName ?? "pasted-screenshot.png", _tlShotType, _tlShotBytes);
 
     // BUG-14: one save at a time. A double-click, or Ctrl+Enter and a click, used to save twice.
     private bool _inFlight;
@@ -1643,12 +1635,11 @@ else
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         if (IsDecision && string.IsNullOrWhiteSpace(_decWhy)) { Toasts.Error("Record why the decision was made."); return; }
         var whenUtc = WallToUtc(_tlWhen);
-        Guid? shotId;
+        var withShot = _tlShotBytes is not null;
         try
         {
-            shotId = await UploadTimelineShotAsync();
             await Cases.AddTimelineEntryAsync(CaseId, TimelineKind.Investigation, _tlType, whenUtc, _tlDesc, _tlSource,
-                evidenceId: shotId, decision: Decision(), followUps: FollowUps());
+                decision: Decision(), followUps: FollowUps(), screenshot: TimelineShot());
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
@@ -1659,7 +1650,7 @@ else
         _tlDesc = ""; _tlSource = null; ClearTimelineShot(); ClearDecision(); ResetFollowUps();
         ComposerDrafts?.Remove(InvEditorId); // FR-02: the draft is now saved
         await OnChanged.InvokeAsync();
-        Toasts.Success(saved ?? (shotId is null ? "Timeline entry added" : "Timeline entry added with screenshot"));
+        Toasts.Success(saved ?? (!withShot ? "Timeline entry added" : "Timeline entry added with screenshot"));
         try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); }
         catch (JSException) { /* best effort */ }
     }
@@ -1677,23 +1668,22 @@ else
     {
         if (string.IsNullOrWhiteSpace(_tlDesc)) return;
         var disclosure = IsThirdParty && !_evtAttackMode;
-        Guid? shotId;
+        var withShot = _tlShotBytes is not null;
         try
         {
-            shotId = await UploadTimelineShotAsync();
             if (disclosure)
             {
                 // REV-24: as stated in the composer (a date, a window), like an attack step.
                 await Cases.AddEventStepAsync(CaseId, StepWhenUtc(), Array.Empty<MitreTactic>(), null, null, null,
-                    Tagged(_tlDesc)!, _tlSource, evidenceId: shotId, type: _evtStage, followUps: FollowUps(), timing: Timing());
+                    Tagged(_tlDesc)!, _tlSource, type: _evtStage, followUps: FollowUps(), timing: Timing(), screenshot: TimelineShot());
             }
             else
             {
                 Guid? actor = Guid.TryParse(_evtActorId, out var a) ? a : null;
                 Guid? target = Guid.TryParse(_evtTargetId, out var t) ? t : null;
                 var technique = string.IsNullOrWhiteSpace(_evtTechnique) ? null : _evtTechnique;
-                var added = await Cases.AddEventStepAsync(CaseId, StepWhenUtc(), EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource, evidenceId: shotId,
-                    followUps: FollowUps(), environment: StepWhere, timing: Timing());
+                var added = await Cases.AddEventStepAsync(CaseId, StepWhenUtc(), EvtTacticSet(), technique, actor, target, Tagged(_tlDesc)!, _tlSource,
+                    followUps: FollowUps(), environment: StepWhere, timing: Timing(), screenshot: TimelineShot());
                 // A run of steps without times is entered in order: the next one comes after this one.
                 if (_tlPrecision == TimePrecision.NotStated) _tlAfter = added.ToString();
             }
@@ -1710,7 +1700,7 @@ else
         var savedStep = SaveSummary();
         ResetFollowUps();
         var what = disclosure ? "Disclosure milestone" : IsThirdParty ? (_evtOurs ? "Attack step in our environment" : "Attack step at the vendor") : "Event step";
-        Toasts.Success(savedStep ?? (shotId is null ? $"{what} added" : $"{what} added with screenshot"));
+        Toasts.Success(savedStep ?? (!withShot ? $"{what} added" : $"{what} added with screenshot"));
     }
 
     // Switch the timeline lens (All / Event / Investigation); abandon any in-progress edit and clear
