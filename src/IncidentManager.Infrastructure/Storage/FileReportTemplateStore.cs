@@ -59,10 +59,22 @@ public sealed class FileReportTemplateStore : IReportTemplateStore
         return new StagedTemplate(templateId, aside);
     }
 
-    public Task CommitAsync(StagedTemplate staged, CancellationToken ct = default)
+    // BUG-239: a report job or preview reading the live file can hold it for a moment, which makes the move fail on
+    // Windows; a few short retries ride that out. A lasting failure (read-only, no permission) still throws.
+    public async Task CommitAsync(StagedTemplate staged, CancellationToken ct = default)
     {
-        File.Move(staged.Token, PathFor(staged.TemplateId), overwrite: true);
-        return Task.CompletedTask;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(staged.Token, PathFor(staged.TemplateId), overwrite: true);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && attempt < 5)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), ct);
+            }
+        }
     }
 
     public Task DiscardAsync(StagedTemplate staged)

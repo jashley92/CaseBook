@@ -944,6 +944,43 @@ public sealed class ReportingIntegrationTests : IDisposable
             .Should().ThrowAsync<InvalidOperationException>().WithMessage("*doesn't match the one recorded*");
     }
 
+    [WindowsFact]
+    public async Task A_template_file_that_cant_be_put_in_place_leaves_the_template_as_it_was(/* BUG-239 */)
+    {
+        _user.RoleSet = [AppRole.SysAdmin];
+        var engine = new WordTemplateEngine();
+        var root = Path.Combine(_reportDir, "templates");
+        var templateStore = new FileReportTemplateStore(Options.Create(new ReportTemplateOptions { RootPath = root }),
+            Options.Create(new ReportBrandingOptions()));
+        var templates = new IncidentManager.Application.Admin.ReportTemplateService(NewFactory(), _user, _clock, engine, templateStore);
+        await using (NewContext()) { }   // the schema
+        var starter = engine.Starter();
+        var id = (await templates.UploadAsync("Case starter", "case.docx", starter)).Id!.Value;
+        var live = Path.Combine(root, $"{id:N}.docx");
+
+        // Being read for a moment (a report job, a preview) doesn't stop a replace: the move is retried.
+        Task<IncidentManager.Application.Reporting.TemplateCheck> replace;
+        await using (new FileStream(live, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            replace = templates.ReplaceFileAsync(id, "v2.docx", engine.LessonsStarter());
+            await Task.Delay(300);
+        }
+        (await replace).Ok.Should().BeTrue();
+
+        // A file that can't be replaced at all (read-only) leaves the row describing the file that's still there.
+        var v2 = await File.ReadAllBytesAsync(live);
+        File.SetAttributes(live, FileAttributes.ReadOnly);
+        try
+        {
+            await templates.Invoking(t => t.ReplaceFileAsync(id, "v3.docx", starter)).Should().ThrowAsync<UnauthorizedAccessException>();
+            await using var db = NewContext();
+            (await db.ReportTemplates.AsNoTracking().SingleAsync(t => t.Id == id)).Sha256
+                .Should().Be(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(v2)).ToLowerInvariant());
+            Directory.EnumerateFiles(root, "*.staged").Should().BeEmpty();
+        }
+        finally { File.SetAttributes(live, FileAttributes.Normal); }
+    }
+
     [Fact]
     public async Task Any_template_fills_either_report_and_lessons_reports_use_the_lessons_default()
     {

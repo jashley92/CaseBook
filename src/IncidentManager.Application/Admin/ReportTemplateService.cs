@@ -78,9 +78,14 @@ public sealed class ReportTemplateService
             CreatedBy = _user.UserId,
             CreatedAtUtc = _clock.UtcNow,
         };
-        var staged = await store.StageAsync(t.Id, docx, ct);   // BUG-199: in place only once the row is saved
-        db.ReportTemplates.Add(t);
-        await SaveThenCommitAsync(db, store, staged, ct);
+        await FileGate.WaitAsync(ct);
+        try
+        {
+            var staged = await store.StageAsync(t.Id, docx, ct);   // BUG-199: in place only once the row is saved
+            db.ReportTemplates.Add(t);
+            await SaveThenCommitAsync(db, store, staged, () => db.ReportTemplates.Remove(t), ct);
+        }
+        finally { FileGate.Release(); }
         return new ReportTemplateUpload(check, t.Id);
     }
 
@@ -94,20 +99,33 @@ public sealed class ReportTemplateService
         var check = engine.Check(docx);
         if (!check.Ok) return check;
 
-        using var db = _factory.CreateDbContext();
-        var t = await FindAsync(db, id, ct);
-        var staged = await store.StageAsync(id, docx, ct);   // BUG-199: the live file stays until the new hash is saved
-        t.FileName = Path.GetFileName(fileName);
-        t.Sha256 = Sha256(docx);
-        t.SizeBytes = docx.LongLength;
-        t.ModifiedBy = _user.UserId;
-        t.ModifiedAtUtc = _clock.UtcNow;
-        await SaveThenCommitAsync(db, store, staged, ct);
+        // BUG-239: one file write at a time, so two replaces can't save in one order and move their files in the other.
+        await FileGate.WaitAsync(ct);
+        try
+        {
+            using var db = _factory.CreateDbContext();
+            var t = await FindAsync(db, id, ct);
+            var staged = await store.StageAsync(id, docx, ct);   // BUG-199: the live file stays until the new hash is saved
+            var (oldName, oldHash, oldSize, oldBy, oldAt) = (t.FileName, t.Sha256, t.SizeBytes, t.ModifiedBy, t.ModifiedAtUtc);
+            t.FileName = Path.GetFileName(fileName);
+            t.Sha256 = Sha256(docx);
+            t.SizeBytes = docx.LongLength;
+            t.ModifiedBy = _user.UserId;
+            t.ModifiedAtUtc = _clock.UtcNow;
+            await SaveThenCommitAsync(db, store, staged,
+                () => (t.FileName, t.Sha256, t.SizeBytes, t.ModifiedBy, t.ModifiedAtUtc) = (oldName, oldHash, oldSize, oldBy, oldAt), ct);
+        }
+        finally { FileGate.Release(); }
         return check;
     }
 
+    private static readonly SemaphoreSlim FileGate = new(1, 1);
+
+    // BUG-239: the row is saved first, then the file moved into place. If the move fails for good (the file read-only,
+    // no permission), the row is put back as it was (undo) and the staged file removed, so "nothing changed" is true:
+    // the row never describes a file that isn't the live one (which would refuse every report from the template).
     private static async Task SaveThenCommitAsync(IAppDbContext db, Reporting.IReportTemplateStore store, Reporting.StagedTemplate staged,
-        CancellationToken ct)
+        Action undo, CancellationToken ct)
     {
         try { await db.SaveChangesAsync(ct); }
         catch
@@ -115,7 +133,14 @@ public sealed class ReportTemplateService
             await store.DiscardAsync(staged);
             throw;
         }
-        await store.CommitAsync(staged, ct);
+        try { await store.CommitAsync(staged, ct); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            try { await store.DiscardAsync(staged); } catch (Exception d) when (d is IOException or UnauthorizedAccessException) { }
+            undo();
+            await db.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     /// <summary>Renames a template, or archives/restores it. A profile's default can't be archived.</summary>
@@ -170,7 +195,11 @@ public sealed class ReportTemplateService
         await EnsureNotADefaultAsync(db, id, "delete", ct);
         db.ReportTemplates.Remove(t);
         await db.SaveChangesAsync(ct);
-        if (_store is not null) await _store.DeleteAsync(id, ct);
+        // BUG-239: the template is deleted once its row is; a file that can't be removed now (open, read-only) is left
+        // unreferenced rather than reported as a failed delete.
+        if (_store is not null)
+            try { await _store.DeleteAsync(id, ct); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     /// <summary>A template's file, for an admin to download and edit, or null.</summary>
