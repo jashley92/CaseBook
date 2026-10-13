@@ -645,6 +645,8 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        // REV-23: a task a colleague finished or cancelled since it was ticked drops out of the selection.
+        _selected.IntersectWith(OpenTaskIds);
         if (RefreshToken != _seenRefresh)
         {
             _seenRefresh = RefreshToken;
@@ -995,7 +997,7 @@ else
     {
         if (_selected.Count == 0) return;
         var done = 0;
-        foreach (var id in _selected.ToList())
+        foreach (var id in _selected.Intersect(OpenTaskIds).ToList())
         {
             try { await Cases.SetActionItemStatusAsync(CaseId, id, ActionItemStatus.Done); done++; }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }

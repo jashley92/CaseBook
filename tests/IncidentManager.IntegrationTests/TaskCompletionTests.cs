@@ -122,6 +122,10 @@ public sealed class TaskCompletionTests : IDisposable
         await svc.SetActionItemStatusAsync(caseId, dropped.Id, ActionItemStatus.Cancelled);
         await svc.Invoking(s => s.CompleteActionItemAsync(caseId, dropped.Id, null, null, null))
             .Should().ThrowAsync<InvalidOperationException>().WithMessage("*cancelled*");
+        // REV-23: nor by setting its status (the bulk "Mark N done").
+        await svc.Invoking(s => s.SetActionItemStatusAsync(caseId, dropped.Id, ActionItemStatus.Done))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*was cancelled*");
+        (await svc.GetDetailAsync(caseId))!.ActionItems.Single(t => t.Title == "Dropped").Status.Should().Be(ActionItemStatus.Cancelled);
     }
 
     [Fact]

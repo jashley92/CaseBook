@@ -2840,6 +2840,9 @@ public sealed class CaseService
                    ?? throw new InvalidOperationException("Task not found.");
         // BUG-109: no change, nothing to record; Done again would overwrite who completed it and when.
         if (item.Status == status) return;
+        // REV-23: as CompleteActionItemAsync refuses it. A cancellation (with its reason) isn't undone by marking done.
+        if (status == ActionItemStatus.Done && item.Status == ActionItemStatus.Cancelled)
+            throw new InvalidOperationException($"\"{item.Title}\" was cancelled. Reopen it to mark it done.");
         if (status == ActionItemStatus.Done)
             await EnsureQuestionAnsweredAsync(db, item, ct);
         item.Status = status;
