@@ -77,6 +77,14 @@ public sealed class AccessReviewTests : IDisposable
                 Classification.AdverseEvent, Severity.Low, CaseOrigin.InternalDetection, "system", _clock.UtcNow);
             db.Cases.Add(open);
 
+            // REV-58: archived, but its commander can still open it.
+            var archived = Case.Open(2026, 3, "Archived Matter", "Old and sensitive",
+                Classification.Incident, Severity.Low, CaseOrigin.InternalDetection, "system", _clock.UtcNow);
+            archived.IsRestricted = true;
+            archived.Assign("ic-uid", "Alice IC", CaseAssignmentRole.IncidentCommander, "system", _clock.UtcNow);
+            archived.Archive("system", _clock.UtcNow);
+            db.Cases.Add(archived);
+
             // PROD-14: the sign-in mirror — one active user, one idle past the dormancy threshold.
             db.Users.Add(new AppUser { Sid = "an-uid", DisplayName = "Bob Analyst", UserPrincipalName = "bob@corp",
                 RolesCsv = "Analyst", LastSeenUtc = _clock.UtcNow.AddDays(-2) });
@@ -96,8 +104,10 @@ public sealed class AccessReviewTests : IDisposable
             review.Broad.Should().Contain(b => b.RoleName == "IncidentCommander" && b.ViewRestricted && !b.ViewAllCases);
             review.Broad.Should().NotContain(b => b.RoleName == "Analyst"); // neither capability
 
-            // Only the restricted, non-archived case appears, with its need-to-know grantees.
-            review.RestrictedCases.Should().ContainSingle();
+            // The restricted cases appear with their need-to-know grantees, archived ones too (REV-58), after the rest.
+            review.RestrictedCases.Should().HaveCount(2);
+            review.RestrictedCases[1].IsArchived.Should().BeTrue();
+            review.RestrictedCases[1].IncidentCommander.Should().Be("ic-uid");
             var rc = review.RestrictedCases[0];
             rc.CaseNumber.Should().Contain("Restricted");
             rc.IncidentCommander.Should().Be("ic-uid");

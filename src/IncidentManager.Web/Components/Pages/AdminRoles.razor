@@ -218,7 +218,7 @@ else
                 @foreach (var c in _review.RestrictedCases)
                 {
                     <tr>
-                        <td><code class="small">@c.CaseNumber</code><div class="small text-muted">@c.Title</div></td>
+                        <td><code class="small">@c.CaseNumber</code>@if (c.IsArchived) { <span class="im-badge im-b-neutral ms-1" title="Archived, but its team can still open it">Archived</span> }<div class="small text-muted">@c.Title</div></td>
                         <td>@(string.IsNullOrWhiteSpace(c.IncidentCommander) ? "—" : c.IncidentCommander)</td>
                         <td>
                             @if (c.Assignees.Count == 0) { <span class="text-muted">—</span> }

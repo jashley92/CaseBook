@@ -9,7 +9,8 @@ namespace IncidentManager.Application.Admin;
 public sealed record BroadAccessRow(string RoleName, bool ViewAllCases, bool ViewRestricted, IReadOnlyList<string> Groups);
 
 /// <summary>A restricted case and the individuals with case-specific need-to-know.</summary>
-public sealed record RestrictedCaseRow(string CaseNumber, string Title, string? IncidentCommander, IReadOnlyList<string> Assignees);
+public sealed record RestrictedCaseRow(string CaseNumber, string Title, string? IncidentCommander, IReadOnlyList<string> Assignees,
+    bool IsArchived = false);
 
 /// <summary>
 /// A person CaseBook has seen sign in (the <c>AppUser</c> mirror), with the roles AD granted them at that
@@ -73,9 +74,11 @@ public sealed class AccessReviewService
             .ToList();
 
         var cases = await db.Cases.AsNoTracking()
-            .Where(c => c.IsRestricted && !c.IsArchived)
-            .Select(c => new { c.Id, c.CaseNumber, c.Title, c.IncidentCommander })
-            .OrderBy(c => c.CaseNumber)
+            // REV-58: archived ones too. Archiving doesn't take anyone's access away (its commander and team can still open
+            // it), so a need-to-know review that left them out under-stated who can see restricted matters.
+            .Where(c => c.IsRestricted)
+            .Select(c => new { c.Id, c.CaseNumber, c.Title, c.IncidentCommander, c.IsArchived })
+            .OrderBy(c => c.IsArchived).ThenBy(c => c.CaseNumber)
             .ToListAsync(ct);
 
         var caseIds = cases.Select(c => c.Id).ToList();
@@ -92,7 +95,7 @@ public sealed class AccessReviewService
         var restricted = cases
             .Select(c => new RestrictedCaseRow(
                 c.CaseNumber, c.Title, c.IncidentCommander,
-                assigneesByCase.TryGetValue(c.Id, out var a) ? a : []))
+                assigneesByCase.TryGetValue(c.Id, out var a) ? a : [], c.IsArchived))
             .ToList();
 
         var now = _clock.UtcNow;
