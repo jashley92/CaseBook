@@ -8,6 +8,9 @@ namespace IncidentManager.Application.Abstractions;
 public interface ISettingsReloader
 {
     void Reload();
+
+    /// <summary>REV-60: why the last reload couldn't read the in-app settings (the earlier values stay in effect), or null.</summary>
+    string? LastError => null;
 }
 
 /// <summary>BUG-245: the value the server's own configuration (appsettings, environment) gives a setting, without the

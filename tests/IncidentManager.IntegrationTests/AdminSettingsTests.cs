@@ -52,6 +52,24 @@ public sealed class AdminSettingsTests : IDisposable
         public void Reload() { }
     }
 
+    private sealed class FailedReload : IncidentManager.Application.Abstractions.ISettingsReloader
+    {
+        public void Reload() { }
+        public string? LastError => "timeout";
+    }
+
+    [Fact]
+    public async Task A_save_the_reload_couldnt_apply_says_so(/* REV-60 */)
+    {
+        await using var db = NewContext();
+        var svc = new AdminSettingsService(NewFactory(), _user, _clock, new FailedReload());
+
+        var set = async () => await svc.SetAsync("Email:Enabled", "true");
+
+        await set.Should().ThrowAsync<InvalidOperationException>().WithMessage("Saved, but not in effect yet*timeout*");
+        (await db.AppSettings.AsNoTracking().SingleAsync(x => x.Key == "Email:Enabled")).Value.Should().Be("true", "it was saved");
+    }
+
     [Fact]
     public async Task Set_persists_normalized_value_and_reports_it_as_overridden()
     {

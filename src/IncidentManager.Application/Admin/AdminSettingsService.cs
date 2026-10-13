@@ -105,6 +105,18 @@ public sealed class AdminSettingsService
         await db.SaveChangesAsync(ct);
         _reloader.Reload(); // make the override take effect at runtime, no restart
         _siem?.Emit(SecurityEvents.SettingChanged(key, _user.UserId, _user.UserPrincipalName));
+        ThrowIfNotInEffect();
+    }
+
+    /// <summary>
+    /// REV-60: the change is saved (and audited), but a reload that couldn't read the settings keeps the earlier values,
+    /// so it isn't in effect yet. The page would otherwise show the new value as if it were.
+    /// </summary>
+    private void ThrowIfNotInEffect()
+    {
+        if (_reloader.LastError is { } error)
+            throw new InvalidOperationException("Saved, but not in effect yet: CaseBook couldn't reload settings from the database " +
+                $"({error}), so the earlier values still apply. Save again once the database is reachable, or restart the app.");
     }
 
     /// <summary>
@@ -122,5 +134,6 @@ public sealed class AdminSettingsService
         await db.SaveChangesAsync(ct);
         _reloader.Reload(); // revert to the server-side/default value at runtime
         _siem?.Emit(SecurityEvents.SettingChanged(key, _user.UserId, _user.UserPrincipalName));
+        ThrowIfNotInEffect();
     }
 }
