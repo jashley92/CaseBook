@@ -230,6 +230,18 @@ public sealed class AccessLogPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_reload_of_a_case_already_open_sends_no_new_open_to_the_siem(/* BUG-243 */)
+    {
+        NewContext();
+        var caseId = SeedCase(restricted: true);
+        var svc = NewService();
+        await svc.RecordCaseOpenAsync(caseId, "2026-01_Alpha", wasRestricted: true);
+        await svc.RecordCaseOpenAsync(caseId, "2026-01_Alpha", wasRestricted: true, stillOpen: true);
+        await svc.RecordCaseOpenAsync(caseId, "2026-01_Alpha", wasRestricted: true, stillOpen: true);
+        _siem.Events.Count(e => e.EventId is SecurityEventIds.CaseOpened or SecurityEventIds.RestrictedCaseAccessed).Should().Be(1);
+    }
+
+    [Fact]
     public async Task Access_emits_the_matching_security_event_to_the_siem_stream()
     {
         NewContext();

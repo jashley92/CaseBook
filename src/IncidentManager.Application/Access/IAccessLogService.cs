@@ -23,8 +23,12 @@ public sealed record AccessLogFilter
 /// </summary>
 public interface IAccessLogService
 {
-    /// <summary>Record an authorized case-detail open by the current user (coalesced into a session).</summary>
-    Task RecordCaseOpenAsync(Guid caseId, string caseNumber, bool wasRestricted, CancellationToken ct = default);
+    /// <summary>Record an authorized case-detail open by the current user (coalesced into a session). BUG-243:
+    /// <paramref name="stillOpen"/> is a reload of a case the person already has open (after their own save, or a
+    /// colleague's change arriving live): it keeps the view-session current but isn't a new open, so it sends no SIEM
+    /// event (a stream of false "restricted case accessed" alerts otherwise, which could crowd out real ones).</summary>
+    Task RecordCaseOpenAsync(Guid caseId, string caseNumber, bool wasRestricted, bool stillOpen = false,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Record a sensitive-artifact access (evidence/report download, or a data export) by the current

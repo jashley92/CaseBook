@@ -495,6 +495,7 @@ else
 
     private async Task Reload() => await ReloadWith(await Cases.GetDetailAsync(Id));
     private Guid _tabOpenedFor;
+    private Guid _openRecordedFor;   // BUG-243: one open per visit; reloads after saves and live changes aren't new opens
 
     // REL-07: reload from an already-fetched detail, so the live-collab path can peek at accessibility
     // before deciding whether to swap the view away (see OnCaseChangedAsync).
@@ -530,7 +531,8 @@ else
                 try { await OpenTabs.OpenedAsync(_case.Id); }   // RD-21: the case becomes (or comes forward as) a tab
                 catch (Exception ex) when (ex is InvalidOperationException or Microsoft.EntityFrameworkCore.DbUpdateException) { /* tabs are a convenience */ }
             }
-            await AccessLog.RecordCaseOpenAsync(_case.Id, _case.CaseNumber, _case.IsRestricted);
+            await AccessLog.RecordCaseOpenAsync(_case.Id, _case.CaseNumber, _case.IsRestricted, stillOpen: _openRecordedFor == _case.Id);
+            _openRecordedFor = _case.Id;
             _isPinned = await Shortcuts.IsPinnedAsync(_case.Id); // PROD-20: header star + palette action state
         }
         // BUG-30: a reload under an open dialog (a colleague's change arriving live) keeps what the analyst picked,

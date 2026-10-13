@@ -39,10 +39,12 @@ public sealed class AccessLogService : IAccessLogService
         _logger = logger;
     }
 
-    public Task RecordCaseOpenAsync(Guid caseId, string caseNumber, bool wasRestricted, CancellationToken ct = default)
+    public Task RecordCaseOpenAsync(Guid caseId, string caseNumber, bool wasRestricted, bool stillOpen = false,
+        CancellationToken ct = default)
     {
-        // F-18: stream every access event (independent of the C-05 store's coalescing/scope).
-        EmitSiem(AccessType.CaseOpen, caseNumber, wasRestricted, targetId: null, label: null);
+        // F-18: stream every access event (independent of the C-05 store's coalescing/scope). BUG-243: an open, not
+        // every reload of a case already open.
+        if (!stillOpen) EmitSiem(AccessType.CaseOpen, caseNumber, wasRestricted, targetId: null, label: null);
         return RecordAsync(AccessType.CaseOpen, caseId, caseNumber, wasRestricted, targetId: null, label: null, ct);
     }
 
