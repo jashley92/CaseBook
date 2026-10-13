@@ -1051,6 +1051,20 @@ public sealed class ReportingIntegrationTests : IDisposable
         (await BodyOf(lessons.Id)).Should().Contain("Post-incident review").And.Contain("reused administrator credential")
             .And.Contain("Reconcile the data-sharing inventory").And.Contain("2026-02_Vendor_SaaS_Breach").And.NotContain("{{");
 
+        // WF-32: with a legend set, the lessons starter prints it in its header, and a template that can't is refused.
+        _reporting.CurrentValue.LessonsLegend = "Privileged & Confidential - prepared at the direction of counsel";
+        await using (var withLegend = new MemoryStream())
+        {
+            var (_, legendStream) = await svc.OpenAsync((await svc.GenerateLessonsAsync(caseId)).Id);
+            await using (legendStream) await legendStream.CopyToAsync(withLegend);
+            withLegend.Position = 0;
+            using var legendDoc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(withLegend, false);
+            legendDoc.MainDocumentPart!.HeaderParts.Single().Header!.InnerText.Should().Contain("prepared at the direction of counsel");
+        }
+        await svc.Invoking(s => s.GenerateLessonsAsync(caseId, template: caseStarterId)).Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*report.legend*");
+        _reporting.CurrentValue.LessonsLegend = null;
+
         // A case-report template picked for the lessons report prints case fields too; the built-in layout is still there.
         (await BodyOf((await svc.GenerateLessonsAsync(caseId, template: caseStarterId)).Id))
             .Should().Contain("Business impact").And.NotContain("{{");

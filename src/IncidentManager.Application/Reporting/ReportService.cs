@@ -307,6 +307,14 @@ public sealed class ReportService
             .Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
         if (await ResolveTemplateAsync(db, lessonsDefault, template, ct) is { } t)
         {
+            // WF-32: the legend is the report's discovery protection (decision 0012), so a template that can't print it is
+            // refused, as one without {{report.tlp}} is, rather than filled without it.
+            if (!string.IsNullOrWhiteSpace(model.Legend)
+                && _templates!.Check(t.Bytes) is var check
+                && !(check.Fillable ?? check.Placeholders).Contains(ReportTemplateFields.LegendField, StringComparer.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Template “{t.Name}” has no {{{{{ReportTemplateFields.LegendField}}}}} field, so the " +
+                    "lessons-learned report would print without its confidentiality legend. Ask an administrator to add it (the page " +
+                    "header is a good place) and replace the file, or pick another template.");
             var full = await LoadFullCaseAsync(db, caseId, ct) ?? throw new InvalidOperationException("Case not found.");
             var sections = await ResolveSectionsAsync(db, full.ReportProfileId, ct);
             var (elemSummary, triggers) = await ImpactElementsAsync(db, full, ct);

@@ -23,6 +23,8 @@ public static partial class ReportTemplateFields
     public const string EntityGraphImage = "image.entity_graph";
     /// <summary>BUG-75: the field every template must print, so no report goes out without its TLP marking.</summary>
     public const string MarkingField = "report.tlp";
+    /// <summary>WF-32: the confidentiality legend a lessons-learned report must print when one is set.</summary>
+    public const string LegendField = "report.legend";
 
     [GeneratedRegex(@"\{\{\s*([a-z_]+(?:\.[a-z0-9_]+)+)\s*\}\}", RegexOptions.IgnoreCase)]
     public static partial Regex Placeholder();
@@ -74,6 +76,8 @@ public static partial class ReportTemplateFields
             m => m.IsLessonsLearned ? "Post-incident review" : "Incident report"),
         (new(MarkingField, "TLP marking, such as TLP:AMBER. Every template must have it."), m => m.TlpLabel ?? ""),
         (new("report.sharing", "The TLP sharing sentence"), m => m.SharingLine ?? ""),
+        (new(LegendField, "The confidentiality legend (Reporting:LessonsLegend; lessons-learned reports only, blank otherwise)"),
+            m => m.Kind == Domain.Enums.ReportKind.LessonsLearned ? m.Legend ?? "" : ""),
         (new("report.defang_note", "The note explaining defanged indicators (blank when not defanged)"), m => m.IndicatorsDefanged ? CaseReportModel.DefangNote : ""),
         (new("report.generated_by", "Who generated the report"), m => m.GeneratedBy),
         (new("report.generated_at", "When (UTC)"), m => D(m.GeneratedAtUtc)),
