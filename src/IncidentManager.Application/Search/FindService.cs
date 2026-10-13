@@ -90,6 +90,13 @@ public sealed class FindService
         // People named by by: / owner:, resolved against the directory ("me" is the caller).
         var by = Person(q.By, unread, "by");
         var owner = Person(q.Owner, unread, "owner");
+        // WF-04: owner: narrows tasks, and type: / by: narrow record entries, which have no owner. Together nothing would
+        // apply owner:, so it's said back as not used rather than shown as a filter it isn't.
+        if (owner is not null && (q.EntryKind is not null || q.EntryType is not null || q.By is not null))
+        {
+            unread.Add($"owner:{q.Owner} (tasks only; it doesn't combine with type: or by:)");
+            owner = null;
+        }
 
         // The cases in play: visible, not exercises unless asked, then the case-level filters.
         var cases = db.Cases.AsNoTracking().ForUser(_user);
@@ -121,7 +128,7 @@ public sealed class FindService
         List<Guid> entityIds = [];
         if (q.Entity is { } ev)
         {
-            var key = ev.ToLowerInvariant();
+            var key = IocObservable.Normalize(IocObservable.DetectType(ev), ev).ToLowerInvariant();   // WF-03
 #pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower(); culture overloads don't translate.
             entityIds = await db.CaseEntities.AsNoTracking()
                 .Where(e => cases.Select(c => c.Id).Contains(e.CaseId) && e.Value.Trim().ToLower() == key)
@@ -153,6 +160,13 @@ public sealed class FindService
         if (readAs == FindReadAs.Words && !text.Contains(' ')
             && await cases.AnyAsync(c => c.CaseNumber == text || c.CaseNumber.StartsWith(text + "_"), ct))
             readAs = FindReadAs.CaseNumber;
+        // WF-02: CVE-2024-3094 or a ticket reference has a case number's shape. Read it as one only when a case number
+        // the caller can see holds it; otherwise it's words, so the record is searched for it.
+#pragma warning disable CA1304, CA1311, CA1862
+        else if (readAs == FindReadAs.CaseNumber && text.ToLower() is var asNumber
+                 && !await cases.AnyAsync(c => c.CaseNumber.ToLower().Contains(asNumber), ct))
+            readAs = FindReadAs.Words;
+#pragma warning restore CA1304, CA1311, CA1862
         var reading = readAs switch
         {
             FindReadAs.Nothing => "filters only",
@@ -178,7 +192,8 @@ public sealed class FindService
             if (q.Entity is not null) src = src.Where(e => entityIds.Contains(e.Id));
             if (readAs == FindReadAs.Indicator)
             {
-                var exact = IocObservable.Refang(text).ToLower();
+                // WF-03: compared in the form entities are stored in (IPv6 canonical, no trailing dot on a domain).
+                var exact = IocObservable.Normalize(iocType!.Value, text).ToLower();
                 src = src.Where(e => e.Value.Trim().ToLower() == exact);
             }
             else if (readAs == FindReadAs.Words)
@@ -223,9 +238,10 @@ public sealed class FindService
                 caseQ = caseQ.Where(c => c.IncidentCommander == personId || c.Assignments.Any(a => a.UserId == personId));
                 break;
             case FindReadAs.Indicator:
-                var exact = IocObservable.Refang(text).ToLower();
-                caseQ = caseQ.Where(c => c.Entities.Any(e => e.Value.Trim().ToLower() == exact)
-                                         || c.Title.ToLower().Contains(exact) || (c.Summary != null && c.Summary.ToLower().Contains(exact)));
+                var stored = IocObservable.Normalize(iocType!.Value, text).ToLower();
+                var typed = IocObservable.Refang(text).ToLower();
+                caseQ = caseQ.Where(c => c.Entities.Any(e => e.Value.Trim().ToLower() == stored)
+                                         || c.Title.ToLower().Contains(typed) || (c.Summary != null && c.Summary.ToLower().Contains(typed)));
                 break;
             case FindReadAs.Words:
                 foreach (var t in terms)
@@ -322,8 +338,12 @@ public sealed class FindService
                 tq = tq.Where(x => x.Title.ToLower().Contains(v) || (x.Description != null && x.Description.ToLower().Contains(v)));
             }
 #pragma warning restore CA1304, CA1311, CA1862
-            if (readAs == FindReadAs.Person) tq = tq.Where(x => x.Owner == personId);
-            if (owner is not null) tq = tq.Where(x => x.Owner == owner);
+            // WF-01: a task's owner is free text, so it's theirs when it names any of their identifiers (the TaskOwner rule
+            // My Work and the agenda use), compared in the query.
+#pragma warning disable CA1304, CA1311
+            if (readAs == FindReadAs.Person) { var ids = OwnerKeys(personId!); tq = tq.Where(x => x.Owner != null && ids.Contains(x.Owner.Trim().ToLower())); }
+            if (owner is not null) { var ids = OwnerKeys(owner); tq = tq.Where(x => x.Owner != null && ids.Contains(x.Owner.Trim().ToLower())); }
+#pragma warning restore CA1304, CA1311
             if (from is not null) tq = tq.Where(x => x.CreatedAtUtc >= from);
             if (to is not null) tq = tq.Where(x => x.CreatedAtUtc < to);
             counts[FindKind.Tasks] = await tq.CountAsync(ct);
@@ -393,6 +413,15 @@ public sealed class FindService
         if (PersonNamed(name) is { } p) return p.UserId;
         unread.Add($"{key}:{name} (no one by that name)");
         return null;
+    }
+
+    // Every identifier a task owner might name a person by, lower-cased for the query: the caller's own, or the directory's.
+    private List<string> OwnerKeys(string userId)
+    {
+        string?[] ids = userId == _user.UserId
+            ? [_user.UserId, _user.UserPrincipalName, _user.DisplayName, _user.Email]
+            : _users.Resolve(userId) is { } u ? [userId, u.UserPrincipalName, u.DisplayName, u.Email] : [userId];
+        return ids.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim().ToLowerInvariant()).Distinct().ToList();
     }
 
     private UserSummary? PersonNamed(string text)

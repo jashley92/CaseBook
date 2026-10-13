@@ -18,7 +18,8 @@ The command bar shows the first few of each kind, then *See all N results in Fin
 
 Above the results Find says how it read what you typed:
 
-- **a case number** (`2026-14`, `2026-01_Phishing_Wave`, `CE-2026-10-04`): cases whose number contains it.
+- **a case number** (`2026-14`, `2026-01_Phishing_Wave`, `CE-2026-10-04`): cases whose number contains it. Something
+  shaped like one that no case number you can see holds (`CVE-2024-3094`, a ticket reference) is read as words.
 - **an IP address, domain, URL, file hash, email address or account** (a single value; defanged values like
   `203.0.113[.]66` are refanged): entities with exactly that value, ignoring case, and the record text, tasks and
   evidence that contain it.
@@ -31,7 +32,8 @@ Above the results Find says how it read what you typed:
 ## Filters
 
 Filters narrow the question and are said back above the results. The controls beside the results edit them in the
-query you can see; nothing is hidden state. A filter Find can't use is listed as *not understood* rather than dropped.
+query you can see; nothing is hidden state. A filter Find can't use is listed as *not understood* rather than dropped, and so is one given twice (the last one is
+used) or `owner:` alongside `type:` or `by:` (tasks aren't record entries).
 
 | Filter | Meaning |
 |---|---|
@@ -41,7 +43,7 @@ query you can see; nothing is hidden state. A filter Find can't use is listed as
 | `type:decision`, `handoff`, `adversary`, `response`, or any entry type (`containment`, `communication`, …) | Which record entries; with a type filter Find lists entries only |
 | `after:YYYY-MM-DD`, `before:YYYY-MM-DD` | From that day on, or up to (not including) that day: when it happened (entries) or was opened, added or raised, in the organization's days |
 | `by:NAME`, `by:me` | Who recorded it |
-| `owner:NAME`, `owner:me` | Whose task |
+| `owner:NAME`, `owner:me` | Whose task: the owner names them by any of their identifiers (sign-in, email, display name) |
 | `state:NY` (or `jurisdiction:NY`) | Cases with residents of that state affected |
 | `in:notes` | Include working notes |
 | `exercises:yes` | Include exercises (left out otherwise) |

@@ -32,6 +32,9 @@ public sealed partial record FindQuery
     /// </summary>
     public const int MaxTerms = 12;
 
+    /// <summary>The years an <c>after:</c> or <c>before:</c> date may name.</summary>
+    public const int MinYear = 1900, MaxYear = 9000;
+
     public string Raw { get; init; } = "";
     /// <summary>The words left after the filters; every one must appear (quoted phrases count as one).</summary>
     public IReadOnlyList<string> Terms { get; init; } = [];
@@ -71,6 +74,7 @@ public sealed partial record FindQuery
         var terms = new List<string>();
         var unread = new List<string>();
         var q = new FindQuery { Raw = raw };
+        var seen = new HashSet<string>();
 
         foreach (Match m in TokenRx().Matches(raw))
         {
@@ -84,6 +88,9 @@ public sealed partial record FindQuery
                 continue;
             }
             if (val.Length == 0) { unread.Add($"{key}: needs a value"); continue; }
+            // WF-04: a filter given twice keeps the last one, and says so rather than dropping the first unseen.
+            var canonical = key == "jurisdiction" ? "state" : key;
+            if (!seen.Add(canonical)) unread.Add($"{key}: given more than once (the last one is used)");
             switch (key)
             {
                 case "entity": q = q with { Entity = IocObservable.Refang(val) }; break;
@@ -102,9 +109,11 @@ public sealed partial record FindQuery
                     break;
                 case "after":
                 case "before":
-                    if (DateOnly.TryParseExact(val, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))
+                    // WF-05: a year far outside any record (0001, 9999) can't be turned into an instant in every zone.
+                    if (DateOnly.TryParseExact(val, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
+                        && d.Year is >= MinYear and <= MaxYear)
                         q = key == "after" ? q with { After = d } : q with { Before = d };
-                    else unread.Add($"{key}:{val} (use a date like 2026-01-31)");
+                    else unread.Add($"{key}:{val} (use a date like 2026-01-31, between {MinYear} and {MaxYear})");
                     break;
                 case "by": q = q with { By = val }; break;
                 case "owner": q = q with { Owner = val }; break;
@@ -158,7 +167,9 @@ public sealed partial record FindQuery
             case "response": return (TimelineKind.Investigation, null);
             case "decisions": return (null, TimelineEntryType.Decision);
         }
-        return Enum.TryParse<TimelineEntryType>(v.Replace("-", ""), ignoreCase: true, out var t) && Enum.IsDefined(t)
+        // WF-04: a name only. Enum.TryParse also takes "2" and "containment,eradication" (flags OR'd into another type).
+        var name = v.Replace("-", "");
+        return name.All(char.IsAsciiLetter) && Enum.TryParse<TimelineEntryType>(name, ignoreCase: true, out var t) && Enum.IsDefined(t)
             ? (null, t) : null;
     }
 

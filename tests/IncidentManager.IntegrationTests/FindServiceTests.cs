@@ -269,6 +269,80 @@ public sealed class FindServiceTests : IDisposable
         }
     }
 
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_task_owned_by_any_of_a_persons_identifiers_is_theirs(string provider /* WF-01 */)
+    {
+        Use(provider);
+        using (var db = NewContext())
+        {
+            db.ActionItems.Add(new ActionItem { CaseId = _alpha, Title = "Rotate the VPN secret", Owner = " RREYES@contoso.example ", CreatedBy = "robin", CreatedAtUtc = H(-10) });
+            db.ActionItems.Add(new ActionItem { CaseId = _alpha, Title = "Brief the board", Owner = "Analyst One", CreatedBy = "robin", CreatedAtUtc = H(-10) });
+            db.SaveChanges();
+        }
+
+        (await NewFind().FindAsync("owner:robin")).Tasks.Select(t => t.Title).Should().Equal("Rotate the VPN secret");
+        (await NewFind().FindAsync("owner:me")).Tasks.Select(t => t.Title).Should().BeEquivalentTo(["Block 203.0.113.66 at the proxy", "Brief the board"]);
+    }
+
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task A_cve_id_shaped_like_a_case_number_is_searched_for_in_the_record(string provider /* WF-02 */)
+    {
+        Use(provider);
+        using (var db = NewContext())
+        {
+            db.TimelineEntries.Add(new TimelineEntry { CaseId = _alpha, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Note, OccurredAtUtc = H(-5),
+                Description = "The appliance is exposed to CVE-2024-3094.", CreatedBy = "robin", CreatedAtUtc = H(-5) });
+            db.SaveChanges();
+        }
+
+        var r = await NewFind().FindAsync("CVE-2024-3094");
+
+        r.ReadAs.Should().Be(FindReadAs.Words);
+        r.Entries.Should().ContainSingle(e => e.Text.Contains("CVE-2024-3094"));
+        (await NewFind().FindAsync("2026-01")).ReadAs.Should().Be(FindReadAs.CaseNumber, "a visible case number holds it");
+    }
+
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task An_indicator_is_matched_in_the_form_entities_are_stored_in(string provider /* WF-03 */)
+    {
+        Use(provider);
+        using (var db = NewContext())
+        {
+            db.CaseEntities.Add(new CaseEntity { CaseId = _alpha, Type = EntityType.IpAddress, Value = "2001:db8::1", CreatedBy = "robin", CreatedAtUtc = H(-5) });
+            db.CaseEntities.Add(new CaseEntity { CaseId = _alpha, Type = EntityType.Domain, Value = "evil.example", CreatedBy = "robin", CreatedAtUtc = H(-5) });
+            db.SaveChanges();
+        }
+
+        (await NewFind().FindAsync("2001:0db8:0000:0000:0000:0000:0000:0001")).Entities.Should().ContainSingle(e => e.Value == "2001:db8::1");
+        (await NewFind().FindAsync("evil.example.")).Entities.Should().ContainSingle(e => e.Value == "evil.example");
+        (await NewFind().FindAsync("entity:evil[.]example.")).Cases.Select(c => c.Id).Should().Equal(_alpha);
+    }
+
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Owner_with_an_entry_filter_is_said_back_not_shown_as_applied(string provider /* WF-04 */)
+    {
+        Use(provider);
+        var r = await NewFind().FindAsync("owner:me type:decision");
+
+        r.Filters.Should().Contain(f => f.StartsWith("not understood: owner:me")).And.NotContain(f => f.StartsWith("tasks of"));
+        r.Entries.Should().ContainSingle(e => e.Id == _decisionId);
+    }
+
+    [Fact]
+    public void The_parser_refuses_what_it_would_misread(/* WF-04, WF-05 */)
+    {
+        FindQuery.Parse("after:0001-01-01").After.Should().BeNull();
+        FindQuery.Parse("after:0001-01-01").Unread.Should().ContainSingle(u => u.StartsWith("after:0001-01-01"));
+        FindQuery.Parse("before:9999-12-31").Before.Should().BeNull();
+        FindQuery.Parse("type:containment,eradication").EntryType.Should().BeNull();
+        FindQuery.Parse("type:2").EntryType.Should().BeNull();
+        FindQuery.Parse("type:decision").EntryType.Should().Be(TimelineEntryType.Decision);
+        var twice = FindQuery.Parse("status:open status:closed");
+        twice.Open.Should().BeFalse();
+        twice.Unread.Should().ContainSingle(u => u.Contains("more than once"));
+        FindQuery.Parse("state:NY jurisdiction:NJ").Unread.Should().ContainSingle(u => u.Contains("more than once"));
+    }
+
     private sealed class Directory : IUserDirectory
     {
         private readonly Dictionary<string, UserSummary> _u = new(StringComparer.OrdinalIgnoreCase)
