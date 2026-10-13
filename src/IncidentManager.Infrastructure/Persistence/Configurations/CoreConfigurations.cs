@@ -763,7 +763,7 @@ public sealed class ApiTokenConfiguration : IEntityTypeConfiguration<ApiToken>
         b.Property(x => x.Name).HasMaxLength(100).IsRequired();
         b.Property(x => x.OwnerUserId).HasMaxLength(200).IsRequired();
         b.Property(x => x.OwnerDisplayName).HasMaxLength(200);
-        b.Property(x => x.RolesCsv).HasMaxLength(400);
+        b.Property(x => x.RolesCsv).HasMaxLength(4000);   // BUG-246: as Users.RolesCsv (BUG-216)
         b.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
         b.Property(x => x.Prefix).HasMaxLength(20);
         b.Property(x => x.CreatedBy).HasMaxLength(200);
