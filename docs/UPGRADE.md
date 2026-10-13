@@ -201,6 +201,23 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.2
+
+A fix with no migration. Things to check:
+
+- **The API now reaches the app.** On IIS, every request under `/api` (API imports, and the import schema the upgrade
+  uses to check the new build started) was answered by IIS itself with a 404 and never reached CaseBook. The published
+  `web.config` held CaseBook's handler in `<location path="." inheritInChildApplications="false">`, and IIS didn't apply
+  it to the `/api` path the installer opens to API tokens. This release ships a `web.config` without that wrapper, and
+  the upgrade puts it in place. If you edited the live `web.config` by hand to set `inheritInChildApplications="true"`,
+  the upgrade replaces it with this one, which works the same way.
+- **The upgrade only counts CaseBook's own answer as "started"**: the import schema. v1.6.1 also took an IIS 404 page
+  for the app. If IIS answers `/api` itself, the script says so and checks the site root as you instead.
+- **The upgrade keeps `VERSION.txt`**, so the next upgrade shows the version it's replacing instead of "(unknown)".
+- **`Verify-Install.ps1` checks that `/api` reaches CaseBook.**
+
+After upgrading, open `https://<your site>/api/import/cases/schema`: it should show the JSON schema, not a 404 page.
+
 ### v1.6.1
 
 A fix to the upgrade script only, with no migration and no change to the app. Upgrading to v1.6.0 or earlier with the
