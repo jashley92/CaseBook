@@ -358,6 +358,7 @@ public sealed partial class ConfigBundleService
             else if (Canon(t) == Canon(ToConfig(existing))) { unchanged++; }
             else
             {
+                existing.Name = t.Name;   // BUG-240: matched ignoring case; take the bundle's, or every import updates it again
                 existing.Description = t.Description; existing.IsActive = t.IsActive; existing.SortOrder = t.SortOrder;
                 existing.DefaultClassification = cls; existing.DefaultSeverity = sev;
                 existing.DefaultDataTypes = t.DefaultDataTypes; existing.SummaryBoilerplate = t.SummaryBoilerplate;
@@ -389,6 +390,7 @@ public sealed partial class ConfigBundleService
             else if (Canon(g) == Canon(ToConfig(existing))) { unchanged++; }
             else
             {
+                existing.Name = g.Name;   // BUG-240: as for case templates
                 existing.Trigger = trigger; existing.IsActive = g.IsActive; existing.Description = g.Description;
                 existing.CommentaryMinLength = g.CommentaryMinLength;
                 existing.ModifiedBy = actor; existing.ModifiedAtUtc = now;
@@ -636,7 +638,7 @@ public sealed partial class ConfigBundleService
         var liveNames = liveTemplates.ToDictionary(t => t.Id, t => t.Name);
         var defaults = (await db.ReportProfiles.AsNoTracking().Where(p => p.TemplateId != null)
                 .Select(p => new { p.Name, p.TemplateId }).ToListAsync(ct))
-            .ToDictionary(p => p.Name, p => liveNames.GetValueOrDefault(p.TemplateId!.Value), StringComparer.Ordinal);
+            .ToDictionary(p => p.Name, p => liveNames.GetValueOrDefault(p.TemplateId!.Value), StringComparer.OrdinalIgnoreCase);   // BUG-240
         foreach (var p in bundle.ReportProfiles) defaults[p.Name] = p.Template;
         foreach (var (profile, template) in defaults.Where(d => d.Value is not null).OrderBy(d => d.Key, StringComparer.Ordinal))
         {

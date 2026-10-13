@@ -344,6 +344,22 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_name_that_differs_only_in_case_is_taken_once_and_then_unchanged(/* BUG-240 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var gate = live.StageGates[0];
+        var upper = gate.Name.ToUpperInvariant();
+        var recased = live with { StageGates = live.StageGates.Select(g => g == gate ? g with { Name = upper } : g).ToList() };
+
+        (await svc.ImportAsync(Signed(recased))).Updated.Should().Be(1);
+        (await db.StageGates.AsNoTracking().CountAsync(g => g.Name == upper)).Should().Be(1);
+        (await svc.ImportAsync(Signed(recased))).Updated.Should().Be(0, "the second import of the same bundle changes nothing");
+    }
+
+    [Fact]
     public async Task Import_adds_new_items_and_updates_changed_ones()
     {
         await using var db = NewContext();
