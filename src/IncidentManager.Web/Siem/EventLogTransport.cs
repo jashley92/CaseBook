@@ -57,6 +57,14 @@ public sealed class EventLogTransport : ISecurityEventTransport
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.Security.SecurityException
                                        or System.ComponentModel.Win32Exception)
         {
+            // REV-69: one event the log refused (one that's somehow still too long, say) is that event, not the transport.
+            // Only a missing source turns delivery off; otherwise a single bad event left every later one, integrity
+            // alarms included, unforwarded until restart.
+            if (OperatingSystem.IsWindows() && SourceRegistered(o.Source))
+            {
+                _logger.LogWarning(ex, "Windows Event Log refused event {EventId}; later events are still sent.", e.EventId);
+                return Task.CompletedTask;
+            }
             // Most often: the source isn't registered and the app (rightly) lacks rights to create it.
             _sourceMissing = true;
             _logger.LogWarning(ex,
@@ -65,6 +73,13 @@ public sealed class EventLogTransport : ISecurityEventTransport
                 e.EventId, o.Source, o.LogName, $"New-EventLog -LogName {o.LogName} -Source {o.Source}");
         }
         return Task.CompletedTask;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool SourceRegistered(string source)
+    {
+        try { return EventLog.SourceExists(source); }
+        catch (System.Security.SecurityException) { return false; }   // can't tell: treat as missing, as before
     }
 
     [SupportedOSPlatform("windows")]
@@ -81,6 +96,9 @@ public sealed class EventLogTransport : ISecurityEventTransport
         log.WriteEntry(message, type, id);
     }
 
+    /// <summary>REV-69: under the Event Log's limit on an entry's message (31,839 characters).</summary>
+    public const int MaxMessage = 31_000;
+
     /// <summary>Entry type, Event ID and message for an event. Pure, so it's testable on any OS.</summary>
     public static (EventLogLevel Level, int EventId, string Message) Map(SecurityEvent e)
     {
@@ -93,9 +111,20 @@ public sealed class EventLogTransport : ISecurityEventTransport
         // Event IDs are 16-bit in the classic API; the catalog (5001–55xx) fits, but clamp defensively.
         var id = e.EventId is >= 0 and <= ushort.MaxValue ? e.EventId : 0;
         // A readable first line for the Event Viewer pane, then the webhook's JSON body for parsers.
-        var message = $"{e.Category}/{e.Action} {e.Outcome} by {e.Actor}" +
-                      (e.CaseNumber is { Length: > 0 } cn ? $" on {cn}" : "") +
-                      Environment.NewLine + SecurityEventJson.Serialize(e);
+        var headline = $"{e.Category}/{e.Action} {e.Outcome} by {e.Actor}" + (e.CaseNumber is { Length: > 0 } cn ? $" on {cn}" : "");
+        var message = headline + Environment.NewLine + SecurityEventJson.Serialize(e);
+        // REV-69: an entry holds about 31,800 characters, and WriteEntry throws past that. A long detail (a long request
+        // path, JSON-escaped) is shortened instead, so the body stays whole JSON and the event still goes.
+        if (e.Detail is { Length: > 0 } detail)
+        {
+            // Escaping can lengthen what's kept, so it's cut again until it fits.
+            var keep = detail.Length;
+            while (message.Length > MaxMessage && keep > 0)
+            {
+                keep = Math.Max(0, keep - Math.Max(64, message.Length - MaxMessage));
+                message = headline + Environment.NewLine + SecurityEventJson.Serialize(e with { Detail = detail[..keep] + "… (shortened)" });
+            }
+        }
         return (type, id, message);
     }
 }

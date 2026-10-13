@@ -36,6 +36,18 @@ public class EventLogTransportTests
     }
 
     [Fact]
+    public void A_detail_too_long_for_an_entry_is_shortened_and_the_body_stays_json(/* REV-69 */)
+    {
+        var big = Event(SecuritySeverity.Warning, SecurityOutcome.Deny) with { Detail = new string('\\', 40_000) };   // escapes double
+
+        var (_, _, message) = EventLogTransport.Map(big);
+
+        message.Length.Should().BeLessThanOrEqualTo(EventLogTransport.MaxMessage);
+        var json = message[(message.IndexOf('\n') + 1)..];
+        System.Text.Json.JsonDocument.Parse(json).RootElement.GetProperty("detail").GetString().Should().EndWith("(shortened)");
+    }
+
+    [Fact]
     public void It_is_off_unless_enabled()
     {
         var off = new EventLogTransport(new TestOptionsMonitor<SiemEventLogOptions>(new()), NullLogger<EventLogTransport>.Instance);
