@@ -706,6 +706,8 @@ else
             await LoadRelated();
             // HR-04: adding one that's already here never overwrites its verdict, so say what the case kept.
             if (!r.AlreadyOnCase) Toasts.Success($"Added {addedVal}");
+            else if (r.VerdictChanged)   // WF-29: an Unknown one takes the verdict it was added with
+                Toasts.Info($"{addedVal} was already on this case as Unknown; it's now {Ui.Label(r.Disposition)}.");
             else if (r.Disposition != asked)
                 Toasts.Warning($"{addedVal} is already on this case as {Ui.Label(r.Disposition)}. Its verdict wasn't changed; use Edit to change it.");
             else Toasts.Info($"{addedVal} is already on this case.");
@@ -760,8 +762,10 @@ else
             // never overwrites a recorded verdict or detail (HR-04).
             // BUG-202: one load and one audited save per batch, not per indicator.
             var results = await Cases.AddOrMatchEntitiesAsync(CaseId,
-                rows.Select(r => new CaseService.EntityToAdd(r.Type, r.Value, null, _bulkDisposition, null, _bulkSource)).ToList());
+                rows.Select(r => new CaseService.EntityToAdd(r.Type, r.Value, null, _bulkDisposition, null, _bulkSource)).ToList(),
+                promotedReason: "Set by paste");
             existing = results.Count(r => r.AlreadyOnCase);
+            var promoted = results.Count(r => r.VerdictChanged);
             added = results.Count - existing;
             ClearBulk();
             await OnChanged.InvokeAsync();
@@ -769,9 +773,13 @@ else
             _relatedDismissed = false; // pasted IOCs may reveal related cases — re-surface the suggestion (PROD-40)
             await LoadRelated();
             var plural = IncidentManager.Application.Common.Plural.Of;
-            var kept = $"{plural(existing, "was", "were")} already on this case and kept {(existing == 1 ? "its" : "their")} verdict.";
+            // WF-29: say how many Unknown ones took the pasted verdict; the rest kept theirs.
+            var kept = promoted == 0
+                ? $"{plural(existing, "was", "were")} already on this case and kept {(existing == 1 ? "its" : "their")} verdict."
+                : $"{plural(existing, "was", "were")} already on this case; {promoted} of them changed from Unknown to {Ui.Label(_bulkDisposition)}"
+                  + (promoted < existing ? ", the rest kept their verdict." : ".");
             Toasts.Success(existing == 0 ? $"Added {plural(added, "indicator")}"
-                : added == 0 ? (existing == 1 ? "That indicator was already on this case and kept its verdict." : $"All {kept}")
+                : added == 0 ? (existing == 1 && promoted == 0 ? "That indicator was already on this case and kept its verdict." : $"All {kept}")
                 : $"Added {plural(added, "indicator")}. {kept}");
         }
         catch (Exception ex)

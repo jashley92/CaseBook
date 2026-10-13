@@ -863,7 +863,7 @@ public class CaseTests
         (first.From, first.To, first.Reason).Should().Be((EntityDisposition.Unknown, EntityDisposition.Compromised,
             "Unauthorized Tor sign-in after MFA fatigue"));
         c.VerdictChanges[1].Should().Match<EntityVerdictChange>(v => v.EntityLabel == "FIN-LT-0442" && v.To == EntityDisposition.Benign
-            && v.Reason == null && v.ChangedBy == "an2");
+            && v.Reason == "Set when added again" && v.ChangedBy == "an2");   // WF-29: never reasonless
 
         var milestones = IncidentManager.Application.Cases.CaseMilestones.Project(c,
                 new IncidentManager.Application.Cases.MilestoneLabels(x => "", s => "", p => "", m => ""))

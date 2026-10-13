@@ -248,7 +248,7 @@ public sealed class CaseImportService
         {
             // BUG-152: the document's marking is kept, and only ever raises one the case already has.
             await _cases.AddOrMatchEntitiesAsync(caseId, batch.Select(e => new CaseService.EntityToAdd(e.Type, e.Value, e.Label,
-                e.Disposition, e.Description, e.Source ?? origin, e.Tlp)).ToList(), ct);
+                e.Disposition, e.Description, e.Source ?? origin, e.Tlp)).ToList(), "Set by import", ct);   // WF-29
             foreach (var e in batch) e.Applied = true;
         }
         var entities = includedEntities.Count;

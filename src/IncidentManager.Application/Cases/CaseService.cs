@@ -1752,7 +1752,9 @@ public sealed class CaseService
     /// <see cref="Disposition"/> is the verdict the case keeps, which may differ from the one asked for: adding never
     /// overwrites a recorded verdict.
     /// </summary>
-    public sealed record EntityAddResult(Guid Id, bool AlreadyOnCase, EntityDisposition Disposition, string? Label);
+    /// <param name="VerdictChanged">WF-29: it was already here as Unknown and took the verdict it was added with.</param>
+    public sealed record EntityAddResult(Guid Id, bool AlreadyOnCase, EntityDisposition Disposition, string? Label,
+        bool VerdictChanged = false);
 
     /// <summary>Adds an entity, or reports that it's already on the case (HR-04). See <see cref="Case.AddEntity"/>.</summary>
     public async Task<EntityAddResult> AddOrMatchEntityAsync(Guid id, EntityType type, string value, string? label,
@@ -1761,10 +1763,11 @@ public sealed class CaseService
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
-        var existed = c.FindEntity(type, value) is not null;
+        var before = c.FindEntity(type, value)?.Disposition;
         var entity = c.AddEntity(type, value, label, disposition, description, source, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
-        return new EntityAddResult(entity.Id, existed, entity.Disposition, entity.Label);
+        return new EntityAddResult(entity.Id, before is not null, entity.Disposition, entity.Label,
+            before is { } was && was != entity.Disposition);
     }
 
     /// <summary>One indicator for <see cref="AddOrMatchEntitiesAsync"/>; <see cref="Tlp"/> only ever raises a marking.</summary>
@@ -1780,8 +1783,9 @@ public sealed class CaseService
     /// same as <see cref="AddOrMatchEntityAsync"/>, so a retry after a failure part-way adds nothing twice. A marking
     /// (BUG-152) is kept, and only ever raises the one an indicator already has.
     /// </summary>
+    /// <param name="promotedReason">WF-29: recorded on an Unknown indicator that takes the verdict it's pasted with.</param>
     public async Task<IReadOnlyList<EntityAddResult>> AddOrMatchEntitiesAsync(Guid id, IReadOnlyList<EntityToAdd> items,
-        CancellationToken ct = default)
+        string? promotedReason = null, CancellationToken ct = default)
     {
         Require();
         var results = new List<EntityAddResult>(items.Count);
@@ -1792,11 +1796,13 @@ public sealed class CaseService
             var now = _clock.UtcNow;
             foreach (var i in batch)
             {
-                var existed = c.FindEntity(i.Type, i.Value) is not null;
-                var entity = c.AddEntity(i.Type, i.Value, i.Label, i.Disposition, i.Description, i.Source, _user.UserId, now);
+                var before = c.FindEntity(i.Type, i.Value)?.Disposition;
+                var existed = before is not null;
+                var entity = c.AddEntity(i.Type, i.Value, i.Label, i.Disposition, i.Description, i.Source, _user.UserId, now, promotedReason);
                 if (i.Tlp is { } tlp && (!existed || entity.Tlp is not { } had || had < tlp))
                     c.SetEntityTlp(entity.Id, tlp, _user.UserId, now);
-                results.Add(new EntityAddResult(entity.Id, existed, entity.Disposition, entity.Label));
+                results.Add(new EntityAddResult(entity.Id, existed, entity.Disposition, entity.Label,
+                    before is { } was && was != entity.Disposition));
             }
             await db.SaveChangesAsync(ct);
         }

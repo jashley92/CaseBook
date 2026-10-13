@@ -130,6 +130,27 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_pasted_verdict_on_an_unknown_indicator_says_so_and_records_why(/* WF-29 */)
+    {
+        Guid caseId;
+        await using (var db = NewContext())
+        {
+            await DevDataSeeder.SeedAsync(db, _clock);
+            caseId = (await db.Cases.FirstAsync(c => c.CaseNumber == "2026-01_Phishing_Wave")).Id;
+        }
+        await using var ctx = NewContext();
+        var svc = NewCaseService(ctx);
+        await svc.AddOrMatchEntitiesAsync(caseId, [new CaseService.EntityToAdd(EntityType.IpAddress, "10.8.0.1", null, EntityDisposition.Unknown, null, "bulk")]);
+
+        var results = await svc.AddOrMatchEntitiesAsync(caseId,
+            [new CaseService.EntityToAdd(EntityType.IpAddress, "10.8.0.1", null, EntityDisposition.Malicious, null, "bulk")], "Set by paste");
+
+        results.Single().VerdictChanged.Should().BeTrue();
+        (await ctx.Set<EntityVerdictChange>().AsNoTracking().SingleAsync(v => v.CaseId == caseId && v.EntityLabel == "10.8.0.1"))
+            .Reason.Should().Be("Set by paste");
+    }
+
+    [Fact]
     public void The_schema_is_valid_json_and_pins_the_format_and_version()
     {
         var act = () => JsonNode.Parse(CaseImportSchema.Build());

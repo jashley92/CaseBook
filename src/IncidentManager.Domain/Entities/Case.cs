@@ -753,8 +753,10 @@ public class Case : AuditableEntity, IHashableEntity
     /// Unknown, and its label, description and source are filled only where blank. Changing a recorded verdict or
     /// detail is an edit (<see cref="EditEntity"/>), so re-pasting a list of indicators can't erase a finding.
     /// </summary>
+    /// <param name="promotedReason">WF-29: the reason recorded when an indicator already here as Unknown takes the verdict
+    /// it was added again with (a paste says "Set by paste"); an edit asks for one, so this one isn't left blank.</param>
     public CaseEntity AddEntity(EntityType type, string value, string? label, EntityDisposition disposition,
-        string? description, string? source, string actor, DateTimeOffset nowUtc)
+        string? description, string? source, string actor, DateTimeOffset nowUtc, string? promotedReason = null)
     {
         if (string.IsNullOrWhiteSpace(value))
             throw new ArgumentException("An entity value is required.");
@@ -770,7 +772,7 @@ public class Case : AuditableEntity, IHashableEntity
             var changed = false;
             if (existing.Disposition == EntityDisposition.Unknown && disposition != EntityDisposition.Unknown)
             {
-                RecordVerdictChange(existing, disposition, null, actor, nowUtc);
+                RecordVerdictChange(existing, disposition, promotedReason ?? "Set when added again", actor, nowUtc);
                 existing.Disposition = disposition;
                 changed = true;
             }
