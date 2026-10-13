@@ -32,6 +32,18 @@
     A release bundle produced by the Release workflow (casebook-<version>.zip: contains app/,
     migrations-sqlserver.txt, VERSION.txt). The recommended source -- no SDK needed on the server.
 
+.PARAMETER Version
+    A release to download from GitHub and upgrade to, e.g. v1.6.0, or 'latest' (PROD-50). The script downloads
+    casebook-<version>.zip and its .sha256 from the repository's release, checks the hash, and continues as with
+    -BundleZip. Needs outbound HTTPS to github.com (or -Proxy); a host without it downloads the bundle elsewhere and
+    uses -BundleZip. Administration > Updates shows this command with the newest version filled in.
+
+.PARAMETER Repository
+    The GitHub repository releases are downloaded from with -Version (default 'jashley92/CaseBook').
+
+.PARAMETER Proxy
+    An outbound proxy for -Version (e.g. http://proxy.contoso.local:8080), used with your Windows credentials.
+
 .PARAMETER AppSource
     A folder that already contains the published app (an extracted bundle's app\, or a build
     output) -- an alternative to -BundleZip.
@@ -63,6 +75,9 @@
     Do not prompt for confirmation before deploying.
 
 .EXAMPLE
+    .\Upgrade-CaseBook.ps1 -Version v2.4.0
+
+.EXAMPLE
     .\Upgrade-CaseBook.ps1 -BundleZip .\casebook-v2.4.0.zip
 
 .EXAMPLE
@@ -71,6 +86,9 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string] $BundleZip,
+    [string] $Version,
+    [string] $Repository = 'jashley92/CaseBook',
+    [string] $Proxy,
     [string] $AppSource,
     [switch] $Build,
 
@@ -99,8 +117,8 @@ function Write-Step($m) { Write-Host "==> $m" -ForegroundColor Cyan }
 function Write-Info($m) { Write-Host "    $m" -ForegroundColor Gray }
 function Write-Warn2($m){ Write-Host "    $m" -ForegroundColor Yellow }
 
-$sourceCount = @($BundleZip, $AppSource).Where({ $_ }).Count + [int][bool]$Build
-if ($sourceCount -ne 1) { throw "Specify exactly one source: -BundleZip <zip>, -AppSource <folder>, or -Build." }
+$sourceCount = @($BundleZip, $Version, $AppSource).Where({ $_ }).Count + [int][bool]$Build
+if ($sourceCount -ne 1) { throw "Specify exactly one source: -Version <vX.Y.Z>, -BundleZip <zip>, -AppSource <folder>, or -Build." }
 
 $deployDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot  = Split-Path -Parent $deployDir
@@ -190,6 +208,42 @@ function Invoke-SqlNonQuery([string]$query, [int]$timeoutSec = 0) {
 $staging = Join-Path $env:TEMP "casebook-upgrade-$stamp"
 New-Item -ItemType Directory -Force -Path $staging | Out-Null
 $appSrc = $null; $manifest = $null; $targetVersion = $null
+
+# PROD-50: -Version downloads the release bundle and its .sha256 itself, as you, on this host, and refuses a bundle whose
+# hash doesn't match. Nothing the web app wrote is used.
+if ($Version) {
+    if ($Repository -notmatch '^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$') { throw "-Repository must be owner/name, not '$Repository'." }
+    $web = @{ UseBasicParsing = $true; TimeoutSec = 300 }
+    if ($Proxy) { $web.Proxy = $Proxy; $web.ProxyUseDefaultCredentials = $true }
+    $ProgressPreference = 'SilentlyContinue'   # Windows PowerShell's progress bar slows a download many times over
+    if ($Version -ieq 'latest') {
+        Write-Step "Finding the latest release of $Repository"
+        $latest = Invoke-RestMethod @web -Uri "https://api.github.com/repos/$Repository/releases/latest" -Headers @{ 'User-Agent' = 'CaseBook-Upgrade' }
+        $Version = [string]$latest.tag_name
+    }
+    if ($Version -notmatch '^v\d{1,4}\.\d{1,4}\.\d{1,4}$') { throw "-Version must be a release tag like v1.6.0 (or 'latest'), not '$Version'." }
+
+    $download = Join-Path $env:TEMP "casebook-download-$stamp"
+    New-Item -ItemType Directory -Force -Path $download | Out-Null
+    $zipName = "casebook-$Version.zip"
+    $base = "https://github.com/$Repository/releases/download/$Version"
+    Write-Step "Downloading $zipName from $Repository"
+    $BundleZip = Join-Path $download $zipName
+    $shaFile = "$BundleZip.sha256"
+    try {
+        Invoke-WebRequest @web -Uri "$base/$zipName.sha256" -OutFile $shaFile
+        Invoke-WebRequest @web -Uri "$base/$zipName" -OutFile $BundleZip
+    } catch {
+        throw ("Couldn't download $Version from github.com/$Repository ($($_.Exception.Message)). Check the version exists " +
+               "and this host can reach github.com (or pass -Proxy); otherwise download the bundle elsewhere and use -BundleZip.")
+    }
+    $expected = ((Get-Content $shaFile -Raw).Trim() -split '\s+')[0]
+    $actual = (Get-FileHash -Path $BundleZip -Algorithm SHA256).Hash
+    if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) {
+        throw "The downloaded bundle's SHA-256 ($actual) doesn't match the release's ($expected). Nothing was changed."
+    }
+    Write-Info "SHA-256 matches the release: $actual"
+}
 
 if ($BundleZip) {
     if (-not (Test-Path $BundleZip)) { throw "Bundle not found: $BundleZip" }
@@ -559,8 +613,23 @@ if (-not $started -or ($lastStatus -ge 500)) {
            "directory before retrying. Review the event-log error above and docs/UPGRADE.md.")
 }
 
-# Record the deployed version so the next upgrade can show current -> target.
-if ($targetVersion) { Set-Content -Path (Join-Path $SitePath 'VERSION.txt') -Value "Version: $targetVersion" -Encoding utf8 }
+# Record the deployed version so the next upgrade can show current -> target, and (PROD-50) what it was upgraded from,
+# when and by whom, which Administration > Updates shows.
+if ($targetVersion) {
+    $verLines = @("Version: $targetVersion")
+    if ($currentVersion -and $currentVersion -ne '(unknown)' -and $currentVersion -ne $targetVersion) { $verLines += "Previous: $currentVersion" }
+    $verLines += "Upgraded: $(Get-Date -Format 'yyyy-MM-dd HH:mm zzz')"
+    $verLines += "By: $([Security.Principal.WindowsIdentity]::GetCurrent().Name)"
+    Set-Content -Path (Join-Path $SitePath 'VERSION.txt') -Value $verLines -Encoding utf8
+}
+
+# PROD-50: keep this release's deploy scripts beside the site (admin-only), so the next upgrade is -Version vX.Y.Z.
+try {
+    $newDeploy = if ($BundleZip) { Get-ChildItem -Path $staging -Recurse -Directory -Filter 'deploy' | Select-Object -First 1 -ExpandProperty FullName } else { $deployDir }
+    if (-not $newDeploy) { $newDeploy = $deployDir }
+    $kept = Publish-CaseBookDeployScripts -SourceDeployDir $newDeploy -SitePath $SitePath
+    if ($kept) { Write-Info "Deploy scripts kept in $kept (next time: & '$kept\Upgrade-CaseBook.ps1' -Version <vX.Y.Z>)" }
+} catch { Write-Warn2 "Couldn't keep a copy of the deploy scripts beside the site: $($_.Exception.Message)" }
 
 Write-Step "Upgrade complete."
 Write-Host @"
