@@ -75,7 +75,7 @@ public sealed class StixExportService
 
         var c = await db.Cases.AsNoTracking().ForUser(_user)
             .Where(x => x.Id == caseId)
-            .Select(x => new { x.Id, x.CaseNumber, x.Title, x.Summary, x.Classification, x.Severity })
+            .Select(x => new { x.Id, x.CaseNumber, x.Title, x.Summary, x.Classification, x.Severity, x.CreatedAtUtc })
             .FirstOrDefaultAsync(ct);
         if (c is null) return null;
 
@@ -93,8 +93,10 @@ public sealed class StixExportService
             ["type"] = "identity",
             ["spec_version"] = Spec,
             ["id"] = identityId,
-            ["created"] = Ts(now),
-            ["modified"] = Ts(now),
+            // BUG-248: the same object every export (its id is derived from the name), so the same created and modified:
+            // STIX 2.1 says created never changes across versions, and a TIP sees a new one as a conflicting object.
+            ["created"] = IdentityCreated,
+            ["modified"] = IdentityCreated,
             ["name"] = org,
             ["identity_class"] = "organization",
         }));
@@ -145,8 +147,8 @@ public sealed class StixExportService
             ["type"] = "report",
             ["spec_version"] = Spec,
             ["id"] = $"report--{c.Id}",
-            ["created"] = Ts(now),
-            ["modified"] = Ts(now),
+            ["created"] = Ts(c.CreatedAtUtc),   // BUG-248: one report per case, first created with the case; each export a new version
+            ["modified"] = Ts(now < c.CreatedAtUtc ? c.CreatedAtUtc : now),
             ["created_by_ref"] = identityId,
             ["name"] = $"{c.CaseNumber} — {c.Title}",
             ["description"] = Nullify(c.Summary),
@@ -256,6 +258,9 @@ public sealed class StixExportService
     }
 
     private static readonly Guid UrlNamespace = new("6ba7b811-9dad-11d1-80b4-00c04fd430c8");   // RFC 4122 appendix C
+
+    // BUG-248: a fixed time for the organization's identity object (any constant will do; it never changes).
+    private const string IdentityCreated = "2026-01-01T00:00:00.000Z";
 
     private static TlpLevel? Max(TlpLevel? a, TlpLevel? b) => a is null ? b : b is null ? a : (TlpLevel)Math.Max((int)a, (int)b);
 
