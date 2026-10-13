@@ -42,6 +42,7 @@
                 </div>
                 <div class="small text-muted mt-2">
                     <span class="bi bi-clipboard me-1"></span>Paste a screenshot or drag files onto this tab. They're hashed and logged to the chain of custody like any upload.
+                    Dropped files upload straight away, without a description; the box above is for the file you pick.
                     @if (_file is not null) { <span class="ms-1">Ready: <strong>@_file.Name</strong>. Add a description and click Upload.</span> }
                 </div>
                 @if (_uploadError is not null) { <div class="text-danger small mt-2">@_uploadError</div> }
@@ -310,7 +311,8 @@
                 try
                 {
                     await using var stream = f.OpenReadStream(MaxEvidenceBytes);
-                    await Evidence.UploadAsync(CaseId, f.Name, f.ContentType, stream, _evDesc);
+                    // REV-34: the description box belongs to the file staged in the picker, not to these.
+                    await Evidence.UploadAsync(CaseId, f.Name, f.ContentType, stream, description: null);
                     uploaded++;
                 }
                 catch (Exception ex)
@@ -326,7 +328,6 @@
         }
         if (uploaded > 0)
         {
-            _evDesc = null;
             await OnChanged.InvokeAsync();
             Toasts.Success($"Uploaded {uploaded} file{(uploaded == 1 ? "" : "s")}");
         }
