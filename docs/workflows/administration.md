@@ -124,7 +124,8 @@ importing a bundle from elsewhere ([known issues](../reference/known-issues.md#s
 On the **Integrity & audit** page (any `ViewCases` user can verify; sealing needs `Administer`):
 
 - **Verify now**: checks the whole chain and the latest seal (shared, at most once a minute).
-- **Seal now**: signs the current chain head.
+- **Seal chain head**: verifies the whole chain and its records, then signs the current head. It refuses while the chain
+  doesn't verify, since a seal would make a rewritten history read as authentic (REV-04).
 - **Audit trail**: filter by case, actor, action, entity and date; export a case's trail.
 - **Compliance bundle**: for a date range.
 - SQL Server ledger status, when enabled.

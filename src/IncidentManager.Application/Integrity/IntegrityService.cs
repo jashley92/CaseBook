@@ -338,10 +338,17 @@ public sealed class IntegrityService
     /// signed with an asymmetric key (<see cref="ISealSigner"/>) so its authenticity can be verified
     /// independently of the database later.
     /// </summary>
-    public Task<IntegritySeal?> SealAsync(CancellationToken ct = default)
+    public async Task<IntegritySeal?> SealAsync(CancellationToken ct = default)
     {
         AdminActionPermissions.Require<IntegrityService>(_user);
-        return SealCoreAsync(ct);
+        // REV-04: as the background job does, never sign over a chain that doesn't verify. A seal over a rewritten head
+        // would make the rewrite read as authentic. The full check also raises the alarm and the banner if it's broken.
+        var check = await VerifyAndTrackAsync(ct);
+        if (!check.IsValid)
+            throw new InvalidOperationException(
+                $"No seal was recorded: the audit chain doesn't verify{(check.FirstBrokenSequence is { } at ? $" at entry #{at}" : "")}. " +
+                "A seal would sign over the break, so investigate it first.");
+        return await SealCoreAsync(ct);
     }
 
     private async Task<IntegritySeal?> SealCoreAsync(CancellationToken ct)

@@ -53,7 +53,8 @@
                 <div>
                     <button class="btn btn-sm btn-primary" @onclick="Verify">Verify now</button>
                     <AuthorizeView Policy="@Policies.Administer">
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="Seal">Seal chain head</button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="Seal"
+                                title="Verifies the whole chain first, and seals only if it's intact">Seal chain head</button>
                     </AuthorizeView>
                 </div>
             </div>

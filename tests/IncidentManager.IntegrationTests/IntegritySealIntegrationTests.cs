@@ -95,6 +95,23 @@ public sealed class IntegritySealIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_manual_seal_is_refused_over_a_chain_that_does_not_verify(/* REV-04 */)
+    {
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);
+        var old = await db.AuditLog.OrderBy(a => a.Sequence).Skip(1).FirstAsync();
+        old.EntryHash = new string('0', 64);
+        await db.SaveChangesAsync();
+        var svc = NewService(db);
+
+        var seal = async () => await svc.SealAsync();
+
+        (await seal.Should().ThrowAsync<InvalidOperationException>()).WithMessage("No seal was recorded*");
+        (await svc.RecentSealsAsync()).Should().BeEmpty();
+        _alerts.Fired.Should().ContainSingle("the check behind the refusal raises the alarm like any other");
+    }
+
+    [Fact]
     public async Task Seal_is_signed_exported_and_verifies_valid()
     {
         await using var db = NewContext();
