@@ -87,6 +87,28 @@ public sealed class ProgramReportTests : IDisposable
     }
 
     [Fact]
+    public async Task Reopening_or_reclassifying_a_case_later_does_not_change_a_past_quarter(/* WF-38 */)
+    {
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            var e = Case.Open(2026, 5, "E", "Later reopened", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "ic", Apr(3));
+            e.ChangePhase(CasePhase.Closed, "Done", "ic", Apr(20), outcomeKey: "Confirmed");
+            // In Q3: reopened, raised to a Breach, and closed again.
+            e.Reopen("New evidence", "ic", Apr(20).AddMonths(3));
+            e.Reclassify(Classification.Breach, "Data left", "ic", Apr(21).AddMonths(3));
+            e.ChangePhase(CasePhase.Closed, "Done again", "ic", Apr(25).AddMonths(3), outcomeKey: "Confirmed");
+            db.Cases.Add(e);
+            await db.SaveChangesAsync();
+        }
+
+        var q2 = (await Service().BuildAsync(Q2)).Current;
+        q2.Closed.Should().Be(1, "it was closed in Q2");
+        q2.OpenAtEnd.Should().Be(0);
+        q2.OpenedByClassification.Should().ContainSingle(x => x.Key == Classification.Incident, "it was an Incident at Q2's end");
+    }
+
+    [Fact]
     public async Task A_review_recorded_after_the_quarter_does_not_change_it(/* REV-59 */)
     {
         await SeedAsync();

@@ -162,7 +162,45 @@ public sealed class ProgramReportService
     }
 
     private sealed record Loaded(List<CaseRow> Rows, Dictionary<Guid, DateTimeOffset> BreachAt, List<(Guid CaseId, DateTimeOffset At)> Reviews,
-        List<ActionRow> Actions, SlaTargets Targets, Dictionary<Guid, SlaState> Notices);
+        List<ActionRow> Actions, SlaTargets Targets, Dictionary<Guid, SlaState> Notices, History History);
+
+    /// <summary>
+    /// WF-38: each case's phase, classification and severity changes, in order, so a quarter is figured as the record stood
+    /// then (owner's decision: past quarters are frozen). A case reopened and closed again later, or reclassified later,
+    /// no longer changes a quarter the board has already seen.
+    /// </summary>
+    private sealed record History(
+        Dictionary<Guid, List<(CasePhase? From, CasePhase To, DateTimeOffset At)>> Phases,
+        Dictionary<Guid, List<(Classification? From, Classification? To, DateTimeOffset At)>> Classes,
+        Dictionary<Guid, List<(Severity? From, Severity To, DateTimeOffset At)>> Severities)
+    {
+        // A case's closures and reopenings, when the record has them; one closed without a phase change (data from before
+        // phase changes were recorded) is judged by its closed time, as before.
+        private List<(CasePhase? From, CasePhase To, DateTimeOffset At)>? Closures(Guid id) =>
+            Phases.TryGetValue(id, out var ph) && ph.Any(x => x.To == CasePhase.Closed || x.From == CasePhase.Closed) ? ph : null;
+
+        public bool ClosedAt(Guid id, DateTimeOffset t, DateTimeOffset? closedNow) =>
+            Closures(id) is { } ph
+                ? ph.Where(x => x.At < t).Select(x => (CasePhase?)x.To).LastOrDefault() == CasePhase.Closed
+                : closedNow is { } c && c < t;
+
+        public bool ClosedIn(Guid id, DateTimeOffset start, DateTimeOffset end, DateTimeOffset? closedNow) =>
+            Closures(id) is { } ph
+                ? ph.Any(x => x.To == CasePhase.Closed && x.At >= start && x.At < end)
+                : closedNow is { } c && c >= start && c < end;
+
+        public bool EverClosed(Guid id, DateTimeOffset? closedNow) => closedNow is not null || Closures(id) is not null;
+
+        public Classification? ClassAt(Guid id, DateTimeOffset t, Classification? now) =>
+            Classes.TryGetValue(id, out var ch) && ch.Count > 0
+                ? (ch.Any(x => x.At < t) ? ch.Last(x => x.At < t).To : ch[0].From)
+                : now;
+
+        public Severity SevAt(Guid id, DateTimeOffset t, Severity now) =>
+            Severities.TryGetValue(id, out var ch) && ch.Count > 0
+                ? (ch.Any(x => x.At < t) ? ch.Last(x => x.At < t).To : ch[0].From ?? now)
+                : now;
+    }
 
     private async Task<Loaded> LoadAsync(IAppDbContext db, bool includeExercises, CancellationToken ct)
     {
@@ -196,7 +234,18 @@ public sealed class ProgramReportService
                 notices[id] = head.State;
         }
 
-        return new Loaded(rows, breachFirstAt, reviews, actions, _sla.Current, notices);
+        // WF-38: the history each quarter is figured from (effective times, as the record dates them).
+        var phases = (await db.StatusChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId))
+                .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc }).ToListAsync(ct))
+            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.At).Select(x => ((CasePhase?)x.From, x.To, x.At)).ToList());
+        var classes = (await db.ClassificationChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId))
+                .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc }).ToListAsync(ct))
+            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.At).Select(x => (x.From, (Classification?)x.To, x.At)).ToList());
+        var severities = (await db.SeverityChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId))
+                .Select(x => new { x.CaseId, x.From, x.To, At = x.EffectiveAtUtc ?? x.ChangedAtUtc }).ToListAsync(ct))
+            .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.At).Select(x => ((Severity?)x.From, x.To, x.At)).ToList());
+
+        return new Loaded(rows, breachFirstAt, reviews, actions, _sla.Current, notices, new History(phases, classes, severities));
     }
 
     private sealed record CaseRow(Guid Id, Classification? Classification, Severity Severity, CasePhase Phase,
@@ -210,7 +259,12 @@ public sealed class ProgramReportService
     private static ProgramSnapshot Snapshot(DateTimeOffset start, DateTimeOffset end, Loaded data)
     {
         var (rows, breachAt, reviews, actions, targets) = (data.Rows, data.BreachAt, data.Reviews, data.Actions, data.Targets);
+        var history = data.History;
         bool In(DateTimeOffset? t) => t is { } v && v >= start && v < end;
+        // WF-38: as the record stood at the quarter's end.
+        bool ClosedInQuarter(CaseRow r) => history.ClosedIn(r.Id, start, end, r.ClosedAtUtc);
+        Classification? ClassAtEnd(CaseRow r) => history.ClassAt(r.Id, end, r.Classification);
+        Severity SevAtEnd(CaseRow r) => history.SevAt(r.Id, end, r.Severity);
 
         var opened = rows.Where(r => In(r.CreatedAtUtc)).ToList();
 
@@ -235,8 +289,9 @@ public sealed class ProgramReportService
             {
                 var met = cont.State == SlaState.Met;
                 if (met) cMet++; else cMiss++;
-                var (sm, sx) = bySeverity.GetValueOrDefault(r.Severity);
-                bySeverity[r.Severity] = met ? (sm + 1, sx) : (sm, sx + 1);
+                var sev = SevAtEnd(r);
+                var (sm, sx) = bySeverity.GetValueOrDefault(sev);
+                bySeverity[sev] = met ? (sm + 1, sx) : (sm, sx + 1);
             }
             if (In(r.ReportedAtUtc) && data.Notices.TryGetValue(r.Id, out var notice))
             {
@@ -261,12 +316,14 @@ public sealed class ProgramReportService
 
         return new ProgramSnapshot(
             Opened: opened.Count,
-            Closed: rows.Count(r => In(r.ClosedAtUtc)),
-            // BUG-211: an archived case that was never closed isn't open, as on the dashboard (BUG-55).
-            OpenAtEnd: rows.Count(r => r.CreatedAtUtc < end && (r.ClosedAtUtc is null ? !r.IsArchived : r.ClosedAtUtc >= end)),
-            OpenedByClassification: opened.GroupBy(r => r.Classification)
+            Closed: rows.Count(ClosedInQuarter),
+            // BUG-211: an archived case that was never closed isn't open, as on the dashboard (BUG-55). WF-38: closed or open
+            // as it stood at the quarter's end, so reopening it later doesn't move a quarter already reported.
+            OpenAtEnd: rows.Count(r => r.CreatedAtUtc < end && !history.ClosedAt(r.Id, end, r.ClosedAtUtc)
+                                       && !(r.IsArchived && !history.EverClosed(r.Id, r.ClosedAtUtc))),
+            OpenedByClassification: opened.GroupBy(ClassAtEnd)
                 .Select(g => new CountBy<Classification?>(g.Key, g.Count())).OrderBy(x => x.Key is null ? -1 : (int)x.Key).ToList(),
-            OpenedBySeverity: opened.GroupBy(r => r.Severity)
+            OpenedBySeverity: opened.GroupBy(SevAtEnd)
                 .Select(g => new CountBy<Severity>(g.Key, g.Count())).OrderByDescending(x => x.Key).ToList(),
             TimeToDetect: Span(rows.Select(r => (r.OccurredAtUtc, r.DetectedAtUtc))),
             TimeToContain: Span(rows.Select(r => (r.DetectedAtUtc, r.ContainedAtUtc))),
@@ -286,7 +343,7 @@ public sealed class ProgramReportService
                 .Select(v => new SeverityAttainment(v, targets.HoursFor(SlaClock.Containment, v),
                     bySeverity.GetValueOrDefault(v).Met, bySeverity.GetValueOrDefault(v).Missed)).ToList(),
             NoticesMet: nMet, NoticesMissed: nMiss,
-            ClosedWithReview: rows.Count(r => In(r.ClosedAtUtc) && reviewed.Contains(r.Id)),
+            ClosedWithReview: rows.Count(r => ClosedInQuarter(r) && reviewed.Contains(r.Id)),
             OpenActionAreas: Areas(openAtEnd));
     }
 
