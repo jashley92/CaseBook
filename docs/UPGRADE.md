@@ -168,9 +168,45 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
-### Next release
+### v1.5.7
 
-No migration. Things to check:
+A bug-fix release from a review by workflow, with one migration, applied at startup (`ReportedJurisdictionsAndAppendedBriefs`:
+a column on `Cases` and one on `CaseBriefs`). At the first start, each reported case records the jurisdictions that were in
+play (its notices', where it has any). Things to check before or right after upgrading:
+
+- **API tokens edited in the database before v1.5.6 are left flagged, not signed off.** The v1.5.6 start-up back-fill
+  recorded every existing token as clean. From this release, a token whose row disagrees with its audit trail (revoked in
+  the trail but live in the row, or roles or expiry different from its Create entry) isn't recorded, and the integrity
+  check flags it. **If the banner shows an API token after upgrading, treat it as a possible tampering incident and
+  revoke it.** A token whose secret was swapped in the database can't be detected: the trail never recorded it. A
+  v1.5.6 install already signed its tokens off; review them in Administration › API tokens.
+
+- **A reported case keeps the jurisdictions in play when it was reported.** Changing a data element's jurisdictions now
+  affects only cases not yet reported (one whose remaining jurisdictions are all notified becomes reported), and an
+  analyst adding an element to a reported case no longer records a notice to a regulator that wasn't told.
+
+- **With `Email:Enabled` off, scheduled reminders, the executive report and critical alerts are held**, not recorded as
+  sent, so the ones still due go out when email is switched on. **Expect a catch-up of reminders** the first time email
+  is turned on after running with it off.
+
+- **The IOC feed (`/export/iocs.csv`) has a `tlp` column**, last, so existing column positions don't move. Every
+  indicator is still included; **filter RED / AMBER+STRICT in the consumer** if it shouldn't get them.
+
+- **A role an active API token holds can't be deleted.** Revoke the tokens or change their roles first.
+
+- **Exercise and live cases can't be linked or superseded into each other.** Existing links are left as they are.
+
+- **Find:** `status:open` leaves archived cases out (archived results are labelled), `after:`/`before:` filter entities by
+  when they were added, `by:` means who first recorded an entry, and a quoted word is never read as a person.
+
+- **Program report:** past quarters are figured from the history as it stood at the quarter's end, so a quarter's
+  figures can differ slightly from what an earlier version showed for a case reopened or reclassified since.
+
+- Also: the Reopen dialog asks when a legacy case was contained or resolved where it needs to; a materiality call taken
+  back and made again is shown as the clock restarting; the close gate notes a classification lowered within 7 days of
+  closing; a stuck import can be reopened by any reviewer; reminders reach a task owner named by email or UPN; manager
+  emails fall back to the user mirror while AD can't be reached; the import preview can file a case restricted and
+  assigned to you; pasting a verdict onto an Unknown indicator records "Set by paste".
 
 - **A config bundle is held to the admin pages' rules.** Import (and its preview) now skips, and says so, an AD mapping
   with no group or to a role that doesn't exist; it refuses taxonomy keys that hide every option of a list or reorder
