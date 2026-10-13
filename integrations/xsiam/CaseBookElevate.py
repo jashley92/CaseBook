@@ -17,7 +17,8 @@ Arguments (set them in the playbook task; keep the token in the XSIAM credential
   max_indicators Optional cap on indicators sent (default 500)
   verify_tls     Optional, default true. Leave on.
 
-Outputs: CaseBook.Elevation.PendingImportId, CaseBook.Elevation.ReviewUrl, CaseBook.Elevation.Warnings
+Outputs: CaseBook.Elevation.PendingImportId, CaseBook.Elevation.ReviewUrl, CaseBook.Elevation.Warnings,
+CaseBook.Elevation.Duplicate (true when the same document was already waiting, e.g. on a retry)
 """
 import demistomock as demisto  # noqa: F401  (provided by the XSIAM / XSOAR runtime)
 from CommonServerPython import *  # noqa: F401,F403
@@ -120,25 +121,39 @@ def main():
 
     doc = build_document(incident, incident_indicators(incident.get("id"), cap), elevated_by)
 
-    resp = requests.post(
-        f"{base}/api/import/cases",
-        json=doc,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        timeout=30,
-        verify=verify,
-    )
-    if resp.status_code != 201:
+    try:
+        resp = requests.post(
+            f"{base}/api/import/cases",
+            json=doc,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=30,
+            verify=verify,
+        )
+    except requests.RequestException as e:
+        # The hand-off may or may not have arrived. Running it again is safe: CaseBook answers a resend of the same
+        # document with the one already waiting (200, duplicate) rather than queueing it twice.
+        return_error(f"Couldn't reach CaseBook ({type(e).__name__}: {e}). It's safe to run this again.")
+        return
+    # 201: queued. 200: this same document was already waiting for review (a retry or a re-run), so that one stands.
+    if resp.status_code not in (200, 201):
         return_error(f"CaseBook refused the hand-off ({resp.status_code}): {resp.text[:500]}")
+        return
 
     body = resp.json()
+    duplicate = bool(body.get("duplicate"))
     review_url = f"{base}/cases/import?pending={body.get('pendingImportId')}"
     outputs = {
         "PendingImportId": body.get("pendingImportId"),
         "ReviewUrl": review_url,
         "Warnings": body.get("warnings") or [],
+        "Duplicate": duplicate,
     }
-    readable = (f"Sent to CaseBook for review ({body.get('itemCount', 0)} item(s)). "
-                f"A person confirms it at {review_url} before any case is written.")
+    if duplicate:
+        readable = (f"Already waiting for review in CaseBook (sent earlier; not queued again). "
+                    f"A person confirms it at {review_url} before any case is written.")
+    else:
+        readable = (f"Sent to CaseBook for review ({body.get('itemCount', 0)} item(s)). "
+                    f"A person confirms it at {review_url} before any case is written.")
     return_results(CommandResults(outputs_prefix="CaseBook.Elevation", outputs=outputs, readable_output=readable))
 
 

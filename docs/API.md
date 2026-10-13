@@ -39,8 +39,10 @@ Submit a structured case-import document. **Auth:** bearer token with **EditCase
 
 The submission is **staged for review** — it is not written to a case until a person opens the
 *Import → Pending imports* queue in CaseBook and confirms it (or rejects it). A submission into an existing
-restricted case appears only to reviewers who can see that case. Nothing is retried on the server;
-resubmitting creates a second pending import.
+restricted case appears only to reviewers who can see that case. Nothing is retried on the server. Resending
+the identical document with the same token while the first is still waiting (within 24 hours) returns that one
+(`200`, `duplicate: true`) rather than queueing it twice, so a client can retry safely after a timeout; a
+changed document is a new submission.
 
 **Responses**
 
