@@ -36,8 +36,19 @@ public sealed class FileSealStore : ISealStore
             seal.Signature
         };
 
-        var name = $"seal-{seal.UpToSequence:D9}-{seal.SealedAtUtc:yyyyMMddTHHmmssZ}.json";
-        var path = Path.Combine(_root, name);
-        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(record, Json), ct);
+        await WriteNewAsync(Path.Combine(_root, FileName(seal, "json")), System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(record, Json)), ct);
+    }
+
+    /// <summary>
+    /// REV-07: one file per seal, never overwritten. Two seals over the same head in the same second (a double click,
+    /// or a manual seal beside the background job) each keep their copy: the name carries the seal's id.
+    /// </summary>
+    internal static string FileName(IntegritySeal seal, string extension) =>
+        $"seal-{seal.UpToSequence:D9}-{seal.SealedAtUtc.UtcDateTime:yyyyMMddTHHmmssZ}-{seal.Id.ToString("N")[..8]}.{extension}";
+
+    internal static async Task WriteNewAsync(string path, byte[] content, CancellationToken ct)
+    {
+        await using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        await file.WriteAsync(content, ct);
     }
 }

@@ -112,6 +112,19 @@ public sealed class IntegritySealIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task Two_seals_in_the_same_second_each_keep_their_copy(/* REV-07 */)
+    {
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);
+        var svc = NewService(db);
+
+        await svc.SealAsync();
+        await svc.SealAsync();   // same head, same clock second
+
+        Directory.GetFiles(Path.Combine(_workDir, "seals")).Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task Seal_is_signed_exported_and_verifies_valid()
     {
         await using var db = NewContext();

@@ -97,8 +97,8 @@ public sealed class TimestampSealCopier : ISealCopier, IDisposable
             throw new InvalidOperationException("The timestamp's signature doesn't verify.");
 
         Directory.CreateDirectory(_folder);
-        var name = $"seal-{seal.UpToSequence:D9}-{seal.SealedAtUtc:yyyyMMddTHHmmssZ}.tsr";
-        await File.WriteAllBytesAsync(Path.Combine(_folder, name), token.AsSignedCms().Encode(), ct);
+        await Storage.FileSealStore.WriteNewAsync(Path.Combine(_folder, Storage.FileSealStore.FileName(seal, "tsr")),
+            token.AsSignedCms().Encode(), ct);   // REV-07
     }
 
     /// <summary>

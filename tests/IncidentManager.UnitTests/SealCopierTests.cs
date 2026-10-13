@@ -101,7 +101,7 @@ public sealed class SealCopierTests : IDisposable
         await copier.CopyAsync(Seal());
 
         var file = Directory.GetFiles(_dir, "*.tsr").Should().ContainSingle().Subject;
-        Path.GetFileName(file).Should().Be("seal-000000042-20261009T120000Z.tsr");
+        Path.GetFileName(file).Should().MatchRegex(@"^seal-000000042-20261009T120000Z-[0-9a-f]{8}[.]tsr$");   // REV-07: the seal id keeps each its own
         Rfc3161TimestampToken.TryDecode(File.ReadAllBytes(file), out var token, out _).Should().BeTrue();
         token!.VerifySignatureForData(System.Text.Encoding.UTF8.GetBytes(Seal().BuildCanonicalContent()), out _).Should().BeTrue();
     }

@@ -248,7 +248,7 @@ Three optional extras:
 - **RFC 3161 timestamps** (`Integrity:SealCopies:TimestampAuthorityUrl`): for an organization with its own timestamp
   authority. Only internal addresses are accepted (the host must resolve to private, loopback or link-local
   addresses; anything else stops startup), so CaseBook never sends seals to the internet. Each token is saved beside
-  the seal's JSON copy as `seal-<sequence>-<time>.tsr`; check one with
+  the seal's JSON copy as `seal-<sequence>-<time>-<id>.tsr` (each seal its own file); check one with
   `openssl ts -verify -data payload.txt -in seal-….tsr -token_in -CAfile <your TSA's CA>` (the payload as in
   `VERIFY.txt`). A timestamp proves the seal existed at that time, so even someone holding the signing key can't
   backdate a rewritten history.
