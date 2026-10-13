@@ -81,6 +81,7 @@ public static partial class IocImportConverter
         var skipped = new SortedDictionary<string, int>(StringComparer.Ordinal);
         var unparsedPatterns = 0;
         var withdrawn = 0;   // BUG-169
+        var together = 0;    // REV-53: observables a pattern matches only together
         string? producer = null;
         var markings = TlpMarkings(objects);   // BUG-152
 
@@ -108,6 +109,14 @@ public static partial class IocImportConverter
                     // An indicator SDO is a producer's assertion about what it matches; carry its name/description,
                     // and its verdict from indicator_types (BUG-123: an allow-list "benign" entry isn't malicious).
                     var verdict = IndicatorVerdict(o);
+                    // REV-53: "[a] AND [b]" (or FOLLOWEDBY, or a WITHIN qualifier) matches the combination, not either part. Each
+                    // part on its own asserts nothing (a common file name, an internal address), so it isn't carried in with
+                    // the indicator's verdict, which would put it on the blocking feed: it comes in as Unknown, to be judged.
+                    if (!OrOnly(Str(o, "pattern")!) && verdict != EntityDisposition.Unknown)
+                    {
+                        verdict = EntityDisposition.Unknown;
+                        together++;
+                    }
                     foreach (var (t, v) in found)
                         entities.Add(new CaseImportEntity
                         {
@@ -129,6 +138,9 @@ public static partial class IocImportConverter
         if (withdrawn > 0)
             notes.Add($"{Plural.Of(withdrawn, "STIX indicator")} {(withdrawn == 1 ? "was" : "were")} revoked or past {(withdrawn == 1 ? "its" : "their")} valid_until, " +
                       $"so {(withdrawn == 1 ? "it wasn't" : "they weren't")} imported.");
+        if (together > 0)
+            notes.Add($"{Plural.Of(together, "STIX indicator")} matched only a combination of observables (AND, FOLLOWEDBY or a qualifier), " +
+                      "so the parts came in as Unknown rather than with the indicator's verdict. Judge each before it reaches the feed.");
         if (unparsedPatterns > 0)
             notes.Add($"{Plural.Of(unparsedPatterns, "STIX indicator pattern")} {(unparsedPatterns == 1 ? "was" : "were")} too complex to read (only simple \"[type:property = 'value']\" comparisons are imported).");
         if (skipped.Count > 0)
@@ -227,6 +239,10 @@ public static partial class IocImportConverter
 
     [GeneratedRegex(@"\[\s*(?<obj>[a-z0-9-]+)\s*:\s*(?<prop>[a-z0-9_.'\-]+)\s*=\s*'(?<val>(?:[^'\\]|\\.)*)'\s*\]", RegexOptions.IgnoreCase)]
     private static partial Regex SimpleComparison();
+
+    /// <summary>REV-53: whether a pattern's comparisons are joined by OR alone, so each one is an indicator by itself.</summary>
+    public static bool OrOnly(string pattern) =>
+        Regex.Replace(SimpleComparison().Replace(pattern, ""), @"\bOR\b", "", RegexOptions.IgnoreCase).Trim().Length == 0;
 
     /// <summary>The observables in a STIX pattern made of simple equality comparisons (joined by OR/AND).</summary>
     public static List<(EntityType Type, string Value)> PatternObservables(string? pattern)

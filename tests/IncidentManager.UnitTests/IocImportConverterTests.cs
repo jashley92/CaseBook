@@ -196,6 +196,27 @@ public class IocImportConverterTests
     }
 
     [Fact]
+    public void Observables_a_pattern_matches_only_together_come_in_as_unknown(/* REV-53 */)
+    {
+        const string bundle = """
+        { "type": "bundle", "id": "bundle--1", "objects": [
+          { "type": "indicator", "spec_version": "2.1", "id": "indicator--1", "indicator_types": ["malicious-activity"],
+            "pattern": "[file:name = 'svchost.exe'] AND [ipv4-addr:value = '10.1.2.3']", "pattern_type": "stix" },
+          { "type": "indicator", "spec_version": "2.1", "id": "indicator--2", "indicator_types": ["malicious-activity"],
+            "pattern": "[domain-name:value = 'evil.example'] OR [url:value = 'https://evil.example/x']", "pattern_type": "stix" }
+        ] }
+        """;
+        var r = IocImportConverter.Convert(bundle);
+
+        var verdicts = r.Document!.Entities!.ToDictionary(e => e.Value!, e => e.Disposition);
+        verdicts["svchost.exe"].Should().Be("Unknown");
+        verdicts["10.1.2.3"].Should().Be("Unknown");
+        verdicts["evil.example"].Should().Be("Malicious", "an OR pattern asserts each part");
+        r.Notes.Should().Contain(n => n.Contains("only a combination"));
+        IocImportConverter.OrOnly("[a:value = 'x'] WITHIN 5 SECONDS".Replace("a:value", "url:value")).Should().BeFalse();
+    }
+
+    [Fact]
     public void Pattern_reader_handles_hashes_escapes_and_ignores_non_equality()
     {
         IocImportConverter.PatternObservables("[file:hashes.'SHA-256' = 'abc'] AND [email-addr:value = 'o\\'brien@x.example']")
