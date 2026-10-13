@@ -253,6 +253,35 @@ if ($Url) {
         if ($code -eq 401) { Bad "401 Unauthorized - Windows auth not negotiating (check SPNs / that you're a mapped role member)" }
         else { Bad "Request failed: $($_.Exception.Message)" }
     }
+
+    # 3. BUG-261: /api reaches the app. The installer opens /api to anonymous requests (API tokens), and IIS can answer
+    #    there itself: a web.config whose handler sits in <location inheritInChildApplications="false"> leaves /api to
+    #    IIS's StaticFile handler, which answers 404, so API imports never arrive. Asked directly (no proxy).
+    $schemaUrl = ([Uri]$Url).GetLeftPart([UriPartial]::Authority) + '/api/import/cases/schema'
+    Info "GET $schemaUrl (anonymous)"
+    $prevCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    try {
+        $req = [System.Net.HttpWebRequest]::Create($schemaUrl)
+        $req.Proxy = $null; $req.AllowAutoRedirect = $false; $req.Timeout = 30000
+        $r = $null
+        try { $r = $req.GetResponse() } catch {
+            $ex = $_.Exception; while ($ex -and $ex -isnot [System.Net.WebException]) { $ex = $ex.InnerException }
+            if ($ex -and $ex.Response) { $r = $ex.Response } else { throw }
+        }
+        try {
+            $code = [int]$r.StatusCode
+            $body = (New-Object System.IO.StreamReader($r.GetResponseStream())).ReadToEnd()
+        } finally { $r.Close() }
+        if ($code -eq 200 -and $body -match '"\$schema"') { Ok "/api reaches CaseBook (API imports can arrive)" }
+        elseif ($code -eq 404) {
+            Bad ("/api answered 404 from IIS, not CaseBook: API imports can't reach the app. The site's web.config probably " +
+                 "wraps its handler in <location inheritInChildApplications=""false"">; upgrade to v1.6.2 or later, or set it to ""true"".")
+        }
+        elseif ($code -in 401,403) { Bad "/api answered ${code}: it isn't open to anonymous requests, so API tokens can't sign in (re-run Install-CaseBook.ps1)." }
+        else { Bad "/api answered $code, not the import schema." }
+    } catch { Bad "/api request failed: $($_.Exception.Message)" }
+    finally { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $prevCallback }
 }
 
 # ================================== SUMMARY ===================================

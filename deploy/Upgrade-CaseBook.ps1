@@ -524,8 +524,8 @@ function Restore-PreviousBuild([string] $why) {
 }
 
 Write-Step "Deploying new binaries (preserving appsettings.Production.json + logs)"
-# /MIR removes stale files from the prior version; /XF + /XD keep the production config and logs.
-& robocopy $appSrc $SitePath /MIR /XF appsettings.Production.json VERSION.txt.bak /XD logs /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
+# /MIR removes stale files from the prior version; /XF + /XD keep the production config, the version record and logs.
+& robocopy $appSrc $SitePath /MIR /XF appsettings.Production.json VERSION.txt /XD logs /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
 $rc = $LASTEXITCODE
 if ($rc -ge 8) {
     Write-Warn2 "Deploy copy failed (robocopy exit $rc) -- rolling back binaries."
@@ -545,10 +545,10 @@ Start-WebAppPool -Name $AppPoolName
 Write-Step "Warming up (the first request applies pending migrations)"
 # BUG-249: only the app's own answer proves it started; a 5xx or a connection failure means it didn't. Tolerate a
 # self-signed cert during this local probe.
-# BUG-260: the probe goes straight to the site, never through the administrator's proxy (Invoke-WebRequest used the
-# system proxy, which on many servers can't reach the site or answers 407), and doesn't follow redirects (an HTTP-only
-# site redirects to an HTTPS that isn't bound). Any answer from the app counts, and each attempt says what it got, so a
-# warm-up that times out is no longer a silent three-minute wait.
+# BUG-260: the probe goes straight to the site, never through the administrator's proxy, and doesn't follow redirects;
+# each attempt says what it got.
+# BUG-261: and only CaseBook's own answer counts: the import schema itself. IIS can answer /api with its own 404 (the
+# StaticFile handler, when /api doesn't reach the app), which v1.6.1 wrongly took for the app.
 function Invoke-SiteProbe([string] $Url, [switch] $WithCredentials) {
     $req = [System.Net.HttpWebRequest]::Create($Url)
     $req.Proxy = $null
@@ -557,73 +557,77 @@ function Invoke-SiteProbe([string] $Url, [switch] $WithCredentials) {
     $req.ReadWriteTimeout = 30000
     $req.UserAgent = 'CaseBook-Upgrade'
     if ($WithCredentials) { $req.UseDefaultCredentials = $true }
-    try {
-        $resp = $req.GetResponse()
-        try { return @{ Status = [int]$resp.StatusCode; Detail = "$([int]$resp.StatusCode) $($resp.StatusDescription)"; Location = $resp.Headers['Location'] } }
-        finally { $resp.Close() }
-    } catch {
+    $resp = $null
+    try { $resp = $req.GetResponse() }
+    catch {
         $ex = $_.Exception
         while ($ex -and $ex -isnot [System.Net.WebException]) { $ex = $ex.InnerException }
-        if ($ex -and $ex.Response) {
-            $r = $ex.Response
-            try { return @{ Status = [int]$r.StatusCode; Detail = "$([int]$r.StatusCode) $($r.StatusDescription)"; Location = $r.Headers['Location'] } }
-            finally { $r.Close() }
+        if ($ex -and $ex.Response) { $resp = $ex.Response }
+        else {
+            $msg = if ($ex) { "$($ex.Status): $($ex.Message)" } else { $_.Exception.Message }
+            return @{ Status = $null; Detail = $msg; Location = $null; Body = '' }
         }
-        $msg = if ($ex) { "$($ex.Status): $($ex.Message)" } else { $_.Exception.Message }
-        return @{ Status = $null; Detail = $msg; Location = $null }
     }
+    try {
+        $body = ''
+        try {
+            $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+            $buf = New-Object char[] 4096
+            $n = $reader.Read($buf, 0, $buf.Length)
+            if ($n -gt 0) { $body = New-Object string($buf, 0, $n) }
+        } catch { }
+        $detail = "$([int]$resp.StatusCode) $($resp.StatusDescription)"
+        if ($body -match '<title>([^<]+)</title>') { $detail += " ($($Matches[1].Trim()))" }
+        return @{ Status = [int]$resp.StatusCode; Detail = $detail; Location = $resp.Headers['Location']; Body = $body }
+    } finally { $resp.Close() }
 }
-# What an answer means: the app started (2xx, a redirect, or a 4xx it gave), Windows authentication answered instead of
-# the app (401/403), it crashed (5xx), or nothing yet (no answer).
-function Get-ProbeVerdict($probe) {
+# What an answer means: CaseBook started ('started'), Windows authentication answered instead of the app ('auth'),
+# something other than CaseBook answered ('other', e.g. IIS's own 404), it crashed ('crashed'), or nothing yet ('none').
+# The schema probe needs the schema itself; the signed-in probe of the site root takes any page or redirect.
+function Get-ProbeVerdict($probe, [switch] $Schema) {
     $c = $probe.Status
-    if ($null -eq $c) { return 'none' }
+    if ($null -eq $c -or $c -eq 407) { return 'none' }
     if ($c -ge 500) { return 'crashed' }
     if ($c -in 401,403) { return 'auth' }
-    if ($c -eq 407) { return 'none' }
-    return 'started'
-}
-function Write-ProbeNote($probe, [string] $url) {
-    if ($probe.Status -ge 300 -and $probe.Status -lt 400) {
-        Write-Warn2 "The app answered with a redirect to $($probe.Location). It's running; check the site's bindings if that isn't where users go."
-    } elseif ($probe.Status -eq 400) {
-        Write-Warn2 ("The app answered 400: the host name in $url is probably not in AllowedHosts (appsettings.Production.json). " +
-                     "It's running; pass -HealthUrl with the site's public name to probe that instead.")
-    } elseif ($probe.Status -ge 404 -and $probe.Status -lt 500) {
-        Write-Warn2 "The app answered $($probe.Detail) at $url. It's running."
-    }
+    if ($Schema) { if ($c -eq 200 -and $probe.Body -match '"\$schema"') { return 'started' } else { return 'other' } }
+    if ($c -ge 200 -and $c -lt 400) { return 'started' }
+    return 'other'
 }
 
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 $deadline = (Get-Date).AddSeconds($WarmupTimeoutSec)
-$started = $false; $lastStatus = $null; $authGated = $false; $lastDetail = $null
+$started = $false; $lastStatus = $null; $verdict = 'none'; $lastDetail = $null
 while ((Get-Date) -lt $deadline) {
     $probe = Invoke-SiteProbe $ProbeUrl
     if ($probe.Detail -ne $lastDetail) { Write-Info "Probe: $($probe.Detail)"; $lastDetail = $probe.Detail }
     $lastStatus = $probe.Status
-    switch (Get-ProbeVerdict $probe) {
-        'started' { $started = $true; Write-ProbeNote $probe $ProbeUrl }
-        'crashed' { }
-        'auth'    { $authGated = $true }
-    }
-    if ($started -or $authGated -or (Get-ProbeVerdict $probe) -eq 'crashed') { break }
+    $verdict = Get-ProbeVerdict $probe -Schema
+    if ($verdict -eq 'started') { $started = $true; break }
+    if ($verdict -in 'crashed','auth','other') { break }
     Start-Sleep -Seconds 3                                                              # still starting / not yet listening
 }
-if ($authGated) {
-    # /api isn't anonymous on this site (installed before the API carve-out, or changed since), so IIS answered for
-    # the app. Ask the site root as a signed-in user instead: a page there is the app's own answer.
-    Write-Warn2 "$ProbeUrl answered $lastStatus (IIS, not the app). Probing $HealthUrl as the signed-in user instead."
+if ($verdict -in 'auth','other') {
+    if ($verdict -eq 'auth') {
+        # /api isn't anonymous on this site (installed before the API carve-out, or changed since), so IIS answered.
+        Write-Warn2 "$ProbeUrl answered $lastStatus (Windows authentication, not the app)."
+    } else {
+        Write-Warn2 ("$ProbeUrl answered '$lastDetail', which isn't CaseBook: IIS isn't passing /api to the app, so API " +
+                     "imports can't reach it either. See docs/UPGRADE.md (v1.6.2).")
+    }
+    # Ask the site root as a signed-in user instead: a page there is the app's own answer.
+    Write-Warn2 "Probing $HealthUrl as the signed-in user instead."
     $probe = Invoke-SiteProbe $HealthUrl -WithCredentials
     Write-Info "Probe: $($probe.Detail)"
     $lastStatus = $probe.Status
     switch (Get-ProbeVerdict $probe) {
-        'started' { $started = $true; Write-ProbeNote $probe $HealthUrl }
+        'started' { $started = $true }
         'auth' {
-            Write-Warn2 ("Couldn't prove the new build started: both probes were answered by Windows authentication. " +
+            Write-Warn2 ("Couldn't prove the new build started: the site root was answered by Windows authentication too. " +
                          "Open $HealthUrl in a browser now; if it fails, run this script's rollback steps by hand " +
-                         "(docs/UPGRADE.md). Carving /api out of Windows Auth (Install-CaseBook.ps1) makes the probe definite.")
+                         "(docs/UPGRADE.md).")
             $started = $true
         }
+        'other' { Write-Warn2 "$HealthUrl answered '$($probe.Detail)', which isn't a CaseBook page." }
     }
 }
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
