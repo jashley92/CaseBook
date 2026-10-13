@@ -400,6 +400,24 @@ public class CaseTests
     }
 
     [Fact]
+    public void Coming_back_into_containment_takes_back_a_resolution_recorded_on_the_way_past(/* REV-11 */)
+    {
+        var c = NewCase();
+        c.ChangeSeverity(Severity.High, "worse", "ic1", Now.AddMinutes(30));
+        c.ChangePhase(CasePhase.Recovery, null, "ic1", Now.AddHours(1), containmentNotNeededReason: "Link never clicked");
+        c.ResolvedAtUtc.Should().Be(Now.AddHours(1));
+
+        c.ChangePhase(CasePhase.Containment, "it was clicked after all", "ic1", Now.AddHours(3));
+        c.ContainedAtUtc.Should().Be(Now.AddHours(3));
+        c.ResolvedAtUtc.Should().BeNull("it can't have been resolved before it was contained");
+
+        var severity = c.SeverityChanges.Single(x => x.From is not null).Id;
+        c.CorrectTransitionTime(TransitionKind.Severity, severity, Now.AddMinutes(20), "logged late", "ic1", Now.AddHours(4));
+        c.ChangePhase(CasePhase.Recovery, null, "ic1", Now.AddHours(5));
+        c.ResolvedAtUtc.Should().Be(Now.AddHours(5));
+    }
+
+    [Fact]
     public void Leaving_closed_for_a_later_phase_asks_for_the_milestones_it_never_had(/* BUG-228 */)
     {
         var c = NewCase();

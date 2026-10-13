@@ -393,6 +393,9 @@ public class Case : AuditableEntity, IHashableEntity
         {
             ContainmentNotNeededReason = null;
             ContainedAtUtc = at;
+            // REV-11: and so it wasn't resolved before that. A resolution recorded on the way past (the skip to Recovery)
+            // would now read as before the containment; it's resolved again when the case next reaches Recovery.
+            if (ResolvedAtUtc < at) ResolvedAtUtc = null;
         }
 
         switch (to)
@@ -1598,7 +1601,9 @@ public class Case : AuditableEntity, IHashableEntity
         if (target.To is CasePhase.Eradication or CasePhase.Recovery or CasePhase.PostIncident
             && ContainmentNotNeededReason is not null && contained == old)
             contained = newEffectiveUtc;
-        if (ContainmentNotNeededReason is null && contained is { } c && resolved is { } r && r < c)
+        // REV-11: only when this correction moves one of them, so a case already out of order doesn't block every other fix.
+        if ((contained != ContainedAtUtc || resolved != ResolvedAtUtc)
+            && ContainmentNotNeededReason is null && contained is { } c && resolved is { } r && r < c)
             throw new ArgumentException("That would date the resolution before the containment.");
         // BUG-230: a move that came after the case was contained (or resolved) can't be re-dated to before it. A skip
         // move states those times itself (BUG-165/208), and ChangePhase refuses a stated time after the move; re-dating
