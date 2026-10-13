@@ -12,13 +12,22 @@ namespace IncidentManager.Infrastructure.Persistence;
 /// </summary>
 public sealed class CaseNumberGenerator : ICaseNumberGenerator
 {
-    private readonly AppDbContext _db;
+    private readonly AppDbContext? _db;
+    private readonly IAppDbContextFactory? _factory;
 
     public CaseNumberGenerator(AppDbContext db) => _db = db;
 
+    /// <summary>
+    /// REV-20: what the app uses. In Blazor Server a scope is the whole circuit, so a scoped context would be shared by
+    /// every operation in it (two promotions in one circuit could overlap on it). Each allocation reads on its own.
+    /// </summary>
+    public CaseNumberGenerator(IAppDbContextFactory factory) => _factory = factory;
+
     public async Task<int> NextSequenceAsync(int year, CancellationToken ct = default)
     {
-        var max = await _db.Cases
+        using var owned = _factory?.CreateDbContext();
+        var cases = owned?.Cases ?? _db!.Cases;
+        var max = await cases
             .Where(c => c.Year == year && c.Classification != null)
             .Select(c => (int?)c.Sequence)
             .MaxAsync(ct);

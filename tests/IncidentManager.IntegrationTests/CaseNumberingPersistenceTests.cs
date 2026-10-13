@@ -58,6 +58,18 @@ public sealed class CaseNumberingPersistenceTests : IDisposable
     };
 
     [Fact]
+    public async Task The_generator_the_app_uses_reads_on_its_own_context(/* REV-20 */)
+    {
+        await using var db = NewContext();
+        var svc = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(NewFactory()), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+
+        (await svc.CreateAsync(Req("Alpha", Classification.Incident))).CaseNumber.Should().Be("2026-01_Alpha");
+        (await svc.CreateAsync(Req("Beta", Classification.Incident))).CaseNumber.Should().Be("2026-02_Beta",
+            "each allocation reads the cases saved since, on a context of its own");
+    }
+
+    [Fact]
     public async Task Filing_onto_the_ladder_needs_the_classification_permission(/* REV-14 */)
     {
         await using var db = NewContext();

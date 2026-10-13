@@ -111,7 +111,7 @@ public static class DependencyInjection
         services.AddSingleton<IAgendaFeedTokens, Agenda.AgendaFeedTokenService>();
 
         services.AddScoped<AuditChainInterceptor>();
-        services.AddScoped<ICaseNumberGenerator, CaseNumberGenerator>();
+        services.AddScoped<ICaseNumberGenerator>(sp => new CaseNumberGenerator(sp.GetRequiredService<IAppDbContextFactory>()));   // REV-20
         services.AddScoped<IAuditWriter, Security.AuditWriter>();
 
         // C-05 access/read log: policy reads live config (scope + window); the service records
@@ -153,7 +153,7 @@ public static class DependencyInjection
 
         // A scoped context bridge for the few Infrastructure consumers that still resolve AppDbContext
         // directly and manage their own short scopes (RoleDirectory/UserDirectory create a scope per
-        // refresh; CaseNumberGenerator/AuditWriter run inside one operation). They are not part of the
+        // refresh; AuditWriter runs inside one operation). They are not part of the
         // shared-context concurrency problem, so they keep a per-scope context unchanged.
         services.AddScoped<AppDbContext>(sp => sp.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext());
         services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbContext>());
