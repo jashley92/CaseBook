@@ -168,6 +168,35 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### Next release
+
+No migration. Things to check:
+
+- **A config bundle is held to the admin pages' rules.** Import (and its preview) now refuses an AD mapping with no group
+  or to a role that doesn't exist, taxonomy keys that hide every option of a list or reorder one that can't be, and
+  labels longer than the Taxonomy page allows. A gate check's threshold below its floor is raised to it. Role
+  permissions are read by name only, so a permission written as a number (`7`) in a role grants nothing. **Re-export
+  a bundle that an older server produced by hand-editing** if it relied on any of these.
+
+- **Lessons-learned templates and the legend.** With `Reporting:LessonsLegend` set, a Word template used for the
+  lessons-learned report must contain `{{report.legend}}` (the lessons starter has it in its header); one without it
+  is refused, as one without `{{report.tlp}}` is. **Add the field to your lessons template** before generating.
+
+- **Word templates with fields that load or run something are refused** (DDEAUTO, INCLUDETEXT, INCLUDEPICTURE and the
+  like, and altChunk imports). Page numbers, dates, tables of contents and hyperlinks are fine.
+
+- **Two system API tokens can't share an identity.** A new system token whose name differs from an active one only by
+  case or punctuation ("Splunk SOAR" / "Splunk-SOAR") is refused. Existing tokens aren't changed.
+
+- **Reports print a due date, an improvement target and the materiality decision day on the organization's calendar**
+  (they printed as UTC dates, a day late west of UTC). The headings say "Target" rather than "Target (UTC)".
+
+- **The access log's date range includes sessions that began in it and ran past it.** A filtered view or CSV may list
+  more sessions than before.
+
+- **The Desk** leaves exercise cases out (as Due work and Team do) and shows notes that mention you on any open case you
+  can see, not only the ones you're on.
+
 ### v1.5.6
 
 A bug-fix release with one migration, applied at startup (a row hash on API tokens). Four things need a look before
