@@ -844,7 +844,25 @@ public sealed class CaseService
         IReadOnlySet<Guid>? attestedRequirementIds = null, string? overrideJustification = null,
         DateTimeOffset? effectiveAtUtc = null, CancellationToken ct = default)
     {
+        // WF-53: two Complex Events promoted at once draw the same IRP sequence, and the second save hits the unique index.
+        // As creation does, try again from a fresh read (the sequence moves on); a case someone else changed is refused
+        // as a ConcurrentEditException, which this doesn't catch.
         Require();
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await ReclassifyOnceAsync(id, to, reason, attestedRequirementIds, overrideJustification, effectiveAtUtc, ct);
+                return;
+            }
+            catch (DbUpdateException) when (attempt < 5) { }
+        }
+    }
+
+    private async Task ReclassifyOnceAsync(Guid id, Classification to, string reason,
+        IReadOnlySet<Guid>? attestedRequirementIds, string? overrideJustification,
+        DateTimeOffset? effectiveAtUtc, CancellationToken ct)
+    {
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
         var from = c.Classification;

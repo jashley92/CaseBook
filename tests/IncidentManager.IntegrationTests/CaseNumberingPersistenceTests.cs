@@ -138,6 +138,33 @@ public sealed class CaseNumberingPersistenceTests : IDisposable
         }
     }
 
+    /// <summary>The first draw returns a sequence another promotion has just taken, as two promotions at once would.</summary>
+    private sealed class RacingNumbers(ICaseNumberGenerator real, int stale) : ICaseNumberGenerator
+    {
+        private bool _drawn;
+        public Task<int> NextSequenceAsync(int year, CancellationToken ct = default)
+        {
+            if (_drawn) return real.NextSequenceAsync(year, ct);
+            _drawn = true;
+            return Task.FromResult(stale);
+        }
+    }
+
+    [Fact]
+    public async Task A_promotion_that_loses_the_sequence_race_takes_the_next_number(/* WF-53 */)
+    {
+        await using var db = NewContext();
+        var first = await NewService(db).CreateAsync(Req("Taken", Classification.Incident));   // 2026-01
+        var ce = await NewService(db).CreateAsync(Req("Odd Beaconing", null));
+        var racing = new CaseService(NewFactory(), _user, _clock, new RacingNumbers(new CaseNumberGenerator(db), first.Sequence),
+            new CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+
+        await racing.ReclassifyAsync(ce.Id, Classification.AdverseEvent, "Confirmed adverse event");
+
+        await using var check = NewContext();
+        (await check.Cases.AsNoTracking().SingleAsync(c => c.Id == ce.Id)).CaseNumber.Should().Be("2026-02_Odd_Beaconing");
+    }
+
     [Fact]
     public async Task A_custom_number_is_honoured_and_duplicates_are_rejected()
     {
