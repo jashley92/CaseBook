@@ -203,6 +203,25 @@ else if (_pending.Count > 0)
                                placeholder="Who disclosed it" />
                     </div>
                 }
+                @* WF-54: as the New case form: restricted to need-to-know from the start, and put on the team. Off by default. *@
+                <div class="col-12">
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="imp-nc-restricted" @bind="nc.IsRestricted" />
+                        <label class="form-check-label small" for="imp-nc-restricted">
+                            <span class="bi bi-lock me-1" aria-hidden="true"></span>Restricted (need-to-know)
+                        </label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" id="imp-nc-assign" @bind="nc.AssignToMe" />
+                        <label class="form-check-label small" for="imp-nc-assign">
+                            <span class="bi bi-person-check me-1" aria-hidden="true"></span>Assign it to me
+                        </label>
+                    </div>
+                    @if (nc.IsRestricted)
+                    {
+                        <div class="form-text">Visible only to the incident commander, the case team and roles cleared for restricted cases. If your role isn't cleared, you're added to the team.</div>
+                    }
+                </div>
             </div>
             @if (nc.Origin == CaseOrigin.ThirdParty && string.IsNullOrWhiteSpace(nc.VendorName))
             {
