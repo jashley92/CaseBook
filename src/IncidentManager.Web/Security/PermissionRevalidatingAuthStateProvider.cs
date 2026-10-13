@@ -44,14 +44,17 @@ public sealed class PermissionRevalidatingAuthStateProvider : ServerAuthenticati
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
-                await RevalidateAsync();
+            {
+                // BUG-226: one failed re-check is logged and the next tick tries again. The loop used to stop for good,
+                // and the circuit (open for days on a SOC desk) kept permissions a later change revoked.
+                try { await RevalidateAsync(); }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _log.LogWarning(ex, "Session permission re-check failed; trying again in {Minutes} min", Interval.TotalMinutes);
+                }
+            }
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            // Never take the circuit down over a re-check; the next reconnect re-derives access anyway.
-            _log.LogWarning(ex, "Session permission re-check stopped");
-        }
     }
 
     /// <summary>Re-derives the current principal's access and publishes it if it changed. Returns whether it did.</summary>
