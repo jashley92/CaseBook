@@ -238,7 +238,7 @@ IP-allow-listed relay.
 
 | Key | Purpose | Default | Edit | Sens |
 |---|---|---|---|---|
-| `Email:Enabled` | Off: messages are logged (recipient count only) instead of sent | `false` | App | |
+| `Email:Enabled` | Off: messages are logged (recipient count only) instead of sent. Scheduled reminders, the executive report and critical alerts aren't marked sent while it's off, so those still due go out once it's on | `false` | App | |
 | `Email:SmtpHost` | Relay host | blank; installer `-SmtpHost` | Server | ⚠ |
 | `Email:SmtpPort` | Relay port | `25` | Server | |
 | `Email:EnableSsl` | STARTTLS | `true` | Server | |

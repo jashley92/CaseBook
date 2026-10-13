@@ -63,6 +63,9 @@ public sealed class EmailSender : IEmailSender
             // Never log the subject or recipient addresses: both carry personal/case data and the app log is a
             // wider-audience sink than the mailbox (CWE-359). The recipient count keeps the operational signal.
             _log.LogInformation("Email delivery disabled; not sending to {RecipientCount} recipient(s).", to.Count);
+            // WF-21: not delivered, so not marked sent. A scan's reminders (and the executive report, and critical alerts
+            // in their outbox) are held and go out once email is on again, rather than being recorded as sent while off.
+            DeliveryWatch.ReportFailure();
             return;
         }
 

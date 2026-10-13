@@ -20,6 +20,17 @@ public sealed class EmailSenderTimeoutTests
     }
 
     [Fact]
+    public async Task With_email_off_a_send_isnt_counted_as_delivered(/* WF-21 */)
+    {
+        var sender = new EmailSender(new Monitor(new EmailOptions { Enabled = false }), NullLogger<EmailSender>.Instance);
+
+        using var watch = DeliveryWatch.Begin();
+        await sender.SendAsync(["a@x.example"], "Reminder", "Body");
+
+        watch.Failed.Should().BeTrue("a scan holds its reminder until email is on again");
+    }
+
+    [Fact]
     public async Task A_silent_relay_fails_the_send_after_the_timeout()
     {
         using var relay = new TcpListener(IPAddress.Loopback, 0);
