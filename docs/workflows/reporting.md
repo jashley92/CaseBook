@@ -30,7 +30,8 @@ flowchart LR
 them. Notable behavior:
 
 - Analyst notes and the working brief are **off unless a layout turns them on** (they're working reasoning and
-  discoverable); the post-incident review is **never** in the case report.
+  discoverable); the post-incident review is **never** in the built-in case report. A Word template prints whatever fields it
+  contains, the review's, the brief's and the notes' included (decision 0012's template exception).
 - The investigation timeline includes milestones (except report approvals and team changes), a **By** column,
   and "(Recorded …)" notes for late entries ([timeline.md](../architecture/timeline.md#in-the-case-report)).
 - The attack chain is drawn across ATT&CK tactic lanes; the entity graph is drawn as an image. On a third-party

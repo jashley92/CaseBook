@@ -14,8 +14,11 @@ choose to make.
 - Built-in labels and generated text use neutral wording: "improvement actions", "opportunities to improve".
 - Analyst notes and the working brief are **off** in the case report unless a report layout turns them on.
   They are working reasoning, not findings.
-- The post-incident review prints in its **own** lessons-learned report, never inside the case report. It
-  can carry a confidentiality legend.
+- The post-incident review prints in its **own** lessons-learned report, never inside the case report's built-in
+  layout. It can carry a confidentiality legend.
+- **Exception (2026-10-13, WF-33): Word templates.** A customer-designed template decides what it prints, and its
+  `review.*`, `brief.*` and `note.*` fields are filled whatever the report profile's sections say. The administrator who
+  uploads a template owns that choice; the built-in layout keeps the rules above.
 - CaseBook records the determinations made by Legal and by the committee (materiality, referral). It never
   makes them.
 
