@@ -105,6 +105,7 @@
                                     @if (c.ClosedAtUtc is { } closed) { <span>closed @TimeDisp.DateOnly(closed)</span> }
                                     else { <span>@Ui.Label(c.Phase), opened @TimeDisp.DateOnly(c.OpenedAtUtc)</span> }
                                     @if (c.IsExercise) { <span class="badge text-bg-secondary">Exercise</span> }
+                                    @if (c.IsArchived) { <span class="badge text-bg-light border">Archived</span> }   @* WF-07 *@
                                 </div>
                                 @if (c.ClosingLine is { } line)
                                 {

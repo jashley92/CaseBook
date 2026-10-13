@@ -20,7 +20,8 @@ public sealed record FindEntity(EntityType Type, string Value, string? Label, IR
 
 /// <summary>A case, with how it ended when it's closed.</summary>
 public sealed record FindCase(Guid Id, string CaseNumber, string Title, Classification? Classification, Severity Severity,
-    CasePhase Phase, DateTimeOffset OpenedAtUtc, DateTimeOffset? ClosedAtUtc, string? ClosingLine, bool IsExercise);
+    CasePhase Phase, DateTimeOffset OpenedAtUtc, DateTimeOffset? ClosedAtUtc, string? ClosingLine, bool IsExercise,
+    bool IsArchived = false);   // WF-07: labelled in the results
 
 /// <summary>A record entry (or a closed case's closing brief), quoting the record.</summary>
 public sealed record FindEntry(Guid Id, Guid CaseId, string CaseNumber, TimelineKind Kind, TimelineEntryType? Type,
@@ -102,7 +103,8 @@ public sealed class FindService
         var cases = db.Cases.AsNoTracking().ForUser(_user);
         if (!q.Exercises) cases = cases.ExcludingExercises();
         else filters.Add("exercises included");
-        if (q.Open == true) { cases = cases.Where(c => c.Phase != CasePhase.Closed); filters.Add("open cases"); }
+        // WF-07: open means open, as in the case list, My work and the reminders: an archived case isn't.
+        if (q.Open == true) { cases = cases.Where(c => c.Phase != CasePhase.Closed && !c.IsArchived); filters.Add("open cases"); }
         if (q.Open == false) { cases = cases.Where(c => c.Phase == CasePhase.Closed); filters.Add("closed cases"); }
         if (q.ClassFilter)
         {
@@ -152,7 +154,7 @@ public sealed class FindService
         var text = q.Text;
         var (readAs, iocType) = FindQuery.ReadShape(text);
         string? personId = null;
-        if (readAs == FindReadAs.Words && PersonNamed(text) is { } p)
+        if (readAs == FindReadAs.Words && !q.Quoted && PersonNamed(text) is { } p)   // WF-10: "admin" in quotes is a word
         {
             readAs = FindReadAs.Person;
             personId = p.UserId;
@@ -190,6 +192,9 @@ public sealed class FindService
             var src = db.CaseEntities.AsNoTracking().Where(e => caseIds.Contains(e.CaseId));
 #pragma warning disable CA1304, CA1311, CA1862
             if (q.Entity is not null) src = src.Where(e => entityIds.Contains(e.Id));
+            // WF-08: after:/before: are when the entity was added to the case, as for evidence and tasks.
+            if (from is not null) src = src.Where(e => e.CreatedAtUtc >= from);
+            if (to is not null) src = src.Where(e => e.CreatedAtUtc < to);
             if (readAs == FindReadAs.Indicator)
             {
                 // WF-03: compared in the form entities are stored in (IPv6 canonical, no trailing dot on a domain).
@@ -259,11 +264,11 @@ public sealed class FindService
         {
             counts[FindKind.Cases] = await caseQ.CountAsync(ct);
             var caseRows = await caseQ.OrderByDescending(c => c.CreatedAtUtc).Take(limit)
-                .Select(c => new { c.Id, c.CaseNumber, c.Title, c.Classification, c.Severity, c.Phase, c.CreatedAtUtc, c.ClosedAtUtc, c.IsExercise, c.OutcomeKey })
+                .Select(c => new { c.Id, c.CaseNumber, c.Title, c.Classification, c.Severity, c.Phase, c.CreatedAtUtc, c.ClosedAtUtc, c.IsExercise, c.OutcomeKey, c.IsArchived })
                 .ToListAsync(ct);
             var closing = await ClosingLinesAsync(db, caseRows.Where(c => c.Phase == CasePhase.Closed).Select(c => c.Id).ToList(), ct);
             foundCases = caseRows.Select(c => new FindCase(c.Id, c.CaseNumber, c.Title, c.Classification, c.Severity, c.Phase,
-                c.CreatedAtUtc, c.ClosedAtUtc, closing.GetValueOrDefault(c.Id), c.IsExercise)).ToList();
+                c.CreatedAtUtc, c.ClosedAtUtc, closing.GetValueOrDefault(c.Id), c.IsExercise, c.IsArchived)).ToList();
         }
 
         // --- Record entries (current versions), then closing briefs.
@@ -277,7 +282,12 @@ public sealed class FindService
             if (readAs is FindReadAs.Indicator or FindReadAs.Words)
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
                     eq = eq.Where(e => e.Description.ToLower().Contains(t) || (e.Rationale != null && e.Rationale.ToLower().Contains(t)));
-            if (readAs == FindReadAs.Person) eq = eq.Where(e => e.CreatedBy == personId);
+            // WF-09: who recorded it is the first version's author, not whoever last edited it.
+            if (readAs == FindReadAs.Person)
+            {
+                var edited = await EditedEntriesFirstRecordedByAsync(db, caseIds, personId!, ct);
+                eq = eq.Where(e => (e.Version == 1 && e.CreatedBy == personId) || edited.Contains(e.Id));
+            }
             if (q.Entity is { } ent)
             {
                 var v = ent.ToLower();
@@ -286,7 +296,11 @@ public sealed class FindService
                                    || e.Description.ToLower().Contains(v));
             }
 #pragma warning restore CA1304, CA1311, CA1862
-            if (by is not null) eq = eq.Where(e => e.CreatedBy == by);
+            if (by is not null)
+            {
+                var edited = await EditedEntriesFirstRecordedByAsync(db, caseIds, by, ct);
+                eq = eq.Where(e => (e.Version == 1 && e.CreatedBy == by) || edited.Contains(e.Id));
+            }
             if (q.EntryKind is { } k) eq = eq.Where(e => e.Kind == k);
             if (q.EntryType is { } ty) eq = eq.Where(e => e.Type == ty);
             if (from is not null) eq = eq.Where(e => e.OccurredAtUtc >= from);
@@ -390,8 +404,12 @@ public sealed class FindService
                     nq = nq.Where(n => n.Body.ToLower().Contains(t));
             if (q.Entity is { } ent4) { var v = ent4.ToLower(); nq = nq.Where(n => n.Body.ToLower().Contains(v)); }
 #pragma warning restore CA1304, CA1311, CA1862
-            if (readAs == FindReadAs.Person) nq = nq.Where(n => n.CreatedBy == personId);
-            if (by is not null) nq = nq.Where(n => n.CreatedBy == by);
+            // WF-09: as for entries, the note's first author.
+            foreach (var who in new[] { readAs == FindReadAs.Person ? personId : null, by }.OfType<string>())
+            {
+                var edited = await EditedNotesFirstWrittenByAsync(db, caseIds, who, ct);
+                nq = nq.Where(n => (n.Version == 1 && n.CreatedBy == who) || edited.Contains(n.Id));
+            }
             if (from is not null) nq = nq.Where(n => n.CreatedAtUtc >= from);
             if (to is not null) nq = nq.Where(n => n.CreatedAtUtc < to);
             counts[FindKind.Notes] = await nq.CountAsync(ct);
@@ -403,6 +421,39 @@ public sealed class FindService
         }
 
         return new FindResult(q, readAs, reading, filters, counts, entities, foundCases, entries, tasks, evidence, notes);
+    }
+
+    // WF-09: current versions of edited entries whose first version was recorded by <who>. Edits are few, so only their
+    // chains are read; an entry never edited is its own first version.
+    private static async Task<List<Guid>> EditedEntriesFirstRecordedByAsync(IAppDbContext db, IQueryable<Guid> caseIds, string who,
+        CancellationToken ct)
+    {
+        var rows = await db.TimelineEntries.AsNoTracking().Where(e => caseIds.Contains(e.CaseId) && (e.Version > 1 || !e.IsCurrent))
+            .Select(e => new Version(e.Id, e.SupersedesEntryId, e.CreatedBy, e.Version, e.IsCurrent)).ToListAsync(ct);
+        return FirstAuthoredBy(rows, who);
+    }
+
+    private static async Task<List<Guid>> EditedNotesFirstWrittenByAsync(IAppDbContext db, IQueryable<Guid> caseIds, string who,
+        CancellationToken ct)
+    {
+        var rows = await db.Notes.AsNoTracking().Where(n => caseIds.Contains(n.CaseId) && (n.Version > 1 || !n.IsCurrent))
+            .Select(n => new Version(n.Id, n.SupersedesNoteId, n.CreatedBy, n.Version, n.IsCurrent)).ToListAsync(ct);
+        return FirstAuthoredBy(rows, who);
+    }
+
+    private sealed record Version(Guid Id, Guid? Supersedes, string CreatedBy, int Number, bool IsCurrent);
+
+    private static List<Guid> FirstAuthoredBy(List<Version> rows, string who)
+    {
+        var byId = rows.ToDictionary(r => r.Id);
+        var result = new List<Guid>();
+        foreach (var r in rows.Where(r => r.IsCurrent && r.Number > 1))
+        {
+            var first = r;
+            for (var guard = 0; first.Supersedes is { } prev && byId.TryGetValue(prev, out var p) && guard < 1000; guard++) first = p;
+            if (string.Equals(first.CreatedBy, who, StringComparison.Ordinal)) result.Add(r.Id);
+        }
+        return result;
     }
 
     // "me", or a person the directory knows by name, sign-in name, or first name when only one person has it.

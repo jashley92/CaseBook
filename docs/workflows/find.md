@@ -32,17 +32,17 @@ Above the results Find says how it read what you typed:
 ## Filters
 
 Filters narrow the question and are said back above the results. The controls beside the results edit them in the
-query you can see; nothing is hidden state. A filter Find can't use is listed as *not understood* rather than dropped, and so is one given twice (the last one is
+query you can see; nothing is hidden state. A quoted word (`"admin"`) is always searched as a word, never read as a person. A filter Find can't use is listed as *not understood* rather than dropped, and so is one given twice (the last one is
 used) or `owner:` alongside `type:` or `by:` (tasks aren't record entries).
 
 | Filter | Meaning |
 |---|---|
 | `entity:VALUE` | Cases with that exact entity value, and the entries and tasks that mention it |
-| `status:open`, `status:closed` | Open or closed cases |
+| `status:open`, `status:closed` | Open or closed cases (an archived case isn't open; archived results are labelled) |
 | `class:event`, `adverse`, `incident`, `breach` | The rung (`event` is a Complex Event) |
 | `type:decision`, `handoff`, `adversary`, `response`, or any entry type (`containment`, `communication`, …) | Which record entries; with a type filter Find lists entries only |
-| `after:YYYY-MM-DD`, `before:YYYY-MM-DD` | From that day on, or up to (not including) that day: when it happened (entries) or was opened, added or raised, in the organization's days |
-| `by:NAME`, `by:me` | Who recorded it |
+| `after:YYYY-MM-DD`, `before:YYYY-MM-DD` | From that day on, or up to (not including) that day: when it happened (entries) or was opened, added or raised (entities: when added to the case), in the organization's days |
+| `by:NAME`, `by:me` | Who recorded it: the author of the first version, not whoever last edited it |
 | `owner:NAME`, `owner:me` | Whose task: the owner names them by any of their identifiers (sign-in, email, display name) |
 | `state:NY` (or `jurisdiction:NY`) | Cases with residents of that state affected |
 | `in:notes` | Include working notes |

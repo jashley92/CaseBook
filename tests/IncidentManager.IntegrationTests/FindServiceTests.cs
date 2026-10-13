@@ -328,6 +328,42 @@ public sealed class FindServiceTests : IDisposable
         r.Entries.Should().ContainSingle(e => e.Id == _decisionId);
     }
 
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Archived_cases_arent_open_dates_apply_to_entities_and_recorded_by_is_the_first_author(string provider /* WF-07..10 */)
+    {
+        Use(provider);
+        using (var db = NewContext())
+        {
+            // Robin's decision, then corrected by me: a new current version superseding Robin's.
+            var original = db.TimelineEntries.Single(e => e.Id == _decisionId);
+            original.IsCurrent = false;
+            db.TimelineEntries.Add(new TimelineEntry { CaseId = _alpha, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Decision,
+                OccurredAtUtc = original.OccurredAtUtc, Description = "Force a password reset for every clicked account (all regions)",
+                Rationale = original.Rationale, Version = 2, SupersedesEntryId = original.Id, CreatedBy = "analyst1", CreatedAtUtc = H(-1) });
+            db.SaveChanges();
+        }
+
+        // WF-09: who recorded it is who first did.
+        (await NewFind().FindAsync("by:robin type:decision")).Entries.Should().ContainSingle(e => e.Text.Contains("all regions"));
+        (await NewFind().FindAsync("by:me type:decision")).Entries.Should().BeEmpty("I only corrected it");
+
+        // WF-08: dates are when the entity was added (alpha's on 26 Sep, beta's in August).
+        var recent = await NewFind().FindAsync("203.0.113.66 after:2026-09-20");
+        recent.Entities.Should().ContainSingle().Which.Cases.Select(c => c.CaseId).Should().Equal(_alpha);
+
+        // WF-10: quoted, a sign-in name is searched as a word.
+        (await NewFind().FindAsync("\"robin\"")).ReadAs.Should().Be(FindReadAs.Words);
+
+        // WF-07: an archived case isn't open, and is labelled.
+        using (var db = NewContext())
+        {
+            db.Cases.Single(c => c.Id == _alpha).IsArchived = true;
+            db.SaveChanges();
+        }
+        (await NewFind().FindAsync("phishing status:open")).Cases.Should().BeEmpty();
+        (await NewFind().FindAsync("phishing")).Cases.Should().ContainSingle(c => c.Id == _alpha).Which.IsArchived.Should().BeTrue();
+    }
+
     [Fact]
     public void The_parser_refuses_what_it_would_misread(/* WF-04, WF-05 */)
     {

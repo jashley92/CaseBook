@@ -54,6 +54,9 @@ public sealed partial record FindQuery
     public bool Exercises { get; init; }
     /// <summary>Filters it couldn't use, said back to the user rather than silently dropped.</summary>
     public IReadOnlyList<string> Unread { get; init; } = [];
+    /// <summary>WF-10: a word or phrase was quoted, so the words are searched as words, never read as a person.</summary>
+    public bool Quoted { get; init; }
+
     /// <summary>How many words were left out past <see cref="MaxTerms"/>, also said back.</summary>
     public int DroppedTerms { get; init; }
 
@@ -85,6 +88,7 @@ public sealed partial record FindQuery
                 // Not a filter: a word or a phrase. A "key:" we don't know stays a word (it may be a URL or an account).
                 var word = m.Groups["qv"].Success && key is null ? val : m.Value.Trim('"');
                 if (word.Length > 0) terms.Add(word);
+                if (m.Groups["qv"].Success && key is null) q = q with { Quoted = true };
                 continue;
             }
             if (val.Length == 0) { unread.Add($"{key}: needs a value"); continue; }
