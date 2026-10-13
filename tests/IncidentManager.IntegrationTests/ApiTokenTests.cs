@@ -71,6 +71,39 @@ public sealed class ApiTokenTests : IDisposable
         public void Invalidate() { }
     }
 
+    private sealed class FailingAudit : IAuditWriter
+    {
+        public Task RecordAsync(AuditAction action, string entityType, string? entityId, string? caseNumber,
+            string summary, CancellationToken ct = default) => throw new TimeoutException("audit write timed out");
+    }
+
+    [Fact]
+    public async Task A_token_whose_audit_line_fails_is_not_left_live(/* REV-06 */)
+    {
+        await using var db = NewContext();
+        var admin = Admin();
+        var svc = new ApiTokenService(NewFactory(admin), admin, _clock, new FakeRoleDirectory(), new FailingAudit());
+
+        var create = async () => await svc.CreateSystemAsync("XSIAM", ["Analyst"], _clock.UtcNow.AddDays(30));
+
+        await create.Should().ThrowAsync<TimeoutException>();
+        (await db.ApiTokens.AsNoTracking().CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_system_token_belongs_to_the_admins_not_to_whoever_created_it(/* REV-06 */)
+    {
+        await using var db = NewContext();
+        var admin = Admin();
+        var made = await NewService(db, admin).CreateSystemAsync("XSIAM", ["Analyst"], _clock.UtcNow.AddDays(30));
+
+        var demoted = new TestCurrentUser { UserId = admin.UserId, DisplayName = admin.DisplayName, RoleSet = [AppRole.Analyst] };
+        var svc = NewService(db, demoted);
+        (await svc.ListMineAsync()).Should().BeEmpty();
+        var revoke = async () => await svc.RevokeAsync(made.Token.Id);
+        await revoke.Should().ThrowAsync<ForbiddenException>();
+    }
+
     [Fact]
     public void A_generated_token_is_opaque_and_its_hash_round_trips()
     {

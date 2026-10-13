@@ -153,8 +153,18 @@ public sealed class ApiTokenService
         db.ApiTokens.Add(row);
         await db.SaveChangesAsync(ct);
 
-        await _audit.RecordAsync(AuditAction.Create, nameof(ApiToken), row.Id.ToString(), null,
-            $"Created {kind} API token '{name}' (roles: {row.RolesCsv}; expires {expiresAtUtc:u})", ct);
+        try
+        {
+            await _audit.RecordAsync(AuditAction.Create, nameof(ApiToken), row.Id.ToString(), null,
+                $"Created {kind} API token '{name}' (roles: {row.RolesCsv}; expires {expiresAtUtc:u})", ct);
+        }
+        catch
+        {
+            // REV-06: no live credential without its audit line. Nobody has seen the plaintext yet, so remove the row.
+            db.ApiTokens.Remove(row);
+            await db.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
         _siem?.Emit(SecurityEvents.ApiTokenChanged("ApiTokenCreated", _user.UserId, _user.UserPrincipalName,
             $"{name} ({kind})"));
 
@@ -168,7 +178,7 @@ public sealed class ApiTokenService
     {
         using var db = _factory.CreateDbContext();
         var rows = await db.ApiTokens.AsNoTracking()
-            .Where(t => t.CreatedBy == _user.UserId)
+            .Where(t => t.Kind == ApiTokenKind.Personal && t.OwnerUserId == _user.UserId)   // REV-06: not system tokens they made
             .OrderByDescending(t => t.CreatedAtUtc).ToListAsync(ct);
         return rows.Select(ToView).ToList();
     }
@@ -190,7 +200,9 @@ public sealed class ApiTokenService
         var row = await db.ApiTokens.FirstOrDefaultAsync(t => t.Id == id, ct);
         if (row is null || row.RevokedAtUtc is not null) return;
 
-        if (!_user.Has(Permission.Administer) && !string.Equals(row.CreatedBy, _user.UserId, StringComparison.Ordinal))
+        // REV-06: the owner path is for personal tokens. A system token is the admins' to revoke, not whoever created it.
+        var owns = row.Kind == ApiTokenKind.Personal && string.Equals(row.OwnerUserId, _user.UserId, StringComparison.Ordinal);
+        if (!_user.Has(Permission.Administer) && !owns)
             throw new ForbiddenException(Permission.Administer, nameof(RevokeAsync));
 
         row.RevokedAtUtc = _clock.UtcNow;
