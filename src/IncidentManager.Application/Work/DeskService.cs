@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Compliance;
 using IncidentManager.Application.Sla;
 using IncidentManager.Domain.Entities;
@@ -77,10 +78,23 @@ public sealed class DeskService
         var work = await _work.GetAsync(ct);
         var now = _clock.UtcNow;
         var me = _user.UserId;
-        var ids = work.OpenCases.Select(c => c.Id).ToList();
-        var numbers = work.OpenCases.Select(c => c.CaseNumber).ToList();
 
         using var db = _factory.CreateDbContext();
+
+        // WF-26: exercises are left off the Desk, as off Due work and Team (PROD-43, rule L7): a tabletop's deadline,
+        // clocks and drill tasks aren't real work. My work, which the Desk is built on, still lists them.
+        var workIds = work.OpenCases.Select(c => c.Id).Concat(work.Tasks.Select(t => t.CaseId)).Distinct().ToList();
+        var drills = (await db.Cases.AsNoTracking().Where(c => workIds.Contains(c.Id) && c.IsExercise).Select(c => c.Id).ToListAsync(ct))
+            .ToHashSet();
+        if (drills.Count > 0)
+            work = work with
+            {
+                OpenCases = work.OpenCases.Where(c => !drills.Contains(c.Id)).ToList(),
+                Tasks = work.Tasks.Where(t => !drills.Contains(t.CaseId)).ToList(),
+                RecentEscalations = work.RecentEscalations.Where(e => !drills.Contains(e.CaseId)).ToList(),
+            };
+        var ids = work.OpenCases.Select(c => c.Id).ToList();
+        var numbers = work.OpenCases.Select(c => c.CaseNumber).ToList();
 
         var roles = await db.Assignments.AsNoTracking()
             .Where(a => ids.Contains(a.CaseId) && a.UserId == me)
@@ -170,17 +184,30 @@ public sealed class DeskService
         foreach (var t in next.Where(t => t.DueAtUtc is { } due && due < now).OrderBy(t => t.DueAtUtc))
             needs.Add(new DeskNeed(DeskNeedKind.Overdue, t.CaseId, t.CaseNumber, t.Title, t.CaseTitle, t.DueAtUtc, TaskId: t.Id));
 
-        var notes = await db.Notes.AsNoTracking()
-            .Where(n => ids.Contains(n.CaseId) && n.IsCurrent && n.CreatedBy != me && n.MentionsCsv != "")
-            .Select(n => new { n.Id, n.CaseId, n.Body, n.MentionsCsv, n.CreatedBy, n.CreatedAtUtc })
+        // WF-27: anyone who can see a case can be @mentioned on it, so mentions come from every open case the caller can see,
+        // not only the ones they're on. A case they've never opened counts from the window's start.
+        var mentionFloor = now.AddDays(-SinceWindowDays);
+        var meKey = me.ToLowerInvariant();
+#pragma warning disable CA1304, CA1311, CA1862 // EF Core translates ToLower(); culture overloads don't translate.
+        var notes = await (
+            from n in db.Notes.AsNoTracking()
+            join c in db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises() on n.CaseId equals c.Id
+            where c.Phase != CasePhase.Closed && !c.IsArchived
+                  && n.IsCurrent && n.CreatedBy != me && n.MentionsCsv != "" && n.MentionsCsv.ToLower().Contains(meKey) && n.CreatedAtUtc > mentionFloor
+            select new { n.Id, n.CaseId, c.CaseNumber, c.Title, n.Body, n.MentionsCsv, n.CreatedBy, n.CreatedAtUtc })
             .ToListAsync(ct);
+#pragma warning restore CA1304, CA1311, CA1862
+        var otherIds = notes.Select(n => n.CaseId).Where(id => !viewed.ContainsKey(id)).Distinct().ToList();
+        if (otherIds.Count > 0)
+            foreach (var g in (await db.CaseAccessEvents.AsNoTracking()
+                         .Where(e => e.ActorUserId == me && e.AccessType == AccessType.CaseOpen && e.CaseId != null && otherIds.Contains(e.CaseId.Value))
+                         .Select(e => new { CaseId = e.CaseId!.Value, e.LastSeenUtc })
+                         .ToListAsync(ct)).GroupBy(e => e.CaseId))
+                viewed[g.Key] = g.Max(e => e.LastSeenUtc);
         foreach (var n in notes.Where(n => n.MentionsCsv.Split(',', StringSplitOptions.TrimEntries).Contains(me, StringComparer.OrdinalIgnoreCase)
                                            && n.CreatedAtUtc > SinceFor(n.CaseId))
                                .OrderByDescending(n => n.CreatedAtUtc))
-        {
-            var c = work.OpenCases.First(x => x.Id == n.CaseId);
-            needs.Add(new DeskNeed(DeskNeedKind.Mention, c.Id, c.CaseNumber, Excerpt(n.Body), c.Title, n.CreatedAtUtc, n.CreatedBy, NoteId: n.Id));
-        }
+            needs.Add(new DeskNeed(DeskNeedKind.Mention, n.CaseId, n.CaseNumber, Excerpt(n.Body), n.Title, n.CreatedAtUtc, n.CreatedBy, NoteId: n.Id));
         foreach (var r in roles.Where(r => r.AssignedBy != me && r.AssignedAtUtc > SinceFor(r.CaseId)).OrderByDescending(r => r.AssignedAtUtc))
         {
             var c = work.OpenCases.First(x => x.Id == r.CaseId);

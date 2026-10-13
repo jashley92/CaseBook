@@ -123,6 +123,34 @@ public sealed class DeskServiceTests : IDisposable
         decisionId.Should().NotBeEmpty();
     }
 
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Mentions_come_from_any_case_you_can_see_and_exercises_stay_off(string provider /* WF-26, WF-27 */)
+    {
+        _db = TestDatabase.Open(provider);
+        await using (var db = NewContext())
+        {
+            // Beta: open, not restricted, I'm not on it, and a colleague @mentions me on it.
+            var b = Case.Open(2026, 1, "beta", "Beta", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ivy", H(-96));
+            b.Notes.Add(new AnalystNote { Body = "@Analyst One can you check this hash?", MentionsCsv = "ivy,ANALYST1", CreatedBy = "ivy", CreatedAtUtc = H(-1) });
+            // Secret: restricted and not mine: its mention mustn't surface.
+            var s = Case.Open(2026, 2, "secret", "Secret", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ivy", H(-96));
+            s.IsRestricted = true;
+            s.Notes.Add(new AnalystNote { Body = "@Analyst One secret", MentionsCsv = "analyst1", CreatedBy = "ivy", CreatedAtUtc = H(-1) });
+            // A tabletop I'm on, with an overdue drill task of mine.
+            var x = Case.Open(2026, 3, "drill", "Drill", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ivy", H(-96), isExercise: true);
+            x.Assign("analyst1", "Analyst One", CaseAssignmentRole.Analyst, "ivy", H(-2));
+            x.ActionItems.Add(new ActionItem { Title = "Drill task", Owner = "analyst1", DueAtUtc = H(-5), CreatedBy = "ivy", CreatedAtUtc = H(-48) });
+            db.Cases.AddRange(b, s, x);
+            await db.SaveChangesAsync();
+        }
+
+        var desk = await NewDesk().GetAsync();
+
+        desk.Needs.Should().ContainSingle().Which.Should().Match<DeskNeed>(n => n.Kind == DeskNeedKind.Mention && n.CaseNumber.Contains("01"));
+        desk.Cases.Should().BeEmpty("the drill is the only case I'm on");
+        desk.Next.Should().BeEmpty();
+    }
+
     private sealed class OffSettings : INotificationDeadlineSettingsProvider
     {
         public NotificationDeadlineSettings Current { get; set; } = NotificationDeadlineSettings.Off;
