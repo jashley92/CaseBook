@@ -29,6 +29,13 @@ public sealed class GroupNameDomainTests
     }
 
     [WindowsFact]
+    public void While_the_servers_domain_is_unknown_no_domain_group_matches_by_bare_name(/* BUG-223 */)
+    {
+        RoleClaimsTransformer.IsLocalToServer($"{ServerDomain}-1104", "CORP", "WEB01", "").Should().BeFalse();
+        RoleClaimsTransformer.IsLocalToServer($"{OtherDomain}-1001", "WEB01", "WEB01", "").Should().BeTrue();   // still local
+    }
+
+    [WindowsFact]
     public void Off_a_domain_there_is_nothing_to_tell_apart() =>
         RoleClaimsTransformer.IsLocalToServer($"{OtherDomain}-1104", "CHILD", "WEB01", null).Should().BeTrue();
 }

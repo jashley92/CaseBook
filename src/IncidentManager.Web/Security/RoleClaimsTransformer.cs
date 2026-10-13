@@ -14,12 +14,21 @@ namespace IncidentManager.Web.Security;
 public sealed class RoleClaimsTransformer : IClaimsTransformation
 {
     // SID -> account name (e.g. "AD\SOC-AppAdmins"). Stable for the process lifetime; caching avoids an
-    // AD/LSA lookup per request. A group rename is picked up on the next app restart.
-    private static readonly ConcurrentDictionary<string, string?> SidNameCache = new(StringComparer.OrdinalIgnoreCase);
+    // AD/LSA lookup per request. A group rename is picked up on the next app restart. BUG-223: a lookup that found no
+    // name (an AD blip as much as an orphaned SID) is kept only for RetryUnresolved, so a group whose first lookup hit
+    // a DC failover doesn't lose its name-mapped roles for everyone until the app pool recycles.
+    private static readonly ConcurrentDictionary<string, (string? Name, DateTime RetryAfterUtc)> SidNameCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan RetryUnresolved = TimeSpan.FromMinutes(5);
 
+    private static ILogger? _log;   // the first instance's; the lookups below are static (shared with the S-10 re-check)
     private readonly IRoleDirectory _directory;
 
-    public RoleClaimsTransformer(IRoleDirectory directory) => _directory = directory;
+    public RoleClaimsTransformer(IRoleDirectory directory, ILogger<RoleClaimsTransformer>? log = null)
+    {
+        _directory = directory;
+        _log ??= log;
+    }
 
     public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
     {
@@ -73,12 +82,19 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
         if (!value.StartsWith("S-1-", StringComparison.OrdinalIgnoreCase))
             yield break;
 
-        var resolved = SidNameCache.GetOrAdd(value, static sid =>
+        var now = DateTime.UtcNow;
+        if (!SidNameCache.TryGetValue(value, out var cached) || (cached.Name is null && now >= cached.RetryAfterUtc))
         {
-            if (!OperatingSystem.IsWindows()) return null;
-            try { return new SecurityIdentifier(sid).Translate(typeof(NTAccount)).Value; }
-            catch { return null; } // well-known/orphaned SID, or AD unreachable
-        });
+            string? name = null;
+            if (OperatingSystem.IsWindows())
+            {
+                try { name = new SecurityIdentifier(value).Translate(typeof(NTAccount)).Value; }
+                catch { /* well-known/orphaned SID, or AD unreachable: tried again after RetryUnresolved */ }
+            }
+            cached = (name, now + RetryUnresolved);
+            SidNameCache[value] = cached;
+        }
+        var resolved = cached.Name;
         if (resolved is null) yield break;
 
         yield return resolved;                                  // DOMAIN\Group
@@ -89,24 +105,61 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
         if (slash >= 0 && IsLocalToServer(value, resolved[..slash])) yield return resolved[(slash + 1)..];   // Group
     }
 
-    // The domain this server is joined to, as the domain part of its computer account's SID; null when it can't be
-    // found (not domain-joined, or not Windows), in which case there's no other domain to tell apart.
-    private static readonly Lazy<string?> ServerDomainSid = new(() =>
+    // The domain this server is joined to, as the domain part of its computer account's SID. BUG-223: only a found one
+    // is kept. A failed lookup was cached for the life of the process as "no domain", which offers bare names for every
+    // domain's groups: one DC failover at app-pool start undid BUG-188 until the next recycle, with nothing logged.
+    private static string? _serverDomainSid;
+    private static DateTime _serverDomainRetryUtc;
+    private static bool _serverDomainWarned;
+    private static readonly object ServerDomainLock = new();
+    private static readonly TimeSpan RetryServerDomain = TimeSpan.FromMinutes(1);
+
+    // Null when the server isn't domain-joined (no other domain to tell apart); "" when it is but its domain couldn't
+    // be found, which matches no domain, so only names that carry their domain map until it's found (fail closed).
+    private static string? ServerDomainSid()
     {
+        if (_serverDomainSid is { } known) return known;
         if (!OperatingSystem.IsWindows()) return null;
-        try
+        lock (ServerDomainLock)
         {
-            var sid = (SecurityIdentifier)new NTAccount(Environment.MachineName + "$").Translate(typeof(SecurityIdentifier));
-            return sid.AccountDomainSid?.Value;
+            if (_serverDomainSid is { } again) return again;
+            if (!IsDomainJoined()) return null;
+            if (DateTime.UtcNow < _serverDomainRetryUtc) return "";
+            try
+            {
+                var sid = (SecurityIdentifier)new NTAccount(Environment.MachineName + "$").Translate(typeof(SecurityIdentifier));
+                if (sid.AccountDomainSid?.Value is { } found)
+                {
+                    if (_serverDomainWarned) _log?.LogWarning("Found this server's domain: bare AD group names map again.");
+                    _serverDomainWarned = false;
+                    return _serverDomainSid = found;
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!_serverDomainWarned)
+                    _log?.LogCritical(ex, "Couldn't look up this server's AD domain (a DC unreachable?). Until it's found, " +
+                        "only role mappings that name the domain (DOMAIN\\Group) take effect. Retrying every {Seconds} s.",
+                        RetryServerDomain.TotalSeconds);
+                _serverDomainWarned = true;
+            }
+            _serverDomainRetryUtc = DateTime.UtcNow + RetryServerDomain;
+            return "";
         }
-        catch { return null; }   // not domain-joined, or AD unreachable
-    });
+    }
+
+    private static bool IsDomainJoined()
+    {
+        try { return !string.IsNullOrEmpty(System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().DomainName); }
+        catch { return true; }   // can't tell: assume joined, so a failed lookup fails closed
+    }
 
     private static bool IsLocalToServer(string sid, string domain) =>
-        !OperatingSystem.IsWindows() || IsLocalToServer(sid, domain, Environment.MachineName, ServerDomainSid.Value);
+        !OperatingSystem.IsWindows() || IsLocalToServer(sid, domain, Environment.MachineName, ServerDomainSid());
 
     /// <summary>Whether a group (its SID and the domain part of its name) belongs to the server: a local or built-in
-    /// group, or one of the server's domain (<paramref name="serverDomainSid"/>; null when unknown, so any).</summary>
+    /// group, or one of the server's domain (<paramref name="serverDomainSid"/>; null when the server isn't on a domain,
+    /// so any; "" when it is but the domain isn't known yet, so none).</summary>
     public static bool IsLocalToServer(string sid, string domain, string machineName, string? serverDomainSid)
     {
         if (!OperatingSystem.IsWindows()) return true;
