@@ -48,7 +48,12 @@ public sealed class EmailSealCopier(IEmailSender email, IOptionsMonitor<EmailOpt
             $"Algorithm / key id     : {seal.Algorithm} / {seal.KeyId}",
             $"Keyed from entry       : {(seal.KeyedFromSequence is { } k ? k.ToString(CultureInfo.InvariantCulture) : "(chain key off)")}",
             $"Signature              : {seal.Signature}");
+        // BUG-242: the sender logs an SMTP failure rather than throwing (a mail problem mustn't break the action that sent
+        // it), so the copy watches for one: a digest the relay refused would otherwise be recorded as delivered.
+        using var watch = DeliveryWatch.Begin();
         await email.SendAsync(To, $"CaseBook integrity seal #{seal.UpToSequence}", body, ct);
+        if (watch.Failed)
+            throw new InvalidOperationException("The digest email couldn't be sent (the mail relay failed; see the app log).");
     }
 }
 

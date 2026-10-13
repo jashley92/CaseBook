@@ -29,13 +29,25 @@ public sealed class SealCopierTests : IDisposable
 
     private sealed class CapturingEmail : IEmailSender
     {
+        public bool RelayDown { get; set; }
         public List<(IReadOnlyCollection<string> To, string Subject, string Body)> Sent { get; } = [];
         public Task SendAsync(EmailMessage message, CancellationToken ct = default) => Task.CompletedTask;
         public Task SendAsync(IReadOnlyCollection<string> to, string subject, string body, CancellationToken ct = default)
         {
+            if (RelayDown) { DeliveryWatch.ReportFailure(); return Task.CompletedTask; }   // as EmailSender does: logged, not thrown
             Sent.Add((to, subject, body));
             return Task.CompletedTask;
         }
+    }
+
+    [Fact]
+    public async Task A_digest_the_relay_refused_counts_as_a_failed_copy(/* BUG-242 */)
+    {
+        var email = new CapturingEmail { RelayDown = true };
+        var copier = new EmailSealCopier(email, new TestOptionsMonitor<EmailOptions>(new EmailOptions { Enabled = true }),
+            Options.Create(new SealCopyOptions { EmailTo = "seals@contoso.com" }));
+        var copy = () => copier.CopyAsync(Seal());
+        await copy.Should().ThrowAsync<InvalidOperationException>().WithMessage("*couldn't be sent*");
     }
 
     [Fact]
