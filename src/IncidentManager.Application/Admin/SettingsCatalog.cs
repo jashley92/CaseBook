@@ -174,6 +174,12 @@ public static class SettingsCatalog
         new SettingDefinition("Integrity:EvidenceVerify:IntervalHours", "Evidence re-verification interval (hours)", "Integrity", SettingKind.Int,
             "Hours between full passes. Each pass re-hashes every stored file, so keep it slow. " +
             "A pass also runs at startup. Default 24.", "24"),
+        // PROD-49: the update check. Off by default; the repository and any proxy stay server-side (Updates:Repository, Updates:Proxy).
+        new SettingDefinition("Updates:CheckEnabled", "Check for new releases", "Updates", SettingKind.Bool,
+            "Asks GitHub (api.github.com) which CaseBook releases are newer than this one and shows them here with their notes. " +
+            "One anonymous request; nothing about this installation is sent. The server needs outbound HTTPS, or a proxy in Updates:Proxy.", "false"),
+        new SettingDefinition("Updates:CheckIntervalHours", "Check interval (hours)", "Updates", SettingKind.Int,
+            "Hours between checks. Default 24.", "24", Min: 6, Max: 168),
         new SettingDefinition("Sla:Containment:Critical", "Containment: Critical (hours)", "Response SLA", SettingKind.Int,
             "Target hours from detection to containment for Critical cases. Blank disables the SLA for this severity.", "4", Max: Sla.SlaPolicy.MaxTargetHours, BlankIsOff: true),
         new SettingDefinition("Sla:Containment:High", "Containment: High (hours)", "Response SLA", SettingKind.Int,

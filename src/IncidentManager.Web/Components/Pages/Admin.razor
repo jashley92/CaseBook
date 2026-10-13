@@ -384,6 +384,12 @@
                         <RegulatoryDeadlineRules />
                     }
 
+                    @* PROD-49/50: what's newer than this build, its notes, and the one command that upgrades. *@
+                    @if (group == "Updates")
+                    {
+                        <UpdatesPanel />
+                    }
+
                     @* Send-a-test-email sits with the notification settings it exercises. *@
                     @if (group == "Notifications")
                     {
@@ -881,6 +887,7 @@
         new("regulatory-deadlines", "Regulatory deadlines", ["Deadline clock"]),
         new("reporting", "Reports", ["Report defaults"]),
         new("governance", "Governance & security", ["Retention", "Integrity", "Access logging", "Security"]),
+        new("updates", "Updates", ["Updates"]),   // PROD-49
     ];
 
     // Any catalog group not claimed by a named section still needs a home, so a newly added group never
@@ -923,6 +930,7 @@
         "source" => "Where each setting's effective value resolves from right now.",
         "regulatory-deadlines" => "The regulatory notification-deadline clock and its per-jurisdiction rules.",
         "reporting" => "Report defaults, the section layout, and reusable report profiles.",
+        "updates" => "Newer CaseBook releases, what's in them, and how to upgrade.",
         _ => null,
     };
 
@@ -949,6 +957,8 @@
         ("Report output path", "ReportOutput:RootPath", false),
         ("Seal signing key path", "Integrity:SigningKeyPath", false),
         ("Backup status file", "BackupStatus:FilePath", false),
+        ("Update check repository", "Updates:Repository", false),
+        ("Update check proxy", "Updates:Proxy", false),
     ];
 
     private (string? Value, string Source) OperationalResolution(SettingDefinition def)
@@ -1090,8 +1100,8 @@
 
     private sealed record HealthCheck(string Label, bool Ok, string Detail);
 
-    private static string AppVersion =>
-        System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "unknown";
+    // PROD-49: the release the workflow stamped, e.g. "1.6.0 (a1b2c3d)"; the assembly version alone always read 1.0.0.0.
+    private static string AppVersion => IncidentManager.Application.Updates.AppVersionInfo.Display;
 
     // Diagnostics read the DB provider once per load; a short-lived context per operation (H-08) rather
     // than a circuit-lived injected context.

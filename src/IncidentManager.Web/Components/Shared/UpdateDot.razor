@@ -1,0 +1,19 @@
+@* PROD-49: a small dot beside "Administration" (and Updates in the admin rail) when a newer CaseBook release is out.
+   Only rendered inside Administer-only markup; the update check itself is off unless an administrator turns it on. *@
+@inject IncidentManager.Web.Updates.UpdateCheckService Updates
+@implements IDisposable
+
+@if (Updates.UpdateAvailable)
+{
+    <span class="im-update-dot" title="@Title" role="img" aria-label="@Title"></span>
+}
+
+@code {
+    private string Title => Updates.Status.Latest is { } r ? $"CaseBook {r.Tag} is available" : "A new CaseBook release is available";
+
+    protected override void OnInitialized() => Updates.Changed += OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Updates.Changed -= OnChanged;
+}

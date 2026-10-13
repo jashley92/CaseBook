@@ -19,6 +19,7 @@
                 <div class="admin-rail-item">
                     <NavLink class="admin-rail-link" href="@item.Href" Match="NavLinkMatch.All">
                         <span class="bi @item.Icon" aria-hidden="true"></span><span>@item.Title</span>
+                        @if (item.Href == UpdatesHref) { <UpdateDot /> }
                     </NavLink>
                 </div>
             }
@@ -33,6 +34,8 @@
 </div>
 
 @code {
+    private const string UpdatesHref = "admin/settings/updates";
+
     private sealed record RailItem(string Title, string Icon, string Href);
     private sealed record RailGroup(string Label, RailItem[] Items);
 
@@ -104,6 +107,7 @@
             new("Setting sources", "bi-diagram-3", "admin/settings/source"),
             new("Configuration bundle", "bi-box-seam", "admin/config-bundle"),
             new("Diagnostics", "bi-activity", "admin/settings/diagnostics"),
+            new("Updates", "bi-cloud-arrow-down", UpdatesHref),   // PROD-49
         ]),
         @* UX-18: the design-system reference is a developer/design tool, not deployment inspection, so it
            sits in its own group rather than polluting System. *@

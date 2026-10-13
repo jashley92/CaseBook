@@ -1,0 +1,199 @@
+@* PROD-49/50: Administration › Updates, below the two update-check settings. Shows the running version, any newer
+   releases with their notes (each release's docs/UPGRADE.md section, published as its GitHub release body), and the
+   one elevated command that upgrades this server. The app never upgrades itself: its app-pool identity can't write its
+   own binaries, by design (PROD-50b tracks an approved, signed executor). *@
+@using IncidentManager.Application.Updates
+@using IncidentManager.Web.Updates
+@inject UpdateCheckService Updates
+@inject Microsoft.Extensions.Options.IOptionsMonitor<UpdateCheckOptions> Options
+@inject IncidentManager.Application.Content.IMarkdownService Md
+@inject IWebHostEnvironment Env
+@inject IJSRuntime JS
+@inject TimeDisplay TimeDisp
+@implements IDisposable
+
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><span class="bi bi-cloud-arrow-down me-1" aria-hidden="true"></span>This server</span>
+        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="CheckNow"
+                disabled="@(_checking || s.State is UpdateState.Disabled or UpdateState.DevBuild)">
+            @(_checking ? "Checking…" : "Check now")
+        </button>
+    </div>
+    <div class="card-body">
+        <table class="table table-sm mb-2">
+            <tbody>
+                <tr><td style="width:32%">Running</td><td><code>@AppVersionInfo.Display</code></td></tr>
+                @if (_installed is { } inst)
+                {
+                    <tr><td>Last upgrade</td><td>@inst</td></tr>
+                }
+                <tr><td>Status</td><td>@StateBadge(s)</td></tr>
+                @if (s.CheckedAtUtc is { } at)
+                {
+                    <tr><td>Last checked</td><td>@TimeDisp.Short(at)</td></tr>
+                }
+            </tbody>
+        </table>
+        @switch (s.State)
+        {
+            case UpdateState.Disabled:
+                <p class="small text-muted mb-0">The check is off. Turn on <strong>Check for new releases</strong> above and save; the first check runs within a few minutes.</p>
+                break;
+            case UpdateState.DevBuild:
+                <p class="small text-muted mb-0">This is a development build with no release version, so there's nothing to compare. Release bundles are checked.</p>
+                break;
+            case UpdateState.NotChecked:
+                <p class="small text-muted mb-0">The first check runs a couple of minutes after start, or now with <strong>Check now</strong>.</p>
+                break;
+            case UpdateState.Failed:
+                <p class="small mb-0"><span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>Couldn't check: @s.Problem. Releases found by an earlier check stay listed below.</p>
+                break;
+        }
+    </div>
+</div>
+
+@if (s.Latest is { } latest)
+{
+    <div class="card mb-3">
+        <div class="card-header"><span class="bi bi-terminal me-1" aria-hidden="true"></span>How to upgrade to @latest.Tag</div>
+        <div class="card-body">
+            <p class="small">
+                Read the notes below first: each release says what to check before and after. Then, on the web host, in an
+                <strong>elevated</strong> PowerShell:
+            </p>
+            @if (DeployScript is { } script)
+            {
+                <div class="d-flex justify-content-end mb-1">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => Copy(Command(script, latest.Tag))">
+                        <span class="bi @(_copied ? "bi-check2" : "bi-clipboard") me-1" aria-hidden="true"></span>@(_copied ? "Copied" : "Copy command")
+                    </button>
+                </div>
+                <pre class="small mb-2"><code>@Command(script, latest.Tag)</code></pre>
+                <p class="small text-muted mb-0">
+                    The script downloads the bundle from GitHub, checks its SHA-256, backs up the database, configuration and
+                    current binaries, swaps in the new build, and rolls back if it doesn't start. A server without internet
+                    access: download the bundle elsewhere and use <code>-BundleZip</code> instead of <code>-Version</code>.
+                </p>
+            }
+            else
+            {
+                <p class="small mb-2">
+                    Download <a href="@(latest.BundleUrl ?? latest.PageUrl)" target="_blank" rel="noopener noreferrer">casebook-@(latest.Tag).zip</a>@if (latest.Sha256Url is { } sha) {<span> and its <a href="@sha" target="_blank" rel="noopener noreferrer">.sha256</a></span>}, check
+                    its hash (<code>Get-FileHash -Algorithm SHA256</code>), expand it, and run:
+                </p>
+                <pre class="small"><code>.\casebook-@(latest.Tag)\deploy\Upgrade-CaseBook.ps1 -BundleZip .\casebook-@(latest.Tag).zip</code></pre>
+                <p class="small text-muted mb-0">
+                    From this release on, the upgrade keeps a copy of its scripts beside the site, and this card shows a
+                    one-line command that downloads and checks the bundle itself.
+                </p>
+            }
+        </div>
+    </div>
+
+    @foreach (var r in s.Releases)
+    {
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span>
+                    <strong>@r.Tag</strong>
+                    @if (r.PublishedAtUtc is { } pub) { <span class="text-muted small ms-2">@TimeDisp.DateOnly(pub)</span> }
+                    @if (r == latest) { <span class="im-badge im-b-info ms-2">Latest</span> }
+                </span>
+                <a class="small" href="@r.PageUrl" target="_blank" rel="noopener noreferrer">Release page <span class="bi bi-box-arrow-up-right" aria-hidden="true"></span></a>
+            </div>
+            <div class="card-body">
+                @if (string.IsNullOrWhiteSpace(r.Notes))
+                {
+                    <p class="small text-muted mb-0">This release has no notes attached. See its section in <code>docs/UPGRADE.md</code>.</p>
+                }
+                else
+                {
+                    <div class="md-body small">@((MarkupString)Md.ToHtml(r.Notes))</div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private UpdateStatus s = default!;
+    private bool _checking;
+    private bool _copied;
+    private string? _installed;
+    private IDisposable? _optionsChanged;
+
+    protected override void OnInitialized()
+    {
+        s = Updates.Status;
+        _installed = ReadInstalled();
+        Updates.Changed += OnChanged;
+        _optionsChanged = Options.OnChange((_, _) => OnChanged());
+    }
+
+    private void OnChanged() => _ = InvokeAsync(() => { s = Updates.Status; StateHasChanged(); });
+
+    private async Task CheckNow()
+    {
+        _checking = true;
+        try { s = await Updates.CheckAsync(manual: true); }
+        finally { _checking = false; }
+    }
+
+    private async Task Copy(string text)
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); _copied = true; }
+        catch (JSException) { /* clipboard blocked; the command stays selectable */ }
+    }
+
+    // The admin-only copy of the deploy scripts the upgrade keeps beside the site (<site parent>\CaseBook-deploy).
+    private string? DeployScript
+    {
+        get
+        {
+            var parent = Directory.GetParent(Env.ContentRootPath)?.FullName;
+            if (parent is null) return null;
+            var script = Path.Combine(parent, "CaseBook-deploy", "Upgrade-CaseBook.ps1");
+            return File.Exists(script) ? script : null;
+        }
+    }
+
+    private static string Command(string script, string tag) => $"& '{script.Replace("'", "''")}' -Version {tag}";
+
+    // VERSION.txt, written into the site by Upgrade-CaseBook.ps1: "Version:", and from v1.6.0 "Previous:", "Upgraded:", "By:".
+    private string? ReadInstalled()
+    {
+        try
+        {
+            var file = Path.Combine(Env.ContentRootPath, "VERSION.txt");
+            if (!File.Exists(file)) return null;
+            var fields = File.ReadLines(file).Take(20)
+                .Select(l => l.Split(':', 2))
+                .Where(p => p.Length == 2)
+                .GroupBy(p => p[0].Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First()[1].Trim(), StringComparer.OrdinalIgnoreCase);
+            if (!fields.TryGetValue("Previous", out var previous) || string.IsNullOrWhiteSpace(previous)) return null;
+            var text = $"from {previous}";
+            if (fields.TryGetValue("Upgraded", out var when) && !string.IsNullOrWhiteSpace(when)) text += $" on {when}";
+            if (fields.TryGetValue("By", out var by) && !string.IsNullOrWhiteSpace(by)) text += $" by {by}";
+            return text;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    private static RenderFragment StateBadge(UpdateStatus st) => st.State switch
+    {
+        UpdateState.Available => @<span class="im-badge im-b-info">@(st.Releases.Count == 1 ? "1 newer release" : $"{st.Releases.Count} newer releases")</span>,
+        UpdateState.UpToDate => @<span class="im-badge im-b-ok">Up to date</span>,
+        UpdateState.Failed => @<span class="im-badge im-b-warn">Couldn't check</span>,
+        UpdateState.NotChecked => @<span class="im-badge im-b-neutral">Not checked yet</span>,
+        UpdateState.DevBuild => @<span class="im-badge im-b-neutral">Development build</span>,
+        _ => @<span class="im-badge im-b-neutral">Off</span>,
+    };
+
+    public void Dispose()
+    {
+        Updates.Changed -= OnChanged;
+        _optionsChanged?.Dispose();
+    }
+}

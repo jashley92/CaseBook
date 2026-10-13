@@ -116,6 +116,19 @@ builder.Services.AddHostedService<IncidentManager.Web.BackgroundJobs.SecurityEve
 
 // --- PROD-02: team-chat (Slack/Teams) notification channel. Overrides the no-op default from Infrastructure. ---
 builder.Services.AddHttpClient("chat");
+
+// --- PROD-49: update check: which newer CaseBook releases exist, for Administration › Updates. Off by default. The
+// proxy is server-side config read here, once (the app pool has no per-user proxy to fall back on). ---
+builder.Services.Configure<IncidentManager.Web.Updates.UpdateCheckOptions>(builder.Configuration.GetSection("Updates"));
+builder.Services.AddHttpClient("updates").ConfigurePrimaryHttpMessageHandler(() =>
+{
+    var proxy = builder.Configuration["Updates:Proxy"];
+    return string.IsNullOrWhiteSpace(proxy)
+        ? new SocketsHttpHandler()
+        : new SocketsHttpHandler { Proxy = new System.Net.WebProxy(proxy), UseProxy = true };
+});
+builder.Services.AddSingleton<IncidentManager.Web.Updates.UpdateCheckService>();
+builder.Services.AddHostedService<IncidentManager.Web.Updates.UpdateCheckHostedService>();
 builder.Services.AddSingleton<IncidentManager.Application.Abstractions.IChatNotifier, IncidentManager.Web.Notifications.ChatWebhookNotifier>();
 
 // --- F-13: per-user rate limit on the download/export endpoints, so a compromised account can't bulk-

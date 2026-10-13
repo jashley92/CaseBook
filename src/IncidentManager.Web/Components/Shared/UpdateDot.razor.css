@@ -1,0 +1,10 @@
+.im-update-dot {
+    display: inline-block;
+    width: .5rem;
+    height: .5rem;
+    margin-left: .4rem;
+    border-radius: var(--im-radius-pill);
+    background: var(--im-accent);
+    flex: none;
+    vertical-align: middle;
+}
