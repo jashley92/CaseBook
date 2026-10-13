@@ -50,11 +50,19 @@ public class CaseBrief : AuditableEntity, IHashableEntity
     /// The "changes since" count runs from here.</summary>
     public DateTimeOffset CurrentAsOfUtc => ConfirmedAtUtc is { } c && c > CreatedAtUtc ? c : CreatedAtUtc;
 
+    /// <summary>
+    /// WF-30: a version CaseBook added on its own, appending to the brief (a composer's Then question or Known line, a
+    /// task's "add to Known", Question mode, a summary edit), rather than someone revising it. It doesn't count as the
+    /// brief being brought up to date: what has happened since is counted from the version before it.
+    /// </summary>
+    public bool Appended { get; set; }
+
     public string? RowHash { get; set; }
 
     // The confirmation is folded in only when set, so rows written before it existed hash exactly as before.
     public string BuildCanonicalContent() => string.Join('|',
         CaseId, Version, SupersedesBriefId, Canonical.Text(Summary), Canonical.Text(WorkingAssessment), Canonical.Text(Known), Canonical.Text(OpenQuestions), Canonical.Text(NextSteps),
         CreatedBy, CreatedAtUtc.ToString("o"))
-        + (ConfirmedAtUtc is { } at ? $"|confirmed|{ConfirmedBy}|{at:o}" : "");
+        + (ConfirmedAtUtc is { } at ? $"|confirmed|{ConfirmedBy}|{at:o}" : "")
+        + (Appended ? "|appended" : "");   // WF-30: only when set, so earlier rows hash as before
 }

@@ -678,6 +678,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.Property<DateTimeOffset?>("ReportedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("ReportedJurisdictions")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<DateTimeOffset?>("ResolvedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -821,6 +825,9 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Appended")
+                        .HasColumnType("bit");
 
                     b.Property<Guid>("CaseId")
                         .HasColumnType("uniqueidentifier");

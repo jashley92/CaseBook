@@ -673,6 +673,10 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.Property<long?>("ReportedAtUtc")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ReportedJurisdictions")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("ResolvedAtUtc")
                         .HasColumnType("INTEGER");
 
@@ -816,6 +820,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("Appended")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("CaseId")
                         .HasColumnType("TEXT");

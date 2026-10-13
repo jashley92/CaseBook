@@ -610,6 +610,7 @@ public sealed partial class ConfigBundleService
 
         // --- Data elements (match by stable Key) ---
         var elements = await db.DataElements.ToListAsync(ct);
+        var rescoped = new List<string>();
         foreach (var d in bundle.DataElements)
         {
             var existing = elements.FirstOrDefault(x => string.Equals(x.Key, d.Key, StringComparison.OrdinalIgnoreCase));
@@ -625,6 +626,8 @@ public sealed partial class ConfigBundleService
             {
                 var changed = existing.Label != d.Label || existing.SortOrder != d.SortOrder
                     || existing.IsActive != d.IsActive || existing.NotificationJurisdictions != d.NotificationJurisdictions;
+                if (changed && !string.Equals(existing.NotificationJurisdictions ?? "", d.NotificationJurisdictions ?? "", StringComparison.OrdinalIgnoreCase))
+                    rescoped.Add(existing.Key);   // WF-11
                 if (changed) { existing.Label = d.Label; existing.SortOrder = d.SortOrder; existing.IsActive = d.IsActive;
                     existing.NotificationJurisdictions = d.NotificationJurisdictions;
                     existing.ModifiedBy = actor; existing.ModifiedAtUtc = now; }
@@ -678,6 +681,8 @@ public sealed partial class ConfigBundleService
             }
         }
         if (notPlaced.Count > 0) await db.SaveChangesAsync(CancellationToken.None);
+        // WF-11: as the Data elements page: cases not yet reported are judged on the imported jurisdictions.
+        await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, rescoped, actor, now, ct);
         await _audit.RecordAsync(AuditAction.Update, "ConfigBundle", null, null,
             $"Imported configuration bundle ({added} added, {updated} updated, {unchanged} unchanged)" +
             (foreignKey ? $", signed with key {envelope.KeyId} (not this server's), source confirmed trusted" : "") +

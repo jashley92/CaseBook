@@ -108,6 +108,7 @@ The aggregate root. Every state change on a case goes through a method on `Domai
 | `ContainedAtUtc`, `ResolvedAtUtc`, `ClosedAtUtc` | datetimeoffset | yes | Set the first time the case enters Containment, Recovery or Closed (effective time). Closed is cleared on reopen. |
 | `OutcomeKey` | nvarchar(64) | yes | What the case concluded: a `CaseOutcomes.Key` (no foreign key). Set when it closes, cleared on reopen. Indexed. Hashed only when set. |
 | `ReportedAtUtc` | datetimeoffset | yes | When regulators were notified. Stops **every** jurisdiction's notification clock. |
+| `ReportedJurisdictions` | nvarchar(1000) | yes | The jurisdiction codes in play when the case became reported (WF-11), comma-separated; empty when none were. A reported case is judged on these, not on the data elements' current settings. Null while unreported. Not in the canonical. |
 | `IncidentCommander` | nvarchar(200) | yes | User id of the current IC (mirrors the IC assignment). |
 | `IsRestricted` | bit | no | Need-to-know. |
 | `LegalHold` | bit | no | Blocks archiving. |
@@ -192,7 +193,7 @@ Edits supersede. Never deleted.
 
 The "Where it stands" brief. `Summary`, `WorkingAssessment`, `Known`, `OpenQuestions`, `NextSteps` (each up to
 8000), `Version`, `IsCurrent`, `SupersedesBriefId`. `NextSteps` is a snapshot of the open tasks when the
-version was saved. Saving any version also sets `Cases.Summary`. `ConfirmedAtUtc` / `ConfirmedBy` (nullable,
+version was saved. Saving any version also sets `Cases.Summary`. `Appended` (bit, WF-30) marks a version CaseBook added on its own (a Then line, a task's "add to Known", a summary edit); the "changes since" count steps back over it. `ConfirmedAtUtc` / `ConfirmedBy` (nullable,
 nvarchar(200); hashed only when set): the latest "still accurate" confirmation of the current version, from which
 "changes since" counts.
 

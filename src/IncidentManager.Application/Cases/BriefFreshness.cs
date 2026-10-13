@@ -18,9 +18,24 @@ public static class BriefFreshness
     /// classification / materiality change after it, or null when there's none.</param>
     public sealed record Result(int Count, IReadOnlyList<(string What, int Count)> Breakdown, string? Prompt);
 
+    /// <summary>
+    /// WF-30: when the brief was last brought up to date: the version written or confirmed, stepping back over versions
+    /// CaseBook appended on its own (a Then line, a task's "add to Known"), which aren't a review of where the case stands.
+    /// </summary>
+    public static DateTimeOffset Baseline(Case c, CaseBrief brief)
+    {
+        var b = brief;
+        for (var guard = 0; b.Appended && b.ConfirmedAtUtc is null && b.SupersedesBriefId is { } prev && guard < 1000; guard++)
+        {
+            if (c.Briefs.FirstOrDefault(x => x.Id == prev) is not { } earlier) break;
+            b = earlier;
+        }
+        return b.CurrentAsOfUtc;
+    }
+
     public static Result Since(Case c, CaseBrief brief, MilestoneLabels labels)
     {
-        var since = brief.CurrentAsOfUtc;   // written, or last confirmed as still accurate
+        var since = Baseline(c, brief);   // written, or last confirmed as still accurate (WF-30: not an appended version)
 
         var entries = c.TimelineEntries.Where(e => e.IsCurrent && e.CreatedAtUtc > since).ToList();
         var milestones = CaseMilestones.Project(c, labels)

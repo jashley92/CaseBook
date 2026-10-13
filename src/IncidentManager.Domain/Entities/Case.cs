@@ -111,6 +111,24 @@ public class Case : AuditableEntity, IHashableEntity
     public DateTimeOffset? OccurredAtUtc { get; set; }
     public DateTimeOffset? DetectedAtUtc { get; set; }
     public DateTimeOffset? ReportedAtUtc { get; set; }
+    /// <summary>
+    /// WF-11: the jurisdictions in play when the case became reported (comma-separated codes; empty when none were),
+    /// so a later change to a data element's jurisdictions in Administration doesn't reopen, re-judge or invent notices
+    /// for a case already reported. Null while unreported, and for a case reported before it was recorded (back-filled at
+    /// start-up). Derived from the notices and the reported time, which are hashed; kept out of the canonical.
+    /// </summary>
+    public string? ReportedJurisdictions { get; set; }
+
+    /// <summary>WF-11: <see cref="ReportedJurisdictions"/> as codes; null when it isn't recorded.</summary>
+    public IReadOnlyList<string>? FrozenJurisdictions => ReportedJurisdictions is null ? null
+        : ReportedJurisdictions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    public const int MaxReportedJurisdictionsLength = 1000;
+
+    private void FreezeJurisdictions(IEnumerable<string>? inPlay) =>
+        ReportedJurisdictions = ReportedAtUtc is null ? null
+            : string.Join(',', (inPlay ?? []).Select(j => j.Trim().ToUpperInvariant()).Where(j => j.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(j => j, StringComparer.Ordinal));
     public DateTimeOffset? ContainedAtUtc { get; set; }
     /// <summary>
     /// BUG-165: why containment wasn't needed, when the case went past Containment without it (a deliberate, recorded
@@ -538,7 +556,7 @@ public class Case : AuditableEntity, IHashableEntity
         {
             var cur = Briefs.FirstOrDefault(b => b.IsCurrent);
             AddBriefVersion(summary, cur?.WorkingAssessment, cur?.Known, cur?.OpenQuestions, cur?.NextSteps,
-                actor, nowUtc, requireContent: false);
+                actor, nowUtc, requireContent: false, appended: true);   // WF-30
         }
         DetectionCaseId = detectionCaseId;
         DataTypesInvolved = dataTypesInvolved;
@@ -1272,7 +1290,8 @@ public class Case : AuditableEntity, IHashableEntity
     /// timing; the tool records that it happened. May be backdated (Legal often reports before it is entered
     /// here) but not set in the future or before the matter was detected.
     /// </summary>
-    public void MarkReported(DateTimeOffset reportedAtUtc, string actor, DateTimeOffset nowUtc)
+    public void MarkReported(DateTimeOffset reportedAtUtc, string actor, DateTimeOffset nowUtc,
+        IReadOnlyCollection<string>? jurisdictionsInPlay = null)
     {
         if (reportedAtUtc > nowUtc)
             throw new ArgumentException("The reported time can't be in the future.");
@@ -1280,6 +1299,8 @@ public class Case : AuditableEntity, IHashableEntity
             throw new ArgumentException("The reported time can't be earlier than the detected time.");
 
         ReportedAtUtc = reportedAtUtc;
+        // WF-11: recorded when the caller says what was in play; not said, it's left for the start-up back-fill.
+        if (jurisdictionsInPlay is not null) FreezeJurisdictions(jurisdictionsInPlay);
         Touch(actor, nowUtc);
     }
 
@@ -1290,6 +1311,7 @@ public class Case : AuditableEntity, IHashableEntity
         EnsureNotArchived("clear its notices");
         JurisdictionNotices.Clear();
         ReportedAtUtc = null;
+        ReportedJurisdictions = null;   // WF-11
         Touch(actor, nowUtc);
     }
 
@@ -1341,6 +1363,8 @@ public class Case : AuditableEntity, IHashableEntity
             : null;
         if (reported == ReportedAtUtc) return;
         ReportedAtUtc = reported;
+        // WF-11: what was in play when it became reported (the notices themselves when nothing is in play any more).
+        FreezeJurisdictions(jurisdictionsInPlay.Count > 0 ? jurisdictionsInPlay : byCode.Keys);
         Touch(actor, nowUtc);
     }
 
@@ -1686,8 +1710,9 @@ public class Case : AuditableEntity, IHashableEntity
     /// <returns>The new version, or null when the written parts are unchanged: saving the same text again makes no
     /// version (use <see cref="ConfirmBrief"/> to say it still stands). The next steps are a snapshot of the tasks,
     /// not written, so they don't count as a change.</returns>
+    /// <param name="appended">WF-30: CaseBrief added this version on its own (see <see cref="CaseBrief.Appended"/>).</param>
     public CaseBrief? ReviseBrief(string? summary, string? workingAssessment, string? known, string? openQuestions,
-        string? nextSteps, string actor, DateTimeOffset nowUtc)
+        string? nextSteps, string actor, DateTimeOffset nowUtc, bool appended = false)
     {
         if (Briefs.FirstOrDefault(b => b.IsCurrent) is { } current
             && Clean(summary) == current.Summary && Clean(workingAssessment) == current.WorkingAssessment
@@ -1695,7 +1720,7 @@ public class Case : AuditableEntity, IHashableEntity
             && new[] { current.Summary, current.WorkingAssessment, current.Known, current.OpenQuestions }.Any(p => p is not null))
             return null;
         var next = AddBriefVersion(summary, workingAssessment, known, openQuestions, nextSteps, actor, nowUtc,
-            requireContent: true);
+            requireContent: true, appended: appended);
         Touch(actor, nowUtc);
         return next;
     }
@@ -1752,12 +1777,13 @@ public class Case : AuditableEntity, IHashableEntity
     // A new brief version (superseding the current one) that also sets the case summary. A summary edit made
     // outside the brief can clear the summary, so it may record a version with nothing in it.
     private CaseBrief AddBriefVersion(string? summary, string? workingAssessment, string? known,
-        string? openQuestions, string? nextSteps, string actor, DateTimeOffset nowUtc, bool requireContent)
+        string? openQuestions, string? nextSteps, string actor, DateTimeOffset nowUtc, bool requireContent, bool appended = false)
     {
         var next = new CaseBrief
         {
             CaseId = Id, Summary = Clean(summary), WorkingAssessment = Clean(workingAssessment), Known = Clean(known),
-            OpenQuestions = Clean(openQuestions), NextSteps = Clean(nextSteps), CreatedBy = actor, CreatedAtUtc = nowUtc
+            OpenQuestions = Clean(openQuestions), NextSteps = Clean(nextSteps), CreatedBy = actor, CreatedAtUtc = nowUtc,
+            Appended = appended
         };
         // INV-25: the next steps are recorded, not written, so they don't count as saying something.
         if (requireContent && new[] { next.Summary, next.WorkingAssessment, next.Known, next.OpenQuestions }.All(p => p is null))

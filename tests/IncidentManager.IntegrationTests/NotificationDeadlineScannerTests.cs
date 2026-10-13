@@ -219,6 +219,75 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
         d.Statuses.Single(s => s.JurisdictionCode == "NY").IsActive.Should().BeTrue();
     }
 
+    private async Task SetJurisdictionsAsync(string key, string jurisdictions)
+    {
+        Guid elementId;
+        await using (var db = NewContext()) elementId = (await db.DataElements.AsNoTracking().SingleAsync(e => e.Key == key)).Id;
+        await new IncidentManager.Application.Admin.DataElementService(NewFactory(), _user, _clock)
+            .SaveAsync([new IncidentManager.Application.Admin.DataElementRow(elementId, "Social Security number", jurisdictions)]);
+    }
+
+    [Fact]
+    public async Task A_reported_case_keeps_the_jurisdictions_in_play_when_it_was_reported(/* WF-11 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await using var db = NewContext();
+        var cases = NewCases(db);
+        await cases.MarkReportedAsync(id, _clock.UtcNow);   // NY notified, so reported
+
+        await SetJurisdictionsAsync("SSN", "NY,CA");   // an admin adds CA to the element afterwards
+
+        var d = await NewDeadlines().EvaluateAsync(id);
+        d.ReportedAtUtc.Should().NotBeNull("it was reported to every regulator in play then");
+        d.Statuses.Select(s => s.JurisdictionCode).Should().Equal("NY");
+
+        // An analyst adds another element: no notice to CA is invented under their name.
+        db.DataElements.Add(new DataElement { Key = "DL", Label = "Driver's licence", NotificationJurisdictions = "NJ",
+            IsActive = true, CreatedBy = "system", CreatedAtUtc = _clock.UtcNow });
+        await db.SaveChangesAsync();
+        await cases.UpdateImpactAssessmentAsync(id, 500, ["SSN", "DL"], "NY");
+        await using var check = NewContext();
+        (await check.JurisdictionNotices.AsNoTracking().Where(n => n.CaseId == id).Select(n => n.Jurisdiction).ToListAsync())
+            .Should().Equal("NY");
+    }
+
+    [Fact]
+    public async Task A_case_reported_before_the_upgrade_gets_its_jurisdictions_at_start_up(/* WF-11 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        await using (var db = NewContext())
+        {
+            var c = await db.Cases.SingleAsync(x => x.Id == id);
+            c.MarkReported(_clock.UtcNow, "alice", _clock.UtcNow);   // as before WF-11: nothing recorded
+            await db.SaveChangesAsync();
+            (await db.Cases.AsNoTracking().SingleAsync(x => x.Id == id)).ReportedJurisdictions.Should().BeNull();
+        }
+
+        await using (var db = NewContext())
+            (await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(db)).Should().Be(1);
+
+        await using var check = NewContext();
+        (await check.Cases.AsNoTracking().SingleAsync(x => x.Id == id)).ReportedJurisdictions.Should().Be("NY");
+        (await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(check)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_case_whose_outstanding_jurisdiction_is_removed_becomes_reported(/* WF-11 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        await SetJurisdictionsAsync("SSN", "NY,CA");
+        await using var db = NewContext();
+        var cases = NewCases(db);
+        await cases.RecordNoticeAsync(id, "NY", _clock.UtcNow);
+        (await NewDeadlines().EvaluateAsync(id)).ReportedAtUtc.Should().BeNull("California is outstanding");
+
+        await SetJurisdictionsAsync("SSN", "NY");   // an admin takes CA off the element
+
+        (await NewDeadlines().EvaluateAsync(id)).ReportedAtUtc.Should().Be(_clock.UtcNow, "every jurisdiction in play is notified");
+    }
+
     [Fact]
     public async Task Re_scoping_to_nothing_in_play_keeps_the_notices_made(/* BUG-104 */)
     {

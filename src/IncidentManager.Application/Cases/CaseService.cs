@@ -1109,7 +1109,7 @@ public sealed class CaseService
         var c = await LoadWithNoticesAsync(db, id, ct);
         var now = _clock.UtcNow;
         var inPlay = await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
-        if (inPlay.Count == 0) c.MarkReported(reportedAtUtc, _user.UserId, now);
+        if (inPlay.Count == 0) c.MarkReported(reportedAtUtc, _user.UserId, now, inPlay);
         else
         {
             foreach (var code in inPlay.Where(j => c.JurisdictionNotices.All(n => n.Jurisdiction != j)))
@@ -1256,7 +1256,10 @@ public sealed class CaseService
                 "Someone else changed the impact assessment while you were editing. Reload and try again.");
         await db.JurisdictionNotices.Where(n => n.CaseId == id).ToListAsync(ct);
         var now = _clock.UtcNow;
-        var before = await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
+        // WF-11: what a reported case covered is what was in play when it was reported, not today's admin settings (an
+        // element given another jurisdiction since would otherwise become a notice, under this user's name, that never happened).
+        var before = c.ReportedAtUtc is not null && c.FrozenJurisdictions is { } frozen ? frozen
+            : await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
         c.SetImpactAssessment(affectedIndividualsCount, dataElementKeys, affectedStates, _user.UserId, now);
         var after = await Compliance.NotificationDeadlineService.JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct);
         // BUG-104: a case reported as a whole (no notice per jurisdiction: reported before notices were per jurisdiction,
@@ -1438,7 +1441,7 @@ public sealed class CaseService
                 : string.IsNullOrWhiteSpace(part) ? $"- {line}" : $"{part.TrimEnd()}\n- {line}";
             var nextSteps = CaseNext.Snapshot(c, _clock.UtcNow, u => _users?.DisplayFor(u) ?? u);
             c.ReviseBrief(c.Summary, cur?.WorkingAssessment, Append(cur?.Known, known), Append(cur?.OpenQuestions, question),
-                nextSteps, _user.UserId, _clock.UtcNow);
+                nextSteps, _user.UserId, _clock.UtcNow, appended: true);   // WF-30
             // WF-25: titled as the brief pairs a question with its task (its plain text), as AddOpenQuestionAsync does; a
             // question with formatting or a tag otherwise never paired, and the brief kept offering a second task.
             if (question is not null && f.QuestionTask) c.RaiseTaskFromQuestion(Content.MarkdownService.PlainLine(question), _user.UserId, _clock.UtcNow);
@@ -2712,7 +2715,7 @@ public sealed class CaseService
             throw new InvalidOperationException("That question is already open in the brief.");
         var open = string.IsNullOrWhiteSpace(cur?.OpenQuestions) ? $"- {q}" : $"{cur!.OpenQuestions!.TrimEnd()}\n- {q}";
         var nextSteps = CaseNext.Snapshot(c, _clock.UtcNow, u => _users?.DisplayFor(u) ?? u);
-        c.ReviseBrief(c.Summary, cur?.WorkingAssessment, cur?.Known, open, nextSteps, _user.UserId, _clock.UtcNow);
+        c.ReviseBrief(c.Summary, cur?.WorkingAssessment, cur?.Known, open, nextSteps, _user.UserId, _clock.UtcNow, appended: true);   // WF-30
         // The task's title is the question as plain text, which is how the brief pairs each question with its task.
         if (followUp) c.RaiseTaskFromQuestion(Content.MarkdownService.PlainLine(q), _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
@@ -2835,7 +2838,7 @@ public sealed class CaseService
             var cur = c.Briefs.FirstOrDefault(b => b.IsCurrent);
             var newKnown = string.IsNullOrWhiteSpace(cur?.Known) ? $"- {known}" : $"{cur!.Known!.TrimEnd()}\n- {known}";
             c.ReviseBrief(c.Summary, cur?.WorkingAssessment, newKnown, cur?.OpenQuestions,
-                CaseNext.Snapshot(c, now, u => _users?.DisplayFor(u) ?? u), _user.UserId, now);
+                CaseNext.Snapshot(c, now, u => _users?.DisplayFor(u) ?? u), _user.UserId, now, appended: true);   // WF-30
         }
         await db.SaveChangesAsync(ct);
     }

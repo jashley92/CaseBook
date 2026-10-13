@@ -23,6 +23,24 @@ public class BriefFreshnessTests
         });
 
     [Fact]
+    public void A_version_casebook_appended_doesnt_count_as_bringing_the_brief_up_to_date(/* WF-30 */)
+    {
+        var c = NewCase();
+        var reviewed = c.ReviseBrief("Lure reached Finance.", "Credential harvesting.", null, null, null, "ic1", T0.AddHours(1))!;
+        Entry(c, TimelineEntryType.Decision, T0.AddHours(2));
+        // The decision's Then adds a line to Known, in the same save: a new version, appended by CaseBook.
+        var appended = c.ReviseBrief("Lure reached Finance.", "Credential harvesting.", "- Account disabled", null, null, "ic1",
+            T0.AddHours(2), appended: true)!;
+
+        appended.Appended.Should().BeTrue();
+        BriefFreshness.Baseline(c, appended).Should().Be(reviewed.CurrentAsOfUtc);
+        BriefFreshness.Since(c, appended, Labels).Prompt.Should().Be("A decision was recorded after this version.");
+
+        c.ConfirmBrief("ic1", T0.AddHours(3));   // someone looks and says it stands
+        BriefFreshness.Since(c, appended, Labels).Prompt.Should().BeNull();
+    }
+
+    [Fact]
     public void A_fresh_brief_has_nothing_to_report()
     {
         var c = NewCase();

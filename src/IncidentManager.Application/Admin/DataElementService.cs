@@ -94,6 +94,7 @@ public sealed class DataElementService
         var byId = existing.ToDictionary(e => e.Id);
         var now = _clock.UtcNow;
         var usedKeys = existing.Select(e => e.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rescoped = new List<string>();   // WF-11: elements whose jurisdictions change
 
         for (var i = 0; i < rows.Count; i++)
         {
@@ -112,6 +113,7 @@ public sealed class DataElementService
                 // BUG-235: not re-activated here: archiving is its own action, and one archived since the page loaded stays so.
                 el.Label = label;
                 el.SortOrder = order;
+                if (!string.Equals(el.NotificationJurisdictions ?? "", juris ?? "", StringComparison.OrdinalIgnoreCase)) rescoped.Add(el.Key);
                 el.NotificationJurisdictions = juris;
                 el.ModifiedBy = _user.UserId;
                 el.ModifiedAtUtc = now;
@@ -135,6 +137,8 @@ public sealed class DataElementService
         }
 
         await db.SaveChangesAsync(ct);
+        // WF-11: cases not yet reported are judged on the new jurisdictions; reported ones keep what was in play.
+        await Compliance.NotificationDeadlineService.RecheckUnreportedAsync(db, rescoped, _user.UserId, now, ct);
     }
 
     /// <summary>Archives (<paramref name="archived"/> = true) or restores an element — built-in ones included.

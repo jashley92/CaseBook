@@ -322,6 +322,8 @@ using (var scope = app.Services.CreateScope())
     // BUG-70: rows of the tables that became hashable get their row hash (a no-op once they all have one).
     await IncidentManager.Infrastructure.Persistence.RowHashBackfill.RunAsync(db,
         scope.ServiceProvider.GetRequiredService<IHashChainService>());
+    // WF-11: reported cases record the jurisdictions in play when they were reported (a no-op once all do).
+    await IncidentManager.Infrastructure.Persistence.ReportedJurisdictionsBackfill.RunAsync(db);
 
     // Seed system roles (from code) and migrate the file-based AD mapping into the DB on first run,
     // then prime the in-memory role directory so authentication resolves permissions immediately.

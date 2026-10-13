@@ -29,6 +29,7 @@ public sealed class CaseConfiguration : IEntityTypeConfiguration<Case>
         b.Property(c => c.ContainmentNotNeededReason).HasMaxLength(Case.MaxContainmentReason);   // BUG-165
         b.Property(c => c.Title).HasMaxLength(300).IsRequired();
         b.Property(c => c.Summary).HasMaxLength(8000);
+        b.Property(c => c.ReportedJurisdictions).HasMaxLength(Case.MaxReportedJurisdictionsLength);   // WF-11
         b.Property(c => c.ImpactedAssets).HasMaxLength(4000);
         b.Property(c => c.DataTypesInvolved).HasMaxLength(4000);
         // F-12: pending two-person legal-hold release request.

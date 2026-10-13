@@ -67,6 +67,7 @@ public sealed class NotificationDeadlineService
                 x.Classification,
                 x.DetectedAtUtc,
                 x.ReportedAtUtc,
+                x.ReportedJurisdictions,
                 MatStatus = x.Materiality.Status,
                 MatDecidedOn = x.Materiality.DecidedOnUtc,
                 MatRecordedAt = x.Materiality.RecordedAtUtc,
@@ -84,7 +85,9 @@ public sealed class NotificationDeadlineService
             Array.Empty<NotificationDeadlineStatus>(), null);
         if (start is null) return empty;
 
-        var jurisdictions = await JurisdictionsInPlayAsync(db, c.Keys, ct);
+        // WF-11: a reported case is judged on what was in play when it was reported.
+        var jurisdictions = c.ReportedAtUtc is not null && Frozen(c.ReportedJurisdictions) is { } frozen ? frozen
+            : await JurisdictionsInPlayAsync(db, c.Keys, ct);
         if (jurisdictions.Count == 0) return empty;
 
         var ruleSet = await _rules.LoadRuleSetAsync(settings.DefaultWindowHours, ct);
@@ -128,6 +131,27 @@ public sealed class NotificationDeadlineService
         if (!settings.Enabled) return [];
         var ruleSet = await _rules.LoadRuleSetAsync(settings.DefaultWindowHours, ct);
         return await StatusesAsync(db, cases, settings, ruleSet, _clock.UtcNow, reported: false, ct);
+    }
+
+    private static IReadOnlyList<string>? Frozen(string? csv) =>
+        csv?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    /// <summary>
+    /// WF-11: after a data element's jurisdictions change, the cases not yet reported that carry it are judged again: one
+    /// whose remaining jurisdictions are all notified becomes reported (a case reported already keeps what was in play).
+    /// </summary>
+    public static async Task RecheckUnreportedAsync(IAppDbContext db, IReadOnlyCollection<string> elementKeys, string actor,
+        DateTimeOffset now, CancellationToken ct = default)
+    {
+        if (elementKeys.Count == 0) return;
+        var cases = await db.Cases
+            .Include(c => c.DataElements).Include(c => c.JurisdictionNotices)
+            .Where(c => c.ReportedAtUtc == null && !c.IsArchived && c.JurisdictionNotices.Any()
+                        && c.DataElements.Any(d => elementKeys.Contains(d.ElementKey)))
+            .ToListAsync(ct);
+        foreach (var c in cases)
+            c.ReportedFromNotices(await JurisdictionsInPlayAsync(db, c.DataElements.Select(d => d.ElementKey), ct), actor, now);
+        if (cases.Count > 0) await db.SaveChangesAsync(ct);
     }
 
     /// <summary>Jurisdictions in play = the union of the notification jurisdictions across the case's data elements.</summary>
@@ -194,7 +218,7 @@ public sealed class NotificationDeadlineService
             .Where(c => reported ? c.ReportedAtUtc != null : c.ReportedAtUtc == null) // a recorded report stops the clock
             .Select(c => new
             {
-                c.Id, c.Classification, c.DetectedAtUtc, c.ReportedAtUtc,
+                c.Id, c.Classification, c.DetectedAtUtc, c.ReportedAtUtc, c.ReportedJurisdictions,
                 MatStatus = c.Materiality.Status, MatDecided = c.Materiality.DecidedOnUtc, MatRecorded = c.Materiality.RecordedAtUtc,
                 Keys = c.DataElements.Select(d => d.ElementKey).ToList(),
                 Notices = c.JurisdictionNotices.Select(n => new { n.Jurisdiction, n.NotifiedAtUtc }).ToList()
@@ -207,9 +231,10 @@ public sealed class NotificationDeadlineService
             var start = ResolveStart(settings.StartBasis, c.Classification, c.DetectedAtUtc, c.MatStatus, c.MatDecided, c.MatRecorded);
             if (start is null) continue; // obligation not triggered yet
 
-            var jurisdictions = c.Keys.Where(elementJur.ContainsKey)
-                .SelectMany(k => elementJur[k].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                .Select(j => j.ToUpperInvariant()).Distinct().ToList();
+            var jurisdictions = c.ReportedAtUtc is not null && Frozen(c.ReportedJurisdictions) is { } frozen ? frozen.ToList()   // WF-11
+                : c.Keys.Where(elementJur.ContainsKey)
+                    .SelectMany(k => elementJur[k].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    .Select(j => j.ToUpperInvariant()).Distinct().ToList();
             if (jurisdictions.Count == 0) continue;
 
             result[c.Id] = NotificationDeadlinePolicy.EvaluateByJurisdiction(start,
