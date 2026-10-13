@@ -213,18 +213,31 @@ public sealed partial class EmailComposer : IEmailComposer
             ["Severity"] = "Critical",
             ["Phase"] = "Containment",
             ["ItemCount"] = "2",
-            ["ReferralNote"] = "",
+            ["ReferralNote"] = "NPI of New York residents may be involved.",
             ["FirstBrokenSequence"] = "4821",
             ["Detail"] = "row hash mismatch at sequence 4821",
             ["DriftCount"] = "1",
             ["CheckedCount"] = "37",
             ["VerifiedAtUtc"] = DateTimeOffset.UtcNow.ToString("u"),
+            // REV-56: every token the catalog offers has a sample, so a preview or test send shows what an edit does.
+            ["Recipient"] = "Robin Reyes",
+            ["Mentioned"] = "Robin Reyes",
+            ["MentionedBy"] = "Ivy Commander",
+            ["Note"] = "Can you check whether the second mailbox forwarded the lure before 09:00?",
+            ["HandedOffBy"] = "Ivy Commander",
+            ["Handoff"] = "Contained: the lure is blocked and the three clicked accounts are reset. Still open: the mailbox-rule sweep.",
+            ["Audience"] = "a manager",
+            ["LeadHours"] = "24",
+            ["Cadence"] = "daily",
+            ["Quarter"] = "Q3 2026",
+            ["PreviousQuarter"] = "Q2 2026",
         };
         var htmlTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["ItemsList"] = "<ul><li>2026-01_Phishing_Wave — Reset affected credentials (due 2026-09-08 12:00:00Z)</li>"
                           + "<li>2026-118_Malware_Beacon — Rebuild the beaconing host (due 2026-09-09 09:00:00Z)</li></ul>",
             ["DriftList"] = "<ul><li>2026-01_Phishing_Wave — capture.pcap: hash mismatch</li></ul>",
+            ["SummaryTable"] = "<table><tr><td>Cases opened</td><td>12</td></tr><tr><td>Median time to contain</td><td>2.5 h</td></tr></table>",
         };
         return (tokens, htmlTokens, "https://casebook.example/cases/preview");
     }

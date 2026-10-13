@@ -95,4 +95,16 @@ public class EmailComposerTests
         msg.HtmlBody.Should().Contain("Acme Cyber");   // header wordmark (no <img> without a base URL + logo)
         msg.HtmlBody.Should().NotContain("<img");
     }
+
+    [Fact]
+    public async Task The_preview_has_a_sample_for_every_token_a_template_offers(/* REV-56 */)
+    {
+        var composer = TestEmail.Composer();
+        foreach (var def in IncidentManager.Application.Admin.EmailTemplateCatalog.Templates)
+            foreach (var token in def.Tokens)
+            {
+                var (_, html) = await composer.PreviewAsync(def.Id, "s", $"<p>[{{{{{token.Name}}}}}]</p>");
+                html.Should().NotContain("[]", $"{def.Id} offers {{{{{token.Name}}}}}, so the preview should show a sample of it");
+            }
+    }
 }
