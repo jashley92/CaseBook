@@ -176,7 +176,8 @@ public static class CaseMilestones
                 : null;
             var detail = string.Join(" ", new[] { decided, Blank(x.Rationale) }.Where(s => s is not null));
             list.Add(new CaseMilestone($"mat:{x.Id}", x.ChangedAtUtc, MilestoneKind.Materiality,
-                $"Materiality {labels.Materiality(x.From)} → {labels.Materiality(x.To)}",
+                x.From == x.To ? $"Materiality determination revised ({labels.Materiality(x.To)})"   // REV-13
+                    : $"Materiality {labels.Materiality(x.From)} → {labels.Materiality(x.To)}",
                 Blank(detail), x.ChangedBy, "materiality record"));
         }
 

@@ -708,7 +708,8 @@ public class Case : AuditableEntity, IHashableEntity
                 throw new ArgumentException("A final determination must record the decision date.");
         }
 
-        var from = Materiality.Status;
+        var previous = Materiality;
+        var from = previous.Status;
         Materiality = new MaterialityDetermination
         {
             Status = status,
@@ -719,9 +720,14 @@ public class Case : AuditableEntity, IHashableEntity
             RecordedAtUtc = nowUtc
         };
 
-        // History captures genuine status transitions (the audit chain records provenance-only edits via the
-        // case row's canonical), mirroring how classification/severity changes are recorded.
-        if (from != status)
+        // History captures status transitions, mirroring how classification/severity changes are recorded. REV-13: and a
+        // call re-recorded with a corrected decision date, decider or rationale, since the timeline and report are built
+        // from these rows: without one they kept showing the provenance that was corrected.
+        var revised = status is MaterialityStatus.Material or MaterialityStatus.NotMaterial
+            && (previous.DecidedOnUtc != Materiality.DecidedOnUtc
+                || !string.Equals(previous.DecisionMaker, Materiality.DecisionMaker, StringComparison.Ordinal)
+                || !string.Equals(previous.Rationale, Materiality.Rationale, StringComparison.Ordinal));
+        if (from != status || revised)
             MaterialityChanges.Add(new MaterialityChange
             {
                 CaseId = Id, From = from, To = status,

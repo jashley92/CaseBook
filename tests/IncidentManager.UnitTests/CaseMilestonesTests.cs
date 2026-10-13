@@ -18,6 +18,22 @@ public class CaseMilestonesTests
         m => m.ToString());
 
     [Fact]
+    public void A_corrected_materiality_call_reaches_the_timeline(/* REV-13 */)
+    {
+        var c = Case.Open(2026, 1, "Vendor", "Vendor incident", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "an1", T0);
+        c.RecordMateriality(MaterialityStatus.Material, "CISO", T0.AddDays(3), "NPI involved", "lp1", T0.AddDays(3));
+        c.RecordMateriality(MaterialityStatus.Material, "CISO", T0.AddDays(1), "NPI involved", "lp1", T0.AddDays(4));   // the real date
+        c.RecordMateriality(MaterialityStatus.Material, "CISO", T0.AddDays(1), "NPI involved", "lp1", T0.AddDays(5));   // unchanged
+
+        c.MaterialityChanges.Should().HaveCount(2, "a correction is recorded; a save that changes nothing isn't");
+        var ms = CaseMilestones.Project(c, Labels).Where(m => m.Kind == MilestoneKind.Materiality).ToList();
+        ms.Should().HaveCount(2);
+        ms.Last().Title.Should().Be("Materiality determination revised (Material)");
+        ms.Last().Detail.Should().StartWith("Decided by CISO on 2026-09-02.");
+    }
+
+    [Fact]
     public void Transitions_become_milestones_in_order_with_reason_and_actor()
     {
         var c = Case.Open(2026, 7, "Phish", "Credential phishing", Classification.AdverseEvent,
