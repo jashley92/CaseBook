@@ -11,12 +11,25 @@ public class EvidenceIntegrityMonitorTests
     private static EvidenceVerificationResult Clean(int checkedCount = 3) =>
         new(checkedCount, Array.Empty<EvidenceDrift>(), T0);
 
-    private static EvidenceVerificationResult Drift(int checkedCount = 3) =>
-        new(checkedCount, new[]
-        {
-            new EvidenceDrift(Guid.NewGuid(), Guid.NewGuid(), "2026-01_Phishing_Wave", "shot.png",
-                "aaaa", "bbbb", EvidenceDriftKind.HashMismatch, "hash mismatch")
-        }, T0);
+    private static readonly Guid Shot = Guid.NewGuid(), Memo = Guid.NewGuid();
+
+    private static EvidenceDrift D(Guid id, EvidenceDriftKind kind = EvidenceDriftKind.HashMismatch) =>
+        new(id, Guid.Empty, "2026-01_Phishing_Wave", "shot.png", "aaaa", "bbbb", kind, "hash mismatch");
+
+    private static EvidenceVerificationResult Drift(int checkedCount = 3) => new(checkedCount, new[] { D(Shot) }, T0);
+
+    [Fact]
+    public void A_new_drift_alerts_even_while_an_older_one_persists(/* REV-09 */)
+    {
+        var m = new EvidenceIntegrityMonitor();
+
+        m.RecordResult(new(3, new[] { D(Shot) }, T0), T0).Should().BeTrue();
+        m.RecordResult(new(3, new[] { D(Shot) }, T0), T0.AddHours(24)).Should().BeFalse();
+        m.RecordResult(new(3, new[] { D(Shot), D(Memo) }, T0), T0.AddHours(48)).Should().BeTrue("a second file drifted");
+        m.RecordResult(new(3, new[] { D(Shot), D(Memo) }, T0), T0.AddHours(72)).Should().BeFalse();
+        m.RecordResult(new(3, new[] { D(Shot, EvidenceDriftKind.Missing), D(Memo) }, T0), T0.AddHours(96))
+            .Should().BeTrue("the same file, now a different problem");
+    }
 
     [Fact]
     public void A_clean_result_never_alerts_and_records_current()

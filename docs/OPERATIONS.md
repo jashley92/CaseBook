@@ -123,8 +123,9 @@ undetected until someone tried to open the file. F-17 closes that gap: a backgro
 - **On drift** (hash mismatch, missing, or unreadable file) it raises the same out-of-band alarm as the
   F-16 chain-break: a `LogLevel.Critical` event **`EventId 5003`** (the SIEM signal, counts only — no
   filenames), the same event on the F-18 stream, and **email** to `Email:IntegrityAlertDistribution`
-  (the offender list — case number, evidence id, filename). The alarm fires **once per drift episode**
-  and re-arms only after a clean pass.
+  (the offender list — case number, evidence id, filename). The alarm fires **once per drift** (an item and
+  what's wrong with it): a drift that persists doesn't repeat it, a new one does even while an older one persists,
+  and one that clears and comes back alerts again (REV-09).
 - **Status** is surfaced on **Administration → Diagnostics → Evidence-at-rest integrity** (last checked,
   count verified, and any offenders) and, on drift, a persistent app-wide banner for Administer users.
 - Like the backup-health signal, the job **only reads** — it records nothing to the database and is not
