@@ -27,6 +27,10 @@ public class PendingImport : Entity
     /// <summary>The raw submitted JSON, re-parsed and previewed when a human opens it to confirm.</summary>
     public string RawJson { get; set; } = "";
 
+    /// <summary>WF-23: SHA-256 (hex) of <see cref="RawJson"/>, so a retried submission is matched in the database without
+    /// reading every waiting document's text. Null on rows queued before it was recorded.</summary>
+    public string? RawJsonSha256 { get; set; }
+
     /// <summary>The existing case the document targeted, if any (a hint; the reviewer can still change it).</summary>
     public Guid? TargetCaseId { get; set; }
 

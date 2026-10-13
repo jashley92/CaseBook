@@ -782,6 +782,8 @@ public sealed class PendingImportConfiguration : IEntityTypeConfiguration<Pendin
         b.Property(x => x.SubmittedBy).HasMaxLength(200).IsRequired();
         b.Property(x => x.Origin).HasMaxLength(200);
         b.Property(x => x.Summary).HasMaxLength(300);
+        b.Property(x => x.RawJsonSha256).HasMaxLength(64);   // WF-23
+        b.HasIndex(x => new { x.SubmittedBy, x.RawJsonSha256 });   // WF-23: the retry check
         b.Property(x => x.RawJson).IsRequired(); // document body â€” unbounded (nvarchar(max) / TEXT)
         b.Property(x => x.DecidedBy).HasMaxLength(200);
         b.Property(x => x.DecisionNote).HasMaxLength(2000);

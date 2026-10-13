@@ -786,6 +786,10 @@ public sealed class CaseImportTests : IDisposable
         retry.AlreadyQueued.Should().BeTrue();
         retry.Id.Should().Be(first.Id);
         (await svc.CountPendingAsync()).Should().Be(1);
+        // WF-23: matched by the hash it's stored with; one queued before hashes were recorded is matched by its text.
+        (await db.PendingImports.AsNoTracking().SingleAsync(p => p.Id == first.Id)).RawJsonSha256.Should().HaveLength(64);
+        await db.PendingImports.Where(p => p.Id == first.Id).ExecuteUpdateAsync(u => u.SetProperty(p => p.RawJsonSha256, (string?)null));
+        (await svc.SubmitOnceAsync(json, doc)).Id.Should().Be(first.Id);
 
         // REV-57: a body ending in spaces too (SQL Server's LEN ignores them; ReviewProviderTests runs this on SQL Server).
         var spaced = json + "  ";

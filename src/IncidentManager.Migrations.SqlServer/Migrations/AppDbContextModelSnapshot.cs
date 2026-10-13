@@ -1966,6 +1966,10 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("RawJsonSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<Guid?>("ResolvedCaseId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1998,6 +2002,8 @@ namespace IncidentManager.Migrations.SqlServer.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Status", "SubmittedAtUtc");
+
+                    b.HasIndex("SubmittedBy", "RawJsonSha256");
 
                     b.ToTable("PendingImports", (string)null);
                 });

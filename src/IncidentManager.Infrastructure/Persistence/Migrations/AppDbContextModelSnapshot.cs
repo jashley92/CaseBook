@@ -1960,6 +1960,10 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("RawJsonSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("ResolvedCaseId")
                         .HasColumnType("TEXT");
 
@@ -1992,6 +1996,8 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Status", "SubmittedAtUtc");
+
+                    b.HasIndex("SubmittedBy", "RawJsonSha256");
 
                     b.ToTable("PendingImports", (string)null);
                 });

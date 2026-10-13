@@ -3975,3 +3975,32 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261013132953_PendingImportHash'
+)
+BEGIN
+    ALTER TABLE [PendingImports] ADD [RawJsonSha256] nvarchar(64) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261013132953_PendingImportHash'
+)
+BEGIN
+    CREATE INDEX [IX_PendingImports_SubmittedBy_RawJsonSha256] ON [PendingImports] ([SubmittedBy], [RawJsonSha256]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261013132953_PendingImportHash'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261013132953_PendingImportHash'', N''10.0.12'');');
+END;
+
+COMMIT;
+GO
+

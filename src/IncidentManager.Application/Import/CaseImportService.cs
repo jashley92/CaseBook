@@ -311,6 +311,9 @@ public sealed class CaseImportService
 
     private static readonly SemaphoreSlim SubmitGate = new(1, 1);
 
+    private static string Sha256(string text) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
+
     private async Task<(Guid Id, CaseImportPreview Preview, bool AlreadyQueued)> SubmitOnceCoreAsync(string rawJson, CaseImportDocument doc,
         CancellationToken ct)
     {
@@ -318,16 +321,19 @@ public sealed class CaseImportService
         {
             var me = _user.UserId;
             var since = _clock.UtcNow - RetryWindow;
-            // The submitter and the retry window narrow it in the database; the text is compared here. REV-57: not by its
-            // length there: SQL Server's LEN ignores trailing spaces, so a retried body ending in one never matched (it did
-            // on SQLite) and was queued a second time.
-            var waiting = await db.PendingImports.AsNoTracking()
-                .Where(p => p.SubmittedBy == me && p.Status == PendingImportStatus.Pending && p.SubmittedAtUtc >= since)
-                .Select(p => new { p.Id, p.SubmittedAtUtc, p.RawJson })
-                .ToListAsync(ct);
-            if (waiting.Where(p => string.Equals(p.RawJson, rawJson, StringComparison.Ordinal))
-                    .OrderByDescending(p => p.SubmittedAtUtc).FirstOrDefault() is { } same)
-                return (same.Id, await BuildPreviewAsync(doc, ct: ct), true);
+            // WF-23: matched by the text's hash, in the database: each POST no longer reads every waiting document (up to
+            // 5 MiB each) of the submitter's last day. A hash names the exact text (REV-57: trailing spaces count). Rows
+            // queued before the hash was recorded are compared by their text, as before, until they leave the window.
+            var hash = Sha256(rawJson);
+            var waiting = db.PendingImports.AsNoTracking()
+                .Where(p => p.SubmittedBy == me && p.Status == PendingImportStatus.Pending && p.SubmittedAtUtc >= since);
+            var same = await waiting.Where(p => p.RawJsonSha256 == hash)
+                .OrderByDescending(p => p.SubmittedAtUtc).Select(p => (Guid?)p.Id).FirstOrDefaultAsync(ct);
+            same ??= (await waiting.Where(p => p.RawJsonSha256 == null).Select(p => new { p.Id, p.SubmittedAtUtc, p.RawJson }).ToListAsync(ct))
+                .Where(p => string.Equals(p.RawJson, rawJson, StringComparison.Ordinal))
+                .OrderByDescending(p => p.SubmittedAtUtc).Select(p => (Guid?)p.Id).FirstOrDefault();
+            if (same is { } id0)
+                return (id0, await BuildPreviewAsync(doc, ct: ct), true);
         }
         var (id, preview) = await SubmitAsync(rawJson, doc, ct);
         return (id, preview, false);
@@ -345,6 +351,7 @@ public sealed class CaseImportService
             Origin = preview.Origin,
             Summary = SummariseForQueue(preview),
             RawJson = rawJson,
+            RawJsonSha256 = Sha256(rawJson),   // WF-23
             TargetCaseId = doc.Target?.CaseId,
             Status = PendingImportStatus.Pending
         };
