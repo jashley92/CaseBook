@@ -113,6 +113,16 @@ public sealed class RoleService
             && !await AdministerRemainsWithoutAsync(db, roleName: role.Name, exceptMappingId: null, ct))
             throw new InvalidOperationException("Can't delete this role: it holds the last administrator access. Grant Administer to another role first.");
 
+        // WF-56: an active API token that holds the role would pick up a later role of the same name, so the role can't be
+        // deleted while one does (owner's decision): revoke the tokens or change their roles first.
+        var now = _clock.UtcNow;
+        var holders = (await db.ApiTokens.AsNoTracking().Where(t => t.RevokedAtUtc == null).ToListAsync(ct))
+            .Where(t => t.IsActive(now) && t.GetRoles().Contains(role.Name, StringComparer.OrdinalIgnoreCase))
+            .Select(t => t.Name).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+        if (holders.Count > 0)
+            throw new InvalidOperationException($"Can't delete this role: active API tokens hold it ({string.Join(", ", holders)}). " +
+                                                "Revoke them or change their roles first.");
+
         // WF-46: every mapping to it, whatever the casing (SQLite compares case-sensitively; role names match ignoring case).
         var lower = role.Name.ToLowerInvariant();
 #pragma warning disable CA1304, CA1311, CA1862 // translated to SQL LOWER()

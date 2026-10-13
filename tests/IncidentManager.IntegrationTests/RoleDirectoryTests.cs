@@ -185,6 +185,31 @@ public sealed class RoleDirectoryTests : IDisposable
     }
 
     [Fact]
+    public async Task A_role_an_active_token_holds_cant_be_deleted(/* WF-56 */)
+    {
+        await SeedAsync(new RoleMappingOptions());
+        using var scope = Scope();
+        var roles = scope.ServiceProvider.GetRequiredService<RoleService>();
+        await roles.CreateRoleAsync("Integrations", null, [Permission.ViewCases]);
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var token = new IncidentManager.Domain.Entities.ApiToken
+        {
+            Name = "XSIAM", Kind = ApiTokenKind.System, OwnerUserId = "apitoken:xsiam", OwnerDisplayName = "XSIAM", RolesCsv = "Analyst,integrations",
+            TokenHash = new string('a', 64), Prefix = "cbk_x", CreatedBy = "admin1", CreatedAtUtc = _clock.UtcNow, ExpiresAtUtc = _clock.UtcNow.AddDays(30),
+        };
+        db.ApiTokens.Add(token);
+        await db.SaveChangesAsync();
+        var id = (await roles.ListRolesAsync()).Single(r => r.Name == "Integrations").Id;
+
+        await roles.Invoking(r => r.DeleteRoleAsync(id)).Should().ThrowAsync<InvalidOperationException>().WithMessage("*XSIAM*");
+
+        token.RevokedAtUtc = _clock.UtcNow;
+        token.RevokedBy = "admin1";
+        await db.SaveChangesAsync();
+        await roles.DeleteRoleAsync(id);
+    }
+
+    [Fact]
     public async Task Cannot_remove_the_last_administrator_mapping()
     {
         await SeedAsync(new RoleMappingOptions { Groups = new() { ["SysAdmin"] = ["SOC-AppAdmins"] } });
