@@ -4,6 +4,7 @@ using System.Text.Json;
 using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Admin;
 using IncidentManager.Application.Security;
+using IncidentManager.Application.StageGates;
 using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -118,6 +119,7 @@ public sealed partial class ConfigBundleService
         var (_, warnings) = await CheckReportTemplatesAsync(incoming, ct);   // a bad template stops the import here, before the preview
         CheckSettings(incoming);                         // so does a setting outside its limits
         CheckNaturalKeys(incoming);                      // and two items that differ only in case
+        CheckSingleActiveGates(incoming, live);          // and a second active gate on one transition
         var items = new List<ConfigDiffItem>();
 
         Diff("Setting", incoming.Settings.Where(IsImportableSetting), live.Settings, s => s.Key, items);
@@ -184,6 +186,25 @@ public sealed partial class ConfigBundleService
 
     // BUG-200: items match live ones by name or key regardless of case (SQL Server's unique indexes ignore it), so two in
     // one bundle that differ only in case would both land on the same row. Throws with each such pair.
+    // BUG-237: one active gate per transition, as the Stage gates page enforces (BUG-139). The import matches gates by
+    // name, so a bundle's active "Closure checks" next to a live active "Close-out gate" would leave both governing
+    // Closing, and which one a close is judged against would be whichever row the database returned first.
+    private static void CheckSingleActiveGates(ConfigBundle incoming, ConfigBundle live)
+    {
+        var after = live.StageGates.ToDictionary(g => g.Name, StringComparer.OrdinalIgnoreCase);
+        foreach (var g in incoming.StageGates.Where(g => ParseEnum<StageGateTrigger>(g.Trigger) is not null))
+            after[g.Name] = g;
+        var clashes = after.Values.Where(g => g.IsActive)
+            .GroupBy(g => ParseEnum<StageGateTrigger>(g.Trigger))
+            .Where(t => t.Key is not null && t.Count() > 1)
+            .Select(t => $"\"{StageGateTriggers.Label(t.Key!.Value)}\" would have {t.Count()} active gates " +
+                         $"(\"{string.Join("\", \"", t.Select(g => g.Name).Order(StringComparer.OrdinalIgnoreCase))}\").")
+            .ToList();
+        if (clashes.Count > 0)
+            throw new ArgumentException("This bundle can't be imported: " + string.Join(" ", clashes) +
+                " A transition has one active gate. Deactivate one (here or in the bundle's source), then try again.");
+    }
+
     private static void CheckNaturalKeys(ConfigBundle bundle)
     {
         static IEnumerable<string> Check<T>(string section, IEnumerable<T>? items, Func<T, string?> key) =>
@@ -239,6 +260,7 @@ public sealed partial class ConfigBundleService
         var (templateFiles, _) = await CheckReportTemplatesAsync(bundle, ct);
         CheckSettings(bundle);
         CheckNaturalKeys(bundle);
+        CheckSingleActiveGates(bundle, await BuildBundleAsync(ct));
 
         using var db = _factory.CreateDbContext();
         var now = _clock.UtcNow;

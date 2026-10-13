@@ -34,6 +34,7 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
         var gate = await db.StageGates.AsNoTracking()
             .Include(g => g.Requirements)
             .Where(g => g.IsActive && g.Trigger == trigger)
+            .OrderBy(g => g.Name)   // BUG-237: one active gate per transition is enforced; if two slip in, pick the same one every time
             .FirstOrDefaultAsync(ct);
 
         // A gate is "in force" when it has requirements or requires commentary — a commentary-only gate
@@ -52,6 +53,7 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
         var gate = await db.StageGates.AsNoTracking()
             .Include(g => g.Requirements)
             .Where(g => g.IsActive && g.Trigger == trigger)
+            .OrderBy(g => g.Name)
             .FirstOrDefaultAsync(ct);
         if (gate is null || (gate.Requirements.Count == 0 && gate.CommentaryMinLength == 0))
             return GateEvaluation.None(trigger);

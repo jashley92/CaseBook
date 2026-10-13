@@ -278,6 +278,29 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_bundle_that_leaves_two_active_gates_on_one_transition_is_refused(/* BUG-237 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var existing = live.StageGates.First(g => g.IsActive);
+        var second = existing with { Name = "Second " + existing.Name };
+        var clash = live with { StageGates = live.StageGates.Append(second).ToList() };
+
+        var preview = () => svc.PreviewAsync(clash);
+        await preview.Should().ThrowAsync<ArgumentException>().WithMessage("*2 active gates*");
+        var import = () => svc.ImportAsync(Signed(clash), sourceTrusted: true);
+        await import.Should().ThrowAsync<ArgumentException>().WithMessage("*2 active gates*");
+        (await db.StageGates.AsNoTracking().AnyAsync(g => g.Name == second.Name)).Should().BeFalse();
+
+        // Deactivating the live one in the same bundle is fine: the transition still has one.
+        var swap = live with { StageGates = live.StageGates.Select(g => g == existing ? g with { IsActive = false } : g).Append(second).ToList() };
+        await svc.ImportAsync(Signed(swap));
+        (await db.StageGates.AsNoTracking().CountAsync(g => g.IsActive && g.Name.EndsWith(existing.Name))).Should().Be(1);
+    }
+
+    [Fact]
     public async Task Reimporting_an_unchanged_bundle_shows_no_changes()
     {
         await using var db = NewContext();
