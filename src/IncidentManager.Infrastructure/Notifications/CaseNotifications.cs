@@ -518,7 +518,11 @@ public sealed class CaseNotifications : ICaseNotifications
             var breached = chatItems.Count(r => r.State == SlaState.Breached);
             var detail = breached > 0
                 ? $"{breached} past deadline, {chatItems.Count - breached} at risk, across {Plural.Of(caseCount, "case")}. Incident commanders and owners were emailed where reachable."
-                : $"{Plural.Of(chatItems.Count, "case")} approaching a deadline. Incident commanders and owners were emailed where reachable.";
+                // BUG-232: a case can have more than one clock (BUG-191), so count the cases, and say the deadlines too.
+                : (chatItems.Count == caseCount
+                    ? $"{Plural.Of(caseCount, "case")} approaching a deadline."
+                    : $"{Plural.Of(chatItems.Count, "deadline")} approaching, across {Plural.Of(caseCount, "case")}.")
+                  + " Incident commanders and owners were emailed where reachable.";
             await _chat.SendAsync(new ChatNotification(
                 "Regulatory notification deadline", detail,
                 CasesUrl(), ChatUrgency.Alert), ct);
@@ -548,8 +552,9 @@ public sealed class CaseNotifications : ICaseNotifications
                 .ThenBy(r => r.CaseNumber, StringComparer.OrdinalIgnoreCase), DeadlineKey, to);
             if (ordered.Count == 0) continue;
 
-            // The CTA points at the one case when this recipient's list is a single case, else the case list.
-            var cta = ordered.Count == 1 ? CaseUrl(ordered[0].CaseId) : CasesUrl();
+            // The CTA points at the one case when this recipient's list is a single case, else the case list. BUG-232: one
+            // case with two clocks is still one case.
+            var cta = ordered.Select(r => r.CaseId).Distinct().Count() == 1 ? CaseUrl(ordered[0].CaseId) : CasesUrl();
 
             var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
