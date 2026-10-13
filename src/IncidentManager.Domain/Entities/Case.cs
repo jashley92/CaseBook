@@ -660,9 +660,13 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>Records a Legal/Privacy referral (capture only &mdash; deadlines are Legal's responsibility).</summary>
     public void ReferToLegal(string referredBy, string? contact, string? relevanceNote, DateTimeOffset nowUtc)
     {
+        // REV-12: editing an existing referral (fixing the contact or the note) keeps when it was referred and by whom.
+        var already = LegalReferral is { IsReferred: true, ReferredAtUtc: not null };
         LegalReferral = new LegalReferral
         {
-            IsReferred = true, ReferredAtUtc = nowUtc, ReferredBy = referredBy,
+            IsReferred = true,
+            ReferredAtUtc = already ? LegalReferral!.ReferredAtUtc : nowUtc,
+            ReferredBy = already ? LegalReferral!.ReferredBy : referredBy,
             ReferredToContact = contact, RegulatoryRelevanceNote = relevanceNote
         };
         Touch(referredBy, nowUtc);

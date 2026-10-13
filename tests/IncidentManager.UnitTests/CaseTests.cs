@@ -207,6 +207,20 @@ public class CaseTests
     }
 
     [Fact]
+    public void Editing_a_referral_keeps_when_it_was_referred_and_by_whom(/* REV-12 */)
+    {
+        var c = NewCase();
+        c.ReferToLegal("ic1", "legal@example.com", "NPI", Now.AddHours(1));
+
+        c.ReferToLegal("an2", "privacy@example.com", "NPI of NY residents", Now.AddDays(8));
+
+        c.LegalReferral!.ReferredAtUtc.Should().Be(Now.AddHours(1));
+        c.LegalReferral.ReferredBy.Should().Be("ic1");
+        c.LegalReferral.ReferredToContact.Should().Be("privacy@example.com");
+        c.LegalReferral.RegulatoryRelevanceNote.Should().Be("NPI of NY residents");
+    }
+
+    [Fact]
     public void ReferToLegal_captures_referral_without_deadlines()
     {
         var c = NewCase();
