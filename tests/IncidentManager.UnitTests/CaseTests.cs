@@ -412,7 +412,7 @@ public class CaseTests
         // Ten minutes later, Containment is recorded as 12:05, what the picker offers.
         c.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddMinutes(15), effectiveAtUtc: Now.AddMinutes(5));
         var contain = c.StatusChanges.Single(x => x.To == CasePhase.Containment);
-        contain.EffectiveAt.Should().Be(triageAt, "held to the previous change's instant, so it still sorts after it");
+        contain.EffectiveAt.Should().Be(triageAt.AddTicks(1), "held just after the previous change, so the two never tie");
 
         c.Invoking(x => x.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddMinutes(20), effectiveAtUtc: Now.AddMinutes(4)))
             .Should().Throw<ArgumentException>().WithMessage("*before the previous phase change*", "a minute earlier still is");
@@ -420,7 +420,7 @@ public class CaseTests
         // A correction into the neighbour's minute is held to it too.
         c.CorrectTransitionTime(TransitionKind.Phase, contain.Id, Now.AddMinutes(6), "typo", "ic1", Now.AddMinutes(21));
         c.CorrectTransitionTime(TransitionKind.Phase, contain.Id, Now.AddMinutes(5), "typo again", "ic1", Now.AddMinutes(22));
-        c.StatusChanges.Single(x => x.Id == contain.Id).EffectiveAt.Should().Be(triageAt);
+        c.StatusChanges.Single(x => x.Id == contain.Id).EffectiveAt.Should().Be(triageAt.AddTicks(1));
     }
 
     [Fact]
