@@ -575,6 +575,7 @@ else
         + $" · {Ui.Label(o.DispositionThere)} there"
         + (o.ClosingLine is { } line ? $" · {line}" : "");
     private int _loadedToken = int.MinValue;
+    private int? _loadedEntities;   // BUG-254: the entity set the overlaps were computed for
 
     // PROD-40: mid-investigation correlation — visible OPEN cases sharing indicators, not yet linked.
     private IReadOnlyList<RelatedCaseSuggestion> _related = Array.Empty<RelatedCaseSuggestion>();
@@ -615,10 +616,24 @@ else
         if (_loadedToken != RefreshToken)
         {
             _loadedToken = RefreshToken;
-            await LoadOverlaps();
-            await LoadRelated();
+            // BUG-254: a live change elsewhere on the case (a note, a step) leaves its entities, and so the cross-case
+            // correlation, as they were: two table scans per viewer per colleague's save otherwise.
+            var entities = EntitySignature();
+            if (entities != _loadedEntities)
+            {
+                _loadedEntities = entities;
+                await LoadOverlaps();
+                await LoadRelated();
+            }
             try { _links = await Cases.GetCaseLinksAsync(CaseId); } catch (InvalidOperationException) { _links = []; }
         }
+    }
+
+    private int EntitySignature()
+    {
+        var h = new HashCode();
+        foreach (var e in Case.Entities.OrderBy(e => e.Id)) { h.Add(e.Id); h.Add(e.Type); h.Add(e.Value); }
+        return h.ToHashCode();
     }
 
     private async Task LoadOverlaps()

@@ -349,7 +349,7 @@
         _otherCases = null;
         if (EntityId is { } id)
         {
-            _otherCases = (await Cases.FindEntityOverlapsAsync(Case.Id)).Where(o => o.EntityId == id)
+            _otherCases = (await Cases.FindEntityOverlapsAsync(Case.Id, entityId: id))   // BUG-254: this entity's only
                 .DistinctBy(o => o.OtherCaseId).ToList();
             if (_otherCases.Any(o => o.IsClosed) && _outcomeLabels.Count == 0) _outcomeLabels = await Outcomes.LabelsAsync();
             _taskComments = await TaskComments.ListForCaseAsync(Case.Id);   // INV-34

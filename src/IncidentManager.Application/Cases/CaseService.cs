@@ -1437,12 +1437,14 @@ public sealed class CaseService
     /// Finds this case's IOCs/entities that also appear on <em>other</em> cases the user is allowed to
     /// see (same type + value), so analysts can pivot on a shared indicator. Exact-value match.
     /// </summary>
-    public async Task<IReadOnlyList<EntityOverlap>> FindEntityOverlapsAsync(Guid caseId, CancellationToken ct = default)
+    /// <param name="entityId">BUG-254: just this entity's overlaps (the entity panel), not the whole case's.</param>
+    public async Task<IReadOnlyList<EntityOverlap>> FindEntityOverlapsAsync(Guid caseId, Guid? entityId = null,
+        CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
         if (!await CanSeeAsync(db, caseId, ct)) return Array.Empty<EntityOverlap>();   // BUG-46
         var mine = await db.CaseEntities.AsNoTracking()
-            .Where(e => e.CaseId == caseId)
+            .Where(e => e.CaseId == caseId && (entityId == null || e.Id == entityId))
             .Select(e => new { e.Id, e.Type, e.Value })
             .ToListAsync(ct);
         if (mine.Count == 0) return Array.Empty<EntityOverlap>();
@@ -1461,14 +1463,14 @@ public sealed class CaseService
 #pragma warning restore CA1304, CA1311
         var closing = await ClosingLinesAsync(db, others.Where(o => o.Phase == CasePhase.Closed).Select(o => o.OtherCaseId), ct);
 
+        // BUG-254: looked up by (family, value), not by scanning every other occurrence for each of this case's entities
+        // (a 1,000-indicator case against 20,000 shared occurrences was 20 million comparisons per load).
+        var byKey = others.ToLookup(o => (Domain.Observables.IocObservable.MatchFamily(o.Type), o.Value.ToLowerInvariant()));
         var result = new List<EntityOverlap>();
         foreach (var m in mine)
         {
             // HR-03: the same observable across types in one family (an account and an email address with one value).
-            var family = Domain.Observables.IocObservable.MatchFamily(m.Type);
-            var matches = others
-                .Where(o => Domain.Observables.IocObservable.MatchFamily(o.Type) == family
-                            && string.Equals(o.Value, m.Value, StringComparison.OrdinalIgnoreCase))
+            var matches = byKey[(Domain.Observables.IocObservable.MatchFamily(m.Type), m.Value.ToLowerInvariant())]
                 .GroupBy(o => o.OtherCaseId);
             foreach (var g in matches)
             {
