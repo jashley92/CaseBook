@@ -126,7 +126,14 @@ public sealed partial class ConfigBundleService
 
         Diff("Setting", incoming.Settings.Where(IsImportableSetting), live.Settings, s => s.Key, items);
         Diff("Role", incoming.Roles.Where(r => !r.IsSystem), live.Roles, r => r.Name, items);
-        Diff("AD mapping", incoming.RoleMappings, live.RoleMappings, m => $"{m.AdGroup} → {m.RoleName}", items);
+        // WF-45: a mapping with no group or to a role neither here nor in the bundle isn't imported (a dormant grant a later
+        // role of that name would pick up), so the preview doesn't count it and says so.
+        var unusable = UnusableMappings(incoming, live.Roles.Select(r => r.Name));
+        Diff("AD mapping", incoming.RoleMappings.Except(unusable), live.RoleMappings, m => $"{m.AdGroup} → {m.RoleName}", items);
+        if (unusable.Count > 0)
+            warnings.Add($"{Common.Plural.Of(unusable.Count, "AD mapping")} won't be imported: " +
+                         string.Join(", ", unusable.Select(m => $"\"{m.AdGroup} → {m.RoleName}\"")) +
+                         " (no AD group, or a role that doesn't exist here or in the bundle).");
         Diff("Case template", incoming.CaseTemplates, live.CaseTemplates, t => t.Name, items);
         // REV-54: a gate for a transition this version doesn't know is skipped on import, so the preview doesn't count it.
         var unknownGates = incoming.StageGates.Where(g => ParseEnum<StageGateTrigger>(g.Trigger) is null).Select(g => g.Name).ToList();
@@ -287,6 +294,12 @@ public sealed partial class ConfigBundleService
             throw new ArgumentException("This bundle can't be imported: " + string.Join(" ", problems.Distinct()));
     }
 
+    private static List<ConfigRoleMapping> UnusableMappings(ConfigBundle incoming, IEnumerable<string> liveRoles)
+    {
+        var roles = liveRoles.Concat(incoming.Roles.Select(r => r.Name)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return incoming.RoleMappings.Where(m => string.IsNullOrWhiteSpace(m.AdGroup) || !roles.Contains(m.RoleName?.Trim() ?? "")).ToList();
+    }
+
     private static void CheckNaturalKeys(ConfigBundle bundle)
     {
         static IEnumerable<string> Check<T>(string section, IEnumerable<T>? items, Func<T, string?> key) =>
@@ -406,12 +419,11 @@ public sealed partial class ConfigBundleService
         {
             // WF-45: as the Roles page: a mapping needs an AD group and a role that exists (one this bundle adds counts),
             // stored with the role's own spelling. A dormant grant would otherwise wait for a later role of that name.
+            // Skipped as the preview said it would be.
             var group = (raw.AdGroup ?? "").Trim();
-            if (group.Length == 0)
-                throw new ArgumentException($"This bundle can't be imported: a mapping to role '{raw.RoleName}' has no AD group.");
-            var role = db.Roles.Local.FirstOrDefault(x => string.Equals(x.Name, raw.RoleName?.Trim(), StringComparison.OrdinalIgnoreCase))
-                ?? throw new ArgumentException(
-                    $"This bundle can't be imported: AD group '{group}' is mapped to role '{raw.RoleName}', which doesn't exist here or in the bundle.");
+            if (group.Length == 0) { unchanged++; continue; }
+            var role = db.Roles.Local.FirstOrDefault(x => string.Equals(x.Name, raw.RoleName?.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (role is null) { unchanged++; continue; }
             var m = raw with { AdGroup = group, RoleName = role.Name };
             // BUG-136: AD group and role names match ignoring case, as SQL Server's unique index does (and AD itself).
             var exists = mappings.Any(x => string.Equals(x.AdGroup, m.AdGroup, StringComparison.OrdinalIgnoreCase)
@@ -629,7 +641,7 @@ public sealed partial class ConfigBundleService
             {
                 // REV-49: codes are upper-case, as the page saves them.
                 db.NotificationRules.Add(new NotificationRule { Code = r.Code.Trim().ToUpperInvariant(), Label = r.Label.Trim(),
-                    WindowHours = r.WindowHours, IsActive = r.IsActive, IsSystem = r.IsSystem,
+                    WindowHours = r.WindowHours, IsActive = r.IsActive, IsSystem = false,   // WF-45: built-ins are seeded, not imported
                     CreatedBy = actor, CreatedAtUtc = now });
                 Tally(true, true);
             }

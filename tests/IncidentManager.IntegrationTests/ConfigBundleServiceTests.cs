@@ -319,10 +319,10 @@ public sealed class ConfigBundleServiceTests : IDisposable
         var svc = NewService(db);
         var live = await svc.BuildBundleAsync();
 
-        var orphan = live with { RoleMappings = [.. live.RoleMappings, new ConfigRoleMapping("SOC-Ghosts", "NoSuchRole")] };
-        await ((Func<Task>)(() => svc.ImportAsync(Signed(orphan), sourceTrusted: true))).Should().ThrowAsync<ArgumentException>().WithMessage("*doesn't exist*");
-        var blank = live with { RoleMappings = [.. live.RoleMappings, new ConfigRoleMapping("  ", "Analyst")] };
-        await ((Func<Task>)(() => svc.ImportAsync(Signed(blank), sourceTrusted: true))).Should().ThrowAsync<ArgumentException>().WithMessage("*no AD group*");
+        var unusable = live with { RoleMappings = [.. live.RoleMappings, new ConfigRoleMapping("SOC-Ghosts", "NoSuchRole"), new ConfigRoleMapping("  ", "Analyst")] };
+        (await svc.PreviewAsync(unusable)).Warnings.Should().Contain(w => w.Contains("2 AD mappings won't be imported"));
+        await svc.ImportAsync(Signed(unusable), sourceTrusted: true);
+        (await db.RoleMappings.AsNoTracking().ToListAsync()).Should().NotContain(m => m.AdGroup == "SOC-Ghosts" || m.AdGroup.Trim() == "");
 
         var kind = IncidentManager.Application.Admin.TaxonomyCatalog.Kinds.First(k => k.AllowVisibilityOrder);
         var hideAll = live with { Settings = [.. live.Settings, .. kind.Members.Select(m =>

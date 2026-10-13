@@ -172,9 +172,9 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 No migration. Things to check:
 
-- **A config bundle is held to the admin pages' rules.** Import (and its preview) now refuses an AD mapping with no group
-  or to a role that doesn't exist, taxonomy keys that hide every option of a list or reorder one that can't be, and
-  labels longer than the Taxonomy page allows. A gate check's threshold below its floor is raised to it. Role
+- **A config bundle is held to the admin pages' rules.** Import (and its preview) now skips, and says so, an AD mapping
+  with no group or to a role that doesn't exist; it refuses taxonomy keys that hide every option of a list or reorder
+  one that can't be, and labels longer than the Taxonomy page allows. A gate check's threshold below its floor is raised to it. Role
   permissions are read by name only, so a permission written as a number (`7`) in a role grants nothing. **Re-export
   a bundle that an older server produced by hand-editing** if it relied on any of these.
 
@@ -183,7 +183,8 @@ No migration. Things to check:
   is refused, as one without `{{report.tlp}}` is. **Add the field to your lessons template** before generating.
 
 - **Word templates with fields that load or run something are refused** (DDEAUTO, INCLUDETEXT, INCLUDEPICTURE and the
-  like, and altChunk imports). Page numbers, dates, tables of contents and hyperlinks are fine.
+  like, and altChunk imports), at upload and when a report is filled from one already stored. Page numbers, dates,
+  tables of contents and hyperlinks are fine. **A report from such a template fails until its file is replaced.**
 
 - **Two system API tokens can't share an identity.** A new system token whose name differs from an active one only by
   case or punctuation ("Splunk SOAR" / "Splunk-SOAR") is refused. Existing tokens aren't changed.
