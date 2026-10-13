@@ -201,7 +201,12 @@
         await IncidentManager.Web.Services.KeymapClient.ApplyAsync(JS, _keymap);
     }
     private void CloseHelp() => _help = false;
-    private void ClosePalette() { _open = false; _query = ""; _results = Array.Empty<Cmd>(); }
+    private void ClosePalette()
+    {
+        _searchSeq++;   // BUG-259: a search still running mustn't fill the list after it closes
+        _findCts?.Cancel();
+        _open = false; _query = ""; _results = Array.Empty<Cmd>();
+    }
 
     private void Escape()
     {
@@ -259,6 +264,10 @@
     {
         var q = _query.Trim();
         var items = new List<Cmd>();
+        // BUG-259: every refresh supersedes the one before, whatever its length: shortening "ab" to "a" left the "ab"
+        // search running, and its results replaced the list for "a" (Enter then opened a case the query didn't match).
+        var seq = ++_searchSeq;
+        if (_findCts is not null) await _findCts.CancelAsync();
 
         // PROD-20: with nothing typed, lead with the user's pinned cases and recently-opened cases, so the
         // handful they're working are one keystroke away. Scoping/need-to-know is enforced in the service.
@@ -287,8 +296,6 @@
 
         if (q.Length >= FindMinChars)
         {
-            var seq = ++_searchSeq;
-            if (_findCts is not null) await _findCts.CancelAsync();
             _findCts?.Dispose();
             var cts = _findCts = new CancellationTokenSource();
             try
@@ -338,6 +345,7 @@
             catch { /* transient — keep the static matches already gathered */ }
         }
 
+        if (seq != _searchSeq) return;   // a newer refresh (or closing) took over while this one awaited
         _results = items;
         if (_selected >= _results.Count) _selected = _results.Count - 1;
         if (_selected < 0) _selected = 0;
