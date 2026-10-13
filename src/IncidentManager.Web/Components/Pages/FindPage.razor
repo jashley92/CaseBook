@@ -9,6 +9,7 @@
 @inject NavigationManager Nav
 @inject TimeDisplay TimeDisp
 @inject IClock Clock
+@inject IOrganizationTimeZone OrgZone
 @inject IncidentManager.Application.Abstractions.IUserDirectory Users
 
 <PageTitle>@(string.IsNullOrWhiteSpace(Q) ? "Find" : $"Find: {Q}")</PageTitle>
@@ -392,10 +393,12 @@
         </details>
     };
 
-    private static readonly (string Say, string Query)[] ExampleQueries =
+    // REV-42: "this year" is the organization's current year, worked out each time (a static field kept the year the
+    // server started in, and the UTC one).
+    private (string Say, string Query)[] ExampleQueries =>
     [
         ("My tasks on open cases", "owner:me status:open"),
-        ("Decisions about password resets this year", $"type:decision reset after:{DateTime.UtcNow.Year}-01-01"),
+        ("Decisions about password resets this year", $"type:decision reset after:{TimeZoneInfo.ConvertTime(Clock.UtcNow, OrgZone.Current).Year}-01-01"),
         ("Breaches with New York residents", "class:breach state:NY"),
         ("Handoffs I recorded", "type:handoff by:me"),
         ("Closed cases mentioning a host", "status:closed FIN-WKS-07"),
