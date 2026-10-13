@@ -545,7 +545,7 @@
                                 }
                             </div>
                         }
-                        <div class="killchain-desc md-body">@((MarkupString)Md.ToInlineHtml(step.Description, CaseId))</div>
+                        <div class="killchain-desc md-body">@((MarkupString)Inline(step.Description))</div>
                     </div>
                 }
             </div>
@@ -724,7 +724,7 @@ else
                             }
                             @StepTimeLabel(e)
                         </div>
-                        <div class="tl-desc md-body">@((MarkupString)Md.ToInlineHtml(e.Description, CaseId))</div>
+                        <div class="tl-desc md-body">@((MarkupString)Inline(e.Description))</div>
                         @if (e.EvidenceId is { } shotId)
                         {
                             @* U-40: attached screenshot — click the thumbnail to preview it in a lightbox. *@
@@ -819,7 +819,7 @@ else
                             }
                             @TimeLabel(e.OccurredAtUtc)
                         </div>
-                        <div class="tl-desc md-body">@((MarkupString)Md.ToHtml(e.Description, CaseId))</div>
+                        <div class="tl-desc md-body">@((MarkupString)Html(e.Description))</div>
                         @if (isDecision)
                         {
                             <dl class="tl-decision">
@@ -884,7 +884,7 @@ else
                                             <span class="im-badge im-b-neutral">v@(prior.Version)</span>
                                             @Users.DisplayFor(prior.CreatedBy) · @TimeDisp.Long(prior.CreatedAtUtc)
                                         </div>
-                                        <div class="md-body">@((MarkupString)Md.ToHtml(prior.Description, CaseId))</div>
+                                        <div class="md-body">@((MarkupString)Html(prior.Description))</div>
                                     </div>
                                 }
                             </div>
@@ -1002,6 +1002,23 @@ else
 }
 
 @code {
+    // BUG-258: each entry's Markdown is rendered once per text, not on every render. The tab re-renders on every
+    // keystroke in a composer (oninput) and on the workspace's 30-second tick, and a long imported record (up to 1,000
+    // entries) was re-parsed each time, for every viewer. Keyed by the text, so an edit renders afresh.
+    private readonly Dictionary<(Guid CaseId, bool Inline, string Text), string> _rendered = new();
+
+    private string Html(string? text) => Rendered(text, inline: false);
+    private string Inline(string? text) => Rendered(text, inline: true);
+
+    private string Rendered(string? text, bool inline)
+    {
+        if (string.IsNullOrEmpty(text)) return inline ? Md.ToInlineHtml(text, CaseId) : Md.ToHtml(text, CaseId);
+        var key = (CaseId, inline, text);
+        if (_rendered.TryGetValue(key, out var html)) return html;
+        if (_rendered.Count > 5000) _rendered.Clear();   // edits leave old texts behind; start over now and then
+        return _rendered[key] = inline ? Md.ToInlineHtml(text, CaseId) : Md.ToHtml(text, CaseId);
+    }
+
     [Parameter, EditorRequired] public Case Case { get; set; } = null!;
     [Parameter, EditorRequired] public Guid CaseId { get; set; }
     /// <summary>HR-01: outcome labels by key (admin-managed), for the Closed milestone.</summary>
