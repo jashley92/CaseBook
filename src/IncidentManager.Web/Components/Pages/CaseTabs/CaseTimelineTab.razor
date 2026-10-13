@@ -1322,8 +1322,9 @@ else
         var f = new EntryFollowUps(
             Tasks: _fuTasks.Where(t => !string.IsNullOrWhiteSpace(t.Title))
                 .Select(t => new FollowUpTask(t.Title, string.IsNullOrWhiteSpace(t.Owner) ? null : t.Owner, t.Kind,
-                    t.Due is { } d ? WallToUtc(d) : null)).ToList(),
-            Question: _fuQuestionOpen ? _fuQuestion : null, QuestionTask: _fuQuestionTask,
+                    // WF-24: a bare due date means by the end of that day (23:59 in the viewer's zone), as on the Tasks tab (F-20).
+                    t.Due is { } d ? WallToUtc(d.Date + new TimeSpan(23, 59, 0)) : null)).ToList(),
+            Question: _fuQuestionOpen ? Tagged(_fuQuestion) : null, QuestionTask: _fuQuestionTask,   // WF-25: [[tags]] as Question mode
             KnownLine: _fuKnownOpen ? _fuKnown : null,
             LinkCaseId: _fuLinkOpen ? _fuLink?.Id : null, LinkType: _fuLinkType);
         return f.Any ? f : null;
