@@ -168,9 +168,9 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
-### Next release
+### v1.5.8
 
-One migration, applied at startup (`PendingImportHash`: a hash column on `PendingImports`). Things to check:
+A bug-fix release with one migration, applied at startup (`PendingImportHash`: a hash column on `PendingImports`). Things to check:
 
 - **A due date or improvement target picked without a time now means the end of that day on the organization's
   calendar** (23:59 in `Organization:TimeZone`), not in the picker's zone, so every viewer and every report shows the day
