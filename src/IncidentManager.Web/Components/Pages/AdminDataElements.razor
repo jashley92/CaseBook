@@ -131,6 +131,7 @@ else
     private sealed class Row
     {
         public Guid? Id { get; init; }
+        public string? Stamp { get; init; }   // BUG-235: as loaded, so another admin's change since isn't undone
         public bool IsSystem { get; init; }
         public string Label { get; set; } = "";
         public string? NotificationJurisdictions { get; set; }
@@ -147,7 +148,7 @@ else
     {
         var all = await DataElements.ListAllAsync();
         _active = all.Where(e => e.IsActive)
-            .Select(e => new Row { Id = e.Id, IsSystem = e.IsSystem, Label = e.Label, NotificationJurisdictions = e.NotificationJurisdictions })
+            .Select(e => new Row { Id = e.Id, Stamp = e.RowHash, IsSystem = e.IsSystem, Label = e.Label, NotificationJurisdictions = e.NotificationJurisdictions })
             .ToList();
         _archived = all.Where(e => !e.IsActive).ToList();
     }
@@ -165,7 +166,7 @@ else
     private async Task Save()
     {
         if (_active is null) return;
-        var payload = _active.Select(r => new DataElementRow(r.Id, r.Label, r.NotificationJurisdictions)).ToList();
+        var payload = _active.Select(r => new DataElementRow(r.Id, r.Label, r.NotificationJurisdictions, r.Stamp)).ToList();
         try
         {
             await DataElements.SaveAsync(payload);

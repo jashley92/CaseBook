@@ -123,6 +123,7 @@ else
     private sealed class Row
     {
         public Guid? Id { get; init; }
+        public string? Stamp { get; init; }   // BUG-235: as loaded, so another admin's change since isn't undone
         public bool IsSystem { get; init; }
         public int Uses { get; init; }
         public string Label { get; set; } = "";
@@ -140,7 +141,7 @@ else
     {
         var all = await Outcomes.ListAllAsync();
         _active = all.Where(o => o.IsActive)
-            .Select(o => new Row { Id = o.Id, IsSystem = o.IsSystem, Uses = o.UseCount, Label = o.Label, Description = o.Description })
+            .Select(o => new Row { Id = o.Id, Stamp = o.RowHash, IsSystem = o.IsSystem, Uses = o.UseCount, Label = o.Label, Description = o.Description })
             .ToList();
         _archived = all.Where(o => !o.IsActive).ToList();
     }
@@ -158,7 +159,7 @@ else
     private async Task Save()
     {
         if (_active is null) return;
-        var payload = _active.Select(r => new CaseOutcomeRow(r.Id, r.Label, r.Description)).ToList();
+        var payload = _active.Select(r => new CaseOutcomeRow(r.Id, r.Label, r.Description, r.Stamp)).ToList();
         try
         {
             await Outcomes.SaveAsync(payload);

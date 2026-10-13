@@ -11,7 +11,7 @@ namespace IncidentManager.Application.Admin;
 /// is true when at least one case already records this element — such elements can be archived but not deleted.</summary>
 public sealed record DataElementView(
     Guid Id, string Key, string Label, int SortOrder, bool IsActive, bool IsSystem,
-    string? NotificationJurisdictions, bool IsReferenced)
+    string? NotificationJurisdictions, bool IsReferenced, string? RowHash = null)
 {
     /// <summary>Hard-delete is allowed only for a non-built-in element that no case references; everything else
     /// is archived instead, so nothing a case points at ever disappears.</summary>
@@ -20,8 +20,9 @@ public sealed record DataElementView(
 
 /// <summary>One active row submitted by the admin editor: an existing element (Id set) or a new one (Id null).
 /// List position is the desired display order; label and notification jurisdictions are the edits. Archiving,
-/// restoring and deleting are separate explicit actions, not part of this batch.</summary>
-public sealed record DataElementRow(Guid? Id, string Label, string? NotificationJurisdictions);
+/// restoring and deleting are separate explicit actions, not part of this batch. BUG-235: <see cref="Stamp"/> is the
+/// element's row hash when the page loaded; a row someone changed since is refused (null skips the check).</summary>
+public sealed record DataElementRow(Guid? Id, string Label, string? NotificationJurisdictions, string? Stamp = null);
 
 /// <summary>
 /// Administers the data-element reference set (X-03): the personal-data categories the impact assessment
@@ -105,8 +106,11 @@ public sealed class DataElementService
             {
                 if (!byId.TryGetValue(id, out var el))
                     throw new InvalidOperationException("A data element you were editing was deleted. Reload the page and try again.");
+                if (row.Stamp is not null && !string.Equals(el.RowHash ?? "", row.Stamp, StringComparison.Ordinal))
+                    throw new InvalidOperationException($"Someone changed \"{el.Label}\" since this page opened (its label, " +
+                        "jurisdictions, order or archive state), so nothing was saved: it would have undone that. Reload the page, then make your changes again.");
+                // BUG-235: not re-activated here: archiving is its own action, and one archived since the page loaded stays so.
                 el.Label = label;
-                el.IsActive = true;   // the editor only ever submits the active set
                 el.SortOrder = order;
                 el.NotificationJurisdictions = juris;
                 el.ModifiedBy = _user.UserId;
@@ -175,7 +179,7 @@ public sealed class DataElementService
         db.DataElements.AsNoTracking().OrderBy(e => e.SortOrder).ThenBy(e => e.Label);
 
     private static DataElementView Project(DataElement e, bool referenced) =>
-        new(e.Id, e.Key, e.Label, e.SortOrder, e.IsActive, e.IsSystem, e.NotificationJurisdictions, referenced);
+        new(e.Id, e.Key, e.Label, e.SortOrder, e.IsActive, e.IsSystem, e.NotificationJurisdictions, referenced, e.RowHash ?? "");
 
     private static string? Normalize(string? jurisdictions)
     {

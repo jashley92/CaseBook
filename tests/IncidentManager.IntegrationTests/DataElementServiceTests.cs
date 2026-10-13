@@ -52,7 +52,7 @@ public sealed class DataElementServiceTests : IDisposable
 
     // Active views → editor rows (order preserved).
     private static List<DataElementRow> RowsFrom(IEnumerable<DataElementView> views) =>
-        views.Where(v => v.IsActive).Select(v => new DataElementRow(v.Id, v.Label, v.NotificationJurisdictions)).ToList();
+        views.Where(v => v.IsActive).Select(v => new DataElementRow(v.Id, v.Label, v.NotificationJurisdictions, v.RowHash)).ToList();
 
     [Fact]
     public async Task Adding_generates_a_derived_key()
@@ -68,6 +68,27 @@ public sealed class DataElementServiceTests : IDisposable
         added.IsSystem.Should().BeFalse();
         added.IsActive.Should().BeTrue();
         added.NotificationJurisdictions.Should().Be("US,NY");
+    }
+
+    [Fact]
+    public async Task A_save_from_a_page_opened_before_another_admins_change_is_refused(/* BUG-235 */)
+    {
+        var svc = NewService();
+        var stalePage = RowsFrom(await svc.ListAllAsync());
+
+        // Another admin adds CA to the first element's jurisdictions, and archives the second.
+        var fresh = RowsFrom(await svc.ListAllAsync());
+        fresh[0] = fresh[0] with { NotificationJurisdictions = "US, CA" };
+        await svc.SaveAsync(fresh);
+        await svc.SetArchivedAsync(stalePage[1].Id!.Value, true);
+
+        stalePage[2] = stalePage[2] with { Label = stalePage[2].Label + " (renamed)" };
+        var save = () => svc.SaveAsync(stalePage);
+        await save.Should().ThrowAsync<InvalidOperationException>().WithMessage("*since this page opened*");
+
+        var after = await svc.ListAllAsync();
+        after.Single(e => e.Id == stalePage[0].Id).NotificationJurisdictions.Should().Be("US,CA");
+        after.Single(e => e.Id == stalePage[1].Id).IsActive.Should().BeFalse();
     }
 
     [Fact]

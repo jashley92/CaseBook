@@ -9,14 +9,15 @@ namespace IncidentManager.Application.Admin;
 
 /// <summary>An outcome for the admin editor and the close dialog. <see cref="UseCount"/> counts closes that recorded it.</summary>
 public sealed record CaseOutcomeView(Guid Id, string Key, string Label, string? Description, int SortOrder,
-    bool IsActive, bool IsSystem, int UseCount)
+    bool IsActive, bool IsSystem, int UseCount, string? RowHash = null)
 {
     /// <summary>Only an added outcome that no close has recorded can be deleted; anything else is archived.</summary>
     public bool IsDeletable => !IsSystem && UseCount == 0;
 }
 
 /// <summary>One active row from the admin editor: an existing outcome (Id set) or a new one. Order is list position.</summary>
-public sealed record CaseOutcomeRow(Guid? Id, string Label, string? Description);
+/// <remarks>BUG-235: <see cref="Stamp"/> is the outcome's row hash when the page loaded; one changed since is refused.</remarks>
+public sealed record CaseOutcomeRow(Guid? Id, string Label, string? Description, string? Stamp = null);
 
 /// <summary>
 /// HR-01: administers the case outcomes offered when a case is closed. Admins add, relabel, describe, reorder,
@@ -102,10 +103,13 @@ public sealed class CaseOutcomeService
             {
                 if (!byId.TryGetValue(id, out var o))
                     throw new InvalidOperationException("An outcome you were editing was deleted. Reload the page and try again.");
+                if (rows[i].Stamp is not null && !string.Equals(o.RowHash ?? "", rows[i].Stamp, StringComparison.Ordinal))
+                    throw new InvalidOperationException($"Someone changed \"{o.Label}\" since this page opened, so nothing was " +
+                        "saved: it would have undone that. Reload the page, then make your changes again.");
+                // BUG-235: an outcome archived since the page loaded isn't brought back by a save of the list.
                 o.Label = labels[i];
                 o.Description = description;
                 o.SortOrder = i + 1;
-                o.IsActive = true;   // the editor submits only the active set
                 o.ModifiedBy = _user.UserId;
                 o.ModifiedAtUtc = now;
             }
@@ -162,7 +166,7 @@ public sealed class CaseOutcomeService
         db.CaseOutcomes.AsNoTracking().OrderBy(o => o.SortOrder).ThenBy(o => o.Label);
 
     private static CaseOutcomeView Project(CaseOutcome o, int uses) =>
-        new(o.Id, o.Key, o.Label, o.Description, o.SortOrder, o.IsActive, o.IsSystem, uses);
+        new(o.Id, o.Key, o.Label, o.Description, o.SortOrder, o.IsActive, o.IsSystem, uses, o.RowHash ?? "");
 
     // A stable PascalCase key from the label ("Insider misuse" → "InsiderMisuse"), made unique with a number.
     private static string UniqueKey(string label, ISet<string> used)
