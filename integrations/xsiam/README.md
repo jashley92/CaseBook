@@ -31,7 +31,7 @@ indicator and timeline entry reads "XSIAM incident N".
 2. **XSIAM credentials store:** save the token as a credential (for example `casebook-api`). Don't paste it
    into the playbook.
 3. **Automation:** create a script from [`CaseBookElevate.py`](CaseBookElevate.py) (Python 3, docker image with
-   `requests`). Arguments: `casebook_url`, `api_token`, optional `max_indicators` and `verify_tls`.
+   `requests`). Arguments: `casebook_url`, `api_token`, optional `max_indicators` (default 500, at most 2,000, CaseBook's limit for one document) and `verify_tls`.
 4. **Playbook:** add a manual, analyst-run playbook (for example "Elevate to CaseBook") with one task calling
    `CaseBookElevate`, passing `casebook_url` and `api_token` from the credential. Run it from the incident
    when you decide to elevate. The task's output includes the review link.

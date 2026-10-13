@@ -39,6 +39,9 @@ INDICATOR_TYPE = {
 # XSIAM indicator score (DBot score) → CaseBook disposition.
 VERDICT = {3: "Malicious", 2: "Suspicious", 1: "Benign", 0: "Unknown"}
 
+# REV-81: the most entities CaseBook takes in one document (CaseImportService.MaxEntities); more and it refuses it whole.
+MAX_ENTITIES = 2000
+
 
 def iso(value):
     """XSIAM timestamps are ISO-8601 strings; pass them through, dropping empty / zero-date values."""
@@ -64,6 +67,9 @@ def incident_indicators(incident_id, cap):
             entity["type"] = mapped
         entity["disposition"] = VERDICT.get(ind.get("score", 0), "Unknown")
         entities.append(entity)
+    # REV-81: a stable order, so a re-run builds the same document and CaseBook recognises it (it matches a resend by
+    # its exact text). findIndicators returns them in no set order.
+    entities.sort(key=lambda e: (e.get("type", ""), e["value"]))
     return entities
 
 
@@ -106,7 +112,7 @@ def main():
     args = demisto.args()
     base = (args.get("casebook_url") or "").rstrip("/")
     token = args.get("api_token") or ""
-    cap = int(args.get("max_indicators") or 500)
+    cap = min(max(int(args.get("max_indicators") or 500), 1), MAX_ENTITIES)   # REV-81
     verify = argToBoolean(args.get("verify_tls", "true"))
     if not base.lower().startswith("https://"):
         return_error("casebook_url must be an https:// URL.")
@@ -139,7 +145,13 @@ def main():
         return_error(f"CaseBook refused the hand-off ({resp.status_code}): {resp.text[:500]}")
         return
 
-    body = resp.json()
+    try:
+        body = resp.json()
+    except ValueError:
+        # REV-81: accepted, but the answer wasn't the JSON expected (a proxy page, say). The hand-off stands.
+        return_error(f"CaseBook accepted the hand-off ({resp.status_code}) but its reply wasn't readable. "
+                     "Check the pending imports in CaseBook before running this again.")
+        return
     duplicate = bool(body.get("duplicate"))
     review_url = f"{base}/cases/import?pending={body.get('pendingImportId')}"
     outputs = {
