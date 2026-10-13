@@ -202,6 +202,22 @@ public class CaseNotificationsTests
     }
 
     [Fact]
+    public async Task Retrying_a_failed_channel_post_doesnt_email_the_owner_again(/* WF-20 follow-up */)
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new FlakyChatNotifier();
+        var n = new CaseNotifications(sender, TestEmail.Composer(), Team(), ChatConfig("OverdueReminders"),
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), chat, new FakePrefs(), sent: new InMemoryNotificationMarks());
+        var item = Item("owner1");
+
+        await n.OnActionItemsOverdueAsync([item]);   // the post fails, so the scan tries the item again
+        await n.OnActionItemsOverdueAsync([item]);
+
+        chat.Posted.Should().ContainSingle();
+        sender.Sent.Should().ContainSingle("the owner was emailed the first time");
+    }
+
+    [Fact]
     public async Task An_escalation_or_executive_report_nobody_can_receive_is_tried_again(/* WF-17 */)
     {
         var noManagers = new FakeUserDirectory().Add("owner1", "Owner One", "owner1@x.example", "Analyst");

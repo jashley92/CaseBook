@@ -369,7 +369,10 @@ public sealed class CaseNotifications : ICaseNotifications
             if (!overdueMandatory && (await _prefs.GetAsync(uid, ct)).Overdue) continue; // opted out / on digest
             var to = _users.EmailFor(uid);
             if (string.IsNullOrWhiteSpace(to)) continue;
-            var ordered = list.OrderBy(i => i.DueAtUtc).ToList();
+            // WF-20 follow-up: marked per recipient, as escalations are, so a scan that retries an item (its channel post
+            // failed, or another owner's email did) doesn't send this owner the same reminder again.
+            var ordered = NotYetSentTo(list.OrderBy(i => i.DueAtUtc), OverdueKey, to);
+            if (ordered.Count == 0) continue;
             var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["ItemCount"] = ordered.Count.ToString(CultureInfo.InvariantCulture),
@@ -381,7 +384,7 @@ public sealed class CaseNotifications : ICaseNotifications
             };
 
             var message = await _composer.ComposeAsync("overdue", [to], tokens, overdueUrl, htmlTokens, ct);
-            await SendForAsync(message, ordered.Select(i => i.ActionItemId.ToString()), ct);
+            if (!await SendForAsync(message, ordered.Select(i => i.ActionItemId.ToString()), ct)) Unsent(ordered, OverdueKey, to);
         }
     }
 
@@ -539,7 +542,8 @@ public sealed class CaseNotifications : ICaseNotifications
             if (!dueSoonMandatory && (await _prefs.GetAsync(uid, ct)).DueSoon) continue; // opted out / on digest
             var to = _users.EmailFor(uid);
             if (string.IsNullOrWhiteSpace(to)) continue;
-            var ordered = list.OrderBy(i => i.DueAtUtc).ToList();
+            var ordered = NotYetSentTo(list.OrderBy(i => i.DueAtUtc), DueSoonKey, to);   // WF-20 follow-up: per recipient
+            if (ordered.Count == 0) continue;
             var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["ItemCount"] = ordered.Count.ToString(CultureInfo.InvariantCulture),
@@ -552,7 +556,7 @@ public sealed class CaseNotifications : ICaseNotifications
             };
 
             var message = await _composer.ComposeAsync("action-item-due-soon", [to], tokens, agendaUrl, htmlTokens, ct);
-            await SendForAsync(message, ordered.Select(i => i.ActionItemId.ToString()), ct);
+            if (!await SendForAsync(message, ordered.Select(i => i.ActionItemId.ToString()), ct)) Unsent(ordered, DueSoonKey, to);
         }
     }
 
