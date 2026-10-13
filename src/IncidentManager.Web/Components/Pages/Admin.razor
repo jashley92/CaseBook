@@ -168,8 +168,14 @@
                                             <div class="mt-1">
                                                 <span class="im-badge im-b-info">Changed in CaseBook</span>
                                                 <button class="btn btn-link btn-sm p-0 ms-2 align-baseline"
-                                                        @onclick="() => ResetOne(def.Key)">Reset to default</button>
+                                                        title="@(s.ServerValueFromFile ? $"Back to the server's settings file: {ShownValue(s.ServerValue)}" : $"Back to the default: {ShownValue(s.ServerValue)}")"
+                                                        @onclick="() => ResetOne(def.Key)">@(s.ServerValueFromFile ? "Reset to the server's value" : "Reset to default")</button>
                                             </div>
+                                        }
+                                        else if (s.ServerValueFromFile && !string.Equals(s.ServerValue ?? "", def.Default ?? "", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            @* BUG-245: say where a value that isn't the default comes from. *@
+                                            <div class="mt-1 small text-muted">Set in the server's settings file (the default is @ShownValue(def.Default)).</div>
                                         }
                                     </div>
                                     <div class="col-md-6 col-xl-7">
@@ -982,6 +988,7 @@
         new[] { "Email:Enabled", "Email:From" }.Any(k =>
             !string.Equals((FormText(k) ?? "").Trim(), (SavedValue(k) ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
     private string? SavedValue(string key) => _effective?.FirstOrDefault(e => e.Definition.Key == key)?.Value;
+    private static string ShownValue(string? v) => string.IsNullOrWhiteSpace(v) ? "blank" : v.Replace("\n", ", ");
     private bool LegalDistributionSet => !string.IsNullOrWhiteSpace(FormText("Email:LegalDistribution"));
     private bool AnyTriggerOn =>
         FormBool("Email:AssignmentNotifications")

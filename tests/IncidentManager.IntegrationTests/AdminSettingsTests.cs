@@ -7,6 +7,7 @@ using IncidentManager.Infrastructure.Persistence.Interceptors;
 using IncidentManager.Infrastructure.Realtime;
 using IncidentManager.Infrastructure.Security;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -102,6 +103,33 @@ public sealed class AdminSettingsTests : IDisposable
         var chain = await db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
         chain.Should().Contain(a => a.EntityType == nameof(IncidentManager.Domain.Entities.AppSetting) && a.EntityId == row.Id.ToString());
         _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task The_page_shows_what_the_servers_settings_file_puts_in_force(/* BUG-245 */)
+    {
+        // As the production template does: seals every 24 h (the catalog default is 6), and a Legal list.
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Integrity:AutoSeal:IntervalHours"] = "24",
+            ["Email:LegalDistribution:0"] = "legal@contoso.com",
+            ["Email:LegalDistribution:1"] = "privacy@contoso.com",
+        }).Build();
+        await using var db = NewContext();
+        var svc = new AdminSettingsService(NewFactory(), _user, _clock, new NoOpReloader(),
+            server: new IncidentManager.Infrastructure.Configuration.ServerSettingValues(config));
+
+        var effective = await svc.GetEffectiveAsync();
+        var seal = effective.Single(e => e.Definition.Key == "Integrity:AutoSeal:IntervalHours");
+        seal.Value.Should().Be("24");
+        seal.IsOverridden.Should().BeFalse();
+        seal.ServerValueFromFile.Should().BeTrue();
+        effective.Single(e => e.Definition.Key == "Email:LegalDistribution").Value.Should().Be("legal@contoso.com\nprivacy@contoso.com");
+        effective.Single(e => e.Definition.Key == "Email:From").ServerValueFromFile.Should().BeFalse();
+
+        await svc.SetAsync("Integrity:AutoSeal:IntervalHours", "12");
+        var changed = (await svc.GetEffectiveAsync()).Single(e => e.Definition.Key == "Integrity:AutoSeal:IntervalHours");
+        (changed.Value, changed.ServerValue).Should().Be(("12", "24"), "Reset goes back to the file's 24, not the default 6");
     }
 
     [Fact]

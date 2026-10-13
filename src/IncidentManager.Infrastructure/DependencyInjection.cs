@@ -72,6 +72,7 @@ public static class DependencyInjection
 
         // Lets a settings write signal the configuration root to re-read the DB provider (A-08).
         services.AddSingleton<ISettingsReloader, Configuration.ConfigurationReloader>();
+        services.AddSingleton<IServerSettingValues, Configuration.ServerSettingValues>();   // BUG-245
 
         services.AddSingleton<IClock, SystemClock>();
         // F-08: the organization's reporting time zone (calendar months on the dashboard), read live from config.

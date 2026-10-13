@@ -6,10 +6,14 @@ using Microsoft.EntityFrameworkCore;
 namespace IncidentManager.Application.Admin;
 
 /// <summary>An editable setting with its current effective value and where that value comes from.</summary>
-/// <param name="IsOverridden">True when a DB override exists; false when the catalog default applies.</param>
-public sealed record EffectiveSetting(SettingDefinition Definition, string? Value, bool IsOverridden)
+/// <param name="IsOverridden">True when a DB override exists; false when the server's value applies.</param>
+/// <param name="ServerValue">BUG-245: what it is without an in-app change (the server's settings file, else the
+/// catalog default): what "Reset" returns it to.</param>
+/// <param name="ServerValueFromFile">Whether <paramref name="ServerValue"/> comes from the server's settings file.</param>
+public sealed record EffectiveSetting(SettingDefinition Definition, string? Value, bool IsOverridden,
+    string? ServerValue = null, bool ServerValueFromFile = false)
 {
-    public string Source => IsOverridden ? "Database" : "Default";
+    public string Source => IsOverridden ? "Database" : ServerValueFromFile ? "Server settings file" : "Default";
 }
 
 /// <summary>
@@ -25,18 +29,22 @@ public sealed class AdminSettingsService
     private readonly IClock _clock;
     private readonly ISettingsReloader _reloader;
     private readonly ISecurityEventSink? _siem;
+    private readonly IServerSettingValues? _server;
 
     public AdminSettingsService(IAppDbContextFactory factory, ICurrentUser user, IClock clock,
-        ISettingsReloader reloader, ISecurityEventSink? siem = null)
+        ISettingsReloader reloader, ISecurityEventSink? siem = null, IServerSettingValues? server = null)
     {
         _factory = factory;
         _user = user;
         _clock = clock;
         _reloader = reloader;
         _siem = siem;
+        _server = server;
     }
 
-    /// <summary>Every editable setting with its current effective value (DB override, else catalog default).</summary>
+    /// <summary>Every editable setting with its current effective value: the in-app change, else the server's settings
+    /// file, else the catalog default. BUG-245: not the catalog default alone, which the files may not use (the
+    /// production template seals every 24 h, not the default 6), so the page showed values that weren't in force.</summary>
     public async Task<IReadOnlyList<EffectiveSetting>> GetEffectiveAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
@@ -44,10 +52,23 @@ public sealed class AdminSettingsService
             .ToDictionaryAsync(s => s.Key, s => s.Value, StringComparer.OrdinalIgnoreCase, ct);
 
         return SettingsCatalog.Editable
-            .Select(d => overrides.TryGetValue(d.Key, out var v)
-                ? new EffectiveSetting(d, v, true)
-                : new EffectiveSetting(d, d.Default, false))
+            .Select(d =>
+            {
+                var file = _server?.ValueOf(d.Key) is { } f ? SafeNormalize(d, f) : null;
+                var server = file ?? d.Default;
+                return overrides.TryGetValue(d.Key, out var v)
+                    ? new EffectiveSetting(d, v, true, server, file is not null)
+                    : new EffectiveSetting(d, server, false, server, file is not null);
+            })
             .ToList();
+    }
+
+    // The file's value as the page would save it (a list one item per line, a bool lower-case); as written if it
+    // doesn't pass the page's checks, so the page still shows what the server runs on.
+    private static string SafeNormalize(SettingDefinition d, string value)
+    {
+        try { return SettingsCatalog.Normalize(d, value) ?? value; }
+        catch (ArgumentException) { return value; }
     }
 
     /// <summary>
