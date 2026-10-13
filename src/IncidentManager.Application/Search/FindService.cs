@@ -205,10 +205,27 @@ public sealed class FindService
                 foreach (var t in terms)
                     src = src.Where(e => e.Value.ToLower().Contains(t) || (e.Label != null && e.Label.ToLower().Contains(t)));
 #pragma warning restore CA1304, CA1311, CA1862
-            var rows = await src.Join(db.Cases, e => e.CaseId, c => c.Id, (e, c) => new
-            {
-                e.Id, e.Type, e.Value, e.Label, e.Disposition, e.CreatedAtUtc, CaseId = c.Id, c.CaseNumber, c.Phase, c.Classification
-            }).Take(2000).ToListAsync(ct);
+            // WF-06: grouped and counted in the database (an email address matches an account, as everywhere), so the count
+            // covers every entity and the ones listed are the most widespread, not whichever 2,000 rows came back first.
+#pragma warning disable CA1304, CA1311, CA1862
+            var groups = await src
+                .GroupBy(e => new { Family = e.Type == EntityType.EmailAddress ? EntityType.Account : e.Type, Key = e.Value.Trim().ToLower() })
+                .Select(g => new { g.Key.Family, g.Key.Key, Cases = g.Select(x => x.CaseId).Distinct().Count() })
+                .ToListAsync(ct);
+#pragma warning restore CA1304, CA1311, CA1862
+            counts[FindKind.Entities] = groups.Count;
+            var top = groups.OrderByDescending(g => g.Cases).ThenBy(g => g.Key, StringComparer.Ordinal).Take(limit).ToList();
+            var topKeys = top.Select(g => g.Key).Distinct().ToList();
+            var wanted = top.Select(g => (g.Family, g.Key)).ToHashSet();
+#pragma warning disable CA1304, CA1311, CA1862
+            var rows = (await src.Where(e => topKeys.Contains(e.Value.Trim().ToLower()))
+                    .Join(db.Cases, e => e.CaseId, c => c.Id, (e, c) => new
+                    {
+                        e.Id, e.Type, e.Value, e.Label, e.Disposition, e.CreatedAtUtc, CaseId = c.Id, c.CaseNumber, c.Phase, c.Classification
+                    }).ToListAsync(ct))
+                .Where(r => wanted.Contains((IocObservable.MatchFamily(r.Type), r.Value.Trim().ToLowerInvariant())))
+                .ToList();
+#pragma warning restore CA1304, CA1311, CA1862
             var grouped = rows
                 .GroupBy(r => (IocObservable.MatchFamily(r.Type), r.Value.Trim().ToLowerInvariant()))
                 .Select(g =>
@@ -224,8 +241,7 @@ public sealed class FindService
                 .OrderByDescending(e => e.Cases.Count)
                 .ThenBy(e => e.Value, StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            counts[FindKind.Entities] = grouped.Count;
-            entities = grouped.Take(limit).ToList();
+            entities = grouped;
         }
 
         // --- Cases.
@@ -362,11 +378,17 @@ public sealed class FindService
             if (to is not null) tq = tq.Where(x => x.CreatedAtUtc < to);
             counts[FindKind.Tasks] = await tq.CountAsync(ct);
             // Open first (by when they're due), then done.
-            tasks = (await tq.Join(db.Cases, t => t.CaseId, c => c.Id, (t, c) => new { t.Id, t.CaseId, c.CaseNumber, t.Title, t.Owner, t.DueAtUtc, t.Status, t.CreatedAtUtc })
+            // WF-06: ordered and cut in the query (dates order on SQLite too, stored as ticks), not every match read and
+            // sorted in memory on each palette keystroke.
+            tasks = (await tq
+                    .OrderBy(t => t.Status == ActionItemStatus.Done || t.Status == ActionItemStatus.Cancelled)
+                    .ThenBy(t => t.DueAtUtc == null)
+                    .ThenBy(t => t.DueAtUtc)
+                    .Take(limit)
+                    .Join(db.Cases, t => t.CaseId, c => c.Id, (t, c) => new { t.Id, t.CaseId, c.CaseNumber, t.Title, t.Owner, t.DueAtUtc, t.Status })
                     .ToListAsync(ct))
                 .OrderBy(t => t.Status is ActionItemStatus.Done or ActionItemStatus.Cancelled)
                 .ThenBy(t => t.DueAtUtc ?? DateTimeOffset.MaxValue)
-                .Take(limit)
                 .Select(t => new FindTask(t.Id, t.CaseId, t.CaseNumber, t.Title, t.Owner, t.DueAtUtc, t.Status)).ToList();
         }
 
@@ -386,9 +408,10 @@ public sealed class FindService
             if (from is not null) xq = xq.Where(x => x.CreatedAtUtc >= from);
             if (to is not null) xq = xq.Where(x => x.CreatedAtUtc < to);
             counts[FindKind.Evidence] = await xq.CountAsync(ct);
-            evidence = (await xq.Join(db.Cases, x => x.CaseId, c => c.Id, (x, c) => new { x.Id, x.CaseId, c.CaseNumber, x.OriginalFileName, x.Description, x.CreatedAtUtc })
+            evidence = (await xq.OrderByDescending(x => x.CreatedAtUtc).Take(limit)   // WF-06
+                    .Join(db.Cases, x => x.CaseId, c => c.Id, (x, c) => new { x.Id, x.CaseId, c.CaseNumber, x.OriginalFileName, x.Description, x.CreatedAtUtc })
                     .ToListAsync(ct))
-                .OrderByDescending(x => x.CreatedAtUtc).Take(limit)
+                .OrderByDescending(x => x.CreatedAtUtc)
                 .Select(x => new FindEvidence(x.Id, x.CaseId, x.CaseNumber, x.OriginalFileName, x.Description, x.CreatedAtUtc, hash is not null))
                 .ToList();
         }
@@ -413,9 +436,10 @@ public sealed class FindService
             if (from is not null) nq = nq.Where(n => n.CreatedAtUtc >= from);
             if (to is not null) nq = nq.Where(n => n.CreatedAtUtc < to);
             counts[FindKind.Notes] = await nq.CountAsync(ct);
-            notes = (await nq.Join(db.Cases, n => n.CaseId, c => c.Id, (n, c) => new { n.Id, n.CaseId, c.CaseNumber, n.CreatedAtUtc, n.CreatedBy, n.Body })
+            notes = (await nq.OrderByDescending(n => n.CreatedAtUtc).Take(limit)   // WF-06
+                    .Join(db.Cases, n => n.CaseId, c => c.Id, (n, c) => new { n.Id, n.CaseId, c.CaseNumber, n.CreatedAtUtc, n.CreatedBy, n.Body })
                     .ToListAsync(ct))
-                .OrderByDescending(n => n.CreatedAtUtc).Take(limit)
+                .OrderByDescending(n => n.CreatedAtUtc)
                 .Select(n => new FindNote(n.Id, n.CaseId, n.CaseNumber, n.CreatedAtUtc, _users.DisplayFor(n.CreatedBy), Clip(Content.RichText.ToText(n.Body))))
                 .ToList();
         }

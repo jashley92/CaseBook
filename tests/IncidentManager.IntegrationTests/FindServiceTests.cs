@@ -364,6 +364,30 @@ public sealed class FindServiceTests : IDisposable
         (await NewFind().FindAsync("phishing")).Cases.Should().ContainSingle(c => c.Id == _alpha).Which.IsArchived.Should().BeTrue();
     }
 
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Entities_are_counted_in_full_and_the_most_widespread_listed(string provider /* WF-06 */)
+    {
+        Use(provider);
+        using (var db = NewContext())
+        {
+            foreach (var (caseId, value) in new[] { (_alpha, "zzz1.example"), (_beta, "ZZZ1.example"), (_alpha, "zzz2.example"), (_alpha, "zzz3.example") })
+                db.CaseEntities.Add(new CaseEntity { CaseId = caseId, Type = EntityType.Domain, Value = value, CreatedBy = "robin", CreatedAtUtc = H(-5) });
+            db.ActionItems.Add(new ActionItem { CaseId = _alpha, Title = "zzz later", DueAtUtc = H(48), CreatedBy = "robin", CreatedAtUtc = H(-5) });
+            db.ActionItems.Add(new ActionItem { CaseId = _alpha, Title = "zzz sooner", DueAtUtc = H(2), CreatedBy = "robin", CreatedAtUtc = H(-5) });
+            db.ActionItems.Add(new ActionItem { CaseId = _alpha, Title = "zzz undated", CreatedBy = "robin", CreatedAtUtc = H(-5) });
+            db.SaveChanges();
+        }
+
+        var r = await NewFind().FindAsync("zzz", limit: 2);
+
+        r.Counts[FindKind.Entities].Should().Be(3);
+        r.Entities.Should().HaveCount(2);
+        r.Entities[0].Value.Should().BeEquivalentTo("zzz1.example");
+        r.Entities[0].Cases.Should().HaveCount(2);
+        r.Counts[FindKind.Tasks].Should().Be(3);
+        r.Tasks.Select(t => t.Title).Should().Equal("zzz sooner", "zzz later");
+    }
+
     [Fact]
     public void The_parser_refuses_what_it_would_misread(/* WF-04, WF-05 */)
     {
