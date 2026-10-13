@@ -169,12 +169,28 @@ public static class CaseMilestones
             list.Add(new CaseMilestone($"command:{x.Id}", x.ChangedAtUtc, MilestoneKind.Command, title, null, x.ChangedBy, "assignment"));
         }
 
-        foreach (var x in c.MaterialityChanges)
+        // WF-12: the notification clock follows the latest Material call, so a call taken back to Under review stops it and
+        // a new Material call restarts it from its own time. The record says so where it happens.
+        DateTimeOffset? runningFrom = null;
+        foreach (var x in c.MaterialityChanges.OrderBy(m => m.ChangedAtUtc))
         {
             var decided = x.DecisionMaker is { Length: > 0 } who
                 ? $"Decided by {who}" + (x.DecidedOnUtc is { } on ? $" on {labels.DayLabel(on)}" : "") + "."
                 : null;
-            var detail = string.Join(" ", new[] { decided, Blank(x.Rationale) }.Where(s => s is not null));
+            string? clock = null;
+            if (x.To == MaterialityStatus.Material)
+            {
+                var from = x.DecidedOnUtc ?? x.ChangedAtUtc;
+                if (x.From != MaterialityStatus.Material && c.MaterialityChanges.Any(m => m.To == MaterialityStatus.Material && m.ChangedAtUtc < x.ChangedAtUtc))
+                    clock = $"The notification clock restarts from this call ({labels.DayLabel(from)}).";
+                runningFrom = from;
+            }
+            else if (x.From == MaterialityStatus.Material && x.To != MaterialityStatus.NotMaterial && runningFrom is { } ran)
+            {
+                clock = $"The notification clock stopped (it ran from {labels.DayLabel(ran)}).";
+                runningFrom = null;
+            }
+            var detail = string.Join(" ", new[] { decided, Blank(x.Rationale), clock }.Where(s => s is not null));
             list.Add(new CaseMilestone($"mat:{x.Id}", x.ChangedAtUtc, MilestoneKind.Materiality,
                 x.From == x.To ? $"Materiality determination revised ({labels.Materiality(x.To)})"   // REV-13
                     : $"Materiality {labels.Materiality(x.From)} → {labels.Materiality(x.To)}",

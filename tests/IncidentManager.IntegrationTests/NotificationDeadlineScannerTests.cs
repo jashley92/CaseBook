@@ -273,6 +273,41 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_material_call_taken_back_and_made_again_says_when_the_clock_first_ran(/* WF-12 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);
+        EnableClock();
+        var first = _clock.UtcNow.AddHours(-10);
+        await using (var db = NewContext())
+        {
+            var c = await db.Cases.Include(x => x.MaterialityChanges).SingleAsync(x => x.Id == id);
+            _clock.UtcNow = _clock.UtcNow.AddHours(1);
+            c.RecordMateriality(MaterialityStatus.UnderReview, null, null, "Counsel wants another look.", "alice", _clock.UtcNow);
+            await db.SaveChangesAsync();
+        }
+        var stopped = await NewDeadlines().EvaluateAsync(id);
+        stopped.StartInstant.Should().BeNull("the clock follows the latest call");
+        stopped.EarlierMaterialUtc.Should().Be(first);
+
+        await using (var db = NewContext())
+        {
+            var c = await db.Cases.Include(x => x.MaterialityChanges).SingleAsync(x => x.Id == id);
+            _clock.UtcNow = _clock.UtcNow.AddHours(1);
+            c.RecordMateriality(MaterialityStatus.Material, "Disclosure Committee", _clock.UtcNow.AddHours(-1), "Confirmed.", "alice", _clock.UtcNow);
+            await db.SaveChangesAsync();
+        }
+        var restarted = await NewDeadlines().EvaluateAsync(id);
+        restarted.StartInstant.Should().Be(_clock.UtcNow.AddHours(-1));
+        restarted.EarlierMaterialUtc.Should().Be(first);
+
+        await using var check = NewContext();
+        var full = await check.Cases.AsNoTracking().Include(x => x.MaterialityChanges).SingleAsync(x => x.Id == id);
+        var notes = CaseMilestones.Project(full, new MilestoneLabels(x => "", s => "", p => p.ToString(), m => m.ToString()))
+            .Where(m => m.Kind == MilestoneKind.Materiality).Select(m => m.Detail ?? "").ToList();
+        notes.Should().Contain(d => d.Contains("clock stopped")).And.Contain(d => d.Contains("clock restarts"));
+    }
+
+    [Fact]
     public async Task A_case_whose_outstanding_jurisdiction_is_removed_becomes_reported(/* WF-11 */)
     {
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);

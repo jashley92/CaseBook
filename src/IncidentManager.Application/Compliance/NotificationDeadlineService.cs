@@ -20,6 +20,14 @@ public sealed record CaseNotificationDeadlines(
         false, NotificationStartBasis.Determination, null, null,
         Array.Empty<NotificationDeadlineStatus>(), null);
 
+    /// <summary>
+    /// WF-12: the clock follows the latest Material call (owner's decision), so a call that went back to Under review and
+    /// was made again restarts it. When the running clock started later than the first Material call, that first call's
+    /// decision time, so it's shown beside the clock; when the case is back under review after a Material call, the one
+    /// that clock ran from. Null otherwise, and under the Detection basis.
+    /// </summary>
+    public DateTimeOffset? EarlierMaterialUtc { get; init; }
+
     /// <summary>BUG-09: the jurisdictions with a recorded notice (empty for a case reported before notices were per jurisdiction).</summary>
     public IReadOnlySet<string> NoticeCodes { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -72,7 +80,9 @@ public sealed class NotificationDeadlineService
                 MatDecidedOn = x.Materiality.DecidedOnUtc,
                 MatRecordedAt = x.Materiality.RecordedAtUtc,
                 Keys = x.DataElements.Select(d => d.ElementKey).ToList(),
-                Notices = x.JurisdictionNotices.Select(n => new { n.Jurisdiction, n.NotifiedAtUtc }).ToList()
+                Notices = x.JurisdictionNotices.Select(n => new { n.Jurisdiction, n.NotifiedAtUtc }).ToList(),
+                MaterialCalls = x.MaterialityChanges.Where(m => m.To == MaterialityStatus.Material)
+                    .Select(m => new { m.DecidedOnUtc, m.ChangedAtUtc }).ToList()
             })
             .FirstOrDefaultAsync(ct);
 
@@ -81,8 +91,15 @@ public sealed class NotificationDeadlineService
         var start = ResolveStart(settings.StartBasis, c.Classification, c.DetectedAtUtc,
             c.MatStatus, c.MatDecidedOn, c.MatRecordedAt);
 
+        // WF-12: the first Material call, when the clock now runs from a later one (or not at all, back under review).
+        DateTimeOffset? earlier = null;
+        if (settings.StartBasis == NotificationStartBasis.Determination
+            && c.MaterialCalls.Select(m => m.DecidedOnUtc ?? m.ChangedAtUtc).DefaultIfEmpty().Min() is var first && first != default
+            && (start is null ? c.MatStatus != MaterialityStatus.NotMaterial : first < start))
+            earlier = first;
+
         var empty = new CaseNotificationDeadlines(true, settings.StartBasis, start, c.ReportedAtUtc,
-            Array.Empty<NotificationDeadlineStatus>(), null);
+            Array.Empty<NotificationDeadlineStatus>(), null) { EarlierMaterialUtc = earlier };
         if (start is null) return empty;
 
         // WF-11: a reported case is judged on what was in play when it was reported.
@@ -97,7 +114,7 @@ public sealed class NotificationDeadlineService
 
         return new CaseNotificationDeadlines(true, settings.StartBasis, start, c.ReportedAtUtc,
             statuses, NotificationDeadlinePolicy.Headline(statuses))
-        { NoticeCodes = notices.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase) };
+        { NoticeCodes = notices.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase), EarlierMaterialUtc = earlier };
     }
 
     /// <summary>

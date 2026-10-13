@@ -237,6 +237,13 @@
                     // BUG-165: a case recorded as not needing containment has no containment target to meet or miss.
                     var slas = new[] { contain, resolve }.Where(s => s.State != SlaState.NoTarget).ToList();
                 }
+                @if (Notify is { EarlierMaterialUtc: { } firstCall } restarted)
+                {
+                    @* WF-12: the clock follows the latest Material call; say when the first one was. *@
+                    <div class="im-bf-sub mb-1">@(restarted.HasClock
+                        ? $"Restarted: the case was first called material {TimeDisp.Brief(firstCall, now)}."
+                        : $"Stopped: back under review after a Material call {TimeDisp.Brief(firstCall, now)}.")</div>
+                }
                 @if (Notify is { HasClock: true } n)
                 {
                     @foreach (var s in n.Statuses)
