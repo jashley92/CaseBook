@@ -151,8 +151,10 @@ return query.Where(c => !c.IsRestricted
   report hash verification, exports, dashboards, indicators, campaigns (a restricted case can't bridge two campaigns), pins and recents.
 - Audit-trail reads (`IntegrityService.RecentAsync`, `QueryAsync`, `AuditFacetsAsync`: `/integrity`, a case's
   Audit tab, the audit CSV) show `ViewAllCases` and `Administer` the whole trail. Everyone else sees only entries
-  for cases they can see; case-less entries (configuration, roles) and entries under a case's former number are
-  left out.
+  for cases they can see; case-less entries (configuration, roles) are left out. Filtered to one case (the Audit
+  tab, the audit CSV), the trail includes the entries made under every number the case has held, such as its
+  Complex Event number before a promotion (REV-01); typing a former number on its own matches only that number,
+  and only for oversight.
 - The pending-import queue (`CaseImportService`) leaves out a submission into an existing case the reviewer
   can't see, for listing, counting, previewing, applying and rejecting. One with no target, or a target that no
   longer exists, is visible to every reviewer.

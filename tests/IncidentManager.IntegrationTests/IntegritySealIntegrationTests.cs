@@ -69,6 +69,32 @@ public sealed class IntegritySealIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_cases_audit_trail_keeps_the_entries_made_under_its_earlier_number(/* REV-01 */)
+    {
+        await using var db = NewContext();
+        var cases = new IncidentManager.Application.Cases.CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(db),
+            new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(),
+            new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
+        var ce = await cases.CreateAsync(new IncidentManager.Application.Cases.CreateCaseRequest
+        {
+            DescriptiveName = "Odd Beaconing", Title = "Odd beaconing", Classification = null, Severity = Severity.Medium, Origin = CaseOrigin.InternalDetection
+        });
+        var intake = ce.CaseNumber;
+        await cases.AddNoteAsync(ce.Id, "Seen on two hosts before promotion.");
+        await cases.ReclassifyAsync(ce.Id, Classification.AdverseEvent, "Confirmed adverse event");
+        var promoted = (await db.Cases.AsNoTracking().FirstAsync(c => c.Id == ce.Id)).CaseNumber;
+        promoted.Should().NotBe(intake);
+
+        var svc = NewService(db);
+        var trail = await svc.QueryAsync(new AuditQueryFilter { CaseNumber = promoted });
+        trail.Select(a => a.CaseNumber).Should().Contain(intake, "the intake entries were saved under the Complex Event number")
+            .And.Contain(promoted);
+        trail.Should().Contain(a => a.EntityType == "AnalystNote");
+        (await svc.AuditFacetsAsync(promoted)).EntityTypes.Should().Contain("AnalystNote");
+        (await svc.RecentAsync(promoted)).Should().HaveCount(trail.Count);
+    }
+
+    [Fact]
     public async Task Seal_is_signed_exported_and_verifies_valid()
     {
         await using var db = NewContext();

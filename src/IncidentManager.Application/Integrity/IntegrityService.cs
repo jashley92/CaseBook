@@ -257,9 +257,7 @@ public sealed class IntegrityService
     public async Task<List<AuditLogEntry>> RecentAsync(string? caseNumber, int take = 100, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var q = ScopedAuditLog(db);
-        if (!string.IsNullOrWhiteSpace(caseNumber))
-            q = q.Where(a => a.CaseNumber == caseNumber);
+        var q = string.IsNullOrWhiteSpace(caseNumber) ? ScopedAuditLog(db) : await ForCaseAsync(db, caseNumber, ct);
         return await q.OrderByDescending(a => a.Sequence).Take(take).ToListAsync(ct);
     }
 
@@ -271,10 +269,8 @@ public sealed class IntegrityService
     public async Task<List<AuditLogEntry>> QueryAsync(AuditQueryFilter filter, int take = 500, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var q = ScopedAuditLog(db);
+        var q = string.IsNullOrWhiteSpace(filter.CaseNumber) ? ScopedAuditLog(db) : await ForCaseAsync(db, filter.CaseNumber, ct);
 
-        if (!string.IsNullOrWhiteSpace(filter.CaseNumber))
-            q = q.Where(a => a.CaseNumber == filter.CaseNumber);
         if (!string.IsNullOrWhiteSpace(filter.Actor))
             q = q.Where(a => a.Actor == filter.Actor);
         if (filter.Action is { } action)
@@ -296,9 +292,7 @@ public sealed class IntegrityService
     public async Task<(List<string> Actors, List<string> EntityTypes)> AuditFacetsAsync(string? caseNumber, CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        var q = ScopedAuditLog(db);
-        if (!string.IsNullOrWhiteSpace(caseNumber))
-            q = q.Where(a => a.CaseNumber == caseNumber);
+        var q = string.IsNullOrWhiteSpace(caseNumber) ? ScopedAuditLog(db) : await ForCaseAsync(db, caseNumber, ct);
         var actors = await q.Select(a => a.Actor).Distinct().OrderBy(x => x).ToListAsync(ct);
         var types = await q.Select(a => a.EntityType).Distinct().OrderBy(x => x).ToListAsync(ct);
         return (actors, types);
@@ -317,6 +311,26 @@ public sealed class IntegrityService
         if (_user.Has(Permission.ViewAllCases) || _user.Has(Permission.Administer)) return all;
         var visible = db.Cases.AsNoTracking().ForUser(_user).Select(c => c.CaseNumber);
         return all.Where(a => a.CaseNumber != null && visible.Contains(a.CaseNumber));
+    }
+
+    /// <summary>
+    /// REV-01: one case's audit entries, under every number it has held. An entry carries the number the case had
+    /// when it was saved, so a promotion out of Complex Event (or a renumber) would otherwise cut the trail at that
+    /// point. The case's own rows record each number it has had; numbers are never reused while still in the trail.
+    /// A number that isn't a case the caller can see now (a former number typed in) matches exactly, as before.
+    /// </summary>
+    private async Task<IQueryable<AuditLogEntry>> ForCaseAsync(IAppDbContext db, string caseNumber, CancellationToken ct)
+    {
+        var caseId = await db.Cases.AsNoTracking().ForUser(_user).Where(c => c.CaseNumber == caseNumber)
+            .Select(c => (Guid?)c.Id).FirstOrDefaultAsync(ct);
+        if (caseId is null) return ScopedAuditLog(db).Where(a => a.CaseNumber == caseNumber);
+
+        var id = caseId.Value.ToString();
+        var numbers = await db.AuditLog.AsNoTracking()
+            .Where(a => a.EntityType == nameof(Case) && a.EntityId == id && a.CaseNumber != null)
+            .Select(a => a.CaseNumber!).Distinct().ToListAsync(ct);
+        if (!numbers.Contains(caseNumber)) numbers.Add(caseNumber);
+        return db.AuditLog.AsNoTracking().Where(a => a.CaseNumber != null && numbers.Contains(a.CaseNumber));
     }
 
     /// <summary>
