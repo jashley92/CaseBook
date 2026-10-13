@@ -212,8 +212,18 @@
     private bool? _renumberAvailable;
     private CancellationTokenSource? _renumberCheckCts;
 
+    // REV-37: the header is reused when the workspace moves to another case, so a rename open for the last case closes
+    // (its typed number was for that case; Save would have renamed this one to it).
+    private Guid _renumberFor;
+
+    protected override void OnParametersSet()
+    {
+        if (_renumbering && _renumberFor != Case.Id) CancelRenumber();
+    }
+
     private void StartRenumber()
     {
+        _renumberFor = Case.Id;
         _editNumber = Case.CaseNumber;
         _renumberError = null;
         _renumberAvailable = null;
