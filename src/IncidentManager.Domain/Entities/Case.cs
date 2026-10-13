@@ -405,19 +405,21 @@ public class Case : AuditableEntity, IHashableEntity
     /// <summary>
     /// BUG-165: whether moving to <paramref name="to"/> goes past Containment without it: from before Containment to
     /// Eradication, Recovery or Post-incident, with no contained time. Closing straight away doesn't (closing stops the
-    /// clocks), and neither does a case already contained or recorded as not needing it.
+    /// clocks), and neither does a case already contained or recorded as not needing it. BUG-228: nor does leaving
+    /// Closed for one of those phases skip the question: a case closed from Triage has no contained time either.
     /// </summary>
     public bool SkipsContainment(CasePhase to) =>
-        Phase < CasePhase.Containment && to is CasePhase.Eradication or CasePhase.Recovery or CasePhase.PostIncident
+        Phase is < CasePhase.Containment or CasePhase.Closed
+        && to is CasePhase.Eradication or CasePhase.Recovery or CasePhase.PostIncident
         && ContainedAtUtc is null && ContainmentNotNeededReason is null;
 
     /// <summary>
     /// BUG-208: whether moving to <paramref name="to"/> goes past Recovery without it: from before Recovery to
     /// Post-incident, with no resolved time. Closing straight away doesn't (closing stops the clocks), and neither does a
-    /// case already resolved.
+    /// case already resolved. BUG-228: leaving Closed for Post-incident counts too.
     /// </summary>
     public bool SkipsRecovery(CasePhase to) =>
-        Phase < CasePhase.Recovery && to == CasePhase.PostIncident && ResolvedAtUtc is null;
+        Phase is < CasePhase.Recovery or CasePhase.Closed && to == CasePhase.PostIncident && ResolvedAtUtc is null;
 
     /// <summary>
     /// Reopens a closed case (E-27): moves it back to the phase it held before closure (or Recovery if that

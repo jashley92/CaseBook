@@ -363,6 +363,25 @@ public class CaseTests
     }
 
     [Fact]
+    public void Leaving_closed_for_a_later_phase_asks_for_the_milestones_it_never_had(/* BUG-228 */)
+    {
+        var c = NewCase();
+        c.ChangePhase(CasePhase.Triage, null, "ic1", Now.AddHours(1));
+        c.ChangePhase(CasePhase.Closed, null, "ic1", Now.AddHours(2));   // closed from Triage: no contained or resolved time
+        c.SkipsContainment(CasePhase.PostIncident).Should().BeTrue();
+        c.SkipsRecovery(CasePhase.PostIncident).Should().BeTrue();
+        c.SkipsContainment(CasePhase.Containment).Should().BeFalse();
+        c.Invoking(x => x.ChangePhase(CasePhase.PostIncident, "new evidence", "ic1", Now.AddHours(3)))
+            .Should().Throw<ArgumentException>();
+
+        c.ChangePhase(CasePhase.PostIncident, "new evidence", "ic1", Now.AddHours(3),
+            containedAtUtc: Now.AddMinutes(90), resolvedAtUtc: Now.AddMinutes(100));
+        c.ContainedAtUtc.Should().Be(Now.AddMinutes(90));
+        c.ResolvedAtUtc.Should().Be(Now.AddMinutes(100));
+        c.ClosedAtUtc.Should().BeNull();
+    }
+
+    [Fact]
     public void The_detected_time_cant_move_past_a_complex_events_promotion(/* BUG-164 */)
     {
         var c = Case.Open(2026, 0, "Beaconing", "Odd beaconing", classification: null, Severity.Medium,
