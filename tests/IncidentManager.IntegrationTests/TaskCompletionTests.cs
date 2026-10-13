@@ -450,6 +450,22 @@ public sealed class TaskCompletionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_formatted_then_question_pairs_with_its_task(/* WF-25 */)
+    {
+        var (svc, caseId, _) = await CaseWithTask();
+        await svc.ReviseBriefAsync(caseId, null, "Lure reached Finance", null, null, null);
+
+        await svc.AddTimelineEntryAsync(caseId, TimelineKind.Investigation, TimelineEntryType.Analysis, _clock.UtcNow,
+            "Reviewed the backup logs.", null, followUps: new EntryFollowUps(Question: "Was `svc_backup` used?", QuestionTask: true));
+
+        var c = (await svc.GetDetailAsync(caseId))!;
+        var brief = c.Briefs.Single(b => b.IsCurrent);
+        brief.OpenQuestions.Should().Be("- Was `svc_backup` used?");
+        c.ActionItems.Single(t => t.RaisedFromBriefId == brief.Id).Title.Should().Be("Was svc_backup used?",
+            "the brief pairs a question with its task by the question's plain text");
+    }
+
+    [Fact]
     public async Task Completing_a_task_can_add_its_finding_to_Known(/* RD-10 */)
     {
         var (svc, caseId, taskId) = await CaseWithTask();

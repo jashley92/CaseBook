@@ -1418,7 +1418,9 @@ public sealed class CaseService
             var nextSteps = CaseNext.Snapshot(c, _clock.UtcNow, u => _users?.DisplayFor(u) ?? u);
             c.ReviseBrief(c.Summary, cur?.WorkingAssessment, Append(cur?.Known, known), Append(cur?.OpenQuestions, question),
                 nextSteps, _user.UserId, _clock.UtcNow);
-            if (question is not null && f.QuestionTask) c.RaiseTaskFromQuestion(question, _user.UserId, _clock.UtcNow);
+            // WF-25: titled as the brief pairs a question with its task (its plain text), as AddOpenQuestionAsync does; a
+            // question with formatting or a tag otherwise never paired, and the brief kept offering a second task.
+            if (question is not null && f.QuestionTask) c.RaiseTaskFromQuestion(Content.MarkdownService.PlainLine(question), _user.UserId, _clock.UtcNow);
         }
 
         if (f.LinkCaseId is { } other)
