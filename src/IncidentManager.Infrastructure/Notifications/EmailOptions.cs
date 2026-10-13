@@ -31,6 +31,8 @@ public sealed class EmailOptions
     private string[] _integrity = [];
 
     // BUG-98: an administered list blanks the file's longer list past its end; blank entries aren't recipients.
+    // BUG-241: a list written in the file as "a@x; b@x" is split too (the admin page splits and checks it).
     private static string[] Addresses(string[]? value) =>
-        (value ?? []).Where(a => !string.IsNullOrWhiteSpace(a)).Select(a => a.Trim()).ToArray();
+        (value ?? []).SelectMany(a => (a ?? "").Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .ToArray();
 }

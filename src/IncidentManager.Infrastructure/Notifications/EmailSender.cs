@@ -93,11 +93,22 @@ public sealed class EmailSender : IEmailSender
         }
     }
 
-    private static async Task DeliverAsync(EmailOptions o, IReadOnlyCollection<string> to, string subject,
+    private async Task DeliverAsync(EmailOptions o, IReadOnlyCollection<string> to, string subject,
         string textBody, string? htmlBody, CancellationToken ct)
     {
         using var message = new MailMessage { From = new MailAddress(o.From), Subject = subject };
-        foreach (var addr in to) message.To.Add(addr);
+        // BUG-241: one bad address (a typo in a list set in the file) mustn't stop the message reaching the rest.
+        var bad = 0;
+        foreach (var addr in to)
+        {
+            if (MailAddress.TryCreate(addr, out var parsed)) message.To.Add(parsed);
+            else bad++;
+        }
+        if (bad > 0)
+        {
+            if (message.To.Count == 0) throw new FormatException($"None of the {to.Count} recipient address(es) is a valid email address.");
+            _log.LogWarning("Skipped {Bad} recipient address(es) that aren't valid email addresses; sending to {Good}.", bad, message.To.Count);
+        }
 
         if (htmlBody is null)
         {

@@ -6,6 +6,17 @@ namespace IncidentManager.UnitTests;
 
 public class SettingsCatalogTests
 {
+    [Fact]
+    public void A_distribution_list_holds_addresses_only_and_a_pasted_list_is_split(/* BUG-241 */)
+    {
+        var legal = SettingsCatalog.ByKey["Email:LegalDistribution"];
+        SettingsCatalog.Normalize(legal, "legal@corp.com; privacy@corp.com\nciso@corp.com")
+            .Should().Be("legal@corp.com\nprivacy@corp.com\nciso@corp.com");
+        SettingsCatalog.Problem(legal, "legal").Should().Contain("isn't an email address");
+        SettingsCatalog.Problem(legal, "Legal Team <legal@corp.com>").Should().Contain("isn't an email address");
+        SettingsCatalog.Problem(SettingsCatalog.ByKey["Email:IntegrityAlertDistribution"], "soc@corp.com").Should().BeNull();
+    }
+
     private static SettingDefinition Def(SettingKind kind) =>
         new("Test:Key", "Test", "Group", kind, "desc");
 

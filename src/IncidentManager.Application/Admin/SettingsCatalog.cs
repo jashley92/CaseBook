@@ -27,7 +27,8 @@ public sealed record SettingDefinition(
     IReadOnlyList<SettingOption>? Options = null,
     int Min = 0,
     int? Max = null,
-    bool BlankIsOff = false);
+    bool BlankIsOff = false,
+    bool EmailList = false);
 
 /// <summary>One allowed value of a fixed-choice text setting, shown as a dropdown instead of a free-text box.</summary>
 public sealed record SettingOption(string Value, string Label);
@@ -76,9 +77,11 @@ public static class SettingsCatalog
         new SettingDefinition("Email:From", "From address", "Notifications", SettingKind.Text,
             "Envelope-from address for outbound notifications.", "incident-manager@localhost"),
         new SettingDefinition("Email:LegalDistribution", "Legal / Privacy distribution", "Notifications", SettingKind.MultiText,
-            "Emailed when a case is escalated to Breach. One address per line.", ""),
+            "Emailed when a case is escalated to Breach. One address per line (a pasted \"a@x; b@x\" list is split).", "",
+            EmailList: true),
         new SettingDefinition("Email:IntegrityAlertDistribution", "Integrity-alert distribution", "Notifications", SettingKind.MultiText,
-            "Emailed if the audit hash chain fails verification, a possible sign of tampering. One address per line. A critical SIEM event is sent either way.", ""),
+            "Emailed if the audit hash chain fails verification, a possible sign of tampering. One address per line. A critical SIEM event is sent either way.", "",
+            EmailList: true),
         new SettingDefinition("Email:AssignmentNotifications", "Assignment notifications", "Notifications", SettingKind.Bool,
             "Emails people when they're assigned to a case. Self-assignments are skipped. Needs an email address on file and Send email on.", "false"),
         new SettingDefinition("Notifications:OverdueScan:Enabled", "Overdue task reminders", "Notifications", SettingKind.Bool,
@@ -308,6 +311,18 @@ public static class SettingsCatalog
     /// Validates and canonicalizes a raw value for a setting. Throws <see cref="ArgumentException"/>
     /// with a user-facing message on invalid input. Returns the value as it should be stored.
     /// </summary>
+    // BUG-241: a distribution list holds addresses and nothing else. .NET reads "legal@corp.com; privacy@corp.com" as one
+    // address (privacy@, with "legal@corp.com;" as its display name), so Legal silently missed breach emails; and a line
+    // that isn't an address failed the send to everyone on the list. Lists pasted with ; or , are split here.
+    private static IEnumerable<string> EmailAddresses(SettingDefinition def, IEnumerable<string> lines)
+    {
+        var addresses = lines.SelectMany(l => l.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).ToList();
+        foreach (var a in addresses)
+            if (!System.Net.Mail.MailAddress.TryCreate(a, out var parsed) || !string.Equals(parsed.Address, a, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException($"{def.Label}: \"{a}\" isn't an email address. Put one address per line, like legal@contoso.com.");
+        return addresses.Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
     public static string? Normalize(SettingDefinition def, string? value)
     {
         var v = value?.Trim();
@@ -330,6 +345,7 @@ public static class SettingsCatalog
                 var lines = v.Replace("\r\n", "\n").Split('\n')
                     .Select(x => x.Trim())
                     .Where(x => x.Length > 0);
+                if (def.EmailList) lines = EmailAddresses(def, lines);
                 return string.Join("\n", lines);
 
             default:
