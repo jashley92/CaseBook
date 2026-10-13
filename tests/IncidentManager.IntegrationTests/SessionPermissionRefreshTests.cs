@@ -58,6 +58,25 @@ public sealed class SessionPermissionRefreshTests
     private static IEnumerable<string> Perms(ClaimsPrincipal p) => p.FindAll(AppClaimTypes.Permission).Select(c => c.Value);
 
     [Fact]
+    public void A_granted_role_named_like_an_ad_group_isnt_read_as_that_group(/* WF-42 */)
+    {
+        var d = Standard();
+        d.Roles["IR-Leads"] = [Permission.ViewCases];
+        d.Groups["IR-Leads"] = ["IR-Leads", "IncidentCommander"];   // the group of the same name grants more
+        d.Groups["SOC-Tier3"] = ["IR-Leads"];
+        var user = WindowsUser(d, "SOC-Tier3");
+        var refresher = new SessionPermissionRefresher(d, windowsMode: true);
+
+        refresher.Refresh(user).Should().BeNull("SOC-Tier3 still grants exactly IR-Leads");
+
+        d.Groups.Remove("SOC-Tier3");   // the mapping that granted it is removed
+        var refreshed = refresher.Refresh(user);
+        refreshed.Should().NotBeNull();
+        refreshed!.IsInRole("IR-Leads").Should().BeFalse();
+        refreshed.IsInRole("IncidentCommander").Should().BeFalse();
+    }
+
+    [Fact]
     public void An_unchanged_session_is_left_alone()
     {
         var d = Standard();

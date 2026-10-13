@@ -66,7 +66,10 @@ public sealed class RoleClaimsTransformer : IClaimsTransformation
     public static IReadOnlySet<string> GroupCandidates(ClaimsPrincipal principal)
     {
         var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var c in principal.Claims)
+        // WF-42: only the signed-in identity's claims. The roles CaseBook grants ride on an unauthenticated identity it
+        // adds (here and in the S-10 re-check); read as groups, a role named like an AD group picked up that group's
+        // mappings, and a removed mapping never took the role away.
+        foreach (var c in principal.Identities.Where(i => i.IsAuthenticated).SelectMany(i => i.Claims))
         {
             if (c.Type != ClaimTypes.Role && c.Type != ClaimTypes.GroupSid) continue;
             candidates.Add(c.Value);
