@@ -40,9 +40,10 @@ public sealed partial class ConfigBundleService
             throw new InvalidOperationException(
                 $"This bundle is schema v{env.SchemaVersion}, newer than this app supports (v{ConfigBundleJson.CurrentSchemaVersion}). Upgrade CaseBook first.");
 
+        RefuseBorrowedKeyId(env);
         var verification = new ConfigVerification(
             SignatureValid: SignatureValid(env),
-            SignedByThisInstance: string.Equals(env.KeyId, _signer.KeyId, StringComparison.Ordinal),
+            SignedByThisInstance: HeldByThisServer(env.PublicKeyPem),
             KeyId: env.KeyId,
             ExportedBy: env.ExportedBy,
             ExportedAtUtc: env.ExportedAtUtc,
@@ -51,6 +52,41 @@ public sealed partial class ConfigBundleService
             SourceHost: env.SourceHost);
 
         return (env, verification);
+    }
+
+    // BUG-221: "signed by this instance" is decided by the key the bundle carries (the one its signature was checked
+    // against), never by the key id it states: the id is public (every export, the compliance bundle, the seals), so
+    // anyone could copy it into a bundle signed with their own key and skip the "source I trust" confirmation.
+    private bool HeldByThisServer(string publicKeyPem)
+    {
+        var carried = SubjectPublicKeyInfo(publicKeyPem);
+        return carried is not null && _signer.VerificationKeys.Any(k =>
+            SubjectPublicKeyInfo(k.PublicKeyPem) is { } held && held.AsSpan().SequenceEqual(carried));
+    }
+
+    private static byte[]? SubjectPublicKeyInfo(string? pem)
+    {
+        if (string.IsNullOrWhiteSpace(pem)) return null;
+        try
+        {
+            using var rsa = RSA.Create();
+            rsa.ImportFromPem(pem);
+            return rsa.ExportSubjectPublicKeyInfo();
+        }
+        catch (Exception ex) when (ex is FormatException or CryptographicException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    // A bundle that names one of this server's key ids but carries a different key is made to look like a re-import.
+    private void RefuseBorrowedKeyId(ConfigBundleEnvelope env)
+    {
+        if (_signer.VerificationKeys.Any(k => string.Equals(k.KeyId, env.KeyId, StringComparison.OrdinalIgnoreCase))
+            && !HeldByThisServer(env.PublicKeyPem))
+            throw new InvalidOperationException(
+                $"This bundle says it was signed with this server's key ({env.KeyId}), but the key it carries is a different " +
+                "one, so it was made to look like this server's own export. Nothing was imported.");
     }
 
     private static bool SignatureValid(ConfigBundleEnvelope env) =>
@@ -188,7 +224,8 @@ public sealed partial class ConfigBundleService
         if (!SignatureValid(envelope))
             throw new InvalidOperationException(
                 "This bundle's signature doesn't verify, so it was altered after export. Nothing was imported.");
-        var foreignKey = !string.Equals(envelope.KeyId, _signer.KeyId, StringComparison.Ordinal);
+        RefuseBorrowedKeyId(envelope);
+        var foreignKey = !HeldByThisServer(envelope.PublicKeyPem);
         if (foreignKey && !sourceTrusted)
             throw new InvalidOperationException(
                 "This bundle is signed with a key this server doesn't hold, so its signature can't show who made it. " +

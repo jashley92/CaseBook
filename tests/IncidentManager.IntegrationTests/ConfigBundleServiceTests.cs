@@ -257,6 +257,27 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_bundle_that_borrows_this_servers_key_id_is_refused(/* BUG-221 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var incoming = live with { DataElements = live.DataElements.Append(new ConfigDataElement("Passport", "Passport", 20, true, false, "US")).ToList() };
+        var other = new RsaSealSigner(Options.Create(new SealSigningOptions { SigningKeyPath = Path.Combine(_workDir, "forger.pem"), AllowKeyGeneration = true }));
+        // Signed with another key, but stating this server's (public) key id.
+        var forged = new ConfigBundleEnvelope(ConfigBundleJson.FormatTag, ConfigBundleJson.CurrentSchemaVersion, "test", _clock.UtcNow,
+            "someone", "elsewhere", other.Algorithm, _signer.KeyId, other.PublicKeyPem, other.Sign(ConfigBundleJson.Canonicalize(incoming)), incoming);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(forged, ConfigBundleJson.File));
+
+        var parse = () => svc.ParseAndVerify(bytes);
+        parse.Should().Throw<InvalidOperationException>().WithMessage("*carries is a different one*");
+        var import = () => svc.ImportAsync(forged, sourceTrusted: true);
+        await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*carries is a different one*");
+        (await db.DataElements.AsNoTracking().AnyAsync(e => e.Key == "Passport")).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Reimporting_an_unchanged_bundle_shows_no_changes()
     {
         await using var db = NewContext();
