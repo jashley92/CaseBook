@@ -72,14 +72,15 @@
         var id = CaseId;
         var c = await Cases.GetDetailAsync(id);
         if (id != CaseId) return;
-        _case = c;
-        if (c is not null)
-        {
-            _taskResults = await Cases.GetTaskResultsAsync(c.Id);
-            _notify = await Deadlines.EvaluateAsync(c.Id);
-            await AccessLog.RecordCaseOpenAsync(c.Id, c.CaseNumber, c.IsRestricted);
-        }
+        // REV-44: every await is a chance for the panel to have moved to another case; what arrives late for this one is
+        // dropped, so the briefing never shows beside another case's task results or deadlines.
+        var taskResults = c is null ? new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>() : await Cases.GetTaskResultsAsync(c.Id);
+        if (id != CaseId) return;
+        var notify = c is null ? null : await Deadlines.EvaluateAsync(c.Id);
+        if (id != CaseId) return;
+        (_case, _taskResults, _notify) = (c, taskResults, notify);
         _loading = false;
+        if (c is not null) await AccessLog.RecordCaseOpenAsync(c.Id, c.CaseNumber, c.IsRestricted);
     }
 
     private Task OnKey(KeyboardEventArgs e)
