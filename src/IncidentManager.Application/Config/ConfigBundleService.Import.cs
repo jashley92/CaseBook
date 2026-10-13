@@ -121,6 +121,7 @@ public sealed partial class ConfigBundleService
         CheckNaturalKeys(incoming);                      // and two items that differ only in case
         CheckSingleActiveGates(incoming, live);          // and a second active gate on one transition
         CheckItems(incoming, live);                      // and an item the admin pages would refuse
+        CheckTaxonomy(incoming, live);                   // WF-45: taxonomy keys too
         var items = new List<ConfigDiffItem>();
 
         Diff("Setting", incoming.Settings.Where(IsImportableSetting), live.Settings, s => s.Key, items);
@@ -242,6 +243,50 @@ public sealed partial class ConfigBundleService
             throw new ArgumentException("This bundle can't be imported: " + string.Join(" ", problems));
     }
 
+    /// <summary>
+    /// WF-45: taxonomy keys get the Taxonomy page's rules, not free text: a label of at most its length, hiding and
+    /// ordering only for a list that allows it, an order naming each member once, and at least one option left visible.
+    /// A key for a list this version doesn't know is left alone (a newer server's bundle).
+    /// </summary>
+    private static void CheckTaxonomy(ConfigBundle incoming, ConfigBundle live)
+    {
+        var problems = new List<string>();
+        var hidden = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var x in live.Settings.Where(x => x.Key.StartsWith(TaxonomyCatalog.KeyPrefix, StringComparison.OrdinalIgnoreCase)))
+            hidden[x.Key] = string.Equals(x.Value?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+        foreach (var x in incoming.Settings.Where(x => x.Key.StartsWith(TaxonomyCatalog.KeyPrefix, StringComparison.OrdinalIgnoreCase)))
+        {
+            var parts = x.Key.Split(':');
+            var kind = parts.Length > 2 ? TaxonomyCatalog.Kinds.FirstOrDefault(k => string.Equals(k.Id, parts[1], StringComparison.OrdinalIgnoreCase)) : null;
+            if (kind is null) continue;
+            var value = x.Value?.Trim() ?? "";
+            switch (parts[2].ToLowerInvariant())
+            {
+                case "label" when value.Length > TaxonomyAdminService.MaxLabelLength:
+                    problems.Add($"A {kind.Title} label is longer than {TaxonomyAdminService.MaxLabelLength} characters.");
+                    break;
+                case "hidden" or "order" when !kind.AllowVisibilityOrder:
+                    problems.Add($"{kind.Title} can't be hidden or reordered.");
+                    break;
+                case "hidden":
+                    hidden[x.Key] = string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+                    break;
+                case "order":
+                    var listed = value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+                    var members = kind.Members.Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
+                    if (value.Length > 0 && (listed.Length != members.Count || !listed.All(members.Contains)
+                                             || listed.Distinct(StringComparer.Ordinal).Count() != listed.Length))
+                        problems.Add($"The order for {kind.Title} must list each of its options exactly once.");
+                    break;
+            }
+        }
+        foreach (var kind in TaxonomyCatalog.Kinds.Where(k => k.AllowVisibilityOrder))
+            if (kind.Members.All(m => hidden.GetValueOrDefault(TaxonomyCatalog.HiddenKey(kind.Id, m.Value))))
+                problems.Add($"It would hide every {kind.Title} option; at least one must stay visible.");
+        if (problems.Count > 0)
+            throw new ArgumentException("This bundle can't be imported: " + string.Join(" ", problems.Distinct()));
+    }
+
     private static void CheckNaturalKeys(ConfigBundle bundle)
     {
         static IEnumerable<string> Check<T>(string section, IEnumerable<T>? items, Func<T, string?> key) =>
@@ -300,6 +345,7 @@ public sealed partial class ConfigBundleService
         var liveBefore = await BuildBundleAsync(ct);
         CheckSingleActiveGates(bundle, liveBefore);
         CheckItems(bundle, liveBefore);
+        CheckTaxonomy(bundle, liveBefore);
 
         using var db = _factory.CreateDbContext();
         var now = _clock.UtcNow;
@@ -339,23 +385,34 @@ public sealed partial class ConfigBundleService
             {
                 if (Role.NameProblem(r.Name) is { } problem) throw new ArgumentException($"Role '{r.Name}': {problem}");
                 db.Roles.Add(new Role { Name = r.Name, Description = r.Description, IsSystem = false,
-                    PermissionsCsv = r.PermissionsCsv, UpdatedAtUtc = now, UpdatedBy = actor });
+                    PermissionsCsv = PermissionNames(r.PermissionsCsv), UpdatedAtUtc = now, UpdatedBy = actor });
                 changedRoles.Add(r.Name);
                 Tally(true, true);
             }
             else if (existing.IsSystem) { unchanged++; }   // never touch a system role via import
             else
             {
-                var changed = existing.Description != r.Description || existing.PermissionsCsv != r.PermissionsCsv;
-                if (changed) { existing.Description = r.Description; existing.PermissionsCsv = r.PermissionsCsv; existing.UpdatedAtUtc = now; existing.UpdatedBy = actor; changedRoles.Add(r.Name); }
+                var perms = PermissionNames(r.PermissionsCsv);
+                var changed = existing.Description != r.Description
+                              || !existing.GetPermissions().SetEquals(Role.ParsePermissions(perms));
+                if (changed) { existing.Description = r.Description; existing.PermissionsCsv = perms; existing.UpdatedAtUtc = now; existing.UpdatedBy = actor; changedRoles.Add(r.Name); }
                 Tally(false, changed);
             }
         }
 
         // --- AD mappings (existence grants; create if missing) ---
         var mappings = await db.RoleMappings.ToListAsync(ct);
-        foreach (var m in bundle.RoleMappings)
+        foreach (var raw in bundle.RoleMappings)
         {
+            // WF-45: as the Roles page: a mapping needs an AD group and a role that exists (one this bundle adds counts),
+            // stored with the role's own spelling. A dormant grant would otherwise wait for a later role of that name.
+            var group = (raw.AdGroup ?? "").Trim();
+            if (group.Length == 0)
+                throw new ArgumentException($"This bundle can't be imported: a mapping to role '{raw.RoleName}' has no AD group.");
+            var role = db.Roles.Local.FirstOrDefault(x => string.Equals(x.Name, raw.RoleName?.Trim(), StringComparison.OrdinalIgnoreCase))
+                ?? throw new ArgumentException(
+                    $"This bundle can't be imported: AD group '{group}' is mapped to role '{raw.RoleName}', which doesn't exist here or in the bundle.");
+            var m = raw with { AdGroup = group, RoleName = role.Name };
             // BUG-136: AD group and role names match ignoring case, as SQL Server's unique index does (and AD itself).
             var exists = mappings.Any(x => string.Equals(x.AdGroup, m.AdGroup, StringComparison.OrdinalIgnoreCase)
                                            && string.Equals(x.RoleName, m.RoleName, StringComparison.OrdinalIgnoreCase));
@@ -420,7 +477,7 @@ public sealed partial class ConfigBundleService
             if (existing is null)
             {
                 var created = new StageGate { Trigger = trigger, IsActive = g.IsActive, Name = g.Name,
-                    Description = g.Description, CommentaryMinLength = g.CommentaryMinLength,
+                    Description = g.Description, CommentaryMinLength = Math.Max(0, g.CommentaryMinLength),
                     CreatedBy = actor, CreatedAtUtc = now };
                 created.Requirements = g.Requirements.Select(r => NewRequirement(created.Id, r)).ToList();
                 db.StageGates.Add(created);
@@ -431,7 +488,7 @@ public sealed partial class ConfigBundleService
             {
                 existing.Name = g.Name;   // BUG-240: as for case templates
                 existing.Trigger = trigger; existing.IsActive = g.IsActive; existing.Description = g.Description;
-                existing.CommentaryMinLength = g.CommentaryMinLength;
+                existing.CommentaryMinLength = Math.Max(0, g.CommentaryMinLength);
                 existing.ModifiedBy = actor; existing.ModifiedAtUtc = now;
                 db.StageGateRequirements.RemoveRange(existing.Requirements);
                 existing.Requirements.Clear();
@@ -526,7 +583,7 @@ public sealed partial class ConfigBundleService
             if (existing is null)
             {
                 db.CaseOutcomes.Add(new CaseOutcome { Key = o.Key, Label = o.Label, Description = o.Description,
-                    SortOrder = o.SortOrder, IsActive = o.IsActive, IsSystem = o.IsSystem, CreatedBy = actor, CreatedAtUtc = now });
+                    SortOrder = o.SortOrder, IsActive = o.IsActive, IsSystem = false, CreatedBy = actor, CreatedAtUtc = now });   // WF-45: built-ins are seeded, not imported
                 Tally(true, true);
             }
             else
@@ -547,7 +604,8 @@ public sealed partial class ConfigBundleService
             if (existing is null)
             {
                 db.DataElements.Add(new DataElement { Key = d.Key, Label = d.Label,
-                    SortOrder = d.SortOrder, IsActive = d.IsActive, IsSystem = d.IsSystem,
+                    SortOrder = d.SortOrder, IsActive = d.IsActive, IsSystem = false,   // WF-45: built-ins are seeded, not imported
+                   
                     NotificationJurisdictions = d.NotificationJurisdictions, CreatedBy = actor, CreatedAtUtc = now });
                 Tally(true, true);
             }
@@ -700,6 +758,15 @@ public sealed partial class ConfigBundleService
         return (files, warnings);
     }
 
+    // WF-45: a known check's threshold is clamped to its floor (defaulted when absent) and a parameterless one carries none,
+    // as on the Gates page: "at least 0 evidence items" passed every case. An unknown check keeps its value for review.
+    private static int? Threshold(ConfigGateRequirement r) =>
+        GateCheckRegistry.Param(r.Check) is { } spec ? Math.Max(spec.Min, r.CheckParam ?? spec.Default)
+        : GateCheckRegistry.IsKnown(r.Check) ? null : r.CheckParam;
+
+    // WF-45: permissions by name, as the Roles page writes them.
+    private static string PermissionNames(string? csv) => Role.ToCsv(Role.ParsePermissions(csv));
+
     private static StageGateRequirement NewRequirement(Guid gateId, ConfigGateRequirement r) => new()
     {
         GateId = gateId,
@@ -709,7 +776,7 @@ public sealed partial class ConfigBundleService
         // field is still named Check). An unrecognised key is preserved verbatim — the evaluator treats
         // it as unmet and flags it for review, rather than dropping it, so a cross-version bundle is safe.
         CheckKey = string.IsNullOrWhiteSpace(r.Check) ? null : r.Check,
-        CheckParam = r.CheckParam,
+        CheckParam = Threshold(r),
         Label = r.Label,
         IsBlocking = r.IsBlocking
     };

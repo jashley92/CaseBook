@@ -312,6 +312,43 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_bundle_gets_the_admin_pages_rules_for_roles_mappings_gates_and_taxonomy(/* WF-45 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+
+        var orphan = live with { RoleMappings = [.. live.RoleMappings, new ConfigRoleMapping("SOC-Ghosts", "NoSuchRole")] };
+        await ((Func<Task>)(() => svc.ImportAsync(Signed(orphan), sourceTrusted: true))).Should().ThrowAsync<ArgumentException>().WithMessage("*doesn't exist*");
+        var blank = live with { RoleMappings = [.. live.RoleMappings, new ConfigRoleMapping("  ", "Analyst")] };
+        await ((Func<Task>)(() => svc.ImportAsync(Signed(blank), sourceTrusted: true))).Should().ThrowAsync<ArgumentException>().WithMessage("*no AD group*");
+
+        var kind = IncidentManager.Application.Admin.TaxonomyCatalog.Kinds.First(k => k.AllowVisibilityOrder);
+        var hideAll = live with { Settings = [.. live.Settings, .. kind.Members.Select(m =>
+            new ConfigSetting(IncidentManager.Application.Admin.TaxonomyCatalog.HiddenKey(kind.Id, m.Value), "true"))] };
+        await ((Func<Task>)(() => svc.PreviewAsync(hideAll))).Should().ThrowAsync<ArgumentException>().WithMessage("*at least one must stay visible*");
+
+        var template = live.StageGates.First();
+        var zeroGate = new ConfigStageGate(template.Trigger, false, "Imported evidence gate", null,
+            [new ConfigGateRequirement(0, "MachineCheck", GateCheckKeys.AtLeastOneEvidence, 0, "Evidence attached", true)], -5);
+        var numbered = live with
+        {
+            Roles = [.. live.Roles, new ConfigRole("Numbered", null, false, "ViewCases,7,-1")],
+            RoleMappings = [.. live.RoleMappings, new ConfigRoleMapping("SOC-Numbered", "numbered")],
+            StageGates = [.. live.StageGates, zeroGate],
+        };
+        await svc.ImportAsync(Signed(numbered), sourceTrusted: true);
+
+        var role = await db.Roles.AsNoTracking().SingleAsync(r => r.Name == "Numbered");
+        role.PermissionsCsv.Should().Be("ViewCases", "a number isn't a permission name");
+        (await db.RoleMappings.AsNoTracking().SingleAsync(m => m.AdGroup == "SOC-Numbered")).RoleName.Should().Be("Numbered");
+        var gate = await db.StageGates.AsNoTracking().Include(g => g.Requirements).SingleAsync(g => g.Name == "Imported evidence gate");
+        gate.Requirements.Single().CheckParam.Should().Be(1, "the threshold is clamped to the check's floor");
+        gate.CommentaryMinLength.Should().Be(0);
+    }
+
+    [Fact]
     public async Task A_bundle_that_leaves_two_active_gates_on_one_transition_is_refused(/* BUG-237 */)
     {
         await using var db = NewContext();

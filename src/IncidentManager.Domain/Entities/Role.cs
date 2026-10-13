@@ -40,17 +40,22 @@ public class Role : Entity, IHashableEntity
 
     public void SetPermissions(IEnumerable<Permission> permissions, string actor, DateTimeOffset nowUtc)
     {
-        PermissionsCsv = string.Join(',', permissions
-            .Distinct()
-            .OrderBy(p => p.ToString(), StringComparer.Ordinal)
-            .Select(p => p.ToString()));
+        PermissionsCsv = ToCsv(permissions);
         UpdatedBy = actor;
         UpdatedAtUtc = nowUtc;
     }
 
+    /// <summary>Permissions as stored: their names, distinct, in a fixed order.</summary>
+    public static string ToCsv(IEnumerable<Permission> permissions) => string.Join(',', permissions
+        .Distinct()
+        .OrderBy(p => p.ToString(), StringComparer.Ordinal)
+        .Select(p => p.ToString()));
+
+    // WF-45: a permission by its name only. Enum.TryParse also reads "7" (or "-1") as a value, so a config bundle could grant
+    // Administer under a number nobody reading the list would recognise.
     public static IReadOnlySet<Permission> ParsePermissions(string? csv) =>
         (csv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(s => Enum.TryParse<Permission>(s, out var p) ? (Permission?)p : (Permission?)null)
+            .Select(s => s.All(char.IsAsciiLetter) && Enum.TryParse<Permission>(s, out var p) && Enum.IsDefined(p) ? (Permission?)p : (Permission?)null)
             .Where(p => p is not null)
             .Select(p => p!.Value)
             .ToHashSet();

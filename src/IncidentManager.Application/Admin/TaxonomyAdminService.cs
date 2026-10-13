@@ -25,7 +25,7 @@ public sealed record TaxonomyKindView(string Id, string Title, string Descriptio
 /// </summary>
 public sealed class TaxonomyAdminService
 {
-    private const int MaxLabelLength = 60;
+    internal const int MaxLabelLength = 60;
 
     private readonly IAppDbContextFactory _factory;
     private readonly IClock _clock;
