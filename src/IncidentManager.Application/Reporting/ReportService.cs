@@ -14,6 +14,7 @@ namespace IncidentManager.Application.Reporting;
 public sealed class ReportService
 {
     private readonly IAppDbContextFactory _factory;
+    private readonly IOrganizationTimeZone? _zone;   // WF-36
     private readonly IReportGenerator _generator;
     private readonly IReportStore _store;
     private readonly IHashChainService _hasher;
@@ -34,8 +35,9 @@ public sealed class ReportService
         IHashChainService hasher, ICurrentUser user, IClock clock, Content.IMarkdownService markdown,
         IOptionsMonitor<ReportingOptions> reporting, IReportBrandingStore branding, IUserDirectory users,
         ISeverityLabels severityLabels, ITaxonomyDisplay? taxonomy = null, IReportDiagrams? diagrams = null,
-        IReportTemplateEngine? templates = null, IReportTemplateStore? templateStore = null)
+        IReportTemplateEngine? templates = null, IReportTemplateStore? templateStore = null, IOrganizationTimeZone? zone = null)
     {
+        _zone = zone;
         _templates = templates;
         _templateStore = templateStore;
         _diagrams = diagrams;
@@ -806,13 +808,21 @@ public sealed class ReportService
             d.Blocks(Content.RichText.Parse(review.ContributingFactors)), d.Blocks(Content.RichText.Parse(review.WhatWorkedWell)),
             d.Blocks(Content.RichText.Parse(review.OpportunitiesToImprove)), review.NoActionsIdentified);
         var rows = actions.Select(a => new ReportImprovementActionRow(d.Text(a.Title), a.RelatedArea, d.NullableText(Plain(a.Details)),
-            a.Owner is null ? "Unassigned" : _users.DisplayFor(a.Owner), a.TargetDateUtc,
+            a.Owner is null ? "Unassigned" : _users.DisplayFor(a.Owner), OrgDay(a.TargetDateUtc),
             Lessons.LessonsService.StatusLabel(a.Status), d.NullableText(Plain(a.OutcomeNote)))).ToList();
         return (printed, rows, canonical);
     }
 
     // Table cells can't carry styling: keep list markers and line breaks, drop emphasis.
     private static string? Plain(string? markdown) => string.IsNullOrWhiteSpace(markdown) ? null : Content.RichText.ToText(markdown);
+
+    /// <summary>
+    /// WF-36: a value that stands for a day (a task's due date, an improvement target, the day a materiality call was
+    /// made) carried in the organization's zone, so the report prints the day that was picked. A bare date is stored as
+    /// 23:59 where it was picked, so as a UTC date it read a day late for anyone west of UTC. Times keep printing in UTC.
+    /// </summary>
+    private DateTimeOffset? OrgDay(DateTimeOffset? t) =>
+        t is { } v && _zone?.Current is { } z ? TimeZoneInfo.ConvertTime(v, z) : t;
 
     private CaseReportModel BuildModel(Case c, DateTimeOffset now, ReportLogo? logo, IReadOnlyList<ReportSection> sections,
         string? dataElementsSummary, string? notificationTriggersSummary, TlpLevel? tlp = null,
@@ -863,7 +873,7 @@ public sealed class ReportService
                 ? null : MaterialityLabel(c.Materiality.Status),
             MaterialityDetermined = c.Materiality.IsDetermined,
             MaterialityDecisionMaker = c.Materiality.DecisionMaker,
-            MaterialityDecidedOnUtc = c.Materiality.DecidedOnUtc,
+            MaterialityDecidedOnUtc = OrgDay(c.Materiality.DecidedOnUtc),
             MaterialityRationale = d.NullableText(c.Materiality.Rationale),
             DetectedAtUtc = c.DetectedAtUtc,
             ReportedAtUtc = c.ReportedAtUtc,
@@ -936,7 +946,7 @@ public sealed class ReportService
                 // Owner may be a user id (playbook tasks default to the case owner) or free text; resolve
                 // ids to display names, pass free text through, so the examiner report never shows a raw id.
                 // HR-02: a done task prints what it found or did, when, and who did it.
-                .Select(x => new ReportActionItemRow(d.Text(x.Title), _users.DisplayFor(x.Owner), x.DueAtUtc, TaskStatusLabel(x.Status),
+                .Select(x => new ReportActionItemRow(d.Text(x.Title), _users.DisplayFor(x.Owner), OrgDay(x.DueAtUtc), TaskStatusLabel(x.Status),
                     x.Status == ActionItemStatus.Done && taskResults.TryGetValue(x.Id, out var r) ? d.Text(r.Text) : null,
                     x.Status == ActionItemStatus.Done ? x.CompletedAtUtc : null,
                     x.Status == ActionItemStatus.Done && x.CompletedBy is { } by ? _users.DisplayFor(by) : null))

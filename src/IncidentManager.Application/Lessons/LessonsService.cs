@@ -73,8 +73,12 @@ public sealed class LessonsService
     private readonly IClock _clock;
     private readonly IUserDirectory _users;
 
-    public LessonsService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, IUserDirectory users)
+    private readonly IOrganizationTimeZone? _zone;   // WF-36
+
+    public LessonsService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, IUserDirectory users,
+        IOrganizationTimeZone? zone = null)
     {
+        _zone = zone;
         _factory = factory;
         _user = user;
         _clock = clock;
@@ -285,14 +289,14 @@ public sealed class LessonsService
     {
         var register = await GetRegisterAsync(filter, ct);
         var sb = new StringBuilder();
-        sb.AppendLine("Case,Case title,Exercise,Improvement action,Related area,Details,Owner,Target date (UTC),Status,Past target date,Closed (UTC),Outcome note,Logged (UTC)");
+        sb.AppendLine("Case,Case title,Exercise,Improvement action,Related area,Details,Owner,Target date,Status,Past target date,Closed (UTC),Outcome note,Logged (UTC)");
         foreach (var r in register.Rows)
         {
             var a = r.Action;
             sb.AppendLine(string.Join(',', new[]
             {
                 r.CaseNumber, r.CaseTitle, r.IsExercise ? "Yes" : "No", a.Title, a.RelatedArea, Plain(a.Details),
-                a.OwnerId is null ? "" : a.OwnerName, Date(a.TargetDateUtc), StatusLabel(a.Status), a.IsPastTarget ? "Yes" : "No",
+                a.OwnerId is null ? "" : a.OwnerName, OrgDate(a.TargetDateUtc), StatusLabel(a.Status), a.IsPastTarget ? "Yes" : "No",
                 Date(a.ClosedAtUtc), Plain(a.OutcomeNote), Date(a.CreatedAtUtc)
             }.Select(Csv.Escape)));
         }
@@ -357,6 +361,11 @@ public sealed class LessonsService
     private static string Plain(string? markdown) => string.IsNullOrWhiteSpace(markdown) ? "" : Content.RichText.ToText(markdown);
 
     private static bool Contains(string? s, string term) => s?.Contains(term, StringComparison.OrdinalIgnoreCase) == true;
+
+    // WF-36: a target is a day picked in someone's zone (stored as 23:59 there), so it's written as the organization's day.
+    private string OrgDate(DateTimeOffset? d) =>
+        d is { } v ? (_zone?.Current is { } z ? TimeZoneInfo.ConvertTime(v, z) : v.ToUniversalTime()).DateTime
+            .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
 
     private static string Date(DateTimeOffset? d) => d?.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "";
 

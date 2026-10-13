@@ -30,7 +30,9 @@ public static partial class ReportTemplateFields
     public static partial Regex Placeholder();
 
     private static string D(DateTimeOffset? t) => t is { } v ? v.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture) : "";
-    private static string Day(DateTimeOffset? t) => t is { } v ? v.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
+    // WF-36: the day in the value's own offset: the report carries a due date, a target or a decision day in the
+    // organization's zone (ReportService.OrgDay); everything else is UTC.
+    private static string Day(DateTimeOffset? t) => t is { } v ? v.DateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
 
     private static readonly (TemplateField Field, Func<CaseReportModel, string> Value)[] ScalarDefs =
     [

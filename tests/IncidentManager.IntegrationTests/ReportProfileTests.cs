@@ -57,13 +57,39 @@ public sealed class ReportProfileTests : IDisposable
         new IncidentManager.Application.Cases.CreateCaseValidator(), new NoOpCaseNotifications(),
         new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets());
 
-    private ReportService NewReportService()
+    private ReportService NewReportService(IncidentManager.Application.Abstractions.IOrganizationTimeZone? zone = null)
     {
         var store = new FileReportStore(Options.Create(new ReportOutputOptions { RootPath = _reportDir }));
         var branding = new FileReportBrandingStore(Options.Create(new ReportBrandingOptions { RootPath = Path.Combine(_reportDir, "branding") }));
         return new ReportService(NewFactory(), new ReportGenerator(), store, _hasher, _user, _clock,
             new IncidentManager.Application.Content.MarkdownService(), _reporting, branding, new StubUserDirectory(),
-            new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()));
+            new IncidentManager.Infrastructure.Severities.ConfigurationSeverityLabels(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()),
+            zone: zone);
+    }
+
+    private sealed class NewYork : IncidentManager.Application.Abstractions.IOrganizationTimeZone
+    {
+        public TimeZoneInfo Current { get; } = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+    }
+
+    [Fact]
+    public async Task A_due_date_prints_as_the_day_picked_not_the_utc_day(/* WF-36 */)
+    {
+        var caseId = await SeededCaseIdAsync();
+        using (var db = NewContext())
+        {
+            // Due 15 Oct, picked in New York: stored as 23:59 there, which is 16 Oct in UTC.
+            db.ActionItems.Add(new IncidentManager.Domain.Entities.ActionItem { CaseId = caseId, Title = "Rotate keys", DueAtUtc = new DateTimeOffset(2026, 10, 16, 3, 59, 0, TimeSpan.Zero),
+                CreatedBy = "analyst1", CreatedAtUtc = _clock.UtcNow });
+            db.SaveChanges();
+        }
+
+        var model = await NewReportService(new NewYork()).BuildPreviewModelAsync(caseId, null);
+
+        var due = model.ActionItems.Single(a => a.Title == "Rotate keys");
+        IncidentManager.Application.Reporting.ReportTemplateFields.CollectionFor("action.due").Should().NotBeNull();
+        due.DueAtUtc!.Value.DateTime.Date.Should().Be(new DateTime(2026, 10, 15));
+        due.DueAtUtc.Value.UtcDateTime.Should().Be(new DateTime(2026, 10, 16, 3, 59, 0), "the instant is unchanged");
     }
 
     /// <summary>Identity directory stub: resolves ids to themselves — enough for the report footer/owner columns.</summary>

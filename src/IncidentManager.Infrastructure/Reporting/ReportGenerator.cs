@@ -247,7 +247,7 @@ public sealed partial class ReportGenerator : IReportGenerator
             body.AppendChild(P(m.NoActionsText));
         else
             body.AppendChild(WordTable(
-                ["Improvement action", "Related area", "Details", "Owner", "Target (UTC)", "Status"],
+                ["Improvement action", "Related area", "Details", "Owner", "Target", "Status"],   // WF-36: the day, in the organization's zone
                 m.ImprovementActions.Select(a => new[]
                 {
                     a.Title, a.RelatedArea ?? "", CaseReportModel.ActionDetail(a), a.Owner,
@@ -300,7 +300,8 @@ public sealed partial class ReportGenerator : IReportGenerator
         if (m.MaterialityStatus is { } ms)
         {
             var by = string.IsNullOrWhiteSpace(m.MaterialityDecisionMaker) ? "" : $" by {m.MaterialityDecisionMaker}";
-            var on = m.MaterialityDecidedOnUtc is { } d ? string.Create(CultureInfo.InvariantCulture, $" on {d.UtcDateTime:yyyy-MM-dd}") : "";
+            // WF-36: the day the call was made, in the organization's zone (the model carries it there).
+            var on = m.MaterialityDecidedOnUtc is { } d ? string.Create(CultureInfo.InvariantCulture, $" on {d.DateTime:yyyy-MM-dd}") : "";
             body.AppendChild(P($"Materiality: {ms}{(m.MaterialityDetermined ? $", determined{by}{on}" : "")}."));
             if (!string.IsNullOrWhiteSpace(m.MaterialityRationale)) body.AppendChild(P($"Materiality rationale: {m.MaterialityRationale}"));
             any = true;
