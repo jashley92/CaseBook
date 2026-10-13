@@ -18,13 +18,19 @@ public sealed class TransitionDraft
 
     /// <summary>When it happened, as a wall time in the display zone.</summary>
     public DateTime? When { get; set; }
-    /// <summary>The time the draft started at; left there, the transition is stored as happening now.</summary>
-    public DateTime? WhenDefault { get; set; }
+
+    /// <summary>
+    /// REV-25: whether a time was set (typed, nudged or offered). Until then the draft means "now": the box follows the
+    /// clock, and the transition is stored as happening when it's applied. Comparing with the time the draft opened at
+    /// showed that time while saving another, hours later for a close-out draft kept and come back to.
+    /// </summary>
+    public bool Edited { get; set; }
 
     /// <summary>Starts over at "now": no ticks, no override, a fresh time.</summary>
     public void Reset(DateTime nowWall)
     {
-        When = WhenDefault = nowWall;
+        When = nowWall;
+        Edited = false;
         Attested.Clear();
         Override = null;
     }
@@ -58,7 +64,7 @@ public sealed class TransitionDraft
 
     /// <summary>The chosen time as UTC, or null when it was left at the default (it happened now).</summary>
     public DateTimeOffset? EffectiveUtc(TimeZoneInfo zone) =>
-        When is { } w && w != WhenDefault ? WallClock.ToUtc(w, zone) : null;
+        Edited && When is { } w ? WallClock.ToUtc(w, zone) : null;
 
     /// <summary>More than the backdating threshold ago, so the transition needs a reason.</summary>
     public bool Backdated(TimeZoneInfo zone, DateTimeOffset nowUtc) => CaseService.IsBackdated(EffectiveUtc(zone), nowUtc);

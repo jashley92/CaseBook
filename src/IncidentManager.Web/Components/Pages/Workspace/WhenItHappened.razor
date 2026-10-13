@@ -3,10 +3,15 @@
 @inject IClock Clock
 @inject TimeDisplay TimeDisp
 
-@{ var now = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone); var backdated = Draft.Backdated(TimeDisp.Zone, Clock.UtcNow); }
+@{
+    var now = WallClock.ToWall(Clock.UtcNow, TimeDisp.Zone);
+    // REV-25: left alone it means now, so it shows now (to the minute), not the time the sheet was opened.
+    if (!Draft.Edited) Draft.When = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMinute));
+    var backdated = Draft.Backdated(TimeDisp.Zone, Clock.UtcNow);
+}
 <div class="mt-2">
     <label class="form-label small mb-0" for="ws-when">When it happened (@TimeDisp.Label)</label>
-    <input id="ws-when" type="datetime-local" class="form-control form-control-sm" @bind="Draft.When" @bind:event="oninput" @bind:after="() => OnChanged.InvokeAsync()" />
+    <input id="ws-when" type="datetime-local" class="form-control form-control-sm" @bind="Draft.When" @bind:event="oninput" @bind:after="Typed" />
     <TimeNudges Value="Draft.When" ValueChanged="Nudged" Now="@now" />
     @if (Draft.When is { } w && Math.Abs((w - now).TotalMinutes) >= 1)
     {
@@ -27,6 +32,13 @@
     private Task Nudged(DateTime? value)
     {
         Draft.When = value;
+        Draft.Edited = true;
+        return OnChanged.InvokeAsync();
+    }
+
+    private Task Typed()
+    {
+        Draft.Edited = true;
         return OnChanged.InvokeAsync();
     }
 }

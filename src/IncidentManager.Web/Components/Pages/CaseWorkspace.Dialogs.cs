@@ -288,7 +288,7 @@ public partial class CaseWorkspace
     {
         await AdvanceTo(offer.Phase);
         _action.PhaseReason = offer.Achieved;
-        if (offer.At is { } at) _action.Transition.When = WallClock.ToWall(at, TimeDisp.Zone);
+        if (offer.At is { } at) { _action.Transition.When = WallClock.ToWall(at, TimeDisp.Zone); _action.Transition.Edited = true; }
     }
 
 
