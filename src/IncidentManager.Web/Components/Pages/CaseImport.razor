@@ -601,6 +601,7 @@ else if (_pending.Count > 0)
         if (!NewCaseTarget) { _gate.UseGate(null); return; }
         var nc = _preview!.NewCase!;
         nc.PlannedEntityCount = _preview.Entities.Count(e => e.Include && !e.Applied);
+        nc.PlannedDispositions = _preview.Entities.Where(e => e.Include && !e.Applied).Select(e => e.Disposition).ToList();   // WF-16
         var eval = await Cases.EvaluateNewCaseGatesAsync(nc);
         if (eval is not { GateExists: true }) { _gate.UseGate(null); return; }
         if (_gate.Gate?.GateName == eval.GateName) _gate.Gate = eval;   // same gates: keep the ticks
@@ -673,6 +674,7 @@ else if (_pending.Count > 0)
             {
                 var nc = p.NewCase!;
                 nc.PlannedEntityCount = p.Entities.Count(e => e.Include && !e.Applied);
+                nc.PlannedDispositions = p.Entities.Where(e => e.Include && !e.Applied).Select(e => e.Disposition).ToList();   // WF-16
                 nc.AttestedRequirementIds = _gate.Attested.ToHashSet();
                 nc.OverrideJustification = _gate.NeedsOverride ? _gate.Override?.Trim() : null;
             }

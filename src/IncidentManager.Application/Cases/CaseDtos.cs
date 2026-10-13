@@ -10,6 +10,9 @@ public sealed class CreateCaseRequest
     public string? OverrideJustification { get; set; }
     /// <summary>Indicators filed with the case (added just after it's saved), so they count toward its gates.</summary>
     public int PlannedEntityCount { get; set; }
+    /// <summary>WF-16: the verdicts those indicators are filed with (an import carries them), so a gate that counts
+    /// confirmed-malicious or unjudged indicators sees them as they'll be saved. Empty means all Unknown.</summary>
+    public IReadOnlyList<Domain.Enums.EntityDisposition> PlannedDispositions { get; set; } = [];
 
     public string DescriptiveName { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;

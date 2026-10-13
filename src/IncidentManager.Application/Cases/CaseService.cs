@@ -733,7 +733,7 @@ public sealed class CaseService
                 foreach (var trigger in StageGateTriggers.Climb(null, cls))
                     await ApplyGateAsync(db, c, trigger, request.AttestedRequirementIds, request.OverrideJustification,
                         request.OverrideJustification ?? request.Summary, ct,
-                        eval: await _gates.EvaluateNewAsync(db, c, trigger, request.PlannedEntityCount, ct));
+                        eval: await _gates.EvaluateNewAsync(db, c, trigger, request.PlannedEntityCount, ct, request.PlannedDispositions));
 
             db.Cases.Add(c);
             try
@@ -1034,7 +1034,7 @@ public sealed class CaseService
         using var db = _factory.CreateDbContext();
         var gates = new List<GateEvaluation>();
         foreach (var t in StageGateTriggers.Climb(null, cls))
-            gates.Add(await _gates.EvaluateNewAsync(db, c, t, request.PlannedEntityCount, ct));
+            gates.Add(await _gates.EvaluateNewAsync(db, c, t, request.PlannedEntityCount, ct, request.PlannedDispositions));
         return GateEvaluation.Combine(gates, StageGateTriggers.ForClassification(cls)!.Value);
     }
 

@@ -340,6 +340,29 @@ public sealed class StageGateEnforcementTests : IDisposable
     }
 
     [Fact]
+    public async Task A_new_cases_gates_see_the_verdicts_its_indicators_are_filed_with(/* WF-16 */)
+    {
+        await using var db = NewContext();
+        var gate = new StageGate { Trigger = StageGateTrigger.EscalateToIncident, IsActive = true, Name = "Malicious IOC", CreatedBy = "admin", CreatedAtUtc = _clock.UtcNow };
+        gate.Requirements.Add(new StageGateRequirement { GateId = gate.Id, Order = 0, Kind = GateRequirementKind.MachineCheck,
+            CheckKey = GateCheckKeys.AtLeastOneMaliciousEntity, CheckParam = 1, Label = "A confirmed malicious IOC", IsBlocking = true });
+        db.StageGates.Add(gate);
+        await db.SaveChangesAsync();
+        var svc = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new StageGateEvaluator(), new TestSlaTargets());
+        var req = new CreateCaseRequest
+        {
+            DescriptiveName = "Imported", Title = "Imported", Classification = Classification.Incident, Severity = Severity.High,
+            Origin = CaseOrigin.InternalDetection, Summary = "From XSIAM.", PlannedEntityCount = 2,
+            PlannedDispositions = [EntityDisposition.Unknown, EntityDisposition.Unknown],
+        };
+
+        (await svc.EvaluateNewCaseGatesAsync(req))!.IsSatisfiedBy(new HashSet<Guid>()).Should().BeFalse();
+        req.PlannedDispositions = [EntityDisposition.Malicious, EntityDisposition.Unknown];
+        (await svc.EvaluateNewCaseGatesAsync(req))!.IsSatisfiedBy(new HashSet<Guid>()).Should().BeTrue("the import says one is malicious");
+    }
+
+    [Fact]
     public async Task A_case_filed_straight_onto_a_rung_passes_its_gates()
     {
         // BUG-61: creating a case at Incident or Breach ran no gate and recorded no passage.

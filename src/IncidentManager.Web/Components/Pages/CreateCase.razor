@@ -381,6 +381,12 @@
     // Create pauses on it so the check can't be skipped; a second Create then files.
     private bool _overlapPrompt;
 
+    // WF-51: what the seeding will add: one entity per distinct value as stored (refanged, normalised), since a value
+    // already on the case is kept, not added again. Counting raw lines let "1.2.3.4", "1.2.3[.]4" meet "at least 2 entities".
+    private int PlannedIndicatorCount() => IndicatorLines(_indicators)
+        .Select(l => IocObservable.DetectType(l) is var t ? (t, IocObservable.Normalize(t, l).ToLowerInvariant()) : default)
+        .Distinct().Count();
+
     private static IEnumerable<string> IndicatorLines(string? raw) =>
         (raw ?? "").Replace("\r", "").Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0);
 
@@ -406,7 +412,7 @@
     private async Task RefreshGates()
     {
         if (_created is not null) return;
-        _request.PlannedEntityCount = IndicatorLines(_indicators).Count();
+        _request.PlannedEntityCount = PlannedIndicatorCount();
         var eval = await Cases.EvaluateNewCaseGatesAsync(_request);
         if (eval is not { GateExists: true }) { _gate.UseGate(null); return; }
         if (_gate.Gate?.GateName == eval.GateName) _gate.Gate = eval;   // same gates: keep the ticks
@@ -599,7 +605,7 @@
             // FR-03: fold the intake timestamps (entered as wall-clock) into the request as UTC.
             _request.DetectedAtUtc = _detectedWall is { } dw ? WallToUtc(dw) : null;
             _request.OccurredAtUtc = _occurredWall is { } ow ? WallToUtc(ow) : null;
-            _request.PlannedEntityCount = IndicatorLines(_indicators).Count();
+            _request.PlannedEntityCount = PlannedIndicatorCount();
             _request.AttestedRequirementIds = _gate.Attested.ToHashSet();
             _request.OverrideJustification = _gate.NeedsOverride ? _gate.Override?.Trim() : null;
             // REL-04: create exactly once — a retry after a partial-seed failure reuses this case rather
