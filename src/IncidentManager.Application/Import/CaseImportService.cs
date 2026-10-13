@@ -26,8 +26,12 @@ public sealed class CaseImportService
     private readonly IClock _clock;
     private readonly CaseService _cases;
 
-    public CaseImportService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, CaseService cases)
+    private readonly IAuditWriter? _audit;   // WF-18
+
+    public CaseImportService(IAppDbContextFactory factory, ICurrentUser user, IClock clock, CaseService cases,
+        IAuditWriter? audit = null)
     {
+        _audit = audit;
         _factory = factory;
         _user = user;
         _clock = clock;
@@ -369,11 +373,47 @@ public sealed class CaseImportService
     public async Task<IReadOnlyList<PendingImportSummary>> ListPendingAsync(CancellationToken ct = default)
     {
         using var db = _factory.CreateDbContext();
-        return await VisiblePending(db).AsNoTracking()
+        var pending = await VisiblePending(db).AsNoTracking()
             .Where(p => p.Status == PendingImportStatus.Pending)
             .OrderByDescending(p => p.SubmittedAtUtc)
-            .Select(p => new PendingImportSummary(p.Id, p.SubmittedBy, p.SubmittedAtUtc, p.Origin, p.Summary))
+            .Select(p => new PendingImportSummary(p.Id, p.SubmittedBy, p.SubmittedAtUtc, p.Origin, p.Summary, null, null))
             .ToListAsync(ct);
+        // WF-18: an apply that stopped without an exception (a recycle, a crash) left its row claimed with no case, out of
+        // the queue for good. Listed again once the claim is stale, so a reviewer can reopen it.
+        var staleBefore = _clock.UtcNow - StaleClaim;
+        var stuck = (await VisiblePending(db).AsNoTracking()
+                .Where(p => p.Status == PendingImportStatus.Applied && p.ResolvedCaseId == null && p.DecidedAtUtc != null)
+                .Select(p => new { p.Id, p.SubmittedBy, p.SubmittedAtUtc, p.Origin, p.Summary, p.DecidedBy, p.DecidedAtUtc })
+                .ToListAsync(ct))
+            .Where(p => p.DecidedAtUtc < staleBefore)
+            .Select(p => new PendingImportSummary(p.Id, p.SubmittedBy, p.SubmittedAtUtc, p.Origin, p.Summary, p.DecidedBy ?? "", p.DecidedAtUtc));
+        return pending.Concat(stuck).OrderByDescending(p => p.SubmittedAtUtc).ToList();
+    }
+
+    /// <summary>
+    /// WF-18: puts a stuck import (see <see cref="ListPendingAsync"/>) back in the queue, for any reviewer (owner's
+    /// decision). Conditional, so a claim that moved on meanwhile isn't undone; audited, naming whose claim it was.
+    /// The stopped apply may have created a case before it stopped: the preview says so, to check before applying.
+    /// </summary>
+    public async Task<bool> ReopenStuckAsync(Guid pendingId, CancellationToken ct = default)
+    {
+        RequireEdit();
+        using var db = _factory.CreateDbContext();
+        var row = await VisiblePending(db).AsNoTracking().Where(p => p.Id == pendingId)
+            .Select(p => new { p.Status, p.ResolvedCaseId, p.DecidedBy, p.DecidedAtUtc, p.Summary }).FirstOrDefaultAsync(ct);
+        if (row is not { Status: PendingImportStatus.Applied, ResolvedCaseId: null, DecidedAtUtc: { } at }
+            || _clock.UtcNow - at < StaleClaim) return false;
+        var reopened = await VisiblePending(db)
+            .Where(p => p.Id == pendingId && p.Status == PendingImportStatus.Applied && p.ResolvedCaseId == null && p.DecidedAtUtc == at)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(p => p.Status, PendingImportStatus.Pending)
+                .SetProperty(p => p.DecidedBy, (string?)null)
+                .SetProperty(p => p.DecidedAtUtc, (DateTimeOffset?)null), ct);
+        if (reopened != 1) return false;
+        if (_audit is not null)
+            await _audit.RecordAsync(AuditAction.Update, "PendingImport", pendingId.ToString(), null,
+                $"Reopened a stuck import \"{row.Summary}\" (claimed by {row.DecidedBy} at {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC, no case recorded)", ct);
+        return true;
     }
 
     /// <summary>How many imports are awaiting review — for a queue badge.</summary>

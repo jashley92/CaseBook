@@ -107,8 +107,11 @@ public sealed class ImportActionItemRow
 }
 
 /// <summary>A queued programmatic import awaiting human review (PROD-33), for the pending-imports list.</summary>
+/// <param name="StuckClaimedBy">WF-18: set when an apply of it stopped without finishing (claimed by this reviewer, over
+/// <see cref="CaseImportService.StaleClaim"/> ago, with no case recorded); any reviewer can reopen it.</param>
 public sealed record PendingImportSummary(
-    Guid Id, string SubmittedBy, DateTimeOffset SubmittedAtUtc, string? Origin, string Summary);
+    Guid Id, string SubmittedBy, DateTimeOffset SubmittedAtUtc, string? Origin, string Summary,
+    string? StuckClaimedBy = null, DateTimeOffset? StuckSinceUtc = null);
 
 /// <summary>Counts written by an apply, plus the resulting case for navigation.</summary>
 public sealed record CaseImportResult(

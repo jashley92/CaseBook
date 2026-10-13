@@ -860,6 +860,37 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public async Task Any_reviewer_can_reopen_an_import_whose_apply_stopped(/* WF-18 */)
+    {
+        Guid pid;
+        await using (var db = NewContext())
+        {
+            var json = FullDocJson();
+            (pid, _) = await NewImportService(db).SubmitAsync(json, CaseImportService.Parse(json).Document!);
+        }
+        await using var ctx = NewContext();
+        var audit = new IncidentManager.Infrastructure.Security.AuditWriter(NewFactory(), _hasher, _user, _clock);
+        var svc = new CaseImportService(NewFactory(), _user, _clock, NewCaseService(ctx), audit);
+        (await svc.ClaimPendingAsync(pid)).Should().NotBeNull();   // then the process recycles mid-apply
+
+        (await svc.ListPendingAsync()).Should().NotContain(p => p.Id == pid, "an apply may still be running");
+        (await svc.ReopenStuckAsync(pid)).Should().BeFalse();
+
+        _clock.UtcNow = _clock.UtcNow.Add(CaseImportService.StaleClaim).AddMinutes(1);
+        (await svc.ListPendingAsync()).Should().ContainSingle(p => p.Id == pid).Which.StuckClaimedBy.Should().Be(_user.UserId);
+
+        var claimer = _user.UserId;
+        _user.UserId = "analyst2";   // another reviewer
+        try { (await svc.ReopenStuckAsync(pid)).Should().BeTrue(); }
+        finally { _user.UserId = claimer; }
+
+        (await svc.ListPendingAsync()).Should().ContainSingle(p => p.Id == pid).Which.StuckClaimedBy.Should().BeNull();
+        (await svc.BuildPreviewForPendingAsync(pid)).Should().NotBeNull();
+        (await ctx.AuditLog.AsNoTracking().AnyAsync(a => a.EntityType == "PendingImport" && a.Summary!.Contains("Reopened a stuck import")))
+            .Should().BeTrue();
+    }
+
+    [Fact]
     public async Task A_second_tabs_apply_cannot_record_or_release_the_first_tabs_claim(/* BUG-198 */)
     {
         Guid pid;

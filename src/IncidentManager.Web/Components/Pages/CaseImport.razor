@@ -36,11 +36,29 @@ else if (_pending.Count > 0)
                     @foreach (var pi in _pending)
                     {
                         <tr>
-                            <td>@pi.Summary</td>
+                            <td>@pi.Summary
+                                @if (pi.StuckClaimedBy is { } who)
+                                {
+                                    @* WF-18: an apply that stopped part-way; any reviewer can put it back in the queue. *@
+                                    <div class="small text-warning-emphasis">
+                                        <span class="bi bi-exclamation-triangle me-1" aria-hidden="true"></span>An apply by @who stopped without finishing
+                                        @(pi.StuckSinceUtc is { } since ? $"({since.UtcDateTime:yyyy-MM-dd HH:mm} UTC)" : "").
+                                    </div>
+                                }
+                            </td>
                             <td class="small text-muted">@(pi.Origin ?? "—")</td>
                             <td class="small">@pi.SubmittedBy</td>
                             <td class="small text-muted">@pi.SubmittedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm")</td>
-                            <td><a class="btn btn-sm btn-outline-primary" href="cases/import?pending=@pi.Id">Review</a></td>
+                            <td>
+                                @if (pi.StuckClaimedBy is null)
+                                {
+                                    <a class="btn btn-sm btn-outline-primary" href="cases/import?pending=@pi.Id">Review</a>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-warning" @onclick="() => ReopenStuck(pi.Id)">Reopen</button>
+                                }
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -458,6 +476,24 @@ else if (_pending.Count > 0)
     // PROD-33: the pending programmatic-import queue + the one currently under review.
     private Guid? _reviewingPendingId;
     private List<PendingImportSummary> _pending = new();
+    private readonly HashSet<Guid> _reopened = new();
+
+    // WF-18: puts a stuck import back in the queue (audited) and opens it for review.
+    private async Task ReopenStuck(Guid id)
+    {
+        try
+        {
+            if (!await Import.ReopenStuckAsync(id))
+            {
+                Toasts.Error("That import isn't stuck any more. Reload to see where it is.");
+                _pending = (await Import.ListPendingAsync()).ToList();
+                return;
+            }
+            _reopened.Add(id);
+            Nav.NavigateTo($"cases/import?pending={id}");
+        }
+        catch (Exception ex) when (ex is ForbiddenException or InvalidOperationException) { Toasts.Error(ex.Message); }
+    }
     private string? _rejectNote;
     private bool _rejecting;
 
@@ -478,6 +514,9 @@ else if (_pending.Count > 0)
                 }
                 _reviewingPendingId = pid;
                 _preview = preview;
+                if (_reopened.Remove(pid))   // WF-18
+                    _preview.Warnings.Add("An earlier apply of this import stopped without finishing and may have created a case " +
+                                          "before it did. Check the case list for it before applying, and pick it as the target if it's there.");
                 await RefreshGates();
                 _text = null;
                 _error = null;
