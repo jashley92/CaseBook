@@ -244,7 +244,7 @@
                         <div class="im-bf-ob">
                             <ClockMark State="s.State" Label="@($"Notify {s.JurisdictionLabel}")" />
                             <div class="im-bf-sub">
-                                @($"{s.WindowHours} h")@if (s.DueAtUtc is { } due) { <text> · due @TimeDisp.Brief(due, now)</text> }@if (n.ReportedAtUtc is { } rep) { <text> · reported @TimeDisp.Brief(rep, now)</text> }
+                                @($"{s.WindowHours} h")@if (s.DueAtUtc is { } due) { <text> · due @TimeDisp.Brief(due, now)</text> }@if ((s.NotifiedAtUtc ?? n.ReportedAtUtc) is { } rep) { <text> · reported @TimeDisp.Brief(rep, now)</text> }
                             </div>
                         </div>
                     }
@@ -480,7 +480,7 @@
         Part("Why", Decisions().Select(d => $"Decision, {TimeDisp.Short(d.OccurredAtUtc)}: {Plain(d.Description)}"
             + (string.IsNullOrWhiteSpace(d.Rationale) ? "" : $" Why: {d.Rationale}")));
         Part("Obligations", (Notify is { HasClock: true } n ? n.Statuses.Select(s => $"Notify {s.JurisdictionLabel}: {s.WindowHours} h"
-            + (s.DueAtUtc is { } due ? $", due {TimeDisp.Short(due)}" : "") + (n.ReportedAtUtc is { } r ? $", reported {TimeDisp.Short(r)}" : "")) : []));
+            + (s.DueAtUtc is { } due ? $", due {TimeDisp.Short(due)}" : "") + ((s.NotifiedAtUtc ?? n.ReportedAtUtc) is { } r ? $", reported {TimeDisp.Short(r)}" : "")) : []));   // REV-36: each regulator's own notice
         Part("Team", Case.Assignments.OrderBy(a => a.Role).Select(a => $"{Users.DisplayFor(a.UserId)}, {Ui.Label(a.Role)}"));
         return sb.ToString().TrimEnd() + "\n";
     }
