@@ -201,6 +201,14 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.1
+
+A fix to the upgrade script only, with no migration and no change to the app. Upgrading to v1.6.0 or earlier with the
+older script could stop at "Warming up", wait the full three minutes and roll back, although the new build had started.
+Its probe went through the administrator's proxy, which on many servers can't reach the site, and followed redirects
+to an HTTPS address that wasn't bound. The probe now goes straight to the site and says what each attempt got. If you
+were rolled back, upgrade again with this release's script: `-BundleZip` with the v1.6.1 bundle, or `-Version v1.6.1`.
+
 ### v1.6.0
 
 A feature release with no migration. Things to check:
