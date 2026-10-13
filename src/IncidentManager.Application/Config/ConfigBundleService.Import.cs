@@ -402,6 +402,8 @@ public sealed partial class ConfigBundleService
         // --- Word templates (PROD-47; match by name, ignoring case; files were checked above) ---
         var libraryRows = await db.ReportTemplates.ToListAsync(ct);
         var staged = new List<Reporting.StagedTemplate>();   // BUG-199: put in place only once the import is saved
+        // BUG-238: each staged file's row and what it described before, to put back if the file can't be put in place.
+        var stagedRows = new Dictionary<Reporting.StagedTemplate, (ReportTemplate Row, (string FileName, string Sha256, long Size)? Before)>();
         var library = libraryRows.ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
         foreach (var t in bundle.ReportTemplates ?? [])
         {
@@ -412,7 +414,9 @@ public sealed partial class ConfigBundleService
                 var created = new ReportTemplate { Name = t.Name, FileName = fileName, IsActive = t.IsActive,
                     IsLessonsDefault = t.LessonsDefault,
                     Sha256 = t.Sha256.ToLowerInvariant(), SizeBytes = bytes.LongLength, CreatedBy = actor, CreatedAtUtc = now };
-                staged.Add(await _templateStore!.StageAsync(created.Id, bytes, ct));
+                var s = await _templateStore!.StageAsync(created.Id, bytes, ct);
+                staged.Add(s);
+                stagedRows[s] = (created, null);
                 db.ReportTemplates.Add(created);
                 library[t.Name] = created;
                 Tally(true, true);
@@ -422,7 +426,12 @@ public sealed partial class ConfigBundleService
                 var fileChanged = !string.Equals(existing.Sha256, t.Sha256, StringComparison.OrdinalIgnoreCase);
                 var changed = fileChanged || existing.Name != t.Name || existing.FileName != fileName
                     || existing.IsActive != t.IsActive || existing.IsLessonsDefault != t.LessonsDefault;
-                if (fileChanged) staged.Add(await _templateStore!.StageAsync(existing.Id, bytes, ct));
+                if (fileChanged)
+                {
+                    var s = await _templateStore!.StageAsync(existing.Id, bytes, ct);
+                    staged.Add(s);
+                    stagedRows[s] = (existing, (existing.FileName, existing.Sha256, existing.SizeBytes));
+                }
                 if (changed) { existing.Name = t.Name; existing.FileName = fileName; existing.IsActive = t.IsActive;
                     existing.IsLessonsDefault = t.LessonsDefault;
                     existing.Sha256 = t.Sha256.ToLowerInvariant(); existing.SizeBytes = bytes.LongLength;
@@ -540,10 +549,27 @@ public sealed partial class ConfigBundleService
             foreach (var s in staged) await _templateStore!.DiscardAsync(s);
             throw;
         }
-        foreach (var s in staged) await _templateStore!.CommitAsync(s, ct);
+        // BUG-238: a file that can't be put in place (open, read-only) mustn't stop what follows: the roles, mappings and
+        // settings are already saved, so they're applied and streamed to the SIEM whatever happens to a template file.
+        // Its row goes back to the file still there (or, for a new template, is archived until a file is uploaded).
+        var notPlaced = new List<string>();
+        foreach (var s in staged)
+        {
+            try { await _templateStore!.CommitAsync(s, ct); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                var (row, before) = stagedRows[s];
+                notPlaced.Add(row.Name);
+                try { await _templateStore!.DiscardAsync(s); } catch (Exception d) when (d is IOException or UnauthorizedAccessException) { }
+                if (before is { } b) (row.FileName, row.Sha256, row.SizeBytes) = b;
+                else { row.IsActive = false; row.IsLessonsDefault = false; }
+            }
+        }
+        if (notPlaced.Count > 0) await db.SaveChangesAsync(CancellationToken.None);
         await _audit.RecordAsync(AuditAction.Update, "ConfigBundle", null, null,
             $"Imported configuration bundle ({added} added, {updated} updated, {unchanged} unchanged)" +
-            (foreignKey ? $", signed with key {envelope.KeyId} (not this server's), source confirmed trusted" : ""), ct);
+            (foreignKey ? $", signed with key {envelope.KeyId} (not this server's), source confirmed trusted" : "") +
+            (notPlaced.Count > 0 ? $"; the file for {string.Join(", ", notPlaced)} couldn't be put in place and was left as it was" : ""), ct);
 
         // S-18: take effect now (as the settings and roles pages do) rather than at the next restart, and stream each
         // access-affecting change to the SIEM exactly as the per-item pages would, so an import can't hide one.
@@ -556,7 +582,7 @@ public sealed partial class ConfigBundleService
         foreach (var mapping in addedMappings)
             _siem?.Emit(SecurityEvents.MappingChanged("AdGroupMappingImported", _user.UserId, _user.UserPrincipalName, mapping));
 
-        return new ConfigImportResult(added, updated, unchanged, _roles?.IsCurrent ?? true);
+        return new ConfigImportResult(added, updated, unchanged, _roles?.IsCurrent ?? true, notPlaced);
     }
 
     /// <summary>

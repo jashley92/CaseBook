@@ -702,6 +702,37 @@ public sealed class ConfigBundleServiceTests : IDisposable
         return (upload.Id!.Value, profile.Name);
     }
 
+    [WindowsFact]
+    public async Task A_template_file_that_cant_be_put_in_place_doesnt_stop_the_rest_of_the_import(/* BUG-238 */)
+    {
+        var source = NewInstance("src-ro");
+        var (sourceTemplateId, _) = await SeedTemplateDefaultAsync(source.Factory, source.Store);
+        await new IncidentManager.Application.Admin.ReportTemplateService(source.Factory, _user, _clock, _engine, source.Store)
+            .ReplaceFileAsync(sourceTemplateId, "examiner-v2.docx", _engine.LessonsStarter());
+        var target = NewInstance("dst-ro");
+        var (targetTemplateId, _) = await SeedTemplateDefaultAsync(target.Factory, target.Store);
+        string before;
+        using (var db = target.Factory.CreateDbContext()) before = (await db.ReportTemplates.SingleAsync()).Sha256;
+
+        var bundle = (await source.Config.ExportAsync()).Envelope.Bundle;
+        bundle = bundle with { DataElements = bundle.DataElements.Append(new ConfigDataElement("Passport", "Passport", 20, true, false, "US")).ToList() };
+        var live = Directory.EnumerateFiles(Path.Combine(_workDir, "dst-ro", "templates"), "*.docx").Single();
+        File.SetAttributes(live, FileAttributes.ReadOnly);
+        try
+        {
+            var result = await target.Config.ImportAsync(Signed(bundle));
+            result.TemplatesNotPlaced.Should().Equal("Examiner pack");
+            result.TemplatesNotPlacedMessage.Should().Contain("couldn't be put in place");
+            using var db = target.Factory.CreateDbContext();
+            (await db.ReportTemplates.SingleAsync()).Sha256.Should().Be(before, "the row still describes the file that's there");
+            (await db.DataElements.AnyAsync(e => e.Key == "Passport")).Should().BeTrue("the rest of the bundle was imported");
+            (await db.AuditLog.OrderBy(a => a.Sequence).LastAsync(a => a.EntityType == "ConfigBundle")).Summary
+                .Should().Contain("couldn't be put in place");
+            Directory.EnumerateFiles(Path.Combine(_workDir, "dst-ro", "templates"), "*.staged").Should().BeEmpty();
+        }
+        finally { File.SetAttributes(live, FileAttributes.Normal); }
+    }
+
     [Fact]
     public async Task Word_templates_and_profile_defaults_are_promoted_to_another_instance()
     {

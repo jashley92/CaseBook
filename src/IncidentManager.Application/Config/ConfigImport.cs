@@ -30,7 +30,15 @@ public sealed record ConfigVerification(
 /// <summary>Counts applied by an import, per outcome.</summary>
 /// <param name="RolesInEffect">BUG-193: false when the import changed roles or mappings that the role directory couldn't
 /// reload yet (it keeps retrying).</param>
-public sealed record ConfigImportResult(int Added, int Updated, int Unchanged, bool RolesInEffect = true)
+public sealed record ConfigImportResult(int Added, int Updated, int Unchanged, bool RolesInEffect = true,
+    IReadOnlyList<string>? TemplatesNotPlaced = null)
 {
     public int Changed => Added + Updated;
+
+    /// <summary>BUG-238: what to tell the admin about template files that couldn't be put in place, or null.</summary>
+    public string? TemplatesNotPlacedMessage => TemplatesNotPlaced is { Count: > 0 } names
+        ? $"The Word file for {string.Join(", ", names.Select(n => $"\"{n}\""))} couldn't be put in place (it may have been " +
+          "open, or the folder is read-only), so that template was left as it was (a new one is archived). The rest of " +
+          "the bundle was imported. Replace the file from Administration › Report templates."
+        : null;
 }
