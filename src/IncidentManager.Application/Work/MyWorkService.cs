@@ -127,18 +127,6 @@ public sealed class MyWorkService
         return new MyWork(openCases, tasks, recentEscalations);
     }
 
-    /// <summary>
-    /// An action item's <c>Owner</c> is free text (AD id, UPN, display name, or email). Match it against
-    /// any of the current user's identifiers so "my tasks" resolves regardless of which was entered.
-    /// </summary>
-    private bool OwnedByMe(string? owner)
-    {
-        if (string.IsNullOrWhiteSpace(owner)) return false;
-        var o = owner.Trim();
-        return Same(o, _user.UserId) || Same(o, _user.UserPrincipalName)
-            || Same(o, _user.DisplayName) || Same(o, _user.Email);
-
-        static bool Same(string a, string? b) => !string.IsNullOrWhiteSpace(b)
-            && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
-    }
+    /// <summary>An action item's free-text owner matched against any of the current user's identifiers.</summary>
+    private bool OwnedByMe(string? owner) => TaskOwner.IsMine(owner, _user);
 }

@@ -167,15 +167,15 @@ public sealed class AgendaService
         return owner is not null && string.Equals(owner.Trim(), ownerFilter.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool OwnedByMe(string? owner) => OwnerMatches(owner, Identifiers(_user.UserId, _user.UserPrincipalName, _user.DisplayName, _user.Email));
+    private bool OwnedByMe(string? owner) => TaskOwner.IsMine(owner, _user);
 
-    private IReadOnlyList<string> Identifiers(string userId, params string?[] extra)
+    // Another person's identifiers: their id, enriched from the directory.
+    private IReadOnlyList<string> Identifiers(string userId)
     {
         var set = new List<string>();
         void Add(string? v) { if (!string.IsNullOrWhiteSpace(v)) set.Add(v.Trim()); }
         Add(userId);
-        foreach (var e in extra) Add(e);
-        if (extra.Length == 0 && _users.Resolve(userId) is { } summary)   // enrich a bare id from the directory
+        if (_users.Resolve(userId) is { } summary)
         {
             Add(summary.DisplayName);
             Add(summary.Email);
@@ -184,10 +184,5 @@ public sealed class AgendaService
         return set;
     }
 
-    private static bool OwnerMatches(string? owner, IReadOnlyList<string> identifiers)
-    {
-        if (string.IsNullOrWhiteSpace(owner)) return false;
-        var o = owner.Trim();
-        return identifiers.Any(id => string.Equals(o, id, StringComparison.OrdinalIgnoreCase));
-    }
+    private static bool OwnerMatches(string? owner, IReadOnlyList<string> identifiers) => TaskOwner.Matches(owner, identifiers);
 }
