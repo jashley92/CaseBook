@@ -86,6 +86,27 @@ public sealed class NotificationMarkTests : IDisposable
     }
 
     [Fact]
+    public void A_reminder_that_still_qualifies_isnt_pruned_and_resent(/* WF-22 */)
+    {
+        var item = Guid.NewGuid();
+        var due = _clock.UtcNow.AddDays(-1);
+        var marks = Process();
+        new OverdueActionItemTracker(marks).TryMarkNotified(item, due).Should().BeTrue();
+
+        // Still overdue: every scan finds the mark for the next months.
+        for (var day = 1; day <= 190; day++)
+        {
+            _clock.UtcNow = _clock.UtcNow.AddDays(1);
+            new OverdueActionItemTracker(marks).TryMarkNotified(item, due).Should().BeFalse();
+        }
+
+        // A restart prunes marks older than 180 days by their time, which the scans kept renewing.
+        var restarted = new OverdueActionItemTracker(Process());
+        restarted.TryMarkNotified(Guid.NewGuid(), _clock.UtcNow);
+        restarted.TryMarkNotified(item, due).Should().BeFalse("the owner was already reminded");
+    }
+
+    [Fact]
     public void A_mark_claimed_by_a_scan_is_kept_only_once_the_scan_completes(/* BUG-147 */)
     {
         var done = Guid.NewGuid();

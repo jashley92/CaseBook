@@ -23,13 +23,31 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
     private HashSet<string>? _keys;
     private readonly HashSet<string> _unsaved = new(StringComparer.Ordinal);   // marked while the table couldn't be read
     private DateTimeOffset _prunedAt;
+    private readonly Dictionary<string, DateTimeOffset> _renewed = new(StringComparer.Ordinal);   // WF-22
+
+    // WF-22: a mark a scan finds still in place is for an item that still qualifies (a task overdue for months, a breached
+    // deadline never reported). Its time is renewed, at most every RenewEvery, so the 180-day prune, which goes by that
+    // time, doesn't drop it and resend the reminder after the next restart.
+    private static readonly TimeSpan RenewEvery = TimeSpan.FromDays(30);
 
     public bool TryAdd(string key)
     {
         if (key.Length > NotificationMark.MaxKeyLength) key = key[..NotificationMark.MaxKeyLength];
+        bool added, renew = false;
         lock (_gate)
         {
-            if (!Loaded().Add(key)) return false;
+            added = Loaded().Add(key);
+            if (!added)
+            {
+                var now = clock.UtcNow;
+                renew = !_renewed.TryGetValue(key, out var at) || now - at >= RenewEvery;
+                if (renew) _renewed[key] = now;
+            }
+        }
+        if (!added)
+        {
+            if (renew) Renew(key);
+            return false;
         }
         var batch = NotificationMarkBatch.Current;
         try
@@ -55,6 +73,21 @@ public sealed class DbNotificationMarks(IServiceScopeFactory scopes, IClock cloc
             log.LogWarning(ex, "Couldn't record a sent notification; a restart may send it again.");
             batch?.Claimed(this, key);
             return true;
+        }
+    }
+
+    private void Renew(string key)
+    {
+        try
+        {
+            using var scope = scopes.CreateScope();
+            using var db = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext();
+            var now = clock.UtcNow;
+            db.NotificationMarks.Where(m => m.Key == key).ExecuteUpdate(u => u.SetProperty(m => m.SentAtUtc, now));
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Couldn't renew a sent notification's mark; it may be sent again after it's pruned.");
         }
     }
 
