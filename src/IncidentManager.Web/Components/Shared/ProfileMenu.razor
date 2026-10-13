@@ -296,7 +296,7 @@
         if (!_confirmedRedraw && await HoldForUnsavedAsync(() => SetTimeZone(next))) return;
         if (next == TimeDisplayMode.Local && TimeDisp.BrowserZoneId is null)
         {
-            try { TimeDisp.Configure(await JS.InvokeAsync<string>("imTime.zone"), next); }
+            try { TimeDisp.Configure(await JS.InvokeAsync<string>("imTime.zone"), next, TimeDisp.TwelveHourClock); }   // REV-45: keep the clock
             catch { TimeDisp.SetMode(next); }
         }
         else
