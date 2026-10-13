@@ -154,6 +154,21 @@ public class CaseNotificationsTests
         chat.Sent.Should().ContainSingle("the team channel isn't told twice about the same reminder");
     }
 
+    [Fact]
+    public async Task An_escalation_retried_for_one_manager_is_posted_to_the_channel_once(/* REV-52 */)
+    {
+        var sender = new CapturingEmailSender();
+        var chat = new CapturingChatNotifier();
+        var n = new CaseNotifications(sender, TestEmail.Composer(), Team(), ChatConfig("OverdueReminders"),
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), chat, new FakePrefs(), sent: new InMemoryNotificationMarks());
+        var escalated = new EscalatedActionItem(Item("owner1"), OverdueEscalationTier.Managers, 130);
+
+        await n.OnActionItemsEscalatedAsync([escalated]);
+        await n.OnActionItemsEscalatedAsync([escalated]);   // the next scan, retrying a failed email
+
+        chat.Sent.Should().ContainSingle();
+    }
+
     // --- Breach escalation (E-03) ----------------------------------------------
 
     [Fact]

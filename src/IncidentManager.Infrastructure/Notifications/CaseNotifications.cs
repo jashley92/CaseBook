@@ -372,11 +372,13 @@ public sealed class CaseNotifications : ICaseNotifications
     {
         if (items.Count == 0) return;
 
-        if (ChatOn("OverdueReminders"))
+        // REV-52: the team channel is a recipient here too (BUG-156), so a scan retrying one manager's failed email doesn't
+        // post the escalation to the channel again, day after day.
+        if (ChatOn("OverdueReminders") && NotYetSentTo(items, EscalationKey, ChatRecipient) is { Count: > 0 } chatItems)
         {
-            var caseCount = items.Select(i => i.Item.CaseId).Distinct().Count();
+            var caseCount = chatItems.Select(i => i.Item.CaseId).Distinct().Count();
             await _chat.SendAsync(new ChatNotification(
-                $"{Plural.Of(items.Count, "overdue task")} escalated",
+                $"{Plural.Of(chatItems.Count, "overdue task")} escalated",
                 $"Across {Plural.Of(caseCount, "case")}. Incident commanders and managers were emailed where reachable.",
                 OverdueUrl(), ChatUrgency.Alert), ct);
         }
@@ -595,9 +597,9 @@ public sealed class CaseNotifications : ICaseNotifications
         if (reminders.Count == 0) return;
 
         // Chat broadcast (PROD-02): one summary to the shared channel, alongside the per-recipient emails.
-        if (ChatOn("StaleReminders"))
+        if (ChatOn("StaleReminders") && NotYetSentTo(reminders, StaleKey, ChatRecipient) is { Count: > 0 } chatReminders)   // REV-52
         {
-            var caseCount = reminders.Select(r => r.CaseId).Distinct().Count();
+            var caseCount = chatReminders.Select(r => r.CaseId).Distinct().Count();
             await _chat.SendAsync(new ChatNotification(
                 $"{Plural.Of(caseCount, "case")} with no recent activity",
                 "These open cases have had no activity past their severity threshold. Incident commanders and owners were emailed where reachable.",
