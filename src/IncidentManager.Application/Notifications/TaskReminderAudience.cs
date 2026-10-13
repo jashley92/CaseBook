@@ -10,9 +10,25 @@ namespace IncidentManager.Application.Notifications;
 /// </summary>
 public static class TaskReminderAudience
 {
+    /// <summary>
+    /// WF-19: a task owner is free text, so one written as an email or UPN (an import, the "External / other" field) is
+    /// read as the directory user it names, and reminded, rather than falling to the incident commander. Only email and
+    /// UPN, which name one person (owner's decision); a display name, which two people can share, still falls back.
+    /// </summary>
+    public static string? OwnerId(string? owner, IUserDirectory? users)
+    {
+        if (users is null || string.IsNullOrWhiteSpace(owner) || users.Resolve(owner) is not null) return owner;
+        var o = owner.Trim();
+        var named = users.All().Where(u => string.Equals(u.Email?.Trim(), o, StringComparison.OrdinalIgnoreCase)
+                                           || string.Equals(u.UserPrincipalName?.Trim(), o, StringComparison.OrdinalIgnoreCase))
+            .Select(u => u.UserId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return named.Count == 1 ? named[0] : owner;
+    }
+
     public static string? Owner(bool isRestricted, string? incidentCommander, IReadOnlyCollection<string> team,
         string? owner, IUserDirectory? users, IRoleDirectory? roles)
     {
+        owner = OwnerId(owner, users);
         if (!isRestricted || string.IsNullOrWhiteSpace(owner)) return owner;
         if (string.Equals(owner, incidentCommander, StringComparison.Ordinal) || team.Contains(owner, StringComparer.Ordinal))
             return owner;
