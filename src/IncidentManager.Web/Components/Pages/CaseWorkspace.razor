@@ -150,7 +150,7 @@ else
                          DetectionLabel="@DetectionLabel" OnChanged="Reload" OnPreview="OpenShot"
                          FlashClass="FlashClass" FlashStyle="FlashStyle" ComposerDrafts="_composerDrafts"
                          ChangedSinceUtc="_timelineSince" OnClearSince="() => _timelineSince = null"
-                         PresetEntityFilter="_timelineEntity" OnOpenEntity="OpenEntity"
+                         PresetEntityFilter="_timelineEntity" OnPresetHandled="() => _timelineEntity = null" OnOpenEntity="OpenEntity"
                          AutofocusComposer="_timelineAutofocus" OnAutofocusHandled="() => _timelineAutofocus = false"
                          FocusNoteId="QNote" FocusEntryId="QEntry" OpenNotes="_openNotes" OnOpenNotesHandled="() => _openNotes = false" />
         @* U-32: a floating "jump to what just arrived" pill when a collaborator adds timeline entries. *@
@@ -459,6 +459,7 @@ else
                 // BUG-86/87: what was typed in a dialog, and the audit filter, belong to the last case.
                 _action = new();
                 _auditFilter = new();
+                _timelineEntity = null;   // REV-38: a "show on timeline" filter belongs to the last case
                 _confirm = null;
                 _accessLost = false;
                 _permissionLost = false;

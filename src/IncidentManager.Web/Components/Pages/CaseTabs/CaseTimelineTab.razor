@@ -2254,6 +2254,8 @@ else
     // --- INV-11: open an entity in the panel; filter to one entity when asked from the panel ---
     [Parameter] public EventCallback<Guid> OnOpenEntity { get; set; }
     [Parameter] public Guid? PresetEntityFilter { get; set; }
+    /// <summary>REV-38: the preset filter was applied, so the workspace can let it go.</summary>
+    [Parameter] public EventCallback OnPresetHandled { get; set; }
     private Guid? _appliedPreset;
 
     protected override void OnParametersSet()
@@ -2281,7 +2283,11 @@ else
         if (PresetEntityFilter != _appliedPreset)
         {
             _appliedPreset = PresetEntityFilter;
-            if (PresetEntityFilter is { } en) { _decOnly = false; _keyOnly = false; _tlLens = null; _tlFilterEntity = en; }
+            if (PresetEntityFilter is { } en)
+            {
+                _decOnly = false; _keyOnly = false; _tlLens = null; _tlFilterEntity = en;
+                _ = OnPresetHandled.InvokeAsync();   // REV-38: applied once; it isn't applied again on the next visit
+            }
         }
         // RD-20: a link to one entry (a Find result) brings it into view on Everything.
         if (FocusEntryId != _appliedFocusEntry)
