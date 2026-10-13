@@ -129,7 +129,7 @@ public sealed class DeskService
             var info = taskInfo.GetValueOrDefault(t.Id);
             var (why, detail) = info is null ? (DeskWhy.None, (string?)null) : Why(info.Kind, info.RaisedFromBriefId, ParseAbout(info.AboutRef),
                 entryTypes, entityNames, evidenceNames);
-            return new DeskTask(t.Id, t.CaseId, t.CaseNumber, titles.GetValueOrDefault(t.CaseId) ?? "", t.Title, t.DueAtUtc,
+            return new DeskTask(t.Id, t.CaseId, t.CaseNumber, titles.GetValueOrDefault(t.CaseId) ?? t.CaseTitle, t.Title, t.DueAtUtc,
                 info?.Kind ?? TaskKind.General, why, detail);
         }).ToList();
 

@@ -82,7 +82,13 @@ public sealed class MyWorkServiceTests : IDisposable
             f.Assign("analyst2", "Analyst Two", CaseAssignmentRole.IncidentCommander, "analyst2", D(6));
             f.ActionItems.Add(Task_("My follow-up", owner: "Analyst One", due: D(4), ActionItemStatus.Open));
 
-            db.Cases.AddRange(a, b, c, d, f);
+            // G — mine, but closed with a task still open (allowed): BUG-252, it isn't on the worklist.
+            var g = Case.Open(2026, 6, "golf", "Golf", Classification.Incident, Severity.Low, CaseOrigin.InternalDetection, "analyst2", D(3));
+            g.Assign("analyst1", "Analyst One", CaseAssignmentRole.Analyst, "analyst2", D(3));
+            g.ActionItems.Add(Task_("Left open at close", owner: "analyst1", due: D(2), ActionItemStatus.Open));
+            g.ChangePhase(CasePhase.Closed, null, "analyst2", D(4));
+
+            db.Cases.AddRange(a, b, c, d, f, g);
             await db.SaveChangesAsync();
         }
 

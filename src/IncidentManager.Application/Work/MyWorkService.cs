@@ -8,7 +8,7 @@ namespace IncidentManager.Application.Work;
 /// <summary>An open after-action task the current user is responsible for (overdue or upcoming).</summary>
 public sealed record MyTask(
     Guid Id, Guid CaseId, string CaseNumber, string Title, string? Owner,
-    DateTimeOffset? DueAtUtc, bool OwnedByMe);
+    DateTimeOffset? DueAtUtc, bool OwnedByMe, string CaseTitle = "");
 
 /// <summary>A recent upward classification transition (escalation) on a case the user can see.</summary>
 public sealed record Escalation(
@@ -64,20 +64,30 @@ public sealed class MyWorkService
 
         // My open after-action tasks on cases I can see — overdue *and* upcoming, so this is a
         // worklist, not just a late list. "Mine" = a task I own, or one on a case I own/am assigned to.
+        // BUG-252: on open cases only (a closed or archived case's leftover task sat under "Overdue" for good, as
+        // BUG-12/103/163/211 fixed everywhere else), and narrowed in the query, not after reading every open task.
+        var me = new[] { _user.UserId, _user.UserPrincipalName, _user.DisplayName, _user.Email }
+            .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim().ToLowerInvariant()).Distinct().ToList();
+#pragma warning disable CA1304, CA1311 // EF Core translates ToLower() to SQL LOWER(); the invariant overload doesn't translate.
         var taskRows = await (
             from a in db.ActionItems.AsNoTracking()
             where a.Status != ActionItemStatus.Done && a.Status != ActionItemStatus.Cancelled
             join c in visible on a.CaseId equals c.Id
+            where c.Phase != CasePhase.Closed && !c.IsArchived
+            let isMyCase = c.IncidentCommander == uid || c.Assignments.Any(x => x.UserId == uid)
+            where isMyCase || (a.Owner != null && me.Contains(a.Owner.Trim().ToLower()))
             select new
             {
                 a.Id,
                 a.CaseId,
                 c.CaseNumber,
-                a.Title,
+                c.Title,
+                TaskTitle = a.Title,
                 a.Owner,
                 a.DueAtUtc,
-                IsMyCase = c.IncidentCommander == uid || c.Assignments.Any(x => x.UserId == uid)
+                IsMyCase = isMyCase
             }).ToListAsync(ct);
+#pragma warning restore CA1304, CA1311
 
         var tasks = taskRows
             .Select(t => new { Row = t, Owned = OwnedByMe(t.Owner) })
@@ -85,16 +95,16 @@ public sealed class MyWorkService
             // Soonest due first; undated tasks sink to the bottom. (Sorted in memory to keep the
             // DateTimeOffset comparison off SQLite, which doesn't translate it.)
             .OrderBy(t => t.Row.DueAtUtc ?? DateTimeOffset.MaxValue)
-            .ThenBy(t => t.Row.Title)
-            .Select(t => new MyTask(t.Row.Id, t.Row.CaseId, t.Row.CaseNumber, t.Row.Title, t.Row.Owner, t.Row.DueAtUtc, t.Owned))
+            .ThenBy(t => t.Row.TaskTitle)
+            .Select(t => new MyTask(t.Row.Id, t.Row.CaseId, t.Row.CaseNumber, t.Row.TaskTitle, t.Row.Owner, t.Row.DueAtUtc, t.Owned, t.Row.Title))
             .ToList();
 
         // Upward classification transitions across my visible set in the recent window (situational
-        // awareness for the shift). From/To comparison and the date filter run in memory.
+        // awareness for the shift). The From/To comparison runs in memory.
         var since = now.AddDays(-EscalationWindowDays);
         var escRows = await (
             from cc in db.ClassificationChanges.AsNoTracking()
-            where cc.From != null
+            where cc.From != null && cc.ChangedAtUtc >= since   // BUG-252: the window in the query, not after reading them all
             join c in visible on cc.CaseId equals c.Id
             select new { c.Id, c.CaseNumber, c.Title, cc.From, cc.To, cc.ChangedBy, cc.ChangedAtUtc })
             .ToListAsync(ct);
