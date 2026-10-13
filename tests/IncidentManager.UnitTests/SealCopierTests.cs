@@ -68,6 +68,8 @@ public sealed class SealCopierTests : IDisposable
         sent.To.Should().Equal("seals@contoso.com", "audit@contoso.com");
         sent.Subject.Should().Be("CaseBook integrity seal #42");
         sent.Body.Should().Contain(new string('a', 64)).And.Contain("0123456789abcdef").And.Contain("2026-10-09T12:00:00");
+        // REV-08: the time as it was signed, and the payload itself, so the signature can be checked from the message.
+        sent.Body.Should().Contain("2026-10-09T12:00:00.0000000+00:00").And.Contain(Seal().BuildCanonicalContent());
     }
 
     // ---- Timestamp authority ----

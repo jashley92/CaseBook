@@ -43,11 +43,15 @@ public sealed class EmailSealCopier(IEmailSender email, IOptionsMonitor<EmailOpt
             "",
             $"Sealed through sequence : {seal.UpToSequence}",
             $"Chain-head hash        : {seal.ChainHeadHash}",
-            $"Sealed at (UTC)        : {seal.SealedAtUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture)}",
+            // REV-08: printed exactly as it's signed (…+00:00), so the payload can be rebuilt from this message.
+            $"Sealed at (UTC)        : {seal.SealedAtUtc.ToString("o", CultureInfo.InvariantCulture)}",
             $"Sealed by              : {seal.SealedBy}",
             $"Algorithm / key id     : {seal.Algorithm} / {seal.KeyId}",
             $"Keyed from entry       : {(seal.KeyedFromSequence is { } k ? k.ToString(CultureInfo.InvariantCulture) : "(chain key off)")}",
-            $"Signature              : {seal.Signature}");
+            $"Signature              : {seal.Signature}",
+            "",
+            "Signed payload (verify the signature over exactly this line):",
+            seal.BuildCanonicalContent());
         // BUG-242: the sender logs an SMTP failure rather than throwing (a mail problem mustn't break the action that sent
         // it), so the copy watches for one: a digest the relay refused would otherwise be recorded as delivered.
         using var watch = DeliveryWatch.Begin();
