@@ -72,6 +72,10 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
         if (user is null) return null;
         using var groups = user.GetAuthorizationGroups();
         var sids = groups.Select(g => g.Sid?.Value).Where(s => s is not null).Select(s => s!).ToList();
-        return new AccountGroups(user.Enabled != false, sids);
+        // REV-68: an account past its expiry date can't sign in either (a common way to end a contractor's access, without
+        // disabling the account), so its tokens and calendar feed stop with it.
+        var expired = user.AccountExpirationDate is { } expires
+            && (expires.Kind == DateTimeKind.Local ? expires.ToUniversalTime() : expires) <= DateTime.UtcNow;
+        return new AccountGroups(user.Enabled != false && !expired, sids);
     }
 }
