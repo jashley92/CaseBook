@@ -416,6 +416,10 @@ public class Case : AuditableEntity, IHashableEntity
     /// clocks), and neither does a case already contained or recorded as not needing it. BUG-228: nor does leaving
     /// Closed for one of those phases skip the question: a case closed from Triage has no contained time either.
     /// </summary>
+    // BUG-231: times people pick are to the minute; a detected time with seconds (from the import API) mustn't refuse the
+    // lowest minute the picker offers.
+    private static DateTimeOffset ToMinute(DateTimeOffset t) => new(t.Ticks - t.Ticks % TimeSpan.TicksPerMinute, t.Offset);
+
     public bool SkipsContainment(CasePhase to) =>
         Phase is < CasePhase.Containment or CasePhase.Closed
         && to is CasePhase.Eradication or CasePhase.Recovery or CasePhase.PostIncident
@@ -514,9 +518,14 @@ public class Case : AuditableEntity, IHashableEntity
                 throw new ArgumentException($"The detected time can't be after the severity first changed ({firstSeverity:u}).");
             if (ActionItems.Select(a => a.CompletedAtUtc).Min() is { } firstDone && detectedAtUtc > firstDone)
                 throw new ArgumentException($"The detected time can't be after a task was completed ({firstDone:u}).");
-            // BUG-209: nor the materiality decision, which can start the notification clock.
-            if (Materiality.DecidedOnUtc is { } decided && detectedAtUtc > decided)
-                throw new ArgumentException($"The detected time can't be after materiality was decided ({decided:u}).");
+            // BUG-209: nor the materiality decision, which can start the notification clock. BUG-231: to the minute (the
+            // picker's precision), and saying what to do when the decision was recorded as a date only (before v1.5.1,
+            // stored at 00:00 UTC that day).
+            if (Materiality.DecidedOnUtc is { } decided && ToMinute(detectedAtUtc) > ToMinute(decided))
+                throw new ArgumentException($"The detected time can't be after materiality was decided ({decided:u})." +
+                    (decided.TimeOfDay == TimeSpan.Zero
+                        ? " That decision was recorded as a date only (before v1.5.1): record its materiality again with the time it was made, then change the detected time."
+                        : ""));
         }
 
         Title = title.Trim();
@@ -679,7 +688,7 @@ public class Case : AuditableEntity, IHashableEntity
         if (decidedOnUtc is { } future && future > nowUtc)
             throw new ArgumentException("The decision date can't be in the future.");
         // BUG-209: a decision about what was found can't come before it was found (it would start the clock early).
-        if (decidedOnUtc is { } early && DetectedAtUtc is { } detected && early < detected)
+        if (decidedOnUtc is { } early && DetectedAtUtc is { } detected && ToMinute(early) < ToMinute(detected))
             throw new ArgumentException("The decision date can't be earlier than the detected time.");
 
         if (status is MaterialityStatus.Material or MaterialityStatus.NotMaterial)

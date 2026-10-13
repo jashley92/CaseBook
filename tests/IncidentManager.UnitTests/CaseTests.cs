@@ -363,6 +363,17 @@ public class CaseTests
     }
 
     [Fact]
+    public void Materiality_and_detection_are_compared_to_the_minute(/* BUG-231 */)
+    {
+        var c = NewCase();
+        c.UpdateDetails(c.Title, c.Summary, null, null, null, Now.AddSeconds(-30), null, "ic1", Now.AddMinutes(1));   // 11:59:30
+        c.Reclassify(Classification.Incident, "confirmed", "ic1", Now.AddMinutes(2));
+        // The picker offers 11:59 for a detection at 11:59:30.
+        c.RecordMateriality(MaterialityStatus.Material, "Committee", Now.AddMinutes(-1), "npi", "legal1", Now.AddHours(1));
+        c.Materiality.DecidedOnUtc.Should().Be(Now.AddMinutes(-1));
+    }
+
+    [Fact]
     public void A_skip_move_cant_be_re_dated_before_the_times_it_stated(/* BUG-230 */)
     {
         var c = NewCase();
