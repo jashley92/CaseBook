@@ -217,6 +217,17 @@ public class IocImportConverterTests
     }
 
     [Fact]
+    public void Grouping_parentheses_dont_make_an_or_pattern_a_combination(/* REV-53 follow-up */)
+    {
+        IocImportConverter.OrOnly("([ipv4-addr:value = '1.2.3.4'] OR [domain-name:value = 'evil.example'])").Should().BeTrue();
+        IocImportConverter.OrOnly("(([ipv4-addr:value = '1.2.3.4']) OR [url:value = 'https://evil.example/x'])").Should().BeTrue();
+        IocImportConverter.OrOnly("([file:name = 'a.exe'] AND [ipv4-addr:value = '1.2.3.4']) OR [url:value = 'https://x.example']")
+            .Should().BeFalse("the AND part matches only together");
+        IocImportConverter.OrOnly("([ipv4-addr:value = '1.2.3.4'] OR [url:value = 'https://x.example']) WITHIN 5 SECONDS")
+            .Should().BeFalse();
+    }
+
+    [Fact]
     public void Pattern_reader_handles_hashes_escapes_and_ignores_non_equality()
     {
         IocImportConverter.PatternObservables("[file:hashes.'SHA-256' = 'abc'] AND [email-addr:value = 'o\\'brien@x.example']")

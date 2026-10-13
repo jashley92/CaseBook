@@ -240,9 +240,10 @@ public static partial class IocImportConverter
     [GeneratedRegex(@"\[\s*(?<obj>[a-z0-9-]+)\s*:\s*(?<prop>[a-z0-9_.'\-]+)\s*=\s*'(?<val>(?:[^'\\]|\\.)*)'\s*\]", RegexOptions.IgnoreCase)]
     private static partial Regex SimpleComparison();
 
-    /// <summary>REV-53: whether a pattern's comparisons are joined by OR alone, so each one is an indicator by itself.</summary>
+    /// <summary>REV-53: whether a pattern's comparisons are joined by OR alone, so each one is an indicator by itself.
+    /// Grouping parentheses don't join anything, so <c>([a] OR [b])</c> is OR-only too.</summary>
     public static bool OrOnly(string pattern) =>
-        Regex.Replace(SimpleComparison().Replace(pattern, ""), @"\bOR\b", "", RegexOptions.IgnoreCase).Trim().Length == 0;
+        Regex.Replace(SimpleComparison().Replace(pattern, ""), @"\bOR\b|[()]", "", RegexOptions.IgnoreCase).Trim().Length == 0;
 
     /// <summary>The observables in a STIX pattern made of simple equality comparisons (joined by OR/AND).</summary>
     public static List<(EntityType Type, string Value)> PatternObservables(string? pattern)
