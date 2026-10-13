@@ -467,7 +467,9 @@ else
             }
             _subscribedTo = Id;
         }
+        var loadingFor = Id;
         await Reload();
+        if (Id != loadingFor) return;   // REV-22: a later navigation took over while this case loaded
         _panelEntity = QEntity;   // INV-11: an entity tag link opens the entity panel
         _panelEvidence = QEntity is null ? QEvidence : null;   // RD-06: a cited-file chip opens the evidence panel
         // Honor an explicit ?tab=, otherwise refresh whatever tab is already active. The Id can change
@@ -493,18 +495,34 @@ else
         if (_draftsCaseId != Id) { _composerDrafts.Clear(); _draftsCaseId = Id; }
     }
 
-    private async Task Reload() => await ReloadWith(await Cases.GetDetailAsync(Id));
+    // REV-22: each load (a navigation, a save's reload, a live change) takes a number, and a load that a later one has
+    // overtaken stops assigning. Quick moves between cases otherwise let a slower read for case B land after case C's,
+    // leaving B on screen under C's address (and the header's actions, which use the route's id, acting on C), or the
+    // last case's task results under this one.
+    private int _loadSeq;
+
+    private async Task<bool> Reload()
+    {
+        var seq = ++_loadSeq;
+        var detail = await Cases.GetDetailAsync(Id);
+        return seq == _loadSeq && await ReloadWith(detail, seq);
+    }
     private Guid _tabOpenedFor;
     private Guid _openRecordedFor;   // BUG-243: one open per visit; reloads after saves and live changes aren't new opens
 
     // REL-07: reload from an already-fetched detail, so the live-collab path can peek at accessibility
     // before deciding whether to swap the view away (see OnCaseChangedAsync).
-    private async Task ReloadWith(Case? detail)
+    private async Task<bool> ReloadWith(Case? detail, int? seq = null)
     {
+        var mine = seq ?? ++_loadSeq;
+        bool Stale() => mine != _loadSeq || (detail is not null && detail.Id != Id);
+        if (Stale()) return false;
         _case = detail;
         _notFound = _case is null;
-        _taskResults = _case is null ? new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>()
+        var taskResults = _case is null ? new Dictionary<Guid, IncidentManager.Application.Cases.TaskResult>()
             : await Cases.GetTaskResultsAsync(_case.Id);
+        if (Stale()) return false;
+        _taskResults = taskResults;
         // HR-01: outcome labels (admin-managed) for the header and the Closed milestone; only closed cases show one.
         if (_case?.StatusChanges.Any(s => s.OutcomeKey is not null) == true && _outcomeLabels.Count == 0)
             _outcomeLabels = await Outcomes.LabelsAsync();
@@ -520,11 +538,15 @@ else
                 _sinceCount = 0;
                 _sincePeople = [];
                 _lastViewed = await AccessLog.LastViewedAsync(_case.Id);
+                if (Stale()) return false;
                 if (_lastViewed is { } lv)
                     (_sinceCount, _sincePeople) = await Feed.ChangesSinceAsync(_case.Id, lv);
+                if (Stale()) return false;
             }
             // HR-15: a closed case says openly what changed after it closed (it isn't locked).
-            _afterClosure = _case.Phase == CasePhase.Closed ? await Feed.ChangesAfterClosureAsync(_case.Id) : null;
+            var afterClosure = _case.Phase == CasePhase.Closed ? await Feed.ChangesAfterClosureAsync(_case.Id) : null;
+            if (Stale()) return false;
+            _afterClosure = afterClosure;
             if (_tabOpenedFor != _case.Id)
             {
                 _tabOpenedFor = _case.Id;
@@ -533,7 +555,9 @@ else
             }
             await AccessLog.RecordCaseOpenAsync(_case.Id, _case.CaseNumber, _case.IsRestricted, stillOpen: _openRecordedFor == _case.Id);
             _openRecordedFor = _case.Id;
-            _isPinned = await Shortcuts.IsPinnedAsync(_case.Id); // PROD-20: header star + palette action state
+            var pinned = await Shortcuts.IsPinnedAsync(_case.Id); // PROD-20: header star + palette action state
+            if (Stale()) return false;
+            _isPinned = pinned;
         }
         // BUG-30: a reload under an open dialog (a colleague's change arriving live) keeps what the analyst picked,
         // which the loaded gate and ticked attestations belong to.
@@ -544,10 +568,15 @@ else
             _action.NewSeverity = _case?.Severity ?? Severity.Medium;
         }
         // PROD-07: headline regulatory-notification deadline for the header badge (null when the feature is off).
-        _notifyDeadlines = _case is null ? null : await Deadlines.EvaluateAsync(Id);
+        var deadlines = _case is null ? null : await Deadlines.EvaluateAsync(_case.Id);
+        if (Stale()) return false;
+        _notifyDeadlines = deadlines;
         // Readiness is computed here and passed to CaseOverviewTab for the stage-readiness card.
-        _readinessEval = NextGateTrigger() is { } t ? await LoadGateAsync(t) : null;
+        var readiness = NextGateTrigger() is { } t ? await LoadGateAsync(t) : null;
+        if (Stale()) return false;
+        _readinessEval = readiness;
         SeedKnownIds(); // U-30: absorb the current items so a viewer's own edits don't echo back as "new"
+        return true;
     }
 
     // --- Overview "Stage readiness" card: the gate for this case's next likely transition (passed to the tab) ---
