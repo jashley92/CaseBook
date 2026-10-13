@@ -78,7 +78,7 @@ public sealed class ReportService
     /// can carry a neutral "Recorded …" note (<see cref="ReportingOptions.MarkLateEntries"/>).
     /// </summary>
     private List<ReportTimelineItem> InvestigationTimeline(Case c, ReportDefanger d, ReportingOptions opts,
-        ReportExtras? extras = null)
+        ReportExtras? extras = null, bool withBrief = false)
     {
         var outcomeLabels = extras?.OutcomeLabels;
         var taskResults = extras?.TaskResults ?? new Dictionary<Guid, Cases.TaskResult>();
@@ -107,7 +107,10 @@ public sealed class ReportService
             // A report listing its own earlier versions reads oddly, so final-report milestones stay out; so do
             // staffing changes (INV-31), which are the team's working record rather than findings.
             foreach (var m in Cases.CaseMilestones.Project(c, labels)
-                         .Where(m => m.Kind is not (Cases.MilestoneKind.ReportFinal or Cases.MilestoneKind.Command)))
+                         .Where(m => m.Kind is not (Cases.MilestoneKind.ReportFinal or Cases.MilestoneKind.Command))
+                         // WF-34: each brief version's working assessment is the working brief (decision 0012): in the report
+                         // only when the profile prints the Case Brief.
+                         .Where(m => withBrief || m.Kind != Cases.MilestoneKind.Assessment))
             {
                 var title = m.Note is { } note ? $"{m.Title} ({note})" : m.Title;   // HR-07: the gate it passed
                 var text = m.Detail is { } detail ? $"{title}. {detail}" : title;
@@ -947,7 +950,7 @@ public sealed class ReportService
                         ? (env == StepEnvironment.Ours ? "Our environment" : "Vendor") : null,
                     StepTime.Stated(x)))
                 .ToList(),
-            InvestigationTimeline = InvestigationTimeline(c, d, opts, extras),
+            InvestigationTimeline = InvestigationTimeline(c, d, opts, extras, sections.Contains(ReportSection.CaseBrief)),
             Brief = c.Briefs.FirstOrDefault(b => b.IsCurrent) is { } brief
                 ? new ReportBrief(brief.Version, brief.CreatedAtUtc, _users.DisplayFor(brief.CreatedBy),
                     BriefText(brief.WorkingAssessment, d), BriefText(brief.Known, d),

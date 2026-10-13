@@ -196,6 +196,22 @@ public sealed class ReportProfileTests : IDisposable
     }
 
     [Fact]
+    public async Task The_working_assessment_is_in_the_timeline_only_with_the_case_brief(/* WF-34 */)
+    {
+        var caseId = await SeededCaseIdAsync();
+        Guid? current;
+        using (var db = NewContext()) current = db.CaseBriefs.Where(b => b.CaseId == caseId && b.IsCurrent).Select(b => (Guid?)b.Id).FirstOrDefault();
+        await NewCaseService().ReviseBriefAsync(caseId, current, "Phishing reached Finance", "Probably MFA fatigue", null, null);
+
+        var plain = await NewReportService().BuildPreviewModelAsync(caseId, null);
+        plain.InvestigationTimeline.Should().NotContain(i => i.Description.Contains("MFA fatigue"), "the brief is off by default (decision 0012)");
+
+        var withBrief = await NewProfileService().CreateAsync(new ReportProfileInput("With brief", null, true, 1, "Summary,CaseBrief"));
+        (await NewReportService().BuildPreviewModelAsync(caseId, withBrief)).InvestigationTimeline
+            .Should().Contain(i => i.Description.Contains("MFA fatigue"));
+    }
+
+    [Fact]
     public async Task A_deleted_profile_transparently_falls_back_to_the_global_default()
     {
         var caseId = await SeededCaseIdAsync();
