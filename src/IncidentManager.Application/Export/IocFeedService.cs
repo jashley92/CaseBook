@@ -16,7 +16,8 @@ public sealed record IocFeedRow(
     DateTimeOffset FirstSeenUtc,
     DateTimeOffset LastSeenUtc,
     IReadOnlyList<string> Cases,
-    IReadOnlyList<string> Sources);
+    IReadOnlyList<string> Sources,
+    TlpLevel? Tlp = null);   // WF-37: the most restrictive marking any occurrence carries
 
 /// <summary>
 /// Curated malicious-IOC feed: the confirmed-<see cref="EntityDisposition.Malicious"/>, IOC-like
@@ -53,7 +54,7 @@ public sealed class IocFeedService
             from e in db.CaseEntities.AsNoTracking()
             where e.Disposition == EntityDisposition.Malicious && IocTypes.Contains(e.Type)
             join c in db.Cases.AsNoTracking().ForUser(_user).ExcludingExercises() on e.CaseId equals c.Id // PROD-43: no drill IOCs in the pushed feed
-            select new { e.Type, e.Value, e.Source, e.CreatedAtUtc, c.CaseNumber }
+            select new { e.Type, e.Value, e.Source, e.CreatedAtUtc, c.CaseNumber, e.Tlp }
         ).ToListAsync(ct);
 
         // Dedupe by (type, value) in memory — case-insensitive to match the E-08 overlap engine,
@@ -74,7 +75,8 @@ public sealed class IocFeedService
                               .Select(s => s!.Trim())
                               .Distinct(StringComparer.OrdinalIgnoreCase)
                               .OrderBy(s => s)
-                              .ToList());
+                              .ToList(),
+                    Tlp: g.Max(x => x.Tlp));
             })
             .OrderBy(r => r.Type)
             .ThenBy(r => r.Value, StringComparer.OrdinalIgnoreCase)

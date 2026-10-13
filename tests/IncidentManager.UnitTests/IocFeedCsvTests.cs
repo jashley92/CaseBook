@@ -19,16 +19,19 @@ public class IocFeedCsvTests
                 new DateTimeOffset(2026, 8, 10, 0, 0, 0, TimeSpan.Zero),
                 new[] { "2026-0001" }, new[] { "SIEM" }),
             new IocFeedRow(EntityType.FileHash, "abc123",
-                At, At, new[] { "2026-0002" }, Array.Empty<string>()),
+                At, At, new[] { "2026-0002" }, Array.Empty<string>(), TlpLevel.Red),
         };
 
         var csv = IocFeedCsv.Build(rows, At);
         var lines = csv.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
 
         lines[0].Should().StartWith("# CaseBook malicious-IOC feed");
-        lines[1].Should().Be("type,indicator,disposition,first_seen_utc,last_seen_utc,case_count,cases,sources");
+        lines[1].Should().Be("type,indicator,disposition,first_seen_utc,last_seen_utc,case_count,cases,sources,tlp");
         csv.Should().Contain("ip,203.0.113.10,malicious,2026-08-01 00:00:00,2026-08-10 00:00:00,1,2026-0001,SIEM");
         csv.Should().Contain("filehash,abc123,malicious,");
+        // WF-37: the indicator's marking travels with it; none set is blank.
+        lines[2].Should().EndWith(",SIEM,");
+        lines[3].Should().EndWith(",TLP:RED");
     }
 
     [Fact]
