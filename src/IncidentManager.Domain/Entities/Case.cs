@@ -1593,12 +1593,15 @@ public class Case : AuditableEntity, IHashableEntity
             throw new ArgumentException($"The {what} change can't be dated in the future.");
         if (DetectedAtUtc is { } detected && ToMinute(newEffectiveUtc) < ToMinute(detected))
             throw new ArgumentException($"The {what} change can't be dated before the case was detected.");
-        if (i > 0 && newEffectiveUtc < ordered[i - 1].EffectiveAt)
+        // WF-52: neighbours are compared to the minute; a time in a neighbour's minute is held to that neighbour's instant.
+        if (i > 0 && ToMinute(newEffectiveUtc) < ToMinute(ordered[i - 1].EffectiveAt))
             throw new ArgumentException(
                 $"The {what} change can't be dated before the {what} change made before it ({ordered[i - 1].EffectiveAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC).");
-        if (i < ordered.Count - 1 && newEffectiveUtc > ordered[i + 1].EffectiveAt)
+        if (i < ordered.Count - 1 && ToMinute(newEffectiveUtc) > ToMinute(ordered[i + 1].EffectiveAt))
             throw new ArgumentException(
                 $"The {what} change can't be dated after the {what} change made after it ({ordered[i + 1].EffectiveAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC).");
+        if (i > 0 && newEffectiveUtc < ordered[i - 1].EffectiveAt) newEffectiveUtc = ordered[i - 1].EffectiveAt;
+        if (i < ordered.Count - 1 && newEffectiveUtc > ordered[i + 1].EffectiveAt) newEffectiveUtc = ordered[i + 1].EffectiveAt;
 
         var old = target.EffectiveAt;
         if (newEffectiveUtc == old)
@@ -1660,10 +1663,14 @@ public class Case : AuditableEntity, IHashableEntity
             throw new ArgumentException($"The {what} change can't be dated in the future.");
         if (DetectedAtUtc is { } detected && ToMinute(at) < ToMinute(detected))
             throw new ArgumentException($"The {what} change can't be dated before the case was detected.");
-        if (earlierChanges.Where(x => x > at).OrderByDescending(x => x).FirstOrDefault() is { } later && later != default)
+        // WF-52: compared to the minute, as the picker gives (REV-16 did the same for the detected time). A change dated in
+        // the previous one's minute is recorded at that change's instant, so it still sorts after it.
+        var earlier = earlierChanges.ToList();
+        if (earlier.Where(x => ToMinute(x) > ToMinute(at)).OrderByDescending(x => x).FirstOrDefault() is { } later && later != default)
             throw new ArgumentException(
                 $"The {what} change can't be dated before the previous {what} change ({later.UtcDateTime:yyyy-MM-dd HH:mm} UTC).");
-        return at;
+        var sameMinute = earlier.Where(x => x > at).DefaultIfEmpty(at).Max();
+        return sameMinute > at ? sameMinute : at;
     }
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();

@@ -403,6 +403,27 @@ public class CaseTests
     }
 
     [Fact]
+    public void A_change_dated_in_the_previous_changes_minute_is_kept_after_it(/* WF-52 */)
+    {
+        var c = NewCase();
+        var triageAt = Now.AddMinutes(5).AddSeconds(37);   // recorded live, 12:05:37
+        c.ChangePhase(CasePhase.Triage, null, "ic1", triageAt);
+
+        // Ten minutes later, Containment is recorded as 12:05, what the picker offers.
+        c.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddMinutes(15), effectiveAtUtc: Now.AddMinutes(5));
+        var contain = c.StatusChanges.Single(x => x.To == CasePhase.Containment);
+        contain.EffectiveAt.Should().Be(triageAt, "held to the previous change's instant, so it still sorts after it");
+
+        c.Invoking(x => x.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddMinutes(20), effectiveAtUtc: Now.AddMinutes(4)))
+            .Should().Throw<ArgumentException>().WithMessage("*before the previous phase change*", "a minute earlier still is");
+
+        // A correction into the neighbour's minute is held to it too.
+        c.CorrectTransitionTime(TransitionKind.Phase, contain.Id, Now.AddMinutes(6), "typo", "ic1", Now.AddMinutes(21));
+        c.CorrectTransitionTime(TransitionKind.Phase, contain.Id, Now.AddMinutes(5), "typo again", "ic1", Now.AddMinutes(22));
+        c.StatusChanges.Single(x => x.Id == contain.Id).EffectiveAt.Should().Be(triageAt);
+    }
+
+    [Fact]
     public void Every_not_before_detection_check_is_to_the_minute(/* REV-16 */)
     {
         var c = NewCase();
