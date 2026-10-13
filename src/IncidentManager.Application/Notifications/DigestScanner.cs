@@ -21,7 +21,9 @@ public sealed class DigestScanner(
     ICaseNotifications notifications,
     IDigestTracker tracker,
     IClock clock,
-    IOrganizationTimeZone? zone = null)
+    IOrganizationTimeZone? zone = null,
+    IUserDirectory? users = null,
+    ApiTokens.ITokenOwnerCheck? owners = null)
 {
     /// <summary>Sends a digest to each subscriber who has items and hasn't been sent one this period. Returns
     /// how many digests were sent.</summary>
@@ -36,6 +38,13 @@ public sealed class DigestScanner(
 
         foreach (var sub in subscribers)
         {
+            // REV-51: as the calendar feed refuses them (BUG-20), no digest for someone who holds no CaseBook role, or whose
+            // account the directory says is disabled or no longer maps to any role: a leaver kept getting case numbers,
+            // titles and tasks (restricted ones included) every day.
+            if (users?.Resolve(sub.UserId) is { } u && string.IsNullOrWhiteSpace(u.RolesCsv)) continue;
+            if (owners is not null && await owners.CheckAsync(sub.UserId, ct) is { } access && (!access.Active || access.Roles.Count == 0))
+                continue;
+
             var items = await agenda.GetFeedItemsAsync(sub.UserId, ct);
 
             var overdue = Band(items, now, tz, AgendaBucketKind.Overdue);

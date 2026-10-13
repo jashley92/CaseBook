@@ -127,6 +127,25 @@ public sealed class DigestScannerTests : IDisposable
         d.TotalItems.Should().Be(3); // later / undated / done excluded
     }
 
+    private sealed class Directory(IncidentManager.Application.ApiTokens.OwnerAccess? now) : IncidentManager.Application.ApiTokens.ITokenOwnerCheck
+    {
+        public Task<IncidentManager.Application.ApiTokens.OwnerAccess?> CheckAsync(string ownerUserId, CancellationToken ct = default) =>
+            Task.FromResult(now);
+    }
+
+    [Fact]
+    public async Task No_digest_for_someone_the_directory_has_disabled(/* REV-51 */)
+    {
+        SeedItemsForAnalyst1();
+        await OptInAsync("analyst1", DigestCadence.Daily);
+        var n = new CapturingNotifications();
+        var scanner = new DigestScanner(NewPrefs(),
+            NewAgenda(), n, new DigestTracker(), _clock, owners: new Directory(new(false, new HashSet<string> { "Analyst" })));
+
+        (await scanner.ScanAndNotifyAsync()).Should().Be(0);
+        n.Digests.Should().BeEmpty();
+    }
+
     // Days follow the reporting time zone: at 19:30 in New York (23:30 UTC), a task due at 22:00 New York time is due
     // today, though it's already tomorrow in UTC. And the day's digest doesn't go out again at UTC midnight.
     [Fact]
