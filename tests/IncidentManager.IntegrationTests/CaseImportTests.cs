@@ -437,6 +437,32 @@ public sealed class CaseImportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_long_timeline_and_task_list_import_in_batches_in_document_order(/* BUG-255 */)
+    {
+        // Past one batch (EntitiesPerSave), with not-stated steps that follow the one before them across the boundary.
+        var d = new DateTimeOffset(2026, 9, 2, 0, 0, 0, TimeSpan.Zero);
+        var n = CaseService.EntitiesPerSave + 50;
+        var doc = new CaseImportDocument
+        {
+            Format = CaseImportJson.FormatTag,
+            Target = new() { NewCase = new() { Title = "Long record", Classification = "Incident", Severity = "High" } },
+            Timeline = Enumerable.Range(0, n).Select(i => i % 3 == 2
+                ? new CaseImportTimelineEntry { Kind = "Event", Type = "Other", Description = $"Step {i}", TimePrecision = "NotStated" }
+                : new CaseImportTimelineEntry { Kind = "Event", Type = "Other", Description = $"Step {i}", OccurredAtUtc = d.AddMinutes(i) }).ToList(),
+            ActionItems = Enumerable.Range(0, n).Select(i => new CaseImportActionItem { Title = $"Task {i}" }).ToList(),
+        };
+
+        await using var db = NewContext();
+        var svc = NewImportService(db);
+        var result = await svc.ApplyAsync(await svc.BuildPreviewAsync(doc));
+        result.Timeline.Should().Be(n);
+        await using var verify = NewContext();
+        var steps = (await verify.Set<TimelineEntry>().Where(t => t.CaseId == result.CaseId).ToListAsync()).InTimelineOrder().ToList();
+        steps.Select(s => s.Description).Should().Equal(Enumerable.Range(0, n).Select(i => $"Step {i}"));
+        (await verify.ActionItems.CountAsync(a => a.CaseId == result.CaseId)).Should().Be(n);
+    }
+
+    [Fact]
     public async Task A_retried_import_places_a_not_stated_step_after_the_step_applied_last_time()
     {
         // BUG-15: the retry skipped already-applied rows without remembering them, so the next not-stated step went first.

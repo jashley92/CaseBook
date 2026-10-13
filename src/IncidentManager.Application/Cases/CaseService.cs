@@ -1312,6 +1312,62 @@ public sealed class CaseService
         return entry.Id;
     }
 
+    /// <summary>An imported timeline entry for <see cref="AddImportedTimelineEntriesAsync"/>. <paramref name="FollowsPrevious"/>:
+    /// an event step whose time wasn't stated, placed after the step before it in the list (ST-03).</summary>
+    public sealed record TimelineToAdd(TimelineKind Kind, TimelineEntryType Type, DateTimeOffset OccurredAtUtc,
+        string Description, string? Source, DecisionDetails? Decision = null, StepTiming? Timing = null, bool FollowsPrevious = false);
+
+    /// <summary>
+    /// BUG-255: adds imported timeline entries in batches of <see cref="EntitiesPerSave"/> (one case load and one audited
+    /// save each), not a whole-case reload, save and live publish per entry. Each is checked and placed exactly as
+    /// <see cref="AddTimelineEntryAsync"/> places one; <paramref name="afterStepId"/> is the step the first not-stated one
+    /// follows (null: first). <paramref name="saved"/> gets each batch's ids once it's saved, so a retry resumes.
+    /// </summary>
+    public async Task AddImportedTimelineEntriesAsync(Guid id, IReadOnlyList<TimelineToAdd> items, Guid? afterStepId,
+        Action<IReadOnlyList<Guid>> saved, CancellationToken ct = default)
+    {
+        Require();
+        var prev = afterStepId;
+        foreach (var batch in items.Chunk(EntitiesPerSave))
+        {
+            using var db = _factory.CreateDbContext();
+            var c = await LoadTrackedAsync(db, id, ct);
+            var ids = new List<Guid>(batch.Length);
+            // Steps at one time with no order of their own sort by when recorded; saved one at a time, that was document
+            // order. In one save it's whatever order the rows go in, so each is recorded a tick after the one before.
+            var recorded = _clock.UtcNow;
+            foreach (var i in batch)
+            {
+                recorded = recorded.AddTicks(1);
+                if (string.IsNullOrWhiteSpace(i.Description)) throw new ArgumentException("Say what happened.");
+                var description = i.Kind == TimelineKind.Event ? Content.MarkdownService.OneLine(i.Description) : i.Description;
+                TimelineEntry.EnsureDecisionHasRationale(i.Type, i.Decision?.Rationale);
+                var isDecision = i.Type == TimelineEntryType.Decision;
+                var entry = new TimelineEntry
+                {
+                    CaseId = c.Id, Kind = i.Kind, Type = i.Type, OccurredAtUtc = i.OccurredAtUtc, Description = description,
+                    Source = i.Source, CreatedBy = _user.UserId, CreatedAtUtc = recorded,
+                    Rationale = isDecision ? i.Decision?.Rationale.Trim() : null,
+                    OptionsConsidered = isDecision && !string.IsNullOrWhiteSpace(i.Decision?.OptionsConsidered) ? i.Decision.OptionsConsidered.Trim() : null,
+                    DecidedBy = isDecision && !string.IsNullOrWhiteSpace(i.Decision?.DecidedBy) ? i.Decision.DecidedBy.Trim() : null,
+                    PromotedFrom = TimelineEntry.Imported   // INV-23
+                };
+                if (i.Kind == TimelineKind.Event)
+                {
+                    var timing = i.FollowsPrevious
+                        ? prev is { } p ? new StepTiming(TimePrecision.NotStated, AfterStepId: p) : new StepTiming(TimePrecision.NotStated, First: true)
+                        : i.Timing;
+                    c.PlaceNewEventStep(entry, i.OccurredAtUtc, timing);
+                    prev = entry.Id;
+                }
+                c.TimelineEntries.Add(entry);
+                ids.Add(entry.Id);
+            }
+            await db.SaveChangesAsync(ct);
+            saved(ids);
+        }
+    }
+
     /// <summary>
     /// RD-09: what the composer saves with an entry, in the same save: tasks about the entry (a decision's tasks read
     /// "carries out a decision"), a question for the brief (optionally followed up as a task), a line for the brief's
@@ -2364,6 +2420,33 @@ public sealed class CaseService
             CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
         });
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>BUG-255: adds imported tasks in batches (one case load and one audited save each), checked as
+    /// <see cref="AddActionItemAsync"/> checks one. <paramref name="saved"/> gets each batch's count once it's saved.</summary>
+    public async Task AddImportedActionItemsAsync(Guid id, IReadOnlyList<(string Title, string? Owner, DateTimeOffset? DueAtUtc)> items,
+        Action<int> saved, CancellationToken ct = default)
+    {
+        Require();
+        foreach (var batch in items.Chunk(EntitiesPerSave))
+        {
+            using var db = _factory.CreateDbContext();
+            var c = await LoadTrackedAsync(db, id, ct);
+            foreach (var (rawTitle, rawOwner, due) in batch)
+            {
+                var title = (rawTitle ?? "").Trim();
+                if (title.Length == 0) throw new ArgumentException("Say what needs doing.");
+                if (title.Length > ActionItem.MaxTitleLength)
+                    throw new ArgumentException($"Keep the task to {ActionItem.MaxTitleLength} characters or fewer.");
+                c.ActionItems.Add(new ActionItem
+                {
+                    CaseId = c.Id, Title = title, Owner = CleanTaskOwner(rawOwner), DueAtUtc = due,
+                    CreatedBy = _user.UserId, CreatedAtUtc = _clock.UtcNow
+                });
+            }
+            await db.SaveChangesAsync(ct);
+            saved(batch.Length);
+        }
     }
 
     // INV-28: checks what a task is about is on this case, and anchors a timeline entry at its first version.

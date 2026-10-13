@@ -57,6 +57,7 @@ public static class CaseActionPermissions
 
             // Timeline
             [nameof(CaseService.AddTimelineEntryAsync)] = Permission.EditCases,
+            [nameof(CaseService.AddImportedTimelineEntriesAsync)] = Permission.EditCases,   // BUG-255
             [nameof(CaseService.AddEventStepAsync)] = Permission.EditCases,
             [nameof(CaseService.EditEventStepAsync)] = Permission.EditCases,
             [nameof(CaseService.MoveEventStepAsync)] = Permission.EditCases,
@@ -98,6 +99,7 @@ public static class CaseActionPermissions
 
             // Action items / playbooks
             [nameof(CaseService.AddActionItemAsync)] = Permission.EditCases,
+            [nameof(CaseService.AddImportedActionItemsAsync)] = Permission.EditCases,   // BUG-255
             [nameof(CaseService.ApplyTemplateAsync)] = Permission.EditCases,
             [nameof(CaseService.SetActionItemStatusAsync)] = Permission.EditCases,
             [nameof(CaseService.CompleteActionItemAsync)] = Permission.EditCases,

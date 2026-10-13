@@ -200,58 +200,69 @@ public sealed class CaseImportService
         var firstStated = p.Timeline.Where(x => x.Include && x.Kind == TimelineKind.Event && x.Precision != TimePrecision.NotStated)
             .Select(x => (DateTimeOffset?)(x.Precision is TimePrecision.Day or TimePrecision.OnOrBefore or TimePrecision.Window
                 ? StepTiming.DateAnchor(x.OccurredAtUtc) : x.OccurredAtUtc)).Min();
-        foreach (var t in p.Timeline.Where(t => t.Include))
+        // BUG-255: in batches (one case load and one audited save each), not a whole-case reload, save and live publish per
+        // entry. The rows still to apply keep their order; a not-stated step follows the step before it in the document.
+        var included = p.Timeline.Where(t => t.Include).ToList();
+        var pending = new List<(ImportTimelineRow Row, CaseService.TimelineToAdd Item)>();
+        var stepBefore = false;   // a step before this one (applied last time, or pending) for a not-stated one to follow
+        foreach (var t in included)
         {
             // BUG-15: on a retry, a step applied last time is still the one the next not-stated step follows.
-            if (t.Applied && t.Kind == TimelineKind.Event && t.AppliedId is { } before) lastStep = before;
-            if (!t.Applied)
+            if (t.Applied)
             {
-                var precision = t.Kind == TimelineKind.Event ? t.Precision : TimePrecision.Exact;
-                StepTiming? timing = precision switch
-                {
-                    TimePrecision.Exact => null,
-                    TimePrecision.Window => new StepTiming(TimePrecision.Window, t.OccurredUntilUtc),
-                    TimePrecision.NotStated => lastStep is { } prev
-                        ? new StepTiming(TimePrecision.NotStated, AfterStepId: prev)
-                        : new StepTiming(TimePrecision.NotStated, First: true),
-                    _ => new StepTiming(precision)
-                };
-                var when = precision == TimePrecision.NotStated && lastStep is null && firstStated is { } earliest
-                    ? earliest : t.OccurredAtUtc;
-                var added = await _cases.AddTimelineEntryAsync(caseId, t.Kind, t.Type, when,
-                    t.Description, t.Source ?? origin, null,
-                    decision: t.Type == TimelineEntryType.Decision
-                        ? new CaseService.DecisionDetails(t.Rationale ?? "", t.OptionsConsidered, t.DecidedBy) : null,
-                    imported: true, timing: timing, ct: ct);
-                if (t.Kind == TimelineKind.Event) lastStep = added;
-                t.AppliedId = added;
-                t.Applied = true;
+                if (pending.Count == 0 && t.Kind == TimelineKind.Event && t.AppliedId is { } before) lastStep = before;
+                if (t.Kind == TimelineKind.Event) stepBefore = true;
+                continue;
             }
-            timeline++;
+            var precision = t.Kind == TimelineKind.Event ? t.Precision : TimePrecision.Exact;
+            StepTiming? timing = precision switch
+            {
+                TimePrecision.Exact => null,
+                TimePrecision.Window => new StepTiming(TimePrecision.Window, t.OccurredUntilUtc),
+                TimePrecision.NotStated => null,   // placed after the step before it, in the batch
+                _ => new StepTiming(precision)
+            };
+            var when = precision == TimePrecision.NotStated && !stepBefore && firstStated is { } earliest
+                ? earliest : t.OccurredAtUtc;
+            pending.Add((t, new CaseService.TimelineToAdd(t.Kind, t.Type, when, t.Description, t.Source ?? origin,
+                t.Type == TimelineEntryType.Decision ? new CaseService.DecisionDetails(t.Rationale ?? "", t.OptionsConsidered, t.DecidedBy) : null,
+                timing, FollowsPrevious: precision == TimePrecision.NotStated)));
+            if (t.Kind == TimelineKind.Event) stepBefore = true;
         }
+        var next = 0;
+        await _cases.AddImportedTimelineEntriesAsync(caseId, pending.Select(x => x.Item).ToList(), lastStep, ids =>
+        {
+            foreach (var id in ids)
+            {
+                pending[next].Row.AppliedId = id;
+                pending[next].Row.Applied = true;
+                next++;
+            }
+        }, ct);
+        timeline = included.Count;
 
         // BUG-202: in batches (one load and one audited save each), not a whole-case reload and save per indicator. A
         // batch's items are marked applied once it's saved; matching makes a retry of an unsaved one harmless anyway.
-        var included = p.Entities.Where(e => e.Include).ToList();
-        foreach (var batch in included.Where(e => !e.Applied).Chunk(CaseService.EntitiesPerSave))
+        var includedEntities = p.Entities.Where(e => e.Include).ToList();
+        foreach (var batch in includedEntities.Where(e => !e.Applied).Chunk(CaseService.EntitiesPerSave))
         {
             // BUG-152: the document's marking is kept, and only ever raises one the case already has.
             await _cases.AddOrMatchEntitiesAsync(caseId, batch.Select(e => new CaseService.EntityToAdd(e.Type, e.Value, e.Label,
                 e.Disposition, e.Description, e.Source ?? origin, e.Tlp)).ToList(), ct);
             foreach (var e in batch) e.Applied = true;
         }
-        var entities = included.Count;
+        var entities = includedEntities.Count;
 
-        var actionItems = 0;
-        foreach (var a in p.ActionItems.Where(a => a.Include))
+        // BUG-255: tasks in batches too.
+        var tasks = p.ActionItems.Where(a => a.Include).ToList();
+        var todo = tasks.Where(a => !a.Applied).ToList();
+        var done = 0;
+        await _cases.AddImportedActionItemsAsync(caseId, todo.Select(a => (a.Title, a.Owner, a.DueAtUtc)).ToList(), n =>
         {
-            if (!a.Applied)
-            {
-                await _cases.AddActionItemAsync(caseId, a.Title, a.Owner, a.DueAtUtc, ct: ct);
-                a.Applied = true;
-            }
-            actionItems++;
-        }
+            foreach (var a in todo.Skip(done).Take(n)) a.Applied = true;
+            done += n;
+        }, ct);
+        var actionItems = tasks.Count;
 
         return new CaseImportResult(caseId, caseNumber, created, notes, timeline, entities, actionItems);
     }
