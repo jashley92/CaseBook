@@ -168,6 +168,47 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### Next release
+
+- **A config bundle counts as this server's only if it carries this server's key.** "Signed by this instance" used to
+  compare the key id the bundle states, which is public, so a bundle signed with any key could claim it. A bundle
+  that names this server's key id but carries another key is now refused; one signed elsewhere asks you to confirm
+  its source, as before.
+
+- **Config import keeps one active stage gate per transition.** A bundle that would leave a transition with two
+  active gates (yours and one of the same transition under another name) is refused at preview: deactivate one,
+  then import.
+
+- **Materiality "Under review" keeps no decision time.** The decision time is asked when the call is made (Material
+  or Not material). **Check open Incidents and Breaches whose Material call was recorded after an Under-review save**:
+  the decision time may have been pre-filled with when the review began, starting the notification clock early.
+  Re-record it with the real time.
+
+- **Downloads refuse frames and loads started by another site.** An evidence file, report or export opens from a
+  link or button in CaseBook, a typed or bookmarked address, or a desktop mail client's link, not from a link or
+  frame on another web page.
+
+- **The installers write AD role groups as `DOMAIN\Group`.** A bare name maps only a group in the web server's own
+  domain (v1.5.4), so `New-CaseBookConfig.ps1` and `Install-CaseBook.ps1` now resolve each group and store its own
+  domain. Existing installs aren't changed.
+
+- **The upgrade warm-up asks the app itself** (`/api/import/cases/schema`, anonymous at the IIS level on an installed
+  site) and needs a `200`, so a build that crashes at startup is rolled back. A failed rollback copy now leaves the
+  app pool stopped and says how to restore the snapshot by hand.
+
+- **`Verify-LedgerDigests.ps1` exits 2 when it couldn't run the check** (server unreachable, sign-in or permission
+  refused, a timeout). Exit 1 is kept for a ledger that doesn't match its digests. **Update any scheduled task or
+  monitor that treats every non-zero exit as tampering.**
+
+- **The Legal and integrity-alert distribution lists hold addresses only.** A pasted `a@x; b@x` is split into one
+  per line; anything that isn't an address is refused on save. **Check both lists**: one saved as `legal@corp;
+  privacy@corp` on one line sent to the last address only.
+
+- **Administration › Settings shows the values in force**, including those set in the server's appsettings files
+  (which it now says), and *Reset* returns to that value.
+
+- **One migration widens the API token role column** (`ApiTokenRolesWider`: `ApiTokens.RolesCsv` to 4,000).
+
 ### v1.5.4
 
 A bug-fix release with two migrations, applied at startup (an audit-log index, which takes a moment on a large audit
