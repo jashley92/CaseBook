@@ -133,6 +133,22 @@ public sealed class NoteMentionTests : IDisposable
         _notifications.HandedOff.Should().Equal("teammate");
     }
 
+    [Fact]
+    public async Task A_handoff_moves_the_tasks_owned_under_any_of_my_identifiers(/* REV-17 */)
+    {
+        var id = await SeedAsync(restricted: false);
+        _user.UserPrincipalName = "ic@corp.example";
+        await Svc().AddActionItemAsync(id, "By id", "ic", null);
+        await Svc().AddActionItemAsync(id, "By UPN", "IC@corp.example", null);
+        await Svc().AddActionItemAsync(id, "Someone else's", "teammate", null);
+
+        var moved = await Svc().HandOffAsync(id, "teammate", "Over to you.", reassignMyOpenTasks: true);
+
+        moved.Should().Be(2);
+        await using var db = new AppDbContext(Options());
+        (await db.ActionItems.Where(t => t.CaseId == id).Select(t => t.Owner).ToListAsync()).Should().OnlyContain(o => o == "teammate");
+    }
+
     private async Task<AnalystNote> CurrentNote()
     {
         await using var db = new AppDbContext(Options());

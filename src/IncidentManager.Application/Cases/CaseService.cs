@@ -1057,6 +1057,18 @@ public sealed class CaseService
         c.RecordGatePassage(trigger, overridden, overrideJustification, reason, detail, _user.UserId, _clock.UtcNow);
     }
 
+    /// <summary>
+    /// REV-17: a task owner is free text (a user id, a UPN, an email, a display name, a template's owner hint). Mine is
+    /// any of my identifiers, as My Work and the agenda read it, so a hand-off moves every task they show as mine.
+    /// </summary>
+    private bool OwnedByMe(string? owner)
+    {
+        if (string.IsNullOrWhiteSpace(owner)) return false;
+        var o = owner.Trim();
+        return Same(_user.UserId) || Same(_user.UserPrincipalName) || Same(_user.DisplayName) || Same(_user.Email);
+        bool Same(string? id) => !string.IsNullOrWhiteSpace(id) && string.Equals(o, id.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
     public async Task ReferToLegalAsync(Guid id, string? contact, string? relevanceNote,
         string? expectedStamp = null, CancellationToken ct = default)
     {
@@ -2577,7 +2589,7 @@ public sealed class CaseService
         });
         var moved = 0;
         if (reassignMyOpenTasks)
-            foreach (var t in c.ActionItems.Where(t => t.IsOpen && string.Equals(t.Owner, _user.UserId, StringComparison.OrdinalIgnoreCase)))
+            foreach (var t in c.ActionItems.Where(t => t.IsOpen && OwnedByMe(t.Owner)))
             {
                 t.Owner = toUserId;
                 t.ModifiedBy = _user.UserId;
