@@ -232,6 +232,28 @@ public sealed class LessonsLearnedTests : IDisposable
     }
 
     [Fact]
+    public async Task Closing_soon_after_lowering_the_classification_is_noted_on_the_passage(/* WF-13 */)
+    {
+        var id = await NewCaseAsync("Lowered Case");
+        await using (var db = NewContext())
+        {
+            var gate = new StageGate { Trigger = StageGateTrigger.CloseCase, Name = "Closure readiness", IsActive = true,
+                CreatedBy = "system", CreatedAtUtc = _clock.UtcNow };
+            gate.Requirements.Add(new StageGateRequirement { GateId = gate.Id, Order = 0, Kind = GateRequirementKind.MachineCheck,
+                CheckKey = GateCheckKeys.LessonsCaptured, Label = "Lessons captured", IsBlocking = true });
+            db.StageGates.Add(gate);
+            await db.SaveChangesAsync();
+            await IncidentManager.Infrastructure.Persistence.DevDataSeeder.SeedCaseOutcomesAsync(db, _clock);
+            await Cases(db).ReclassifyAsync(id, Classification.AdverseEvent, "Turned out to be contained to one mailbox");
+            await Cases(db).ChangePhaseAsync(id, CasePhase.Closed, "done", closing: TestOutcomes.Closing());   // not blocked
+        }
+
+        await using var check = NewContext();
+        var passage = await check.GatePassages.AsNoTracking().SingleAsync(p => p.CaseId == id && p.Trigger == StageGateTrigger.CloseCase);
+        passage.Detail.Should().Contain("lowered from Incident to Adverse Event").And.Contain("judged on the current classification");
+    }
+
+    [Fact]
     public async Task A_close_gate_requiring_lessons_blocks_an_incident_until_the_review_is_complete()
     {
         var id = await NewCaseAsync("Gate Case");

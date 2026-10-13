@@ -1078,9 +1078,36 @@ public sealed class CaseService
         // not as a UTC "4 Oct 2026" the analyst never saw.
         var detail = GateDetail.Summarize(eval, attested,
             d => OrgLocal(d).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        if (trigger == StageGateTrigger.CloseCase && RecentDowngrade(c) is { } note) detail += note;
         // The reason is the analyst's rationale for the transition; keep it on the passage so the gate
         // record is self-contained for an examiner.
         c.RecordGatePassage(trigger, overridden, overrideJustification, reason, detail, _user.UserId, _clock.UtcNow);
+    }
+
+    /// <summary>WF-13: how long before closing a lowered classification is noted on the close gate's passage.</summary>
+    public static readonly TimeSpan DowngradeNoteWindow = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// WF-13: the close gate judges the case as it stands, so a Breach lowered to Adverse Event just before closing skips
+    /// the Incident- and Breach-only checks (lessons captured, notifications recorded). That stands (owner's decision:
+    /// flag, don't block), but the passage says so, so an examiner reading "[MET]" sees the lowering beside it.
+    /// </summary>
+    private string? RecentDowngrade(Case c)
+    {
+        var now = _clock.UtcNow;
+        var lowered = c.ClassificationChanges
+            .Where(x => x.ChangedAtUtc >= now - DowngradeNoteWindow && Rank(x.To) < Rank(x.From))
+            .OrderByDescending(x => x.ChangedAtUtc).FirstOrDefault();
+        if (lowered is null) return null;
+        var on = OrgLocal(lowered.EffectiveAt).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        return $" · Note: the classification was lowered from {Words(lowered.From)} to {Words(lowered.To)} on {on}, within " +
+               $"{DowngradeNoteWindow.TotalDays:0} days of closing; the checks were judged on the current classification.";
+
+        static int Rank(Classification? k) => k is null ? 0 : (int)k.Value + 1;
+        static string Words(Classification? k) => k switch
+        {
+            null => "Complex Event", Classification.AdverseEvent => "Adverse Event", var v => v.ToString()
+        };
     }
 
     public async Task ReferToLegalAsync(Guid id, string? contact, string? relevanceNote,
