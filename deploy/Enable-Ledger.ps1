@@ -74,13 +74,19 @@ Write-Host "==> Ledger for [$DbName] on [$SqlInstance]" -ForegroundColor Cyan
 $conn = New-CaseBookSqlConnection -SqlInstance $SqlInstance -DbName $DbName -SqlCredential $SqlCredential
 try {
     if (-not $SkipBackupCheck) {
+        # REV-75: judged on the SQL host's own clock. backup_finish_date is in that server's local time, so comparing it
+        # with this machine's clock (another time zone) let a 26-hour-old backup pass, or refused a fresh one.
+        $recent = Invoke-CaseBookSqlScalar -Connection $conn -Sql @"
+SELECT COUNT(*) FROM msdb.dbo.backupset
+WHERE database_name = @db AND type = 'D' AND backup_finish_date >= DATEADD(hour, -24, GETDATE())
+"@ -Parameters @{ '@db' = $DbName }
         $lastFull = Invoke-CaseBookSqlScalar -Connection $conn -Sql @"
 SELECT MAX(backup_finish_date) FROM msdb.dbo.backupset WHERE database_name = @db AND type = 'D'
 "@ -Parameters @{ '@db' = $DbName }
-        if ($lastFull -is [DBNull] -or $null -eq $lastFull -or $lastFull -lt (Get-Date).AddHours(-24)) {
+        if ([int]$recent -eq 0) {
             throw "No full backup of [$DbName] in the last 24 hours. Take one first: enabling the ledger can't be undone."
         }
-        Write-Host "    Last full backup: $lastFull" -ForegroundColor Gray
+        Write-Host "    Last full backup: $lastFull (the SQL host's local time)" -ForegroundColor Gray
     }
 
     if (-not $PSCmdlet.ShouldProcess("[$DbName] on [$SqlInstance]", 'Convert AuditLog, IntegritySeals and ChainOfCustodyEvents to append-only ledger tables (irreversible)')) {
