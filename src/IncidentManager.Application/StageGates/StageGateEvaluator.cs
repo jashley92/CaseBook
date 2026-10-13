@@ -15,7 +15,7 @@ public interface IStageGateEvaluator
     /// <paramref name="plannedEntities"/> are the indicators filed with it, added right after it's saved.
     /// </summary>
     Task<GateEvaluation> EvaluateNewAsync(IAppDbContext db, Domain.Entities.Case unsaved, StageGateTrigger trigger,
-        int plannedEntities = 0, CancellationToken ct = default, IReadOnlyList<EntityDisposition>? plannedDispositions = null);
+        int plannedEntities = 0, IReadOnlyList<EntityDisposition>? plannedDispositions = null, CancellationToken ct = default);
 }
 
 public sealed class StageGateEvaluator : IStageGateEvaluator
@@ -48,7 +48,7 @@ public sealed class StageGateEvaluator : IStageGateEvaluator
     }
 
     public async Task<GateEvaluation> EvaluateNewAsync(IAppDbContext db, Domain.Entities.Case c, StageGateTrigger trigger,
-        int plannedEntities = 0, CancellationToken ct = default, IReadOnlyList<EntityDisposition>? plannedDispositions = null)
+        int plannedEntities = 0, IReadOnlyList<EntityDisposition>? plannedDispositions = null, CancellationToken ct = default)
     {
         var gate = await db.StageGates.AsNoTracking()
             .Include(g => g.Requirements)
