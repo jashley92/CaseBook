@@ -44,12 +44,20 @@ GO
 IF DB_ID(N'$(DbName)') IS NULL
 BEGIN
     DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(N'$(DbName)');
-    IF N'$(DataPath)' NOT IN (N'', N'(default)') AND N'$(LogPath)' NOT IN (N'', N'(default)')
+    -- REV-74: either path on its own is honoured. CREATE DATABASE takes LOG ON only with ON PRIMARY, so the one not
+    -- given is the instance default (SQL Server 2012+), rather than both being ignored unless both are set.
+    DECLARE @data nvarchar(4000) = CASE WHEN N'$(DataPath)' IN (N'', N'(default)')
+        THEN CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(4000)) ELSE N'$(DataPath)' END;
+    DECLARE @log nvarchar(4000) = CASE WHEN N'$(LogPath)' IN (N'', N'(default)')
+        THEN CAST(SERVERPROPERTY('InstanceDefaultLogPath') AS nvarchar(4000)) ELSE N'$(LogPath)' END;
+    IF RIGHT(@data, 1) = N'\' SET @data = LEFT(@data, LEN(@data) - 1);
+    IF RIGHT(@log, 1) = N'\' SET @log = LEFT(@log, LEN(@log) - 1);
+    IF N'$(DataPath)' NOT IN (N'', N'(default)') OR N'$(LogPath)' NOT IN (N'', N'(default)')
         SET @sql = N'CREATE DATABASE ' + QUOTENAME(N'$(DbName)') + N'
              ON PRIMARY (NAME = ' + QUOTENAME(N'$(DbName)' + N'_data', '''') + N',
-                         FILENAME = ' + QUOTENAME(N'$(DataPath)\$(DbName).mdf', '''') + N')
+                         FILENAME = ' + QUOTENAME(@data + N'\$(DbName).mdf', '''') + N')
              LOG ON     (NAME = ' + QUOTENAME(N'$(DbName)' + N'_log', '''') + N',
-                         FILENAME = ' + QUOTENAME(N'$(LogPath)\$(DbName)_log.ldf', '''') + N')';
+                         FILENAME = ' + QUOTENAME(@log + N'\$(DbName)_log.ldf', '''') + N')';
     -- EXEC's errors don't end the batch on their own, so catch and re-raise: the "Created" line only prints on
     -- success, and the re-raised error stops the script (sqlcmd :on error exit; Invoke-Sqlcmd -AbortOnError).
     BEGIN TRY
