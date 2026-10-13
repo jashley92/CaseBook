@@ -20,6 +20,9 @@ public static class UserFacingError
 
     /// <param name="action">A short phrase for the log, e.g. "creating a case" or "uploading evidence".</param>
     /// <param name="generic">Context-specific fallback for unexpected failures; defaults to <see cref="GenericSave"/>.</param>
+    private static bool Ours(Exception ex) =>
+        ex.TargetSite?.DeclaringType?.FullName?.StartsWith("IncidentManager.", StringComparison.Ordinal) == true;
+
     public static string Describe(Exception ex, ILogger logger, string action, string? generic = null)
     {
         switch (ex)
@@ -34,8 +37,11 @@ public static class UserFacingError
             case ForbiddenException:
             case StaleEditException:
             case GateNotSatisfiedException:
-            case ArgumentException:
-            case InvalidOperationException:
+                return ex.Message;
+            // REV-66: only when CaseBook threw it. EF Core and SqlClient raise these too (a query that won't translate,
+            // quoting the expression and entity names; a second operation on a context; an exhausted connection pool),
+            // and those messages are internals for the log, not for the person.
+            case ArgumentException or InvalidOperationException when Ours(ex):
                 return ex.Message;
 
             default:

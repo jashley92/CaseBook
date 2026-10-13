@@ -21,6 +21,13 @@ public sealed class UserFacingErrorTests
     private static string Describe(Exception ex) =>
         UserFacingError.Describe(ex, NullLogger.Instance, "testing");
 
+    // Thrown here, in CaseBook's code, as the domain throws them (REV-66 passes those through, not the framework's).
+    private static Exception Thrown(Exception e)
+    {
+        try { throw e; }
+        catch (Exception x) { return x; }
+    }
+
     [Fact]
     public void A_validation_exception_joins_its_messages()
     {
@@ -36,14 +43,24 @@ public sealed class UserFacingErrorTests
     [Fact]
     public void Domain_exception_messages_pass_through_verbatim()
     {
-        Describe(new InvalidOperationException("Case number '2026-01' is already in use."))
+        Describe(Thrown(new InvalidOperationException("Case number '2026-01' is already in use.")))
             .Should().Be("Case number '2026-01' is already in use.");
-        Describe(new ArgumentException("The detected time cannot be in the future."))
+        Describe(Thrown(new ArgumentException("The detected time cannot be in the future.")))
             .Should().Be("The detected time cannot be in the future.");
         Describe(new StaleEditException("stamp", "Another author changed this."))
             .Should().Be("Another author changed this.");
         Describe(new ForbiddenException(Permission.EditCases))
             .Should().Contain("permission");
+    }
+
+    [Fact]
+    public void A_framework_invalid_operation_is_replaced_not_shown(/* REV-66 */)
+    {
+        Exception fromFramework;
+        try { _ = new List<int>().First(); throw new InvalidOperationException("unreachable"); }
+        catch (InvalidOperationException x) { fromFramework = x; }
+
+        Describe(fromFramework).Should().Be(UserFacingError.GenericSave, "it came from System.Linq, not from CaseBook");
     }
 
     [Fact]
