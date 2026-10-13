@@ -8,6 +8,22 @@ namespace IncidentManager.UnitTests;
 public partial class DeployScriptTests
 {
     [Fact]
+    public void The_deploy_scripts_are_plain_ascii(/* REV-79 */)
+    {
+        // Windows PowerShell 5.1 reads a BOM-less script in the ANSI code page, so a non-ASCII character (an em dash) turns
+        // into mojibake, and in a string or a here-string changes what the script does. A leading UTF-8 BOM is allowed.
+        var deploy = Path.Combine(RepoRoot(), "deploy");
+        var offenders = Directory.EnumerateFiles(deploy, "*.ps*1", SearchOption.AllDirectories)
+            .Select(f => (File: Path.GetRelativePath(deploy, f), Bytes: File.ReadAllBytes(f)))
+            .Select(x => (x.File, Bytes: x.Bytes.AsSpan().StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]) ? x.Bytes[3..] : x.Bytes))
+            .Where(x => x.Bytes.Any(b => b > 127))
+            .Select(x => x.File)
+            .ToList();
+
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Every_sqlcmd_that_runs_a_script_file_turns_QUOTED_IDENTIFIER_on()
     {
         // BUG-143: sqlcmd defaults QUOTED_IDENTIFIER off, and the schema's filtered indexes fail without it.

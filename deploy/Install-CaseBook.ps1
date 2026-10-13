@@ -398,8 +398,8 @@ function Protect-DataRoot($path) {
 Protect-DataRoot $DataRoot
 Grant-Ntfs $SitePath 'ReadAndExecute'                       # app binaries: read/execute only
 foreach ($d in $dataDirs) { Grant-Ntfs $d 'Modify' }        # stores the app reads/writes
-# H-07: on SQL Server (production) every file store — DB, evidence, reports, branding, keys, seals,
-# data-protection ring, ops status — lives under the ACL'd DataRoot, and the app no longer creates an
+# H-07: on SQL Server (production) every file store - DB, evidence, reports, branding, keys, seals,
+# data-protection ring, ops status - lives under the ACL'd DataRoot, and the app no longer creates an
 # App_Data folder under its content root. The web root therefore stays fully read/execute-only above;
 # no per-folder Modify carve-out is needed.
 # Tighten the private signing key to the app identity (read) - provision the key out of band (OPERATIONS section 2).
