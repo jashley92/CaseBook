@@ -7,12 +7,16 @@ namespace IncidentManager.Web.Security;
 /// <summary>
 /// Turns a Windows account name (<c>DOMAIN\sam</c>) into the person's real display name. Windows
 /// authentication only gives us <c>DOMAIN\sam</c>; this looks up the AD display name (e.g. "Jordan
-/// Rivera") so the UI never shows the domain or the bare logon name. Results are cached for the
-/// process lifetime, and every failure path degrades gracefully to the bare username — never the domain.
+/// Rivera") so the UI never shows the domain or the bare logon name. A name found is cached for the process lifetime;
+/// every failure path degrades gracefully to the bare username (never the domain), and is tried again after
+/// <see cref="RetryUnresolved"/> (REV-67), so one domain-controller blip doesn't fix "jdoe" as someone's name until the
+/// app pool recycles (written into the user mirror and into hashed records such as assignments).
 /// </summary>
 internal static class WindowsNames
 {
-    private static readonly ConcurrentDictionary<string, string> Cache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, (string? Name, DateTime RetryAfterUtc)> Cache = new(StringComparer.OrdinalIgnoreCase);
+
+    internal static readonly TimeSpan RetryUnresolved = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// A human-friendly name for an identity: the AD display name for a <c>DOMAIN\sam</c> account, the
@@ -27,7 +31,13 @@ internal static class WindowsNames
         if (slash < 0) return identityName;                 // not DOMAIN\sam (dev auth, UPN, plain name)
 
         var sam = identityName[(slash + 1)..];
-        return Cache.GetOrAdd(identityName, key => ResolveDisplayName(key) ?? sam);
+        var now = DateTime.UtcNow;
+        if (!Cache.TryGetValue(identityName, out var cached) || (cached.Name is null && now >= cached.RetryAfterUtc))
+        {
+            cached = (ResolveDisplayName(identityName), now + RetryUnresolved);
+            Cache[identityName] = cached;
+        }
+        return cached.Name ?? sam;
     }
 
     private static string? ResolveDisplayName(string domainAndSam)
