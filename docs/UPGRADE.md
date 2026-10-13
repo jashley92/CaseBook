@@ -168,6 +168,43 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### Next release
+
+- **A case's Audit tab and audit CSV now include what was recorded under its earlier numbers.** A promotion out of
+  Complex Event (or a renumber) used to cut the trail at that point. Evidence uploads, report generate/approve and case
+  links are now also stamped with their case, so they appear there (entries already written without one stay as they
+  are).
+
+- **Seal chain head verifies the whole chain first** and refuses while it doesn't verify.
+
+- **Seal copies on disk have the seal's id in the name** (`seal-<sequence>-<time>-<id>.json` and `.tsr`). Update any
+  job that picks them up by the old pattern.
+
+- **Two settings are bounded.** `Security:IdleTimeoutMinutes` takes 0 to 1,440 (a larger value is held to 1,440), and
+  `Compliance:NotificationDeadlines:DefaultWindowHours` takes 1 to 8,760 (a value outside that from the file falls back
+  to 72). **Check both** if either was set high in `appsettings.Production.json`.
+
+- **A config bundle is refused when an item breaks the admin pages' rules**: a notification rule window outside 1 to
+  8,760 hours, a blank label, or no case outcome left active. Rule codes are stored upper-case.
+
+- **Filing a case straight onto the ladder (Adverse Event or above) needs Change classification.** All built-in editor
+  roles have it; **check custom roles** that should file Incidents or Breaches directly.
+
+- **Evidence thumbnails are rate-limited per user** (`RateLimiting:Thumbnails`, 300 a minute by default), and refused
+  cross-site loads no longer spend the download budget.
+
+- **Manager escalations, the executive report and the digest go only to people the directory still holds** (Windows
+  sign-in): a disabled or expired account, or one whose groups no longer map to a CaseBook role (Manager, for the first
+  two), is left out.
+
+- **Installer and upgrade scripts.** Re-running `Install-CaseBook.ps1` keeps an existing `appsettings.Production.json`
+  (the newly generated one is written beside it as `.new`; `-ReplaceSettings` overwrites), stops the app pool before
+  publishing, and asks for a normal service account's password. `Upgrade-CaseBook.ps1` waits for the app pool's worker to
+  exit before copying files. Both probe over TLS 1.2 on Windows PowerShell 5.1. `Enable-Ledger.ps1` fails when the first
+  digest couldn't be saved, and judges the last backup's age on the SQL host's clock.
+
+- No migrations.
+
 ### v1.5.5
 
 A bug-fix release with one migration, applied at startup (a wider API-token role column). Three things need a look
