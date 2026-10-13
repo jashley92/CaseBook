@@ -298,6 +298,18 @@ public sealed class CaseImportService
     public async Task<(Guid Id, CaseImportPreview Preview, bool AlreadyQueued)> SubmitOnceAsync(string rawJson, CaseImportDocument doc,
         CancellationToken ct = default)
     {
+        // BUG-236: the look and the insert run one submission at a time, so two identical POSTs a moment apart (two
+        // playbook runs for one alert) can't both find nothing and both queue. API submissions are few; one server.
+        await SubmitGate.WaitAsync(ct);
+        try { return await SubmitOnceCoreAsync(rawJson, doc, ct); }
+        finally { SubmitGate.Release(); }
+    }
+
+    private static readonly SemaphoreSlim SubmitGate = new(1, 1);
+
+    private async Task<(Guid Id, CaseImportPreview Preview, bool AlreadyQueued)> SubmitOnceCoreAsync(string rawJson, CaseImportDocument doc,
+        CancellationToken ct)
+    {
         using (var db = _factory.CreateDbContext())
         {
             var me = _user.UserId;
@@ -488,14 +500,19 @@ public sealed class CaseImportService
     {
         RequireEdit();
         using var db = _factory.CreateDbContext();
-        var row = await VisiblePending(db).FirstOrDefaultAsync(p => p.Id == pendingId, ct);
-        if (row is null || row.Status != PendingImportStatus.Pending) return false;
-        row.Status = PendingImportStatus.Rejected;
-        row.DecidedBy = _user.UserId;
-        row.DecidedAtUtc = _clock.UtcNow;
-        row.DecisionNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
-        await db.SaveChangesAsync(ct);
-        return true;
+        // BUG-236: only while it's still pending, in one statement, as a claim is (ClaimPendingAsync): a read-then-save
+        // reject landing between another reviewer's claim and apply wrote Rejected over Applied for a case being created.
+        var me = _user.UserId;
+        var now = _clock.UtcNow;
+        var why = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        var rejected = await VisiblePending(db)
+            .Where(p => p.Id == pendingId && p.Status == PendingImportStatus.Pending)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(p => p.Status, PendingImportStatus.Rejected)
+                .SetProperty(p => p.DecidedBy, me)
+                .SetProperty(p => p.DecidedAtUtc, now)
+                .SetProperty(p => p.DecisionNote, why), ct);
+        return rejected == 1;
     }
 
     /// <summary>S-09: deciding a queued import is a case edit (the page is EditCases-gated; this is the backstop).</summary>
