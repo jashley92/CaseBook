@@ -1452,6 +1452,7 @@ public sealed class CaseService
             if (other == c.Id) throw new ArgumentException("A case can't be linked to itself.");
             var visible = await Scoped(db.Cases.AsNoTracking()).AnyAsync(x => x.Id == other, ct);
             if (!visible) throw new InvalidOperationException("The case to link must exist and be visible to you.");
+            await EnsureSameSideAsync(db, c.Id, other, ct);
             var already = await db.CaseLinks.AsNoTracking().AnyAsync(l =>
                 (l.CaseId == c.Id && l.RelatedCaseId == other) || (l.CaseId == other && l.RelatedCaseId == c.Id), ct);
             if (!already)
@@ -1547,6 +1548,7 @@ public sealed class CaseService
     {
         using var db = _factory.CreateDbContext();
         if (!await CanSeeAsync(db, caseId, ct)) return Array.Empty<EntityOverlap>();   // BUG-46
+        if (await IsExerciseAsync(db, caseId, ct)) return Array.Empty<EntityOverlap>();   // WF-48: a drill correlates with no live case
         var mine = await db.CaseEntities.AsNoTracking()
             .Where(e => e.CaseId == caseId && (entityId == null || e.Id == entityId))
             .Select(e => new { e.Id, e.Type, e.Value })
@@ -1711,6 +1713,7 @@ public sealed class CaseService
     {
         using var db = _factory.CreateDbContext();
         if (!await CanSeeAsync(db, caseId, ct)) return Array.Empty<RelatedCaseSuggestion>();   // BUG-46
+        if (await IsExerciseAsync(db, caseId, ct)) return Array.Empty<RelatedCaseSuggestion>();   // WF-48
 
         var mine = await db.CaseEntities.AsNoTracking()
             .Where(e => e.CaseId == caseId)
@@ -1944,6 +1947,21 @@ public sealed class CaseService
     /// a pair can only be linked once (either direction). Returns the new link id, or null if the
     /// pair is already linked. Self-links are rejected.
     /// </summary>
+    private static Task<bool> IsExerciseAsync(IAppDbContext db, Guid caseId, CancellationToken ct) =>
+        db.Cases.AsNoTracking().Where(c => c.Id == caseId).Select(c => c.IsExercise).FirstOrDefaultAsync(ct);
+
+    /// <summary>
+    /// WF-48: an exercise and a live case are never linked or superseded into each other (owner's decision). Superseding
+    /// copied a drill's malicious indicators into a live case and its pushed IOC feed, and a live case superseded into a
+    /// drill went on in a case left out of every reminder and dashboard.
+    /// </summary>
+    private static async Task EnsureSameSideAsync(IAppDbContext db, Guid a, Guid b, CancellationToken ct)
+    {
+        var sides = await db.Cases.AsNoTracking().Where(c => c.Id == a || c.Id == b).Select(c => c.IsExercise).Distinct().ToListAsync(ct);
+        if (sides.Count > 1)
+            throw new InvalidOperationException("An exercise case and a live case can't be linked or superseded into each other.");
+    }
+
     public async Task<Guid?> LinkCaseAsync(Guid caseId, Guid relatedCaseId, CaseLinkType type,
         string? description, CancellationToken ct = default)
     {
@@ -1957,6 +1975,7 @@ public sealed class CaseService
             .Select(c => c.Id).ToListAsync(ct);
         if (!visible.Contains(caseId) || !visible.Contains(relatedCaseId))
             throw new InvalidOperationException("Both cases must exist and be visible to you.");
+        await EnsureSameSideAsync(db, caseId, relatedCaseId, ct);
 
         // One link per pair, regardless of direction — keeps the relationship unambiguous.
         var already = await db.CaseLinks.AsNoTracking().AnyAsync(l =>
@@ -2041,6 +2060,7 @@ public sealed class CaseService
         if (!visible.Contains(duplicateId) || !visible.Contains(primaryId))
             throw new InvalidOperationException("Both cases must exist and be visible to you.");
 
+        await EnsureSameSideAsync(db, duplicateId, primaryId, ct);
         var dup = await LoadTrackedAsync(db, duplicateId, ct);
         var primary = await LoadTrackedAsync(db, primaryId, ct);
         // BUG-114: as the docs and the workspace say, neither case may be closed (reopen it first).
@@ -2162,7 +2182,9 @@ public sealed class CaseService
             .Select(l => l.CaseId == caseId ? l.RelatedCaseId : l.CaseId)
             .ToListAsync(ct);
 
-        var q = Scoped(db.Cases.AsNoTracking()).Where(c => c.Id != caseId);
+        // WF-48: only cases on the same side of the exercise boundary.
+        var drill = await db.Cases.AsNoTracking().Where(c => c.Id == caseId).Select(c => c.IsExercise).FirstOrDefaultAsync(ct);
+        var q = Scoped(db.Cases.AsNoTracking()).Where(c => c.Id != caseId && c.IsExercise == drill);
         if (linked.Count > 0) q = q.Where(c => !linked.Contains(c.Id));
         if (!string.IsNullOrWhiteSpace(query))
         {

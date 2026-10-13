@@ -424,7 +424,8 @@
         _overlapPrompt = false;
         var lines = IndicatorLines(_indicators).ToList();
         _checkedInput = _indicators;
-        if (lines.Count == 0) { _matches = new(); _history = []; return; }
+        // WF-48: a drill is checked against no live case (and links to none).
+        if (lines.Count == 0 || _request.IsExercise) { _matches = new(); _history = []; _linkChoice.Clear(); return; }
         _checking = true;
         try
         {
@@ -623,7 +624,7 @@
             // Apply the analyst's chosen relationships to the matched open cases (E-14), tracking which
             // are done so a resume doesn't re-link.
             foreach (var (relatedCaseId, choice) in _linkChoice)
-                if (choice is { } type && !_linksApplied.Contains(relatedCaseId))
+                if (choice is { } type && !_request.IsExercise && !_linksApplied.Contains(relatedCaseId))   // WF-48
                 {
                     await Cases.LinkCaseAsync(_created.Id, relatedCaseId, type, "Linked at case creation (shared indicator)");
                     _linksApplied.Add(relatedCaseId);

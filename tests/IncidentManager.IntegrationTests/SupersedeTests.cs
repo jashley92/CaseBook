@@ -55,6 +55,28 @@ public sealed class SupersedeTests : IDisposable
     }
 
     [Fact]
+    public async Task An_exercise_and_a_live_case_are_never_linked_or_superseded(/* WF-48 */)
+    {
+        var (db, svc, dup, primary) = await SeedAsync();
+        await using var _ = db;
+        var drill = Case.Open(2026, 3, "Tabletop", "Tabletop", Classification.Incident, Severity.High,
+            CaseOrigin.InternalDetection, "analyst1", _clock.UtcNow, isExercise: true);
+        drill.AddEntity(EntityType.IpAddress, "203.0.113.66", null, EntityDisposition.Malicious, null, "drill", "analyst1", _clock.UtcNow);
+        db.Cases.Add(drill);
+        await db.SaveChangesAsync();
+
+        await svc.Invoking(s => s.SupersedeAsync(drill.Id, primary, copyIndicators: true, "Same wave", acknowledgeExposure: true))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*exercise*");
+        await svc.Invoking(s => s.SupersedeAsync(primary, drill.Id, copyIndicators: false, "Same wave", acknowledgeExposure: true))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*exercise*");
+        await svc.Invoking(s => s.LinkCaseAsync(primary, drill.Id, CaseLinkType.RelatedTo, null))
+            .Should().ThrowAsync<InvalidOperationException>().WithMessage("*exercise*");
+        (await svc.SearchLinkableCasesAsync(primary, null)).Should().NotContain(c => c.Id == drill.Id);
+        (await svc.FindEntityOverlapsAsync(drill.Id)).Should().BeEmpty("a drill's indicators suggest no live case");
+        (await svc.LinkCaseAsync(dup, primary, CaseLinkType.RelatedTo, null)).Should().NotBeNull("two live cases still link");
+    }
+
+    [Fact]
     public async Task A_restricted_duplicate_is_superseded_into_an_unrestricted_case_only_once_confirmed(/* BUG-129 */)
     {
         var (db, svc, dup, primary) = await SeedAsync();
