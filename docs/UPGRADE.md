@@ -12,7 +12,8 @@ How to move a running production instance to a newer build. For a first install 
 Each version tag (`vX.Y.Z`) builds a **release bundle** attached to the matching
 [GitHub Release](https://github.com/jashley92/CaseBook/releases): `casebook-<version>.zip` plus a
 `.sha256`. The bundle contains the published app (`app/`), the deploy scripts (`deploy/`), a
-migration manifest, and a `VERSION.txt`. Deploying from the bundle means **the server needs no .NET
+migration manifest, and a `VERSION.txt`. The release's description is the version's section of [Notes](#notes) below, and
+from v1.6.0 the version is stamped into the app (Administration › Diagnostics shows it). Deploying from the bundle means **the server needs no .NET
 SDK and no NuGet access**. The release workflow rebuilds the app from the tagged commit; it doesn't rerun the
 tests, so releases are only tagged on commits that passed CI on `main`.
 
@@ -32,10 +33,15 @@ new build fails to start.
 On the web host, **elevated**:
 
 ```powershell
-# 1. Download casebook-<version>.zip from the GitHub Release and (optionally) verify it:
-#    Get-FileHash .\casebook-<version>.zip -Algorithm SHA256   # compare to the .sha256
+# From v1.6.0: one command. The script downloads the release bundle and its .sha256 from GitHub itself, refuses a
+# bundle whose hash doesn't match, and carries on as below. It runs from the copy of the deploy scripts each upgrade
+# keeps beside the site (<site parent>\CaseBook-deploy); Administration › Updates shows the exact line.
+& 'C:\inetpub\CaseBook-deploy\Upgrade-CaseBook.ps1' -Version v1.6.0      # or -Version latest; -Proxy <url> if needed
 
-# 2. Run the upgrade from the version-matched script inside the bundle, or the repo's deploy folder:
+# Without outbound internet, or the first time (before v1.6.0 there's no kept copy):
+# 1. Download casebook-<version>.zip from the GitHub Release and verify it:
+#    Get-FileHash .\casebook-<version>.zip -Algorithm SHA256   # compare to the .sha256
+# 2. Run the upgrade from the version-matched script inside the bundle:
 .\Upgrade-CaseBook.ps1 -BundleZip .\casebook-<version>.zip
 ```
 
@@ -48,12 +54,39 @@ CaseBook database and run `BACKUP DATABASE` on the instance. Warm-up counts any 
 URL as "started"; if the health URL's host name isn't in `AllowedHosts` the site answers 400 and the upgrade
 times out and rolls back.
 
-Alternatives to `-BundleZip`:
+Alternatives to `-Version` and `-BundleZip`:
 - `-AppSource <folder>` — a folder that already holds the published app.
 - `-Build` — publish from this repo (needs the .NET 10 SDK on the host).
 
+The hash check proves the bundle is the one published on the release, not who published it: the zip and its `.sha256`
+come from the same GitHub release. Upgrade from the repository you trust, and read the release's notes first.
+
+After an upgrade the site's `VERSION.txt` records the version, the version it replaced, when and by whom; Administration
+› Updates shows that line. The kept scripts folder (`CaseBook-deploy`) is writable only by Administrators and SYSTEM, so
+the app-pool account can read the scripts but never change what an administrator later runs elevated.
+
 When it finishes: sign in, open **Integrity -> "Verify now"** (chain should read **VALID**), and
 confirm a case opens and a report generates.
+
+---
+
+## Knowing when a release is out (update check)
+
+Administration › **Updates** can check GitHub for releases newer than the running one and list each of them with its
+notes (every release between yours and the latest, since upgrades skip versions), plus the one command that upgrades.
+A dot beside **Administration** in the sidebar shows when one is waiting. It's **off by default**:
+
+- Turn on **Check for new releases** there (`Updates:CheckEnabled`); it checks a couple of minutes after start, then every
+  `Updates:CheckIntervalHours` (default 24), or now with **Check now**.
+- It's one anonymous `GET https://api.github.com/repos/jashley92/CaseBook/releases`: no token, and nothing about the
+  installation is sent. The web host needs outbound HTTPS to `api.github.com`; the `-Version` upgrade also needs
+  `github.com` and `objects.githubusercontent.com`. Behind a proxy, set `Updates:Proxy` in `appsettings.Production.json`
+  (read at start-up) and pass `-Proxy` to the script.
+- A failure (no route, a proxy refusal, GitHub rate-limiting) shows as "Couldn't check" with the reason, and is logged
+  once until the reason changes. It never blocks a page or start-up.
+- A local build (no release version) never checks.
+
+The app only shows the command. It can't upgrade itself: its app-pool account can't write its own binaries, by design.
 
 ---
 
@@ -167,6 +200,19 @@ values). Restore the pre-upgrade database backup together with the previous bina
 ---
 
 ## Notes
+
+### v1.6.0
+
+A feature release with no migration. Things to check:
+
+- **The app knows its version.** Administration › Diagnostics shows the release (e.g. `1.6.0 (a1b2c3d)`); earlier builds
+  all read 1.0.0.0, and so did the `AppVersion` in an exported configuration bundle.
+- **Update check (off by default).** Administration › Updates can list newer releases with these notes. Turning it on
+  makes the web host call `api.github.com` once a day; see "Knowing when a release is out" in
+  `docs/UPGRADE.md` for the firewall and proxy settings.
+- **One-command upgrades from the next release on.** This upgrade (still `-BundleZip`) keeps a copy of the deploy
+  scripts in `<site parent>\CaseBook-deploy`, writable only by Administrators and SYSTEM. The next upgrade is
+  `& '<site parent>\CaseBook-deploy\Upgrade-CaseBook.ps1' -Version vX.Y.Z`, which downloads the bundle and checks its hash.
 
 ### v1.5.9
 
