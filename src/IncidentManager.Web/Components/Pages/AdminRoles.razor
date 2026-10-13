@@ -297,6 +297,7 @@ else
         public string? Description;
         public HashSet<Permission> Permissions = [];
         public bool IsNew;
+        public string? Stamp;   // REV-27
     }
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
@@ -317,7 +318,8 @@ else
         Name = r.Name,
         Description = r.Description,
         Permissions = [.. r.GetPermissions()],
-        IsNew = false
+        IsNew = false,
+        Stamp = r.RowHash ?? ""
     };
 
     private void TogglePerm(Permission p, bool on)
@@ -334,7 +336,7 @@ else
             if (_editing.IsNew)
                 await Roles.CreateRoleAsync(_editing.Name, _editing.Description, _editing.Permissions);
             else
-                await Roles.UpdateRoleAsync(_editing.Id!.Value, _editing.Description, _editing.Permissions);
+                await Roles.UpdateRoleAsync(_editing.Id!.Value, _editing.Description, _editing.Permissions, _editing.Stamp);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {

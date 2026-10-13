@@ -194,6 +194,23 @@ public sealed class RoleDirectoryTests : IDisposable
         await svc.UpdateRoleAsync(role.Id, "Platform team", [Permission.ViewCases, Permission.EditCases, Permission.Administer]);
     }
 
+    [Fact]
+    public async Task A_role_someone_changed_since_the_editor_opened_is_not_written_back(/* REV-27 */)
+    {
+        await SeedAsync(new RoleMappingOptions());
+        using var scope = Scope();
+        var svc = scope.ServiceProvider.GetRequiredService<RoleService>();
+        await svc.CreateRoleAsync("IR Lead", null, [Permission.ViewCases, Permission.ViewRestricted]);
+        var opened = (await svc.ListRolesAsync()).First(r => r.Name == "IR Lead");
+        var stamp = opened.RowHash;
+
+        await svc.UpdateRoleAsync(opened.Id, null, [Permission.ViewCases], stamp);   // another admin takes ViewRestricted off
+        var stale = () => svc.UpdateRoleAsync(opened.Id, "Leads", [Permission.ViewCases, Permission.ViewRestricted], stamp);
+
+        await stale.Should().ThrowAsync<InvalidOperationException>().WithMessage("*since you opened it*");
+        (await svc.ListRolesAsync()).First(r => r.Name == "IR Lead").GetPermissions().Should().NotContain(Permission.ViewRestricted);
+    }
+
     public void Dispose()
     {
         _sp.Dispose();

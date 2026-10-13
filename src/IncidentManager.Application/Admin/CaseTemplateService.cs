@@ -19,7 +19,7 @@ public sealed record TemplateView(
     Guid Id, string Name, string? Description, bool IsActive, int SortOrder,
     Classification? DefaultClassification, Severity? DefaultSeverity,
     string? DefaultDataTypes, string? SummaryBoilerplate,
-    IReadOnlyList<TemplateStepView> Steps);
+    IReadOnlyList<TemplateStepView> Steps, string Stamp = "");
 
 /// <summary>The field defaults + steps to create a template with, or replace an existing one's content.</summary>
 public sealed record TemplateInput(
@@ -84,12 +84,17 @@ public sealed class CaseTemplateService
         return template.Id;
     }
 
-    public async Task UpdateAsync(Guid id, TemplateInput input, CancellationToken ct = default)
+    /// <summary>REV-27: <paramref name="expectedStamp"/> is the template's <see cref="TemplateView.Stamp"/> when the editor
+    /// opened; the edit replaces the whole template, so one someone changed since is refused. Null skips the check.</summary>
+    public async Task UpdateAsync(Guid id, TemplateInput input, string? expectedStamp = null, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<CaseTemplateService>(_user);
         using var db = _factory.CreateDbContext();
         var template = await db.CaseTemplates.Include(t => t.Steps).FirstOrDefaultAsync(t => t.Id == id, ct)
                        ?? throw new InvalidOperationException("That template no longer exists. Reload the page and try again.");
+        if (expectedStamp is not null && !string.Equals(StampOf(template), expectedStamp, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Someone changed the template \"{template.Name}\" since you opened it, so nothing was saved: " +
+                "it would have undone that. Reload the page, then make your change again.");
 
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A template name is required.");
@@ -160,7 +165,11 @@ public sealed class CaseTemplateService
         t.DefaultClassification, t.DefaultSeverity, t.DefaultDataTypes, t.SummaryBoilerplate,
         t.Steps.OrderBy(s => s.Order)
             .Select(s => new TemplateStepView(s.Id, s.Order, s.Title, s.Description, s.OwnerHint, s.DueOffsetHours, s.Kind))
-            .ToList());
+            .ToList(), StampOf(t));
+
+    // The template's row and each step's, in order: what the editor holds and writes back.
+    private static string StampOf(CaseTemplate t) =>
+        string.Join(',', t.Steps.OrderBy(s => s.Order).Select(s => s.RowHash ?? "").Prepend(t.RowHash ?? ""));
 
     private static string? Trim(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }

@@ -220,6 +220,7 @@ else
         public bool IsActive = true;
         public int CommentaryMinLength;
         public List<ReqEdit> Requirements = [];
+        public string? Stamp;   // REV-27
     }
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
@@ -232,6 +233,7 @@ else
     {
         Id = g.Id,
         IsNew = false,
+        Stamp = g.Stamp,
         Trigger = g.Trigger,
         Name = g.Name,
         Description = g.Description,
@@ -306,7 +308,7 @@ else
         try
         {
             if (_edit.IsNew) await Gates.CreateAsync(input);
-            else await Gates.UpdateAsync(_edit.Id!.Value, input);
+            else await Gates.UpdateAsync(_edit.Id!.Value, input, _edit.Stamp);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {

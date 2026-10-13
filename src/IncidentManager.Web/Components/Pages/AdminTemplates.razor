@@ -207,6 +207,7 @@ else
         public string? DefaultDataTypes;
         public string? SummaryBoilerplate;
         public List<StepEdit> Steps = [];
+        public string? Stamp;   // REV-27
     }
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
@@ -219,6 +220,7 @@ else
     {
         Id = t.Id,
         IsNew = false,
+        Stamp = t.Stamp,
         Name = t.Name,
         Description = t.Description,
         IsActive = t.IsActive,
@@ -262,7 +264,7 @@ else
         try
         {
             if (_edit.IsNew) await Templates.CreateAsync(input);
-            else await Templates.UpdateAsync(_edit.Id!.Value, input);
+            else await Templates.UpdateAsync(_edit.Id!.Value, input, _edit.Stamp);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {

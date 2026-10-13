@@ -72,13 +72,20 @@ public sealed class RoleService
     public const string NotInEffectMessage = "Saved, but not in effect yet: CaseBook couldn't reload roles from the database, " +
         "so people still have the permissions they had before. It keeps retrying; check the application log.";
 
-    public async Task UpdateRoleAsync(Guid id, string? description, IEnumerable<Permission> permissions, CancellationToken ct = default)
+    /// <summary>REV-27: <paramref name="expectedStamp"/> is the role's row hash when the editor opened. The edit writes the
+    /// whole permission set back, so a role someone changed since (taking ViewRestricted off, say) is refused rather than
+    /// quietly restored. Null skips the check.</summary>
+    public async Task UpdateRoleAsync(Guid id, string? description, IEnumerable<Permission> permissions,
+        string? expectedStamp = null, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<RoleService>(_user, _siem);
         using var db = _factory.CreateDbContext();
         var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == id, ct)
                    ?? throw new InvalidOperationException("That role no longer exists. Reload the page and try again.");
         if (role.IsSystem) throw new InvalidOperationException("System roles can't be edited. Create a custom role instead.");
+        if (expectedStamp is not null && !string.Equals(role.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Someone changed the role \"{role.Name}\" since you opened it, so nothing was saved: " +
+                "it would have undone that. Reload the page, then make your change again.");
 
         // S-17: the same anti-lockout guard as delete — taking Administer off a role mustn't remove the last admin access.
         var perms = permissions as IReadOnlyCollection<Permission> ?? permissions.ToList();

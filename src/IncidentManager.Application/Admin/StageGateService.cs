@@ -18,7 +18,7 @@ public sealed record GateRequirementView(Guid Id, int Order, GateRequirementKind
 /// <summary>A stage gate resolved for administration.</summary>
 public sealed record StageGateView(
     Guid Id, StageGateTrigger Trigger, string Name, string? Description, bool IsActive,
-    IReadOnlyList<GateRequirementView> Requirements, int CommentaryMinLength);
+    IReadOnlyList<GateRequirementView> Requirements, int CommentaryMinLength, string Stamp = "");
 
 /// <summary>The content to create a gate with, or replace an existing one's content.</summary>
 public sealed record StageGateInput(
@@ -73,12 +73,17 @@ public sealed class StageGateService
         return gate.Id;
     }
 
-    public async Task UpdateAsync(Guid id, StageGateInput input, CancellationToken ct = default)
+    /// <summary>REV-27: <paramref name="expectedStamp"/> is the gate's <see cref="StageGateView.Stamp"/> when the editor
+    /// opened; the edit replaces the whole gate, so one someone changed since is refused. Null skips the check.</summary>
+    public async Task UpdateAsync(Guid id, StageGateInput input, string? expectedStamp = null, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<StageGateService>(_user);
         using var db = _factory.CreateDbContext();
         var gate = await db.StageGates.Include(g => g.Requirements).FirstOrDefaultAsync(g => g.Id == id, ct)
                    ?? throw new InvalidOperationException("That gate no longer exists. Reload the page and try again.");
+        if (expectedStamp is not null && !string.Equals(StampOf(gate), expectedStamp, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Someone changed the gate \"{gate.Name}\" since you opened it, so nothing was saved: " +
+                "it would have undone that. Reload the page, then make your change again.");
 
         var name = (input.Name ?? "").Trim();
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A gate name is required.");
@@ -174,7 +179,11 @@ public sealed class StageGateService
         g.Requirements.OrderBy(r => r.Order)
             .Select(r => new GateRequirementView(r.Id, r.Order, r.Kind, r.CheckKey, r.CheckParam, r.Label, r.IsBlocking))
             .ToList(),
-        g.CommentaryMinLength);
+        g.CommentaryMinLength, StampOf(g));
+
+    // The gate's row and each requirement's, in order: what the editor holds and writes back.
+    private static string StampOf(StageGate g) =>
+        string.Join(',', g.Requirements.OrderBy(r => r.Order).Select(r => r.RowHash ?? "").Prepend(g.RowHash ?? ""));
 
     private static string? Trim(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }

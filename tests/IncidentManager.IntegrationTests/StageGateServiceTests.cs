@@ -116,6 +116,22 @@ public sealed class StageGateServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_gate_someone_changed_since_the_editor_opened_is_not_written_back(/* REV-27 */)
+    {
+        var svc = NewService();
+        var id = await svc.CreateAsync(BreachGate());
+        var stamp = (await svc.GetAsync(id))!.Stamp;
+        var tighter = new StageGateInput(StageGateTrigger.EscalateToBreach, "Breach readiness", "tighter", true,
+            new[] { new GateRequirementInput(GateRequirementKind.MachineCheck, GateCheckKeys.AtLeastOneReport, null, "", true) });
+        await svc.UpdateAsync(id, tighter, stamp);
+
+        var stale = () => svc.UpdateAsync(id, BreachGate(), stamp);
+
+        await stale.Should().ThrowAsync<InvalidOperationException>().WithMessage("*since you opened it*");
+        (await svc.GetAsync(id))!.Description.Should().Be("tighter");
+    }
+
+    [Fact]
     public async Task Update_replaces_the_requirement_set_wholesale()
     {
         var svc = NewService();
