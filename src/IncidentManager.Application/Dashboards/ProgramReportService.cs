@@ -103,7 +103,8 @@ public sealed record ProgramReport(ProgramPeriod Period, ProgramSnapshot Current
 /// faced, and post-incident review follow-through (E-26). For leadership, board and exam packs (the CISO's 500.4
 /// report). Need-to-know scoped like every metric; exercise cases excluded unless asked for. Read-only.
 /// Figures are "in the period" by the date the thing happened (opened, contained, reported…), so a quarter's
-/// numbers don't move when later quarters' work is recorded.
+/// numbers don't move when later quarters' work is recorded. One exception (REV-59): no archive time is recorded, so a case
+/// never closed and archived since drops out of a past quarter's open-at-end count.
 /// </summary>
 public sealed class ProgramReportService
 {
@@ -250,7 +251,8 @@ public sealed class ProgramReportService
         }
 
         var openAtEnd = actions.Where(a => a.CreatedAtUtc < end && (a.ClosedAtUtc is null || a.ClosedAtUtc >= end)).ToList();
-        var reviewed = reviews.Select(r => r.CaseId).ToHashSet();
+        // REV-59: a review recorded by the end of the quarter, so one recorded later doesn't change a quarter already reported.
+        var reviewed = reviews.Where(r => r.At < end).Select(r => r.CaseId).ToHashSet();
 
         static List<CountBy<string>> Areas(IEnumerable<ActionRow> list) => list
             .GroupBy(a => string.IsNullOrWhiteSpace(a.RelatedArea) ? "Unspecified" : a.RelatedArea.Trim(), StringComparer.OrdinalIgnoreCase)

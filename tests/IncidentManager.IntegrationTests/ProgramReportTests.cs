@@ -87,6 +87,20 @@ public sealed class ProgramReportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_review_recorded_after_the_quarter_does_not_change_it(/* REV-59 */)
+    {
+        await SeedAsync();
+        await using (var db = new AppDbContext(Options()))
+        {
+            var b = await db.Cases.FirstAsync(c => c.Title == "Exposure");   // closed in Q2 without a review
+            db.PostIncidentReviews.Add(new PostIncidentReview { CaseId = b.Id, WhatHappened = "late", CreatedAtUtc = Apr(20).AddMonths(3), CreatedBy = "ic" });
+            await db.SaveChangesAsync();
+        }
+
+        (await Service().BuildAsync(Q2)).Current.ClosedWithReview.Should().Be(0, "the review came in Q3");
+    }
+
+    [Fact]
     public async Task A_quarter_counts_what_happened_in_it_and_compares_with_the_previous()
     {
         await SeedAsync();
