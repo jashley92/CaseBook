@@ -543,35 +543,82 @@ Start-WebAppPool -Name $AppPoolName
 
 # --- 7. Warm up (applies pending migrations) + verify ------------------------
 Write-Step "Warming up (the first request applies pending migrations)"
-# BUG-249: only a 200 from the app's own anonymous endpoint proves it started; a 5xx or a connection failure means it
-# didn't. Tolerate a self-signed cert during this local probe.
+# BUG-249: only the app's own answer proves it started; a 5xx or a connection failure means it didn't. Tolerate a
+# self-signed cert during this local probe.
+# BUG-260: the probe goes straight to the site, never through the administrator's proxy (Invoke-WebRequest used the
+# system proxy, which on many servers can't reach the site or answers 407), and doesn't follow redirects (an HTTP-only
+# site redirects to an HTTPS that isn't bound). Any answer from the app counts, and each attempt says what it got, so a
+# warm-up that times out is no longer a silent three-minute wait.
+function Invoke-SiteProbe([string] $Url, [switch] $WithCredentials) {
+    $req = [System.Net.HttpWebRequest]::Create($Url)
+    $req.Proxy = $null
+    $req.AllowAutoRedirect = $false
+    $req.Timeout = 30000
+    $req.ReadWriteTimeout = 30000
+    $req.UserAgent = 'CaseBook-Upgrade'
+    if ($WithCredentials) { $req.UseDefaultCredentials = $true }
+    try {
+        $resp = $req.GetResponse()
+        try { return @{ Status = [int]$resp.StatusCode; Detail = "$([int]$resp.StatusCode) $($resp.StatusDescription)"; Location = $resp.Headers['Location'] } }
+        finally { $resp.Close() }
+    } catch {
+        $ex = $_.Exception
+        while ($ex -and $ex -isnot [System.Net.WebException]) { $ex = $ex.InnerException }
+        if ($ex -and $ex.Response) {
+            $r = $ex.Response
+            try { return @{ Status = [int]$r.StatusCode; Detail = "$([int]$r.StatusCode) $($r.StatusDescription)"; Location = $r.Headers['Location'] } }
+            finally { $r.Close() }
+        }
+        $msg = if ($ex) { "$($ex.Status): $($ex.Message)" } else { $_.Exception.Message }
+        return @{ Status = $null; Detail = $msg; Location = $null }
+    }
+}
+# What an answer means: the app started (2xx, a redirect, or a 4xx it gave), Windows authentication answered instead of
+# the app (401/403), it crashed (5xx), or nothing yet (no answer).
+function Get-ProbeVerdict($probe) {
+    $c = $probe.Status
+    if ($null -eq $c) { return 'none' }
+    if ($c -ge 500) { return 'crashed' }
+    if ($c -in 401,403) { return 'auth' }
+    if ($c -eq 407) { return 'none' }
+    return 'started'
+}
+function Write-ProbeNote($probe, [string] $url) {
+    if ($probe.Status -ge 300 -and $probe.Status -lt 400) {
+        Write-Warn2 "The app answered with a redirect to $($probe.Location). It's running; check the site's bindings if that isn't where users go."
+    } elseif ($probe.Status -eq 400) {
+        Write-Warn2 ("The app answered 400: the host name in $url is probably not in AllowedHosts (appsettings.Production.json). " +
+                     "It's running; pass -HealthUrl with the site's public name to probe that instead.")
+    } elseif ($probe.Status -ge 404 -and $probe.Status -lt 500) {
+        Write-Warn2 "The app answered $($probe.Detail) at $url. It's running."
+    }
+}
+
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 $deadline = (Get-Date).AddSeconds($WarmupTimeoutSec)
-$started = $false; $lastStatus = $null; $authGated = $false
+$started = $false; $lastStatus = $null; $authGated = $false; $lastDetail = $null
 while ((Get-Date) -lt $deadline) {
-    try {
-        $resp = Invoke-WebRequest -Uri $ProbeUrl -UseBasicParsing -TimeoutSec 30
-        $lastStatus = [int]$resp.StatusCode; $started = $true; break
-    } catch {
-        $code = $null
-        if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
-        if ($code -ge 500) { $lastStatus = $code; break }                              # started but crashed
-        if ($code -in 401,403) { $lastStatus = $code; $authGated = $true; break }       # IIS, not the app (see below)
-        Start-Sleep -Seconds 3                                                          # still starting / not yet listening
+    $probe = Invoke-SiteProbe $ProbeUrl
+    if ($probe.Detail -ne $lastDetail) { Write-Info "Probe: $($probe.Detail)"; $lastDetail = $probe.Detail }
+    $lastStatus = $probe.Status
+    switch (Get-ProbeVerdict $probe) {
+        'started' { $started = $true; Write-ProbeNote $probe $ProbeUrl }
+        'crashed' { }
+        'auth'    { $authGated = $true }
     }
+    if ($started -or $authGated -or (Get-ProbeVerdict $probe) -eq 'crashed') { break }
+    Start-Sleep -Seconds 3                                                              # still starting / not yet listening
 }
 if ($authGated) {
     # /api isn't anonymous on this site (installed before the API carve-out, or changed since), so IIS answered for
     # the app. Ask the site root as a signed-in user instead: a page there is the app's own answer.
     Write-Warn2 "$ProbeUrl answered $lastStatus (IIS, not the app). Probing $HealthUrl as the signed-in user instead."
-    try {
-        $resp = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 30 -UseDefaultCredentials
-        $lastStatus = [int]$resp.StatusCode; $started = $true
-    } catch {
-        $code = $null
-        if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
-        $lastStatus = $code
-        if ($code -in 401,403) {
+    $probe = Invoke-SiteProbe $HealthUrl -WithCredentials
+    Write-Info "Probe: $($probe.Detail)"
+    $lastStatus = $probe.Status
+    switch (Get-ProbeVerdict $probe) {
+        'started' { $started = $true; Write-ProbeNote $probe $HealthUrl }
+        'auth' {
             Write-Warn2 ("Couldn't prove the new build started: both probes were answered by Windows authentication. " +
                          "Open $HealthUrl in a browser now; if it fails, run this script's rollback steps by hand " +
                          "(docs/UPGRADE.md). Carving /api out of Windows Auth (Install-CaseBook.ps1) makes the probe definite.")
@@ -580,6 +627,10 @@ if ($authGated) {
     }
 }
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
+if (-not $started -and $null -eq $lastStatus) {
+    Write-Warn2 ("No answer from $ProbeUrl within $WarmupTimeoutSec seconds (last: $lastDetail). If the site works in a " +
+                 "browser, this host can't reach it by that name: pass -HealthUrl with an address it can reach.")
+}
 
 if (-not $started -or ($lastStatus -ge 500)) {
     Write-Warn2 "App did not come up (last status: $(if($lastStatus){$lastStatus}else{'no response'})). Checking the event log..."
