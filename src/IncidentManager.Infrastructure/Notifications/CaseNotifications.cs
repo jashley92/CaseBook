@@ -76,7 +76,7 @@ public sealed class CaseNotifications : ICaseNotifications
         if (_owners is null) return mirrored;
         var current = new List<string>(mirrored.Count);
         foreach (var id in mirrored)
-            if (await _owners.CheckAsync(id, ct) is not { } access
+            if (await _owners.CheckRecipientAsync(id, ct) is not { } access   // WF-57: AD out of reach leaves the mirror standing
                 || (access.Active && access.Roles.Contains(nameof(AppRole.Manager), StringComparer.OrdinalIgnoreCase)))
                 current.Add(id);   // the directory can't say (null): the mirror stands, as before
         return current;

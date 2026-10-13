@@ -359,6 +359,10 @@ public sealed class ApiTokenTests : IDisposable
         (await svc.AuthenticateAsync(token)).Should().NotBeNull();
         _clock.UtcNow += AdTokenOwnerCheck.LastKnownLimit;
         (await svc.AuthenticateAsync(token)).Should().BeNull();
+        // WF-57: choosing who gets an email doesn't fail closed: with AD out of reach the directory can't say, and the
+        // user mirror stands.
+        (await ad.CheckRecipientAsync("analyst1")).Should().BeNull();
+        (await ad.CheckAsync("analyst1"))!.Active.Should().BeFalse("a token still fails closed");
 
         // Disabled in AD: refused.
         adDown = false;

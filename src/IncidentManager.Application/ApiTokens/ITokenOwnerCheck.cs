@@ -14,4 +14,11 @@ public sealed record OwnerAccess(bool Active, IReadOnlySet<string> Roles);
 public interface ITokenOwnerCheck
 {
     Task<OwnerAccess?> CheckAsync(string ownerUserId, CancellationToken ct = default);
+
+    /// <summary>
+    /// WF-57: the same question when choosing who gets an email. When the directory can't be reached the answer is null
+    /// (the mirror stands), not "inactive": a token stays fail-closed, but a manager isn't left off a report or an
+    /// escalation because the domain controller was briefly out of reach (owner's decision).
+    /// </summary>
+    Task<OwnerAccess?> CheckRecipientAsync(string userId, CancellationToken ct = default) => CheckAsync(userId, ct);
 }

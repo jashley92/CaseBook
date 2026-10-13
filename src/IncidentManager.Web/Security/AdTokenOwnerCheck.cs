@@ -37,7 +37,11 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
         _lookup = lookup ?? (OperatingSystem.IsWindows() ? QueryDirectory : _ => throw new PlatformNotSupportedException());
     }
 
-    public async Task<OwnerAccess?> CheckAsync(string ownerUserId, CancellationToken ct = default)
+    public Task<OwnerAccess?> CheckAsync(string ownerUserId, CancellationToken ct = default) => CheckCoreAsync(ownerUserId, failOpen: false, ct);
+
+    public Task<OwnerAccess?> CheckRecipientAsync(string userId, CancellationToken ct = default) => CheckCoreAsync(userId, failOpen: true, ct);
+
+    private async Task<OwnerAccess?> CheckCoreAsync(string ownerUserId, bool failOpen, CancellationToken ct)
     {
         var now = _clock.UtcNow;
         var known = _answers.TryGetValue(ownerUserId, out var last);
@@ -54,7 +58,7 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _log?.LogWarning(ex, "Couldn't check an API token's owner in Active Directory.");
-            return known && now - last.At < LastKnownLimit ? last.Access : new OwnerAccess(false, NoRoles);
+            return known && now - last.At < LastKnownLimit ? last.Access : failOpen ? null : new OwnerAccess(false, NoRoles);
         }
     }
 
