@@ -254,7 +254,8 @@ public static class SettingsCatalog
             "Repeat views of the same case or artifact by the same user within this window fold into one row " +
             "with a count. Default 30.", "30"),
         new SettingDefinition("Security:IdleTimeoutMinutes", "Idle session timeout (minutes)", "Security", SettingKind.Int,
-            "Locks the app after this many minutes without keyboard or mouse activity. Works alongside the workstation screen lock, not instead of it. 0 turns it off. Applies to new sessions.", "15"),
+            "Locks the app after this many minutes without keyboard or mouse activity. Works alongside the workstation screen lock, not instead of it. 0 turns it off; at most 1,440 (a day). Applies to new sessions.", "15",
+            Min: 0, Max: Security.IdleTimeoutPolicy.MaxMinutes),   // REV-46
         new SettingDefinition("Reporting:RequireSeparateApprover", "Require separate report approver", "Report defaults", SettingKind.Bool,
             "When on, a report must be approved by someone other than the analyst who generated it. The approver is audited either way.", "false"),
         new SettingDefinition("Reporting:LessonsLegend", "Lessons-learned report legend", "Report defaults", SettingKind.Text,

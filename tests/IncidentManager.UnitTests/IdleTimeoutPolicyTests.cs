@@ -39,6 +39,17 @@ public class IdleTimeoutPolicyTests
         plan.WarnMs.Should().BeLessThan(plan.IdleMs);
     }
 
+    [Theory]
+    [InlineData(40_000)]
+    [InlineData(int.MaxValue)]
+    public void A_huge_timeout_is_held_to_a_day_and_never_wraps_to_a_past_deadline(int minutes /* REV-46 */)
+    {
+        var plan = IdleTimeoutPolicy.Compute(minutes);
+        plan.Enabled.Should().BeTrue();
+        plan.IdleMs.Should().Be(IdleTimeoutPolicy.MaxMinutes * 60_000);
+        SettingsCatalog.ByKey["Security:IdleTimeoutMinutes"].Max.Should().Be(IdleTimeoutPolicy.MaxMinutes, "the page refuses more");
+    }
+
     [Fact]
     public void The_administered_setting_exists_and_is_an_integer()
     {

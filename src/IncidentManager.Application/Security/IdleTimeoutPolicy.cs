@@ -20,6 +20,10 @@ public static class IdleTimeoutPolicy
     /// <summary>How long the inactivity warning is shown before the session is actually locked.</summary>
     public const int WarningSeconds = 60;
 
+    /// <summary>REV-46: the longest timeout, a day. Longer is "off" in all but name (and its milliseconds overflowed an int,
+    /// wrapping to a negative deadline that locked every session within a second). A larger stored value is held to it.</summary>
+    public const int MaxMinutes = 24 * 60;
+
     /// <summary>
     /// Computes the timing plan for a given timeout in minutes. Zero or negative disables the app-level
     /// timeout (the deployment then relies on OS/AD screen-lock alone). The warning window is
@@ -30,7 +34,7 @@ public static class IdleTimeoutPolicy
     {
         if (minutes <= 0) return IdleTimeoutPlan.Disabled;
 
-        var idleMs = minutes * 60_000;
+        var idleMs = Math.Min(minutes, MaxMinutes) * 60_000;
         var warnMs = Math.Min(WarningSeconds * 1_000, idleMs / 2);
         return new IdleTimeoutPlan(true, idleMs, warnMs);
     }
