@@ -168,6 +168,18 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### Next release
+
+One migration, applied at startup (`PendingImportHash`: a hash column on `PendingImports`). Things to check:
+
+- **A due date or improvement target picked without a time now means the end of that day on the organization's
+  calendar** (23:59 in `Organization:TimeZone`), not in the picker's zone, so every viewer and every report shows the day
+  that was picked. A viewer far from the organization's zone sees such a task fall due at the organization's end of day.
+  Values saved before this release keep their instants.
+
+- Also: Find counts every matching entity and lists the most widespread; a pasted screenshot is stored only when its
+  timeline entry is saved; the import API matches a retried submission by its hash.
+
 ### v1.5.7
 
 A bug-fix release from a review by workflow, with one migration, applied at startup (`ReportedJurisdictionsAndAppendedBriefs`:
