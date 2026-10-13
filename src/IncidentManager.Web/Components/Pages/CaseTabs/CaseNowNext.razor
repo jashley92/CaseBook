@@ -120,14 +120,22 @@
                         @if (_doneFor == t.Id)
                         {
                             <div class="im-nn-doneform">
-                                <label class="form-label small mb-1" for="nn-result-@t.Id">What came of it (optional)</label>
+                                @if (t.FollowsUpQuestion)
+                                {
+                                    @* REV-35 / HR-02: as on the Tasks tab, a question's task is done when the question has an answer. *@
+                                    <label class="form-label small mb-1" for="nn-result-@t.Id">What did you find? <span class="text-muted">(required: this task follows up a question in the brief, and the answer shows there)</span></label>
+                                }
+                                else
+                                {
+                                    <label class="form-label small mb-1" for="nn-result-@t.Id">What came of it (optional)</label>
+                                }
                                 <textarea id="nn-result-@t.Id" class="form-control form-control-sm im-rec" rows="3" maxlength="7992" @bind="_result" @bind:event="oninput"></textarea>
                                 <div class="form-check small mt-1">
                                     <input class="form-check-input" type="checkbox" id="nn-log-@t.Id" @bind="_logIt" disabled="@string.IsNullOrWhiteSpace(_result)" />
                                     <label class="form-check-label" for="nn-log-@t.Id">Put the result on the record too</label>
                                 </div>
                                 <div class="d-flex gap-2 mt-1">
-                                    <button type="button" class="btn btn-sm btn-primary" disabled="@_saving" @onclick="() => Done(task)">Mark done</button>
+                                    <button type="button" class="btn btn-sm btn-primary" disabled="@(_saving || (t.FollowsUpQuestion && string.IsNullOrWhiteSpace(_result)))" @onclick="() => Done(task)">Mark done</button>
                                     <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => _doneFor = null">Cancel</button>
                                 </div>
                                 @if (_doneError is not null) { <div class="text-danger small mt-1" role="alert">@_doneError</div> }
@@ -308,6 +316,15 @@
 
     // Why the task exists: the question it answers, the decision it carries out, what it's about, the obligation it
     // feeds, or the phase its kind belongs to. The first that applies.
+    // REV-35: an entry a task is about, followed forward through edits to its current version (as the Tasks tab does).
+    private TimelineEntry? CurrentEntry(Guid id)
+    {
+        var e = Case.TimelineEntries.FirstOrDefault(x => x.Id == id);
+        for (var guard = 0; e is not null && !e.IsCurrent && guard < 100; guard++)
+            e = Case.TimelineEntries.FirstOrDefault(x => x.SupersedesEntryId == e.Id);
+        return e is { IsCurrent: true } ? e : null;
+    }
+
     private WhyInfo? Why(ActionItem t)
     {
         if (t.RaisedFromBriefId is not null) return new("bi-question-circle", "Answers a question", "Raised from an open question in the brief");
@@ -316,7 +333,7 @@
             switch (about.Kind)
             {
                 case ActionItem.AboutEntry:
-                    var entry = Case.TimelineEntries.FirstOrDefault(e => e.Id == about.Id || e.SupersedesEntryId == about.Id);
+                    var entry = CurrentEntry(about.Id);   // REV-35: its current version, followed through every edit
                     return entry?.Type == TimelineEntryType.Decision
                         ? new("bi-signpost-split", "Carries out a decision", OneLine(entry.Description))
                         : new("bi-journal-text", "From an entry", entry is null ? null : OneLine(entry.Description));
