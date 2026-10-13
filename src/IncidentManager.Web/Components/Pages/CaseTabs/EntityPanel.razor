@@ -268,11 +268,18 @@
         _verdictError = null;
         try
         {
-            await Cases.EditEntityAsync(Case.Id, en.Id, en.Type, en.Value, en.Label, d, en.Description, en.Source,
-                string.IsNullOrWhiteSpace(_verdictReason) ? null : _verdictReason.Trim());
+            // BUG-234: the verdict alone; the other fields stay as they are now, not as this panel last showed them.
+            await Cases.SetEntityVerdictAsync(Case.Id, en.Id, d,
+                string.IsNullOrWhiteSpace(_verdictReason) ? null : _verdictReason.Trim(), expectedDisposition: en.Disposition);
             _pendingVerdict = null;
             _verdictReason = null;
             Toasts.Success($"Verdict recorded: {Ui.Label(d)}");
+            await OnChanged.InvokeAsync();
+        }
+        catch (StaleEditException ex)
+        {
+            _pendingVerdict = null;
+            _verdictError = ex.Message;
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)

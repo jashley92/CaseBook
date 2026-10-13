@@ -91,6 +91,29 @@ public sealed class RecordEditingPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task An_entity_editor_opened_before_a_colleagues_change_is_refused(/* BUG-234 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+        var ip = await svc.AddEntityAsync(id, EntityType.IpAddress, "203.0.113.9", null, EntityDisposition.Unknown, null, null);
+        var opened = (await svc.GetDetailAsync(id))!.Entities.Single(e => e.Id == ip).RowHash ?? "";
+
+        // A colleague marks it malicious from the panel; the verdict alone is written.
+        await svc.SetEntityVerdictAsync(id, ip, EntityDisposition.Malicious, "beaconing", expectedDisposition: EntityDisposition.Unknown);
+
+        // The editor opened before that still says Unknown: its save is refused, not written back over the verdict.
+        var stale = () => svc.EditEntityAsync(id, ip, EntityType.IpAddress, "203.0.113.9", "C2", EntityDisposition.Unknown,
+            null, null, expectedStamp: opened);
+        await stale.Should().ThrowAsync<StaleEditException>();
+        var staleVerdict = () => svc.SetEntityVerdictAsync(id, ip, EntityDisposition.Benign, null, expectedDisposition: EntityDisposition.Unknown);
+        await staleVerdict.Should().ThrowAsync<StaleEditException>();
+        var e = (await svc.GetDetailAsync(id))!.Entities.Single(x => x.Id == ip);
+        e.Disposition.Should().Be(EntityDisposition.Malicious);
+        e.Label.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Marking_an_entity_malicious_or_compromised_needs_a_reason_that_stays_with_the_verdict()
     {
         // HR-05: the finding and its basis are kept together, not only in the audit trail.

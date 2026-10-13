@@ -532,6 +532,9 @@ else
     private string? _enLabel;
     private EntityDisposition _enDisposition = EntityDisposition.Suspicious;
     private TlpLevel? _enTlp;   // PROD-45
+    private TlpLevel? _enTlpAtOpen;   // BUG-234: what the editor showed, so a colleague's later marking isn't written back
+    private string? _enStamp;         // BUG-234: the entity's row hash when the editor opened
+    private string? _relEditStamp;
     private string? _enSource;
     private string? _enDescription;
     private string? _entityError;
@@ -776,6 +779,8 @@ else
         _enSource = e.Source;
         _enDescription = e.Description;
         _enTlp = e.Tlp;
+        _enTlpAtOpen = e.Tlp;
+        _enStamp = e.RowHash ?? "";
     }
 
     private void CancelEntityEdit()
@@ -790,8 +795,9 @@ else
         _entityError = null;
         try
         {
-            var tlpChanged = Case.Entities.FirstOrDefault(x => x.Id == id)?.Tlp != _enTlp;
-            await Cases.EditEntityAsync(CaseId, id, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource, _enReason);
+            var tlpChanged = _enTlpAtOpen != _enTlp;   // BUG-234: changed in this editor, not just different from now
+            await Cases.EditEntityAsync(CaseId, id, _enType, _enValue, _enLabel, _enDisposition, _enDescription, _enSource, _enReason,
+                expectedStamp: _enStamp);
             if (tlpChanged) await Cases.SetEntityTlpAsync(CaseId, id, _enTlp);   // PROD-45
             CancelEntityEdit();
             await OnChanged.InvokeAsync();
@@ -799,6 +805,12 @@ else
             _relatedDismissed = false; // a changed value may reveal/clear a related case (PROD-40)
             await LoadRelated();
             Toasts.Success("Entity updated");
+        }
+        catch (StaleEditException ex)
+        {
+            CancelEntityEdit();
+            Toasts.Error(ex.Message);
+            await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _entityError = ex.Message; }
     }
@@ -848,6 +860,7 @@ else
         _relEditTarget = r.TargetEntityId.ToString();
         _relEditType = r.Type;
         _relEditDescription = r.Description;
+        _relEditStamp = r.RowHash ?? "";
         _relEditError = null;
     }
 
@@ -859,10 +872,16 @@ else
         _relEditError = null;
         try
         {
-            await Cases.EditRelationshipAsync(CaseId, id, src, tgt, _relEditType, _relEditDescription);
+            await Cases.EditRelationshipAsync(CaseId, id, src, tgt, _relEditType, _relEditDescription, _relEditStamp);
             _relEditId = null;
             await OnChanged.InvokeAsync();
             Toasts.Success("Relationship updated");
+        }
+        catch (StaleEditException ex)
+        {
+            _relEditId = null;
+            Toasts.Error(ex.Message);
+            await OnChanged.InvokeAsync();
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { _relEditError = ex.Message; }
     }

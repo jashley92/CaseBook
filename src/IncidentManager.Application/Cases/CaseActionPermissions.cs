@@ -67,6 +67,7 @@ public static class CaseActionPermissions
             [nameof(CaseService.AddOrMatchEntityAsync)] = Permission.EditCases,
             [nameof(CaseService.AddOrMatchEntitiesAsync)] = Permission.EditCases,   // BUG-202
             [nameof(CaseService.EditEntityAsync)] = Permission.EditCases,
+            [nameof(CaseService.SetEntityVerdictAsync)] = Permission.EditCases,   // BUG-234
             [nameof(CaseService.RemoveEntityAsync)] = Permission.EditCases,
             [nameof(CaseService.SetEntityTlpAsync)] = Permission.EditCases,
             [nameof(CaseService.SetEntityPinnedAsync)] = Permission.EditCases,

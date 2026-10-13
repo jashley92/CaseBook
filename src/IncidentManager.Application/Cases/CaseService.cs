@@ -1702,21 +1702,52 @@ public sealed class CaseService
 
     /// <summary>
     /// Corrects an existing IOC/entity in place (e.g. a mis-typed value or a re-assessed disposition).
-    /// The optional <paramref name="reason"/> is recorded on the audit entry.
+    /// The optional <paramref name="reason"/> is recorded on the audit entry. BUG-234: <paramref name="expectedStamp"/> is
+    /// the entity's row hash when the editor opened; one someone changed since (a colleague's verdict) is refused with
+    /// <see cref="StaleEditException"/> rather than written back over. Null skips the check.
     /// </summary>
     public async Task EditEntityAsync(Guid id, Guid entityId, EntityType type, string value, string? label,
         EntityDisposition disposition, string? description, string? source, string? reason = null,
-        CancellationToken ct = default)
+        string? expectedStamp = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        if (expectedStamp is not null && c.Entities.FirstOrDefault(e => e.Id == entityId) is { } current
+            && !string.Equals(current.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
+            throw new StaleEditException(current.RowHash ?? "", "Someone changed this entity since you opened it, so your " +
+                "edit wasn't saved (it would have undone theirs). It now shows their version; make your change again.");
         // HR-05: marking something Malicious or Compromised is a finding; say why, in a line.
         if (c.Entities.FirstOrDefault(e => e.Id == entityId) is { } before && before.Disposition != disposition
             && disposition is EntityDisposition.Malicious or EntityDisposition.Compromised && string.IsNullOrWhiteSpace(reason))
             throw new ArgumentException($"Say why it's {(disposition == EntityDisposition.Malicious ? "malicious" : "compromised")}: the reason is kept with the verdict.");
         if (reason is { Length: > 2000 }) throw new ArgumentException("Keep the reason to 2,000 characters or fewer.");
         c.EditEntity(entityId, type, value, label, disposition, description, source, _user.UserId, _clock.UtcNow, reason);
+        db.PendingChangeReason = reason;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// BUG-234: records a verdict alone, keeping the entity's other fields as they are now (the panel's copy may be
+    /// older). <paramref name="expectedDisposition"/> is the verdict the person saw; if someone has changed it since,
+    /// the change is refused rather than recorded as a move from a verdict that's no longer there.
+    /// </summary>
+    public async Task SetEntityVerdictAsync(Guid id, Guid entityId, EntityDisposition disposition, string? reason,
+        EntityDisposition expectedDisposition, CancellationToken ct = default)
+    {
+        Require();
+        using var db = _factory.CreateDbContext();
+        var c = await LoadTrackedAsync(db, id, ct);
+        var e = c.Entities.FirstOrDefault(x => x.Id == entityId)
+            ?? throw new InvalidOperationException("That entity is no longer on the case.");
+        if (e.Disposition != expectedDisposition)
+            throw new StaleEditException(e.RowHash ?? "", $"Someone set this to {e.Disposition} since you opened it, so your " +
+                "verdict wasn't recorded. Look again, then record yours.");
+        if (e.Disposition != disposition && disposition is EntityDisposition.Malicious or EntityDisposition.Compromised
+            && string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException($"Say why it's {(disposition == EntityDisposition.Malicious ? "malicious" : "compromised")}: the reason is kept with the verdict.");
+        if (reason is { Length: > 2000 }) throw new ArgumentException("Keep the reason to 2,000 characters or fewer.");
+        c.EditEntity(entityId, e.Type, e.Value, e.Label, disposition, e.Description, e.Source, _user.UserId, _clock.UtcNow, reason);
         db.PendingChangeReason = reason;
         await db.SaveChangesAsync(ct);
     }
@@ -1771,11 +1802,16 @@ public sealed class CaseService
 
     /// <summary>INV-49: change a relationship's type, description or direction as one audited update.</summary>
     public async Task EditRelationshipAsync(Guid id, Guid relationshipId, Guid sourceEntityId, Guid targetEntityId,
-        EntityRelationshipType type, string? description, CancellationToken ct = default)
+        EntityRelationshipType type, string? description, string? expectedStamp = null, CancellationToken ct = default)
     {
         Require();
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
+        // BUG-234: as for entities, a relationship someone changed since the editor opened isn't written back over.
+        if (expectedStamp is not null && c.EntityRelationships.FirstOrDefault(r => r.Id == relationshipId) is { } current
+            && !string.Equals(current.RowHash ?? "", expectedStamp, StringComparison.Ordinal))
+            throw new StaleEditException(current.RowHash ?? "", "Someone changed this relationship since you opened it, so " +
+                "your edit wasn't saved. It now shows their version; make your change again.");
         c.EditRelationship(relationshipId, sourceEntityId, targetEntityId, type, description, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
     }
