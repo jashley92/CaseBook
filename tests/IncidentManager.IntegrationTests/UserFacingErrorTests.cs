@@ -64,6 +64,23 @@ public sealed class UserFacingErrorTests
     }
 
     [Fact]
+    public void A_guard_helper_called_by_casebook_counts_as_casebooks(/* REV-66 follow-up */)
+    {
+        Exception guarded;
+        try { ArgumentException.ThrowIfNullOrWhiteSpace(" ", "Title"); throw new InvalidOperationException("unreachable"); }
+        catch (ArgumentException x) { guarded = x; }
+
+        guarded.TargetSite!.DeclaringType!.Namespace.Should().Be("System", "the case TargetSite got wrong");
+        Describe(guarded).Should().Be(guarded.Message);
+    }
+
+    [Fact]
+    public void An_exception_never_thrown_has_no_frames_and_isnt_shown(/* REV-66 follow-up */)
+    {
+        Describe(new InvalidOperationException("internal detail")).Should().Be(UserFacingError.GenericSave);
+    }
+
+    [Fact]
     public void An_internal_exception_is_replaced_and_never_leaks_its_detail()
     {
         var ex = new DbUpdateException("SQLite Error 19: 'UNIQUE constraint failed: AuditLog.Sequence'.");

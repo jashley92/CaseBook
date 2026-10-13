@@ -20,8 +20,21 @@ public static class UserFacingError
 
     /// <param name="action">A short phrase for the log, e.g. "creating a case" or "uploading evidence".</param>
     /// <param name="generic">Context-specific fallback for unexpected failures; defaults to <see cref="GenericSave"/>.</param>
-    private static bool Ours(Exception ex) =>
-        ex.TargetSite?.DeclaringType?.FullName?.StartsWith("IncidentManager.", StringComparison.Ordinal) == true;
+    // REV-66: whether CaseBook threw it, read from the frame that raised it rather than TargetSite, which is best-effort
+    // and names the BCL for a guard like ArgumentException.ThrowIfNullOrEmpty. An exception type's own throw helpers are
+    // stepped over, so the guard counts as thrown by whoever called it; any other framework frame (EF, SqlClient,
+    // System.Linq) is not ours. With no frames to read, it isn't ours, and the generic line is shown.
+    private static bool Ours(Exception ex)
+    {
+        foreach (var frame in new System.Diagnostics.StackTrace(ex, false).GetFrames())
+        {
+            var type = frame.GetMethod()?.DeclaringType;
+            if (type is null) continue;
+            if (typeof(Exception).IsAssignableFrom(type) && type.Namespace == "System") continue;
+            return type.FullName?.StartsWith("IncidentManager.", StringComparison.Ordinal) == true;
+        }
+        return false;
+    }
 
     public static string Describe(Exception ex, ILogger logger, string action, string? generic = null)
     {
