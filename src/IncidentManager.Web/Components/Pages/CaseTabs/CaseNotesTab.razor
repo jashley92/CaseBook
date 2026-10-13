@@ -24,7 +24,8 @@
 }
 else
 {
-    @foreach (var n in Notes.Where(x => x.IsCurrent).OrderByDescending(x => x.CreatedAtUtc))
+    @* REV-32: the note being edited stays on screen, with what's typed in it, even after a colleague saves a newer version. *@
+    @foreach (var n in Notes.Where(x => x.IsCurrent || x.Id == _editNoteId).OrderByDescending(x => x.CreatedAtUtc))
     {
         <div class="card mb-2 im-enter @FlashClass?.Invoke(n.Id) @(IsFocused(n) ? "im-note-focus" : "")" style="@FlashStyle?.Invoke(n.Id)" @key="n.Id" id="@($"note-{n.Id}")">
             <div class="card-body py-2">
@@ -32,7 +33,14 @@ else
                 {
                     @* EasyMDE enhances this textarea; keyed by note id so switching notes remounts a fresh editor. *@
                     <textarea id="@NoteEditEditorId(n.Id)" class="form-control mb-2" aria-label="Edit note"></textarea>
-                    <button class="btn btn-sm btn-primary" @onclick="SaveNoteEdit">Save new version</button>
+                    @if (!n.IsCurrent && Notes.FirstOrDefault(x => x.IsCurrent && x.SupersedesNoteId == n.Id) is { } newer)
+                    {
+                        <div class="alert alert-warning py-1 px-2 small mb-2" role="status">
+                            @Users.DisplayFor(newer.CreatedBy) saved a newer version of this note while you were editing it, so this
+                            one can't be saved over it. Copy what you've written, cancel, then edit the newer version.
+                        </div>
+                    }
+                    <button class="btn btn-sm btn-primary" @onclick="SaveNoteEdit" disabled="@(!n.IsCurrent)">Save new version</button>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="CancelNoteEdit">Cancel</button>
                 }
                 else
