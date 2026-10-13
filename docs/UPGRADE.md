@@ -207,6 +207,11 @@ values). Restore the pre-upgrade database backup together with the previous bina
 - **Administration › Settings shows the values in force**, including those set in the server's appsettings files
   (which it now says), and *Reset* returns to that value.
 
+- **The 10-minute integrity check no longer re-reads the whole audit log.** Each cycle hashes the entries written
+  since the last one and checks every record, as before; the whole chain is re-hashed every 6 hours and on *Verify
+  now*. So an edit to an *older* audit entry is now found within 6 hours, not 10 minutes (new entries, records
+  changed in the database and the latest seal are still checked every cycle).
+
 - **One migration widens the API token role column** (`ApiTokenRolesWider`: `ApiTokens.RolesCsv` to 4,000).
 
 ### v1.5.4

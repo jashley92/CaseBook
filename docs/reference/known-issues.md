@@ -50,7 +50,6 @@ Severity: **High** (security or data-integrity impact), **Medium** (wrong behavi
 |---|---|
 | **Single instance only** | In-process audit lock, live refresh, presence, trackers and SIEM queue. Scaling out needs a distributed lock, a backplane, shared trackers and a shared data-protection keyring. |
 | **Large classes** | `CaseService` (~2,400 lines), `Case` (~1,400), `CaseTimelineTab.razor` (~2,400). `CaseWorkspace` is split into partial files. Split by area when adding substantially. |
-| **Integrity check loads the whole chain every 10 minutes** | See [performance.md](performance.md). |
 | **Test gaps** | No browser, component or HTTP-level tests; little SQL Server coverage; deploy scripts untested ([testing.md](../development/testing.md#what-is-not-covered)). |
 | **Release workflow doesn't test** | It relies on CI having passed for the tagged commit. |
 | **Floating package versions** | Microsoft packages use `10.*`, so builds at different times can differ. |

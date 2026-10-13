@@ -51,6 +51,7 @@ public sealed class AdminActionPermissionsTests
         K<IntegrityService>(nameof(IntegrityService.VerifyAsync)),
         K<IntegrityService>(nameof(IntegrityService.VerifyChainAndRecordsAsync)),
         K<IntegrityService>(nameof(IntegrityService.VerifyAndTrackAsync)),
+        K<IntegrityService>(nameof(IntegrityService.MonitorAndTrackAsync)),   // BUG-257: the background monitor's
         K<IntegrityService>(nameof(IntegrityService.VerifyOnDemandAsync)),
         K<IntegrityService>(nameof(IntegrityService.VerifyLatestSealAsync)),
         K<IntegrityService>(nameof(IntegrityService.LatestSealAtUtc)),

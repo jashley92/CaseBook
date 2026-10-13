@@ -101,7 +101,7 @@ altered or deleted later shows up when the two are compared
 
 ```mermaid
 flowchart TB
-    Start(["At startup, then every 10 minutes"]) --> V["Verify the whole chain<br/>and the latest covering seal"]
+    Start(["At startup, then every 10 minutes"]) --> V["Verify the entries written since the last cycle<br/>(the whole chain every 6 h),<br/>every record, and the latest covering seal"]
     V --> C{"Intact?"}
     C -- "no" --> Alarm["Alarm once per episode:<br/>Critical log 5001 · SIEM 5001 ·<br/>email to IntegrityAlertDistribution ·<br/>banner for administrators"]
     C -- "yes" --> En{"AutoSeal enabled<br/>and interval elapsed?"}
@@ -112,11 +112,16 @@ flowchart TB
     Wait --> V
 ```
 
-- Detection latency is about 10 minutes, regardless of the seal interval.
+- Detection latency is about 10 minutes for new audit entries, any record changed in the database, a removed
+  record, and the latest seal, regardless of the seal interval. Each cycle carries on from where the last one
+  stopped (`IntegrityCheckState`: the chain verifier and each record's latest recorded hash), hashing only the
+  entries written since, after confirming the last entry it checked is still there unchanged. **An edit to an older
+  audit entry is found by the full re-hash**, which runs every 6 hours (`IntegrityCheckState.FullEvery`), after any
+  failure, when the chain's key point changes, and on *Verify now* (BUG-257).
 - **No seal is made over a broken chain.**
 - The alarm fires once per broken episode (`IntegrityMonitor` is shared by the job and every session's banner)
   and goes out of band, so deleting rows can't also suppress it.
-- *Verify now* on the Integrity page runs the same check (at most once a minute, shared between users).
+- *Verify now* on the Integrity page runs the full check (at most once a minute, shared between users).
 - **The check covers the records too** (`RowIntegrityVerifier`, after the chain and seal pass). Each hashable record
   must still produce its stored `RowHash`, which catches a field edited in the database, and that hash must be the
   one the record's latest audit entry recorded, which catches an edit whose author also recomputed `RowHash`. Every

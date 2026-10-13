@@ -36,8 +36,9 @@ public sealed class IntegrityService
         IIntegrityAlertNotifier alerts, OnDemandVerificationGate? gate = null,
         Security.ISecurityEventSink? siem = null, SealCopyStatus? copies = null,
         Microsoft.Extensions.Logging.ILogger<IntegrityService>? logger = null, IEnumerable<ISealCopier>? copiers = null,
-        IChainKeyring? chainKeys = null)
+        IChainKeyring? chainKeys = null, IntegrityCheckState? state = null)
     {
+        _state = state;
         _chainKeys = chainKeys;
         _copiers = copiers?.ToList() ?? [];
         _siem = siem;
@@ -55,6 +56,7 @@ public sealed class IntegrityService
     }
 
     private readonly IChainKeyring? _chainKeys;   // BUG-142
+    private readonly IntegrityCheckState? _state;   // BUG-257: none (tests, tools) means every check is a full one
 
     public async Task<ChainVerificationResult> VerifyAsync(CancellationToken ct = default)
     {
@@ -96,22 +98,55 @@ public sealed class IntegrityService
     /// BUG-06: the chain check, then the records themselves (<see cref="RowIntegrityVerifier"/>): each record's
     /// content against its hash, and that hash against the one the chain last recorded for it.
     /// </summary>
-    public async Task<ChainVerificationResult> VerifyChainAndRecordsAsync(CancellationToken ct = default)
+    public Task<ChainVerificationResult> VerifyChainAndRecordsAsync(CancellationToken ct = default) =>
+        CheckAsync(full: true, ct);
+
+    // BUG-257: with full false, and a check kept from a recent cycle, only the entries written since are read and hashed
+    // (on from where the kept verifier stopped); every record is still checked against the kept map. Otherwise the
+    // whole chain is read from the start. Either way, what's checked is kept for the next cycle.
+    private async Task<ChainVerificationResult> CheckAsync(bool full, CancellationToken ct)
+    {
+        if (_state is null) return await CheckCoreAsync(full: true, ct);
+        await _state.Gate.WaitAsync(ct);
+        try { return await CheckCoreAsync(full, ct); }
+        catch
+        {
+            _state.Forget();
+            throw;
+        }
+        finally { _state.Gate.Release(); }
+    }
+
+    private async Task<ChainVerificationResult> CheckCoreAsync(bool full, CancellationToken ct)
     {
         // BUG-66/BUG-194: the chain is read before the tables, so a save landing in between makes a record look added,
         // changed or removed outside CaseBook. A record that fails is checked again after reading the entries written
         // since (their links checked too), and reported only if it still fails: a real edit stays, a save in progress
         // doesn't, however many saves land during the check.
         using var db = _factory.CreateDbContext();
-        var records = new RowIntegrityVerifier.ChainRecords();
-        var verifier = _hasher.BeginVerify(await KeyedFromAsync(db, ct));
-        await ReadOnAsync(db, verifier, records, after: null, ct);
-        if (!verifier.Result.IsValid) return verifier.Result;
+        var keyedFrom = await KeyedFromAsync(db, ct);
+        var now = _clock.UtcNow;
+        var carryOn = !full && _state is not null && _state.CanContinue(keyedFrom, now);
+        // The chain must still run through the last entry checked, unchanged: entries removed from the end (or that
+        // entry rewritten) would otherwise go unseen until the next full check. Anything else and it starts over.
+        if (carryOn && _state!.Records!.Head is { } head)
+            carryOn = await db.AuditLog.AsNoTracking().Where(a => a.Sequence == head).Select(a => a.EntryHash).FirstOrDefaultAsync(ct)
+                is { } stillThere && string.Equals(stillThere, _state.Records.HeadHash, StringComparison.Ordinal);
+        var records = carryOn ? _state!.Records! : new RowIntegrityVerifier.ChainRecords();
+        var verifier = carryOn ? _state!.Verifier! : _hasher.BeginVerify(keyedFrom);
+        await ReadOnAsync(db, verifier, records, after: carryOn ? records.Head ?? 0 : null, ct);
+        if (!verifier.Result.IsValid) { _state?.Forget(); return verifier.Result; }
 
         var bad = await RowIntegrityVerifier.VerifyAsync(db, _hasher, records,
             new RowIntegrityVerifier.Recheck(t => ReadOnAsync(db, verifier, records, records.Head ?? 0, t)), ct);
-        if (!verifier.Result.IsValid) return verifier.Result;   // an entry written since broke the chain
-        return bad is null ? verifier.Result : ChainVerificationResult.Broken(bad.LastSequence ?? 0, bad.Detail);
+        if (!verifier.Result.IsValid) { _state?.Forget(); return verifier.Result; }   // an entry written since broke the chain
+        if (bad is not null)
+        {
+            _state?.Forget();
+            return ChainVerificationResult.Broken(bad.LastSequence ?? 0, bad.Detail);
+        }
+        _state?.Keep(verifier, records, keyedFrom, carryOn ? null : now);
+        return verifier.Result;
     }
 
     /// <summary>
@@ -125,11 +160,20 @@ public sealed class IntegrityService
     /// under a minute old (<see cref="OnDemandVerificationGate"/>), since any case viewer can press it.
     /// </summary>
     public Task<OnDemandVerification> VerifyOnDemandAsync(CancellationToken ct = default) =>
-        _gate.RunAsync(VerifyAndTrackAsync, _clock.UtcNow, ct);
+        _gate.RunAsync(VerifyAndTrackAsync, _clock.UtcNow, ct);   // a person asked: the whole chain, re-hashed
 
-    public async Task<ChainVerificationResult> VerifyAndTrackAsync(CancellationToken ct = default)
+    /// <summary>
+    /// BUG-257: the background monitor's check. Between full checks (every <see cref="IntegrityCheckState.FullEvery"/>) it
+    /// hashes only the entries written since the last cycle, and checks every record; otherwise as
+    /// <see cref="VerifyAndTrackAsync"/>.
+    /// </summary>
+    public Task<ChainVerificationResult> MonitorAndTrackAsync(CancellationToken ct = default) => TrackAsync(full: false, ct);
+
+    public Task<ChainVerificationResult> VerifyAndTrackAsync(CancellationToken ct = default) => TrackAsync(full: true, ct);
+
+    private async Task<ChainVerificationResult> TrackAsync(bool full, CancellationToken ct)
     {
-        var result = await VerifyChainAndRecordsAsync(ct);
+        var result = await CheckAsync(full, ct);
 
         // VerifyAsync is the unkeyed self-consistency check — a tamperer who recomputes every hash would
         // pass it. The signed seals are the independent anchor, but they were only ever checked on demand

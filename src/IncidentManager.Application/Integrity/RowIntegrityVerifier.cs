@@ -220,9 +220,13 @@ public static class RowIntegrityVerifier
         /// <summary>The last entry added: what the record check is up to date with.</summary>
         public long? Head { get; private set; }
 
+        /// <summary>BUG-257: that entry's hash, so a later cycle can tell the chain still runs through it.</summary>
+        public string? HeadHash { get; private set; }
+
         public void Add(AuditLogEntry e)
         {
             Head = e.Sequence;
+            HeadHash = e.EntryHash;
             if (e.EntityId is not { } id) return;
             var type = string.Intern(e.EntityType);   // a few dozen names, repeated across every entry
             if (e.Action == Domain.Enums.AuditAction.Delete) { _last[(type, id)] = (null, e.Sequence, true); return; }

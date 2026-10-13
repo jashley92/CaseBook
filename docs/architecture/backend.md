@@ -153,7 +153,7 @@ scope per cycle, and log and continue on failure. In a background scope the "use
 
 | Job | Does | Poll / default interval | Settings | Default |
 |---|---|---|---|---|
-| `IntegritySealHostedService` | Verify the chain and latest seal; alarm on a break; seal when due | verify every 10 min; seal every 6 h (24 h in the production template) | `Integrity:AutoSeal:*` | verify always on; sealing on |
+| `IntegritySealHostedService` | Verify the chain and latest seal; alarm on a break; seal when due | verify every 10 min (new entries and every record; the whole chain every 6 h); seal every 6 h (24 h in the production template) | `Integrity:AutoSeal:*` | verify always on; sealing on |
 | `EvidenceIntegrityHostedService` | Re-hash stored evidence; alarm 5003 on drift | 5 min poll; 24 h | `Integrity:EvidenceVerify:*` | off |
 | `OverdueActionItemHostedService` | Overdue task reminders and escalation | 5 min poll; 24 h | `Notifications:OverdueScan:*` | off |
 | `DueSoonActionItemHostedService` | Due-soon reminders | 5 min poll; 6 h | `Notifications:DueSoonScan:*` | off |

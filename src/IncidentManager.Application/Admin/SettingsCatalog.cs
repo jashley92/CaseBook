@@ -166,7 +166,7 @@ public static class SettingsCatalog
         new SettingDefinition("Integrity:AutoSeal:Enabled", "Auto-seal enabled", "Integrity", SettingKind.Bool,
             "Periodically verifies the audit chain and records a signed seal.", "true"),
         new SettingDefinition("Integrity:AutoSeal:IntervalHours", "Auto-seal interval (hours)", "Integrity", SettingKind.Int,
-            "Hours between signed seals. Tamper checks still run about every 10 minutes. This only limits " +
+            "Hours between signed seals. Tamper checks still run about every 10 minutes (the whole audit chain re-hashed every 6 hours). This only limits " +
             "how much recent history waits for a seal. Applies within a few minutes.", "6"),
         new SettingDefinition("Integrity:EvidenceVerify:Enabled", "Evidence re-verification enabled", "Integrity", SettingKind.Bool,
             "Periodically re-hashes stored evidence and alerts if a file no longer matches its recorded SHA-256. " +

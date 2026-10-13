@@ -17,9 +17,9 @@ namespace IncidentManager.Web.BackgroundJobs;
 public sealed class IntegritySealHostedService : BackgroundService
 {
     // Verification (chain + latest seal) and the alarm run on this cadence regardless of the seal
-    // interval, so detection latency is decoupled from — and far shorter than — how often we seal. Full
-    // re-verification is O(n) over the audit log, read as a stream (BUG-195); 10 minutes balances detection latency
-    // against load.
+    // interval, so detection latency is decoupled from — and far shorter than — how often we seal. BUG-257: a cycle
+    // hashes the entries written since the last one and checks every record; the whole chain is re-hashed every
+    // IntegrityCheckState.FullEvery (6 h), so an edit to an old audit entry is found within that.
     private static readonly TimeSpan VerifyPoll = TimeSpan.FromMinutes(10);
 
     private readonly IServiceScopeFactory _scopeFactory;
@@ -60,7 +60,7 @@ public sealed class IntegritySealHostedService : BackgroundService
 
             // Always verify (chain + most-covering seal), record the app-wide status, and fire the F-16
             // alarm once on a fresh break. Never seal over a broken chain.
-            var verification = await integrity.VerifyAndTrackAsync(ct);
+            var verification = await integrity.MonitorAndTrackAsync(ct);
             if (!verification.IsValid || !options.Enabled) return;
 
             // Seal only when the interval has elapsed since the last seal; the verify cadence above is

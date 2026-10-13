@@ -24,8 +24,8 @@ worse.
 | **Case list** | Filtered and paged in SQL (default 25). Sorting by **SLA** loads a small projection of every matching case into memory, ranks them and then loads the page. | Fine at thousands of cases; reconsider if the filtered set grows into tens of thousands. |
 | **Dashboard** | Counts and averages are computed in a single scan (`OneScan`, conditional aggregates), measured at 100k cases on SQL Server. Trends are rebuilt from case timestamps. | Don't add per-figure queries; register figures with `OneScan`. |
 | **Elapsed-time math** | `DbTime.TicksBetween` maps to `DATEDIFF_BIG` on SQL Server and subtraction on SQLite, so durations aggregate in the database. | Use it rather than loading rows to compute durations. |
-| **Integrity monitor** | **Every 10 minutes it loads the entire audit log** and recomputes every hash. | Linear in audit rows. At hundreds of thousands of rows this becomes noticeable CPU and memory every 10 minutes; incremental verification from the last seal isn't implemented. |
-| **Compliance bundle** | Loads the whole chain into memory to verify it, then writes the segment. | Same growth as above. |
+| **Integrity monitor** | Every 10 minutes it hashes the audit entries written since the last cycle and checks every record; the whole chain is re-hashed every 6 hours (BUG-257). | The full re-hash is a stream, linear in audit rows. The per-record map of latest hashes is kept in memory between cycles (one entry per audited record). |
+| **Compliance bundle** | Streams the whole chain to verify it, then reads the range again into a temp-file zip (BUG-256). | The verify pass is linear in audit rows; memory stays flat. |
 | **Evidence re-hash** | Reads every stored file on its interval. | I/O heavy; off by default; schedule it for quiet hours via the interval. |
 | **Report generation** | Builds the model, renders diagrams with SkiaSharp, writes Word. | A case with very large timelines or graphs takes seconds. It runs in the background (`ReportJobs`, one at a time), so nobody waits on the page; a queue of many large reports finishes in order. |
 | **Indicators page** | Capped at 300 rows. | |

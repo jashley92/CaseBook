@@ -256,6 +256,35 @@ public sealed class IntegritySealIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task The_monitor_hashes_new_entries_each_cycle_and_the_whole_chain_every_few_hours(/* BUG-257 */)
+    {
+        await using var db = NewContext();
+        await DevDataSeeder.SeedAsync(db, _clock);
+        var state = new IntegrityCheckState();
+        var svc = new IntegrityService(NewFactory(), _hasher, _signer, _store, _user, _clock, _monitor, _alerts, state: state);
+
+        (await svc.MonitorAndTrackAsync()).IsValid.Should().BeTrue();   // the first cycle is a full one
+        state.LastFullUtc.Should().Be(_clock.UtcNow);
+
+        // A record edited in the database is still found at the next cycle: every record is checked each time.
+        var note = await db.Notes.FirstAsync();
+        await db.Database.ExecuteSqlRawAsync("UPDATE AnalystNotes SET Body = 'rewritten' WHERE Id = {0}", note.Id);
+        (await svc.MonitorAndTrackAsync()).IsValid.Should().BeFalse("a record changed outside CaseBook is found within a cycle");
+        await db.Database.ExecuteSqlRawAsync("UPDATE AnalystNotes SET Body = {0} WHERE Id = {1}", note.Body, note.Id);
+        (await svc.MonitorAndTrackAsync()).IsValid.Should().BeTrue();
+
+        // An old audit entry rewritten is left to the full check: not the next cycle, but "Verify now", or within FullEvery.
+        var old = await db.AuditLog.OrderBy(a => a.Sequence).Skip(1).FirstAsync();
+        old.EntryHash = new string('0', 64);
+        await db.SaveChangesAsync();
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(10);
+        (await svc.MonitorAndTrackAsync()).IsValid.Should().BeTrue("a cycle hashes only the entries written since the last");
+        (await svc.VerifyAndTrackAsync()).IsValid.Should().BeFalse("Verify now re-hashes the whole chain");
+        _clock.UtcNow = _clock.UtcNow.Add(IntegrityCheckState.FullEvery);
+        (await svc.MonitorAndTrackAsync()).IsValid.Should().BeFalse("and so does the monitor, every FullEvery");
+    }
+
+    [Fact]
     public async Task VerifyAndTrack_fires_the_alarm_once_when_the_chain_is_broken()
     {
         await using var db = NewContext();

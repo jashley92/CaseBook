@@ -342,7 +342,7 @@ first.
 | Evidence upload limit **50 MB** | `Web/Components/Pages/CaseTabs/CaseEvidenceTab.razor` (`MaxEvidenceBytes`) |
 | Timeline screenshot **15 MB**; report logo 2 MB; Word template 5 MB; config bundle 64 MB | `CaseTimelineTab.razor`, `Admin.razor`, `Application/Admin/ReportTemplateService.cs`, `AdminConfigBundle.razor` |
 | Case-import file **4 MB in the UI, 5 MB through the API**; IOC import 2,000 indicators | `CaseImport.razor`, `Web/Program.cs`, `Application/Import/IocImportConverter.cs` |
-| Audit-chain verification every **10 minutes** (tamper-detection latency) | `Web/BackgroundJobs/IntegritySealHostedService.cs` |
+| Audit-chain verification every **10 minutes** (new entries and every record), the whole chain re-hashed every **6 hours** | `Web/BackgroundJobs/IntegritySealHostedService.cs`, `Application/Integrity/IntegrityCheckState.cs` |
 | Job option re-read every 5 minutes | each `*HostedService.cs` |
 | Signed-in users' permissions re-derived every **2 minutes** | `Web/Security/PermissionRevalidatingAuthStateProvider.cs` |
 | User directory refresh 30 minutes | `Infrastructure/Security/UserDirectory.cs` |
