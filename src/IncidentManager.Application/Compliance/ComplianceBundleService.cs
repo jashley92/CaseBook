@@ -34,8 +34,23 @@ public sealed class ComplianceBundleService
         _clock = clock;
     }
 
+    /// <summary>The bundle in memory (small ranges, tests). A download uses <see cref="WriteAsync"/>.</summary>
     public async Task<ComplianceBundle> BuildAsync(DateTimeOffset fromUtc, DateTimeOffset toUtc,
         CancellationToken ct = default)
+    {
+        AdminActionPermissions.Require<ComplianceBundleService>(_user);   // the endpoint is Administer-gated too
+        using var ms = new MemoryStream();
+        var (fileName, model) = await WriteAsync(fromUtc, toUtc, ms, ct);
+        return new ComplianceBundle(ms.ToArray(), fileName, model);
+    }
+
+    /// <summary>
+    /// BUG-256: writes the bundle to <paramref name="output"/>. The chain is verified as a stream (BUG-78), and the range's
+    /// entries are read again into the zip as it's written, rather than held in a list beside a zip built in memory (a
+    /// year-to-date range on a large log was a gigabyte on the web server's heap).
+    /// </summary>
+    public async Task<(string FileName, ComplianceBundleModel Model)> WriteAsync(DateTimeOffset fromUtc, DateTimeOffset toUtc,
+        Stream output, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<ComplianceBundleService>(_user);   // the endpoint is Administer-gated too
         using var db = _factory.CreateDbContext();
@@ -48,8 +63,8 @@ public sealed class ComplianceBundleService
         var sealedAt = allSeals.Select(s => s.UpToSequence).ToHashSet();
         var hashBySequence = new Dictionary<long, string>();
         var verifier = _hasher.BeginVerify(await Integrity.IntegrityService.KeyedFromAsync(db, ct));   // BUG-142
-        var segment = new List<AuditLogEntry>();
-        long total = 0;
+        long total = 0, inRange = 0;
+        long? firstSeq = null, lastSeq = null;
         (long Sequence, string Hash)? head = null;
         var checking = true;
         await foreach (var e in db.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).AsAsyncEnumerable().WithCancellation(ct))
@@ -57,12 +72,15 @@ public sealed class ComplianceBundleService
             total++;
             if (checking) checking = verifier.Add(e);
             if (sealedAt.Contains(e.Sequence)) hashBySequence[e.Sequence] = e.EntryHash;
-            if (e.AtUtc >= fromUtc && e.AtUtc <= toUtc) segment.Add(e);   // the segment: entries inside the window
+            if (e.AtUtc >= fromUtc && e.AtUtc <= toUtc)   // the segment: entries inside the window
+            {
+                inRange++;
+                firstSeq ??= e.Sequence;
+                lastSeq = e.Sequence;
+            }
             head = (e.Sequence, e.EntryHash);
         }
         var chainResult = verifier.Result;
-        long? firstSeq = segment.Count > 0 ? segment[0].Sequence : null;
-        long? lastSeq = segment.Count > 0 ? segment[^1].Sequence : null;
 
         // The covering seal: the earliest seal whose coverage reaches the segment's last entry, so the
         // bundle can attest that the whole range is under seal even if the seal was written later.
@@ -88,7 +106,7 @@ public sealed class ComplianceBundleService
             GeneratedByUserId: _user.UserId,
             FromUtc: fromUtc,
             ToUtc: toUtc,
-            Segment: segment,
+            Segment: [],
             TotalChainLength: total,
             SegmentFirstSequence: firstSeq,
             SegmentLastSequence: lastSeq,
@@ -100,17 +118,24 @@ public sealed class ComplianceBundleService
             Algorithm: _signer.Algorithm,
             KeyId: _signer.KeyId,
             PublicKeyPem: _signer.PublicKeyPem,
-            RetiredKeys: _signer.VerificationKeys.Where(k => !k.Current).ToList());
+            RetiredKeys: _signer.VerificationKeys.Where(k => !k.Current).ToList(),
+            SegmentCount: inRange);
 
-        var bytes = ComplianceBundlePack.Zip(model);
+        // The same entries as counted above: in the window, and within the sequence span it found (later ones aren't).
+        IEnumerable<AuditLogEntry> segment = firstSeq is { } fs && lastSeq is { } ls
+            ? db.AuditLog.AsNoTracking()
+                .Where(a => a.Sequence >= fs && a.Sequence <= ls && a.AtUtc >= fromUtc && a.AtUtc <= toUtc)
+                .OrderBy(a => a.Sequence).AsEnumerable()
+            : [];
+        await Task.Run(() => ComplianceBundlePack.Zip(model, output, segment), ct);
         var fileName = $"compliance-bundle-{fromUtc.UtcDateTime:yyyyMMdd}-{toUtc.UtcDateTime:yyyyMMdd}.zip";
 
         // Recorded after building so the bundle never references its own export line.
         await _audit.RecordAsync(AuditAction.Export, nameof(ComplianceBundle), null, null,
             $"Generated compliance evidence bundle covering " +
-            $"{fromUtc.UtcDateTime:yyyy-MM-dd}..{toUtc.UtcDateTime:yyyy-MM-dd} ({segment.Count} entries)", ct);
+            $"{fromUtc.UtcDateTime:yyyy-MM-dd}..{toUtc.UtcDateTime:yyyy-MM-dd} ({inRange} entries)", ct);
 
-        return new ComplianceBundle(bytes, fileName, model);
+        return (fileName, model);
     }
 
     private SealLine Verify(IntegritySeal seal, IReadOnlyDictionary<long, string> hashBySequence)

@@ -19,17 +19,24 @@ public static class ComplianceBundlePack
     public static byte[] Zip(ComplianceBundleModel m)
     {
         using var ms = new MemoryStream();
-        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        Zip(m, ms);
+        return ms.ToArray();
+    }
+
+    /// <summary>BUG-256: writes the zip to <paramref name="output"/> (a temp file for a download), with the audit-chain CSV
+    /// taken from <paramref name="segment"/> as it's read, so neither the range's entries nor the zip is held in memory.</summary>
+    public static void Zip(ComplianceBundleModel m, Stream output, IEnumerable<AuditLogEntry>? segment = null)
+    {
+        using (var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
         {
             AddEntry(zip, "manifest.txt", Manifest(m));
-            AddEntry(zip, "audit-chain.csv", w => WriteAuditChainCsv(w, m.Segment));   // BUG-78: written straight into the zip
+            AddEntry(zip, "audit-chain.csv", w => WriteAuditChainCsv(w, segment ?? m.Segment));   // BUG-78: written straight into the zip
             AddEntry(zip, "seals.csv", SealsCsv(m.Seals));
             AddEntry(zip, "signing-public-key.pem", m.PublicKeyPem);
             foreach (var k in m.RetiredKeys ?? [])
                 AddEntry(zip, $"retired-public-keys/{k.KeyId}.pem", k.PublicKeyPem);
             AddEntry(zip, "VERIFY.txt", VerifyReadme());
         }
-        return ms.ToArray();
     }
 
     private static void AddEntry(ZipArchive zip, string name, Action<TextWriter> write)
@@ -63,7 +70,7 @@ public static class ComplianceBundlePack
         Line();
         Line("AUDIT CHAIN SEGMENT");
         Line("-------------------");
-        Line($"Entries in range   : {m.Segment.Count}");
+        Line($"Entries in range   : {m.EntriesInRange}");
         Line(m.SegmentFirstSequence is { } f && m.SegmentLastSequence is { } l
             ? $"Sequence span      : #{f} through #{l}"
             : "Sequence span      : (no entries in this range)");
@@ -120,7 +127,7 @@ public static class ComplianceBundlePack
     }
 
     /// <summary>BUG-78: the audit-chain CSV a row at a time, so a large range isn't built as one string first.</summary>
-    public static void WriteAuditChainCsv(TextWriter w, IReadOnlyList<AuditLogEntry> entries)
+    public static void WriteAuditChainCsv(TextWriter w, IEnumerable<AuditLogEntry> entries)
     {
         w.Write("Sequence,AtUtc,Actor,Action,EntityType,EntityId,CaseNumber,Summary,BeforeJson,AfterJson,PrevHash,EntryHash,Reason,EntityLabel,HashKeyId,Format");
         w.Write(Nl);

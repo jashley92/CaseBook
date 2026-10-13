@@ -92,6 +92,7 @@ public static class AdminActionPermissions
 
             // Administrator-only oversight reads: behind Administer pages and endpoints, asserted here as well.
             [Key<ComplianceBundleService>(nameof(ComplianceBundleService.BuildAsync))] = Permission.Administer,
+            [Key<ComplianceBundleService>(nameof(ComplianceBundleService.WriteAsync))] = Permission.Administer,   // BUG-256
             [Key<AccessReviewService>(nameof(AccessReviewService.BuildAsync))] = Permission.Administer,
             [Key<IAccessLogService>(nameof(IAccessLogService.QueryAsync))] = Permission.Administer,
             [Key<IAccessLogService>(nameof(IAccessLogService.ActorsAsync))] = Permission.Administer,

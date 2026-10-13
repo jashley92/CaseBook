@@ -90,7 +90,8 @@ public sealed class ComplianceBundleTests : IDisposable
 
         // Verified content: intact chain, real segment, an authentic covering seal.
         files["manifest.txt"].Should().Contain("Whole-chain verification : VALID");
-        bundle.Model.Segment.Should().NotBeEmpty();
+        bundle.Model.EntriesInRange.Should().BeGreaterThan(0);
+        files["audit-chain.csv"].Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Length.Should().BeGreaterThan(1);
         bundle.Model.Seals.Should().NotBeEmpty();
         bundle.Model.CoveringSeal!.IsValid.Should().BeTrue();
         files["signing-public-key.pem"].Should().Contain("BEGIN PUBLIC KEY");
@@ -112,7 +113,7 @@ public sealed class ComplianceBundleTests : IDisposable
         var to = new DateTimeOffset(2020, 12, 31, 23, 59, 59, TimeSpan.Zero);
         var bundle = await NewBundleService(db).BuildAsync(from, to);
 
-        bundle.Model.Segment.Should().BeEmpty();
+        bundle.Model.EntriesInRange.Should().Be(0);
         Unzip(bundle.Content)["manifest.txt"].Should().Contain("Sequence span      : (no entries in this range)");
     }
 

@@ -744,9 +744,21 @@ app.MapGet("/export/compliance-bundle.zip", async (
     var fromUtc = new DateTimeOffset(fromDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
     var toUtc = new DateTimeOffset(toDate.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero); // inclusive end of day
 
-    var bundle = await bundles.BuildAsync(fromUtc, toUtc, ct);
-    await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, bundle.FileName, null, ct);
-    return Results.File(bundle.Content, "application/zip", bundle.FileName);
+    // BUG-256: built into a temp file (removed when the response is done), not in memory.
+    var temp = new FileStream(Path.Combine(Path.GetTempPath(), $"casebook-bundle-{Guid.NewGuid():N}.zip"), FileMode.CreateNew,
+        FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+    try
+    {
+        var (fileName, _) = await bundles.WriteAsync(fromUtc, toUtc, temp, ct);
+        temp.Position = 0;
+        await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null, fileName, null, ct);
+        return Results.File(temp, "application/zip", fileName);
+    }
+    catch
+    {
+        await temp.DisposeAsync();
+        throw;
+    }
 }).RequireAuthorization(Policies.Administer).RequireRateLimiting("downloads").RefusePassiveLoads();
 
 // X-07: download the editable-configuration "seed pack" as a signed, versioned JSON bundle. The export

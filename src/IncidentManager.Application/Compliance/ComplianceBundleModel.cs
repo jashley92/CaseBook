@@ -27,7 +27,12 @@ public sealed record ComplianceBundleModel(
     string KeyId,
     string PublicKeyPem,
     // F-24: earlier signing keys' public halves, so seals signed before a key change can be checked offline too.
-    IReadOnlyList<IncidentManager.Application.Abstractions.SealPublicKey>? RetiredKeys = null);
+    IReadOnlyList<IncidentManager.Application.Abstractions.SealPublicKey>? RetiredKeys = null,
+    // BUG-256: the range's entry count when Segment isn't held (the entries are streamed into the zip instead).
+    long? SegmentCount = null)
+{
+    public long EntriesInRange => SegmentCount ?? Segment.Count;
+}
 
 /// <summary>A seal paired with the result of re-verifying it while building the bundle.</summary>
 public sealed record SealLine(IntegritySeal Seal, bool SignatureValid, bool ChainMatches)
