@@ -112,6 +112,15 @@ public class ExportCsvTests
     }
 
     [Fact]
+    public void An_export_cut_at_its_limit_says_so(/* REV-65 */)
+    {
+        Lines(AuditCsv.Build([], Generated, "2026-0042", truncatedAt: 100_000))[1]
+            .Should().Be("# Truncated: only the newest 100,000 rows are here. Narrow the date range to export the rest.");
+        Lines(AccessLogCsv.Build([], Generated, truncatedAt: 100_000))[1].Should().StartWith("# Truncated: only the newest 100,000");
+        Lines(AccessLogCsv.Build([], Generated))[1].Should().StartWith("actor,", "an export that wasn't cut has no such line");
+    }
+
+    [Fact]
     public void Access_log_csv_with_no_rows_is_just_the_preamble_and_header()
     {
         Lines(AccessLogCsv.Build([], Generated)).Should().HaveCount(2);

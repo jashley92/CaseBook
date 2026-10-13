@@ -12,13 +12,17 @@ namespace IncidentManager.Application.Access;
 /// </summary>
 public static class AccessLogCsv
 {
-    public static string Build(IReadOnlyList<CaseAccessEvent> rows, DateTimeOffset generatedAtUtc)
+    public static string Build(IReadOnlyList<CaseAccessEvent> rows, DateTimeOffset generatedAtUtc, int? truncatedAt = null)
     {
         var inv = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
 
         sb.Append("# CaseBook access log (read and access telemetry, kept outside the tamper-evident chain), generated ")
           .Append(generatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(" UTC\r\n");
+        // REV-65: an export cut at its row limit says so, so the missing oldest rows aren't mistaken for no activity.
+        if (truncatedAt is { } limit)
+            sb.Append("# Truncated: only the newest ").Append(limit.ToString("N0", inv))
+              .Append(" rows are here. Narrow the date range to export the rest.\r\n");
 
         sb.Append("actor,access_type,case_number,target,restricted,count,first_seen_utc,last_seen_utc\r\n");
 

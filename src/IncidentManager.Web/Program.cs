@@ -122,6 +122,8 @@ builder.Services.AddSingleton<IncidentManager.Application.Abstractions.IChatNoti
 // scrape evidence/reports/exports. A token bucket keyed on the caller's id — bursts are fine, sustained
 // volume is capped — with an immediate 429 (no queueing) past the budget. Limits are server-side config
 // (RateLimiting:Downloads); a rejection is streamed to the SIEM (EventId 5306) and logged. ---
+// REV-65: the most rows a case-audit or access-log CSV holds; a longer one says it was cut.
+const int ExportRowLimit = 100_000;
 var downloadLimits = builder.Configuration.GetSection("RateLimiting:Downloads").Get<DownloadRateLimitOptions>()
     ?? new DownloadRateLimitOptions();
 // REV-62: evidence thumbnails (the timeline's inline images) aren't logged as downloads (S-03), but they're still evidence
@@ -717,8 +719,9 @@ app.MapGet("/export/case-audit.csv", async (
             ? new DateTimeOffset(td.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero) : null
     };
 
-    var rows = await integrity.QueryAsync(filter, take: 100_000, ct);
-    var csv = IncidentManager.Application.Integrity.AuditCsv.Build(rows, clock.UtcNow, @case);
+    var rows = await integrity.QueryAsync(filter, take: ExportRowLimit + 1, ct);   // REV-65: one more, to know it was cut
+    var csv = IncidentManager.Application.Integrity.AuditCsv.Build(rows.Take(ExportRowLimit).ToList(), clock.UtcNow, @case,
+        rows.Count > ExportRowLimit ? ExportRowLimit : null);
     var safe = @case.Replace('/', '-').Replace('\\', '-');
     var fileName = $"case-audit-{safe}-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     // BUG-155: logged against the case, so the access log's case and "restricted only" filters find it.
@@ -748,8 +751,9 @@ app.MapGet("/export/access-log.csv", async (
             ? new DateTimeOffset(td.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero) : null
     };
 
-    var rows = await access.QueryAsync(filter, take: 100_000, ct);
-    var csv = IncidentManager.Application.Access.AccessLogCsv.Build(rows, clock.UtcNow);
+    var rows = await access.QueryAsync(filter, take: ExportRowLimit + 1, ct);   // REV-65
+    var csv = IncidentManager.Application.Access.AccessLogCsv.Build(rows.Take(ExportRowLimit).ToList(), clock.UtcNow,
+        rows.Count > ExportRowLimit ? ExportRowLimit : null);
     var fileName = $"access-log-{clock.UtcNow.UtcDateTime:yyyyMMdd-HHmm}.csv";
     // BUG-132: pulling the access log is itself an access, recorded with the slice that was pulled.
     await access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, null,
