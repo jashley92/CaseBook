@@ -38,7 +38,11 @@ public sealed class ChatWebhookNotifier : IChatNotifier
         }
     }
 
-    public Task SendAsync(ChatNotification message, CancellationToken ct = default) => PostAsync(message, ct);
+    // WF-20: a post that didn't go is a delivery failure, as an email's is, so a scan's broadcast is tried again.
+    public async Task SendAsync(ChatNotification message, CancellationToken ct = default)
+    {
+        if (await PostAsync(message, ct).ConfigureAwait(false) is not null) DeliveryWatch.ReportFailure();
+    }
 
     public Task<string?> SendTestAsync(ChatNotification message, CancellationToken ct = default) => PostAsync(message, ct);
 

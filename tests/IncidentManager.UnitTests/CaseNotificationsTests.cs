@@ -169,6 +169,38 @@ public class CaseNotificationsTests
         chat.Sent.Should().ContainSingle();
     }
 
+    /// <summary>Fails the first post (as the webhook notifier reports a 429), then posts.</summary>
+    private sealed class FlakyChatNotifier : IChatNotifier
+    {
+        private int _calls;
+        public bool Enabled => true;
+        public List<ChatNotification> Posted { get; } = new();
+        public Task SendAsync(ChatNotification message, CancellationToken ct = default)
+        {
+            if (_calls++ == 0) DeliveryWatch.ReportFailure();
+            else Posted.Add(message);
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task A_failed_channel_post_is_tried_again_by_the_next_scan(/* WF-20 */)
+    {
+        var chat = new FlakyChatNotifier();
+        var n = new CaseNotifications(new CapturingEmailSender(), TestEmail.Composer(), Team(), ChatConfig("OverdueReminders"),
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), chat, new FakePrefs(), sent: new InMemoryNotificationMarks());
+        var escalated = new EscalatedActionItem(Item("owner1"), OverdueEscalationTier.Managers, 130);
+
+        using (var scan = DeliveryWatch.Begin())
+        {
+            await n.OnActionItemsEscalatedAsync([escalated]);
+            scan.ShouldRetry(escalated.Item.ActionItemId.ToString()).Should().BeTrue("its post didn't go");
+        }
+        await n.OnActionItemsEscalatedAsync([escalated]);   // the next scan
+
+        chat.Posted.Should().ContainSingle();
+    }
+
     // --- Breach escalation (E-03) ----------------------------------------------
 
     [Fact]
