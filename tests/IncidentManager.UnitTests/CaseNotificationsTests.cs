@@ -201,6 +201,30 @@ public class CaseNotificationsTests
         chat.Posted.Should().ContainSingle();
     }
 
+    [Fact]
+    public async Task An_escalation_or_executive_report_nobody_can_receive_is_tried_again(/* WF-17 */)
+    {
+        var noManagers = new FakeUserDirectory().Add("owner1", "Owner One", "owner1@x.example", "Analyst");
+        var n = new CaseNotifications(new CapturingEmailSender(), TestEmail.Composer(), noManagers, TestEmail.EmptyConfig,
+            new TestOptionsMonitor<EmailOptions>(new EmailOptions()), new NullChatNotifier(), new FakePrefs(), sent: new InMemoryNotificationMarks());
+        var escalated = new EscalatedActionItem(Item("owner1"), OverdueEscalationTier.Managers, 130);
+
+        using (var scan = DeliveryWatch.Begin())
+        {
+            await n.OnActionItemsEscalatedAsync([escalated]);
+            scan.ShouldRetry(escalated.Item.ActionItemId.ToString()).Should().BeTrue("no manager could be sent it");
+        }
+
+        using var quarter = DeliveryWatch.Begin();
+        var snap = new IncidentManager.Application.Dashboards.ProgramSnapshot(12, 9, 5, [], [],
+            new(null, null, 0), new(3, 2.5, 4), new(null, null, 0),
+            [new(IncidentManager.Application.Sla.SlaClock.Containment, 3, 1)],
+            1, 1, new(null, null, 0), 2, 3, 1, 0, 4, 1, []);
+        await n.OnExecutiveReportAsync(new IncidentManager.Application.Dashboards.ProgramReport(
+            new IncidentManager.Application.Dashboards.ProgramPeriod(2026, 2), snap, snap, [], false, Now));
+        quarter.Failed.Should().BeTrue("the quarter isn't reported until someone receives it");
+    }
+
     // --- Breach escalation (E-03) ----------------------------------------------
 
     [Fact]

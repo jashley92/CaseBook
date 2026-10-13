@@ -410,6 +410,7 @@ public sealed class CaseNotifications : ICaseNotifications
             if (!byRecipient.TryGetValue((uid, audience), out var list)) byRecipient[(uid, audience)] = list = [];
             list.Add(e);
         }
+        var alreadyTold = new HashSet<EscalatedActionItem>();   // WF-17: the IC was the first reminder's recipient
         foreach (var e in items)
         {
             if (e.Tier == OverdueEscalationTier.IncidentCommander)
@@ -418,6 +419,7 @@ public sealed class CaseNotifications : ICaseNotifications
                 var first = ResolveRecipientUserId(e.Item.OwnerUserId, ic);
                 if (!string.IsNullOrWhiteSpace(ic) && !string.Equals(ic, first, StringComparison.OrdinalIgnoreCase))
                     Add(ic, "the incident commander", e);
+                else if (!string.IsNullOrWhiteSpace(ic)) alreadyTold.Add(e);
             }
             else
             {
@@ -427,11 +429,13 @@ public sealed class CaseNotifications : ICaseNotifications
 
         var overdueUrl = OverdueUrl();
         var mandatory = Mandatory("Overdue");
+        var handled = new HashSet<EscalatedActionItem>();
         foreach (var ((uid, audience), list) in byRecipient)
         {
-            if (!mandatory && (await _prefs.GetAsync(uid, ct)).Escalation) continue; // the user's overdue opt-out (not a digest: BUG-97)
+            if (!mandatory && (await _prefs.GetAsync(uid, ct)).Escalation) { handled.UnionWith(list); continue; } // the user's overdue opt-out (not a digest: BUG-97)
             var to = _users.EmailFor(uid);
             if (string.IsNullOrWhiteSpace(to)) continue;
+            handled.UnionWith(list);
             var ordered = NotYetSentTo(list.OrderBy(i => i.Item.DueAtUtc), EscalationKey, to);
             if (ordered.Count == 0) continue;
             var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -450,6 +454,11 @@ public sealed class CaseNotifications : ICaseNotifications
             var message = await _composer.ComposeAsync("overdue-escalated", [to], tokens, overdueUrl, htmlTokens, ct);
             if (!await SendForAsync(message, ordered.Select(i => i.Item.ActionItemId.ToString()), ct)) Unsent(ordered, EscalationKey, to);
         }
+
+        // WF-17: an escalation nobody could be sent (no manager the directory still holds, none with an address, an IC with
+        // none) is tried again by the scan, as an unreached reminder is (BUG-156), rather than marked as escalated.
+        DeliveryWatch.Unreached(items.Where(e => !handled.Contains(e) && !alreadyTold.Contains(e))
+            .Select(e => e.Item.ActionItemId.ToString()));
     }
 
     public async Task OnExecutiveReportAsync(IncidentManager.Application.Dashboards.ProgramReport report, CancellationToken ct = default)
@@ -460,7 +469,9 @@ public sealed class CaseNotifications : ICaseNotifications
             .Select(e => e!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        if (to.Count == 0) return;
+        // WF-17: nobody to send it to (no manager the directory still holds, or none with an address, after a restart with
+        // the domain controller out of reach, say) isn't a quarter reported: the scan tries again while its window is open.
+        if (to.Count == 0) { DeliveryWatch.ReportFailure(); return; }
 
         var c = report.Current;
         var p = report.Previous;
