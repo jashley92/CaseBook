@@ -387,6 +387,14 @@ public class Case : AuditableEntity, IHashableEntity
 
         if (skipsRecovery && resolvedAtUtc is { } resolved) ResolvedAtUtc = resolved;   // BUG-208, checked above
 
+        // BUG-229: coming into Containment after recording that it wasn't needed takes that back: it needed containing
+        // after all, so it's contained at this move and measured against the target again (the decision stays in the trail).
+        if (to == CasePhase.Containment && ContainmentNotNeededReason is not null)
+        {
+            ContainmentNotNeededReason = null;
+            ContainedAtUtc = at;
+        }
+
         switch (to)
         {
             case CasePhase.Containment: ContainedAtUtc ??= at; break;

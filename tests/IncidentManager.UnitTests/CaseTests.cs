@@ -363,6 +363,18 @@ public class CaseTests
     }
 
     [Fact]
+    public void Coming_back_into_containment_takes_back_not_needed(/* BUG-229 */)
+    {
+        var c = NewCase();
+        c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(1), containmentNotNeededReason: "Link never clicked");
+        c.ContainmentNotNeededReason.Should().NotBeNull();
+
+        c.ChangePhase(CasePhase.Containment, "it was clicked after all", "ic1", Now.AddHours(3));
+        c.ContainmentNotNeededReason.Should().BeNull();
+        c.ContainedAtUtc.Should().Be(Now.AddHours(3));
+    }
+
+    [Fact]
     public void Leaving_closed_for_a_later_phase_asks_for_the_milestones_it_never_had(/* BUG-228 */)
     {
         var c = NewCase();
