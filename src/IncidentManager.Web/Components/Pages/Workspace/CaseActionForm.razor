@@ -597,7 +597,7 @@
                     done = "Referred to Legal / Privacy";
                     break;
                 case "materiality":
-                    DateTimeOffset? decidedOn = D.MaterialityIsFinal && D.MaterialityDecidedOn is { } d ? WallClock.ToUtc(d, TimeDisp.Zone) : null;
+                    DateTimeOffset? decidedOn = D.DecidedOnUtc(TimeDisp.Zone);   // WF-14
                     await Cases.RecordMaterialityAsync(id, D.MaterialityStatus, D.MaterialityDecisionMaker, decidedOn,
                         D.MaterialityRationale, D.MaterialityBaseline);
                     done = $"Materiality recorded: {Ui.Label(D.MaterialityStatus)}";

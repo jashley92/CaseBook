@@ -10,6 +10,24 @@ public class WallClockTests
     private static readonly TimeZoneInfo NewYork = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
 
     [Fact]
+    public void Resaving_a_decision_made_in_the_repeated_hour_keeps_it(/* WF-14 */)
+    {
+        // 2026-11-01: 01:30 happens twice in New York. The decision was at the first, 01:30 EDT (05:30Z).
+        var recorded = new DateTimeOffset(2026, 11, 1, 5, 30, 0, TimeSpan.Zero);
+        var draft = new CaseActionDraft
+        {
+            MaterialityStatus = IncidentManager.Domain.Enums.MaterialityStatus.Material,
+            MaterialityDecidedOn = WallClock.ToWall(recorded, NewYork),
+            MaterialityDecidedOnRecorded = recorded,
+        };
+
+        draft.DecidedOnUtc(NewYork).Should().Be(recorded, "the time wasn't changed");
+
+        draft.MaterialityDecidedOn = new DateTime(2026, 11, 1, 9, 0, 0);
+        draft.DecidedOnUtc(NewYork).Should().Be(new DateTimeOffset(2026, 11, 1, 14, 0, 0, TimeSpan.Zero), "a changed time is read as typed");
+    }
+
+    [Fact]
     public void An_ordinary_time_converts_with_the_zones_offset()
     {
         WallClock.ToUtc(new DateTime(2026, 7, 1, 9, 0, 0), NewYork)

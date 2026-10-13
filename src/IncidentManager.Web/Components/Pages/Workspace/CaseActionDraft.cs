@@ -51,6 +51,24 @@ public sealed class CaseActionDraft
     public string? MaterialityDecisionMaker { get; set; }
     /// <summary>BUG-07: when the decision was made, as a wall time in the display zone (a datetime-local input).</summary>
     public DateTime? MaterialityDecidedOn { get; set; }
+    /// <summary>WF-14: the recorded decision instant the form was filled from; kept as it is when the time isn't changed.</summary>
+    public DateTimeOffset? MaterialityDecidedOnRecorded { get; set; }
+
+    /// <summary>
+    /// WF-14: the decision instant to save. A wall time in the repeated autumn hour names two instants and reads back as
+    /// the later one, so re-saving the dialog (to fix the rationale, say) moved a 01:30 EDT decision to 01:30 EST, an hour
+    /// later. The recorded instant is kept when the time shown for it wasn't changed.
+    /// </summary>
+    public DateTimeOffset? DecidedOnUtc(TimeZoneInfo zone)
+    {
+        if (!MaterialityIsFinal || MaterialityDecidedOn is not { } wall) return null;
+        if (MaterialityDecidedOnRecorded is { } kept)
+        {
+            var shown = WallClock.ToWall(kept, zone);
+            if (shown.AddSeconds(-shown.Second).AddMilliseconds(-shown.Millisecond) == wall) return kept;
+        }
+        return WallClock.ToUtc(wall, zone);
+    }
     public string? MaterialityRationale { get; set; }
     public string? MaterialityBaseline { get; set; }
 

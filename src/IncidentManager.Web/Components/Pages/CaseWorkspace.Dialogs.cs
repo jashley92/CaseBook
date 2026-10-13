@@ -92,6 +92,7 @@ public partial class CaseWorkspace
                 : Clock.UtcNow;
             var wall = WallClock.ToWall(decided, TimeDisp.Zone);
             a.MaterialityDecidedOn = wall.AddSeconds(-wall.Second).AddMilliseconds(-wall.Millisecond);
+            a.MaterialityDecidedOnRecorded = m.Status is MaterialityStatus.Material or MaterialityStatus.NotMaterial ? m.DecidedOnUtc : null;
             a.MaterialityRationale = m.Rationale;
             a.MaterialityBaseline = _case.MaterialityConcurrencyStamp(); // REL-02: optimistic-concurrency baseline
         }
