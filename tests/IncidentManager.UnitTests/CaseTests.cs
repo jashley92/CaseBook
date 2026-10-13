@@ -424,6 +424,24 @@ public class CaseTests
     }
 
     [Fact]
+    public void Reopening_a_case_closed_before_containment_was_recorded_says_when_it_was_contained(/* WF-50 */)
+    {
+        var c = NewCase();
+        c.ChangePhase(CasePhase.Triage, null, "ic1", Now.AddMinutes(10));
+        c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddMinutes(20), containedAtUtc: Now.AddMinutes(15));
+        c.ChangePhase(CasePhase.Closed, "Concluded", "ic1", Now.AddHours(1), outcomeKey: "Confirmed");
+        c.ContainedAtUtc = null;   // as a case closed before BUG-165 was left
+
+        c.ReopenPhase().Should().Be(CasePhase.Eradication);
+        c.SkipsContainment(c.ReopenPhase()).Should().BeTrue("the dialog asks");
+        c.Invoking(x => x.Reopen("More to check", "ic1", Now.AddHours(2))).Should().Throw<ArgumentException>();
+
+        c.Reopen("More to check", "ic1", Now.AddHours(2), containedAtUtc: Now.AddMinutes(15));
+        c.Phase.Should().Be(CasePhase.Eradication);
+        c.ContainedAtUtc.Should().Be(Now.AddMinutes(15));
+    }
+
+    [Fact]
     public void Every_not_before_detection_check_is_to_the_minute(/* REV-16 */)
     {
         var c = NewCase();

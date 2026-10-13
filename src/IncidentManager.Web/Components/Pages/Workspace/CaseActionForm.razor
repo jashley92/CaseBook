@@ -107,42 +107,7 @@
             <div class="form-text">Moving a case out of Closed reopens it, so it needs a reason, as Reopen does.</div>
         }
         <WhenItHappened Draft="T" OnChanged="Changed" />
-        @if (Case.SkipsContainment(D.NewPhase))
-        {
-            @* BUG-165: going past Containment without it is a decision, recorded either way. *@
-            <fieldset class="border rounded p-2 mt-2">
-                <legend class="form-label small mb-1 float-none w-auto px-1">This case hasn't been through Containment (required)</legend>
-                <div class="form-check">
-                    <input class="form-check-input" type="radio" name="ws-contained" id="ws-contained-yes" checked="@(D.WasContained == true)"
-                           @onchange="() => D.WasContained = true" />
-                    <label class="form-check-label small" for="ws-contained-yes">It was contained, at</label>
-                </div>
-                @if (D.WasContained == true)
-                {
-                    <input type="datetime-local" class="form-control form-control-sm mb-1" aria-label="When it was contained" @bind="D.ContainedAt" @bind:event="oninput" />
-                }
-                <div class="form-check">
-                    <input class="form-check-input" type="radio" name="ws-contained" id="ws-contained-no" checked="@(D.WasContained == false)"
-                           @onchange="() => D.WasContained = false" />
-                    <label class="form-check-label small" for="ws-contained-no">Containment wasn't needed, because</label>
-                </div>
-                @if (D.WasContained == false)
-                {
-                    <input class="form-control form-control-sm" maxlength="@Case.MaxContainmentReason" aria-label="Why containment wasn't needed"
-                           placeholder="e.g. the phishing link was never clicked" @bind="D.ContainmentNotNeededReason" @bind:event="oninput" />
-                }
-                <div class="form-text">Skipping Containment is recorded either way. "Not needed" stops the containment clock and leaves the
-                    case out of time-to-contain.</div>
-            </fieldset>
-        }
-        @if (Case.SkipsRecovery(D.NewPhase))
-        {
-            @* BUG-208: going past Recovery without it says when it was resolved. *@
-            <label class="form-label small mt-2" for="ws-resolved-at">When it was resolved <span class="text-muted">(required)</span></label>
-            <input id="ws-resolved-at" type="datetime-local" class="form-control form-control-sm" @bind="D.ResolvedAt" @bind:event="oninput" />
-            <div class="form-text">This case hasn't been through Recovery. Say when it was resolved, so the resolution SLA stops at the
-                right time.</div>
-        }
+        @SkipQuestions(D.NewPhase, "ws")
         <TransitionWarnings Case="Case" To="D.NewPhase" Notify="Notify" />
         <GateSection Draft="T" OnFix="OnFix" OnChanged="Changed" />
     }
@@ -314,6 +279,7 @@
         <p class="small text-muted mb-2">Reopen <code>@Case.CaseNumber</code>? It returns to the phase it was in before closing and the closure time is cleared. Closing it again re-runs the close gate.</p>
         <label class="form-label small" for="ws-reopen-reason">Reason <span class="text-muted">(required)</span></label>
         <input id="ws-reopen-reason" class="form-control" maxlength="2000" placeholder="Why is this case being reopened?" @bind="D.ReopenReason" @bind:event="oninput" />
+        @SkipQuestions(Case.ReopenPhase(), "ws-reopen")
     }
     else if (D.Name == "assign")
     {
@@ -461,7 +427,9 @@
         return D.Name switch
         {
             "assign" => string.IsNullOrEmpty(D.AssignUserId) || CurrentRole(D.AssignUserId) == D.AssignRole,
-            "reopen" => string.IsNullOrWhiteSpace(D.ReopenReason),
+            "reopen" => string.IsNullOrWhiteSpace(D.ReopenReason)
+                || (Case.SkipsContainment(Case.ReopenPhase()) && !ContainmentSaid)   // WF-50
+                || (Case.SkipsRecovery(Case.ReopenPhase()) && D.ResolvedAt is null),
             "holdrelease" => string.IsNullOrWhiteSpace(D.HoldReleaseReason),
             "supersede" => D.SupersedeTargetId is null || string.IsNullOrWhiteSpace(D.SupersedeReason)
                 || (D.SupersedeExposure is not null && !D.SupersedeAck),
@@ -486,6 +454,48 @@
             _ => false
         };
     }
+
+    // BUG-165/208, WF-50: the questions a move past Containment or Recovery without it asks, for a phase change and for
+    // a reopen that returns to such a phase.
+    private RenderFragment SkipQuestions(CasePhase to, string p) => __builder =>
+    {
+        @if (Case.SkipsContainment(to))
+        {
+            @* BUG-165: going past Containment without it is a decision, recorded either way. *@
+            <fieldset class="border rounded p-2 mt-2">
+                <legend class="form-label small mb-1 float-none w-auto px-1">This case hasn't been through Containment (required)</legend>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="@($"{p}-contained")" id="@($"{p}-contained-yes")" checked="@(D.WasContained == true)"
+                           @onchange="() => D.WasContained = true" />
+                    <label class="form-check-label small" for="@($"{p}-contained-yes")">It was contained, at</label>
+                </div>
+                @if (D.WasContained == true)
+                {
+                    <input type="datetime-local" class="form-control form-control-sm mb-1" aria-label="When it was contained" @bind="D.ContainedAt" @bind:event="oninput" />
+                }
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="@($"{p}-contained")" id="@($"{p}-contained-no")" checked="@(D.WasContained == false)"
+                           @onchange="() => D.WasContained = false" />
+                    <label class="form-check-label small" for="@($"{p}-contained-no")">Containment wasn't needed, because</label>
+                </div>
+                @if (D.WasContained == false)
+                {
+                    <input class="form-control form-control-sm" maxlength="@Case.MaxContainmentReason" aria-label="Why containment wasn't needed"
+                           placeholder="e.g. the phishing link was never clicked" @bind="D.ContainmentNotNeededReason" @bind:event="oninput" />
+                }
+                <div class="form-text">Skipping Containment is recorded either way. "Not needed" stops the containment clock and leaves the
+                    case out of time-to-contain.</div>
+            </fieldset>
+        }
+        @if (Case.SkipsRecovery(to))
+        {
+            @* BUG-208: going past Recovery without it says when it was resolved. *@
+            <label class="form-label small mt-2" for="@($"{p}-resolved-at")">When it was resolved <span class="text-muted">(required)</span></label>
+            <input id="@($"{p}-resolved-at")" type="datetime-local" class="form-control form-control-sm" @bind="D.ResolvedAt" @bind:event="oninput" />
+            <div class="form-text">This case hasn't been through Recovery. Say when it was resolved, so the resolution SLA stops at the
+                right time.</div>
+        }
+    };
 
     /// <summary>BUG-107: a closed case is reopened before its classification goes up.</summary>
     private bool ClosedAndRaising => Case.Phase == CasePhase.Closed && Case.RaisesClassification(D.NewClass);
@@ -608,8 +618,16 @@
                     break;
                 case "reopen":
                     if (string.IsNullOrWhiteSpace(D.ReopenReason)) { D.Error = "Enter a reason."; return; }
-                    await Cases.ReopenAsync(id, D.ReopenReason);
+                    var back = Case.ReopenPhase();
+                    await Cases.ReopenAsync(id, D.ReopenReason,
+                        containment: Case.SkipsContainment(back)   // WF-50
+                            ? new CaseService.ContainmentDecision(
+                                D.WasContained == true && D.ContainedAt is { } rca ? WallClock.ToUtc(rca, TimeDisp.Zone) : null,
+                                D.WasContained == false ? D.ContainmentNotNeededReason : null)
+                            : null,
+                        resolvedAtUtc: Case.SkipsRecovery(back) && D.ResolvedAt is { } rra ? WallClock.ToUtc(rra, TimeDisp.Zone) : null);
                     D.ReopenReason = "";
+                    (D.WasContained, D.ContainedAt, D.ContainmentNotNeededReason, D.ResolvedAt) = (null, null, null, null);
                     done = "Case reopened";
                     break;
                 case "assign":

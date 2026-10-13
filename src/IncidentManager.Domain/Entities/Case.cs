@@ -460,23 +460,29 @@ public class Case : AuditableEntity, IHashableEntity
     /// can't be determined), clears <see cref="ClosedAtUtc"/>, and records the transition with the caller's
     /// reason. A first-class, reason-captured lifecycle action — closing again re-runs the close stage gate.
     /// </summary>
-    public void Reopen(string reason, string actor, DateTimeOffset nowUtc)
+    /// <param name="containedAtUtc">WF-50: when the phase reopened to goes past Containment without it (a case closed before
+    /// BUG-165 recorded the decision), when it was contained; or <paramref name="containmentNotNeededReason"/>.</param>
+    /// <param name="resolvedAtUtc">WF-50: likewise for Recovery (BUG-208).</param>
+    public void Reopen(string reason, string actor, DateTimeOffset nowUtc, DateTimeOffset? containedAtUtc = null,
+        string? containmentNotNeededReason = null, DateTimeOffset? resolvedAtUtc = null)
     {
         if (Phase != CasePhase.Closed)
             throw new InvalidOperationException("Only a closed case can be reopened.");
         if (string.IsNullOrWhiteSpace(reason))
             throw new ArgumentException("A reason is required to reopen a case.");
 
-        // Return to the phase it was in when it closed, so the lifecycle reads truthfully.
-        var priorPhase = StatusChanges
-            .Where(s => s.To == CasePhase.Closed && s.From is { } f && f != CasePhase.Closed)
-            .OrderByDescending(s => s.ChangedAtUtc)
-            .Select(s => s.From!.Value)
-            .DefaultIfEmpty(CasePhase.Recovery)
-            .First();
-
-        ChangePhase(priorPhase, reason.Trim(), actor, nowUtc);
+        ChangePhase(ReopenPhase(), reason.Trim(), actor, nowUtc, containedAtUtc: containedAtUtc,
+            containmentNotNeededReason: containmentNotNeededReason, resolvedAtUtc: resolvedAtUtc);
     }
+
+    /// <summary>The phase a reopened case returns to: the one it was in when it closed (Recovery if that can't be told),
+    /// so the lifecycle reads truthfully.</summary>
+    public CasePhase ReopenPhase() => StatusChanges
+        .Where(s => s.To == CasePhase.Closed && s.From is { } f && f != CasePhase.Closed)
+        .OrderByDescending(s => s.ChangedAtUtc)
+        .Select(s => s.From!.Value)
+        .DefaultIfEmpty(CasePhase.Recovery)
+        .First();
 
     /// <summary>
     /// Updates the descriptive/core fields plus the two intake timestamps — when the matter was first

@@ -982,7 +982,9 @@ public sealed class CaseService
     /// Reopens a closed case (E-27) with a required reason: returns it to its pre-closure phase and clears
     /// the closure timestamp so MTTR / dashboard math stays correct. Audited via the change interceptor.
     /// </summary>
-    public async Task ReopenAsync(Guid id, string reason, CancellationToken ct = default)
+    /// <param name="containment">WF-50: when the phase reopened to skips Containment, as for ChangePhaseAsync.</param>
+    public async Task ReopenAsync(Guid id, string reason, ContainmentDecision? containment = null,
+        DateTimeOffset? resolvedAtUtc = null, CancellationToken ct = default)
     {
         Require();
         if (string.IsNullOrWhiteSpace(reason))
@@ -990,7 +992,7 @@ public sealed class CaseService
 
         using var db = _factory.CreateDbContext();
         var c = await LoadTrackedAsync(db, id, ct);
-        c.Reopen(reason, _user.UserId, _clock.UtcNow);
+        c.Reopen(reason, _user.UserId, _clock.UtcNow, containment?.ContainedAtUtc, containment?.NotNeededReason, resolvedAtUtc);
         await db.SaveChangesAsync(ct);
     }
 
