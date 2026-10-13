@@ -266,6 +266,19 @@ public sealed class ApiTokenTests : IDisposable
     }
 
     [Fact]
+    public async Task Two_active_system_tokens_cant_share_an_identity(/* WF-47 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db, Admin());
+        await svc.CreateSystemAsync("Splunk SOAR", ["Analyst"], _clock.UtcNow.AddDays(30));
+
+        foreach (var alike in new[] { "Splunk-SOAR", "splunk soar", "Splunk SOAR" })
+            await svc.Invoking(s => s.CreateSystemAsync(alike, ["Analyst"], _clock.UtcNow.AddDays(30)))
+                .Should().ThrowAsync<ArgumentException>();
+        (await svc.CreateSystemAsync("Splunk SOAR 2", ["Analyst"], _clock.UtcNow.AddDays(30))).Token.Name.Should().Be("Splunk SOAR 2");
+    }
+
+    [Fact]
     public async Task Only_an_admin_can_create_a_system_token()
     {
         await using var db = NewContext();

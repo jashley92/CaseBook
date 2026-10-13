@@ -256,9 +256,17 @@ public sealed class ApiTokenService
     private async Task EnsureSystemNameFreeAsync(string name, CancellationToken ct)
     {
         using var db = _factory.CreateDbContext();
-        var taken = await db.ApiTokens.AsNoTracking().AnyAsync(
-            t => t.Kind == ApiTokenKind.System && t.RevokedAtUtc == null && t.Name == name, ct);
-        if (taken) throw new ArgumentException($"An active system token named '{name}' already exists.");
+        // WF-47: a system token acts as apitoken:<slug>, so two active tokens whose names slug alike ("Splunk SOAR" and
+        // "Splunk-SOAR", or "Splunk" and "splunk") would share one identity in the audit trail, the import review and the
+        // retry dedupe. Compared by the identity, not the exact name (which SQLite compares case-sensitively).
+        var owner = "apitoken:" + Slug(name);
+        var clash = await db.ApiTokens.AsNoTracking()
+            .Where(t => t.Kind == ApiTokenKind.System && t.RevokedAtUtc == null && t.OwnerUserId == owner)
+            .Select(t => t.Name).FirstOrDefaultAsync(ct);
+        if (clash is not null)
+            throw new ArgumentException(string.Equals(clash, name, StringComparison.Ordinal)
+                ? $"An active system token named '{name}' already exists."
+                : $"An active system token named '{clash}' already acts as {owner}. Choose a name that differs by more than case or punctuation.");
     }
 
     private static string Slug(string s)
