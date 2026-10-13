@@ -1316,12 +1316,14 @@
 
         _savingSection = true;
         var changed = 0;
+        var saved = new List<string>();   // REV-40: the keys already in effect if a later one fails
         try
         {
             foreach (var s in _effective.Where(e => SectionGroups.Contains(e.Definition.Group)).ToList())
             {
                 if (!Differs(s.Definition.Key)) continue;
                 await Settings.SetAsync(s.Definition.Key, _form.GetValueOrDefault(s.Definition.Key));
+                saved.Add(s.Definition.Key);
                 changed++;
             }
             if (SectionHasLayout && LayoutDirty)
@@ -1338,7 +1340,13 @@
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
         {
-            Toasts.Error(ex.Message);
+            _savingSection = false;
+            if (saved.Count == 0) { Toasts.Error(ex.Message); return; }
+            // REV-40: each key saves on its own, so the ones before the failure are in effect. Show them as saved, keep the
+            // rest as unsaved edits, and say which is which, rather than leave everything looking unsaved.
+            var names = string.Join(", ", saved.Select(k => _effective.FirstOrDefault(e => e.Definition.Key == k)?.Definition.Label ?? k));
+            await ReloadKeepingEdits(saved);
+            Toasts.Error($"Saved {names}, but not the rest: {ex.Message}");
             return;
         }
         finally
