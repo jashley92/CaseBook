@@ -661,6 +661,7 @@ public sealed class ReportService
             .Include(x => x.SeverityChanges)
             .Include(x => x.StatusChanges)        // INV-16: milestones in the investigation timeline
             .Include(x => x.MaterialityChanges)
+            .Include(x => x.JurisdictionNotices)  // WF-35: each regulator's notice is its own milestone (BUG-09)
             .Include(x => x.VerdictChanges)      // HR-05: verdict milestones in the investigation timeline
             .Include(x => x.GatePassages)
             .Include(x => x.Citations)            // INV-10: evidence an entry cites

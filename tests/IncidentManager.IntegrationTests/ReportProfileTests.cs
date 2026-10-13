@@ -151,6 +151,25 @@ public sealed class ReportProfileTests : IDisposable
     }
 
     [Fact]
+    public async Task The_report_timeline_has_each_regulators_notice(/* WF-35 */)
+    {
+        var caseId = await SeededCaseIdAsync();
+        using (var db = NewContext())
+        {
+            var c = db.Cases.Include(x => x.JurisdictionNotices).Single(x => x.Id == caseId);
+            var at = c.DetectedAtUtc ?? c.CreatedAtUtc;
+            c.RecordNotice("NY", at.AddHours(1), "analyst1", at.AddDays(3));
+            c.RecordNotice("CA", at.AddDays(2), "analyst1", at.AddDays(3));
+            db.SaveChanges();
+        }
+
+        var model = await NewReportService().BuildPreviewModelAsync(caseId, null);
+
+        model.InvestigationTimeline.Select(i => i.Description).Should().Contain(d => d.Contains("Notified NY"))
+            .And.Contain(d => d.Contains("Notified CA"));
+    }
+
+    [Fact]
     public async Task A_deleted_profile_transparently_falls_back_to_the_global_default()
     {
         var caseId = await SeededCaseIdAsync();
