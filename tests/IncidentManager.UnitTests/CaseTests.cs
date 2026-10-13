@@ -363,6 +363,20 @@ public class CaseTests
     }
 
     [Fact]
+    public void A_skip_move_cant_be_re_dated_before_the_times_it_stated(/* BUG-230 */)
+    {
+        var c = NewCase();
+        c.ChangePhase(CasePhase.Containment, null, "ic1", Now.AddHours(1));
+        c.ChangePhase(CasePhase.Eradication, null, "ic1", Now.AddHours(2));
+        c.ChangePhase(CasePhase.PostIncident, null, "ic1", Now.AddHours(4), resolvedAtUtc: Now.AddHours(3));
+        var move = c.StatusChanges.Single(s => s.To == CasePhase.PostIncident).Id;
+
+        c.Invoking(x => x.CorrectTransitionTime(TransitionKind.Phase, move, Now.AddMinutes(150), "typo", "ic1", Now.AddHours(5)))
+            .Should().Throw<ArgumentException>().WithMessage("*after the case was resolved*");
+        c.CorrectTransitionTime(TransitionKind.Phase, move, Now.AddMinutes(200), "typo", "ic1", Now.AddHours(5));   // still after
+    }
+
+    [Fact]
     public void Coming_back_into_containment_takes_back_not_needed(/* BUG-229 */)
     {
         var c = NewCase();

@@ -1591,6 +1591,18 @@ public class Case : AuditableEntity, IHashableEntity
             contained = newEffectiveUtc;
         if (ContainmentNotNeededReason is null && contained is { } c && resolved is { } r && r < c)
             throw new ArgumentException("That would date the resolution before the containment.");
+        // BUG-230: a move that came after the case was contained (or resolved) can't be re-dated to before it. A skip
+        // move states those times itself (BUG-165/208), and ChangePhase refuses a stated time after the move; re-dating
+        // the move before it would undo that check. A move that was already earlier (a close before a later reopen) can
+        // still be corrected.
+        var at = newEffectiveUtc;
+        if (target.To is CasePhase.Eradication or CasePhase.Recovery or CasePhase.PostIncident or CasePhase.Closed
+            && contained is { } cAt && old >= cAt && at < cAt)
+            throw new ArgumentException($"This move came after the case was contained ({cAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC), " +
+                "so it can't be dated before that.");
+        if (target.To is CasePhase.PostIncident or CasePhase.Closed && resolved is { } rAt && old >= rAt && at < rAt)
+            throw new ArgumentException($"This move came after the case was resolved ({rAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC), " +
+                "so it can't be dated before that.");
 
         target.Set(newEffectiveUtc == target.ChangedAtUtc ? null : newEffectiveUtc);
         (ContainedAtUtc, ResolvedAtUtc, ClosedAtUtc) = (contained, resolved, closed);
