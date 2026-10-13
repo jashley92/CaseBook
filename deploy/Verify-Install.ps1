@@ -53,6 +53,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# REV-73: Windows PowerShell 5.1 offers only SSL3/TLS 1.0 by default unless the host sets SchUseStrongCrypto, and a host
+# with those turned off then refuses every HTTPS probe below (a healthy site reads as down).
+# (Left to the OS when it already decides: SystemDefault includes TLS 1.2 and 1.3.)
+if ([Net.ServicePointManager]::SecurityProtocol -ne [Net.SecurityProtocolType]::SystemDefault) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+}
 $script:fail = 0
 $script:warn = 0
 $cfg = $null
