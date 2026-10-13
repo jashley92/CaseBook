@@ -28,6 +28,17 @@ jobs:
       - name: Released migrations are immutable
         run: bash tools/ci/check-migrations-immutable.sh
 
+      # PROD-49: the release body is the version's docs/UPGRADE.md section (the app shows it to administrators as the
+      # release's notes). Checked first, so a tag without notes fails before anything is built.
+      - name: Release notes from docs/UPGRADE.md
+        run: |
+          set -euo pipefail
+          bash tools/ci/extract-release-notes.sh "${GITHUB_REF_NAME}" > release-notes.md
+          prev="$(git tag --list 'v[0-9]*' --sort=-v:refname --merged HEAD | grep -vx "${GITHUB_REF_NAME}" | head -n1 || true)"
+          if [[ -n "$prev" ]]; then
+            printf '\n**Full changelog**: https://github.com/%s/compare/%s...%s\n' "$GITHUB_REPOSITORY" "$prev" "$GITHUB_REF_NAME" >> release-notes.md
+          fi
+
       - name: Set up .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -40,8 +51,10 @@ jobs:
 
       # REV-77: the same gates as CI, on the tagged commit itself. A tag can sit on a commit CI never ran (a docs-only
       # commit skips CI) or one whose CI failed, and a bundle with un-migrated model changes fails to start on upgrade.
+      # PROD-49: stamp the tag's version into the assemblies (they'd otherwise all read 1.0.0), so the app knows which
+      # release it is and the update check has something to compare. The SDK appends the commit (+sha) itself.
       - name: Build
-        run: dotnet build --no-restore -c Release
+        run: dotnet build --no-restore -c Release -p:Version="${GITHUB_REF_NAME#v}"
 
       - name: Test
         run: dotnet test --no-build -c Release --verbosity minimal
@@ -56,7 +69,7 @@ jobs:
       # Framework-dependent, portable publish (no RID) — the same shape Install-CaseBook.ps1
       # produces, so the app runs under IIS in-process with the .NET 10 Hosting Bundle.
       - name: Publish web app
-        run: dotnet publish src/IncidentManager.Web -c Release -o publish/app --nologo
+        run: dotnet publish src/IncidentManager.Web -c Release -o publish/app --nologo -p:Version="${GITHUB_REF_NAME#v}"
 
       - name: Assemble release bundle
         run: |
@@ -87,4 +100,4 @@ jobs:
             "bundle/casebook-${version}.zip" \
             "bundle/casebook-${version}.zip.sha256" \
             --title "CaseBook ${version}" \
-            --generate-notes
+            --notes-file release-notes.md

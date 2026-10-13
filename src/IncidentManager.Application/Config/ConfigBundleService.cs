@@ -159,8 +159,7 @@ public sealed partial class ConfigBundleService
         return new ConfigExport(bytes, fileName, envelope);
     }
 
-    private static string AppVersion() =>
-        typeof(ConfigBundleService).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+    private static string AppVersion() => Updates.AppVersionInfo.Current?.ToString(3) ?? "0.0.0";
 
     // Projectors shared by export and import-diff, so a template/gate exported and re-imported compares equal
     // (records with nested collections lack structural equality — the import diffs on the canonical JSON of
