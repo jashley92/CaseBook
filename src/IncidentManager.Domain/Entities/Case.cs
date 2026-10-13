@@ -762,6 +762,8 @@ public class Case : AuditableEntity, IHashableEntity
         // Refang defanged IOC notation on entry so correlation (E-08), links (E-05) and the pushed
         // feed (E-13) all match on canonical values — and so this dedup catches "1.1.1[.]1" == "1.1.1.1".
         var v = IocObservable.Normalize(type, value);
+        // REV-18: a value that's only dots ("." or "[.]" as a domain) is nothing once it's normalized.
+        if (v.Length == 0) throw new ArgumentException("That value is empty once it's normalized. Enter the indicator itself.");
         var existing = FindEntity(type, v);
         if (existing is not null)
         {
@@ -810,6 +812,8 @@ public class Case : AuditableEntity, IHashableEntity
             ?? throw new InvalidOperationException("Entity not found on this case.");
 
         var v = IocObservable.Normalize(type, value);
+        // REV-18: a value that's only dots ("." or "[.]" as a domain) is nothing once it's normalized.
+        if (v.Length == 0) throw new ArgumentException("That value is empty once it's normalized. Enter the indicator itself.");
         // Don't let an edit collapse this entity onto a different one of the same type+value.
         if (Entities.Any(e => e.Id != entityId && e.Type == type &&
                 string.Equals(e.Value, v, StringComparison.OrdinalIgnoreCase)))

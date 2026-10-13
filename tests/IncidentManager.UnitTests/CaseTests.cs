@@ -387,6 +387,21 @@ public class CaseTests
         c.Materiality.DecidedOnUtc.Should().Be(Now.AddMinutes(-1));
     }
 
+    [Theory]
+    [InlineData(".")]
+    [InlineData("[.]")]
+    [InlineData("..")]
+    public void A_domain_that_is_only_dots_is_refused(string value /* REV-18 */)
+    {
+        var c = NewCase();
+        c.Invoking(x => x.AddEntity(EntityType.Domain, value, null, EntityDisposition.Unknown, null, null, "a1", Now))
+            .Should().Throw<ArgumentException>().WithMessage("*empty once it's normalized*");
+        var e = c.AddEntity(EntityType.Domain, "evil.example", null, EntityDisposition.Unknown, null, null, "a1", Now);
+        c.Invoking(x => x.EditEntity(e.Id, EntityType.Domain, value, null, EntityDisposition.Unknown, null, null, "a1", Now))
+            .Should().Throw<ArgumentException>();
+        c.Entities.Should().ContainSingle().Which.Value.Should().Be("evil.example");
+    }
+
     [Fact]
     public void Every_not_before_detection_check_is_to_the_minute(/* REV-16 */)
     {
