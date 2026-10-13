@@ -19,7 +19,8 @@ public sealed class SecretReference
 
     /// <summary>True if <paramref name="value"/> is a CyberArk reference rather than a literal secret.</summary>
     public static bool IsReference([NotNullWhen(true)] string? value) =>
-        value is not null && value.StartsWith(Scheme, StringComparison.OrdinalIgnoreCase);
+        // REV-10: leading whitespace (a pasted value) is still a reference, as the signer and keyring already read it.
+        value is not null && value.TrimStart().StartsWith(Scheme, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Parses a reference. Returns false (no throw) for a null/literal value or a malformed reference —
@@ -30,7 +31,7 @@ public sealed class SecretReference
         reference = null;
         if (!IsReference(value)) return false;
 
-        var body = value[Scheme.Length..];
+        var body = value.Trim()[Scheme.Length..];
         var pairs = new List<KeyValuePair<string, string>>();
         foreach (var part in body.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {

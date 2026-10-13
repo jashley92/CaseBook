@@ -19,8 +19,13 @@ public class SecretResolutionTests
     [InlineData(null, false)]
     [InlineData("@cyberark:Safe=SIEM;Object=Tok", true)]
     [InlineData("@CyberArk:Safe=SIEM;Object=Tok", true)] // scheme is case-insensitive
+    [InlineData("  @cyberark:Safe=SIEM;Object=Tok", true)] // REV-10: as the signer and keyring read it
     public void IsReference_distinguishes_references_from_literals(string? value, bool expected) =>
         SecretReference.IsReference(value).Should().Be(expected);
+
+    [Fact]
+    public void TryParse_reads_a_reference_with_surrounding_whitespace(/* REV-10 */) =>
+        SecretReference.TryParse("  @cyberark:Safe=SIEM;Object=Tok ", out _).Should().BeTrue();
 
     [Fact]
     public void TryParse_reads_query_pairs_in_order()
