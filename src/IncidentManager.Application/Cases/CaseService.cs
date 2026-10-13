@@ -2761,7 +2761,7 @@ public sealed class CaseService
         var now = _clock.UtcNow;
         var at = completedAtUtc ?? now;
         if (at > now) throw new ArgumentException("A task can't be completed in the future.");
-        if (c.DetectedAtUtc is { } detected && at < detected)
+        if (c.DetectedAtUtc is { } detected && Case.ToMinute(at) < Case.ToMinute(detected))   // REV-16
             throw new ArgumentException("A task can't be completed before the case was detected.");
 
         item.Status = ActionItemStatus.Done;

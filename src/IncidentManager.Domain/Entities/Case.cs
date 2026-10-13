@@ -353,14 +353,14 @@ public class Case : AuditableEntity, IHashableEntity
         if (skips && containedAtUtc is { } containedAt)
         {
             if (containedAt > nowUtc) throw new ArgumentException("When it was contained can't be in the future.");
-            if (DetectedAtUtc is { } det && containedAt < det) throw new ArgumentException("It can't have been contained before it was detected.");
+            if (DetectedAtUtc is { } det && ToMinute(containedAt) < ToMinute(det)) throw new ArgumentException("It can't have been contained before it was detected.");
             if (containedAt > at) throw new ArgumentException("It can't have been contained after this move.");
         }
         // BUG-208: likewise, against the contained time this move leaves (unless it wasn't needed).
         if (skipsRecovery && resolvedAtUtc is { } resolvedAt)
         {
             if (resolvedAt > nowUtc) throw new ArgumentException("When it was resolved can't be in the future.");
-            if (DetectedAtUtc is { } det && resolvedAt < det) throw new ArgumentException("It can't have been resolved before it was detected.");
+            if (DetectedAtUtc is { } det && ToMinute(resolvedAt) < ToMinute(det)) throw new ArgumentException("It can't have been resolved before it was detected.");
             var containedBy = skips ? containedAtUtc : ContainmentNotNeededReason is null ? ContainedAtUtc : null;
             if (containedBy is { } cb && resolvedAt < cb) throw new ArgumentException("It can't have been resolved before it was contained.");
             if (resolvedAt > at) throw new ArgumentException("It can't have been resolved after this move.");
@@ -419,9 +419,10 @@ public class Case : AuditableEntity, IHashableEntity
     /// clocks), and neither does a case already contained or recorded as not needing it. BUG-228: nor does leaving
     /// Closed for one of those phases skip the question: a case closed from Triage has no contained time either.
     /// </summary>
-    // BUG-231: times people pick are to the minute; a detected time with seconds (from the import API) mustn't refuse the
-    // lowest minute the picker offers.
-    private static DateTimeOffset ToMinute(DateTimeOffset t) => new(t.Ticks - t.Ticks % TimeSpan.TicksPerMinute, t.Offset);
+    // BUG-231: times people pick are to the minute; a detected time with seconds (from the import API, or a case filed with
+    // Detected left blank) mustn't refuse the lowest minute the picker offers. REV-16: every "not before it was detected"
+    // check compares to the minute.
+    public static DateTimeOffset ToMinute(DateTimeOffset t) => new(t.Ticks - t.Ticks % TimeSpan.TicksPerMinute, t.Offset);
 
     public bool SkipsContainment(CasePhase to) =>
         Phase is < CasePhase.Containment or CasePhase.Closed
@@ -1269,7 +1270,7 @@ public class Case : AuditableEntity, IHashableEntity
     {
         if (reportedAtUtc > nowUtc)
             throw new ArgumentException("The reported time can't be in the future.");
-        if (DetectedAtUtc is { } detected && reportedAtUtc < detected)
+        if (DetectedAtUtc is { } detected && ToMinute(reportedAtUtc) < ToMinute(detected))
             throw new ArgumentException("The reported time can't be earlier than the detected time.");
 
         ReportedAtUtc = reportedAtUtc;
@@ -1296,7 +1297,7 @@ public class Case : AuditableEntity, IHashableEntity
         if (code.Length == 0) throw new ArgumentException("Say which jurisdiction was notified.");
         if (code.Length > JurisdictionNotice.MaxJurisdictionLength) throw new ArgumentException("That jurisdiction code is too long.");
         if (notifiedAtUtc > nowUtc) throw new ArgumentException("The notice time can't be in the future.");
-        if (DetectedAtUtc is { } detected && notifiedAtUtc < detected)
+        if (DetectedAtUtc is { } detected && ToMinute(notifiedAtUtc) < ToMinute(detected))
             throw new ArgumentException("The notice time can't be earlier than the detected time.");
 
         var notice = JurisdictionNotices.FirstOrDefault(n => n.Jurisdiction == code);
@@ -1586,7 +1587,7 @@ public class Case : AuditableEntity, IHashableEntity
         var what = kind switch { TransitionKind.Phase => "phase", TransitionKind.Severity => "severity", _ => "classification" };
         if (newEffectiveUtc > nowUtc)
             throw new ArgumentException($"The {what} change can't be dated in the future.");
-        if (DetectedAtUtc is { } detected && newEffectiveUtc < detected)
+        if (DetectedAtUtc is { } detected && ToMinute(newEffectiveUtc) < ToMinute(detected))
             throw new ArgumentException($"The {what} change can't be dated before the case was detected.");
         if (i > 0 && newEffectiveUtc < ordered[i - 1].EffectiveAt)
             throw new ArgumentException(
@@ -1653,7 +1654,7 @@ public class Case : AuditableEntity, IHashableEntity
         if (effectiveAtUtc is not { } at || at == nowUtc) return null;
         if (at > nowUtc)
             throw new ArgumentException($"The {what} change can't be dated in the future.");
-        if (DetectedAtUtc is { } detected && at < detected)
+        if (DetectedAtUtc is { } detected && ToMinute(at) < ToMinute(detected))
             throw new ArgumentException($"The {what} change can't be dated before the case was detected.");
         if (earlierChanges.Where(x => x > at).OrderByDescending(x => x).FirstOrDefault() is { } later && later != default)
             throw new ArgumentException(

@@ -388,6 +388,21 @@ public class CaseTests
     }
 
     [Fact]
+    public void Every_not_before_detection_check_is_to_the_minute(/* REV-16 */)
+    {
+        var c = NewCase();
+        c.UpdateDetails(c.Title, c.Summary, null, null, null, Now.AddSeconds(-30), null, "ic1", Now.AddMinutes(1));   // 11:59:30
+        var minute = Now.AddMinutes(-1);   // 11:59, what the picker offers
+
+        c.ChangePhase(CasePhase.Triage, null, "ic1", Now.AddMinutes(2), effectiveAtUtc: minute);
+        c.ChangePhase(CasePhase.PostIncident, null, "ic1", Now.AddMinutes(3), containedAtUtc: minute, resolvedAtUtc: minute);
+        c.MarkReported(minute, "lp1", Now.AddMinutes(4));
+        var triage = c.StatusChanges.Single(x => x.To == CasePhase.Triage).Id;
+        c.Invoking(x => x.CorrectTransitionTime(TransitionKind.Phase, triage, minute.AddMinutes(-1), "typo", "ic1", Now.AddMinutes(5)))
+            .Should().Throw<ArgumentException>().WithMessage("*before the case was detected*", "a minute earlier still is");
+    }
+
+    [Fact]
     public void A_skip_move_cant_be_re_dated_before_the_times_it_stated(/* BUG-230 */)
     {
         var c = NewCase();
