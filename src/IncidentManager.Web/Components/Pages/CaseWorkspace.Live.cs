@@ -42,6 +42,10 @@ public partial class CaseWorkspace
         var actorId = change.ActorId;
         if (_accessLost) return; // REL-07: already holding the workspace for a copy-out — don't churn it
         if (change.CaseId != Id) return; // BUG-05: a late change for the case this view just left
+        // BUG-233: and after every await below, since the view can move to another case while one is in flight
+        // (navigation doesn't wait on the live gate): a read of the old case landing then would put it back on screen
+        // under the new one's route, its tabs writing to it.
+        bool Left() => change.CaseId != Id || _case?.Id != change.CaseId;
 
         // RD-22: a change to the record, tasks, things, evidence, the brief or the paperwork re-reads only that part
         // of the case; anything touching the case itself (phase, rung, team, gates…) re-reads the whole case below.
@@ -49,11 +53,19 @@ public partial class CaseWorkspace
         if (_case is not null && !regions.HasFlag(IncidentManager.Application.Cases.CaseRegions.Whole))
         {
             var known = _knownIds;
-            if (await Cases.RefreshPartsAsync(_case, regions))
+            var refreshed = await Cases.RefreshPartsAsync(_case, regions);
+            if (Left()) return;
+            if (refreshed)
             {
                 if (regions.HasFlag(IncidentManager.Application.Cases.CaseRegions.Tasks))
-                    _taskResults = await Cases.GetTaskResultsAsync(_case.Id);
-                _readinessEval = NextGateTrigger() is { } gt ? await LoadGateAsync(gt) : null;   // the gate reads them all
+                {
+                    var taskResults = await Cases.GetTaskResultsAsync(change.CaseId);
+                    if (Left()) return;
+                    _taskResults = taskResults;
+                }
+                var gate = NextGateTrigger() is { } gt ? await LoadGateAsync(gt) : null;   // the gate reads them all
+                if (Left()) return;
+                _readinessEval = gate;
                 SeedKnownIds();
                 if (LiveRefreshFor(_activeTab, regions)) _liveRefresh++;
                 await SetTab(_activeTab);
@@ -71,15 +83,17 @@ public partial class CaseWorkspace
         // text, don't yank the workspace out to the "not found" page (which unmounts the editors and
         // silently discards the draft — the FR-05 guard only covers navigation). Hold the workspace with
         // a banner so the viewer can copy the text out first.
-        var refreshed = await Cases.GetDetailAsync(Id);
-        if (refreshed is null && hadCase && await AnyDraftDirtyAsync())
+        var detail = await Cases.GetDetailAsync(change.CaseId);
+        if (change.CaseId != Id) return;   // BUG-233: the view moved on while this was read
+        if (detail is null && hadCase && await AnyDraftDirtyAsync())
         {
             _accessLost = true;
             StateHasChanged();
             return;
         }
 
-        await ReloadWith(refreshed);
+        await ReloadWith(detail);
+        if (change.CaseId != Id) return;
         await RefreshPermissionsAsync(); // REL-08: demote the UI if this user's access was revoked mid-session
         _liveRefresh++; // UX-13: signal extracted tabs to re-query the case (an in-progress edit in a
                         // tab component survives, since the component isn't re-created by a reload)
