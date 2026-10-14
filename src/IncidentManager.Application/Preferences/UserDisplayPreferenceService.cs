@@ -50,17 +50,12 @@ public sealed class UserDisplayPreferenceService
     public async Task SetAttackChainOpenAsync(bool open, CancellationToken ct = default)
     {
         if (!_user.IsAuthenticated) return;
-        using var db = _factory.CreateDbContext();
-        var row = await db.UserDisplayPreferences.FirstOrDefaultAsync(p => p.UserId == _user.UserId, ct);
-        if (row is null)
+        await UpsertAsync(row =>
         {
-            row = new UserDisplayPreference { UserId = _user.UserId };
-            db.UserDisplayPreferences.Add(row);
-        }
-        else if (row.AttackChainOpen == open) return;
-        row.AttackChainOpen = open;
-        row.UpdatedAtUtc = _clock.UtcNow;
-        await db.SaveChangesAsync(ct);
+            if (row.AttackChainOpen == open) return false;
+            row.AttackChainOpen = open;
+            return true;
+        }, ct);
     }
 
     /// <summary>RD-24: the current user's keyboard settings (the defaults when they've changed nothing).</summary>
@@ -82,17 +77,12 @@ public sealed class UserDisplayPreferenceService
         if (settings is null) throw new ArgumentException(string.Join(" ", problems));
         var stored = Keymap.Serialize(settings.Keys);
         if (stored is { Length: > 2000 }) throw new ArgumentException("That's more key bindings than CaseBook can store.");
-        using var db = _factory.CreateDbContext();
-        var row = await db.UserDisplayPreferences.FirstOrDefaultAsync(p => p.UserId == _user.UserId, ct);
-        if (row is null)
+        await UpsertAsync(row =>
         {
-            row = new UserDisplayPreference { UserId = _user.UserId };
-            db.UserDisplayPreferences.Add(row);
-        }
-        row.SingleKeyShortcutsOff = settings.SingleKeysOff;
-        row.KeyBindings = stored;
-        row.UpdatedAtUtc = _clock.UtcNow;
-        await db.SaveChangesAsync(ct);
+            row.SingleKeyShortcutsOff = settings.SingleKeysOff;
+            row.KeyBindings = stored;
+            return true;
+        }, ct);
         return settings;
     }
 
@@ -100,24 +90,45 @@ public sealed class UserDisplayPreferenceService
     public async Task SaveMineAsync(DisplayPrefs prefs, CancellationToken ct = default)
     {
         if (!_user.IsAuthenticated) return;
-        using var db = _factory.CreateDbContext();
-        var row = await db.UserDisplayPreferences.FirstOrDefaultAsync(p => p.UserId == _user.UserId, ct);
-        if (row is null)
+        await UpsertAsync(row =>
         {
-            row = new UserDisplayPreference { UserId = _user.UserId };
-            db.UserDisplayPreferences.Add(row);
-        }
-        else if (row.DarkTheme == prefs.DarkTheme && row.NavCollapsed == prefs.NavCollapsed && row.LocalTime == prefs.LocalTime
-                 && row.TwelveHourClock == prefs.TwelveHourClock && row.CompactRows == prefs.CompactRows)
+            if (row.DarkTheme == prefs.DarkTheme && row.NavCollapsed == prefs.NavCollapsed && row.LocalTime == prefs.LocalTime
+                && row.TwelveHourClock == prefs.TwelveHourClock && row.CompactRows == prefs.CompactRows)
+                return false;
+            row.DarkTheme = prefs.DarkTheme;
+            row.NavCollapsed = prefs.NavCollapsed;
+            row.LocalTime = prefs.LocalTime;
+            row.TwelveHourClock = prefs.TwelveHourClock;
+            row.CompactRows = prefs.CompactRows;
+            return true;
+        }, ct);
+    }
+
+    /// <summary>
+    /// Applies <paramref name="apply"/> (which returns whether it changed anything) to the user's single row, adding the
+    /// row when there isn't one. BUG-368: a new user's first two tabs both find no row and both insert; the second hits
+    /// the unique UserId index. That one re-reads the row the first inserted and applies its change to it instead.
+    /// </summary>
+    private async Task UpsertAsync(Func<UserDisplayPreference, bool> apply, CancellationToken ct)
+    {
+        for (var attempt = 0; ; attempt++)
         {
-            return;
+            using var db = _factory.CreateDbContext();
+            var row = await db.UserDisplayPreferences.FirstOrDefaultAsync(p => p.UserId == _user.UserId, ct);
+            var adding = row is null;
+            if (row is null)
+            {
+                row = new UserDisplayPreference { UserId = _user.UserId };
+                db.UserDisplayPreferences.Add(row);
+            }
+            if (!apply(row) && !adding) return;
+            row.UpdatedAtUtc = _clock.UtcNow;
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                return;
+            }
+            catch (DbUpdateException) when (adding && attempt == 0) { /* lost the insert race: update the row that won */ }
         }
-        row.DarkTheme = prefs.DarkTheme;
-        row.NavCollapsed = prefs.NavCollapsed;
-        row.LocalTime = prefs.LocalTime;
-        row.TwelveHourClock = prefs.TwelveHourClock;
-        row.CompactRows = prefs.CompactRows;
-        row.UpdatedAtUtc = _clock.UtcNow;
-        await db.SaveChangesAsync(ct);
     }
 }

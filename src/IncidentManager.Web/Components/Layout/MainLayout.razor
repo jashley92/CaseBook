@@ -4,6 +4,7 @@
 @inject NavigationManager Nav
 @inject IncidentManager.Application.Preferences.UserDisplayPreferenceService DisplayPrefs
 @inject IncidentManager.Web.Services.CaseTabsState Tabs
+@inject ILogger<MainLayout> Logger
 @implements IDisposable
 
 @* UX-02: first focusable element on the page, so a keyboard/AT user can skip the sidebar. *@
@@ -164,6 +165,11 @@
         }
         catch (JSException) { /* interop unavailable: the browser keeps its own copy */ }
         catch (JSDisconnectedException) { }
+        // BUG-368: a convenience; a database failure here mustn't take the circuit down with it.
+        catch (Exception ex) when (ex is Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)
+        {
+            Logger.LogWarning(ex, "Couldn't sync display preferences; the browser keeps its own copy");
+        }
     }
 
     [JSInvokable]
@@ -181,6 +187,10 @@
         }
         catch (JSException) { }
         catch (JSDisconnectedException) { }
+        catch (Exception ex) when (ex is Microsoft.EntityFrameworkCore.DbUpdateException or InvalidOperationException)   // BUG-368
+        {
+            Logger.LogWarning(ex, "Couldn't save display preferences; the browser keeps its own copy");
+        }
     }
 
     public void Dispose()
