@@ -125,6 +125,30 @@ public sealed class LessonsLearnedTests : IDisposable
     }
 
     [Fact]
+    public async Task Reopening_a_not_pursued_action_clears_no_actions_identified_so_the_review_still_saves()
+    {
+        // BUG-331: a NotPursued action can sit beside "none identified"; reopening it used to leave the flag set,
+        // and every later review save was refused.
+        var id = await NewCaseAsync("Reopen Case");
+        var svc = Lessons();
+        var actionId = await svc.AddActionAsync(id, Action("Replace the VPN") with
+            { Status = ImprovementActionStatus.NotPursued, OutcomeNote = "Out of budget; CISO decided." });
+        await svc.SaveReviewAsync(id, new PostIncidentReviewInput("What happened.", null, null, null, NoActionsIdentified: true), null);
+        var opened = (await svc.GetForCaseAsync(id)).Actions.Single().Stamp;
+
+        await svc.UpdateActionAsync(id, actionId, Action("Replace the VPN") with { Status = ImprovementActionStatus.Open }, opened);
+
+        var view = await svc.GetForCaseAsync(id);
+        view.Review!.NoActionsIdentified.Should().BeFalse("an active action answers the question the other way");
+        await svc.SaveReviewAsync(id, new PostIncidentReviewInput("Revised.", null, null, null, false), view.Review.Stamp);
+        (await svc.GetForCaseAsync(id)).Review!.WhatHappened.Should().Be("Revised.");
+
+        // The flag change is in the audit trail with the action's edit.
+        await using var db = NewContext();
+        (await db.AuditLog.CountAsync(a => a.EntityType == nameof(PostIncidentReview))).Should().Be(3);
+    }
+
+    [Fact]
     public async Task Closing_an_action_needs_an_outcome_note_and_stamps_then_clears_the_close_time()
     {
         var id = await NewCaseAsync("Close Case");

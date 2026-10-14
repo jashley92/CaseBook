@@ -235,6 +235,20 @@ public sealed class LessonsService
         action.OutcomeNote = v.OutcomeNote;
         action.ModifiedBy = _user.UserId;
         action.ModifiedAtUtc = now;
+
+        // BUG-331: an action that isn't NotPursued answers the review's follow-up question, as AddActionAsync does,
+        // so a reopened one clears "no improvement actions identified" in the same audited save.
+        if (input.Status != ImprovementActionStatus.NotPursued)
+        {
+            var review = await db.PostIncidentReviews.FirstOrDefaultAsync(r => r.CaseId == caseId, ct);
+            if (review is { NoActionsIdentified: true })
+            {
+                review.NoActionsIdentified = false;
+                review.ModifiedBy = _user.UserId;
+                review.ModifiedAtUtc = now;
+            }
+        }
+
         await db.SaveChangesAsync(ct);
     }
 
