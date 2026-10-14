@@ -313,9 +313,10 @@ public sealed partial class ConfigBundleService
                 case "order":
                     var listed = value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
                     var members = kind.Members.Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
-                    if (value.Length > 0 && (listed.Length != members.Count || !listed.All(members.Contains)
-                                             || listed.Distinct(StringComparer.Ordinal).Count() != listed.Length))
-                        problems.Add($"The order for {kind.Title} must list each of its options exactly once.");
+                    // BUG-424: not necessarily all of them. An order saved before an option was added (Command line) lists the
+                    // rest, and the option goes after them, as the admin page reads it (TaxonomyAdminService.OrderMembers).
+                    if (value.Length > 0 && (!listed.All(members.Contains) || listed.Distinct(StringComparer.Ordinal).Count() != listed.Length))
+                        problems.Add($"The order for {kind.Title} must list only its own options, each at most once.");
                     break;
             }
         }

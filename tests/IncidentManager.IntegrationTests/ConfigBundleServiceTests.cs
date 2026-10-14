@@ -355,6 +355,33 @@ public sealed class ConfigBundleServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task An_order_saved_before_an_option_was_added_still_imports(/* BUG-424 */)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var kind = IncidentManager.Application.Admin.TaxonomyCatalog.Kinds.Single(k => k.Id == "EntityType");
+        var orderKey = IncidentManager.Application.Admin.TaxonomyCatalog.OrderKey(kind.Id);
+        ConfigBundle WithOrder(IEnumerable<string> members) => live with
+        {
+            Settings = [.. live.Settings.Where(s => s.Key != orderKey), new ConfigSetting(orderKey, string.Join(",", members))]
+        };
+
+        // Customised before the Command line type existed: every other member, reversed.
+        var older = kind.Members.Select(m => m.Value).Where(v => v != nameof(EntityType.CommandLine)).Reverse().ToList();
+        older.Should().HaveCount(kind.Members.Count - 1);
+        await svc.ImportAsync(Signed(WithOrder(older)), sourceTrusted: true);
+        (await db.AppSettings.AsNoTracking().SingleAsync(s => s.Key == orderKey)).Value.Should().Be(string.Join(",", older));
+
+        // Still refused: a member named twice, or one the kind doesn't have.
+        await ((Func<Task>)(() => svc.PreviewAsync(WithOrder([.. older, older[0]])))).Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*each at most once*");
+        await ((Func<Task>)(() => svc.PreviewAsync(WithOrder([.. older, "Spaceship"])))).Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*only its own options*");
+    }
+
+    [Fact]
     public async Task A_bundle_that_leaves_two_active_gates_on_one_transition_is_refused(/* BUG-237 */)
     {
         await using var db = NewContext();
