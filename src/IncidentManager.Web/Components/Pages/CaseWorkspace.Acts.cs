@@ -161,8 +161,11 @@ public partial class CaseWorkspace
     // PROD-20: pin/unpin the open case for the current user.
     private bool _isPinned;
 
+    private bool _pinning;   // BUG-391 sibling: a double-click would pin, then unpin
     private async Task TogglePin()
     {
+        if (_pinning) return;
+        _pinning = true;
         try
         {
             _isPinned = await Shortcuts.TogglePinAsync(Id);
@@ -173,6 +176,7 @@ public partial class CaseWorkspace
         {
             Toasts.Error(ex.Message);
         }
+        finally { _pinning = false; }
     }
 
     // A one-click action invoked from the palette: run it, then re-render this workspace (the palette has

@@ -86,7 +86,13 @@ public sealed class AdTokenOwnerCheck : ITokenOwnerCheck
     [SupportedOSPlatform("windows")]
     private static AccountGroups? QueryDirectory(string ownerUserId)
     {
-        using var ctx = new PrincipalContext(ContextType.Domain);
+        // BUG-400 sibling: a trusted domain's DOMAIN\sam is looked up in that domain, not the server's, where a namesake
+        // would answer with someone else's groups and enabled state.
+        var slash = ownerUserId.IndexOf('\\');
+        var domain = slash > 0 ? ownerUserId[..slash] : null;
+        using var ctx = domain is not null && string.Equals(domain, Environment.MachineName, StringComparison.OrdinalIgnoreCase)
+            ? new PrincipalContext(ContextType.Machine)
+            : new PrincipalContext(ContextType.Domain, domain);
         using var user = UserPrincipal.FindByIdentity(ctx, ownerUserId);
         if (user is null) return null;
         using var groups = user.GetAuthorizationGroups();

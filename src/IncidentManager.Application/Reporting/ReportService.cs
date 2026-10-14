@@ -761,7 +761,7 @@ public sealed class ReportService
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var byJurisdiction = new SortedDictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var e in elements.Where(e => !string.IsNullOrWhiteSpace(e.NotificationJurisdictions)))
-            foreach (var j in e.NotificationJurisdictions!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            foreach (var j in Compliance.NotificationDeadlineService.SplitCodes(e.NotificationJurisdictions)   // BUG-404: ',' or ';'
                          .Where(j => frozen is null || frozen.Contains(j)))
                 (byJurisdiction.TryGetValue(j, out var list) ? list : byJurisdiction[j] = new()).Add(e.Label);
 
