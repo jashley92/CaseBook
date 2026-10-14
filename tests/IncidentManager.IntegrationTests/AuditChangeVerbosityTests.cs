@@ -191,6 +191,70 @@ public sealed class AuditChangeVerbosityTests : IDisposable
     }
 
     [Fact]
+    public async Task Re_recording_materiality_and_editing_a_referral_audit_the_real_before_values(/* BUG-333 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var c = await svc.CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = "Rerecord", Title = "Rerecord case",
+            Classification = Classification.Incident, Severity = Severity.Medium,
+            Origin = CaseOrigin.InternalDetection
+        });
+
+        async Task<IncidentManager.Domain.Entities.AuditLogEntry> LastCaseUpdate()
+        {
+            await using var read = NewContext();
+            return await read.AuditLog.AsNoTracking()
+                .Where(a => a.EntityType == "Case" && a.Action == AuditAction.Update)
+                .OrderByDescending(a => a.Sequence).FirstAsync();
+        }
+        static Dictionary<string, System.Text.Json.JsonElement> Parse(string? json) =>
+            System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(json!)!;
+
+        // Materiality: Under review, then re-recorded as Material. The second line's before is Under review with its
+        // rationale, not the type's defaults, and only what moved is listed.
+        await svc.RecordMaterialityAsync(c.Id, MaterialityStatus.UnderReview, null, null, "With counsel");
+        var first = await LastCaseUpdate();
+        AuditChangeDetail.Changes(first).Should().Contain(new AuditChangeDetail.FieldChange("Materiality", "Undetermined", "Under review"));
+
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(5);   // a later save, as in use (the touch moves the case row)
+        await svc.RecordMaterialityAsync(c.Id, MaterialityStatus.Material, "General Counsel", _clock.UtcNow, "With counsel");
+        var second = await LastCaseUpdate();
+        second.Summary.Should().Be("Update Case — Materiality");
+        var before = Parse(second.BeforeJson);
+        before["Materiality.Status"].GetInt32().Should().Be((int)MaterialityStatus.UnderReview);
+        before.Should().NotContainKey("Materiality.Rationale", "the rationale didn't change");
+        Parse(second.AfterJson).Should().NotContainKey("Materiality.Rationale");
+        AuditChangeDetail.Changes(second).Should().BeEquivalentTo(new[]
+        {
+            new AuditChangeDetail.FieldChange("Materiality", "Under review", "Material"),
+            new AuditChangeDetail.FieldChange("Materiality decision-maker", "—", "General Counsel"),
+            new AuditChangeDetail.FieldChange("Materiality decision date", "—", AuditChangeDetail.Changes(second)
+                .Single(x => x.Label == "Materiality decision date").After),
+        });
+
+        // Legal referral: referred, then only the contact edited. Before is "referred, old contact"; IsReferred and the
+        // note aren't listed as changed.
+        await svc.ReferToLegalAsync(c.Id, "General Counsel", "NY NPI involved");
+        _clock.UtcNow = _clock.UtcNow.AddMinutes(5);
+        await svc.ReferToLegalAsync(c.Id, "Privacy Office", "NY NPI involved");
+        var edit = await LastCaseUpdate();
+        edit.Summary.Should().Be("Update Case — Legal referral");
+        var b = Parse(edit.BeforeJson);
+        b["LegalReferral.ReferredToContact"].GetString().Should().Be("General Counsel");
+        b.Should().NotContainKey("LegalReferral.IsReferred");
+        b.Should().NotContainKey("LegalReferral.RegulatoryRelevanceNote");
+        AuditChangeDetail.Changes(edit).Should().ContainSingle()
+            .Which.Should().Be(new AuditChangeDetail.FieldChange("Legal contact", "General Counsel", "Privacy Office"));
+
+        // The chain still verifies.
+        await using var check = NewContext();
+        var entries = await check.AuditLog.AsNoTracking().OrderBy(a => a.Sequence).ToListAsync();
+        _hasher.VerifyChain(entries).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
     public void A_reference_guid_in_a_diff_resolves_to_its_label()
     {
         var actorId = Guid.NewGuid();

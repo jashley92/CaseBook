@@ -238,6 +238,11 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                         && !OnlyTokenUseStamped(e))
             .ToList();
 
+        // BUG-333: a replaced owned value object is tracked as the new instance (Added) plus the old one (Deleted). The old
+        // ones are taken now, while change detection is current, so the update's diff can read the real before-values.
+        var replacedOwned = ctx.ChangeTracker.Entries()
+            .Where(x => x.Metadata.IsOwned() && x.State == EntityState.Deleted).ToList();
+
         // Map cases by id so child-entity audit lines can carry the case number.
         var (caseNumbers, evidenceCases) = CaseNumbersFor(ctx, auditable);
 
@@ -286,7 +291,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
                 hashable.RowHash = _hasher.ComputeRowHash(hashable);
         }
 
-        return new PreparedAudit(auditable, caseNumbers, evidenceCases, actor, now, reason);
+        return new PreparedAudit(auditable, caseNumbers, evidenceCases, actor, now, reason, replacedOwned);
     }
 
     /// <summary>
@@ -296,7 +301,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     /// </summary>
     private void AppendChain(DbContext ctx, PreparedAudit p)
     {
-        var (auditable, caseNumbers, evidenceCases, actor, now, reason) = p;
+        var (auditable, caseNumbers, evidenceCases, actor, now, reason, replacedOwned) = p;
 
         var head = ctx.Set<AuditLogEntry>().AsNoTracking().OrderByDescending(a => a.Sequence).FirstOrDefault();
         var newEntries = new List<AuditLogEntry>(auditable.Count);
@@ -309,7 +314,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         {
             var entity = (Entity)e.Entity;
             var type = e.Entity.GetType().Name;
-            var (action, before, after, changedFields) = Describe(e);
+            var (action, before, after, changedFields) = Describe(e, replacedOwned);
 
             // Skip a pure "touch": an update whose only changed columns are the freshness stamps
             // (ModifiedAtUtc/ModifiedBy). It never alters the tamper-evident canonical (RowHash stays put),
@@ -356,11 +361,13 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
         IReadOnlyDictionary<Guid, Guid> EvidenceCases,
         string Actor,
         DateTimeOffset Now,
-        string? Reason);
+        string? Reason,
+        IReadOnlyList<EntityEntry> ReplacedOwned);
 
     private static readonly string[] NoFields = Array.Empty<string>();
 
-    private static (AuditAction action, string? before, string? after, IReadOnlyList<string> changedFields) Describe(EntityEntry e)
+    private static (AuditAction action, string? before, string? after, IReadOnlyList<string> changedFields) Describe(EntityEntry e,
+        IReadOnlyList<EntityEntry> replacedOwned)
     {
         switch (e.State)
         {
@@ -369,7 +376,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             case EntityState.Deleted:
                 return (AuditAction.Delete, Serialize(e.OriginalValues, e.OriginalValues.Properties), null, NoFields);
             default:
-                return DescribeUpdate(e);
+                return DescribeUpdate(e, replacedOwned);
         }
     }
 
@@ -379,7 +386,8 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
     /// folded into the owner's diff here, keyed "Nav.Prop" (e.g. "Materiality.Status"). Without this, a
     /// referral or materiality determination shows only as an empty "Update Case" (just the row-hash/touch).
     /// </summary>
-    private static (AuditAction, string?, string?, IReadOnlyList<string>) DescribeUpdate(EntityEntry e)
+    private static (AuditAction, string?, string?, IReadOnlyList<string>) DescribeUpdate(EntityEntry e,
+        IReadOnlyList<EntityEntry> replacedOwned)
     {
         var before = new Dictionary<string, object?>();
         var after = new Dictionary<string, object?>();
@@ -399,16 +407,24 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             if (target.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted)) continue;
 
             var nav = reference.Metadata.Name;
+            // BUG-333: replacing the whole VO tracks the new instance as Added; its before-values are the replaced
+            // instance's (the Deleted entry of the same owned navigation and owner).
+            var replaced = target.State == EntityState.Added ? ReplacedBy(target, e, replacedOwned) : null;
             foreach (var p in target.Properties)
             {
                 if (p.Metadata.IsShadowProperty()) continue; // owner FK / key
                 var moved = target.State is EntityState.Added or EntityState.Deleted || p.IsModified;
                 if (!moved) continue;
                 var key = $"{nav}.{p.Metadata.Name}";
-                // Replacing the whole VO tracks it as Added (no original), so a first-time referral/materiality
-                // reads from the type's default — "No" / "Undetermined" — rather than an "absent" dash.
-                before[key] = target.State == EntityState.Added ? DefaultOf(p.Metadata.ClrType) : p.OriginalValue;
-                after[key] = target.State == EntityState.Deleted ? null : p.CurrentValue;
+                // A true first time (nothing replaced) reads from the type's default — "No" / "Undetermined" — rather
+                // than an "absent" dash.
+                var was = target.State != EntityState.Added ? p.OriginalValue
+                    : replaced is not null ? replaced.Property(p.Metadata.Name).OriginalValue
+                    : DefaultOf(p.Metadata.ClrType);
+                var now = target.State == EntityState.Deleted ? null : p.CurrentValue;
+                if (Equals(was, now)) continue; // BUG-333: only what actually moved
+                before[key] = was;
+                after[key] = now;
                 names.Add(key);
             }
         }
@@ -431,6 +447,17 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
             JsonSerializer.Serialize(before, Json),
             JsonSerializer.Serialize(after, Json),
             names);
+    }
+
+    // BUG-333: the owned instance an Added one replaced: the Deleted entry of the same owned type (one per navigation)
+    // whose owner key is this owner's.
+    private static EntityEntry? ReplacedBy(EntityEntry added, EntityEntry owner, IReadOnlyList<EntityEntry> replacedOwned)
+    {
+        if (added.Metadata.FindOwnership() is not { } ownership) return null;
+        var fk = ownership.Properties;
+        var pk = ownership.PrincipalKey.Properties;
+        return replacedOwned.FirstOrDefault(d => d.Metadata == added.Metadata
+            && Enumerable.Range(0, fk.Count).All(i => Equals(d.Property(fk[i].Name).CurrentValue, owner.Property(pk[i].Name).CurrentValue)));
     }
 
     // The "empty" prior value for a property whose owned VO was added wholesale: the zero of a value type
