@@ -290,9 +290,10 @@
     {
         _ranFor = Q;
         _draft = Q ?? "";
-        _cts?.Cancel();
-        _cts?.Dispose();
+        // Taken before the await, so a second run doesn't cancel or dispose it again.
+        var old = _cts;
         _cts = null;
+        if (old is not null) { await old.CancelAsync(); old.Dispose(); }
         _failed = null;
         // BUG-454: advance the sequence first, so a search still running when the query is cleared is dropped too.
         var seq = ++_seq;

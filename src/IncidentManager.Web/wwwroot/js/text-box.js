@@ -8,7 +8,7 @@
 // Enter starts the next item (and on an empty item ends the list), Tab makes it a sub-item and Shift+Tab takes it back
 // out. Off a list line, Tab moves to the next field as usual.
 (function () {
-    const ITEM = /^(\s*)([-*+]|(\d{1,9})([.)]))(\s+)(.*)$/;
+    const ITEM = /^(\s*)([-*+]|(\d{1,9})([.)]))(\s+)(\S.*|)$/;   // the content starts after the whole gap (no backtracking)
     const STEP = '    ';   // four spaces nest under "- ", "1. " and "10. " alike in CommonMark
 
     function lineAt(el) {
