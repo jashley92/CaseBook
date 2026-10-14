@@ -2390,7 +2390,8 @@ else
         if (_tlPrecision is TimePrecision.Day or TimePrecision.OnOrBefore or TimePrecision.Window && _tlEditId is null)
         {
             _tlDay = day;
-            if (_tlUntilDay <= _tlDay) _tlUntilDay = _tlDay.AddDays(1);
+            // BUG-463 sibling: a typed 31 Dec 9999 has no next day; the save refuses a future time anyway.
+            if (_tlUntilDay <= _tlDay) _tlUntilDay = _tlDay < DateTime.MaxValue.Date ? _tlDay.AddDays(1) : _tlDay;
         }
         if (_tlPrecision == TimePrecision.NotStated && _tlEditId is null)
             _tlAfter = AttackSteps().LastOrDefault()?.Id.ToString() ?? "";
