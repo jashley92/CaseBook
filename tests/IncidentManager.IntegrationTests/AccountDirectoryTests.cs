@@ -178,14 +178,112 @@ public sealed class AccountDirectoryTests : IDisposable
         (await NewService().IsKnownAccountAsync("jdoe")).Should().BeFalse();
     }
 
+    private CaseService Cases(AppDbContext db) => new(new TestDbContextFactory(Options()), _user, _clock, new CaseNumberGenerator(db),
+        new CreateCaseValidator(), new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(),
+        new TestSlaTargets(), accounts: NewService());
+
+    private static CaseService.EntityToAdd Account(string value) =>
+        new(EntityType.Account, value, null, EntityDisposition.Unknown, null, null);
+
+    [Fact]
+    public async Task Capture_stops_at_the_first_unavailable_answer_and_skips_accounts_it_doesnt_look_up(/* BUG-419, BUG-420 */)
+    {
+        var (caseId, _, _, _) = await SeedAsync();
+        await using var db = NewContext();
+        _directory.Accounts["CONTOSO\\found"] = Jdoe();
+        _directory.NotAsked.Add("EVIL\\svc");
+        _directory.DownFor.Add("CONTOSO\\broken");
+
+        var added = await Cases(db).AddOrMatchEntitiesAsync(caseId,
+            [Account("EVIL\\svc"), Account("CONTOSO\\found"), Account("CONTOSO\\broken"), Account("CONTOSO\\later1"), Account("CONTOSO\\later2")]);
+
+        added.Should().HaveCount(5);
+        _directory.Asked.Should().Equal(["EVIL\\svc", "CONTOSO\\found", "CONTOSO\\broken"],
+            "a skipped account doesn't stop the capture; an unavailable directory isn't asked again for the rest of the add");
+        (await db.AccountDirectorySnapshots.AsNoTracking().Select(s => s.LookedUp).ToListAsync())
+            .Should().Equal(["CONTOSO\\found"], "an account that wasn't looked up isn't kept as 'not found'");
+    }
+
+    [Fact]
+    public async Task Capture_keeps_what_it_took_when_the_add_runs_out_of_time(/* BUG-420 */)
+    {
+        var (caseId, account, _, _) = await SeedAsync();
+        var hang = (await SeedEntityAsync(caseId, "CONTOSO\\hangs")).Id;
+        _directory.Hang.Add("CONTOSO\\hangs");
+
+        var started = DateTime.UtcNow;
+        var taken = await NewService().CaptureOnAddAsync(caseId, [account, hang],
+            new AccountDirectoryService.CaptureAllowance(TimeSpan.FromMilliseconds(300)));
+
+        (DateTime.UtcNow - started).Should().BeLessThan(TimeSpan.FromSeconds(10));
+        _directory.Asked.Should().Equal("CONTOSO\\jdoe", "CONTOSO\\hangs");
+        taken.Should().Be(1, "what was looked up before the time ran out is kept");
+        (await NewService().SnapshotsAsync(caseId, account)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Accounts_saved_before_a_later_batch_failed_are_still_captured(/* BUG-429 */)
+    {
+        var (caseId, _, _, _) = await SeedAsync();
+        await using var db = NewContext();
+        var first = Enumerable.Range(0, CaseService.EntitiesPerSave - 1)
+            .Select(i => new CaseService.EntityToAdd(EntityType.IpAddress, $"198.51.100.{i % 250}", null, EntityDisposition.Unknown, null, $"s{i}"))
+            .Prepend(Account("CONTOSO\\firstbatch"));
+        var items = first.Append(Account("   ")).ToList();   // the second batch fails
+
+        await Cases(db).Invoking(c => c.AddOrMatchEntitiesAsync(caseId, items)).Should().ThrowAsync<ArgumentException>();
+
+        (await db.AccountDirectorySnapshots.AsNoTracking().CountAsync(s => s.LookedUp == "CONTOSO\\firstbatch")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_lookup_is_kept_only_for_the_value_it_was_made_for(/* BUG-432 */)
+    {
+        var (caseId, account, _, _) = await SeedAsync();
+        _directory.Accounts["CONTOSO\\jdoe"] = Jdoe();
+        var live = await NewService().LookupAsync(caseId, account);
+        live.LookedUp.Should().Be("CONTOSO\\jdoe");
+
+        await using (var db = NewContext())
+            await db.CaseEntities.Where(e => e.Id == account).ExecuteUpdateAsync(s => s.SetProperty(e => e.Value, "CONTOSO\\asmith"));
+
+        await NewService().Invoking(s => s.SaveAsync(caseId, account, live)).Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*changed since it was looked up*");
+        await NewService().Invoking(s => s.SaveAsync(caseId, account, DirectoryLookup.Of(Jdoe())))
+            .Should().ThrowAsync<InvalidOperationException>("a lookup that doesn't say what it was for isn't kept");
+        (await NewService().SnapshotsAsync(caseId, account)).Should().BeEmpty();
+
+        _directory.NotAsked.Add("CONTOSO\\asmith");
+        var notAsked = await NewService().LookupAsync(caseId, account);
+        await NewService().Invoking(s => s.SaveAsync(caseId, account, notAsked)).Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    private async Task<IncidentManager.Domain.Entities.CaseEntity> SeedEntityAsync(Guid caseId, string value)
+    {
+        await using var db = NewContext();
+        var c = await db.Cases.Include(x => x.Entities).FirstAsync(x => x.Id == caseId);
+        var e = c.AddEntity(EntityType.Account, value, null, EntityDisposition.Unknown, null, null, _user.UserId, _clock.UtcNow);
+        await db.SaveChangesAsync();
+        return e;
+    }
+
     private sealed class FakeDirectory : IAccountDirectory
     {
         public Dictionary<string, DirectoryAccount> Accounts { get; } = new(StringComparer.OrdinalIgnoreCase);
         public bool Down { get; set; }
+        public HashSet<string> DownFor { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> NotAsked { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> Hang { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public List<string> Asked { get; } = [];
         public bool IsAvailable => true;
 
-        public Task<DirectoryLookup> LookupAsync(string account, CancellationToken ct = default) => Task.FromResult(
-            Down ? DirectoryLookup.Unavailable("down")
-            : Accounts.TryGetValue(account, out var a) ? DirectoryLookup.Of(a) : DirectoryLookup.NotFound);
+        public async Task<DirectoryLookup> LookupAsync(string account, CancellationToken ct = default)
+        {
+            Asked.Add(account);
+            if (Hang.Contains(account)) await Task.Delay(Timeout.Infinite, ct);
+            return Down || DownFor.Contains(account) ? DirectoryLookup.Unavailable("down")
+                : NotAsked.Contains(account) ? DirectoryLookup.NotLookedUp("not ours")
+                : Accounts.TryGetValue(account, out var a) ? DirectoryLookup.Of(a) : DirectoryLookup.NotFound;
+        }
     }
 }

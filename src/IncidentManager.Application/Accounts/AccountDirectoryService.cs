@@ -48,25 +48,49 @@ public sealed class AccountDirectoryService
         Require(Permission.ViewCases);
         using var db = _factory.CreateDbContext();
         var entity = await VisibleEntityAsync(db, caseId, entityId, ct);
-        if (!_directory.IsAvailable) return DirectoryLookup.Unavailable("There's no directory to look accounts up in here.");
-        return await _directory.LookupAsync(entity.Value, ct);
+        if (!_directory.IsAvailable)
+            return DirectoryLookup.Unavailable("There's no directory to look accounts up in here.") with { LookedUp = entity.Value };
+        return await _directory.LookupAsync(entity.Value, ct) with { LookedUp = entity.Value };   // BUG-432
     }
 
     /// <summary>
     /// Keeps <paramref name="lookup"/> (what the analyst was shown) as a new snapshot of the entity. A lookup that
-    /// couldn't reach the directory has nothing to keep.
+    /// couldn't reach the directory, or wasn't made (BUG-419), has nothing to keep. BUG-432: nor has one made for a value
+    /// the entity no longer has (it was edited meanwhile).
     /// </summary>
     public async Task<AccountDirectorySnapshot> SaveAsync(Guid caseId, Guid entityId, DirectoryLookup lookup, CancellationToken ct = default)
     {
         Require(Permission.EditCases);
         if (lookup.Outcome == DirectoryLookupOutcome.Unavailable)
             throw new InvalidOperationException("The directory couldn't be reached, so there's nothing to keep. Try the lookup again.");
+        if (lookup.Outcome == DirectoryLookupOutcome.NotLookedUp)
+            throw new InvalidOperationException("That account wasn't looked up in the directory, so there's nothing to keep.");
         using var db = _factory.CreateDbContext();
         var entity = await VisibleEntityAsync(db, caseId, entityId, ct);
+        if (!string.Equals(lookup.LookedUp, entity.Value, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The account was changed since it was looked up. Look it up again.");
         var snapshot = Snapshot(caseId, entity, lookup, DirectorySnapshotTrigger.Requested);
         db.AccountDirectorySnapshots.Add(snapshot);
         await db.SaveChangesAsync(ct);
         return snapshot;
+    }
+
+    /// <summary>How long one add (a paste, an import) spends on the directory in all, at most.</summary>
+    public static readonly TimeSpan CaptureBudget = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// BUG-420: what one add may still spend on the directory: <see cref="MaxCapturedPerAdd"/> lookups within
+    /// <see cref="CaptureBudget"/>, shared by every batch of the add. Once the directory is unavailable, the rest of the
+    /// add isn't looked up.
+    /// </summary>
+    public sealed class CaptureAllowance(TimeSpan? budget = null)
+    {
+        private readonly long _start = System.Diagnostics.Stopwatch.GetTimestamp();
+        private readonly TimeSpan _budget = budget ?? CaptureBudget;
+
+        internal int Lookups { get; set; } = MaxCapturedPerAdd;
+        internal bool Stopped { get; set; }
+        internal TimeSpan Left => _budget - System.Diagnostics.Stopwatch.GetElapsedTime(_start);
     }
 
     /// <summary>
@@ -74,9 +98,14 @@ public sealed class AccountDirectoryService
     /// accounts were added. Best effort: an unreachable directory, or one that doesn't know the account, records
     /// nothing, and the add has already been saved either way.
     /// </summary>
-    public async Task<int> CaptureOnAddAsync(Guid caseId, IEnumerable<Guid> entityIds, CancellationToken ct = default)
+    public Task<int> CaptureOnAddAsync(Guid caseId, IEnumerable<Guid> entityIds, CancellationToken ct = default) =>
+        CaptureOnAddAsync(caseId, entityIds, new CaptureAllowance(), ct);
+
+    /// <summary>The same, within what <paramref name="allowance"/> has left (BUG-420).</summary>
+    public async Task<int> CaptureOnAddAsync(Guid caseId, IEnumerable<Guid> entityIds, CaptureAllowance allowance,
+        CancellationToken ct = default)
     {
-        if (!_directory.IsAvailable || !_user.Has(Permission.EditCases)) return 0;
+        if (!_directory.IsAvailable || !_user.Has(Permission.EditCases) || allowance.Stopped) return 0;
         var ids = entityIds.Distinct().ToList();
         if (ids.Count == 0) return 0;
         try
@@ -87,12 +116,24 @@ public sealed class AccountDirectoryService
                 .Where(e => e.CaseId == caseId && ids.Contains(e.Id))
                 .ToListAsync(ct);
             var taken = 0;
-            // At most MaxCapturedPerAdd lookups, so a large paste isn't held up by the directory.
-            foreach (var e in entities.Where(e => IsAccountType(e.Type)).Take(MaxCapturedPerAdd))
+            // BUG-420: one after another, within the add's allowance, so a large paste isn't held up by the directory.
+            foreach (var e in entities.Where(e => IsAccountType(e.Type)).OrderBy(e => ids.IndexOf(e.Id)))   // in the order added
             {
-                var lookup = await _directory.LookupAsync(e.Value, ct);
+                var left = allowance.Left;
+                if (allowance.Lookups <= 0 || left <= TimeSpan.Zero) { allowance.Stopped = true; break; }
+                allowance.Lookups--;
+                DirectoryLookup lookup;
+                using (var budget = CancellationTokenSource.CreateLinkedTokenSource(ct))
+                {
+                    budget.CancelAfter(left);
+                    try { lookup = await _directory.LookupAsync(e.Value, budget.Token); }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested) { allowance.Stopped = true; break; }
+                }
+                // BUG-420: an unavailable directory isn't asked again for the rest of the add.
+                if (lookup.Outcome == DirectoryLookupOutcome.Unavailable) { allowance.Stopped = true; break; }
                 // An email address is only an account when the directory has it; an account not found is worth keeping
-                // (the name didn't resolve when it was added), an unreachable directory isn't.
+                // (the name didn't resolve when it was added), an unreachable directory isn't. One that wasn't looked up
+                // (BUG-419: another organisation's domain) keeps nothing either.
                 if (lookup.Outcome == DirectoryLookupOutcome.Found
                     || (lookup.Outcome == DirectoryLookupOutcome.NotFound && e.Type == EntityType.Account))
                 {

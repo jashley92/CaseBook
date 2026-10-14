@@ -69,6 +69,11 @@ Used only by `POST /api/import/cases` (bearer header).
   answer is reused for 15 minutes; if AD can't be reached, the last answer stands for up to 24 hours, then the token is
   refused. The calendar feed link follows the same check. Without Windows sign-in the user mirror is used (it updates
   at each sign-in).
+- **Account entities are looked up only in domains the server already trusts** (BUG-419, `AdAccountDirectory`): an
+  account indicator is attacker-supplied text, so `DOMAIN\sam` is asked about only when DOMAIN is in the server's
+  forest or has a trust with its domain. Anything else, and a local account (`.\sam`, `COMPUTER\sam`), is answered
+  "not looked up" without a DC-locator query or bind, so the server's identity never authenticates to a host an
+  indicator names. See [integrations](../operations/integrations.md#active-directory).
 - **Reminders go only to people still entitled to the case** (`ReminderAudience`): task (overdue, due soon), deadline,
   stale-case and digest emails, and the calendar feed, need an active account holding a role that grants `ViewCases`,
   and on a restricted case its IC, a teammate or someone cleared for restricted cases. The directory's current answer

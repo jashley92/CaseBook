@@ -27,6 +27,11 @@
                 {
                     <p class="small text-warning-emphasis mb-1">@live.Problem</p>
                 }
+                else if (live.Outcome == DirectoryLookupOutcome.NotLookedUp)
+                {
+                    @* BUG-419: nothing was asked, so neither "not found" nor anything to keep. *@
+                    <p class="small text-muted mb-1"><span class="im-badge im-b-neutral">Not looked up</span> @live.Problem</p>
+                }
                 else
                 {
                     <div class="small fw-semibold mb-1">Now, from the directory@(Latest is null ? "" : Differs(live, Latest) ? " · changed since the kept details" : " · same as the kept details")</div>
@@ -50,23 +55,23 @@
                 As kept @TimeDisp.Short(kept.CreatedAtUtc) · @(kept.Trigger == DirectorySnapshotTrigger.Added ? "when the account was added" : $"looked up by {Users.DisplayFor(kept.CreatedBy)}")
             </div>
             @Details(kept.Found ? FromSnapshot(kept) : null, null)
-            @if (_snapshots.Count > 1)
-            {
-                <details class="small mt-1">
-                    <summary>Earlier snapshots · @(_snapshots.Count - 1)</summary>
-                    @foreach (var s in _snapshots.Skip(1))
-                    {
-                        <div class="im-entity-ref">
-                            <div class="text-muted">@TimeDisp.Short(s.CreatedAtUtc) · @(s.Trigger == DirectorySnapshotTrigger.Added ? "when added" : Users.DisplayFor(s.CreatedBy))</div>
-                            @Details(s.Found ? FromSnapshot(s) : null, null)
-                        </div>
-                    }
-                </details>
-            }
         }
         else if (_loaded && _live is null)
         {
-            <p class="small text-muted mb-0">No directory details are kept for it yet.@(Directory.IsAvailable ? " Look it up to see them." : "")</p>
+            <p class="small text-muted mb-0">No directory details are kept for @(_snapshots.Count > 0 ? "this account name" : "it") yet.@(Directory.IsAvailable ? " Look it up to see them." : "")</p>
+        }
+        @if (Earlier is { Count: > 0 } earlier)
+        {
+            <details class="small mt-1">
+                <summary>Earlier snapshots · @earlier.Count</summary>
+                @foreach (var s in earlier)
+                {
+                    <div class="im-entity-ref">
+                        <div class="text-muted">@TimeDisp.Short(s.CreatedAtUtc) · @(s.Trigger == DirectorySnapshotTrigger.Added ? "when added" : Users.DisplayFor(s.CreatedBy))@(IsFor(s) ? "" : $" · taken for {s.LookedUp}")</div>
+                        @Details(s.Found ? FromSnapshot(s) : null, null)
+                    </div>
+                }
+            </details>
         }
     </section>
 }
@@ -83,7 +88,11 @@
     private bool _looking, _saving, _loaded;
     private (Guid Entity, string Value)? _loadedFor;
 
-    private AccountDirectorySnapshot? Latest => _snapshots.Count > 0 ? _snapshots[0] : null;
+    // BUG-432: the kept details are the newest snapshot taken for the account as it's written now; one taken before the
+    // value was edited is listed among the earlier ones, marked with the name it was taken for.
+    private AccountDirectorySnapshot? Latest => _snapshots.FirstOrDefault(IsFor);
+    private List<AccountDirectorySnapshot> Earlier => _snapshots.Where(s => !ReferenceEquals(s, Latest)).ToList();
+    private bool IsFor(AccountDirectorySnapshot s) => string.Equals(s.LookedUp, Entity.Value, StringComparison.OrdinalIgnoreCase);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -102,11 +111,12 @@
     {
         if (_looking) return;
         _looking = true;
-        var id = Entity.Id;
+        var key = (Entity.Id, Entity.Value);
         try
         {
-            var result = await Directory.LookupAsync(CaseId, id);
-            if (Entity.Id == id) _live = result;
+            var result = await Directory.LookupAsync(CaseId, key.Id);
+            // BUG-432: shown only for the account it was looked up for: not another entity, nor this one after an edit.
+            if ((Entity.Id, Entity.Value) == key && string.Equals(result.LookedUp, key.Value, StringComparison.Ordinal)) _live = result;
         }
         catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
         finally { _looking = false; }
@@ -116,11 +126,17 @@
     {
         if (_live is not { } live || _saving) return;
         _saving = true;
+        var key = (Entity.Id, Entity.Value);
         try
         {
-            await Directory.SaveAsync(CaseId, Entity.Id, live);
-            _snapshots = await Directory.SnapshotsAsync(CaseId, Entity.Id);
-            _live = null;
+            // BUG-432: the service refuses a lookup made for a value the entity no longer has.
+            await Directory.SaveAsync(CaseId, key.Id, live);
+            var list = await Directory.SnapshotsAsync(CaseId, key.Id);
+            if ((Entity.Id, Entity.Value) == key)
+            {
+                _snapshots = list;
+                _live = null;
+            }
             Toasts.Success("Directory details kept with the case");
         }
         catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }

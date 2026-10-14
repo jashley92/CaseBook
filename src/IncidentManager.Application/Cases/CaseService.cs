@@ -2000,10 +2000,11 @@ public sealed class CaseService
     }
 
     // BUG-416: an account added to the case is looked up in the directory and its details kept (best effort).
-    private async Task CaptureAccountsAsync(Guid id, IEnumerable<CaseEntity> added, CancellationToken ct)
+    private async Task CaptureAccountsAsync(Guid id, IEnumerable<CaseEntity> added,
+        Accounts.AccountDirectoryService.CaptureAllowance capture, CancellationToken ct)
     {
         var ids = added.Where(e => Accounts.AccountDirectoryService.IsAccountType(e.Type)).Select(e => e.Id).ToList();
-        if (ids.Count > 0 && _accounts is not null) await _accounts.CaptureOnAddAsync(id, ids, ct);
+        if (ids.Count > 0 && _accounts is not null) await _accounts.CaptureOnAddAsync(id, ids, capture, ct);
     }
 
     public async Task<Guid> AddEntityAsync(Guid id, EntityType type, string value, string? label,
@@ -2029,7 +2030,7 @@ public sealed class CaseService
         var before = c.FindEntity(type, value)?.Disposition;
         var entity = c.AddEntity(type, value, label, disposition, description, source, _user.UserId, _clock.UtcNow);
         await db.SaveChangesAsync(ct);
-        if (before is null) await CaptureAccountsAsync(id, [entity], ct);   // BUG-416
+        if (before is null) await CaptureAccountsAsync(id, [entity], new Accounts.AccountDirectoryService.CaptureAllowance(), ct);   // BUG-416
         return new EntityAddResult(entity.Id, before is not null, entity.Disposition, entity.Label,
             before is { } was && was != entity.Disposition);
     }
@@ -2048,8 +2049,13 @@ public sealed class CaseService
     /// (BUG-152) is kept, and only ever raises the one an indicator already has.
     /// </summary>
     /// <param name="promotedReason">WF-29: recorded on an Unknown indicator that takes the verdict it's pasted with.</param>
-    public async Task<IReadOnlyList<EntityAddResult>> AddOrMatchEntitiesAsync(Guid id, IReadOnlyList<EntityToAdd> items,
-        string? promotedReason = null, CancellationToken ct = default)
+    public Task<IReadOnlyList<EntityAddResult>> AddOrMatchEntitiesAsync(Guid id, IReadOnlyList<EntityToAdd> items,
+        string? promotedReason = null, CancellationToken ct = default) =>
+        AddOrMatchEntitiesAsync(id, items, promotedReason, new Accounts.AccountDirectoryService.CaptureAllowance(), ct);
+
+    /// <summary>BUG-420: the same, with the directory lookups of the accounts added taken from <paramref name="capture"/>.</summary>
+    internal async Task<IReadOnlyList<EntityAddResult>> AddOrMatchEntitiesAsync(Guid id, IReadOnlyList<EntityToAdd> items,
+        string? promotedReason, Accounts.AccountDirectoryService.CaptureAllowance capture, CancellationToken ct)
     {
         Require();
         var results = new List<EntityAddResult>(items.Count);
@@ -2058,6 +2064,7 @@ public sealed class CaseService
             using var db = _factory.CreateDbContext();
             var c = await LoadTrackedAsync(db, id, ct);
             var now = _clock.UtcNow;
+            var added = new List<CaseEntity>();
             foreach (var i in batch)
             {
                 var before = c.FindEntity(i.Type, i.Value)?.Disposition;
@@ -2067,12 +2074,13 @@ public sealed class CaseService
                     c.SetEntityTlp(entity.Id, tlp, _user.UserId, now);
                 results.Add(new EntityAddResult(entity.Id, existed, entity.Disposition, entity.Label,
                     before is { } was && was != entity.Disposition));
+                if (!existed) added.Add(entity);
             }
             await db.SaveChangesAsync(ct);
+            // BUG-416: the accounts just added, as the directory has them now. BUG-429: once each batch is saved, so a later
+            // batch failing (and a retry matching these as already on the case) doesn't leave them without a snapshot.
+            await CaptureAccountsAsync(id, added, capture, ct);
         }
-        // BUG-416: the accounts just added, as the directory has them now.
-        var added = results.Where(r => !r.AlreadyOnCase).Select(r => r.Id).ToHashSet();
-        if (added.Count > 0 && _accounts is not null) await _accounts.CaptureOnAddAsync(id, added, ct);
         return results;
     }
 

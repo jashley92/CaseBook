@@ -248,11 +248,13 @@ public sealed class CaseImportService
         // BUG-202: in batches (one load and one audited save each), not a whole-case reload and save per indicator. A
         // batch's items are marked applied once it's saved; matching makes a retry of an unsaved one harmless anyway.
         var includedEntities = p.Entities.Where(e => e.Include).ToList();
+        // BUG-420: one directory allowance for the whole import, not one per batch.
+        var capture = new Accounts.AccountDirectoryService.CaptureAllowance();
         foreach (var batch in includedEntities.Where(e => !e.Applied).Chunk(CaseService.EntitiesPerSave))
         {
             // BUG-152: the document's marking is kept, and only ever raises one the case already has.
             await _cases.AddOrMatchEntitiesAsync(caseId, batch.Select(e => new CaseService.EntityToAdd(e.Type, e.Value, e.Label,
-                e.Disposition, e.Description, e.Source ?? origin, e.Tlp)).ToList(), "Set by import", ct);   // WF-29
+                e.Disposition, e.Description, e.Source ?? origin, e.Tlp)).ToList(), "Set by import", capture, ct);   // WF-29
             foreach (var e in batch) e.Applied = true;
         }
         var entities = includedEntities.Count;

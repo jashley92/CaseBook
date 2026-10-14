@@ -59,8 +59,16 @@ flowchart LR
   added to a case, and its details (display name, title, department, manager, email, enabled, locked, expiry, last
   logon, password last set, created, DN) are kept with the case as a hashed snapshot. The entity panel's *Look up now*
   shows the account as it is now, with what changed, and *Keep with the case* adds that as a new snapshot. Lookups are
-  read-only, as the app pool's identity, `DOMAIN\sam` in that domain, 10-second timeout. An unreachable directory
-  keeps nothing and never blocks the add. A bare name the directory knows is typed as an Account when it's added.
+  read-only, as the app pool's identity, 10-second timeout. A bare name or a UPN is looked up in the server's own
+  domain, and `DOMAIN\sam` only when DOMAIN is in the server's forest or has a trust with its domain (BUG-419: the
+  list is read from our own domain controller and kept for an hour). Any other domain, and a local account (`.\sam`,
+  `COMPUTER\sam`), is shown as *Not looked up*: nothing is sent anywhere, so an indicator naming an attacker's domain
+  can't make the server contact it. A domain that failed or timed out isn't asked again for a minute (BUG-420). An
+  add looks up at most 50 accounts within 15 seconds in all (an import shares one allowance), stops at the first
+  unavailable answer, and keeps what it took so far; an unreachable directory keeps nothing and the add is saved
+  either way. A snapshot is shown as the account's details only when it was taken for the value the entity has now;
+  one taken before the value was edited is listed as "taken for" the old value (BUG-432). A bare name the directory
+  knows is typed as an Account when it's added.
   In development (not Windows sign-in) a made-up CONTOSO directory answers for `jdoe`, `asmith` and `svc_backup`.
 
 ## Case-import API (and XSIAM elevation)
