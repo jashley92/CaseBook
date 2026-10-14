@@ -147,6 +147,20 @@ public sealed class RetractAndVerdictTimeTests : IDisposable
     }
 
     [Fact]
+    public async Task An_entity_a_retracted_step_names_stays_on_the_case_with_a_reason_why()
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        var id = await NewCaseAsync(svc);
+        var host = await svc.AddEntityAsync(id, EntityType.Host, "KIOSK-07", null, EntityDisposition.Unknown, null, null);
+        var step = await svc.AddEventStepAsync(id, _clock.UtcNow.AddHours(-1), [MitreTactic.Execution], null, null, host, "Ran a script", null);
+        await svc.RetractTimelineEntryAsync(id, step, "Wrong host");
+
+        (await svc.Invoking(s => s.RemoveEntityAsync(id, host)).Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("A retracted attack step names this entity*");
+    }
+
+    [Fact]
     public async Task Retracting_needs_edit_rights()
     {
         Guid id, step;

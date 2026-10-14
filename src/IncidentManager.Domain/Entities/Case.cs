@@ -1608,7 +1608,12 @@ public class Case : AuditableEntity, IHashableEntity
         if (entity is null) return;
         // BUG-108: an attack step that names it as actor or target would silently lose that (or the save would fail on
         // the foreign key), so the steps are changed first.
-        var named = TimelineEntries.Count(t => t.ActorEntityId == entityId || t.TargetEntityId == entityId);
+        var named = TimelineEntries.Count(t => !t.IsRetracted && (t.ActorEntityId == entityId || t.TargetEntityId == entityId));
+        // BUG-413: a retracted step can't be changed, and it keeps saying what it said, so the entity it names stays.
+        if (named == 0 && TimelineEntries.Any(t => t.IsRetracted && (t.ActorEntityId == entityId || t.TargetEntityId == entityId)))
+            throw new InvalidOperationException(
+                "A retracted attack step names this entity as actor or target, so it stays on the case: the retracted step " +
+                "keeps reading as it did. Set its verdict to Benign instead if it's not part of the incident.");
         if (named > 0)
             throw new InvalidOperationException(
                 $"{(named == 1 ? "An attack step names" : $"{named} attack steps name")} this entity as actor or target. " +
