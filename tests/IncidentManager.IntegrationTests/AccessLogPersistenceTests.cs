@@ -228,6 +228,22 @@ public sealed class AccessLogPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_to_date_of_the_last_calendar_day_queries_without_error(/* BUG-463 */)
+    {
+        NewContext();
+        var caseId = SeedCase();
+        var svc = NewService();
+        await svc.RecordCaseOpenAsync(caseId, "2026-01_Alpha", wasRestricted: false);
+
+        // The page's end-of-day bound for a "To" of 9999-12-31, which AddDays(1) couldn't build.
+        var lastDay = DateOnly.MaxValue.ToDateTime(TimeOnly.MinValue);
+        var toUtc = new DateTimeOffset(DateOnly.FromDateTime(lastDay).ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero);
+        toUtc.Should().Be(DateTimeOffset.MaxValue);
+        _user.RoleSet = [AppRole.SysAdmin];
+        (await svc.QueryAsync(new AccessLogFilter { ToUtc = toUtc })).Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task Query_filters_by_actor_and_access_type()
     {
         NewContext();

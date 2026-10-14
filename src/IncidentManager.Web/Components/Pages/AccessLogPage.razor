@@ -137,7 +137,8 @@ else
         AccessType = Enum.TryParse<AccessType>(_type, out var t) ? t : null,
         RestrictedOnly = _restrictedOnly,
         FromUtc = _from is { } f ? new DateTimeOffset(f.Date, TimeSpan.Zero) : null,
-        ToUtc = _to is { } dt ? new DateTimeOffset(dt.Date.AddDays(1).AddTicks(-1), TimeSpan.Zero) : null
+        // BUG-463: the end of the day without AddDays(1), which threw for 9999-12-31 (as the CSV export does it).
+        ToUtc = _to is { } dt ? new DateTimeOffset(DateOnly.FromDateTime(dt).ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero) : null
     };
 
     // BUG-395 (sibling of BUG-346): a filter change supersedes the load before it, which is cancelled, and its rows are

@@ -266,7 +266,8 @@ else
         Action = Enum.TryParse<AuditAction>(State.Action, out var a) ? a : null,
         EntityType = string.IsNullOrWhiteSpace(State.Entity) ? null : State.Entity,
         FromUtc = State.From is { } f ? new DateTimeOffset(f.Date, TimeSpan.Zero) : null,
-        ToUtc = State.To is { } t ? new DateTimeOffset(t.Date.AddDays(1).AddTicks(-1), TimeSpan.Zero) : null
+        // BUG-463: the end of the day without AddDays(1), which threw for 9999-12-31 (as the CSV export does it).
+        ToUtc = State.To is { } t ? new DateTimeOffset(DateOnly.FromDateTime(t).ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero) : null
     };
 
     private async Task ApplyAuditFilter() => await LoadAudit();
