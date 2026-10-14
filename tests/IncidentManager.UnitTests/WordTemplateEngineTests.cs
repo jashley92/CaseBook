@@ -320,4 +320,144 @@ public class WordTemplateEngineTests
         result.MainDocumentPart!.Document!.Body!.Descendants<TableCell>().Single().Elements<Paragraph>().Should().ContainSingle(
             "a cell must end in a paragraph");
     }
+
+    // BUG-467: a paragraph anchoring a text box, as Word writes it: the box's paragraphs once in the drawing (wps) and
+    // again in the VML fallback.
+    private static Paragraph TextBoxAnchor(string before, params Paragraph[] inBox)
+    {
+        var inner = string.Concat(inBox.Select(p => p.OuterXml));
+        return new Paragraph($"""
+            <w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                 xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+                 xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+                 xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+                 xmlns:v="urn:schemas-microsoft-com:vml">
+              <w:r><w:t xml:space="preserve">{before}</w:t></w:r>
+              <w:r><mc:AlternateContent>
+                <mc:Choice Requires="wps"><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1"
+                    behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/>
+                  <wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>
+                  <wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>
+                  <wp:extent cx="1828800" cy="914400"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapSquare wrapText="bothSides"/>
+                  <wp:docPr id="1" name="Text Box 1"/><wp:cNvGraphicFramePr/>
+                  <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+                    <wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1828800" cy="914400"/></a:xfrm>
+                      <a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr>
+                      <wps:txbx><w:txbxContent>{inner}</w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp>
+                  </a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice>
+                <mc:Fallback><w:pict><v:shape id="Text Box 1" style="width:144pt;height:72pt" type="#_x0000_t202">
+                  <v:textbox><w:txbxContent>{inner}</w:txbxContent></v:textbox></v:shape></w:pict></mc:Fallback>
+              </mc:AlternateContent></w:r>
+            </w:p>
+            """);
+    }
+
+    private static byte[] DocWithParts(OpenXmlElement[] body, Paragraph[]? header = null)
+    {
+        using var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
+        {
+            var main = doc.AddMainDocumentPart();
+            main.Document = new Document(new Body(body));
+            if (header is not null)
+            {
+                var part = main.AddNewPart<HeaderPart>();
+                part.Header = new Header(header);
+                main.Document.Body!.AppendChild(new SectionProperties(
+                    new HeaderReference { Type = HeaderFooterValues.Default, Id = main.GetIdOfPart(part) }));
+            }
+            main.Document.Save();
+        }
+        return ms.ToArray();
+    }
+
+    private static List<List<string>> BoxContents(OpenXmlElement root) =>
+        root.Descendants().Where(e => e.LocalName == "txbxContent")
+            .Select(b => b.Elements<Paragraph>().Select(p => p.InnerText).ToList()).ToList();
+
+    [Fact]
+    public void A_field_split_across_runs_in_a_text_box_passes_the_check_and_fills(/* BUG-467 */)
+    {
+        var template = DocWithParts([TextBoxAnchor("Case: ", new Paragraph(R("{{case."), R("title}}"))),
+            new Paragraph(R("{{report.tlp}}"))]);
+
+        var check = _engine.Check(template);
+        check.Problems.Should().BeEmpty();
+        check.Placeholders.Should().Contain("case.title");
+        check.Fillable.Should().Contain("case.title");
+
+        using var result = WordprocessingDocument.Open(new MemoryStream(_engine.Render(template, Model())), false);
+        BoxContents(result.MainDocumentPart!.Document!.Body!).Should().HaveCount(2)
+            .And.AllSatisfy(b => b.Should().Equal("Credential-phishing wave"));
+    }
+
+    [Fact]
+    public void A_list_in_a_text_box_repeats_inside_the_box(/* BUG-467 */)
+    {
+        var template = DocWithParts([TextBoxAnchor("Case {{case.number}}", new Paragraph(R("Indicators")), new Paragraph(R("{{ioc.value}}"))),
+            new Paragraph(R("{{report.tlp}}"))]);
+
+        using var result = WordprocessingDocument.Open(new MemoryStream(_engine.Render(template, Model())), false);
+        var body = result.MainDocumentPart!.Document!.Body!;
+        body.Elements<Paragraph>().Should().HaveCount(2, "the anchoring paragraph isn't repeated per indicator");
+        body.Descendants<Drawing>().Should().ContainSingle("no stacked text boxes");
+        BoxContents(body).Should().HaveCount(2, "the drawing and its VML fallback")
+            .And.AllSatisfy(b => b.Should().Equal("Indicators", "203[.]0[.]113[.]66", "hxxps://evil[.]test"));
+        new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(result).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void An_empty_list_in_a_text_box_keeps_the_anchoring_paragraph_and_the_box(/* BUG-467 */)
+    {
+        var template = DocWithParts([TextBoxAnchor("Case {{case.number}}", new Paragraph(R("{{ioc.value}}"))),
+            new Paragraph(R("{{report.tlp}}"))]);
+
+        using var result = WordprocessingDocument.Open(new MemoryStream(_engine.Render(template, Model(withIocs: false))), false);
+        var body = result.MainDocumentPart!.Document!.Body!;
+        body.Elements<Paragraph>().First().Descendants<Text>().First().Text.Should().Be("Case 2026-01_Phishing_Wave");
+        BoxContents(body).Should().HaveCount(2).And.AllSatisfy(b => b.Should().Equal([""], "a text box must end in a paragraph"));
+        new DocumentFormat.OpenXml.Validation.OpenXmlValidator().Validate(result).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_paragraph_and_its_text_box_of_the_same_list_repeat_together_per_item(/* BUG-467 */)
+    {
+        var template = DocWithParts([TextBoxAnchor("{{ioc.value}}", new Paragraph(R("{{ioc.type}}"))),
+            new Paragraph(R("{{report.tlp}}"))]);
+
+        using var result = WordprocessingDocument.Open(new MemoryStream(_engine.Render(template, Model())), false);
+        var body = result.MainDocumentPart!.Document!.Body!;
+        var cards = body.Elements<Paragraph>().SkipLast(1).ToList();
+        cards.Should().HaveCount(2, "one paragraph, with its box, per indicator");
+        cards.Select(c => c.Descendants<Text>().First().Text).Should().Equal("203[.]0[.]113[.]66", "hxxps://evil[.]test");
+        cards.Select(c => BoxContents(c).Select(b => string.Join("|", b)).Distinct().Single()).Should().Equal("IP Address", "Url");
+    }
+
+    [Fact]
+    public void A_list_in_a_text_box_in_a_table_cell_repeats_inside_the_box_not_the_row(/* BUG-467 */)
+    {
+        var cell = new TableCell(TextBoxAnchor("", new Paragraph(R("{{ioc.value}}"))));
+        var template = DocWithParts([new Table(new TableRow(cell)), new Paragraph(R("{{report.tlp}}"))]);
+
+        using var result = WordprocessingDocument.Open(new MemoryStream(_engine.Render(template, Model())), false);
+        var body = result.MainDocumentPart!.Document!.Body!;
+        body.Descendants<TableRow>().Should().ContainSingle();
+        BoxContents(body).Should().HaveCount(2).And.AllSatisfy(b => b.Should().Equal("203[.]0[.]113[.]66", "hxxps://evil[.]test"));
+    }
+
+    [Fact]
+    public void A_marking_in_a_header_text_box_is_found_and_filled(/* BUG-467 */)
+    {
+        var template = DocWithParts([new Paragraph(R("{{case.title}}"))],
+            header: [TextBoxAnchor("", new Paragraph(R("{{report."), R("tlp}}")))]);
+
+        var check = _engine.Check(template);
+        check.Problems.Should().BeEmpty();
+        check.Fillable.Should().Contain("report.tlp");
+
+        using var result = WordprocessingDocument.Open(new MemoryStream(_engine.Render(template, Model())), false);
+        BoxContents(result.MainDocumentPart!.HeaderParts.Single().Header!).Should().HaveCount(2)
+            .And.AllSatisfy(b => b.Should().Equal("TLP:RED"));
+    }
 }

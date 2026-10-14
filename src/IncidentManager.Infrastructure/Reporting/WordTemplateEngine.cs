@@ -59,7 +59,9 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
             {
                 foreach (var p in root.Descendants<Paragraph>())
                 {
-                    foreach (System.Text.RegularExpressions.Match match in ReportTemplateFields.Placeholder().Matches(p.InnerText))
+                    // BUG-467: a paragraph's own text; a text box's paragraphs are checked on their own.
+                    var own = OwnText(p);
+                    foreach (System.Text.RegularExpressions.Match match in ReportTemplateFields.Placeholder().Matches(own))
                     {
                         var name = match.Groups[1].Value.ToLowerInvariant();
                         found.Add(name);
@@ -70,11 +72,12 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
                     // can't be rejoined, so it would print as typed. Say so now rather than in the report.
                     var joined = (Paragraph)p.CloneNode(true);
                     JoinSplitFields(joined);
-                    var whole = joined.Descendants<Text>().SelectMany(t => ReportTemplateFields.Placeholder().Matches(t.Text))
+                    var texts = joined.Descendants<Text>().Where(t => ReferenceEquals(t.Ancestors<Paragraph>().First(), joined)).ToList();
+                    var whole = texts.SelectMany(t => ReportTemplateFields.Placeholder().Matches(t.Text))
                         .Select(m => m.Value).ToHashSet(StringComparer.Ordinal);
-                    foreach (var m in joined.Descendants<Text>().SelectMany(t => ReportTemplateFields.Placeholder().Matches(t.Text)))
+                    foreach (var m in texts.SelectMany(t => ReportTemplateFields.Placeholder().Matches(t.Text)))
                         fillable.Add(m.Groups[1].Value.ToLowerInvariant());
-                    foreach (System.Text.RegularExpressions.Match match in ReportTemplateFields.Placeholder().Matches(p.InnerText))
+                    foreach (System.Text.RegularExpressions.Match match in ReportTemplateFields.Placeholder().Matches(own))
                         if (!whole.Contains(match.Value))
                             fill.Add($"{match.Value} is split by a link, a content control or a tracked change, so it can't be filled. " +
                                      "Retype it in one go (and accept any tracked changes).");
@@ -181,10 +184,11 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         // Word splits typed text across runs ("{{case." + "title}}"); rejoin the runs a field spans first.
         foreach (var p in root.Descendants<Paragraph>().ToList()) JoinSplitFields(p);
 
-        // Pictures: a paragraph holding only an image field becomes the picture(s).
-        foreach (var p in root.Descendants<Paragraph>().ToList())
+        // Pictures: a paragraph holding only an image field becomes the picture(s). BUG-467: not one that also anchors a
+        // text box, which would go with it.
+        foreach (var p in root.Descendants<Paragraph>().Where(p => !p.Descendants<Paragraph>().Any()).ToList())
         {
-            var text = p.InnerText.Trim();
+            var text = OwnText(p).Trim();
             IReadOnlyList<byte[]>? images = Is(text, ReportTemplateFields.AttackChainImage) ? m.AttackChainImages
                 : Is(text, ReportTemplateFields.EntityGraphImage) ? (m.EntityGraphImage is { } g ? [g] : [])
                 : null;
@@ -200,11 +204,14 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         // nested rows go first, so the inner list fills its own table instead of repeating the whole layout row.
         // A nested row of the same list as a row around it (an indicator "card" whose cell holds a table of that indicator's
         // details) isn't repeated on its own: the outer row's copies fill it per item, as before BUG-382.
+        // BUG-467: a text box is a block of its own, like a nested table: its paragraphs (in both the drawing and the VML
+        // fallback copy) repeat inside it, before the paragraph or row that anchors it, which repeats for its own fields only.
         foreach (var row in root.Descendants<TableRow>().OrderByDescending(r => r.Ancestors<TableRow>().Count()).ToList())
             if (ListIn(OwnText(row)) is { } prefix && !row.Ancestors<TableRow>().Any(a => ListIn(OwnText(a)) == prefix))
                 Repeat(row, prefix, m, emptyText: "(none)");
-        foreach (var p in root.Descendants<Paragraph>().Where(p => !p.Ancestors<Table>().Any()).ToList())
-            if (ListIn(p.InnerText) is { } prefix) Repeat(p, prefix, m, emptyText: null);
+        foreach (var p in root.Descendants<Paragraph>().Where(p => !InTable(p)).OrderByDescending(p => p.Ancestors<Paragraph>().Count()).ToList())
+            if (ListIn(OwnText(p)) is { } prefix && !p.Ancestors<Paragraph>().Any(a => !InTable(a) && ListIn(OwnText(a)) == prefix))
+                Repeat(p, prefix, m, emptyText: null);
 
         // Everything else: single values (unknown or out-of-place fields become blank).
         Replace(root, name => ReportTemplateFields.Scalar(m, name));
@@ -222,9 +229,21 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
         ReportTemplateFields.Placeholder().Match(text) is { Success: true } mt && mt.Value.Length == text.Length
         && mt.Groups[1].Value.Equals(field, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>BUG-382: the text of a row's own cells, leaving out any table nested inside them.</summary>
+    /// <summary>BUG-382: the text of a row's own cells, leaving out any table (BUG-467: or text box) nested inside them.</summary>
     private static string OwnText(TableRow row) =>
-        string.Concat(row.Descendants<Text>().Where(t => ReferenceEquals(t.Ancestors<TableRow>().First(), row)).Select(t => t.Text));
+        string.Concat(row.Descendants<Text>().Where(t => ReferenceEquals(t.Ancestors().First(a => a is TableRow || IsTextBox(a)), row))
+            .Select(t => t.Text));
+
+    /// <summary>BUG-467: a paragraph's text as <c>InnerText</c> reads it, leaving out the paragraphs of a text box it anchors.</summary>
+    private static string OwnText(Paragraph p) => Leaves(p);
+
+    private static string Leaves(OpenXmlElement e) =>
+        e.HasChildren ? string.Concat(e.ChildElements.Where(c => c is not Paragraph).Select(Leaves)) : e.InnerText;
+
+    /// <summary>BUG-467: in a table, rather than in a text box (which may itself sit in a table cell).</summary>
+    private static bool InTable(Paragraph p) => p.Ancestors().FirstOrDefault(a => a is Table || IsTextBox(a)) is Table;
+
+    private static bool IsTextBox(OpenXmlElement e) => e.LocalName == "txbxContent";
 
     private static string? ListIn(string text) =>
         ReportTemplateFields.Placeholder().Matches(text)
@@ -259,7 +278,7 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
     private static void RemoveBlock(OpenXmlElement block)
     {
         var parent = block.Parent;
-        var mustHoldOne = parent is TableCell || parent?.LocalName == "txbxContent";
+        var mustHoldOne = parent is TableCell || (parent is not null && IsTextBox(parent));
         if (mustHoldOne && !parent!.ChildElements.Any(c => !ReferenceEquals(c, block) && c is Paragraph or Table))
             block.InsertAfterSelf(new Paragraph());
         block.Remove();
