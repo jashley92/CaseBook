@@ -32,6 +32,13 @@ public class ActionItem : AuditableEntity, IHashableEntity
     /// </summary>
     public string? CompletedBy { get; set; }
 
+    /// <summary>
+    /// BUG-364: when the completion was recorded. <see cref="CompletedAtUtc"/> may be dated earlier (ticked off after the
+    /// fact), and the "since" windows (brief freshness, the handoff) go by when things were recorded. Null while not done,
+    /// and on tasks completed before this was kept. Bookkeeping: not part of the row's canonical.
+    /// </summary>
+    public DateTimeOffset? CompletionRecordedAtUtc { get; set; }
+
     /// <summary>HR-02: the task follows up an open question in the brief, so completing it needs an answer.</summary>
     public bool FollowsUpQuestion => RaisedFromBriefId is not null;
 

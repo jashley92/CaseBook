@@ -160,6 +160,36 @@ public sealed class TaskCompletionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_backdated_completion_keeps_when_it_was_recorded_and_who_did_it(/* BUG-364, BUG-365 */)
+    {
+        var (svc, caseId, taskId) = await CaseWithTask();
+        _clock.UtcNow = _clock.UtcNow.AddHours(5);
+        var doneAt = _clock.UtcNow.AddHours(-3);
+        await svc.CompleteActionItemAsync(caseId, taskId, doneAt, null, null, doneBy: "jdoe");
+        var recordedAt = _clock.UtcNow;
+
+        // Someone else edits the task later; it stays done.
+        _clock.UtcNow = _clock.UtcNow.AddHours(1);
+        _user.UserId = "editor";
+        await svc.UpdateActionItemAsync(caseId, taskId, "Block look-alike domains (all)", null, null, ActionItemStatus.Done, null);
+
+        var c = (await svc.GetDetailAsync(caseId))!;
+        c.ActionItems.Single().CompletionRecordedAtUtc.Should().Be(recordedAt);
+        var done = CaseMilestones.Project(c, new MilestoneLabels(x => "", s => "", p => "", m => ""))
+            .Single(m => m.Kind == MilestoneKind.TaskDone);
+        done.AtUtc.Should().Be(doneAt);
+        done.RecordedAtUtc.Should().Be(recordedAt);
+        done.Actor.Should().Be("jdoe", "who completed it, not who edited it last");
+
+        // Reopened: cleared. Done again by status: recorded now.
+        await svc.SetActionItemStatusAsync(caseId, taskId, ActionItemStatus.Open);
+        (await svc.GetDetailAsync(caseId))!.ActionItems.Single().CompletionRecordedAtUtc.Should().BeNull();
+        _clock.UtcNow = _clock.UtcNow.AddHours(1);
+        await svc.UpdateActionItemAsync(caseId, taskId, "Block look-alike domains (all)", null, null, ActionItemStatus.Done, null);
+        (await svc.GetDetailAsync(caseId))!.ActionItems.Single().CompletionRecordedAtUtc.Should().Be(_clock.UtcNow);
+    }
+
+    [Fact]
     public async Task An_edit_keeps_a_task_within_its_limits(/* BUG-50 */)
     {
         var (svc, caseId, taskId) = await CaseWithTask();

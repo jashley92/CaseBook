@@ -228,19 +228,25 @@ public static class CaseMilestones
         if (c.JurisdictionNotices.Count > 1)
             foreach (var n in c.JurisdictionNotices.OrderBy(n => n.NotifiedAtUtc))
                 list.Add(new CaseMilestone($"notice:{n.Id}", n.NotifiedAtUtc, MilestoneKind.Reported,
-                    $"Notified {n.Jurisdiction}", null, n.CreatedBy, "notice"));
+                    $"Notified {n.Jurisdiction}", null, n.CreatedBy, "notice", RecordedAtUtc: Later(n.NotifiedAtUtc, n.CreatedAtUtc)));
+        // BUG-364: dated when it happened, recorded when the (last) notice was entered, so a backdated notice still counts
+        // as new in the "since" windows.
         if (c.ReportedAtUtc is { } reported)
             list.Add(new CaseMilestone($"reported:{c.Id}", reported, MilestoneKind.Reported,
                 c.JurisdictionNotices.Count > 1 ? "Reported to every regulator in play" : "Reported to regulators",
-                null, null, "reported milestone"));
+                null, null, "reported milestone",
+                RecordedAtUtc: c.JurisdictionNotices.Count > 0 ? Later(reported, c.JurisdictionNotices.Max(n => n.CreatedAtUtc)) : null));
 
         // A task whose result was logged on the timeline (INV-08) is told by that entry; don't say it twice.
         var loggedTasks = c.TimelineEntries.Where(e => e.IsCurrent && e.ActionItemId is not null)
             .Select(e => e.ActionItemId!.Value).ToHashSet();
         foreach (var t in c.ActionItems.Where(t => t.Status == ActionItemStatus.Done && t.CompletedAtUtc is not null
                                                    && !loggedTasks.Contains(t.Id)))
+            // BUG-365: credited to who completed it (HR-02), not whoever edited the task last; BUG-364: and recorded when
+            // the completion was. Tasks completed before either was kept fall back as before.
             list.Add(new CaseMilestone($"task:{t.Id}", t.CompletedAtUtc!.Value, MilestoneKind.TaskDone,
-                $"Task done: {t.Title}", null, t.ModifiedBy ?? t.Owner, "task"));
+                $"Task done: {t.Title}", null, t.CompletedBy ?? t.ModifiedBy ?? t.Owner, "task",
+                RecordedAtUtc: t.CompletionRecordedAtUtc is { } rec ? Later(t.CompletedAtUtc!.Value, rec) : null));
 
         // A screenshot pasted into a timeline entry already shows on that entry; so does a file an entry cites (HR-07).
         var onEntries = c.TimelineEntries.Where(e => e.EvidenceId is not null).Select(e => e.EvidenceId!.Value)
@@ -264,6 +270,11 @@ public static class CaseMilestones
 
     private static DateTimeOffset? Recorded(DateTimeOffset? effective, DateTimeOffset recorded) =>
         effective is not null ? recorded : null;
+
+    // BUG-364: the recorded time when it's in a later minute than the time given (entered after the fact); null when it
+    // was entered as it happened, so the timeline doesn't mark every notice "recorded".
+    private static DateTimeOffset? Later(DateTimeOffset happened, DateTimeOffset recorded) =>
+        Case.ToMinute(recorded) > Case.ToMinute(happened) ? recorded : null;
 
     private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 

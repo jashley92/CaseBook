@@ -26,7 +26,7 @@ public static class AuditChangeDetail
     {
         "RowHash", "ModifiedAtUtc", "ModifiedBy", "CreatedAtUtc", "CreatedBy", "HasCustomNumber",
         "LegalReferral.ReferredAtUtc", "LegalReferral.ReferredBy",
-        "Materiality.RecordedAtUtc", "Materiality.RecordedBy",
+        "Materiality.RecordedAtUtc", "Materiality.RecordedBy", "CompletionRecordedAtUtc",   // BUG-364
     };
 
     // Friendly labels for the fields that don't humanise cleanly from their property name.

@@ -100,4 +100,37 @@ public class CaseMilestonesTests
         ms.Should().ContainSingle(m => m.Kind == MilestoneKind.EvidenceAdded).Which.Title.Should().Be("Evidence added: signin.csv");
         ms.Should().ContainSingle(m => m.Kind == MilestoneKind.ReportFinal).Which.Title.Should().Be("Case report v2 approved as final");
     }
+
+    [Fact]
+    public void Backdated_notices_and_completions_carry_when_they_were_recorded(/* BUG-364, BUG-365 */)
+    {
+        var c = Case.Open(2026, 9, "Br", "Breach", Classification.Incident, Severity.High, CaseOrigin.InternalDetection, "ic1", T0);
+        c.RecordNotice("NY", T0.AddDays(1), "lp1", T0.AddDays(3));          // entered two days after the fact
+        c.RecordNotice("CA", T0.AddDays(2), "lp1", T0.AddDays(2));          // entered as it happened
+        c.ReportedFromNotices(["NY", "CA"], "lp1", T0.AddDays(3));
+        c.ActionItems.Add(new ActionItem
+        {
+            CaseId = c.Id, Title = "Reset creds", Status = ActionItemStatus.Done, Owner = "rr1", CompletedBy = "an2",
+            CompletedAtUtc = T0.AddHours(5), CompletionRecordedAtUtc = T0.AddDays(1), ModifiedBy = "ic1"
+        });
+        c.ActionItems.Add(new ActionItem
+        {
+            CaseId = c.Id, Title = "Old task", Status = ActionItemStatus.Done, Owner = "rr1", CompletedAtUtc = T0.AddHours(6), ModifiedBy = "ic1"
+        });
+
+        var ms = CaseMilestones.Project(c, Labels);
+
+        ms.Single(m => m.Title == "Notified NY").RecordedAtUtc.Should().Be(T0.AddDays(3));
+        ms.Single(m => m.Title == "Notified CA").RecordedAtUtc.Should().BeNull("it was entered as it happened");
+        var reported = ms.Single(m => m.Key.StartsWith("reported:", StringComparison.Ordinal));
+        reported.AtUtc.Should().Be(T0.AddDays(2));
+        reported.RecordedAtUtc.Should().Be(T0.AddDays(3), "the last notice was entered then");
+
+        var done = ms.Single(m => m.Title == "Task done: Reset creds");
+        done.Actor.Should().Be("an2", "credited to who completed it, not who edited the task last");
+        done.RecordedAtUtc.Should().Be(T0.AddDays(1));
+        var old = ms.Single(m => m.Title == "Task done: Old task");
+        old.Actor.Should().Be("ic1", "a task completed before either was kept falls back as before");
+        old.RecordedAtUtc.Should().BeNull();
+    }
 }

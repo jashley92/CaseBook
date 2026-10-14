@@ -231,6 +231,7 @@ Created only by `EvidenceService.UploadAsync`. **No update or delete path exists
 | `Kind` | int | 0 General, 1 Investigate, 2 Contain, 3 Eradicate, 4 Recover, 5 Notify (linked to phases Triage, Containment, Eradication, Recovery). |
 | `CompletedAtUtc` | datetimeoffset | Set on Done. |
 | `CompletedBy` | nvarchar(200) | Who did the work: a user id or a typed name. Set on Done (defaults to whoever marks it done), cleared when it leaves Done. Hashed only when set. |
+| `CompletionRecordedAtUtc` | datetimeoffset | When the completion was recorded (`CompletedAtUtc` may be dated earlier). Set on Done, kept while it stays Done, cleared when it leaves. Null on tasks completed before it was kept. Not hashed. |
 | `RaisedFromBriefId` | uniqueidentifier | The brief version whose open question raised it. |
 | `AboutRef` | nvarchar(64) | `entity:<id>`, `evidence:<id>` or `entry:<first-version id>`. |
 

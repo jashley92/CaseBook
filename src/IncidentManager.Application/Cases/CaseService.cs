@@ -3076,6 +3076,7 @@ public sealed class CaseService
         item.Status = ActionItemStatus.Done;
         item.CompletedAtUtc = at;
         item.CompletedBy = by;
+        item.CompletionRecordedAtUtc = now;   // BUG-364
         item.ModifiedBy = _user.UserId;
         item.ModifiedAtUtc = now;
 
@@ -3146,6 +3147,7 @@ public sealed class CaseService
         // completion timestamp so it re-enters the open queues and metrics stay accurate.
         item.CompletedAtUtc = status == ActionItemStatus.Done ? _clock.UtcNow : null;
         item.CompletedBy = status == ActionItemStatus.Done ? _user.UserId : null;   // HR-02
+        item.CompletionRecordedAtUtc = item.CompletedAtUtc;   // BUG-364
         await db.SaveChangesAsync(ct);
     }
 
@@ -3221,6 +3223,9 @@ public sealed class CaseService
         item.CompletedBy = status == ActionItemStatus.Done ? (item.Status == ActionItemStatus.Done ? item.CompletedBy : _user.UserId) : null;   // HR-02
         item.Status = status;
         item.CompletedAtUtc = status == ActionItemStatus.Done ? (item.CompletedAtUtc ?? _clock.UtcNow) : null;
+        // BUG-364: kept while it stays done, set when it becomes done, cleared when it leaves.
+        item.CompletionRecordedAtUtc = status != ActionItemStatus.Done ? null
+            : wasStatus == ActionItemStatus.Done ? item.CompletionRecordedAtUtc : _clock.UtcNow;
         if (kind is { } k) item.Kind = k;
         item.ModifiedBy = _user.UserId;
         item.ModifiedAtUtc = _clock.UtcNow;

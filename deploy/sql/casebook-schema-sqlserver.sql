@@ -4025,3 +4025,24 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261014113100_TaskCompletionRecordedAt'
+)
+BEGIN
+    ALTER TABLE [ActionItems] ADD [CompletionRecordedAtUtc] datetimeoffset NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261014113100_TaskCompletionRecordedAt'
+)
+BEGIN
+    EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N''20261014113100_TaskCompletionRecordedAt'', N''10.0.13'');');
+END;
+
+COMMIT;
+GO
+

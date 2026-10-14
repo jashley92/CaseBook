@@ -36,6 +36,9 @@ namespace IncidentManager.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("CompletionRecordedAtUtc")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("CreatedAtUtc")
                         .HasColumnType("INTEGER");
 
