@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -78,6 +79,23 @@ public sealed class AdminSettingsService
     public async Task SetAsync(string key, string? value, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<AdminSettingsService>(_user, _siem);
+        await SetCoreAsync(key, value, false, null, ct);
+    }
+
+    /// <summary>
+    /// BUG-438: as <see cref="SetAsync(string, string?, CancellationToken)"/>, for a value the page saves whole (the report
+    /// section layout), so a page opened before another administrator's change can't write over it.
+    /// <paramref name="expectedStored"/> is the in-app value the page loaded (null when there was none); a stored value
+    /// that differs now is refused.
+    /// </summary>
+    public async Task SetAsync(string key, string? value, string? expectedStored, CancellationToken ct = default)
+    {
+        AdminActionPermissions.Require<AdminSettingsService>(_user, _siem);
+        await SetCoreAsync(key, value, true, expectedStored, ct);
+    }
+
+    private async Task SetCoreAsync(string key, string? value, bool checkExpected, string? expectedStored, CancellationToken ct)
+    {
         using var db = _factory.CreateDbContext();
         if (!SettingsCatalog.ByKey.TryGetValue(key, out var def))
             throw new InvalidOperationException($"'{key}' is not an editable operational setting.");
@@ -85,6 +103,9 @@ public sealed class AdminSettingsService
         var normalized = SettingsCatalog.Normalize(def, value);
 
         var existing = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == key, ct);
+        if (checkExpected && !string.Equals(existing?.Value, expectedStored, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Someone changed \"{def.Label}\" since you opened it, so nothing was saved: " +
+                "it would have undone that. Reload the page, then make your change again.");
         if (existing is null)
         {
             db.AppSettings.Add(new AppSetting
@@ -130,7 +151,10 @@ public sealed class AdminSettingsService
         if (existing is null) return;
 
         db.AppSettings.Remove(existing);
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        // BUG-437: another reset (a double click, or another administrator) removed it first; it's reset either way. The
+        // context reports the lost delete as a ConcurrentEditException, not EF's own exception.
+        catch (ConcurrentEditException) { return; }
         _reloader.Reload(); // revert to the server-side/default value at runtime
         _siem?.Emit(SecurityEvents.SettingChanged(key, _user.UserId, _user.UserPrincipalName));
         ThrowIfNotInEffect();

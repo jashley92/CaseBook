@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -12,8 +13,10 @@ public sealed record TaxonomyMemberView(string Value, string DefaultLabel, strin
     public bool IsOverridden => Override is not null;
 }
 
-/// <summary>A taxonomy with its members' effective labels, for the admin UI.</summary>
-public sealed record TaxonomyKindView(string Id, string Title, string Description, bool AllowVisibilityOrder, IReadOnlyList<TaxonomyMemberView> Members);
+/// <summary>A taxonomy with its members' effective labels, for the admin UI. BUG-438: <paramref name="Stamp"/> stands for
+/// the kind's stored order and hidden rows, for <see cref="TaxonomyAdminService.SetVisibilityOrderAsync"/>.</summary>
+public sealed record TaxonomyKindView(string Id, string Title, string Description, bool AllowVisibilityOrder, IReadOnlyList<TaxonomyMemberView> Members,
+    string Stamp = "");
 
 /// <summary>
 /// Reads and writes the admin-editable <b>display</b> of the code-defined taxonomies (X-02): member labels for
@@ -61,8 +64,18 @@ public sealed class TaxonomyAdminService
                     && bool.TryParse(h, out var b) && b;
                 return new TaxonomyMemberView(m.Value, m.DefaultLabel, trimmed, trimmed ?? m.DefaultLabel, hidden);
             }).ToList();
-            return new TaxonomyKindView(k.Id, k.Title, k.Description, k.AllowVisibilityOrder, members);
+            return new TaxonomyKindView(k.Id, k.Title, k.Description, k.AllowVisibilityOrder, members,
+                StampOf(k, key => overrides.TryGetValue(key, out var v) ? v : null));
         }).ToList();
+    }
+
+    // BUG-438: the kind's stored order and hidden rows (whatever their case or value), as a hash.
+    private static string StampOf(TaxonomyKind k, Func<string, string?> stored)
+    {
+        var parts = new List<string> { stored(TaxonomyCatalog.OrderKey(k.Id)) ?? "" };
+        parts.AddRange(k.Members.Select(m => stored(TaxonomyCatalog.HiddenKey(k.Id, m.Value)) is { } h ? m.Value + "=" + h : ""));
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(string.Join("\u0001", parts))));
     }
 
     // Catalog members reordered by the stored Order CSV (listed members first, in CSV order; the rest keep
@@ -119,6 +132,22 @@ public sealed class TaxonomyAdminService
         }
         if (edits.Count == 0) return;
 
+        // BUG-437: a reset (or change) of a label another save removed meanwhile is refused by the context as a
+        // ConcurrentEditException, and the whole save rolls back. Labels have no stamp (each is set as typed), so it goes
+        // again from a fresh read: a label already gone is then left alone.
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await SaveLabelEditsAsync(edits, ct);
+                return;
+            }
+            catch (ConcurrentEditException) when (attempt < 2) { }
+        }
+    }
+
+    private async Task SaveLabelEditsAsync(List<(string Key, string? Value)> edits, CancellationToken ct)
+    {
         using var db = _factory.CreateDbContext();
         var keys = edits.Select(e => e.Key).ToList();
         var rows = await db.AppSettings.Where(s => keys.Contains(s.Key)).ToListAsync(ct);
@@ -149,8 +178,12 @@ public sealed class TaxonomyAdminService
     /// allow it (the ladder and phases don't); <paramref name="orderedMembers"/> must be exactly the kind's
     /// members, in the desired order; and at least one member must remain visible. Redundant rows are removed:
     /// an order equal to the built-in order stores nothing, and only hidden members keep a hidden row. Audited.
+    /// BUG-438: <paramref name="expectedStamp"/> is the kind's <see cref="TaxonomyKindView.Stamp"/> when the page loaded; the
+    /// save writes the whole order and hidden set, so one another administrator changed since is refused. Null skips the
+    /// check. Returns the kind's stamp after the save.
     /// </summary>
-    public async Task SetVisibilityOrderAsync(string kind, IReadOnlyList<string> orderedMembers, IReadOnlyCollection<string> hiddenMembers, CancellationToken ct = default)
+    public async Task<string> SetVisibilityOrderAsync(string kind, IReadOnlyList<string> orderedMembers, IReadOnlyCollection<string> hiddenMembers,
+        string? expectedStamp = null, CancellationToken ct = default)
     {
         AdminActionPermissions.Require<TaxonomyAdminService>(_user);
         var k = TaxonomyCatalog.Kinds.FirstOrDefault(x => x.Id == kind)
@@ -171,6 +204,8 @@ public sealed class TaxonomyAdminService
             .Where(s => s.Key.StartsWith(TaxonomyCatalog.KeyPrefix + kind + ":"))
             .ToListAsync(ct);
         AppSetting? Find(string key) => rows.FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (expectedStamp is not null && !string.Equals(StampOf(k, key => Find(key)?.Value), expectedStamp, StringComparison.Ordinal))
+            throw StaleOrder(k);
 
         var changed = false;
         var added = new List<string>();
@@ -210,10 +245,18 @@ public sealed class TaxonomyAdminService
 
         if (changed)
         {
-            await SaveAsync(db, added, ct);
+            // BUG-438: a row this changes or removes went between the read above and this save.
+            try { await SaveAsync(db, added, ct); }
+            catch (ConcurrentEditException ex) { throw StaleOrder(k, ex); }
             _reloader.ReloadOrThrow();   // BUG-270
         }
+        // The rows as saved (Local leaves out the removed ones), so the page can save again without reloading the card.
+        return StampOf(k, key => db.AppSettings.Local.FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase))?.Value);
     }
+
+    private static InvalidOperationException StaleOrder(TaxonomyKind k, Exception? inner = null) =>
+        new($"Someone changed the order or hidden options of {k.Title} since you opened it, so nothing was saved: " +
+            "it would have undone that. Reload the page, then make your change again.", inner);
 
     private void Add(IAppDbContext db, List<string> added, string key, string value)
     {

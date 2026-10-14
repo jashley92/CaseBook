@@ -165,6 +165,50 @@ public sealed class AdminSettingsTests : IDisposable
         (await db.AppSettings.AsNoTracking().AnyAsync()).Should().BeFalse();
     }
 
+    private AdminSettingsService RacingService(RaceCommandInterceptor race) =>
+        new(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new CaseChangeNotifier()), race)
+            .Options), _user, _clock, new NoOpReloader());
+
+    [Fact]
+    public async Task A_reset_another_reset_beat_to_it_is_not_an_error(/* BUG-437 */)
+    {
+        await using var db = NewContext();
+        const string key = "ExternalLinks:DetectionCaseUrlTemplate";
+        await NewService(db).SetAsync(key, "https://siem/{0}");
+
+        // A double click: the first reset deletes the row between the second's read and its delete.
+        var race = new RaceCommandInterceptor("DELETE FROM \"AppSettings\"", "DELETE FROM \"AppSettings\" WHERE \"Key\" = $k", ("$k", key));
+        await RacingService(race).ResetAsync(key);
+
+        race.Ran.Should().BeTrue();
+        (await db.AppSettings.AsNoTracking().AnyAsync(s => s.Key == key)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_whole_value_saved_from_a_stale_page_is_refused(/* BUG-438 */)
+    {
+        await using var db = NewContext();
+        var svc = NewService(db);
+        const string key = "Reporting:SectionLayout";
+
+        // Two admins open the page with nothing stored; one saves a layout.
+        var first = "ExecutiveSummary:1,Timeline:0";
+        var otherSaves = async () => await svc.SetAsync(key, first, expectedStored: null);
+        await otherSaves.Should().NotThrowAsync();
+        var stored = (await svc.GetEffectiveAsync()).Single(e => e.Definition.Key == key).Value;
+
+        // The other page still thinks nothing is stored, so its save would undo that.
+        var stale = async () => await svc.SetAsync(key, "Timeline:1", expectedStored: null);
+        await stale.Should().ThrowAsync<InvalidOperationException>().WithMessage("Someone changed*since you opened it*");
+        (await svc.GetEffectiveAsync()).Single(e => e.Definition.Key == key).Value.Should().Be(stored);
+
+        // From the stored value it goes through.
+        await svc.SetAsync(key, "Timeline:1", expectedStored: stored);
+        (await svc.GetEffectiveAsync()).Single(e => e.Definition.Key == key).Value.Should().NotBe(stored);
+    }
+
     [Fact]
     public async Task Set_rejects_a_non_whitelisted_key()
     {

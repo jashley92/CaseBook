@@ -103,7 +103,7 @@ else
         public string? Label { get; set; }          // current input; blank/default => no override
         public bool Hidden { get; set; }
         public string? OriginalOverride { get; init; }
-        public bool OriginalHidden { get; init; }
+        public bool OriginalHidden { get; set; }
     }
 
     private sealed class KindEdit
@@ -113,7 +113,8 @@ else
         public required string Description { get; init; }
         public required bool AllowVisibilityOrder { get; init; }
         public required List<MemberEdit> Members { get; init; }
-        public required IReadOnlyList<string> OriginalOrder { get; init; }   // REV-28: as loaded
+        public required IReadOnlyList<string> OriginalOrder { get; set; }   // REV-28: as loaded
+        public required string Stamp { get; set; }   // BUG-438: the stored order and hidden rows, as loaded
     }
 
     private List<KindEdit>? _kinds;
@@ -138,6 +139,7 @@ else
         {
             Id = k.Id,
             OriginalOrder = k.Members.Select(m => m.Value).ToList(),
+            Stamp = k.Stamp,
             Title = k.Title,
             Description = k.Description,
             AllowVisibilityOrder = k.AllowVisibilityOrder,
@@ -184,7 +186,11 @@ else
             if (kind.AllowVisibilityOrder && (!ordered.SequenceEqual(kind.OriginalOrder) || kind.Members.Any(m => m.Hidden != m.OriginalHidden)))
             {
                 var hidden = kind.Members.Where(m => m.Hidden).Select(m => m.Value).ToList();
-                await Taxonomy.SetVisibilityOrderAsync(kindId, ordered, hidden);
+                // BUG-438: refused if another admin reordered or hid options since this card loaded. Once saved, the card's
+                // baseline moves on, so a label refused below can be saved again without this being refused as stale.
+                kind.Stamp = await Taxonomy.SetVisibilityOrderAsync(kindId, ordered, hidden, kind.Stamp);
+                kind.OriginalOrder = ordered;
+                foreach (var m in kind.Members) m.OriginalHidden = m.Hidden;
             }
 
             // BUG-378: the card's changed labels in one save, so a refused one doesn't leave the others committed.

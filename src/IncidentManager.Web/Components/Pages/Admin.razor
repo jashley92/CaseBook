@@ -170,7 +170,7 @@
                                                 <span class="im-badge im-b-info">Changed in CaseBook</span>
                                                 <button class="btn btn-link btn-sm p-0 ms-2 align-baseline"
                                                         title="@(s.ServerValueFromFile ? $"Back to the server's settings file: {ShownValue(s.ServerValue)}" : $"Back to the default: {ShownValue(s.ServerValue)}")"
-                                                        @onclick="() => ResetOne(def.Key)">@(s.ServerValueFromFile ? "Reset to the server's value" : "Reset to default")</button>
+                                                        @onclick="() => ResetOne(def.Key)" disabled="@_savingSection">@(s.ServerValueFromFile ? "Reset to the server's value" : "Reset to default")</button>
                                             </div>
                                         }
                                         else if (s.ServerValueFromFile && !string.Equals(s.ServerValue ?? "", def.Default ?? "", StringComparison.OrdinalIgnoreCase))
@@ -271,7 +271,7 @@
                                     {
                                         <span class="small text-warning-emphasis">Unsaved changes</span>
                                     }
-                                    <button class="btn btn-sm btn-outline-secondary" @onclick="ResetBrand">Reset to defaults</button>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="ResetBrand" disabled="@_savingSection">Reset to defaults</button>
                                 </div>
                             </div>
                             <div class="card-body">
@@ -1174,8 +1174,9 @@
         _accentColor = _effective.FirstOrDefault(e => e.Definition.Key == "Branding:AccentColor")?.Value;
         _inkColor = _effective.FirstOrDefault(e => e.Definition.Key == "Branding:InkColor")?.Value;
 
-        var layoutRaw = _effective.FirstOrDefault(e => e.Definition.Key == "Reporting:SectionLayout")?.Value;
-        _layout = ReportLayout.Parse(layoutRaw).ToList();
+        var layoutSetting = _effective.FirstOrDefault(e => e.Definition.Key == "Reporting:SectionLayout");
+        _layout = ReportLayout.Parse(layoutSetting?.Value).ToList();
+        _layoutLoadedFrom = layoutSetting is { IsOverridden: true } ? layoutSetting.Value : null;
 
         var logo = await Branding.GetLogoAsync();
         _logoDataUri = logo is null ? null : $"data:{logo.ContentType};base64,{Convert.ToBase64String(logo.Bytes)}";
@@ -1183,6 +1184,9 @@
 
     // --- Report section layout designer (Reporting:SectionLayout) ---
     private List<ReportSectionState> _layout = [];
+    // BUG-438: the stored layout _layout was loaded from (null when none was stored), kept with unsaved layout edits
+    // across reloads, so saving them over a layout another administrator saved since is refused.
+    private string? _layoutLoadedFrom;
 
     private static string SectionLabel(ReportSection s) => Ui.Label(s);
 
@@ -1226,22 +1230,29 @@
 
     private async Task ResetBrand()
     {
+        // BUG-437: one save or reset at a time (a double click, or Reset during a Save).
+        if (_savingSection) return;
+        _savingSection = true;
         try
         {
-            await Settings.ResetAsync("Branding:AccentColor");
-            await Settings.ResetAsync("Branding:InkColor");
+            try
+            {
+                await Settings.ResetAsync("Branding:AccentColor");
+                await Settings.ResetAsync("Branding:InkColor");
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
+            {
+                _brandError = ex.Message;
+                return;
+            }
+            _accentColor = null;
+            _inkColor = null;
+            _brandError = null;
+            await ReloadKeepingEdits(dropBrand: true);
+            await JS.InvokeVoidAsync("imBrand.apply", "");
+            Toasts.Info("Brand colors reset to defaults.");
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
-        {
-            _brandError = ex.Message;
-            return;
-        }
-        _accentColor = null;
-        _inkColor = null;
-        _brandError = null;
-        await ReloadKeepingEdits(dropBrand: true);
-        await JS.InvokeVoidAsync("imBrand.apply", "");
-        Toasts.Info("Brand colors reset to defaults.");
+        finally { _savingSection = false; }
     }
 
     // --- Report logo (IReportBrandingStore) ---
@@ -1343,7 +1354,8 @@
                 }
                 if (SectionHasLayout && LayoutDirty)
                 {
-                    await Settings.SetAsync("Reporting:SectionLayout", ReportLayout.Serialize(_layout));
+                    // BUG-438: the layout is saved whole, so one another administrator saved since this page loaded is refused.
+                    await Settings.SetAsync("Reporting:SectionLayout", ReportLayout.Serialize(_layout), _layoutLoadedFrom);
                     changed++;
                 }
                 if (saveBrand)
@@ -1399,20 +1411,28 @@
             ?? new Dictionary<string, string?>();
         var keepBrand = !dropBrand && BrandDirty ? (_accentColor, _inkColor) : ((string?, string?)?)null;
         var keepLayout = !dropLayout && LayoutDirty ? _layout.ToList() : null;
+        var keepLayoutFrom = _layoutLoadedFrom;
 
         await LoadAsync();
 
         foreach (var (k, v) in keep) _form[k] = v;
         if (keepBrand is { } b) (_accentColor, _inkColor) = b;
-        if (keepLayout is not null) _layout = keepLayout;
+        if (keepLayout is not null) (_layout, _layoutLoadedFrom) = (keepLayout, keepLayoutFrom);
     }
 
     private async Task ResetOne(string key)
     {
-        try { await Settings.ResetAsync(key); }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
-        await ReloadKeepingEdits([key]);
-        Toasts.Info("Reverted to default.");
+        // BUG-437: one save or reset at a time. A double click ran the reset twice, and the second lost the delete.
+        if (_savingSection) return;
+        _savingSection = true;
+        try
+        {
+            try { await Settings.ResetAsync(key); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); return; }
+            await ReloadKeepingEdits([key]);
+            Toasts.Info("Reverted to default.");
+        }
+        finally { _savingSection = false; }
     }
 
     private bool SigningKeyPresent()

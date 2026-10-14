@@ -78,6 +78,25 @@ public sealed class EmailTemplateAdminServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_reset_another_save_beat_to_it_still_resets(/* BUG-437 */)
+    {
+        await NewService().SaveAsync("assignment", "Custom", "<p>custom</p>");
+
+        // Another admin's change removes the subject override between this reset's read and its delete of both.
+        var race = new RaceCommandInterceptor("DELETE FROM \"AppSettings\"", "DELETE FROM \"AppSettings\" WHERE \"Key\" = $k",
+            ("$k", EmailTemplateCatalog.SubjectKey("assignment")));
+        var racing = new EmailTemplateAdminService(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new IncidentManager.Infrastructure.Realtime.CaseChangeNotifier()), race)
+            .Options), _clock, _user, new NoOpReloader());
+
+        await racing.ResetAsync("assignment");
+
+        race.Ran.Should().BeTrue();
+        (await NewService().GetAsync("assignment")).IsOverridden.Should().BeFalse("the body override went too");
+    }
+
+    [Fact]
     public async Task Reset_reverts_to_the_default()
     {
         var svc = NewService();

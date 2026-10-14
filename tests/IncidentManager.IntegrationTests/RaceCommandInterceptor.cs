@@ -4,11 +4,13 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace IncidentManager.IntegrationTests;
 
 /// <summary>
-/// Plays a concurrent writer: just before the first database command whose text contains <c>match</c>, runs
-/// <c>sql</c> on the same connection (and transaction), as another context's save landing between this one's read and
-/// its write would. Once only, so a retry from a fresh read goes through.
+/// Plays a concurrent writer: runs <c>sql</c> once, as another context's committed save landing between this one's read
+/// and its write would. It runs as the save's transaction starts (so the save's rollback doesn't undo it), or, for a save
+/// without one, just before the first command whose text contains <c>match</c>. Once only, so a retry from a fresh read
+/// goes through. Give it to a context that makes one save.
 /// </summary>
-public sealed class RaceCommandInterceptor(string match, string sql, params (string Name, object Value)[] parameters) : DbCommandInterceptor
+public sealed class RaceCommandInterceptor(string match, string sql, params (string Name, object Value)[] parameters)
+    : DbCommandInterceptor, IDbTransactionInterceptor
 {
     private bool _done;
 
@@ -17,9 +19,14 @@ public sealed class RaceCommandInterceptor(string match, string sql, params (str
     private void Race(DbCommand command)
     {
         if (_done || !command.CommandText.Contains(match, StringComparison.Ordinal)) return;
+        Run(command.Connection!, command.Transaction);
+    }
+
+    private void Run(DbConnection connection, DbTransaction? transaction)
+    {
         _done = true;
-        using var other = command.Connection!.CreateCommand();
-        other.Transaction = command.Transaction;
+        using var other = connection.CreateCommand();
+        other.Transaction = transaction;
         other.CommandText = sql;
         foreach (var (name, value) in parameters)
         {
@@ -29,6 +36,20 @@ public sealed class RaceCommandInterceptor(string match, string sql, params (str
             other.Parameters.Add(p);
         }
         other.ExecuteNonQuery();
+    }
+
+    public InterceptionResult<DbTransaction> TransactionStarting(DbConnection connection, TransactionStartingEventData eventData,
+        InterceptionResult<DbTransaction> result)
+    {
+        if (!_done) Run(connection, null);
+        return result;
+    }
+
+    public ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(DbConnection connection, TransactionStartingEventData eventData,
+        InterceptionResult<DbTransaction> result, CancellationToken cancellationToken = default)
+    {
+        if (!_done) Run(connection, null);
+        return ValueTask.FromResult(result);
     }
 
     public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData,

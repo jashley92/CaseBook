@@ -1,4 +1,5 @@
 using IncidentManager.Application.Abstractions;
+using IncidentManager.Application.Cases;
 using IncidentManager.Application.Security;
 using IncidentManager.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -103,6 +104,13 @@ public sealed class EmailTemplateAdminService
         var added = UpsertOrClear(db, Row(subjectKey), subjectKey, subject, def.DefaultSubject)
                     | UpsertOrClear(db, Row(bodyKey), bodyKey, body, def.DefaultBodyHtml);
         try { await db.SaveChangesAsync(ct); }
+        // BUG-437: an override this changes or removes went between the read above and this save (the context reports
+        // it as a ConcurrentEditException, whose message is about cases).
+        catch (ConcurrentEditException ex)
+        {
+            throw new InvalidOperationException($"Someone changed the email template \"{def.Title}\" since you opened it, so nothing was saved: " +
+                "it would have undone that. Reload the page, then make your change again.", ex);
+        }
         catch (DbUpdateException ex) when (added)
         {
             // BUG-393: another administrator's first override of this template was saved between the read above and this
@@ -121,6 +129,21 @@ public sealed class EmailTemplateAdminService
     {
         AdminActionPermissions.Require<EmailTemplateAdminService>(_user);
         var def = EmailTemplateCatalog.ById(id) ?? throw new InvalidOperationException($"'{id}' is not a known email template.");
+        // BUG-437: an override another reset or save removed meanwhile makes the context refuse the delete (as a
+        // ConcurrentEditException) and roll it all back, so go again from a fresh read; nothing left means it's reset.
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await ResetOnceAsync(def, ct);
+                return;
+            }
+            catch (ConcurrentEditException) when (attempt < 2) { }
+        }
+    }
+
+    private async Task ResetOnceAsync(EmailTemplateDefinition def, CancellationToken ct)
+    {
         using var db = _factory.CreateDbContext();
         var rows = await db.AppSettings
             .Where(s => s.Key == EmailTemplateCatalog.SubjectKey(def.Id) || s.Key == EmailTemplateCatalog.BodyKey(def.Id))

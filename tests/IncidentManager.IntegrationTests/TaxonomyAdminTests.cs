@@ -185,6 +185,52 @@ public sealed class TaxonomyAdminTests : IDisposable
         _hasher.VerifyChain(chain).IsValid.Should().BeTrue();
     }
 
+    private TaxonomyAdminService RacingService(RaceCommandInterceptor race) =>
+        new(new TestDbContextFactory(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(new AuditChainInterceptor(_hasher, _user, _clock, new IncidentManager.Infrastructure.Realtime.CaseChangeNotifier()), race)
+            .Options), _clock, _user, new NoOpReloader());
+
+    [Fact]
+    public async Task A_label_reset_another_save_beat_to_it_still_resets_the_rest(/* BUG-437 */)
+    {
+        var svc = NewService();
+        await svc.SetLabelAsync("Classification", new Dictionary<string, string?> { ["Breach"] = "Major", ["Incident"] = "Event" });
+
+        // Another admin's reset of Breach lands between this save's read and its delete of both.
+        var race = new RaceCommandInterceptor("DELETE FROM \"AppSettings\"", "DELETE FROM \"AppSettings\" WHERE \"Key\" = $k",
+            ("$k", TaxonomyCatalog.LabelKey("Classification", "Breach")));
+        await RacingService(race).SetLabelAsync("Classification", new Dictionary<string, string?> { ["Breach"] = null, ["Incident"] = null });
+
+        race.Ran.Should().BeTrue();
+        await using var db = NewContext();
+        (await db.AppSettings.AnyAsync(s => s.Key.StartsWith("Taxonomy:Classification:"))).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task An_order_saved_from_a_stale_card_is_refused(/* BUG-438 */)
+    {
+        var svc = NewService();
+        var opened = (await svc.GetEffectiveAsync()).Single(k => k.Id == "EntityDisposition").Stamp;
+
+        // Another admin hides an option after this card loaded.
+        var saved = await svc.SetVisibilityOrderAsync("EntityDisposition",
+            new[] { "Unknown", "Benign", "Suspicious", "Malicious", "Compromised" }, new[] { "Suspicious" }, opened);
+        saved.Should().Be((await svc.GetEffectiveAsync()).Single(k => k.Id == "EntityDisposition").Stamp, "the stamp after the save");
+
+        var stale = async () => await svc.SetVisibilityOrderAsync("EntityDisposition",
+            new[] { "Malicious", "Benign", "Unknown", "Suspicious", "Compromised" }, Array.Empty<string>(), opened);
+        await stale.Should().ThrowAsync<InvalidOperationException>().WithMessage("Someone changed*since you opened it*");
+        var disp = (await svc.GetEffectiveAsync()).Single(k => k.Id == "EntityDisposition");
+        disp.Members.Single(m => m.Value == "Suspicious").Hidden.Should().BeTrue("the other admin's change stands");
+
+        // From the current stamp it goes through; null (a config import) skips the check.
+        await svc.SetVisibilityOrderAsync("EntityDisposition",
+            new[] { "Malicious", "Benign", "Unknown", "Suspicious", "Compromised" }, Array.Empty<string>(), saved);
+        await svc.SetVisibilityOrderAsync("EntityDisposition",
+            new[] { "Unknown", "Benign", "Suspicious", "Malicious", "Compromised" }, Array.Empty<string>());
+    }
+
     [Fact]
     public async Task A_label_that_already_has_an_override_can_be_changed(/* BUG-378 */)
     {
