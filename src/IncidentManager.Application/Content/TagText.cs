@@ -60,10 +60,46 @@ public static partial class TagText
                 target = targets[Math.Min(n, targets.Length - 1)];
             }
             else
-                target = list.FirstOrDefault(e => string.Equals(e.Label, label, StringComparison.OrdinalIgnoreCase)
-                                                  || string.Equals(e.Value, label, StringComparison.OrdinalIgnoreCase)) is { Id: var id } && id != Guid.Empty
-                    ? $"entity:{id}" : null;
+            {
+                // BUG-423: a label wins over another entity's value, and a label saved with spaces round it still matches.
+                var name = label.Trim();
+                var hit = list.FirstOrDefault(e => Same(e.Label, name));
+                if (hit.Id == Guid.Empty) hit = list.FirstOrDefault(e => Same(e.Value, name));
+                target = hit.Id != Guid.Empty ? $"entity:{hit.Id}" : null;
+            }
             return target is null ? m.Value : $"[{label}]({target})";
         });
+    }
+
+    private static bool Same(string? a, string b) => string.Equals(a?.Trim(), b, StringComparison.OrdinalIgnoreCase);
+
+    private static bool Writable(string? s) => !string.IsNullOrWhiteSpace(s) && s.IndexOfAny(['[', ']', '\r', '\n']) < 0;
+
+    /// <summary>What the <c>[[</c> picker inserts for each entity: <c>[[label]]</c>, else <c>[[value]]</c>, when that
+    /// text names no other entity (by label or value), so <see cref="FromEditable"/> links it back to this one.
+    /// BUG-423: when both are shared with another entity the picker inserts the link itself,
+    /// <c>[label](entity:&lt;id&gt;)</c>, which a save keeps as it is. An entity with nothing writable is left out.</summary>
+    public static IReadOnlyList<(Guid Id, string Display, string Insert)> PickerTags(
+        IEnumerable<(Guid Id, string? Label, string Value)> entities)
+    {
+        var list = entities.ToList();
+        var named = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // how many entities each text names
+        foreach (var e in list)
+            foreach (var key in new[] { e.Label?.Trim(), e.Value.Trim() }
+                         .Where(k => !string.IsNullOrEmpty(k)).Distinct(StringComparer.OrdinalIgnoreCase))
+                named[key!] = named.GetValueOrDefault(key!) + 1;
+        var tags = new List<(Guid, string, string)>();
+        foreach (var e in list)
+        {
+            var label = e.Label?.Trim();
+            var value = e.Value.Trim();
+            var display = Writable(label) ? label! : Writable(value) ? value : null;
+            if (display is null) continue;
+            var tag = Writable(label) && named[label!] == 1 ? label
+                : Writable(value) && named[value] == 1 ? value : null;
+            tags.Add((e.Id, string.IsNullOrWhiteSpace(label) ? e.Value : label,
+                tag is not null ? $"[[{tag}]]" : $"[{display}](entity:{e.Id})"));
+        }
+        return tags;
     }
 }

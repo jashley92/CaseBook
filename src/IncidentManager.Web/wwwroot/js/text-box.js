@@ -55,20 +55,32 @@
 })();
 
 window.imTagBox = (function () {
-    let entities = [];   // { tag, label, hint }
-    let menu = null, items = [], active = -1, field = null, from = -1;
+    let entities = [];   // { insert, label, hint }
+    let menu = null, items = [], active = -1, field = null, from = -1, at = -1;
     const TRIGGER = /(?:^|[\s(])\[\[([^\[\]\r\n]{0,40})$/u;
 
-    function close() { if (menu) { menu.remove(); menu = null; } items = []; active = -1; field = null; from = -1; }
+    function close() { if (menu) { menu.remove(); menu = null; } items = []; active = -1; field = null; from = -1; at = -1; }
+
+    // The "[[" the caret is in now: { caret, query, from }, or null.
+    function trigger(el) {
+        const caret = el.selectionStart;
+        if (caret == null || el.selectionEnd !== caret) return null;
+        const m = el.value.slice(0, caret).match(TRIGGER);
+        return m ? { caret: caret, query: m[1], from: caret - m[1].length - 2 } : null;
+    }
 
     function highlight() { if (menu) [...menu.children].forEach((el, i) => el.classList.toggle('active', i === active)); }
 
     function choose(i) {
         if (!field || !items[i]) return close();
-        const el = field, start = from, end = el.selectionStart;
+        // BUG-430: the caret may have moved since the list was drawn (arrow keys, a click, Home/End); insert only at the
+        // "[[" it is in now, so text elsewhere isn't overwritten.
+        const el = field, t = trigger(el);
+        if (!t || t.from !== from) return close();
+        const start = t.from, end = t.caret;
         let after = el.value.slice(end);
         if (after.startsWith(']]')) after = after.slice(2);   // a closer already typed is taken with the tag
-        const text = '[[' + items[i].tag + ']] ';
+        const text = items[i].insert + ' ';   // [[tag]], or the link itself for a shared name (BUG-423)
         el.value = el.value.slice(0, start) + text + after;
         const caret = start + text.length;
         try { el.setSelectionRange(caret, caret); } catch (e) { /* not a text field */ }
@@ -80,14 +92,12 @@ window.imTagBox = (function () {
     }
 
     function update(el) {
-        const caret = el.selectionStart;
-        if (caret == null || el.selectionEnd !== caret) return close();
-        const m = el.value.slice(0, caret).match(TRIGGER);
-        if (!m || entities.length === 0) return close();
-        const q = m[1].toLowerCase();
+        const t = trigger(el);
+        if (!t || entities.length === 0) return close();
+        const q = t.query.toLowerCase();
         const matches = entities.filter(c => q === '' || c.label.toLowerCase().includes(q) || (c.hint || '').toLowerCase().includes(q)).slice(0, 8);
         if (matches.length === 0) return close();
-        field = el; from = caret - m[1].length - 2; items = matches; active = 0;
+        field = el; from = t.from; at = t.caret; items = matches; active = 0;
         if (!menu) { menu = document.createElement('div'); menu.className = 'cm-mention-menu'; menu.setAttribute('role', 'listbox'); document.body.appendChild(menu); }
         menu.innerHTML = '';
         matches.forEach((c, i) => {
@@ -109,6 +119,11 @@ window.imTagBox = (function () {
 
     document.addEventListener('input', e => { if (isBox(e.target) && e.isTrusted) update(e.target); }, true);
     document.addEventListener('click', e => { if (menu && e.target !== field) close(); }, true);
+    // BUG-430: a caret moved without typing (a click in the box, Left/Right, Home/End) re-reads the trigger, closing the
+    // list once the caret has left the "[[". Up/Down only move through the list, so they leave the caret where it was.
+    const moved = e => { if (menu && e.target === field && (field.selectionStart !== at || field.selectionEnd !== at)) update(field); };
+    document.addEventListener('keyup', moved, true);
+    document.addEventListener('mouseup', moved, true);
     document.addEventListener('focusout', e => { if (e.target === field) setTimeout(() => { if (document.activeElement !== field) close(); }, 150); }, true);
     // Window capture runs before the keymap's handlers, so Enter picks a tag instead of saving the form.
     window.addEventListener('keydown', e => {
