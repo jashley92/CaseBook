@@ -217,7 +217,8 @@ $ProbeHost = $null
 if (-not (Test-HostAllowed $probeUri.Host $allowedHosts)) {
     $bindingHosts = @(Get-WebBinding -Name $SiteName -ErrorAction SilentlyContinue | Where-Object { $_.protocol -in 'https','http' } |
         Sort-Object { $_.protocol -ne 'https' } | ForEach-Object { if ([string]$_.bindingInformation -match ':\d*:(?<h>[^:]+)$') { $Matches['h'] } })
-    $ProbeHost = @($bindingHosts) + @($allowedHosts | Where-Object { $_ -notmatch '\*' }) |
+    # A wildcard (an IIS '*.corp.example' binding or AllowedHosts entry) can't be sent as a Host, so only plain names.
+    $ProbeHost = @($bindingHosts) + @($allowedHosts) | Where-Object { $_ -notmatch '\*' } |
         Where-Object { Test-HostAllowed $_ $allowedHosts } | Select-Object -First 1
     if ($ProbeHost -and -not $probeUri.IsDefaultPort) { $ProbeHost = "${ProbeHost}:$($probeUri.Port)" }
     if ($ProbeHost) { Write-Info "Probe Host: $ProbeHost ('$($probeUri.Host)' isn't in AllowedHosts)" }

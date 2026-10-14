@@ -219,9 +219,9 @@
     else if (D.Name == "legal")
     {
         <label class="form-label small" for="legal-contact">Legal contact <span class="text-muted">(optional)</span></label>
-        <input id="legal-contact" class="form-control mb-2" maxlength="300" placeholder="Name or team" @bind="D.LegalContact" />
+        <input id="legal-contact" class="form-control mb-2" maxlength="300" placeholder="Name or team" @bind="D.LegalContact" @bind:event="oninput" />
         <label class="form-label small" for="legal-note">Regulatory relevance <span class="text-muted">(optional)</span></label>
-        <input id="legal-note" class="form-control" maxlength="4000" placeholder="e.g. NY NPI" @bind="D.LegalNote" />
+        <input id="legal-note" class="form-control" maxlength="4000" placeholder="e.g. NY NPI" @bind="D.LegalNote" @bind:event="oninput" />
     }
     else if (D.Name == "materiality")
     {
@@ -238,7 +238,7 @@
             <option value="@MaterialityStatus.NotMaterial">Not material</option>
         </select>
         <label class="form-label small" for="ws-mat-maker">Decision-maker <span class="text-muted">@(D.MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-        <input id="ws-mat-maker" class="form-control mb-2" maxlength="300" placeholder="e.g. Disclosure Committee, General Counsel" @bind="D.MaterialityDecisionMaker" />
+        <input id="ws-mat-maker" class="form-control mb-2" maxlength="300" placeholder="e.g. Disclosure Committee, General Counsel" @bind="D.MaterialityDecisionMaker" @bind:event="oninput" />
         @if (D.MaterialityIsFinal)
         {
             <label class="form-label small mb-0" for="ws-mat-date">When it was decided (@TimeDisp.Label) <span class="text-muted">(required)</span></label>
@@ -258,7 +258,7 @@
             <div class="form-text mb-2">When it was decided is asked once the call is made (Material or Not material).</div>
         }
         <label class="form-label small" for="ws-mat-rationale">Rationale <span class="text-muted">@(D.MaterialityIsFinal ? "(required)" : "(optional)")</span></label>
-        <textarea id="ws-mat-rationale" class="form-control" rows="2" maxlength="4000" placeholder="Why the case is or isn't material" @bind="D.MaterialityRationale"></textarea>
+        <textarea id="ws-mat-rationale" class="form-control" rows="2" maxlength="4000" placeholder="Why the case is or isn't material" @bind="D.MaterialityRationale" @bind:event="oninput"></textarea>
     }
     else if (D.Name == "archive")
     {

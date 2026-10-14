@@ -265,6 +265,15 @@ public sealed class ProgramReportTests : IDisposable
         (await Service().BuildAsync(new ProgramPeriod(2026, 3))).Current.ReviewsRecorded.Should().Be(1, "it was filled in in Q3");
         var snaps = await Service().SnapshotsAsync([new ProgramWindow(Feb(1), Feb(28), "February")]);
         snaps[0].ReviewsRecorded.Should().Be(0, "the overview counts it the same way");
+
+        // Cleared again, it isn't a review recorded at all, as the close gate reads it (BUG-324).
+        await using (var db = new AppDbContext(Options()))
+        {
+            var review = await db.PostIncidentReviews.SingleAsync();
+            review.WhatHappened = null;
+            await db.SaveChangesAsync();
+        }
+        (await Service().BuildAsync(new ProgramPeriod(2026, 3))).Current.ReviewsRecorded.Should().Be(0, "it no longer says what happened");
     }
 
     [Fact]

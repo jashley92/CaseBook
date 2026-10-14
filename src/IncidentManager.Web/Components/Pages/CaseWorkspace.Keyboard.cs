@@ -30,13 +30,13 @@ public partial class CaseWorkspace
         if (cmd is "submit" or "submit:dialog")
         {
             // BUG-328: what's open on top takes it. The action dialog or sheet applies when the keys were pressed in it
-            // (its own guard and disabled state hold, BUG-14); pressed elsewhere while a sheet is open, they do nothing.
-            // A confirm, the leave guard, the screenshot or a side panel ignores it, as does any other dialog it came
-            // from (keymap.js says "submit:dialog"), such as the timeline's correction dialog.
+            // (its own guard and disabled state hold, BUG-14); a sheet isn't modal, so pressed outside it they submit the
+            // tab's composer as usual. A confirm, the leave guard, the screenshot or a side panel ignores it, as does any
+            // other dialog it came from (keymap.js says "submit:dialog"), such as the timeline's correction dialog.
             if (_confirm is not null || _confirmLeaveOpen || _previewShotId is not null) return;
-            if (_action.Name is not null)
+            if (_action.Name is not null && (cmd == "submit:dialog" || !_action.IsSheet))
             {
-                if ((cmd == "submit:dialog" || !_action.IsSheet) && _actionForm is not null) await _actionForm.SubmitAsync();
+                if (_actionForm is not null) await _actionForm.SubmitAsync();
                 return;
             }
             if (cmd == "submit:dialog" || _panelEntity is not null || _panelEvidence is not null) return;

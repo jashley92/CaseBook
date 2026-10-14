@@ -309,6 +309,7 @@ public sealed class ProgramReportService
         var list = new List<(Guid CaseId, DateTimeOffset At)>();
         foreach (var r in rows)
         {
+            if (!r.Recorded) continue;   // filled in once and cleared since: not a review recorded (BUG-324)
             DateTimeOffset? at;
             if (!trails.TryGetValue(r.Id.ToString(), out var trail)) at = r.Recorded ? r.CreatedAtUtc : null;
             else if (trail[0].Action == AuditAction.Create || !Filled(trail[0].BeforeJson))

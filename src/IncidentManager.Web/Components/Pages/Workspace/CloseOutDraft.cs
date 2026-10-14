@@ -53,6 +53,9 @@ public sealed class CloseOutDraft
         _prefilledFor = c.Id;
     }
 
+    /// <summary>BUG-337: whether the draft is still the one started for this case (a switch discards and re-prefills it).</summary>
+    public bool IsFor(Guid caseId) => _prefilledFor == caseId;
+
     /// <summary>The draft is spent (closed) or thrown away.</summary>
     public void Discard()
     {

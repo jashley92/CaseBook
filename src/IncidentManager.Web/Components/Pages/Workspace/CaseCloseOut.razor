@@ -133,8 +133,16 @@
             await OnClosed.InvokeAsync(new(id, number, $"Case closed: {label}", null));
         }
         catch (ForbiddenException) { await OnForbidden.InvokeAsync(new(id, number)); }
-        catch (GateNotSatisfiedException ex) { Draft.Error = ex.Message; }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Draft.Error = ex.Message; }
+        catch (GateNotSatisfiedException ex) { Refused(id, number, ex.Message); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { Refused(id, number, ex.Message); }
+    }
+
+    // BUG-337: the draft is one object the workspace keeps across cases; a refusal that comes back after a switch belongs
+    // to the case it was for, not to the close-out since started on the next one.
+    private void Refused(Guid id, string number, string message)
+    {
+        if (Draft.IsFor(id)) Draft.Error = message;
+        else Toasts.Error($"{number}: {message}");
     }
 
     // --- HR-18: the closing-brief prompt for the analyst's own AI tool ---
