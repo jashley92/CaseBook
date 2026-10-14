@@ -142,7 +142,11 @@ else
     // with the stamp of the template it was typed over.
     private readonly Dictionary<string, (string Subject, string Body, string Stamp)> _drafts = new();
 
-    private bool Unsaved => Selected is { } v && (_subject != v.EffectiveSubject || _body != v.EffectiveBody);
+    // BUG-486: judged on the text as Save would store it (trimmed; a blank body is the default), so a saved final newline
+    // doesn't leave the badge on and whitespace alone isn't parked as a draft.
+    private bool Unsaved => Selected is { } v && (_subject.Trim() != v.EffectiveSubject || BodyAsSaved(v) != v.EffectiveBody);
+
+    private string BodyAsSaved(EmailTemplateView v) => _body.Trim() is { Length: > 0 } body ? body : v.DefaultBody;
 
     private async Task Select(string id)
     {
