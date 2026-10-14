@@ -311,8 +311,9 @@ public sealed class ReportService
         // from the full case model carrying this report's identity: its kind, legend, review and content hash.
         byte[]? rendered = null;
         ResolvedTemplate? used = null;
+        // BUG-487: two defaults left by an earlier race give the same pick every time (by name), until one is set again.
         var lessonsDefault = await db.ReportTemplates.AsNoTracking().Where(t => t.IsLessonsDefault && t.IsActive)
-            .Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
+            .OrderBy(t => t.Name).ThenBy(t => t.Id).Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
         if (await ResolveTemplateAsync(db, lessonsDefault, template, ct) is { } t)
         {
             // WF-32: the legend is the report's discovery protection (decision 0012), so a template that can't print it is
