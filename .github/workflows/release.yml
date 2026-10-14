@@ -14,7 +14,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # BUG-318 (REV-77): every CI gate on the tagged commit itself, the SQL Server ones included (the SQL Server tests, the
+  # DBA schema script being current and re-runnable, the upgrade from earlier releases) and the vulnerable-package scan.
+  # A tag can sit on a commit CI never ran (a docs-only commit skips it) or one whose CI failed; the bundle carries the DBA
+  # script, so a stale one would leave DbaApplies sites unable to start.
+  gates:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+    permissions:
+      contents: read
+
   release:
+    needs: gates
     runs-on: ubuntu-latest
     permissions:
       contents: write   # create the GitHub Release and upload assets

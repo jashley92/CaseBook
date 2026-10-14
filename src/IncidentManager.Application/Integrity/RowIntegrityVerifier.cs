@@ -115,8 +115,9 @@ public static class RowIntegrityVerifier
         // A record the chain last recorded as created or changed (with a row hash, so after row hashes existed) that is
         // no longer in its table was deleted outside CaseBook: the app records every removal.
         var missing = recorded.All.Where(r => IsMissing(r.Key, r.Value, tableOf, present)).Select(r => r.Key).ToList();
+        var lineage = await LineageAsync(db, ct);
         if (recheck is null)
-            return missing.Select(k => Missing(k, recorded)).FirstOrDefault();
+            return missing.Select(k => Missing(k, recorded)).FirstOrDefault() ?? lineage;
 
         // BUG-194: each catch-up reads the entries written since, then re-reads what still looks wrong. A save in
         // progress settles; a record still failing after the last is what's stored.
@@ -135,7 +136,38 @@ public static class RowIntegrityVerifier
                     gone.Add(key);
             missing = gone;
         }
-        return suspects.Count > 0 ? suspects[0].Bad : missing.Select(k => Missing(k, recorded)).FirstOrDefault();
+        if (suspects.Count > 0) return suspects[0].Bad;
+        if (missing.Count > 0) return Missing(missing[0], recorded);
+        if (lineage is null) return null;
+        await recheck.CatchUp(ct);   // a save in progress settles before a lineage is called wrong
+        return await LineageAsync(db, ct);
+    }
+
+    /// <summary>
+    /// BUG-315: which version of a note, an investigation entry or the brief is the current one isn't in any row's hash
+    /// (IsCurrent changes when the next version is written), so setting an earlier version current in the database, and the
+    /// latest not, showed the old wording everywhere while every row still matched its hash. CaseBook only ever makes a
+    /// version not current by writing the one that replaces it, so a replaced version marked current was changed outside
+    /// it. (The other way round, a latest version not current, isn't flagged: it hides the text rather than changing it,
+    /// and older releases could leave a lineage like that, so it would raise alarms nobody caused.)
+    /// </summary>
+    private static async Task<RowMismatch?> LineageAsync(IAppDbContext db, CancellationToken ct) =>
+        Lineage(nameof(AnalystNote), await db.Notes.AsNoTracking()
+                .Select(n => new Link(n.Id, n.SupersedesNoteId, n.IsCurrent)).ToListAsync(ct))
+        ?? Lineage(nameof(TimelineEntry), await db.TimelineEntries.AsNoTracking()
+                .Select(e => new Link(e.Id, e.SupersedesEntryId, e.IsCurrent)).ToListAsync(ct))
+        ?? Lineage(nameof(CaseBrief), await db.CaseBriefs.AsNoTracking()
+                .Select(b => new Link(b.Id, b.SupersedesBriefId, b.IsCurrent)).ToListAsync(ct));
+
+    private sealed record Link(Guid Id, Guid? Supersedes, bool IsCurrent);
+
+    private static RowMismatch? Lineage(string type, List<Link> rows)
+    {
+        var replaced = rows.Where(r => r.Supersedes is not null).Select(r => r.Supersedes!.Value).ToHashSet();
+        return rows.FirstOrDefault(r => r.IsCurrent && replaced.Contains(r.Id)) is { } bad
+            ? new RowMismatch(type, bad.Id, null,
+                $"{type} {bad.Id} is marked current though a later version replaced it: changed outside CaseBook.")
+            : null;
     }
 
     private static RowMismatch Missing((string Type, string Id) key, ChainRecords recorded)

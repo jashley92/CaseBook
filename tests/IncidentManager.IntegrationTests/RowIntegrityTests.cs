@@ -137,6 +137,35 @@ public sealed class RowIntegrityTests
 
     [Theory]
     [MemberData(nameof(Providers))]
+    public async Task Putting_an_earlier_version_back_as_current_is_caught(string provider /* BUG-315 */)
+    {
+        using var database = Seeded(provider);
+        Guid earlier;
+        await using (var db = database.NewContext())
+        {
+            var c = await db.Cases.Include(x => x.Briefs).FirstAsync(x => x.Briefs.Any(b => b.IsCurrent));
+            earlier = c.Briefs.Single(b => b.IsCurrent).Id;
+            c.ReviseBrief("Rewritten summary.", "Rewritten assessment.", null, null, null, _user.UserId, _clock.UtcNow);
+            await db.SaveChangesAsync();
+        }
+        (await VerifyAsync(database))?.Detail.Should().BeNull("a new version written in CaseBook passes");
+
+        // Swapped (one current brief per case is a unique index): the latest made not current, the earlier current again.
+        await using (var db = database.NewContext())
+        {
+            var caseId = await db.CaseBriefs.Where(b => b.Id == earlier).Select(b => b.CaseId).FirstAsync();
+            await db.CaseBriefs.Where(b => b.CaseId == caseId && b.IsCurrent).ExecuteUpdateAsync(s => s.SetProperty(b => b.IsCurrent, false));
+            await db.CaseBriefs.Where(b => b.Id == earlier).ExecuteUpdateAsync(s => s.SetProperty(b => b.IsCurrent, true));
+        }
+
+        var bad = await VerifyAsync(database);
+        bad.Should().NotBeNull();
+        bad!.EntityType.Should().Be(nameof(CaseBrief));
+        bad.Detail.Should().Contain("marked current though a later version replaced it");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
     public async Task An_edit_made_directly_in_the_database_is_caught(string provider)
     {
         using var database = Seeded(provider);

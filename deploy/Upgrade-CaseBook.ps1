@@ -152,10 +152,16 @@ if (-not $SqlInstance -or -not $DbName) {
 $adminConn = "Server=$SqlInstance;Database=$DbName;Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True;Application Name=CaseBook-Upgrade;"
 
 # BUG-138: a binding is "IP:port:host"; a site on a port other than the scheme's default is probed on that port.
+# BUG-314: IIS writes a binding as "IP:port:host". With no host name the site answers on that IP only (10.0.0.5:443:), so
+# the probe asks that address, not localhost (which http.sys doesn't route to it, so nothing answered and a good upgrade
+# was rolled back). An IPv6 address is bracketed ([::1]:443:), so the string can't simply be split on ':'.
 function Get-BindingUrl($binding, $scheme, $defaultPort) {
-    $parts = $binding.bindingInformation -split ':'
-    $hostHeader = if ($parts[-1]) { $parts[-1] } else { 'localhost' }
-    $port = if ($parts.Length -ge 3) { $parts[-2] } else { '' }
+    $info = [string]$binding.bindingInformation
+    $ip = ''; $port = ''; $hostHeader = ''
+    if ($info -match '^(?<ip>\[[^\]]*\]|[^:]*):(?<port>\d*):(?<host>.*)$') {
+        $ip = $Matches['ip']; $port = $Matches['port']; $hostHeader = $Matches['host']
+    }
+    if (-not $hostHeader) { $hostHeader = if ($ip -and $ip -ne '*') { $ip } else { 'localhost' } }
     $portPart = if ($port -and $port -ne "$defaultPort") { ":$port" } else { '' }
     return "${scheme}://$hostHeader$portPart/"
 }
@@ -179,6 +185,61 @@ Write-Info "Health URL: $HealthUrl"
 $siteBase = ([Uri]$HealthUrl).GetLeftPart([UriPartial]::Authority)
 $ProbeUrl = "$siteBase/api/import/cases/schema"
 Write-Info "Probe URL : $ProbeUrl"
+
+# BUG-249: only the app's own answer proves it started; a 5xx or a connection failure means it didn't. Tolerate a
+# self-signed cert during this local probe.
+# BUG-260: the probe goes straight to the site, never through the administrator's proxy, and doesn't follow redirects;
+# each attempt says what it got.
+# BUG-261: and only CaseBook's own answer counts: the import schema itself. IIS can answer /api with its own 404 (the
+# StaticFile handler, when /api doesn't reach the app), which v1.6.1 wrongly took for the app.
+function Invoke-SiteProbe([string] $Url, [switch] $WithCredentials) {
+    $req = [System.Net.HttpWebRequest]::Create($Url)
+    $req.Proxy = $null
+    $req.AllowAutoRedirect = $false
+    $req.Timeout = 30000
+    $req.ReadWriteTimeout = 30000
+    $req.UserAgent = 'CaseBook-Upgrade'
+    if ($WithCredentials) { $req.UseDefaultCredentials = $true }
+    $resp = $null
+    try { $resp = $req.GetResponse() }
+    catch {
+        $ex = $_.Exception
+        while ($ex -and $ex -isnot [System.Net.WebException]) { $ex = $ex.InnerException }
+        if ($ex -and $ex.Response) { $resp = $ex.Response }
+        else {
+            $msg = if ($ex) { "$($ex.Status): $($ex.Message)" } else { $_.Exception.Message }
+            return @{ Status = $null; Detail = $msg; Location = $null; Body = '' }
+        }
+    }
+    try {
+        $body = ''
+        try {
+            $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+            $buf = New-Object char[] 4096
+            $n = $reader.Read($buf, 0, $buf.Length)
+            if ($n -gt 0) { $body = New-Object string($buf, 0, $n) }
+        } catch { }
+        $detail = "$([int]$resp.StatusCode) $($resp.StatusDescription)"
+        if ($body -match '<title>([^<]+)</title>') { $detail += " ($($Matches[1].Trim()))" }
+        return @{ Status = [int]$resp.StatusCode; Detail = $detail; Location = $resp.Headers['Location']; Body = $body }
+    } finally { $resp.Close() }
+}
+# What an answer means: CaseBook started ('started'), Windows authentication answered instead of the app ('auth'),
+# something other than CaseBook answered ('other', e.g. IIS's own 404), it crashed ('crashed'), or nothing yet ('none').
+# The schema probe needs the schema itself; the signed-in probe of the site root takes any page or redirect.
+function Get-ProbeVerdict($probe, [switch] $Schema) {
+    $c = $probe.Status
+    if ($null -eq $c -or $c -eq 407) { return 'none' }
+    # WF-73: 500.37 is IIS saying the app hasn't finished starting within its startupTimeLimit (a long migration); the
+    # next request starts it again where the migrations left off, so it's still starting, not a crash.
+    if ($c -eq 500 -and $probe.Body -match '500\.37') { return 'none' }
+    if ($c -ge 500) { return 'crashed' }
+    if ($c -in 401,403) { return 'auth' }
+    if ($Schema) { if ($c -eq 200 -and $probe.Body -match '"\$schema"') { return 'started' } else { return 'other' } }
+    if ($c -ge 200 -and $c -lt 400) { return 'started' }
+    return 'other'
+}
+
 
 # Small SQL helpers over System.Data.SqlClient (present in Windows PowerShell 5.1 -- no module needed).
 function Invoke-SqlScalar([string]$query) {
@@ -444,6 +505,19 @@ if ($template) {
     Write-Warn2 "No appsettings.Production.template.json found -- skipping the data-folder settings check."
 }
 
+# BUG-314: the warm-up decides whether the new build started, by asking the site at $ProbeUrl. Asked now, before anything
+# is stopped: any HTTP answer (even an error page) shows this host can reach it. No answer at all would make the warm-up
+# roll back a build that started, after its migrations, leaving the pool stopped until the database is restored.
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+$reach = Invoke-SiteProbe $ProbeUrl
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
+if ($null -eq $reach.Status) {
+    throw ("This host can't reach the site at $ProbeUrl ($($reach.Detail)), so the upgrade couldn't tell whether the new " +
+           "build started. Nothing has been changed. Pass -HealthUrl with an address this host can reach (the one you " +
+           "open the site with, or http://localhost:<port>/ when the site has a localhost binding), then run it again.")
+}
+Write-Info "Probe reaches the site ($($reach.Detail))."
+
 # --- 4. Confirm ---------------------------------------------------------------
 $currentVerFile = Join-Path $SitePath 'VERSION.txt'
 $currentVersion = if (Test-Path $currentVerFile) { ((Get-Content $currentVerFile | Where-Object { $_ -match 'Version:' }) -replace 'Version:\s*','').Trim() } else { '(unknown)' }
@@ -566,60 +640,6 @@ Start-WebAppPool -Name $AppPoolName
 
 # --- 7. Warm up (applies pending migrations) + verify ------------------------
 Write-Step "Warming up (the first request applies pending migrations)"
-# BUG-249: only the app's own answer proves it started; a 5xx or a connection failure means it didn't. Tolerate a
-# self-signed cert during this local probe.
-# BUG-260: the probe goes straight to the site, never through the administrator's proxy, and doesn't follow redirects;
-# each attempt says what it got.
-# BUG-261: and only CaseBook's own answer counts: the import schema itself. IIS can answer /api with its own 404 (the
-# StaticFile handler, when /api doesn't reach the app), which v1.6.1 wrongly took for the app.
-function Invoke-SiteProbe([string] $Url, [switch] $WithCredentials) {
-    $req = [System.Net.HttpWebRequest]::Create($Url)
-    $req.Proxy = $null
-    $req.AllowAutoRedirect = $false
-    $req.Timeout = 30000
-    $req.ReadWriteTimeout = 30000
-    $req.UserAgent = 'CaseBook-Upgrade'
-    if ($WithCredentials) { $req.UseDefaultCredentials = $true }
-    $resp = $null
-    try { $resp = $req.GetResponse() }
-    catch {
-        $ex = $_.Exception
-        while ($ex -and $ex -isnot [System.Net.WebException]) { $ex = $ex.InnerException }
-        if ($ex -and $ex.Response) { $resp = $ex.Response }
-        else {
-            $msg = if ($ex) { "$($ex.Status): $($ex.Message)" } else { $_.Exception.Message }
-            return @{ Status = $null; Detail = $msg; Location = $null; Body = '' }
-        }
-    }
-    try {
-        $body = ''
-        try {
-            $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
-            $buf = New-Object char[] 4096
-            $n = $reader.Read($buf, 0, $buf.Length)
-            if ($n -gt 0) { $body = New-Object string($buf, 0, $n) }
-        } catch { }
-        $detail = "$([int]$resp.StatusCode) $($resp.StatusDescription)"
-        if ($body -match '<title>([^<]+)</title>') { $detail += " ($($Matches[1].Trim()))" }
-        return @{ Status = [int]$resp.StatusCode; Detail = $detail; Location = $resp.Headers['Location']; Body = $body }
-    } finally { $resp.Close() }
-}
-# What an answer means: CaseBook started ('started'), Windows authentication answered instead of the app ('auth'),
-# something other than CaseBook answered ('other', e.g. IIS's own 404), it crashed ('crashed'), or nothing yet ('none').
-# The schema probe needs the schema itself; the signed-in probe of the site root takes any page or redirect.
-function Get-ProbeVerdict($probe, [switch] $Schema) {
-    $c = $probe.Status
-    if ($null -eq $c -or $c -eq 407) { return 'none' }
-    # WF-73: 500.37 is IIS saying the app hasn't finished starting within its startupTimeLimit (a long migration); the
-    # next request starts it again where the migrations left off, so it's still starting, not a crash.
-    if ($c -eq 500 -and $probe.Body -match '500\.37') { return 'none' }
-    if ($c -ge 500) { return 'crashed' }
-    if ($c -in 401,403) { return 'auth' }
-    if ($Schema) { if ($c -eq 200 -and $probe.Body -match '"\$schema"') { return 'started' } else { return 'other' } }
-    if ($c -ge 200 -and $c -lt 400) { return 'started' }
-    return 'other'
-}
-
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 $deadline = (Get-Date).AddSeconds($WarmupTimeoutSec)
 $started = $false; $lastStatus = $null; $verdict = 'none'; $lastDetail = $null
