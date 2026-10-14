@@ -183,9 +183,9 @@
                 try { return (m.value() || '').trim().length > 0; } catch (e) { return false; }
             });
         },
-        // FR-05: let a deliberate, security-driven teardown (the idle-lock's forced navigation to
-        // /session-expired) bypass the beforeunload prompt, so an unattended screen is never trapped behind
-        // a native dialog. One-shot: it clears itself once the unload it was meant for has passed.
+        // FR-05: let a deliberate, security-driven teardown (the idle lock, Lock now, the client fallback) bypass
+        // every beforeunload prompt, this one and any other page's (BUG-369), so an unattended screen is never trapped
+        // behind a native dialog. One-shot: it clears itself once the unload it was meant for has passed.
         suppressUnloadGuard: function () {
             suppressUnload = true;
             setTimeout(function () { suppressUnload = false; }, 4000);
@@ -197,6 +197,12 @@
     // NavigationLock in the case workspace; this covers the browser-level unload that guard can't see. It
     // only prompts when actually dirty (and never when suppressed for the idle-lock), so it's otherwise inert.
     let suppressUnload = false;
+    // BUG-369: other pages register their own beforeunload, e.g. Blazor's NavigationLock ConfirmExternalNavigation on
+    // Administration (blazor.web.js adds a plain window listener that always calls preventDefault). A capture-phase
+    // listener on window runs before every bubble-phase one there, so while a lock is under way it stops them all.
+    window.addEventListener('beforeunload', function (e) {
+        if (suppressUnload) e.stopImmediatePropagation();
+    }, { capture: true });
     window.addEventListener('beforeunload', function (e) {
         if (suppressUnload) return;
         let dirty = false;

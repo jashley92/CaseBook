@@ -28,7 +28,8 @@
 <PageTitle>Administration</PageTitle>
 
 @* Edits are kept while moving between settings sections (one page), but leaving for anywhere else drops
-   them, so ask first. The browser's own prompt covers refresh and tab close. *@
+   them, so ask first. The browser's own prompt covers refresh and tab close (a security lock stops it in
+   markdown-editor.js, BUG-369). *@
 <NavigationLock OnBeforeInternalNavigation="OnBeforeLeave" ConfirmExternalNavigation="@HasUnsavedChanges" />
 
 <PageHeader Title="@ActiveTitle"

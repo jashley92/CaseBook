@@ -7,7 +7,8 @@ namespace IncidentManager.Web.Security;
 /// The one way a circuit locks itself (F-15 idle lock, S-24 "Lock now"). A full-page load to the lock page
 /// tears the circuit down. BUG-327: both callers go through here so neither can forget to suppress the
 /// composer's unsaved-changes <c>beforeunload</c> prompt first (FR-05), which would otherwise hold the
-/// navigation at the browser's "Leave site?" dialog and leave the session open.
+/// navigation at the browser's "Leave site?" dialog and leave the session open. BUG-369: the suppression also stops
+/// every other page's <c>beforeunload</c>, including Blazor's own from <c>NavigationLock ConfirmExternalNavigation</c>.
 /// </summary>
 public static class SessionLock
 {
