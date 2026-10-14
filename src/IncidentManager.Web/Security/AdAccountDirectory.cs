@@ -39,6 +39,7 @@ public sealed class AdAccountDirectory : IAccountDirectory
     private readonly Dictionary<string, DateTimeOffset> _failedUntil = new(StringComparer.OrdinalIgnoreCase);
     private (HashSet<string>? Names, DateTimeOffset Until)? _trusted;
     private Task<HashSet<string>?>? _listing;
+    private int _listingGeneration;   // BUG-457: which listing is the current one
     private int _inFlight;
 
     /// <param name="query">The directory query for a name that may be asked (tests stand in for AD here).</param>
@@ -134,14 +135,32 @@ public sealed class AdAccountDirectory : IAccountDirectory
         lock (_gate)
         {
             if (_trusted is { } t && t.Until > _time.GetUtcNow()) return t.Names;
-            listing = _listing ??= Task.Factory.StartNew(ListTrusted, CancellationToken.None, TaskCreationOptions.LongRunning,
-                TaskScheduler.Default);
+            if (_listing is null)
+            {
+                var generation = ++_listingGeneration;
+                _listing = Task.Factory.StartNew(() => ListTrusted(generation), CancellationToken.None,
+                    TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            }
+            listing = _listing;
         }
         try { return await listing.WaitAsync(Timeout, _time, ct); }
-        catch (TimeoutException) { return null; }
+        catch (TimeoutException)
+        {
+            // BUG-457: a listing that hangs is given up on, as a failure, so the next lookup after BackOff starts a new one
+            // rather than waiting on this one for good.
+            lock (_gate)
+            {
+                if (ReferenceEquals(_listing, listing))
+                {
+                    _listing = null;
+                    _trusted = (null, _time.GetUtcNow() + BackOff);
+                }
+            }
+            return null;
+        }
     }
 
-    private HashSet<string>? ListTrusted()
+    private HashSet<string>? ListTrusted(int generation)
     {
         HashSet<string>? names = null;
         try
@@ -155,8 +174,10 @@ public sealed class AdAccountDirectory : IAccountDirectory
         }
         lock (_gate)
         {
-            _trusted = (names, _time.GetUtcNow() + (names is null ? BackOff : TrustedFor));
-            _listing = null;
+            // BUG-457: one given up on (a newer one has started since) only records a list it did get.
+            var current = generation == _listingGeneration;
+            if (current || names is not null) _trusted = (names, _time.GetUtcNow() + (names is null ? BackOff : TrustedFor));
+            if (current) _listing = null;
         }
         return names;
     }
@@ -181,7 +202,12 @@ public sealed class AdAccountDirectory : IAccountDirectory
     private static void Read(string path, string filter, string[] attributes, List<string> into)
     {
         using var root = new DirectoryEntry(path);
-        using var searcher = new DirectorySearcher(root, filter, attributes, SearchScope.OneLevel);
+        // BUG-457: bounded, so a domain controller that hangs ends the listing instead of holding its thread for good.
+        using var searcher = new DirectorySearcher(root, filter, attributes, SearchScope.OneLevel)
+        {
+            ClientTimeout = Timeout,
+            ServerTimeLimit = Timeout,
+        };
         using var results = searcher.FindAll();
         foreach (SearchResult r in results)
             foreach (var a in attributes)

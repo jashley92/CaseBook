@@ -112,9 +112,35 @@ public sealed class AdAccountDirectoryTests
         again.Outcome.Should().Be(DirectoryLookupOutcome.NotFound, "the blocked lookups finished and freed their places");
     }
 
+    [Fact]
+    public async Task A_listing_that_hangs_is_given_up_on_and_tried_again_after_the_back_off(/* BUG-457 */)
+    {
+        using var release = new ManualResetEventSlim();
+        var time = new ManualTime { FastTimers = true };   // the 10 s timeout passes in a moment
+        var listings = 0;
+        var directory = new AdAccountDirectory(query: _ => DirectoryLookup.NotFound, time: time, trustedDomains: () =>
+        {
+            if (Interlocked.Increment(ref listings) == 1) release.Wait(TimeSpan.FromSeconds(30));   // the DC hangs
+            return ["CORP"];
+        });
+
+        (await directory.LookupAsync("CORP\\a")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable);
+        (await directory.LookupAsync("CORP\\b")).Outcome.Should().Be(DirectoryLookupOutcome.Unavailable, "backing off");
+        listings.Should().Be(1);
+
+        time.Now += AdAccountDirectory.BackOff + TimeSpan.FromSeconds(1);
+        (await directory.LookupAsync("CORP\\c")).Outcome.Should().Be(DirectoryLookupOutcome.NotFound, "a new listing was made");
+        listings.Should().Be(2);
+        release.Set();
+    }
+
     private sealed class ManualTime : TimeProvider
     {
         public DateTimeOffset Now { get; set; } = new(2026, 10, 14, 12, 0, 0, TimeSpan.Zero);
+        public bool FastTimers { get; init; }
         public override DateTimeOffset GetUtcNow() => Now;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period) =>
+            base.CreateTimer(callback, state, FastTimers && dueTime > TimeSpan.Zero ? TimeSpan.FromMilliseconds(50) : dueTime, period);
     }
 }
