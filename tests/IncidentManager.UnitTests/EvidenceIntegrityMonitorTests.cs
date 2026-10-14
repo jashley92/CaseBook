@@ -19,6 +19,20 @@ public class EvidenceIntegrityMonitorTests
     private static EvidenceVerificationResult Drift(int checkedCount = 3) => new(checkedCount, new[] { D(Shot) }, T0);
 
     [Fact]
+    public void Each_recorded_result_raises_changed_after_current_is_set_and_a_throwing_listener_is_ignored(/* BUG-332 */)
+    {
+        var m = new EvidenceIntegrityMonitor();
+        var seen = new List<bool?>();
+        m.Changed += () => throw new InvalidOperationException("a circuit that's gone");
+        m.Changed += () => seen.Add(m.Current?.IsClean);
+
+        m.RecordResult(Drift(), T0).Should().BeTrue("a listener's failure doesn't reach the verifier or change the alert");
+        m.RecordResult(Clean(), T0.AddHours(24)).Should().BeFalse();
+
+        seen.Should().Equal(false, true);
+    }
+
+    [Fact]
     public void A_new_drift_alerts_even_while_an_older_one_persists(/* REV-09 */)
     {
         var m = new EvidenceIntegrityMonitor();

@@ -26,6 +26,10 @@ public interface IEvidenceIntegrityMonitor
     /// (i.e. the result holds a drift that the previous result didn't).
     /// </summary>
     bool RecordResult(EvidenceVerificationResult result, DateTimeOffset whenUtc);
+
+    /// <summary>BUG-332: raised after each recorded result, so an open banner shows new drift, or hides cleared drift,
+    /// without a reload. Raised outside the monitor's lock; a listener that throws is ignored.</summary>
+    event Action? Changed;
 }
 
 /// <inheritdoc />
@@ -40,7 +44,16 @@ public sealed class EvidenceIntegrityMonitor : IEvidenceIntegrityMonitor
         get { lock (_gate) return _current; }
     }
 
+    public event Action? Changed;
+
     public bool RecordResult(EvidenceVerificationResult result, DateTimeOffset whenUtc)
+    {
+        var alert = Record(result, whenUtc);
+        MonitorEvents.Raise(Changed);   // BUG-332
+        return alert;
+    }
+
+    private bool Record(EvidenceVerificationResult result, DateTimeOffset whenUtc)
     {
         lock (_gate)
         {

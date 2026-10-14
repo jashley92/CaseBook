@@ -12,6 +12,20 @@ public class IntegrityMonitorTests
     private static ChainVerificationResult Broken => ChainVerificationResult.Broken(7, "hash mismatch");
 
     [Fact]
+    public void Each_recorded_result_raises_changed_after_current_is_set_and_a_throwing_listener_is_ignored(/* BUG-332 */)
+    {
+        var m = new IntegrityMonitor();
+        var seen = new List<bool?>();
+        m.Changed += () => throw new InvalidOperationException("a circuit that's gone");
+        m.Changed += () => seen.Add(m.Current?.IsValid);
+
+        m.RecordResult(Broken, T0).Should().BeTrue("a listener's failure doesn't reach the verifier or change the alert");
+        m.RecordResult(Valid, T0.AddMinutes(5)).Should().BeFalse();
+
+        seen.Should().Equal(false, true);
+    }
+
+    [Fact]
     public void A_valid_result_never_alerts_and_records_current()
     {
         var m = new IntegrityMonitor();
