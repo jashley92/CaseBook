@@ -555,6 +555,9 @@ else
     private string _enValue = "";
     private string? _enLabel;
     private EntityDisposition _enDisposition = EntityDisposition.Suspicious;
+    // BUG-484: the add form's verdict before an edit loaded an entity's. The next add used the edited one's (Malicious,
+    // say), and WF-29 raised a matched Unknown entity to it without a reason.
+    private EntityDisposition _enAddDisposition = EntityDisposition.Suspicious;
     private TlpLevel? _enTlp;   // PROD-45
     private TlpLevel? _enTlpAtOpen;   // BUG-234: what the editor showed, so a colleague's later marking isn't written back
     private string? _enStamp;         // BUG-234: the entity's row hash when the editor opened
@@ -881,6 +884,7 @@ else
     // Load an existing IOC into the composer to correct it in place.
     private void StartEntityEdit(CaseEntity e)
     {
+        if (_enEditId is null) _enAddDisposition = _enDisposition;   // BUG-484: switching edits keeps the one from before the first
         _entityError = null;
         _enEditId = e.Id;
         _enReason = null;
@@ -902,6 +906,7 @@ else
         if (_enEditId is { } was) _bringIntoView = ("imMotion.scrollToId", RowId(was));   // BUG-410: back to the row
         _enEditId = null; _enReason = null; _entityError = null; _enTypePicked = false; _enDeterminedWall = null;
         _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null; _enTlp = null;
+        _enDisposition = _enAddDisposition;   // BUG-484
     }
 
     private async Task SaveEntityEdit()
