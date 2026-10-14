@@ -81,7 +81,9 @@ public sealed class WordTemplateEngine : IReportTemplateEngine
                 }
             }
         }
-        catch (Exception e) when (e is OpenXmlPackageException or InvalidDataException or FileFormatException or IOException)
+        // BUG-360: and a part whose XML is malformed (XmlException), which killed the admin's circuit and a config import.
+        catch (Exception e) when (e is OpenXmlPackageException or InvalidDataException or FileFormatException or IOException
+                                   or System.Xml.XmlException)
         {
             return new TemplateCheck(["It isn't a readable Word document (.docx)."], []);
         }

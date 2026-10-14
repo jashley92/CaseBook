@@ -226,6 +226,25 @@ public class WordTemplateEngineTests
     }
 
     [Fact]
+    public void A_document_whose_xml_is_truncated_is_reported_not_thrown(/* BUG-360 */)
+    {
+        var docx = Doc(["{{case.number}} {{report.tlp}}"]);
+        using var ms = new MemoryStream();
+        ms.Write(docx);
+        using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var entry = zip.GetEntry("word/document.xml")!;
+            string xml;
+            using (var r = new StreamReader(entry.Open())) xml = r.ReadToEnd();
+            entry.Delete();
+            using var w = new StreamWriter(zip.CreateEntry("word/document.xml").Open());
+            w.Write(xml[..(xml.Length / 2)]);
+        }
+
+        _engine.Check(ms.ToArray()).Problems.Should().ContainSingle(p => p.Contains("readable Word document"));
+    }
+
+    [Fact]
     public void Non_word_files_and_fieldless_documents_are_rejected()
     {
         _engine.Check("not a docx"u8.ToArray()).Problems.Should().ContainSingle(p => p.Contains("readable Word document"));
