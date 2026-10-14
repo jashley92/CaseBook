@@ -16,6 +16,7 @@ public enum SettingKind
 /// <param name="BlankIsOff">BUG-192: a value saved blank means none (an SLA target that's off), so it hides the
 /// appsettings.json default instead of falling back to it. Only for settings read as raw strings: a bound int can't
 /// take an empty value.</param>
+/// <param name="EmailAddress">BUG-468: a single sender address, never blank; a display-name form is allowed.</param>
 public sealed record SettingDefinition(
     string Key,
     string Label,
@@ -30,7 +31,8 @@ public sealed record SettingDefinition(
     bool BlankIsOff = false,
     bool EmailList = false,
     bool LinkTemplate = false,
-    bool AbsoluteUrl = false);
+    bool AbsoluteUrl = false,
+    bool EmailAddress = false);
 
 /// <summary>One allowed value of a fixed-choice text setting, shown as a dropdown instead of a free-text box.</summary>
 public sealed record SettingOption(string Value, string Label);
@@ -83,7 +85,8 @@ public static class SettingsCatalog
         new SettingDefinition("Email:Enabled", "Send email", "Notifications", SettingKind.Bool,
             "When off, notifications are logged, not delivered.", "false"),
         new SettingDefinition("Email:From", "From address", "Notifications", SettingKind.Text,
-            "Envelope-from address for outbound notifications.", "incident-manager@localhost"),
+            "Envelope-from address for outbound notifications, for example casebook@contoso.com or CaseBook <casebook@contoso.com>.",
+            "incident-manager@localhost", EmailAddress: true),
         new SettingDefinition("Email:LegalDistribution", "Legal / Privacy distribution", "Notifications", SettingKind.MultiText,
             "Emailed when a case is escalated to Breach. One address per line (a pasted \"a@x; b@x\" list is split).", "",
             EmailList: true),
@@ -312,7 +315,8 @@ public static class SettingsCatalog
     public static IReadOnlyList<(SettingDefinition Definition, string Value, string Problem)> FindInvalid(Func<string, string?> read) =>
         Editable
             .Select(d => (Definition: d, Value: read(d.Key)))
-            .Where(x => !string.IsNullOrWhiteSpace(x.Value))
+            // BUG-468: a blank sender address isn't "the default applies"; it's what every send would use, and fails.
+            .Where(x => !string.IsNullOrWhiteSpace(x.Value) || (x.Value is not null && x.Definition.EmailAddress))
             .Select(x => (x.Definition, Value: x.Value!, Problem: Problem(x.Definition, x.Value)))
             .Where(x => x.Problem is not null)
             .Select(x => (x.Definition, x.Value, x.Problem!))
@@ -337,6 +341,16 @@ public static class SettingsCatalog
             if (!System.Net.Mail.MailAddress.TryCreate(a, out var parsed) || !string.Equals(parsed.Address, a, StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException($"{def.Label}: \"{a}\" isn't an email address. Put one address per line, like legal@contoso.com.");
         return addresses.Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string? SenderProblem(string? v)
+    {
+        if (string.IsNullOrEmpty(v))
+            return "enter an address, like casebook@contoso.com. Use Reset to go back to the default.";
+        // "a@x; b@x" parses as one address (b@x) named "a@x;", so a pasted list is refused rather than half-used.
+        if (!System.Net.Mail.MailAddress.TryCreate(v, out var parsed) || parsed.DisplayName.Contains('@'))
+            return $"\"{v}\" isn't one email address. Use one address, like casebook@contoso.com or CaseBook <casebook@contoso.com>.";
+        return null;
     }
 
     public static string? Normalize(SettingDefinition def, string? value)
@@ -368,6 +382,9 @@ public static class SettingsCatalog
                 // BUG-264: a link template is a full http(s) address with {0} in it; the base URL a full http(s) address.
                 if (def.LinkTemplate && Content.LinkTemplate.Problem(v) is { } problem)
                     throw new ArgumentException($"{def.Label}: {problem}");
+                // BUG-468: every email is sent from this address, so one that doesn't parse stops all of them, Legal's included.
+                if (def.EmailAddress && SenderProblem(v) is { } sender)
+                    throw new ArgumentException($"{def.Label}: {sender}");
                 if (def.AbsoluteUrl && !string.IsNullOrEmpty(v)
                     && !(Uri.TryCreate(v, UriKind.Absolute, out var url) && (url.Scheme == Uri.UriSchemeHttps || url.Scheme == Uri.UriSchemeHttp)))
                     throw new ArgumentException($"{def.Label}: use a full http:// or https:// address, like https://casebook.contoso.com.");

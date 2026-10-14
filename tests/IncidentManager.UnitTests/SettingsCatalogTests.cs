@@ -17,6 +17,34 @@ public class SettingsCatalogTests
         SettingsCatalog.Problem(SettingsCatalog.ByKey["Email:IntegrityAlertDistribution"], "soc@corp.com").Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("casebook@corp.com")]
+    [InlineData("  casebook@corp.com ")]
+    [InlineData("CaseBook <casebook@corp.com>")]
+    [InlineData("incident-manager@localhost")]
+    public void The_sender_address_takes_one_address_with_or_without_a_name(string value /* BUG-468 */)
+    {
+        var from = SettingsCatalog.ByKey["Email:From"];
+        SettingsCatalog.Problem(from, value).Should().BeNull();
+        System.Net.Mail.MailAddress.TryCreate(SettingsCatalog.Normalize(from, value), out _).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("CaseBook")]
+    [InlineData("casebook@")]
+    [InlineData("a@corp.com; b@corp.com")]
+    [InlineData("a@corp.com, b@corp.com")]
+    public void The_sender_address_refuses_a_value_every_send_would_fail_on(string value /* BUG-468 */)
+    {
+        var from = SettingsCatalog.ByKey["Email:From"];
+        SettingsCatalog.Problem(from, value).Should().StartWith("From address:");
+        // A stored blank sender is what every send would use, so it's reported rather than skipped as "default applies".
+        SettingsCatalog.FindInvalid(k => k == "Email:From" ? value : null)
+            .Select(i => i.Definition.Key).Should().Equal("Email:From");
+    }
+
     private static SettingDefinition Def(SettingKind kind) =>
         new("Test:Key", "Test", "Group", kind, "desc");
 

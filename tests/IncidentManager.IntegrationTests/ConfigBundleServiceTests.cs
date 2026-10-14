@@ -184,6 +184,28 @@ public sealed class ConfigBundleServiceTests : IDisposable
             .Should().BeFalse("nothing from a rejected bundle is written");
     }
 
+    // BUG-468: every email is sent from Email:From, so a bundle can't bring one that doesn't parse (or a blank one).
+    [Theory]
+    [InlineData("CaseBook")]
+    [InlineData("")]
+    public async Task A_bundle_with_a_sender_address_no_email_could_be_sent_from_is_rejected(string from)
+    {
+        await using var db = NewContext();
+        await SeedConfigAsync(db);
+        var svc = NewService(db);
+        var live = await svc.BuildBundleAsync();
+        var bad = live with
+        {
+            Settings = live.Settings.Where(s => s.Key != "Email:From").Append(new ConfigSetting("Email:From", from)).ToList(),
+        };
+
+        var preview = () => svc.PreviewAsync(bad);
+        (await preview.Should().ThrowAsync<ArgumentException>()).Which.Message.Should().Contain("From address");
+        var import = () => svc.ImportAsync(Signed(bad));
+        await import.Should().ThrowAsync<ArgumentException>();
+        (await db.AppSettings.AsNoTracking().AnyAsync(s => s.Key == "Email:From")).Should().BeFalse();
+    }
+
     [Fact]
     public async Task A_bundle_that_would_remove_the_last_administrator_access_is_refused()
     {

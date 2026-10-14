@@ -239,7 +239,7 @@ IP-allow-listed relay.
 | `Email:SmtpHost` | Relay host | blank; installer `-SmtpHost` | Server | ⚠ |
 | `Email:SmtpPort` | Relay port | `25` | Server | |
 | `Email:EnableSsl` | STARTTLS | `true` | Server | |
-| `Email:From` | Sender address. A blank installer mail domain produces `casebook@`, which fails once email is on. | `incident-manager@localhost`; template `casebook@<domain>` | App | |
+| `Email:From` | Sender address: one address, optionally with a name (`CaseBook <casebook@contoso.com>`). The settings page and a config-bundle import refuse a blank value, a name alone or a list; a bad value in the file (a blank installer mail domain produces `casebook@`, which fails every send once email is on) is flagged by the "Settings within limits" health check in Administration. | `incident-manager@localhost`; template `casebook@<domain>` | App | |
 | `Email:LegalDistribution` | Who is emailed when a case escalates to Breach | empty | App | ⚠ |
 | `Email:IntegrityAlertDistribution` | Who receives audit-chain and evidence-drift alarms | empty | App | ⚠ |
 | `Email:AssignmentNotifications` | Email people when they're assigned | `false` | App | |
