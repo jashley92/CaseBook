@@ -22,15 +22,29 @@ public static class BriefFreshness
     /// WF-30: when the brief was last brought up to date: the version written or confirmed, stepping back over versions
     /// CaseBook appended on its own (a Then line, a task's "add to Known"), which aren't a review of where the case stands.
     /// </summary>
-    public static DateTimeOffset Baseline(Case c, CaseBrief brief)
+    public static DateTimeOffset Baseline(Case c, CaseBrief brief) => Baseline(c.Briefs, brief);
+
+    /// <summary>BUG-407: <see cref="Baseline(Case, CaseBrief)"/> from the case's brief versions, for a reader without the case.</summary>
+    public static DateTimeOffset Baseline(IEnumerable<CaseBrief> versions, CaseBrief brief)
     {
         var b = brief;
         for (var guard = 0; b.Appended && b.ConfirmedAtUtc is null && b.SupersedesBriefId is { } prev && guard < 1000; guard++)
         {
-            if (c.Briefs.FirstOrDefault(x => x.Id == prev) is not { } earlier) break;
+            if (versions.FirstOrDefault(x => x.Id == prev) is not { } earlier) break;
             b = earlier;
         }
         return b.CurrentAsOfUtc;
+    }
+
+    /// <summary>
+    /// BUG-301: when an entry was first recorded: its first version's time, so an old entry edited since (an edit is a new
+    /// version, dated now) isn't new. <paramref name="byId"/> holds the case's entry versions.
+    /// </summary>
+    public static DateTimeOffset FirstRecorded(TimelineEntry e, IReadOnlyDictionary<Guid, TimelineEntry> byId)
+    {
+        for (var guard = 0; e.SupersedesEntryId is { } prev && byId.TryGetValue(prev, out var earlier) && guard < 1000; guard++)
+            e = earlier;
+        return e.CreatedAtUtc;
     }
 
     public static Result Since(Case c, CaseBrief brief, MilestoneLabels labels)
@@ -40,12 +54,7 @@ public static class BriefFreshness
         // BUG-301: an entry recorded since, not an old one edited since (an edit is a new version, dated now): correcting a
         // typo in last week's decision said "A decision was recorded after this version."
         var byId = c.TimelineEntries.ToDictionary(e => e.Id);
-        DateTimeOffset FirstRecorded(TimelineEntry e)
-        {
-            for (var guard = 0; e.SupersedesEntryId is { } prev && byId.TryGetValue(prev, out var earlier) && guard < 1000; guard++)
-                e = earlier;
-            return e.CreatedAtUtc;
-        }
+        DateTimeOffset FirstRecorded(TimelineEntry e) => BriefFreshness.FirstRecorded(e, byId);
         var entries = c.TimelineEntries.Where(e => e.IsCurrent && FirstRecorded(e) > since).ToList();
         var milestones = CaseMilestones.Project(c, labels)
             .Where(m => m.Kind != MilestoneKind.Opened && (m.RecordedAtUtc ?? m.AtUtc) > since)

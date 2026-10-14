@@ -2,6 +2,7 @@ using IncidentManager.Application.Abstractions;
 using IncidentManager.Application.Cases;
 using IncidentManager.Application.Compliance;
 using IncidentManager.Application.Sla;
+using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
@@ -103,16 +104,28 @@ public sealed class NeedsActionService
         // Briefs behind the record: the latest decision, handoff, phase, classification or materiality change was
         // recorded after the current brief was written or last confirmed (what the case page prompts on).
         var openIds = open.Select(c => c.Id).ToList();
-        var briefs = await db.CaseBriefs.AsNoTracking().Where(b => b.IsCurrent && openIds.Contains(b.CaseId))
-            .Select(b => new { b.CaseId, b.Version, b.CreatedAtUtc, b.ConfirmedAtUtc }).ToListAsync(ct);
+        // BUG-407: judged as the case page's brief card judges it (BriefFreshness): from the version last written or confirmed,
+        // stepping back over versions CaseBook appended (WF-30), and an entry dated by when it was first recorded, so an
+        // edited decision isn't a new one (BUG-301). Every version of each, without their text.
+        var versions = (await db.CaseBriefs.AsNoTracking().Where(b => openIds.Contains(b.CaseId))
+                .Select(b => new CaseBrief { Id = b.Id, CaseId = b.CaseId, Version = b.Version, IsCurrent = b.IsCurrent,
+                    SupersedesBriefId = b.SupersedesBriefId, Appended = b.Appended, CreatedAtUtc = b.CreatedAtUtc,
+                    ConfirmedAtUtc = b.ConfirmedAtUtc })
+                .ToListAsync(ct))
+            .GroupBy(b => b.CaseId).ToDictionary(g => g.Key, g => g.ToList());
+        var briefs = versions.Values.SelectMany(v => v.Where(b => b.IsCurrent)).ToList();
         if (briefs.Count > 0)
         {
             var ids = briefs.Select(b => b.CaseId).ToList();
-            var changes = (await db.TimelineEntries.AsNoTracking()
-                    .Where(e => ids.Contains(e.CaseId) && e.IsCurrent
-                                && (e.Type == TimelineEntryType.Decision || e.Type == TimelineEntryType.Handoff))
-                    .Select(e => new { e.CaseId, At = e.CreatedAtUtc, e.Type }).ToListAsync(ct))
-                .Select(e => (e.CaseId, e.At, What: e.Type == TimelineEntryType.Decision ? "a decision" : "a handoff"))
+            var entries = (await db.TimelineEntries.AsNoTracking().Where(e => ids.Contains(e.CaseId))
+                    .Select(e => new TimelineEntry { Id = e.Id, CaseId = e.CaseId, Type = e.Type, IsCurrent = e.IsCurrent,
+                        SupersedesEntryId = e.SupersedesEntryId, CreatedAtUtc = e.CreatedAtUtc })
+                    .ToListAsync(ct))
+                .ToDictionary(e => e.Id);
+            var changes = entries.Values
+                .Where(e => e.IsCurrent && e.Type is TimelineEntryType.Decision or TimelineEntryType.Handoff)
+                .Select(e => (e.CaseId, At: BriefFreshness.FirstRecorded(e, entries),
+                    What: e.Type == TimelineEntryType.Decision ? "a decision" : "a handoff"))
                 .Concat((await db.StatusChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId))
                     .Select(x => new { x.CaseId, x.ChangedAtUtc }).ToListAsync(ct)).Select(x => (x.CaseId, At: x.ChangedAtUtc, What: "a phase change")))
                 .Concat((await db.ClassificationChanges.AsNoTracking().Where(x => ids.Contains(x.CaseId))
@@ -123,7 +136,7 @@ public sealed class NeedsActionService
             var numbers = open.ToDictionary(c => c.Id, c => c.CaseNumber);
             foreach (var b in briefs)
             {
-                var asOf = b.ConfirmedAtUtc is { } conf && conf > b.CreatedAtUtc ? conf : b.CreatedAtUtc;
+                var asOf = BriefFreshness.Baseline(versions[b.CaseId], b);
                 if (changes.TryGetValue(b.CaseId, out var latest) && latest.At > asOf)
                     items.Add(new(NeedsActionKind.Brief, b.CaseId, numbers[b.CaseId],
                         $"Brief v{b.Version} predates {latest.What}", latest.At, false));

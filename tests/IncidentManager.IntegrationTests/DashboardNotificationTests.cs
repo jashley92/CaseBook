@@ -120,6 +120,45 @@ public sealed class DashboardNotificationTests : IDisposable
     }
 
     [Fact]
+    public async Task Needs_action_judges_a_brief_as_the_case_page_does(/* BUG-407 */)
+    {
+        var now = _clock.UtcNow;
+        var edited = Case.Open(2026, 70, "Edited", "Edited decision", Classification.Incident, Severity.Low,
+            CaseOrigin.InternalDetection, "a", now.AddDays(-3));
+        var appended = Case.Open(2026, 71, "Appended", "Appended brief", Classification.Incident, Severity.Low,
+            CaseOrigin.InternalDetection, "a", now.AddDays(-3));
+        await SeedAsync(edited, appended);
+        await using (var db = NewContext())
+        {
+            // A decision recorded before the brief, its typo corrected after it: not a new decision (BUG-301).
+            var v1 = new TimelineEntry { CaseId = edited.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Decision,
+                OccurredAtUtc = now.AddDays(-2), Description = "Isolte the host", CreatedBy = "a", CreatedAtUtc = now.AddDays(-2),
+                IsCurrent = false };
+            db.TimelineEntries.Add(v1);
+            db.TimelineEntries.Add(new TimelineEntry { CaseId = edited.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Decision,
+                OccurredAtUtc = now.AddDays(-2), Description = "Isolate the host", CreatedBy = "a", CreatedAtUtc = now.AddHours(-1),
+                Version = 2, SupersedesEntryId = v1.Id });
+            db.CaseBriefs.Add(new CaseBrief { CaseId = edited.Id, Summary = "s", CreatedBy = "a", CreatedAtUtc = now.AddDays(-1) });
+
+            // A decision after the brief, then a version CaseBook appended on its own (WF-30): still behind the decision.
+            var b1 = new CaseBrief { CaseId = appended.Id, Summary = "s", CreatedBy = "a", CreatedAtUtc = now.AddDays(-2), IsCurrent = false };
+            db.CaseBriefs.Add(b1);
+            db.TimelineEntries.Add(new TimelineEntry { CaseId = appended.Id, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Decision,
+                OccurredAtUtc = now.AddDays(-1), Description = "Reset the creds", CreatedBy = "a", CreatedAtUtc = now.AddDays(-1) });
+            db.CaseBriefs.Add(new CaseBrief { CaseId = appended.Id, Summary = "s", Known = "- Host isolated", Version = 2,
+                SupersedesBriefId = b1.Id, Appended = true, CreatedBy = "a", CreatedAtUtc = now.AddHours(-2) });
+            await db.SaveChangesAsync();
+        }
+        var f = NewFactory();
+
+        var na = await new NeedsActionService(f, _user, _clock, new TestSlaTargets(), _settings,
+            new NotificationRuleService(f, _user, _clock)).GetAsync();
+
+        na.Items.Where(i => i.Kind == NeedsActionKind.Brief).Should().ContainSingle()
+            .Which.Should().Match<NeedsActionItem>(i => i.CaseId == appended.Id && i.What == "Brief v2 predates a decision");
+    }
+
+    [Fact]
     public async Task Needs_action_leaves_out_overdue_tasks_on_closed_cases(/* BUG-163 */)
     {
         var now = _clock.UtcNow;
