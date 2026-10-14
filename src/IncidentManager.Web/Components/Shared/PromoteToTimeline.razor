@@ -24,7 +24,7 @@
         </div>
         <div class="col-md-5">
             <label class="form-label small mb-0" for="@($"promote-when-{_id}")">Occurred (@TimeDisp.Label)</label>
-            <input id="@($"promote-when-{_id}")" type="datetime-local" class="form-control form-control-sm" @bind="_when" />
+            <DateTimeInput id="@($"promote-when-{_id}")" class="form-control form-control-sm" @bind-Value="_when" />
             <div class="tl-nudges" role="group" aria-label="Adjust the time">
                 <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = ToWall(Clock.UtcNow)">Now</button>
                 <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _when = _when.AddHours(-1)" aria-label="One hour earlier">&minus;1 h</button>

@@ -282,8 +282,8 @@
                                             else if (CanEdit && _noticeFor == s.JurisdictionCode)
                                             {
                                                 <div class="d-flex align-items-center gap-1 flex-wrap">
-                                                    <input type="datetime-local" class="form-control form-control-sm" style="max-width: 13rem" @bind="_noticeAt"
-                                                           aria-label="When @s.JurisdictionLabel was notified (@TimeDisp.Label)" />
+                                                    <DateTimeInput class="form-control form-control-sm" style="max-width: 13rem" @bind-Value="_noticeAt"
+                                                           aria-label="@($"When {s.JurisdictionLabel} was notified ({TimeDisp.Label})")" />
                                                     <button class="btn btn-sm btn-primary" @onclick="() => SaveNotice(s.JurisdictionCode)">Save</button>
                                                     <button class="btn btn-sm btn-outline-secondary" @onclick="() => _noticeFor = null">Cancel</button>
                                                 </div>
@@ -313,7 +313,7 @@
                                 <div class="d-flex align-items-end gap-2 flex-wrap">
                                     <div>
                                         <label class="form-label small mb-0" for="ov-reported-at">@(_deadlines.Statuses.Count > 1 ? "Every regulator not yet recorded was notified at" : "Reported at") (@TimeDisp.Label)</label>
-                                        <input id="ov-reported-at" type="datetime-local" class="form-control form-control-sm" @bind="_reportedAt"
+                                        <DateTimeInput id="ov-reported-at" class="form-control form-control-sm" @bind-Value="_reportedAt"
                                                title="When regulators were notified. Saving this stops the notification countdown." />
                                     </div>
                                     <button class="btn btn-sm btn-primary" @onclick="MarkReported">Save</button>
@@ -398,12 +398,12 @@
                     <div class="row g-2 mb-2">
                         <div class="col-sm-6">
                             <label class="form-label small mb-0" for="ov-detected">Detected (@TimeDisp.Label)</label>
-                            <input id="ov-detected" type="datetime-local" class="form-control form-control-sm" @bind="_edDetected"
+                            <DateTimeInput id="ov-detected" class="form-control form-control-sm" @bind-Value="_edDetected"
                                    title="When this was first detected or reported, not when the case was opened. Starts the response SLA clock." />
                         </div>
                         <div class="col-sm-6">
                             <label class="form-label small mb-0" for="ov-occurred">Initial activity <span class="text-muted">(optional)</span></label>
-                            <input id="ov-occurred" type="datetime-local" class="form-control form-control-sm" @bind="_edOccurred"
+                            <DateTimeInput id="ov-occurred" class="form-control form-control-sm" @bind-Value="_edOccurred"
                                    title="When adversary activity began (initial access), if known. Used to calculate dwell time." />
                         </div>
                     </div>

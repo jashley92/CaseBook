@@ -104,7 +104,7 @@
                         }
                     </select>
                 }
-                <textarea id="@($"brief-{part.Key}")" class="form-control form-control-sm" rows="@part.Rows" maxlength="@CaseBrief.MaxPartLength"
+                <textarea id="@($"brief-{part.Key}")" data-tag-box data-list-box class="form-control form-control-sm" rows="@part.Rows" maxlength="@CaseBrief.MaxPartLength"
                           value="@_draft[part.Key]" @oninput="e => _draft[part.Key] = e.Value?.ToString()"></textarea>
             </div>
         }

@@ -139,6 +139,8 @@ Use these rather than writing new ones. All are in `Components/Shared/`.
 | `PromoteToTimeline` | Put a note or task comment on the timeline |
 | `GateChecklist` | Stage-gate readiness |
 | `TimeNudges` | "Now / −1 h / −15 min / +15 min" buttons beside a time input |
+| `DateTimeInput` | Every date-and-time field: `@bind-Value` to a `DateTime` or `DateTime?`, to the minute. Don't `@bind` a `datetime-local` input directly: Blazor's write-back resets the segment being typed (BUG-408) |
+| `TagBoxSource` | Feeds the case's entities to `[[` autocomplete in plain boxes; mark a box with `data-tag-box` (and `data-list-box` for Markdown lists) |
 | `ComposerHint`, `WhyThisMatters` | One-line purpose hint under a composer; collapsed explainer on compliance screens |
 | `AttackMatrixPicker`, `AttackStepPicker`, `AttackTacticPicker` | MITRE ATT&CK selection |
 | `ReportPreview`, `RichBlocksView`, `StoredReportTable`, `ReportTemplateLibrary`, `ReportProfilesEditor` | Report preview, stored reports, admin report setup |
@@ -197,7 +199,9 @@ Scripts are plain files in `wwwroot/js` (the content-security policy forbids inl
 | `theme-init.js` | Applies theme, sidebar and density before first paint | `App.razor` `<head>` |
 | `theme.js` | Theme, density and sidebar toggles; reports changes to the server | Account menu, nav |
 | `time.js` | Display time zone and clock preference | `TimeDisplay`, account menu |
-| `markdown-editor.js` | Wraps EasyMDE: value sync, `@` mentions, `[[` entity tags, dirty tracking | Notes, timeline, review, overview editors |
+| `markdown-editor.js` | Wraps EasyMDE: value sync, `@` mentions, `[[` entity tags, indent/outdent buttons, dirty tracking | Notes, timeline, review, overview editors |
+| `date-field.js` | Date-and-time inputs that keep what's being typed: reports changes, and writes a value only when the field doesn't already show it (BUG-408) | `DateTimeInput` (every date-time field) |
+| `text-box.js` | Plain text boxes: `[[` entity autocomplete on `data-tag-box`, and list editing (Enter continues, Tab/Shift+Tab nest) on `data-list-box` | `TagBoxSource` (case workspace); timeline, brief, tasks, close-out boxes |
 | `entity-graph.js` | vis-network relationship graph; reports dragged positions | Entities tab |
 | `keymap.js` | The one keyboard dispatcher (RD-24): the user's keymap from `Application/Preferences/Keymap.cs` (`imKeymap.configure`), global commands to `CommandPalette`, case commands to `CaseWorkspace` (`registerCase`). Single keys never fire while typing and can all be switched off; `Ctrl+K`, `Esc` and `Ctrl+Enter` are fixed | `CommandPalette`, `CaseWorkspace` |
 | `modal-a11y.js` | Focus trap and focus return for dialogs | Workspace and admin dialogs |

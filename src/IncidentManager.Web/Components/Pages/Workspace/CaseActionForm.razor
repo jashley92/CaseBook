@@ -244,7 +244,7 @@
         @if (D.MaterialityIsFinal)
         {
             <label class="form-label small mb-0" for="ws-mat-date">When it was decided (@TimeDisp.Label) <span class="text-muted">(required)</span></label>
-            <input id="ws-mat-date" type="datetime-local" class="form-control" @bind="D.MaterialityDecidedOn"
+            <DateTimeInput id="ws-mat-date" class="form-control" @bind-Value="D.MaterialityDecidedOn"
                    min="@(Case.DetectedAtUtc is { } det ? TimeZoneInfo.ConvertTime(det, TimeDisp.Zone).ToString("yyyy-MM-ddTHH:mm", System.Globalization.CultureInfo.InvariantCulture) : null)" />
             @if (Case.DetectedAtUtc is { } detectedAt)
             {
@@ -473,7 +473,7 @@
                 </div>
                 @if (D.WasContained == true)
                 {
-                    <input type="datetime-local" class="form-control form-control-sm mb-1" aria-label="When it was contained" @bind="D.ContainedAt" @bind:event="oninput" />
+                    <DateTimeInput class="form-control form-control-sm mb-1" aria-label="When it was contained" @bind-Value="D.ContainedAt" />
                 }
                 <div class="form-check">
                     <input class="form-check-input" type="radio" name="@($"{p}-contained")" id="@($"{p}-contained-no")" checked="@(D.WasContained == false)"
@@ -493,7 +493,7 @@
         {
             @* BUG-208: going past Recovery without it says when it was resolved. *@
             <label class="form-label small mt-2" for="@($"{p}-resolved-at")">When it was resolved <span class="text-muted">(required)</span></label>
-            <input id="@($"{p}-resolved-at")" type="datetime-local" class="form-control form-control-sm" @bind="D.ResolvedAt" @bind:event="oninput" />
+            <DateTimeInput id="@($"{p}-resolved-at")" class="form-control form-control-sm" @bind-Value="D.ResolvedAt" />
             <div class="form-text">This case hasn't been through Recovery. Say when it was resolved, so the resolution SLA stops at the
                 right time.</div>
         }

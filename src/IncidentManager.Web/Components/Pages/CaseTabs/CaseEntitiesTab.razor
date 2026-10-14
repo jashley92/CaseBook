@@ -817,10 +817,12 @@ else
         _enTlp = e.Tlp;
         _enTlpAtOpen = e.Tlp;
         _enStamp = e.RowHash ?? "";
+        _bringIntoView = ("imMotion.focusId", "ent-value");   // BUG-410
     }
 
     private void CancelEntityEdit()
     {
+        if (_enEditId is { } was) _bringIntoView = ("imMotion.scrollToId", RowId(was));   // BUG-410: back to the row
         _enEditId = null; _enReason = null; _entityError = null;
         _enValue = ""; _enLabel = null; _enDescription = null; _enSource = null; _enTlp = null;
     }
@@ -1006,6 +1008,7 @@ else
             .Select(e => $"{e.Id:N}:{e.ActorEntityId:N}>{e.TargetEntityId:N}")));
 
     private Guid? _focusHandled;
+    private (string Fn, string Id)? _bringIntoView;
     /// <summary>Stable DOM id for an entity row, so an entity tag chip can deep-link straight to it.</summary>
     private static string RowId(Guid id) => $"ent-{id:N}";
 
@@ -1016,6 +1019,14 @@ else
         {
             _focusHandled = fid;
             try { await JS.InvokeVoidAsync("imMotion.scrollToId", RowId(fid)); } catch (JSException) { /* motion is optional */ }
+        }
+        // BUG-410: Edit loads the row into the form at the top of the tab, so take the user there (and back to the
+        // row when the edit ends).
+        if (_bringIntoView is { } target)
+        {
+            _bringIntoView = null;
+            var (fn, id) = target;
+            try { await JS.InvokeVoidAsync(fn, id); } catch (JSException) { /* motion is optional */ }
         }
 
         // The graph container only exists when there are entities to draw.

@@ -339,7 +339,7 @@ else
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label small mb-0" for="task-done-when">Completed at (@TimeDisp.Label)</label>
-                                    <input id="task-done-when" type="datetime-local" class="form-control form-control-sm" @bind="_doneWhen" />
+                                    <DateTimeInput id="task-done-when" class="form-control form-control-sm" @bind-Value="_doneWhen" />
                                     <div class="tl-nudges" role="group" aria-label="Adjust the time">
                                         <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = ToWall(Clock.UtcNow)">Now</button>
                                         <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _doneWhen = _doneWhen.AddHours(-1)" aria-label="One hour earlier">&minus;1 h</button>
@@ -369,7 +369,7 @@ else
                                     </div>
                                     @if (_doneKnown)
                                     {
-                                        <input class="form-control form-control-sm im-rec" maxlength="2000" aria-label="Line for Known" @bind="_doneKnownLine" @bind:event="oninput"
+                                        <input class="form-control form-control-sm im-rec" maxlength="2000" aria-label="Line for Known" data-tag-box @bind="_doneKnownLine" @bind:event="oninput"
                                                placeholder="What this establishes, in a line" />
                                         <div class="small text-muted mt-1">Saved with the task as a new version of the brief.</div>
                                     }

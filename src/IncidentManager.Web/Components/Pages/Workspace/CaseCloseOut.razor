@@ -33,10 +33,10 @@
                 }
             </fieldset>
             <label class="form-label small mt-3" for="ws-close-summary">What happened <span class="text-muted">(required · the case summary, printed in the report)</span></label>
-            <textarea id="ws-close-summary" class="form-control im-rec mb-2" rows="5" maxlength="@CaseBrief.MaxPartLength"
+            <textarea id="ws-close-summary" data-tag-box data-list-box class="form-control im-rec mb-2" rows="5" maxlength="@CaseBrief.MaxPartLength"
                       @bind="Draft.Summary" @bind:event="oninput"></textarea>
             <label class="form-label small" for="ws-close-conclusion">Conclusion <span class="text-muted">(required · what the team concluded, and on what basis; was the working assessment)</span></label>
-            <textarea id="ws-close-conclusion" class="form-control im-rec mb-1" rows="4" maxlength="@CaseBrief.MaxPartLength"
+            <textarea id="ws-close-conclusion" data-tag-box data-list-box class="form-control im-rec mb-1" rows="4" maxlength="@CaseBrief.MaxPartLength"
                       placeholder="e.g. Account takeover with preparation for payment fraud. No other user affected; no payment made."
                       @bind="Draft.Conclusion" @bind:event="oninput"></textarea>
             <RationaleHint Gate="Draft.Transition.Gate" Text="@Draft.Conclusion" />

@@ -14,6 +14,11 @@
             '|',
             { name: 'ul', action: EasyMDE.toggleUnorderedList, className: 'bi bi-list-ul', title: 'Bulleted list' },
             { name: 'ol', action: EasyMDE.toggleOrderedList, className: 'bi bi-list-ol', title: 'Numbered list' },
+            // BUG-412: sub-bullets. Tab / Shift+Tab do the same on a list line; the buttons say so.
+            { name: 'indent', className: 'bi bi-text-indent-left', title: 'Indent: make a sub-bullet (Tab)',
+              action: editor => { const cm = editor.codemirror; cm.execCommand('indentMore'); cm.focus(); } },
+            { name: 'outdent', className: 'bi bi-text-indent-right', title: 'Outdent (Shift+Tab)',
+              action: editor => { const cm = editor.codemirror; cm.execCommand('indentLess'); cm.focus(); } },
             { name: 'quote', action: EasyMDE.toggleBlockquote, className: 'bi bi-quote', title: 'Quote' },
             { name: 'code', action: EasyMDE.toggleCodeBlock, className: 'bi bi-code-slash', title: 'Code' },
             '|',

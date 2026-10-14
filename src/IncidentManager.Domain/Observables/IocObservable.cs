@@ -54,9 +54,13 @@ public static partial class IocObservable
             return EntityType.IpAddress;
         // MD5 / SHA-1 / SHA-256 are fixed-length hex strings.
         if (v.Length is 32 or 40 or 64 && HexRx().IsMatch(v)) return EntityType.FileHash;
+        // BUG-416: a registry path (HKLM\…, HKEY_CURRENT_USER\…) before anything else with a backslash.
+        if (RegistryRx().IsMatch(v)) return EntityType.RegistryKey;
         // BUG-124: svchost.exe and invoice.docm have the shape of a domain; a common file extension reads as a file
         // name. The analyst can still pick Domain for the rare real one (a .zip domain, say).
         if (HasFileExtension(v)) return EntityType.FileName;
+        // BUG-416: DOMAIN\sAMAccountName (or .\name for a local account) is an account. A file in a folder was taken above.
+        if (DownLevelLogonRx().IsMatch(v)) return EntityType.Account;
         if (DomainRx().IsMatch(v)) return EntityType.Domain;
         return EntityType.Other;
     }
@@ -79,6 +83,14 @@ public static partial class IocObservable
         var dot = v.LastIndexOf('.');
         return dot > 0 && dot < v.Length - 1 && v.IndexOfAny(['/', ':', '@']) < 0 && FileExtensions.Contains(v[(dot + 1)..]);
     }
+
+    // Down-level logon name: a NetBIOS or DNS domain (or "." for the local machine), one backslash, and a sAMAccountName
+    // (at most 20 characters, none of the characters Windows forbids in one).
+    [GeneratedRegex(@"^(?:\.|[A-Za-z0-9][A-Za-z0-9.\-]{0,62})\\[^\\/\[\]:;|=,+*?<>""@\s]{1,20}$")]
+    private static partial Regex DownLevelLogonRx();
+
+    [GeneratedRegex(@"^(?:HKLM|HKCU|HKCR|HKU|HKCC|HKEY_[A-Z_]+)(?::)?\\", RegexOptions.IgnoreCase)]
+    private static partial Regex RegistryRx();
 
     /// <summary>
     /// BUG-176: one spelling per address, so the same one written two ways dedupes and matches across cases: IPv6 in its

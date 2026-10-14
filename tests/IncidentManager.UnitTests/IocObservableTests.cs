@@ -158,9 +158,18 @@ public class IocObservableTests
     [InlineData("evil.com.", EntityType.Domain)]
     [InlineData("-bad.com", EntityType.Other)]
     [InlineData("http://evil.com/a.exe", EntityType.Url)]
-    // Fallbacks: bare hostname, account, partial IP, odd-length hex.
+    // BUG-416: a down-level logon name is an account; a registry path is a registry key; a file in a folder stays a file.
+    [InlineData("CONTOSO\\jdoe", EntityType.Account)]
+    [InlineData("corp.example.com\\svc_backup", EntityType.Account)]
+    [InlineData(".\\Administrator", EntityType.Account)]
+    [InlineData("HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", EntityType.RegistryKey)]
+    [InlineData("HKEY_CURRENT_USER\\Software\\Evil", EntityType.RegistryKey)]
+    [InlineData("Temp\\payload.exe", EntityType.FileName)]
+    [InlineData("C:\\Users", EntityType.Other)]
+    [InlineData("CONTOSO\\a name with spaces", EntityType.Other)]
+    // Fallbacks: bare hostname, bare sAMAccountName (can't be told from a host), partial IP, odd-length hex.
     [InlineData("WKS-HR-14", EntityType.Other)]
-    [InlineData("CONTOSO\\jdoe", EntityType.Other)]
+    [InlineData("jdoe", EntityType.Other)]
     [InlineData("1.2.3", EntityType.Other)]
     [InlineData("abc123", EntityType.Other)]
     public void DetectType_classifies_common_indicators(string value, EntityType expected)

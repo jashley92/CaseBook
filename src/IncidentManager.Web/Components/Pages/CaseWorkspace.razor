@@ -124,6 +124,7 @@ else
        header, tab bar and other tabs stay usable) and recovers when you switch away and back, with no manual
        reset wiring. This sits inside the layout's page-level boundary, which catches anything outside a tab. *@
     <CaseParts Facts="Facts" OnSetTab="SetTab" />
+    <TagBoxSource Entities="_case.Entities" />
     <ErrorBoundary>
     <ChildContent>
     @if (_activeTab is "Briefing" or "Impact" or "Attack" or "Connections")

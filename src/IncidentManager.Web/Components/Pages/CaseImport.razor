@@ -324,9 +324,8 @@ else if (_pending.Count > 0)
                                     }
                                     else
                                     {
-                                        <input type="datetime-local" class="form-control form-control-sm" aria-label="When (UTC)"
-                                               value="@t.OccurredAtUtc.UtcDateTime.ToString("yyyy-MM-ddTHH:mm")"
-                                               @onchange="e => SetOccurred(t, e.Value?.ToString())" />
+                                        <DateTimeInput TValue="DateTime" class="form-control form-control-sm" aria-label="When (UTC)"
+                                                       Value="@t.OccurredAtUtc.UtcDateTime" ValueChanged="v => SetOccurred(t, v)" />
                                     }
                                     @if (t.Warning is not null) { <div class="form-text text-warning small">@t.Warning</div> }
                                 </td>
@@ -702,13 +701,10 @@ else if (_pending.Count > 0)
     private void SetClassification(CreateCaseRequest nc, string? raw)
         => nc.Classification = Enum.TryParse<Classification>(raw, out var c) ? c : null;
 
-    private void SetOccurred(ImportTimelineRow t, string? raw)
+    private void SetOccurred(ImportTimelineRow t, DateTime dt)
     {
-        if (DateTime.TryParse(raw, out var dt))
-        {
-            t.OccurredAtUtc = new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc), TimeSpan.Zero);
-            t.Warning = null; // a manual correction clears the auto-note (e.g. future/no-timestamp)
-        }
+        t.OccurredAtUtc = new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc), TimeSpan.Zero);
+        t.Warning = null; // a manual correction clears the auto-note (e.g. future/no-timestamp)
     }
 
     private void ClearExisting(CaseImportPreview p)

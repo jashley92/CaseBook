@@ -205,7 +205,7 @@
                             : "Editing this entry. Saving creates a new version and keeps the old one.")
                     </span>
                     <button type="button" class="btn btn-sm btn-link text-decoration-none p-0"
-                            @onclick="CancelTimelineEdit">Cancel</button>
+                            @onclick="CancelEditToRow">Cancel</button>
                 </div>
             }
             @if (_tlEditId is null)
@@ -226,7 +226,7 @@
             {
                 @* RD-07: a question goes on the brief's open questions (a new brief version), optionally followed up as a task. *@
                 <label class="form-label small mb-1" for="tl-question">What does the team still need to find out?</label>
-                <textarea id="tl-question" class="form-control form-control-sm im-rec" rows="2" maxlength="400" @bind="_question" @bind:event="oninput"
+                <textarea id="tl-question" data-tag-box class="form-control form-control-sm im-rec" rows="2" maxlength="400" @bind="_question" @bind:event="oninput"
                           aria-describedby="tl-oneline-hint" placeholder="e.g. Did the other two users' credentials get used?"></textarea>
                 @OneLineHint("the brief and as its task's title")
                 <div class="form-check small mt-2">
@@ -301,7 +301,7 @@
                     </div>
                     <div class="mt-2">
                         <label class="form-label small mb-1" for="tl-atk-desc">What the @(!IsThirdParty ? "adversary did" : _evtOurs ? "attacker did in our environment" : "attacker did at the vendor")</label>
-                        <textarea id="tl-atk-desc" class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
+                        <textarea id="tl-atk-desc" data-tag-box class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
                                   aria-describedby="tl-oneline-hint" placeholder="e.g. Authenticated to the VPN from 203.0.113.66 with valid credentials"></textarea>
                         @OneLineHint("the report's tables and the attack-chain diagram")
                     </div>
@@ -329,7 +329,7 @@
                     </div>
                     <div class="mt-2">
                         <label class="form-label small mb-1" for="tl-disc-desc">What the vendor reported / what we confirmed</label>
-                        <textarea id="tl-disc-desc" class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
+                        <textarea id="tl-disc-desc" data-tag-box class="form-control form-control-sm" rows="2" @bind="_tlDesc" @bind:event="oninput"
                                   aria-describedby="tl-oneline-hint" placeholder="e.g. Vendor confirmed our policyholder records were in the exposed dataset"></textarea>
                         @OneLineHint("the report's disclosure milestones table")
                     </div>
@@ -356,7 +356,7 @@
                         }
                         else
                         {
-                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelTimelineEdit">Cancel</button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEditToRow">Cancel</button>
                             <button class="btn btn-sm btn-primary" @onclick="SaveEventEdit">
                                 <span class="bi bi-check-lg" aria-hidden="true"></span> Save changes
                             </button>
@@ -385,7 +385,7 @@
                     }
                     <div class="col-md-3">
                         <label class="form-label small mb-0" for="tl-inv-when">Occurred (@TimeDisp.Label)</label>
-                        <input id="tl-inv-when" type="datetime-local" class="form-control form-control-sm" @bind="_tlWhen" />
+                        <DateTimeInput id="tl-inv-when" class="form-control form-control-sm" @bind-Value="_tlWhen" />
                         @TimeNudges()
                     </div>
                     <div class="col-md-3">
@@ -457,7 +457,7 @@
                         }
                         else
                         {
-                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelTimelineEdit">Cancel</button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEditToRow">Cancel</button>
                             <button class="btn btn-sm btn-primary" @onclick="SaveInvestigationEdit">
                                 <span class="bi bi-check-lg" aria-hidden="true"></span> Save new version
                             </button>
@@ -971,7 +971,7 @@ else
                         <dt class="col-4 fw-normal text-muted">Currently dated</dt><dd class="col-8 mb-0 im-data">@TimeDisp.Long(cm.AtUtc)</dd>
                     </dl>
                     <label class="form-label small mb-0" for="tl-corr-when">When it happened (@TimeDisp.Label)</label>
-                    <input id="tl-corr-when" type="datetime-local" class="form-control form-control-sm" @bind="_corrWhen" @bind:event="oninput" />
+                    <DateTimeInput id="tl-corr-when" class="form-control form-control-sm" @bind-Value="_corrWhen" />
                     <div class="mb-2"><TimeNudges @bind-Value="_corrWhen" Now="@UtcToWall(DateTimeOffset.UtcNow)" /></div>
                     <label class="form-label small mb-0" for="tl-corr-reason">Reason for the correction <span class="text-muted">(required)</span></label>
                     <textarea id="tl-corr-reason" class="form-control form-control-sm" rows="2" maxlength="2000"
@@ -1059,6 +1059,7 @@ else
 
     // U-40: a screenshot pasted into the composer, staged in memory and attached as evidence on Add.
     private bool _composerOpen;
+    private bool _editFocusPending;
     // Open when asked, while editing, or on a case with nothing on its timeline yet (the first entry is the job).
     private bool ComposerVisible => _composerOpen || _tlEditId is not null || !Case.TimelineEntries.Any(x => x.IsCurrent);
     private byte[]? _tlShotBytes;
@@ -1231,6 +1232,25 @@ else
         {
             _jumpTo = null;
             try { await JS.InvokeVoidAsync("imMotion.scrollToId", jump); } catch (JSException) { /* cosmetic */ }
+        }
+        // BUG-410: Edit loads the entry into the composer at the top of the tab; take the user there, caret in the text.
+        if (_editFocusPending && _tlEditId is not null)
+        {
+            _editFocusPending = false;
+            try
+            {
+                if (_tlAddKind == TimelineKind.Event)
+                {
+                    await JS.InvokeVoidAsync("imMotion.focusId", "tl-atk-desc");    // whichever of the two is shown
+                    await JS.InvokeVoidAsync("imMotion.focusId", "tl-disc-desc");
+                }
+                else
+                {
+                    await JS.InvokeVoidAsync("imMotion.scrollToId", "tl-inv-type");
+                    await JS.InvokeVoidAsync("markdownEditor.focus", InvEditorId);
+                }
+            }
+            catch (JSException) { /* cosmetic */ }
         }
         if (_autofocusPending && _mdEditors.Contains(InvEditorId))
         {
@@ -1436,7 +1456,7 @@ else
             <div class="im-then-row">
                 <span class="bi bi-question-circle" aria-hidden="true"></span>
                 <input class="form-control form-control-sm im-then-wide" placeholder="A question for the brief" maxlength="@ActionItem.MaxTitleLength" aria-label="Question"
-                       @bind="_fuQuestion" @bind:event="oninput" />
+                       data-tag-box @bind="_fuQuestion" @bind:event="oninput" />
                 <div class="form-check small mb-0">
                     <input class="form-check-input" type="checkbox" id="fu-q-task" @bind="_fuQuestionTask" />
                     <label class="form-check-label" for="fu-q-task">and a task to answer it</label>
@@ -1449,7 +1469,7 @@ else
             <div class="im-then-row">
                 <span class="bi bi-book" aria-hidden="true"></span>
                 <input class="form-control form-control-sm im-then-wide im-rec" placeholder="What this establishes, in a line, for the brief's Known" maxlength="2000" aria-label="Line for Known"
-                       @bind="_fuKnown" @bind:event="oninput" />
+                       data-tag-box @bind="_fuKnown" @bind:event="oninput" />
                 <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove the line" @onclick="() => { _fuKnownOpen = false; _fuKnown = null; }"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
             </div>
         }
@@ -1769,6 +1789,7 @@ else
         await StashDraftAsync();
         _special = null;
         _tlAddKind = TimelineKind.Event;
+        _editFocusPending = true;   // BUG-410
         _evtAttackMode = IsThirdParty && IsAttackStep(e); // edit a vendor attack step as one, a milestone as one
         _evtOurs = e.Environment == StepEnvironment.Ours;
         _tlEditId = e.Id;
@@ -1839,7 +1860,7 @@ else
             Toasts.Error(ex.Message);
             return;
         }
-        await CancelTimelineEdit();
+        await CancelEditToRow();   // BUG-410: the step keeps its id, so go back to it
         await OnChanged.InvokeAsync();
         Toasts.Success(savedLabel);
     }
@@ -1851,6 +1872,7 @@ else
         _special = null;   // BUG-33: a Working note or Question composer hides the entry's type, time and source
         _tlAddKind = TimelineKind.Investigation;
         _tlEditId = e.Id;
+        _editFocusPending = true;   // BUG-410
         _tlReason = null;
         _tlType = e.Type;
         _tlWhen = UtcToWall(e.OccurredAtUtc);
@@ -1882,6 +1904,14 @@ else
         await CancelTimelineEdit();
         await OnChanged.InvokeAsync();
         Toasts.Success("Investigation entry saved as a new version");
+    }
+
+    // BUG-410: Cancel (and a saved step) takes the user back to the entry they were editing.
+    private async Task CancelEditToRow()
+    {
+        var id = _tlEditId;
+        await CancelTimelineEdit();
+        if (id is { } back) _jumpTo = $"tl-{back}";
     }
 
     // Leave edit mode and clear the composer. For Investigation, also blank the Markdown editor.
@@ -2202,7 +2232,7 @@ else
         @switch (_tlPrecision)
         {
             case TimePrecision.Exact:
-                <input id="tl-atk-when" type="datetime-local" class="form-control form-control-sm mt-1" aria-label="Date and time (@TimeDisp.Label)" @bind="_tlWhen" />
+                <DateTimeInput id="tl-atk-when" class="form-control form-control-sm mt-1" aria-label="@($"Date and time ({TimeDisp.Label})")" @bind-Value="_tlWhen" />
                 @TimeNudges()
                 break;
             case TimePrecision.Day:

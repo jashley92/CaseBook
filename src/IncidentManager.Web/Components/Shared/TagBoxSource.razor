@@ -1,0 +1,44 @@
+@* BUG-409: gives text-box.js the case's entities, so "[[" in a plain box (marked data-tag-box) lists them. Pushed again
+   only when the entities change. Each entry's tag is the text TagText.FromEditable resolves back to that entity: its
+   label, or its value when the label is shared with another entity or can't be written inside [[ ]]. *@
+@inject IJSRuntime JS
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyCollection<CaseEntity> Entities { get; set; } = [];
+
+    private string? _sent;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var list = Candidates(Entities);
+        var sig = string.Join('\n', list.Select(c => c.Tag + '\t' + c.Label + '\t' + c.Hint));
+        if (sig == _sent) return;
+        try { await JS.InvokeVoidAsync("imTagBox.setEntities", list); _sent = sig; }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { /* tagging help is an enhancement */ }
+    }
+
+    /// <summary>Serialised camel-case for text-box.js: { tag, label, hint }.</summary>
+    internal sealed record Candidate(string Tag, string Label, string Hint);
+
+    internal static IReadOnlyList<Candidate> Candidates(IReadOnlyCollection<CaseEntity> entities)
+    {
+        static bool Writable(string? s) => !string.IsNullOrWhiteSpace(s) && s.IndexOfAny(['[', ']', '\r', '\n']) < 0;
+        var labels = entities.Where(e => !string.IsNullOrWhiteSpace(e.Label))
+            .GroupBy(e => e.Label!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+        var list = new List<Candidate>();
+        foreach (var e in entities)
+        {
+            var label = e.Label?.Trim();
+            // FromEditable takes the first entity whose label or value matches, so a shared label would link the wrong one.
+            var tag = Writable(label) && labels[label!] == 1
+                      && !entities.Any(o => o.Id != e.Id && string.Equals(o.Value, label, StringComparison.OrdinalIgnoreCase))
+                ? label!
+                : Writable(e.Value) ? e.Value : null;
+            if (tag is null) continue;
+            list.Add(new Candidate(tag, string.IsNullOrWhiteSpace(label) ? e.Value : label!, Ui.Label(e.Type)));
+        }
+        return list;
+    }
+}

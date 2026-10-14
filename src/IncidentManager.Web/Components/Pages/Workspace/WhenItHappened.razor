@@ -11,7 +11,7 @@
 }
 <div class="mt-2">
     <label class="form-label small mb-0" for="ws-when">When it happened (@TimeDisp.Label)</label>
-    <input id="ws-when" type="datetime-local" class="form-control form-control-sm" @bind="Draft.When" @bind:event="oninput" @bind:after="Typed" />
+    <DateTimeInput id="ws-when" class="form-control form-control-sm" @bind-Value="Draft.When" @bind-Value:after="Typed" />
     <TimeNudges Value="Draft.When" ValueChanged="Nudged" Now="@now" />
     @if (Draft.When is { } w && Math.Abs((w - now).TotalMinutes) >= 1)
     {
