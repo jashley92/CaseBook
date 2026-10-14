@@ -118,6 +118,20 @@ public sealed class EmailTemplateAdminServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task The_body_limit_is_what_the_settings_column_holds(/* BUG-460 */)
+    {
+        var svc = NewService();
+        var tooLong = () => svc.SaveAsync("assignment", "Subject", new string('x', 8001));
+        await tooLong.Should().ThrowAsync<ArgumentException>().WithMessage("Body must be 8000 characters or fewer.");
+
+        await svc.SaveAsync("assignment", "Subject", new string('x', 8000));   // the most the column holds is saved
+        (await svc.GetAsync("assignment")).EffectiveBody.Should().HaveLength(8000);
+
+        EmailTemplateCatalog.Templates.Should().OnlyContain(t => t.DefaultBodyHtml.Length <= 8000 && t.DefaultSubject.Length <= 200,
+            "every default can be saved back as it is");
+    }
+
+    [Fact]
     public async Task A_save_from_a_stale_editor_is_refused(/* BUG-396 */)
     {
         var svc = NewService();

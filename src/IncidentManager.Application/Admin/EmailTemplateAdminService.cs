@@ -23,8 +23,11 @@ public sealed record EmailTemplateView(
 /// </summary>
 public sealed class EmailTemplateAdminService
 {
+    // BUG-460: both are stored in AppSettings.Value, which holds 8,000 characters (AppSettingConfiguration); a longer
+    // limit let a body through to the column check, which refused it with an internal message.
+    private const int ValueColumnLength = 8000;
     private const int MaxSubjectLength = 200;
-    private const int MaxBodyLength = 20_000;
+    private const int MaxBodyLength = ValueColumnLength;
 
     private readonly IAppDbContextFactory _factory;
     private readonly IClock _clock;
@@ -73,7 +76,7 @@ public sealed class EmailTemplateAdminService
             t.CtaLabel, StampOf(subjOv, bodyOv));
     }
 
-    // BUG-396: the stored overrides the editor opened with (a hash: a body can be 20,000 characters).
+    // BUG-396: the stored overrides the editor opened with (a hash: a body can be 8,000 characters).
     private static string StampOf(string? subject, string? body) =>
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes((subject ?? "") + "" + (body ?? ""))));
