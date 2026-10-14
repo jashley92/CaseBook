@@ -228,6 +228,46 @@ public sealed class ProgramReportTests : IDisposable
     }
 
     [Fact]
+    public async Task A_review_counts_from_when_what_happened_was_filled_in_not_from_its_stub(/* BUG-347 */)
+    {
+        Guid caseId;
+        await using (var db = new AppDbContext(Options()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            var c = Case.Open(2026, 6, "F", "Stubbed", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "ic", Feb(1));
+            c.ClosedAtUtc = Feb(20);
+            db.Cases.Add(c);
+            await db.SaveChangesAsync();
+            caseId = c.Id;
+        }
+
+        // A stub saved in Q1 with only the follow-up fields…
+        _clock.UtcNow = Feb(10);
+        await using (var db = new AppDbContext(Options()))
+        {
+            db.PostIncidentReviews.Add(new PostIncidentReview
+                { CaseId = caseId, WhatWorkedWell = "Paging", CreatedAtUtc = Feb(10), CreatedBy = "ic" });
+            await db.SaveChangesAsync();
+        }
+        // …and "What happened" filled in during Q3.
+        _clock.UtcNow = new DateTimeOffset(2026, 8, 10, 0, 0, 0, TimeSpan.Zero);
+        await using (var db = new AppDbContext(Options()))
+        {
+            var review = await db.PostIncidentReviews.SingleAsync();
+            review.WhatHappened = "A phish led to one mailbox.";
+            review.ModifiedAtUtc = _clock.UtcNow;
+            await db.SaveChangesAsync();
+        }
+        _clock.UtcNow = new DateTimeOffset(2026, 9, 24, 0, 0, 0, TimeSpan.Zero);
+
+        var q1 = (await Service().BuildAsync(new ProgramPeriod(2026, 1))).Current;
+        (q1.ReviewsRecorded, q1.Closed, q1.ClosedWithReview).Should().Be((0, 1, 0), "only a stub existed by Q1's end");
+        (await Service().BuildAsync(new ProgramPeriod(2026, 3))).Current.ReviewsRecorded.Should().Be(1, "it was filled in in Q3");
+        var snaps = await Service().SnapshotsAsync([new ProgramWindow(Feb(1), Feb(28), "February")]);
+        snaps[0].ReviewsRecorded.Should().Be(0, "the overview counts it the same way");
+    }
+
+    [Fact]
     public async Task A_quarter_counts_what_happened_in_it_and_compares_with_the_previous()
     {
         await SeedAsync();

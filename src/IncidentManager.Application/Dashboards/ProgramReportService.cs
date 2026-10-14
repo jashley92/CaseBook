@@ -6,6 +6,7 @@ using IncidentManager.Application.Cases;
 using IncidentManager.Application.Compliance;
 using IncidentManager.Application.Mitre;
 using IncidentManager.Application.Sla;
+using IncidentManager.Domain.Entities;
 using IncidentManager.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using static IncidentManager.Application.Common.Csv;
@@ -224,10 +225,8 @@ public sealed class ProgramReportService
                 .Select(x => new { x.CaseId, x.ChangedAtUtc, x.EffectiveAtUtc }).ToListAsync(ct))
             .GroupBy(x => x.CaseId).ToDictionary(g => g.Key, g => g.Min(x => x.EffectiveAtUtc ?? x.ChangedAtUtc));
         // BUG-324: a review counts once it says what happened (PostIncidentReview.IsRecorded, as the close gate reads it);
-        // a stub saved with nothing in it, or only what worked well, isn't a review recorded.
-        var reviews = (await db.PostIncidentReviews.AsNoTracking()
-                .Where(r => ids.Contains(r.CaseId) && r.WhatHappened != null && r.WhatHappened.Trim() != "")
-                .Select(r => new { r.CaseId, r.CreatedAtUtc }).ToListAsync(ct)).Select(r => (r.CaseId, r.CreatedAtUtc)).ToList();
+        // a stub saved with nothing in it, or only what worked well, isn't a review recorded. BUG-347: dated by when it did.
+        var reviews = await ReviewsRecordedAsync(db, ids, ct);
         var actionRows = await db.ImprovementActions.AsNoTracking().Where(a => ids.Contains(a.CaseId))
             .Select(a => new { a.Id, a.CreatedAtUtc, a.ClosedAtUtc, a.Status, a.TargetDateUtc, a.RelatedArea })
             .ToListAsync(ct);
@@ -278,6 +277,62 @@ public sealed class ProgramReportService
         }
         return new Loaded(rows, breachFirstAt, reviews, actions, current, notices, new History(phases, classes, severities), _clock.UtcNow,
             targetsAt);
+    }
+
+    /// <summary>
+    /// BUG-347: each review dated by when "What happened" was first filled in, not when its stub was saved, so filling
+    /// one in later doesn't move a quarter already reported. Read from the review's audit trail (a create carries every
+    /// field, an update only the ones it changed). A create is dated by the review's own CreatedAtUtc: the same moment,
+    /// and what seeded rows are dated by. A review from before the trail is dated by CreatedAtUtc when it was already
+    /// filled in then, or by the edit that filled it. One never filled in isn't counted.
+    /// </summary>
+    private static async Task<List<(Guid CaseId, DateTimeOffset At)>> ReviewsRecordedAsync(IAppDbContext db,
+        IQueryable<Guid> caseIds, CancellationToken ct)
+    {
+        var rows = await db.PostIncidentReviews.AsNoTracking().Where(r => caseIds.Contains(r.CaseId))
+            .Select(r => new { r.Id, r.CaseId, r.CreatedAtUtc, Recorded = r.WhatHappened != null && r.WhatHappened.Trim() != "" })
+            .ToListAsync(ct);
+        if (rows.Count == 0) return [];
+
+        // One read for every review's trail; only the entries that carry "What happened" are needed.
+        var keys = rows.Select(r => r.Id.ToString()).ToList();
+        var field = "\"" + nameof(PostIncidentReview.WhatHappened) + "\"";
+        var trails = (await db.AuditLog.AsNoTracking()
+                .Where(a => a.EntityType == nameof(PostIncidentReview) && keys.Contains(a.EntityId!)
+                            && (a.Action == AuditAction.Create || a.Action == AuditAction.Update)
+                            && a.AfterJson != null && a.AfterJson.Contains(field))
+                .Select(a => new { a.EntityId, a.Sequence, a.Action, a.AtUtc, a.BeforeJson, a.AfterJson })
+                .ToListAsync(ct))
+            .GroupBy(a => a.EntityId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.OrderBy(a => a.Sequence).ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var list = new List<(Guid CaseId, DateTimeOffset At)>();
+        foreach (var r in rows)
+        {
+            DateTimeOffset? at;
+            if (!trails.TryGetValue(r.Id.ToString(), out var trail)) at = r.Recorded ? r.CreatedAtUtc : null;
+            else if (trail[0].Action == AuditAction.Create || !Filled(trail[0].BeforeJson))
+                at = trail.FirstOrDefault(a => Filled(a.AfterJson)) is { } first
+                    ? (first.Action == AuditAction.Create ? r.CreatedAtUtc : first.AtUtc)
+                    : null;
+            else at = r.CreatedAtUtc;   // filled in before the trail began
+            if (at is { } t) list.Add((r.CaseId, t));
+        }
+        return list;
+    }
+
+    // Whether an audit entry's JSON holds a non-blank "What happened".
+    private static bool Filled(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                   && doc.RootElement.TryGetProperty(nameof(PostIncidentReview.WhatHappened), out var v)
+                   && v.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(v.GetString());
+        }
+        catch (JsonException) { return false; }
     }
 
     private sealed record CaseRow(Guid Id, Classification? Classification, Severity Severity, CasePhase Phase,
