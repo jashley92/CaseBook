@@ -419,7 +419,18 @@
         else _gate.UseGate(eval);
     }
 
-    private async Task CheckOverlaps()
+    // BUG-356: the check in progress, so Create can wait for one the blur started (the click on Create blurs the box,
+    // so the check is already marked as done for this text when Create runs). _checkTaskNew: it checks text whose
+    // matches haven't been shown yet (a re-check of the same text doesn't pause Create a second time).
+    private Task? _checkTask;
+    private bool _checkTaskNew;
+    private Task CheckOverlaps()
+    {
+        _checkTaskNew = (_checkTask is { IsCompleted: false } && _checkTaskNew) || _checkedInput != _indicators;
+        return _checkTask = CheckOverlapsCore();
+    }
+
+    private async Task CheckOverlapsCore()
     {
         _overlapPrompt = false;
         var lines = IndicatorLines(_indicators).ToList();
@@ -589,9 +600,11 @@
         // REL-04: only gate on the overlap check before the case exists; once created, a retry is just
         // resuming the seeding, so the pre-create duplicate/campaign prompt no longer applies.
         var lines = IndicatorLines(_indicators).ToList();
-        if (_created is null && lines.Count > 0 && _checkedInput != _indicators)
+        var running = _checkTask is { IsCompleted: false } t && _checkTaskNew ? t : null;   // BUG-356: matches not seen yet
+        if (_created is null && lines.Count > 0 && (running is not null || _checkedInput != _indicators))
         {
-            await CheckOverlaps();
+            if (running is not null) await running;
+            if (_checkedInput != _indicators) await CheckOverlaps();
             if (_matches.Count > 0)
             {
                 _overlapPrompt = true;
