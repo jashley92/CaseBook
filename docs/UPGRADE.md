@@ -34,9 +34,11 @@ On the web host, **elevated**:
 
 ```powershell
 # From v1.6.0: one command. The script downloads the release bundle and its .sha256 from GitHub itself, refuses a
-# bundle whose hash doesn't match, and carries on as below. It runs from the copy of the deploy scripts each upgrade
-# keeps beside the site (<site parent>\CaseBook-deploy); Administration › Updates shows the exact line.
-& 'C:\inetpub\CaseBook-deploy\Upgrade-CaseBook.ps1' -Version v1.6.0      # or -Version latest; -Proxy <url> if needed
+# bundle whose hash doesn't match, and hands over to the upgrade script inside that bundle (from v1.6.3), so the
+# upgrade always runs with the new release's own logic. Start it from the copy of the deploy scripts each upgrade keeps
+# beside the site (<site parent>\<site folder>-deploy, e.g. C:\inetpub\CaseBook-deploy); Administration › Updates shows
+# the exact line, with -SiteName when it knows the site.
+& 'C:\inetpub\CaseBook-deploy\Upgrade-CaseBook.ps1' -Version v1.6.3      # or -Version latest; -Proxy <url> if needed
 
 # Without outbound internet, or the first time (before v1.6.0 there's no kept copy):
 # 1. Download casebook-<version>.zip from the GitHub Release and verify it:
@@ -50,9 +52,11 @@ HTTPS binding's host name). Override any of them with `-SiteName`, `-SitePath`, 
 `-HealthUrl` if your names differ. Add `-Force` to skip the confirmation prompt for an unattended run.
 
 The script connects to SQL Server **as you** (Windows authentication), so your account needs to read the
-CaseBook database and run `BACKUP DATABASE` on the instance. Warm-up counts any 2xx, 401 or 403 from the health
-URL as "started"; if the health URL's host name isn't in `AllowedHosts` the site answers 400 and the upgrade
-times out and rolls back.
+CaseBook database and run `BACKUP DATABASE` on the instance. Warm-up counts only CaseBook's own answer as "started":
+a 200 with the JSON import schema from `<site>/api/import/cases/schema` (anonymous at the IIS level). A 5xx is a failed
+start and rolls back. When IIS answers `/api` itself (401/403, or its own 404 page), the script says so and checks the
+site root signed in as you instead. If the health URL's host name isn't in `AllowedHosts` the site answers 400 and the
+upgrade times out and rolls back.
 
 Alternatives to `-Version` and `-BundleZip`:
 - `-AppSource <folder>` — a folder that already holds the published app.
@@ -62,8 +66,9 @@ The hash check proves the bundle is the one published on the release, not who pu
 come from the same GitHub release. Upgrade from the repository you trust, and read the release's notes first.
 
 After an upgrade the site's `VERSION.txt` records the version, the version it replaced, when and by whom; Administration
-› Updates shows that line. The kept scripts folder (`CaseBook-deploy`) is writable only by Administrators and SYSTEM, so
-the app-pool account can read the scripts but never change what an administrator later runs elevated.
+› Updates shows that line. The kept scripts folder (`<site folder>-deploy`, holding the scripts and `site.txt` with the
+IIS site's name) is writable only by Administrators and SYSTEM, so the app-pool account can read the scripts but never
+change what an administrator later runs elevated. Each site has its own, so two sites under one parent don't share it.
 
 When it finishes: sign in, open **Integrity -> "Verify now"** (chain should read **VALID**), and
 confirm a case opens and a report generates.
@@ -201,6 +206,37 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.3
+
+A fix release with no migration. Things to check:
+
+- **Upgrades run with the new release's own script.** `-Version` downloads the bundle and then hands over to the
+  `Upgrade-CaseBook.ps1` inside it, so a fix to the upgrade itself applies to the upgrade that ships it. The kept scripts
+  from v1.6.0-v1.6.2 don't hand over yet, so for this upgrade use `-BundleZip` with the bundle's own script (or `-Version`
+  from a v1.6.1 or v1.6.2 copy, whose warm-up is already right).
+- **One kept-scripts folder per site.** The copy is now `<site parent>\<site folder>-deploy`, with `site.txt` naming the IIS
+  site, and Administration › Updates puts `-SiteName` in its command. For a site in `C:\inetpub\CaseBook` that's the same
+  `CaseBook-deploy` as before; a site in another folder gets its own after this upgrade (the old shared `CaseBook-deploy`
+  can then be deleted if no site named `CaseBook` lives beside it).
+- **`-AppSource` and `-Build` upgrades record the version** read from the new build, instead of leaving the previous one.
+- **The update check signs in to a proxy** as the app pool's account (`Updates:Proxy`), and a 407 is reported as the
+  proxy refusing, not GitHub.
+- **Notification deadlines after an admin change.** Editing a reported case's impact assessment (just the affected count)
+  no longer reopens it when an administrator has since added a jurisdiction to one of its data elements; only an element
+  added in that edit brings in a new regulator. The report's "Notification triggers" lists the regulators in play when
+  the case was reported.
+- **"1 change after closure by system".** v1.5.8-v1.6.2 recorded the start-up back-fill of each reported case's
+  jurisdictions as a change, so closed reported cases showed one change after closure (header, report Outcome line).
+  That entry is no longer counted, and the back-fill no longer writes one.
+- **Program figures for past quarters** use the severity and classification a case had then for SLA met/missed, and a
+  close dated before the case was filed counts. The Program Overview's 12-month chart and the metrics CSV follow the same
+  rule, so a case reopened later no longer moves past months.
+- **IOC feed**: an occurrence without its own TLP carries the default (`Reporting:DefaultTlp`), as reports and STIX do.
+- **Critical alerts with email off** wait in the outbox until email is on again, instead of being given up after a few
+  hours with a "may not have heard" notice.
+- **Find** finds entries, notes, briefs and tasks that tag an entity by its label, marks archived and exercise cases in an
+  entity's case list and the palette, and says back filters it can't use.
+
 ### v1.6.2
 
 A fix with no migration. Things to check:
@@ -224,7 +260,8 @@ A fix to the upgrade script only, with no migration and no change to the app. Up
 older script could stop at "Warming up", wait the full three minutes and roll back, although the new build had started.
 Its probe went through the administrator's proxy, which on many servers can't reach the site, and followed redirects
 to an HTTPS address that wasn't bound. The probe now goes straight to the site and says what each attempt got. If you
-were rolled back, upgrade again with this release's script: `-BundleZip` with the v1.6.1 bundle, or `-Version v1.6.1`.
+were rolled back, upgrade again with this release's script: `-BundleZip` with the v1.6.1 bundle. (Not `-Version v1.6.1`
+from the kept v1.6.0 scripts: before v1.6.3, `-Version` ran the kept, older script, with the old probe.)
 
 ### v1.6.0
 

@@ -169,9 +169,13 @@ scope per cycle, and log and continue on failure. In a background scope the "use
 Caveats:
 
 - "Already reminded" marks are kept in the `NotificationMarks` table (BUG-95), outside the audit chain, so a restart
-  doesn't resend. The mark is the table's key, so if two processes overlap only the first to record it sends. Marks
-  older than 180 days are pruned; a reminder still due then is sent once more.
-- The executive report marks a quarter as sent before sending, so a failed send isn't retried until a restart.
+  doesn't resend. The mark is the table's key, so if two processes overlap only the first to record it sends. A mark
+  still in use is renewed (WF-22), so only marks for reminders that no longer qualify are pruned after 180 days.
+- The executive report's quarter mark is taken back when nobody was reached or the send failed, so it's tried again
+  hourly within the first 7 days of the quarter (WF-17).
+- `CriticalAlertRetryHostedService` retries undelivered breach-escalation and integrity-alarm emails from the alert
+  outbox (BUG-101), holding them while email is off; `UpdateCheckHostedService` runs the update check (PROD-49, off by
+  default).
 
 ## Real-time
 

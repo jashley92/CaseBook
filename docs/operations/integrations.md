@@ -66,8 +66,8 @@ flowchart LR
   timeline entries, entities, tasks. Up to 5 MB.
 - **Result:** a pending import, nothing written to a case. A reviewer confirms or rejects it in *Import →
   Pending imports*.
-- **Failure:** 400 with an `error` message for invalid documents; 401/403/413/429 as documented; server errors
-  redirect to `/Error` (an HTML 302).
+- **Failure:** 400 with an `error` message for invalid documents; 401/403/413/429 as documented; a server error is a
+  JSON 500 (`{ "error", "ref" }`, the ref matching the server log), as in [API.md](../API.md).
 - **Retry:** none on the server; the caller decides.
 - **XSIAM:** `integrations/xsiam/CaseBookElevate.py` is a template automation (Python 3, `requests`) that builds
   a new-case document from an XSIAM incident (name, severity, times, details, incident id, indicators with DBot
@@ -93,7 +93,10 @@ schema, for use in the organization's own approved AI tool.
   anonymously or by IP.
 - **Data:** branded HTML plus a text part; subject and body from editable templates; links and logo only when
   `App:BaseUrl` is set. Restricted-case details only go to people who can see the case.
-- **Failure:** logged and dropped; **no retry**. With email off, sends are logged (recipient counts only).
+- **Failure:** a scheduled reminder that wasn't delivered isn't marked sent, so the next scan tries it again (BUG-08); a
+  breach escalation or integrity alarm is kept in the alert outbox and retried, then shown to administrators as
+  undelivered (BUG-101). With email off nothing is marked sent and critical alerts wait in the outbox, so they go out
+  once email is on again (WF-21); the log records recipient counts only.
 - **Testing:** Administration → Notifications → *Send a test email*. Locally, run an SMTP sink such as smtp4dev
   on localhost:25 with `Email:EnableSsl=false`.
 
@@ -105,7 +108,8 @@ schema, for use in the organization's own approved AI tool.
   reference). Must be https (http only to loopback).
 - **Data:** Slack mrkdwn or a Teams MessageCard; restricted cases are redacted ("Breach escalation (restricted
   case)").
-- **Failure and retry:** up to `MaxAttempts` (3) with a 250 ms × attempt back-off; then dropped and logged.
+- **Failure and retry:** up to `MaxAttempts` (3) with a 250 ms × attempt back-off. A scheduled reminder's post that still
+  fails is tried again at the next scan (WF-20); an event post (an escalation, an assignment) is then dropped and logged.
 - **Limits:** a broadcast channel, not per-user messaging.
 - **Testing:** point the URL at `http://localhost:<port>/` with any request-capture tool.
 

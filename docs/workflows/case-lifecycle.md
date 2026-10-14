@@ -35,7 +35,8 @@ flowchart LR
 | **Afterwards** | No notification is sent on creation. The timeline shows "Case opened as …". |
 
 **Exercise cases** are fixed at creation: they work normally but are excluded from dashboards, team workload,
-reminders, digests, the calendar feed, the IOC feed and cross-case suggestions.
+reminders, digests, the calendar feed, the IOC feed and cross-case suggestions. An exercise and a live case can't be
+linked or superseded into each other, and filing an exercise checks for duplicates only among exercises (WF-48).
 
 ## 2. Importing a case
 
@@ -158,7 +159,9 @@ field `case.changed_after_closure`). Reopen when the conclusion itself is in que
 
 Shown on a closed case: **Reopen case…** with a required reason. `Case.Reopen` returns the case to the phase it
 was in before the latest close (Recovery if unknown), as an ordinary phase change. The case's outcome is cleared
-(the earlier close's history row keeps it), and closing again asks for one. Closing again re-runs the gate.
+(the earlier close's history row keeps it), and closing again asks for one. Closing again re-runs the gate. When the
+phase it returns to is past Containment or Recovery and the case has no contained or resolved time (one closed before
+those were required), the dialog asks for it, or for why it wasn't needed (WF-50).
 Errors: "Only a closed case can be reopened." · "A reason is required to reopen a case." Reopen can't be
 backdated. Needs `EditCases`.
 
@@ -167,7 +170,7 @@ backdated. Needs `EditCases`.
 Actions → *Supersede as a duplicate…* (not on closed cases): pick the primary case and optionally copy indicators
 it's missing. In one save: a "Duplicate of" link, the copied entities (source "Copied from …"), and a note on each
 case pointing at the other. It **doesn't close** the duplicate; the close-out view then opens pre-filled "Duplicate
-of …". Needs `EditCases`.
+of …". An exercise can't supersede a live case, or the other way round. Needs `EditCases`.
 
 ## 9. Archiving and restoring
 

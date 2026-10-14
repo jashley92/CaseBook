@@ -29,6 +29,7 @@ authentication, key paths, SIEM, CyberArk) aren't editable here; they're shown r
 | Server configuration | `/admin/settings/server` | Read-only view of server-side settings (secrets as present or absent) |
 | Setting sources | `/admin/settings/source` | Each setting's effective value and where it comes from |
 | Configuration bundle | `/admin/config-bundle` | Export, diff and import editable configuration |
+| Updates | `/admin/settings/updates` | The running version and the last upgrade; the update check (off by default: one anonymous call a day to the GitHub Releases API) with each newer release's notes; the exact elevated command to upgrade this site |
 | Diagnostics | `/admin/settings/diagnostics` | Backup and restore freshness, evidence-integrity status, CyberArk resolution health, SIEM test event, writable-path checks |
 | Style guide | `/admin/style` | Live design-system reference for developers |
 | Access log | `/access-log` (main navigation) | Who read which case or downloaded what |
