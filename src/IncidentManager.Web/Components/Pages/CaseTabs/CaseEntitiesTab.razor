@@ -754,7 +754,9 @@ else
     private async Task ValueTyped()
     {
         if (_enEditId is not null || _enTypePicked || string.IsNullOrWhiteSpace(_enValue)) return;
-        _accountCheck?.Cancel();
+        // Sonar S6966/S2930: the earlier check is only cancelled here. The call that made it disposes it when it wakes
+        // (finally, below), so its Task.Delay or directory call never runs on a disposed token.
+        if (_accountCheck is { } earlier) { _accountCheck = null; await earlier.CancelAsync(); }
         var detected = IocObservable.DetectType(_enValue);
         _enType = detected;
         if (detected != EntityType.Other || !AccountDirectory.IsAvailable) return;
@@ -769,6 +771,11 @@ else
                 _enType = EntityType.Account;
         }
         catch (OperationCanceledException) { /* typed on */ }
+        finally
+        {
+            if (ReferenceEquals(_accountCheck, cts)) _accountCheck = null;
+            cts.Dispose();
+        }
     }
 
     private async Task AddEntity()
@@ -1248,6 +1255,14 @@ else
     public async ValueTask DisposeAsync()
     {
         Disposed = true;
+        // Sonar S2930: a directory check still waiting is cancelled first, so its Task.Delay ends before the source is
+        // disposed (its own call's Dispose after that is a no-op).
+        if (_accountCheck is { } check)
+        {
+            _accountCheck = null;
+            await check.CancelAsync();
+            check.Dispose();
+        }
         try { await JS.InvokeVoidAsync("entityGraph.destroy", GraphContainerId); await JS.InvokeVoidAsync("entityGraph.destroy", CrossGraphId); }
         catch { /* circuit may already be gone during teardown */ }
         _graphRef?.Dispose();
