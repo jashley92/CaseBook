@@ -1123,7 +1123,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260909194827_InitialCreate'', N''10.0.12'');');
+    VALUES (N''20260909194827_InitialCreate'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1176,7 +1176,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260913055758_AddSavedViews'', N''10.0.12'');');
+    VALUES (N''20260913055758_AddSavedViews'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1225,7 +1225,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260913130041_AddCaseComments'', N''10.0.12'');');
+    VALUES (N''20260913130041_AddCaseComments'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1314,7 +1314,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260914014215_AddMaterialityDetermination'', N''10.0.12'');');
+    VALUES (N''20260914014215_AddMaterialityDetermination'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1356,7 +1356,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260914032412_AddNotificationRules'', N''10.0.12'');');
+    VALUES (N''20260914032412_AddNotificationRules'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1399,7 +1399,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260918234125_AddPinnedCases'', N''10.0.12'');');
+    VALUES (N''20260918234125_AddPinnedCases'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1420,7 +1420,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260919000735_AddDefaultSavedView'', N''10.0.12'');');
+    VALUES (N''20260919000735_AddDefaultSavedView'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1464,7 +1464,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260920134054_AddPendingImports'', N''10.0.12'');');
+    VALUES (N''20260920134054_AddPendingImports'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1517,7 +1517,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260920143522_AddApiTokens'', N''10.0.12'');');
+    VALUES (N''20260920143522_AddApiTokens'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1552,7 +1552,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260920233957_AddUserNotificationPreferences'', N''10.0.12'');');
+    VALUES (N''20260920233957_AddUserNotificationPreferences'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1589,7 +1589,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260920235541_AddNotificationOptOuts'', N''10.0.12'');');
+    VALUES (N''20260920235541_AddNotificationOptOuts'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1610,7 +1610,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260921054724_AddCaseExerciseFlag'', N''10.0.12'');');
+    VALUES (N''20260921054724_AddCaseExerciseFlag'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1658,7 +1658,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260921223520_AddActionItemComments'', N''10.0.12'');');
+    VALUES (N''20260921223520_AddActionItemComments'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1679,7 +1679,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260921230204_AddAuditEntityLabel'', N''10.0.12'');');
+    VALUES (N''20260921230204_AddAuditEntityLabel'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1773,7 +1773,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260924044617_AddPostIncidentReview'', N''10.0.12'');');
+    VALUES (N''20260924044617_AddPostIncidentReview'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1810,7 +1810,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260924112734_AddLegalHoldReleaseRequest'', N''10.0.12'');');
+    VALUES (N''20260924112734_AddLegalHoldReleaseRequest'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1831,7 +1831,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260924153921_AddAgendaFeedLinkIssuedAt'', N''10.0.12'');');
+    VALUES (N''20260924153921_AddAgendaFeedLinkIssuedAt'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1860,7 +1860,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260924194443_AddTlpMarkings'', N''10.0.12'');');
+    VALUES (N''20260924194443_AddTlpMarkings'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -1889,7 +1889,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260924200616_AddReportProfileTemplate'', N''10.0.12'');');
+    VALUES (N''20260924200616_AddReportProfileTemplate'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2014,7 +2014,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260925181541_AddReportTemplateLibrary'', N''10.0.12'');');
+    VALUES (N''20260925181541_AddReportTemplateLibrary'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2035,7 +2035,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260927180902_AddLessonsDefaultTemplate'', N''10.0.12'');');
+    VALUES (N''20260927180902_AddLessonsDefaultTemplate'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2074,7 +2074,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260928154841_AddUserDisplayPreferences'', N''10.0.12'');');
+    VALUES (N''20260928154841_AddUserDisplayPreferences'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2111,7 +2111,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260929025933_AddTransitionEffectiveTimes'', N''10.0.12'');');
+    VALUES (N''20260929025933_AddTransitionEffectiveTimes'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2155,7 +2155,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260929032611_AddTransitionTimeCorrections'', N''10.0.12'');');
+    VALUES (N''20260929032611_AddTransitionTimeCorrections'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2192,7 +2192,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260929033644_AddDecisionEntries'', N''10.0.12'');');
+    VALUES (N''20260929033644_AddDecisionEntries'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2213,7 +2213,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260929035849_AddTimelineEntryTaskLink'', N''10.0.12'');');
+    VALUES (N''20260929035849_AddTimelineEntryTaskLink'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2234,7 +2234,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260929040211_AddTimelineEntryPromotedFrom'', N''10.0.12'');');
+    VALUES (N''20260929040211_AddTimelineEntryPromotedFrom'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2281,7 +2281,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260929042238_AddCaseBriefs'', N''10.0.12'');');
+    VALUES (N''20260929042238_AddCaseBriefs'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2302,7 +2302,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260929064238_AddTaskKind'', N''10.0.12'');');
+    VALUES (N''20260929064238_AddTaskKind'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2354,7 +2354,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260929064658_AddEvidenceCitations'', N''10.0.12'');');
+    VALUES (N''20260929064658_AddEvidenceCitations'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2375,7 +2375,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260930020835_RenameBriefSituationToSummary'', N''10.0.12'');');
+    VALUES (N''20260930020835_RenameBriefSituationToSummary'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2396,7 +2396,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260930034733_TaskRaisedFromBrief'', N''10.0.12'');');
+    VALUES (N''20260930034733_TaskRaisedFromBrief'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2417,7 +2417,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260930035947_AttackChainOpenPreference'', N''10.0.12'');');
+    VALUES (N''20260930035947_AttackChainOpenPreference'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2446,7 +2446,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260930041809_NoteMentionsDropDiscussion'', N''10.0.12'');');
+    VALUES (N''20260930041809_NoteMentionsDropDiscussion'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2475,7 +2475,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260930045710_TaskAboutAndStepKind'', N''10.0.12'');');
+    VALUES (N''20260930045710_TaskAboutAndStepKind'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2515,7 +2515,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260930050314_AssignmentChanges'', N''10.0.12'');');
+    VALUES (N''20260930050314_AssignmentChanges'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2536,7 +2536,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20260930050612_EntityPinned'', N''10.0.12'');');
+    VALUES (N''20260930050612_EntityPinned'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2563,7 +2563,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261001005319_ClosureGateNotificationsRecorded'', N''10.0.12'');');
+    VALUES (N''20261001005319_ClosureGateNotificationsRecorded'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2584,7 +2584,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261004054804_AddTaskCompletedBy'', N''10.0.12'');');
+    VALUES (N''20261004054804_AddTaskCompletedBy'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2651,7 +2651,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261004060405_AddCaseOutcomes'', N''10.0.12'');');
+    VALUES (N''20261004060405_AddCaseOutcomes'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2700,7 +2700,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261004094442_AddEntityVerdictChanges'', N''10.0.12'');');
+    VALUES (N''20261004094442_AddEntityVerdictChanges'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2741,7 +2741,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261004175151_ClosureGateHonestChecks'', N''10.0.12'');');
+    VALUES (N''20261004175151_ClosureGateHonestChecks'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2770,7 +2770,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261004223836_AddBriefConfirmation'', N''10.0.12'');');
+    VALUES (N''20261004223836_AddBriefConfirmation'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2814,7 +2814,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261005051639_AddOpenCaseTabs'', N''10.0.12'');');
+    VALUES (N''20261005051639_AddOpenCaseTabs'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2843,7 +2843,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261005083920_AddKeymapPreferences'', N''10.0.12'');');
+    VALUES (N''20261005083920_AddKeymapPreferences'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2864,7 +2864,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261007040154_AddStepEnvironment'', N''10.0.12'');');
+    VALUES (N''20261007040154_AddStepEnvironment'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2885,7 +2885,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261009185500_AddAuditHashKeyId'', N''10.0.12'');');
+    VALUES (N''20261009185500_AddAuditHashKeyId'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2922,7 +2922,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261010032839_AddStepTimePrecision'', N''10.0.12'');');
+    VALUES (N''20261010032839_AddStepTimePrecision'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2951,7 +2951,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012014606_CaseEntityIndexFitsSqlServer'', N''10.0.12'');');
+    VALUES (N''20261012014606_CaseEntityIndexFitsSqlServer'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -2992,7 +2992,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012060710_JurisdictionNotices'', N''10.0.12'');');
+    VALUES (N''20261012060710_JurisdictionNotices'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3025,7 +3025,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012153629_NotificationMarks'', N''10.0.12'');');
+    VALUES (N''20261012153629_NotificationMarks'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3071,7 +3071,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012154250_AlertDeliveries'', N''10.0.12'');');
+    VALUES (N''20261012154250_AlertDeliveries'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3148,7 +3148,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012155220_HistoryRowHashes'', N''10.0.12'');');
+    VALUES (N''20261012155220_HistoryRowHashes'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3185,7 +3185,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012155902_CaseEditVersion'', N''10.0.12'');');
+    VALUES (N''20261012155902_CaseEditVersion'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3206,7 +3206,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012160816_SealKeyedFrom'', N''10.0.12'');');
+    VALUES (N''20261012160816_SealKeyedFrom'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3723,7 +3723,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012161613_RowHashFormat2'', N''10.0.12'');');
+    VALUES (N''20261012161613_RowHashFormat2'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3744,7 +3744,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012172622_PendingImportResume'', N''10.0.12'');');
+    VALUES (N''20261012172622_PendingImportResume'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3773,7 +3773,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012173001_NotificationMarkConfirmed'', N''10.0.12'');');
+    VALUES (N''20261012173001_NotificationMarkConfirmed'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3794,7 +3794,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012180740_ContainmentNotNeeded'', N''10.0.12'');');
+    VALUES (N''20261012180740_ContainmentNotNeeded'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3815,7 +3815,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012183347_AuditEntryFormat'', N''10.0.12'');');
+    VALUES (N''20261012183347_AuditEntryFormat'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3844,7 +3844,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012183715_CaseBriefLatestCurrent'', N''10.0.12'');');
+    VALUES (N''20261012183715_CaseBriefLatestCurrent'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3865,7 +3865,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012205203_AuditLogEntityIndex'', N''10.0.12'');');
+    VALUES (N''20261012205203_AuditLogEntityIndex'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3892,7 +3892,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261012212238_UserRolesWider'', N''10.0.12'');');
+    VALUES (N''20261012212238_UserRolesWider'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3919,7 +3919,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261013005522_ApiTokenRolesWider'', N''10.0.12'');');
+    VALUES (N''20261013005522_ApiTokenRolesWider'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3940,7 +3940,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261013040758_ApiTokenRowHash'', N''10.0.12'');');
+    VALUES (N''20261013040758_ApiTokenRowHash'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3969,7 +3969,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261013124330_ReportedJurisdictionsAndAppendedBriefs'', N''10.0.12'');');
+    VALUES (N''20261013124330_ReportedJurisdictionsAndAppendedBriefs'', N''10.0.13'');');
 END;
 
 COMMIT;
@@ -3998,7 +3998,7 @@ IF NOT EXISTS (
 )
 BEGIN
     EXEC(N'    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
-    VALUES (N''20261013132953_PendingImportHash'', N''10.0.12'');');
+    VALUES (N''20261013132953_PendingImportHash'', N''10.0.13'');');
 END;
 
 COMMIT;
