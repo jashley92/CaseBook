@@ -804,7 +804,12 @@ else
         _filter.OpenedMonth = null;
         _openedLabel = null;
         _opened = null;
-        if (!string.IsNullOrWhiteSpace(QOpened) && DateTime.TryParse($"{QOpened}-01", out var mo))
+        // BUG-475: read invariantly (the key is always Gregorian yyyy-MM), and a month the list can't bound (years 1 and
+        // 9999) is ignored like any other bad value, as CaseService.ListAsync does.
+        if (!string.IsNullOrWhiteSpace(QOpened)
+            && DateTime.TryParse($"{QOpened}-01", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var mo)
+            && mo.Year is >= 2 and <= 9998)
         {
             _filter.OpenedYear = mo.Year;
             _filter.OpenedMonth = mo.Month;

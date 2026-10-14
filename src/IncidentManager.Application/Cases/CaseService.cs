@@ -323,7 +323,9 @@ public sealed class CaseService
         }
 
         // The dashboard trend's month drill-in: the same calendar month, in the organization's reporting time zone.
-        if (filter is { OpenedYear: { } oy, OpenedMonth: { } om })
+        // BUG-475: a month outside years 2..9998 is ignored, as the page does. 9999-12 has no next month and year 1
+        // starts before DateTime.MinValue in UTC east of Greenwich, so either would throw.
+        if (filter is { OpenedYear: int oy and >= 2 and <= 9998, OpenedMonth: int om and >= 1 and <= 12 })
         {
             var zone = _zone?.Current ?? TimeZoneInfo.Utc;
             var start = ZonedMonths.StartUtc(oy, om, zone);

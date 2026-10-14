@@ -219,6 +219,40 @@ public sealed class CaseSearchTests : IDisposable
         }
     }
 
+    // BUG-475: 9999-12 has no next month, and 0001-01 begins before DateTime.MinValue in UTC east of Greenwich. Both
+    // are ignored (the whole list), as a bad opened= is on the page; the first and last usable months still filter.
+    [Theory]
+    [InlineData("Asia/Tokyo")]
+    [InlineData("America/New_York")]
+    public async Task Opened_month_out_of_range_is_ignored_not_thrown(string zoneId)
+    {
+        await using (var db = NewContext())
+        {
+            db.Cases.Add(IncidentManager.Domain.Entities.Case.Open(2026, 1, "March", "March",
+                Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection, "system",
+                new DateTimeOffset(2026, 3, 10, 0, 0, 0, TimeSpan.Zero)));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext())
+        {
+            var svc = new CaseService(NewFactory(), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+                new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+                zone: new FixedZone(TimeZoneInfo.FindSystemTimeZoneById(zoneId)));
+
+            (await svc.ListAsync(new CaseFilter { OpenedYear = 9999, OpenedMonth = 12 })).Total.Should().Be(1);
+            (await svc.ListAsync(new CaseFilter { OpenedYear = 1, OpenedMonth = 1 })).Total.Should().Be(1);
+            (await svc.ListAsync(new CaseFilter { OpenedYear = 2026, OpenedMonth = 13 })).Total.Should().Be(1);
+            (await svc.ListAsync(new CaseFilter { OpenedYear = 9998, OpenedMonth = 12 })).Total.Should().Be(0);
+            (await svc.ListAsync(new CaseFilter { OpenedYear = 2, OpenedMonth = 1 })).Total.Should().Be(0);
+        }
+    }
+
+    private sealed class FixedZone(TimeZoneInfo zone) : IncidentManager.Application.Abstractions.IOrganizationTimeZone
+    {
+        public TimeZoneInfo Current { get; } = zone;
+    }
+
     [Fact]
     public async Task Search_matches_an_ioc_value_not_just_the_case_number()
     {
