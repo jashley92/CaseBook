@@ -72,7 +72,7 @@
     Skip the automatic DB backup (only if your backup is handled externally and is current).
 
 .PARAMETER Force
-    Do not prompt for confirmation before deploying.
+    Do not prompt for confirmation before deploying. -WhatIf runs the checks and stops before any change.
 
 .EXAMPLE
     .\Upgrade-CaseBook.ps1 -Version v2.4.0
@@ -107,6 +107,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# BUG-366: -WhatIf stops at the confirmation, before anything changes. Until then the run stages the build in TEMP and
+# runs the preflight for real (an Expand-Archive or New-Item skipped by -WhatIf would only break it); the flag is
+# still passed on by the handover to the bundle's script below.
+$dryRun = [bool]$WhatIfPreference
+$WhatIfPreference = $false
 # REV-73: Windows PowerShell 5.1 offers only SSL3/TLS 1.0 by default unless the host sets SchUseStrongCrypto, and a host
 # with those turned off then refuses every HTTPS probe below (a healthy site reads as down).
 # (Left to the OS when it already decides: SystemDefault includes TLS 1.2 and 1.3.)
@@ -529,7 +534,14 @@ Write-Host "    Target version  : $(if ($targetVersion) { $targetVersion } else 
 Write-Host "    Site path       : $SitePath"
 Write-Host "    Database        : $DbName on $SqlInstance"
 Write-Host ""
-if (-not $Force -and -not $PSCmdlet.ShouldProcess($SiteName, "Upgrade CaseBook")) {
+# BUG-366: at ConfirmImpact Medium ShouldProcess says yes without asking, so it can't stand in for the prompt; under
+# -WhatIf it said no, which ran the prompt and then the real backup. It now answers -Confirm only.
+if ($dryRun) {
+    Write-Host "What if: Performing the operation ""Upgrade CaseBook"" on target ""$SiteName"". Nothing has been changed."
+    return
+}
+if (-not $PSCmdlet.ShouldProcess($SiteName, "Upgrade CaseBook")) { Write-Warn2 "Aborted by user."; return }
+if (-not $Force -and -not $PSBoundParameters.ContainsKey('Confirm')) {
     $ans = Read-Host "Proceed with backup + deploy? (y/N)"
     if ($ans -notmatch '^(y|yes)$') { Write-Warn2 "Aborted by user."; return }
 }
