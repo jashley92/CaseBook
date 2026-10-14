@@ -102,7 +102,7 @@ param(
     [string] $BackupRoot,
     [string] $DataRoot,
     [switch] $SkipDbBackup,
-    [int]    $WarmupTimeoutSec = 180,
+    [int]    $WarmupTimeoutSec = 660,   # WF-73: past the app's 600 s startupTimeLimit (web.config)
     [switch] $Force
 )
 
@@ -610,6 +610,9 @@ function Invoke-SiteProbe([string] $Url, [switch] $WithCredentials) {
 function Get-ProbeVerdict($probe, [switch] $Schema) {
     $c = $probe.Status
     if ($null -eq $c -or $c -eq 407) { return 'none' }
+    # WF-73: 500.37 is IIS saying the app hasn't finished starting within its startupTimeLimit (a long migration); the
+    # next request starts it again where the migrations left off, so it's still starting, not a crash.
+    if ($c -eq 500 -and $probe.Body -match '500\.37') { return 'none' }
     if ($c -ge 500) { return 'crashed' }
     if ($c -in 401,403) { return 'auth' }
     if ($Schema) { if ($c -eq 200 -and $probe.Body -match '"\$schema"') { return 'started' } else { return 'other' } }
