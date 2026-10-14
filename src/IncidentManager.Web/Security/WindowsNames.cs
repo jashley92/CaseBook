@@ -52,11 +52,16 @@ internal static class WindowsNames
         try
         {
             var slash = domainAndSam.IndexOf('\\');
+            var domain = domainAndSam[..slash];
             var sam = domainAndSam[(slash + 1)..];
 
-            // Current domain (the app-pool identity is domain-joined); an authenticated account can read
-            // display-name attributes. Kept short-lived; the result is cached by the caller.
-            using var ctx = new PrincipalContext(ContextType.Domain);
+            // BUG-400: the account's own domain, not the server's. A trusted-domain user's sam looked up in the server's
+            // domain found a namesake there, whose name was shown and stored. A local account (the server's own name)
+            // is looked up on the machine. An authenticated account can read display-name attributes. Kept
+            // short-lived; the result is cached by the caller.
+            using var ctx = string.Equals(domain, Environment.MachineName, StringComparison.OrdinalIgnoreCase)
+                ? new PrincipalContext(ContextType.Machine)
+                : new PrincipalContext(ContextType.Domain, domain.Length == 0 ? null : domain);
             using var user = UserPrincipal.FindByIdentity(ctx, IdentityType.SamAccountName, sam);
             if (user is null) return null;
 
