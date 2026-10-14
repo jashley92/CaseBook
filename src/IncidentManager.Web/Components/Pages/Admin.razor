@@ -1317,7 +1317,8 @@
 
     private async Task SaveSection()
     {
-        if (_effective is null) return;
+        // BUG-394: a double-click mustn't run a second save, which could insert the same new AppSettings key twice.
+        if (_effective is null || _savingSection) return;
         _brandError = null;
         var saveBrand = SectionHasBrand && BrandDirty;
         var accent = NullIfBlank(_accentColor);
@@ -1325,49 +1326,52 @@
         if (saveBrand && accent is not null && !BrandPalette.IsValidHex(accent)) { _brandError = "Accent color must be a hex value like #2563eb."; return; }
         if (saveBrand && ink is not null && !BrandPalette.IsValidHex(ink)) { _brandError = "Primary action color must be a hex value like #232a33."; return; }
 
+        // BUG-394: busy until the saved values have reloaded, so a click in between can't save them again.
         _savingSection = true;
-        var changed = 0;
-        var saved = new List<string>();   // REV-40: the keys already in effect if a later one fails
         try
         {
-            foreach (var s in _effective.Where(e => SectionGroups.Contains(e.Definition.Group)).ToList())
+            var changed = 0;
+            var saved = new List<string>();   // REV-40: the keys already in effect if a later one fails
+            try
             {
-                if (!Differs(s.Definition.Key)) continue;
-                await Settings.SetAsync(s.Definition.Key, _form.GetValueOrDefault(s.Definition.Key));
-                saved.Add(s.Definition.Key);
-                changed++;
+                foreach (var s in _effective.Where(e => SectionGroups.Contains(e.Definition.Group)).ToList())
+                {
+                    if (!Differs(s.Definition.Key)) continue;
+                    await Settings.SetAsync(s.Definition.Key, _form.GetValueOrDefault(s.Definition.Key));
+                    saved.Add(s.Definition.Key);
+                    changed++;
+                }
+                if (SectionHasLayout && LayoutDirty)
+                {
+                    await Settings.SetAsync("Reporting:SectionLayout", ReportLayout.Serialize(_layout));
+                    changed++;
+                }
+                if (saveBrand)
+                {
+                    if (accent is null) await Settings.ResetAsync("Branding:AccentColor"); else await Settings.SetAsync("Branding:AccentColor", accent);
+                    if (ink is null) await Settings.ResetAsync("Branding:InkColor"); else await Settings.SetAsync("Branding:InkColor", ink);
+                    changed++;
+                }
             }
-            if (SectionHasLayout && LayoutDirty)
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
             {
-                await Settings.SetAsync("Reporting:SectionLayout", ReportLayout.Serialize(_layout));
-                changed++;
+                if (saved.Count == 0) { Toasts.Error(ex.Message); return; }
+                // REV-40: each key saves on its own, so the ones before the failure are in effect. Show them as saved, keep the
+                // rest as unsaved edits, and say which is which, rather than leave everything looking unsaved.
+                var names = string.Join(", ", saved.Select(k => _effective.FirstOrDefault(e => e.Definition.Key == k)?.Definition.Label ?? k));
+                await ReloadKeepingEdits(saved);
+                Toasts.Error($"Saved {names}, but not the rest: {ex.Message}");
+                return;
             }
-            if (saveBrand)
-            {
-                if (accent is null) await Settings.ResetAsync("Branding:AccentColor"); else await Settings.SetAsync("Branding:AccentColor", accent);
-                if (ink is null) await Settings.ResetAsync("Branding:InkColor"); else await Settings.SetAsync("Branding:InkColor", ink);
-                changed++;
-            }
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or ForbiddenException)
-        {
-            _savingSection = false;
-            if (saved.Count == 0) { Toasts.Error(ex.Message); return; }
-            // REV-40: each key saves on its own, so the ones before the failure are in effect. Show them as saved, keep the
-            // rest as unsaved edits, and say which is which, rather than leave everything looking unsaved.
-            var names = string.Join(", ", saved.Select(k => _effective.FirstOrDefault(e => e.Definition.Key == k)?.Definition.Label ?? k));
-            await ReloadKeepingEdits(saved);
-            Toasts.Error($"Saved {names}, but not the rest: {ex.Message}");
-            return;
+
+            await ReloadKeepingEdits(SectionKeys(), dropBrand: SectionHasBrand, dropLayout: SectionHasLayout);
+            if (saveBrand) await JS.InvokeVoidAsync("imBrand.apply", BrandPalette.BuildCss(accent, ink) ?? "");
+            Toasts.Success($"Saved {IncidentManager.Application.Common.Plural.Of(changed, "change")} to {ActiveTitle}.");
         }
         finally
         {
             _savingSection = false;
         }
-
-        await ReloadKeepingEdits(SectionKeys(), dropBrand: SectionHasBrand, dropLayout: SectionHasLayout);
-        if (saveBrand) await JS.InvokeVoidAsync("imBrand.apply", BrandPalette.BuildCss(accent, ink) ?? "");
-        Toasts.Success($"Saved {IncidentManager.Application.Common.Plural.Of(changed, "change")} to {ActiveTitle}.");
     }
 
     private async Task DiscardSection()
