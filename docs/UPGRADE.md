@@ -206,6 +206,50 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ## Notes
 
+### v1.6.6
+
+A fix release with no migration. Things to check:
+
+- **Who sees cases:** a signed-in user without the View cases permission sees no case data. That includes a domain
+  user with no CaseBook role, and a custom role with Administer only. The search pill, the case tabs, the beside pane
+  and the activity bell are hidden for them, and the command palette shows no cases. Every built-in role has View
+  cases, so nothing changes for them. **Check:** a custom role whose users should see cases has View cases ticked.
+- **Releases** need SonarQube Cloud's quality gate to have passed on the tagged commit (or, for a release-notes commit,
+  on the code before it). A red gate now fails CI on main.
+- **Email:** the From address must be one address (`CaseBook <casebook@contoso.com>` is fine). A blank value, a name
+  alone or a list is refused, in the settings and in config-bundle imports. A bad value already saved is flagged in
+  the health checks. **Check:** Administration › Diagnostics shows "Settings within limits" as passing.
+- **Active Directory:**
+  - An API token's owner check gives up after 10 seconds. A hung domain controller no longer stalls token requests,
+    reminders, escalations or the agenda feed, and a hung trusted domain doesn't hold up the others.
+  - A list of trusted domains cut short by a slow controller isn't kept for an hour.
+- **Report templates** with text boxes work. A field inside a text box isn't refused on upload, and a list in a text
+  box repeats inside the box. A stage gate with many long requirements no longer blocks the close or escalation it
+  records.
+- **Case record:**
+  - A note promoted to the timeline, or an entry edited, keeps its time in the repeated autumn hour.
+  - When an admin hides Analysis, forms default to the first type offered.
+  - After editing an entity, the add form gets its own verdict back.
+  - A question with `[[tags]]` is limited by what you typed.
+  - A climb such as Complex Event to Incident names every gate it passed.
+  - Accounts copied by a supersede keep their directory details.
+  - Tactics are listed in ATT&CK matrix order everywhere, so Defense Impairment comes before Discovery.
+- **Navigation:**
+  - Going back to Cases returns to the list you left: All, Mine or your filters.
+  - A closed evidence panel or a followed link stays closed after a refresh.
+  - On a phone, another case opens on Now, or on the note its link points at.
+- **Smaller fixes:**
+  - A case import with an empty item in a list is previewed instead of erroring.
+  - Odd dates in Cases links and the timeline's time buttons no longer break the page.
+  - Program overview bars render under any server language.
+  - Case-link searches show the latest results.
+  - A screenshot pasted during an upload is refused with a message.
+  - The reclassify checklist matches the level you picked.
+  - Colleagues on a closed case see "changes after closure" update.
+  - Email templates don't stay "Unsaved" after a save, and two templates can't both be the lessons default.
+  - Search snippets are dated on the organisation's calendar.
+- **v1.6.4's notes** now also list three changes they missed.
+
 ### v1.6.5
 
 A fix release with no migration. Things to check:
