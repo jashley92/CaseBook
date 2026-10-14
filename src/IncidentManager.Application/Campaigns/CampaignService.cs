@@ -249,11 +249,14 @@ public sealed class CampaignService
         var visible = cases.ToDictionary(c => c.Id);
         if (visible.Count == 0) return [];
 
-        // Adjacency over visible-both edges only.
+        // Adjacency over visible-both edges only, and (WF-105) not across the exercise/live line.
+        var drills = (await db.Cases.AsNoTracking().Where(c => participantIds.Contains(c.Id) && c.IsExercise)
+            .Select(c => c.Id).ToListAsync(ct)).ToHashSet();
         var adjacency = new Dictionary<Guid, List<Guid>>();
         void Edge(Guid a, Guid b) => (adjacency.TryGetValue(a, out var l) ? l : adjacency[a] = new()).Add(b);
         foreach (var l in links)
-            if (visible.ContainsKey(l.CaseId) && visible.ContainsKey(l.RelatedCaseId))
+            if (visible.ContainsKey(l.CaseId) && visible.ContainsKey(l.RelatedCaseId)
+                && drills.Contains(l.CaseId) == drills.Contains(l.RelatedCaseId))
             { Edge(l.CaseId, l.RelatedCaseId); Edge(l.RelatedCaseId, l.CaseId); }
 
         // Walk each connected component once; keep those with two or more members (a genuine campaign).
@@ -345,8 +348,11 @@ public sealed class CampaignService
 
         if (candidates.Count == 1) return candidates; // lone case, no campaign links — nothing to scope
 
+        // WF-105: and on the anchor's side of the exercise/live line. Links across it are refused since v1.5.7 (WF-48);
+        // one made before then stays on the cases as recorded but doesn't bring a drill into a live campaign (or back).
+        var anchorExercise = await db.Cases.AsNoTracking().Where(c => c.Id == anchorId).Select(c => c.IsExercise).FirstOrDefaultAsync(ct);
         var visible = (await db.Cases.AsNoTracking().ForUser(_user)
-            .Where(c => candidates.Contains(c.Id))
+            .Where(c => candidates.Contains(c.Id) && c.IsExercise == anchorExercise)
             .Select(c => c.Id).ToListAsync(ct)).ToHashSet();
 
         // Re-walk from the anchor using only edges whose both ends are visible.

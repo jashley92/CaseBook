@@ -91,6 +91,29 @@ public sealed class CampaignServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task An_old_link_to_an_exercise_does_not_bring_it_into_a_live_campaign(/* WF-105 */)
+    {
+        _user.RoleSet = [AppRole.Manager];
+        var a = SeedCase("Alpha", 1);
+        var b = SeedCase("Bravo", 2);
+        Guid drill;
+        using (var db = NewContext())
+        {
+            var x = Case.Open(2026, 3, "Drill", "Drill case", Classification.Incident, Severity.Medium, CaseOrigin.InternalDetection,
+                "creator", _clock.UtcNow, isExercise: true);
+            db.Cases.Add(x);
+            db.SaveChanges();
+            drill = x.Id;
+        }
+        LinkCampaign(a, b);
+        LinkCampaign(b, drill);   // made before v1.5.7 refused such links
+
+        (await NewService().GetRollupAsync(a))!.Members.Select(m => m.CaseId).Should().BeEquivalentTo(new[] { a, b });
+        (await NewService().GetRollupAsync(drill))!.MemberCount.Should().Be(1);
+        (await NewService().ListAsync()).Should().ContainSingle().Which.MemberCount.Should().Be(2);
+    }
+
+    [Fact]
     public async Task Surfaces_only_indicators_that_appear_on_more_than_one_member()
     {
         _user.RoleSet = [AppRole.Manager];

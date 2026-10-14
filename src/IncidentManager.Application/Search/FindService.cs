@@ -170,6 +170,10 @@ public sealed class FindService
                  && !await cases.AnyAsync(c => c.CaseNumber.ToLower().Contains(asNumber), ct))
             readAs = FindReadAs.Words;
 #pragma warning restore CA1304, CA1311, CA1862
+        // WF-89: an email address or account that is a colleague's sign-in name is read as both: the indicator, and the
+        // person (their cases, the tasks they own and the entries they recorded are listed with the indicator's).
+        string? alsoPersonId = readAs == FindReadAs.Indicator && iocType is EntityType.EmailAddress or EntityType.Account
+                               && !q.Quoted && SignInNamed(text) is { } signIn ? signIn.UserId : null;
         var reading = readAs switch
         {
             FindReadAs.Nothing => "filters only",
@@ -178,8 +182,14 @@ public sealed class FindService
             FindReadAs.Person => $"a person: {_users.DisplayFor(personId)}",
             _ => q.Terms.Count == 1 ? "a word in the record" : "words in the record",
         };
+        if (alsoPersonId is not null) reading += $", and a person: {_users.DisplayFor(alsoPersonId)}";
+        List<string> alsoOwner = alsoPersonId is null ? [] : OwnerKeys(alsoPersonId);
+        List<Guid> alsoRecorded = alsoPersonId is null ? [] : await EditedEntriesFirstRecordedByAsync(db, cases.Select(c => c.Id), alsoPersonId, ct);
 
         var terms = q.Terms.Select(t => t.ToLowerInvariant()).ToList();
+        // WF-84: stored text holds link targets the reader never sees ([name](entity:<id>), evidence:, a GUID's hex), so
+        // a word that could be part of one is checked again against the text as shown before a match counts.
+        var recheck = readAs == FindReadAs.Words && terms.Any(CouldBeHidden);
         var counts = new Dictionary<FindKind, int>();
         var caseIds = cases.Select(c => c.Id);
 
@@ -277,7 +287,9 @@ public sealed class FindService
                 var stored = IocObservable.Normalize(iocType!.Value, text).ToLower();
                 var typed = IocObservable.Refang(text).ToLower();
                 caseQ = caseQ.Where(c => c.Entities.Any(e => e.Value.Trim().ToLower() == stored)
-                                         || c.Title.ToLower().Contains(typed) || (c.Summary != null && c.Summary.ToLower().Contains(typed)));
+                                         || c.Title.ToLower().Contains(typed) || (c.Summary != null && c.Summary.ToLower().Contains(typed))
+                                         || (alsoPersonId != null && (c.IncidentCommander == alsoPersonId
+                                                                      || c.Assignments.Any(a => a.UserId == alsoPersonId))));   // WF-89
                 break;
             case FindReadAs.Words:
                 foreach (var t in terms)
@@ -303,8 +315,9 @@ public sealed class FindService
         }
 
         // --- Record entries (current versions), then closing briefs.
-        var entriesApply = readAs is FindReadAs.Indicator or FindReadAs.Words or FindReadAs.Person
-                           || q.Entity is not null || by is not null || q.EntryKind is not null || q.EntryType is not null;
+        // WF-87: owner: is about tasks, which are the only things with an owner, so it lists tasks alone.
+        var entriesApply = owner is null && (readAs is FindReadAs.Indicator or FindReadAs.Words or FindReadAs.Person
+                           || q.Entity is not null || by is not null || q.EntryKind is not null || q.EntryType is not null);
         List<FindEntry> entries = [];
         if (entriesApply)
         {
@@ -314,7 +327,8 @@ public sealed class FindService
             if (readAs is FindReadAs.Indicator or FindReadAs.Words)
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
                     eq = eq.Where(e => e.Description.ToLower().Contains(t) || (e.Rationale != null && e.Rationale.ToLower().Contains(t))
-                                       || taggedEntries.Contains(e.Id));
+                                       || taggedEntries.Contains(e.Id)
+                                       || (alsoPersonId != null && ((e.Version == 1 && e.CreatedBy == alsoPersonId) || alsoRecorded.Contains(e.Id))));
             // WF-09: who recorded it is the first version's author, not whoever last edited it.
             if (readAs == FindReadAs.Person)
             {
@@ -338,6 +352,12 @@ public sealed class FindService
             if (q.EntryType is { } ty) eq = eq.Where(e => e.Type == ty);
             if (from is not null) eq = eq.Where(e => e.OccurredAtUtc >= from);
             if (to is not null) eq = eq.Where(e => e.OccurredAtUtc < to);
+            if (recheck)
+            {
+                var seen = await eq.Select(e => new { e.Id, e.Description, e.Rationale }).ToListAsync(ct);
+                var shown = seen.Where(e => Shows(terms, e.Description, e.Rationale)).Select(e => e.Id).ToList();
+                eq = eq.Where(e => shown.Contains(e.Id));
+            }
             var entryCount = await eq.CountAsync(ct);
             var rows = await eq.OrderByDescending(e => e.OccurredAtUtc).Take(limit)
                 .Join(db.Cases, e => e.CaseId, c => c.Id, (e, c) => new { e.Id, e.CaseId, c.CaseNumber, e.Kind, e.Type, e.OccurredAtUtc, e.Description, e.Rationale })
@@ -359,6 +379,12 @@ public sealed class FindService
                                        || taggedBriefs.Contains(b.Id));
                 if (q.Entity is { } ent2) { var v = ent2.ToLower(); bq = bq.Where(b => b.WorkingAssessment!.ToLower().Contains(v) || taggedBriefs.Contains(b.Id)); }
 #pragma warning restore CA1304, CA1311, CA1862
+                if (recheck)
+                {
+                    var seen = await bq.Select(b => new { b.Id, b.WorkingAssessment, b.Summary }).ToListAsync(ct);
+                    var shown = seen.Where(b => Shows(terms, b.WorkingAssessment, b.Summary)).Select(b => b.Id).ToList();
+                    bq = bq.Where(b => shown.Contains(b.Id));
+                }
                 var brows = await bq.Join(db.Cases, b => b.CaseId, c => c.Id,
                         (b, c) => new { b.Id, b.CaseId, c.CaseNumber, c.ClosedAtUtc, b.CreatedAtUtc, b.WorkingAssessment })
                     .ToListAsync(ct);
@@ -384,7 +410,8 @@ public sealed class FindService
             if (readAs is FindReadAs.Indicator or FindReadAs.Words)
                 foreach (var t in readAs == FindReadAs.Indicator ? [IocObservable.Refang(text).ToLower()] : terms)
                     tq = tq.Where(x => x.Title.ToLower().Contains(t) || (x.Description != null && x.Description.ToLower().Contains(t))
-                                       || taggedTasks.Contains(x.Id));
+                                       || taggedTasks.Contains(x.Id)
+                                       || (x.Owner != null && alsoOwner.Contains(x.Owner.Trim().ToLower())));   // WF-89
             if (q.Entity is { } ent3)
             {
                 var v = ent3.ToLower();
@@ -400,6 +427,12 @@ public sealed class FindService
 #pragma warning restore CA1304, CA1311
             if (from is not null) tq = tq.Where(x => x.CreatedAtUtc >= from);
             if (to is not null) tq = tq.Where(x => x.CreatedAtUtc < to);
+            if (recheck)
+            {
+                var seen = await tq.Select(x => new { x.Id, x.Title, x.Description }).ToListAsync(ct);
+                var shown = seen.Where(x => Shows(terms, x.Title, x.Description)).Select(x => x.Id).ToList();
+                tq = tq.Where(x => shown.Contains(x.Id));
+            }
             counts[FindKind.Tasks] = await tq.CountAsync(ct);
             // Open first (by when they're due), then done.
             // WF-06: ordered and cut in the query (dates order on SQLite too, stored as ticks), not every match read and
@@ -444,7 +477,9 @@ public sealed class FindService
 
         // --- Working notes: only when asked for (they're working reasoning, not the record).
         List<FindNote> notes = [];
-        if (q.Notes && (readAs is FindReadAs.Indicator or FindReadAs.Words or FindReadAs.Person || by is not null || q.Entity is not null))
+        // WF-87: and a type filter lists entries only, as owner: lists tasks only.
+        if (q.Notes && owner is null && q.EntryType is null && q.EntryKind is null
+            && (readAs is FindReadAs.Indicator or FindReadAs.Words or FindReadAs.Person || by is not null || q.Entity is not null))
         {
             var nq = db.Notes.AsNoTracking().Where(n => n.IsCurrent && caseIds.Contains(n.CaseId));
             var taggedNotes = await TaggingAsync(nq, r => n => n.Body.Contains(r), n => n.Id, tagRefs, ct);
@@ -462,6 +497,12 @@ public sealed class FindService
             }
             if (from is not null) nq = nq.Where(n => n.CreatedAtUtc >= from);
             if (to is not null) nq = nq.Where(n => n.CreatedAtUtc < to);
+            if (recheck)
+            {
+                var seen = await nq.Select(n => new { n.Id, n.Body }).ToListAsync(ct);
+                var shown = seen.Where(n => Shows(terms, n.Body)).Select(n => n.Id).ToList();
+                nq = nq.Where(n => shown.Contains(n.Id));
+            }
             counts[FindKind.Notes] = await nq.CountAsync(ct);
             var notes0 = (await nq.OrderByDescending(n => n.CreatedAtUtc).Take(limit)   // WF-06
                     .Join(db.Cases, n => n.CaseId, c => c.Id, (n, c) => new { n.Id, n.CaseId, c.CaseNumber, n.CreatedAtUtc, n.CreatedBy, n.Body, n.Version })
@@ -480,6 +521,20 @@ public sealed class FindService
         }
 
         return new FindResult(q, readAs, reading, filters, counts, entities, foundCases, entries, tasks, evidence, notes);
+    }
+
+    private static readonly string[] LinkSchemes = ["entity:", "evidence:", "entry:", "note:"];
+
+    // A word that a link target could hold: part of a scheme name, or hex digits and dashes (a GUID's).
+    private static bool CouldBeHidden(string term) =>
+        LinkSchemes.Any(s => s.Contains(term, StringComparison.Ordinal))
+        || (term.Length >= 2 && term.All(ch => ch is (>= '0' and <= '9') or (>= 'a' and <= 'f') or '-'));
+
+    // Whether every word is in one of the texts as the reader sees them (links shown by their names).
+    private static bool Shows(IReadOnlyList<string> terms, params string?[] texts)
+    {
+        var shown = string.Join('\n', texts.Where(t => t is not null).Select(t => Content.RichText.ToText(t).ToLowerInvariant()));
+        return terms.All(t => shown.Contains(t, StringComparison.Ordinal));
     }
 
     // WF-83: how many of an entity's occurrences are looked for as tags (one query per kind each; a value is on few cases).
@@ -548,6 +603,16 @@ public sealed class FindService
             ? [_user.UserId, _user.UserPrincipalName, _user.DisplayName, _user.Email]
             : _users.Resolve(userId) is { } u ? [userId, u.UserPrincipalName, u.DisplayName, u.Email] : [userId];
         return ids.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim().ToLowerInvariant()).Distinct().ToList();
+    }
+
+    // WF-89: a known person's sign-in name, email address or DOMAIN\user (which reads as an indicator by its shape).
+    private UserSummary? SignInNamed(string text)
+    {
+        var t = text.Trim();
+        var matches = _users.All().Where(u => u.UserId.Equals(t, StringComparison.OrdinalIgnoreCase)
+                                              || (u.UserPrincipalName is { } upn && upn.Equals(t, StringComparison.OrdinalIgnoreCase))
+                                              || (u.Email is { } em && em.Equals(t, StringComparison.OrdinalIgnoreCase))).ToList();
+        return matches.Count == 1 ? matches[0] : null;
     }
 
     private UserSummary? PersonNamed(string text)

@@ -22,10 +22,13 @@ Above the results Find says how it read what you typed:
   shaped like one that no case number you can see holds (`CVE-2024-3094`, a ticket reference) is read as words.
 - **an IP address, domain, URL, file hash, email address or account** (a single value; defanged values like
   `203.0.113[.]66` are refanged): entities with exactly that value, ignoring case, and the record text, tasks and
-  evidence that contain it.
+  evidence that contain it or tag the entity (by its label too), and the tasks about it. An email address or
+  `DOMAIN\user` that is a colleague's sign-in name is read as both: the indicator, and that person (their cases, the
+  entries they recorded and the tasks they own are listed with it).
 - **a person** (a display name, a sign-in name, or a first name only one person has): the cases they lead or are
   assigned to, the entries they recorded and the tasks they own.
-- **words in the record**: everything else. Every word must appear, ignoring case; quote a phrase to keep it together.
+- **words in the record**: everything else. Every word must appear, ignoring case, in the text as you see it (a link's
+  hidden target, such as `evidence:` and its id, doesn't count); quote a phrase to keep it together.
   Find uses the first 12 words or phrases and says *only the first 12 words used* when there were more.
   Characters like `%`, `_` and `[` match themselves.
 
@@ -43,7 +46,7 @@ used) or `owner:` alongside `type:` or `by:` (tasks aren't record entries).
 | `type:decision`, `handoff`, `adversary`, `response`, or any entry type (`containment`, `communication`, …) | Which record entries; with a type filter Find lists entries only |
 | `after:YYYY-MM-DD`, `before:YYYY-MM-DD` | From that day on, or up to (not including) that day: when it happened (entries) or was opened, added or raised (entities: when added to the case), in the organization's days |
 | `by:NAME`, `by:me` | Who recorded it: the author of the first version, not whoever last edited it |
-| `owner:NAME`, `owner:me` | Whose task: the owner names them by any of their identifiers (sign-in, email, display name) |
+| `owner:NAME`, `owner:me` | Whose task: the owner names them by any of their identifiers (sign-in, email, display name). Find then lists tasks only |
 | `state:NY` (or `jurisdiction:NY`) | Cases with residents of that state affected |
 | `in:notes` | Include working notes |
 | `exercises:yes` | Include exercises (left out otherwise) |

@@ -208,7 +208,21 @@ values). Restore the pre-upgrade database backup together with the previous bina
 
 ### v1.6.3
 
-A fix release with no migration. Things to check:
+A fix release with one small migration (`NoticeDueAt`: a nullable `JurisdictionNotices.DueAtUtc`; the DBA script is
+regenerated). Things to check:
+
+- **Slow start-ups don't roll back.** The shipped `web.config` gives the app 600 seconds to start (IIS's default is 120),
+  so a long migration isn't cut off, and the upgrade's warm-up now waits up to 660 seconds and reads IIS's "still
+  starting" answer (500.37) as starting, not a crash.
+- **Past quarters' notice and improvement-action figures are frozen.** Each regulator notice keeps the deadline it was
+  made against, so its on-time outcome doesn't move when a rule's window or the materiality decision changes later
+  (notices made before this release get today's at start-up). Improvement-action figures are worked out from each
+  action as it stood at the quarter's end.
+- **Exercise links made before v1.5.7** no longer bring a drill into a live campaign's rollup (or the reverse); the links
+  stay on the cases.
+- **Find**: a colleague's email address or `DOMAIN\user` lists their cases, entries and tasks with the indicator's
+  results; `owner:` lists tasks only and `type:` entries only; a word only inside a link's hidden target (`evidence`,
+  part of an id) no longer matches.
 
 - **Upgrades run with the new release's own script.** `-Version` downloads the bundle and then hands over to the
   `Upgrade-CaseBook.ps1` inside it, so a fix to the upgrade itself applies to the upgrade that ships it. The kept scripts

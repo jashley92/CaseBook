@@ -432,6 +432,33 @@ public sealed class FindServiceTests : IDisposable
         (await NewFind().FindAsync("203.0.113.66")).Entities.Single().Cases.Should().Contain(c => c.CaseId == _alpha && c.IsArchived);
     }
 
+    [Theory, MemberData(nameof(TestDatabase.Providers), MemberType = typeof(TestDatabase))]
+    public async Task Sign_in_names_owner_and_hidden_link_text(string provider /* WF-84, WF-87, WF-89 */)
+    {
+        Use(provider);
+        using (var db = NewContext())
+        {
+            db.TimelineEntries.Add(new TimelineEntry { CaseId = _alpha, Kind = TimelineKind.Investigation, Type = TimelineEntryType.Analysis,
+                OccurredAtUtc = H(-30), Description = $"See the [proxy log](evidence:{Guid.NewGuid()}) for the times", CreatedBy = "robin", CreatedAtUtc = H(-30) });
+            db.SaveChanges();
+        }
+
+        // WF-89: a colleague's address is the indicator and the person: the tasks they own are listed too.
+        var mail = await NewFind().FindAsync("analyst1@contoso.example");
+        mail.ReadAs.Should().Be(FindReadAs.Indicator);
+        mail.Reading.Should().Contain("and a person: Analyst One");
+        mail.Tasks.Should().Contain(t => t.Title == "Block 203.0.113.66 at the proxy");
+
+        // WF-87: owner: lists tasks alone.
+        var mine = await NewFind().FindAsync("owner:me proxy");
+        mine.Tasks.Should().NotBeEmpty();
+        mine.Entries.Should().BeEmpty();
+
+        // WF-84: a word only in a link's hidden target doesn't match; the link's shown name does.
+        (await NewFind().FindAsync("evidence")).Entries.Should().NotContain(e => e.Text.Contains("proxy log"));
+        (await NewFind().FindAsync("proxy log")).Entries.Should().Contain(e => e.Text.Contains("proxy log"));
+    }
+
     [Fact]
     public void A_filter_it_cant_use_is_said_back(/* WF-88 */)
     {
