@@ -44,7 +44,9 @@ public sealed class EmailSender : IEmailSender
             await DeliverAsync(_options.CurrentValue, message.To, message.Subject, message.TextBody, message.HtmlBody, ct);
             return new EmailSendOutcome(EmailSendStatus.Sent);
         }
-        catch (Exception ex) when (ex is SmtpException or InvalidOperationException or FormatException or IOException)
+        // BUG-373: ArgumentException too (an empty sender address, a header MailMessage refuses), so the admin sees the
+        // reason instead of an error page.
+        catch (Exception ex) when (ex is SmtpException or InvalidOperationException or FormatException or IOException or ArgumentException)
         {
             _log.LogError(ex, "Test email to {RecipientCount} recipient(s) failed.", message.To.Count);
             // The innermost message names the actual cause (connection refused, auth required, bad address).
@@ -103,7 +105,9 @@ public sealed class EmailSender : IEmailSender
     private async Task DeliverAsync(EmailOptions o, IReadOnlyCollection<string> to, string subject,
         string textBody, string? htmlBody, CancellationToken ct)
     {
-        using var message = new MailMessage { From = new MailAddress(o.From), Subject = subject };
+        // BUG-373: a subject stored with a line break (an alert queued before the composer collapsed them) is sent on
+        // retry instead of throwing again.
+        using var message = new MailMessage { From = new MailAddress(o.From), Subject = EmailComposer.SingleLine(subject) };
         // BUG-241: one bad address (a typo in a list set in the file) mustn't stop the message reaching the rest.
         var bad = 0;
         foreach (var addr in to)

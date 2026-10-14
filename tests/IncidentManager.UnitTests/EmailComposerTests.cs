@@ -108,3 +108,31 @@ public class EmailComposerTests
             }
     }
 }
+
+/// <summary>BUG-373: a token holding a line break mustn't put one in the subject header, where MailMessage refuses it.</summary>
+public class EmailComposerSubjectLineTests
+{
+    [Fact]
+    public async Task A_multi_line_token_in_the_subject_collapses_to_one_line()
+    {
+        var composer = TestEmail.Composer(("EmailTemplate:mention:Subject", "{{MentionedBy}}: {{Note}}"));
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["MentionedBy"] = "Ivy", ["Note"] = "First paragraph.\r\n\r\nSecond\tparagraph.\n", ["CaseNumber"] = "2026-01",
+        };
+
+        var msg = await composer.ComposeAsync("mention", ["a@x.test"], tokens);
+
+        msg.Subject.Should().Be("Ivy: First paragraph. Second paragraph.");
+        var act = () => new System.Net.Mail.MailMessage { Subject = msg.Subject };
+        act.Should().NotThrow();
+        msg.TextBody.Should().Contain("First paragraph.\n", "the body keeps its line breaks");
+    }
+
+    [Fact]
+    public async Task The_preview_subject_is_one_line_too()
+    {
+        var (subject, _) = await TestEmail.Composer().PreviewAsync("mention", "Hi\r\n{{CaseNumber}}", "<p>x</p>");
+        subject.Should().Be("Hi 2026-01_Phishing_Wave");
+    }
+}

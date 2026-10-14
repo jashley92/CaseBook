@@ -43,7 +43,7 @@ public sealed partial class EmailComposer : IEmailComposer
         var bodyTemplate = draftBody is { Length: > 0 } db ? db
             : _config[EmailTemplateCatalog.BodyKey(templateId)] is { Length: > 0 } b ? b : def.DefaultBodyHtml;
 
-        var subject = SubstitutePlain(subjectTemplate, tokens);
+        var subject = SingleLine(SubstitutePlain(subjectTemplate, tokens));
         var contentHtml = SubstituteHtml(bodyTemplate, tokens, htmlTokens);
         var contentText = SubstituteText(bodyTemplate, tokens, htmlTokens);
 
@@ -61,7 +61,7 @@ public sealed partial class EmailComposer : IEmailComposer
                   ?? throw new ArgumentException($"Unknown email template '{templateId}'.", nameof(templateId));
 
         var (tokens, htmlTokens, ctaUrl) = SampleTokens(def);
-        var subj = SubstitutePlain(subject, tokens);
+        var subj = SingleLine(SubstitutePlain(subject, tokens));
         var content = SubstituteHtml(bodyHtml, tokens, htmlTokens);
         var palette = BrandPalette.EmailColors(_config["Branding:AccentColor"], _config["Branding:InkColor"]);
         var (html, _) = await RenderShellAsync(content, "", palette, def.CtaLabel, ctaUrl, subj, ct);
@@ -84,6 +84,16 @@ public sealed partial class EmailComposer : IEmailComposer
 
     [GeneratedRegex(@"<[^>]+>")]
     private static partial Regex TagRegex();
+
+    [GeneratedRegex(@"\s*[\p{Cc}  ]+\s*")]
+    private static partial Regex LineBreakRegex();
+
+    /// <summary>
+    /// BUG-373: a subject is one header line. A token holding a line break (a two-paragraph @mention, a handoff, an
+    /// imported multi-line case title) made <c>MailMessage.Subject</c> throw, so the email was lost or failed every retry.
+    /// Line breaks and other control characters collapse to one space.
+    /// </summary>
+    internal static string SingleLine(string subject) => LineBreakRegex().Replace(subject, " ").Trim();
 
     private static string SubstitutePlain(string template, IReadOnlyDictionary<string, string> tokens) =>
         TokenRegex().Replace(template, m => tokens.TryGetValue(m.Groups[1].Value, out var v) ? v : "");

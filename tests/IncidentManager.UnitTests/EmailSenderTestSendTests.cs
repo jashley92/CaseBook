@@ -40,4 +40,14 @@ public sealed class EmailSenderTestSendTests
         var act = () => sender.SendAsync(Msg);
         await act.Should().NotThrowAsync();
     }
+
+    [Fact]
+    public async Task A_sender_address_MailMessage_refuses_is_reported_not_thrown(/* BUG-373 */)
+    {
+        var sender = Sender(new EmailOptions { Enabled = true, From = "", SmtpHost = "127.0.0.1", SmtpPort = 1, EnableSsl = false });
+
+        var outcome = await sender.SendTestAsync(Msg);
+
+        outcome.Status.Should().Be(EmailSendStatus.Failed);
+    }
 }

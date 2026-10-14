@@ -86,4 +86,28 @@ public sealed class EmailSenderRefusedRecipientTests
         await stop.CancelAsync();
         try { await relay; } catch (OperationCanceledException) { }
     }
+
+    [Fact]
+    public async Task A_stored_subject_with_a_line_break_is_still_sent(/* BUG-373 */)
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        using var stop = new CancellationTokenSource();
+        var relay = RelayAsync(listener, stop.Token);
+        var sender = new EmailSender(new Monitor(new EmailOptions
+        {
+            Enabled = true, SmtpHost = "127.0.0.1", SmtpPort = ((IPEndPoint)listener.LocalEndpoint).Port, EnableSsl = false,
+            From = "casebook@example.test"
+        }), NullLogger<EmailSender>.Instance);
+
+        using (var watch = DeliveryWatch.Begin())
+        {
+            await sender.SendAsync(new EmailMessage(["legal@example.test"], "Breach: Multi\r\nline title", "<p>b</p>", "b"));
+            watch.Failed.Should().BeFalse("an outbox row queued with a bad subject must not fail every retry");
+        }
+        var outcome = await sender.SendTestAsync(new EmailMessage(["legal@example.test"], "Test\nsubject", "<p>b</p>", "b"));
+        outcome.Status.Should().Be(EmailSendStatus.Sent);
+        await stop.CancelAsync();
+        try { await relay; } catch (OperationCanceledException) { }
+    }
 }
