@@ -20,9 +20,11 @@ public static class HandoffDraft
     ];
 
     /// <summary>When the last handoff was recorded, or when the case was opened if there hasn't been one.</summary>
+    // BUG-363: by when each handoff was first recorded. Editing the last one (a typo) made a new version, and anchoring on
+    // its CreatedAtUtc dropped the work done between the handoff and the edit.
     public static DateTimeOffset Since(Case c) =>
         c.TimelineEntries.Where(e => e.IsCurrent && e.Type == TimelineEntryType.Handoff)
-            .Select(e => (DateTimeOffset?)e.CreatedAtUtc).Max() ?? c.CreatedAtUtc;
+            .Select(e => (DateTimeOffset?)FirstRecorded(c, e)).Max() ?? c.CreatedAtUtc;
 
     /// <summary>
     /// The pre-fill as Markdown bullets, ordered by when things happened, or null when nothing was recorded

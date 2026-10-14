@@ -77,4 +77,21 @@ public class HandoffDraftTests
 
         HandoffDraft.DoneSince(c, Labels, s => s).Should().BeNull();
     }
+
+    [Fact]
+    public void Editing_the_last_handoff_keeps_the_work_done_after_it(/* BUG-363 */)
+    {
+        var c = NewCase();
+        var handoff = Entry(c, TimelineKind.Investigation, TimelineEntryType.Handoff, "Handed to an1", T0.AddHours(2));
+        handoff.IsCurrent = false;
+        c.TimelineEntries.Add(handoff);
+        c.TimelineEntries.Add(Entry(c, TimelineKind.Investigation, TimelineEntryType.Analysis, "Work after the handoff", T0.AddHours(3)));
+        var fixedTypo = Entry(c, TimelineKind.Investigation, TimelineEntryType.Handoff, "Handed to an1 (typo)", T0.AddHours(2));
+        fixedTypo.CreatedAtUtc = T0.AddHours(4);
+        fixedTypo.SupersedesEntryId = handoff.Id;
+        c.TimelineEntries.Add(fixedTypo);
+
+        HandoffDraft.Since(c).Should().Be(T0.AddHours(2));
+        HandoffDraft.DoneSince(c, Labels, s => s).Should().Be("- Work after the handoff");
+    }
 }
