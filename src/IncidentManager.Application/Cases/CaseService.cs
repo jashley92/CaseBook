@@ -2382,16 +2382,19 @@ public sealed class CaseService
             });
 
         var copied = 0;
+        var added = new List<CaseEntity>();
         if (copyIndicators)
         {
             foreach (var e in dup.Entities.OrderBy(e => e.CreatedAtUtc))
             {
                 var have = primary.Entities.Any(p => p.Type == e.Type && string.Equals(p.Value, e.Value, StringComparison.OrdinalIgnoreCase));
                 if (have) continue;
+                var isNew = primary.FindEntity(e.Type, e.Value) is null;
                 var source = $"Copied from {dup.CaseNumber}" + (string.IsNullOrWhiteSpace(e.Source) ? "" : $" ({e.Source})");
                 var copy = primary.AddEntity(e.Type, e.Value, e.Label, e.Disposition, e.Description,
                     source.Length > 200 ? source[..200] : source, _user.UserId, now);
                 copy.Tlp = e.Tlp;   // BUG-106: the sharing marking travels with the indicator
+                if (isNew) added.Add(copy);
                 copied++;
             }
         }
@@ -2409,6 +2412,9 @@ public sealed class CaseService
         });
 
         await db.SaveChangesAsync(ct);
+        // BUG-493: the accounts copied across get their "as added" directory snapshot on the kept case, as any add does
+        // (BUG-416); best effort, once the supersede is saved.
+        await CaptureAccountsAsync(primary.Id, added, new Accounts.AccountDirectoryService.CaptureAllowance(), ct);
         return new SupersedeResult(primary.Id, primary.CaseNumber, copied, !linked);
     }
 

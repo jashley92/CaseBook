@@ -168,6 +168,60 @@ public sealed class AccountDirectoryTests : IDisposable
     }
 
     [Fact]
+    public async Task An_account_copied_by_a_supersede_keeps_its_directory_details_on_the_kept_case(/* BUG-493 */)
+    {
+        _directory.Accounts["CONTOSO\\asmith"] = Jdoe() with { SamAccountName = "asmith", DisplayName = "Alex Smith" };
+        await using var db = NewContext();
+        var cases = new CaseService(new TestDbContextFactory(Options()), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+            accounts: NewService());
+        Task<IncidentManager.Domain.Entities.Case> Open(string name) => cases.CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = name, Title = "Account case", Classification = Classification.Incident,
+            Severity = Severity.Medium, Origin = CaseOrigin.InternalDetection
+        });
+        var dup = await Open("Dup");
+        var kept = await Open("Kept");
+        await cases.AddOrMatchEntityAsync(dup.Id, EntityType.Account, "CONTOSO\\asmith", null, EntityDisposition.Compromised, null, null);
+        await cases.AddOrMatchEntityAsync(dup.Id, EntityType.Account, "CONTOSO\\jdoe", null, EntityDisposition.Unknown, null, null);
+        await cases.AddOrMatchEntityAsync(dup.Id, EntityType.IpAddress, "203.0.113.9", null, EntityDisposition.Unknown, null, null);
+        var already = (await cases.AddOrMatchEntityAsync(kept.Id, EntityType.Account, "CONTOSO\\jdoe", null, EntityDisposition.Unknown, null, null)).Id;
+        _directory.Asked.Clear();
+
+        var result = await cases.SupersedeAsync(dup.Id, kept.Id, copyIndicators: true, "Same sign-ins");
+
+        result.IndicatorsCopied.Should().Be(2);
+        var copy = (await cases.GetDetailAsync(kept.Id))!.Entities.Single(e => e.Value == "CONTOSO\\asmith");
+        (await NewService().SnapshotsAsync(kept.Id, copy.Id)).Should().ContainSingle()
+            .Which.DisplayName.Should().Be("Alex Smith");
+        (await NewService().SnapshotsAsync(kept.Id, already)).Should().ContainSingle("one already on the kept case isn't looked up again");
+        _directory.Asked.Should().Equal(["CONTOSO\\asmith"]);
+    }
+
+    [Fact]
+    public async Task A_supersede_is_saved_when_the_directory_is_down(/* BUG-493 */)
+    {
+        await using var db = NewContext();
+        var cases = new CaseService(new TestDbContextFactory(Options()), _user, _clock, new CaseNumberGenerator(db), new CreateCaseValidator(),
+            new NoOpCaseNotifications(), new IncidentManager.Application.StageGates.StageGateEvaluator(), new TestSlaTargets(),
+            accounts: NewService());
+        Task<IncidentManager.Domain.Entities.Case> Open(string name) => cases.CreateAsync(new CreateCaseRequest
+        {
+            DescriptiveName = name, Title = "Account case", Classification = Classification.Incident,
+            Severity = Severity.Medium, Origin = CaseOrigin.InternalDetection
+        });
+        var dup = await Open("Dup");
+        var kept = await Open("Kept");
+        await cases.AddOrMatchEntityAsync(dup.Id, EntityType.Account, "CONTOSO\\asmith", null, EntityDisposition.Unknown, null, null);
+        _directory.Down = true;
+
+        (await cases.SupersedeAsync(dup.Id, kept.Id, copyIndicators: true, "Same sign-ins")).IndicatorsCopied.Should().Be(1);
+
+        var copy = (await cases.GetDetailAsync(kept.Id))!.Entities.Single(e => e.Value == "CONTOSO\\asmith");
+        (await NewService().SnapshotsAsync(kept.Id, copy.Id)).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task A_bare_name_is_an_account_only_when_the_directory_knows_it()
     {
         _directory.Accounts["jdoe"] = Jdoe();
