@@ -303,20 +303,35 @@
         ClearShown();
     }
 
-    private void ClearShown() => (_shownBytes, _shownPending, _shownError) = (null, false, null);
+    // BUG-439: bumped by every Show here and everything that clears what's shown (another case or template, Close, a
+    // replaced file), so a slow fill that finishes after one of those is dropped instead of shown as the current choice.
+    private int _showSeq;
+
+    private void ClearShown()
+    {
+        _showSeq++;
+        (_shownBytes, _shownPending, _shownError) = (null, false, null);
+    }
 
     private async Task ShowHere(ReportTemplateView t)
     {
         ClearShown();
+        var seq = _showSeq;
+        var caseId = _previewCaseId;   // BUG-439: the case filled, not whichever is picked when the fill finishes
         try
         {
-            var (fileName, bytes, _) = await Reports.PreviewTemplateAsync(t.Id, _previewCaseId);
+            var (fileName, bytes, _) = await Reports.PreviewTemplateAsync(t.Id, caseId);
+            if (seq != _showSeq) return;
             // The admin sees the case's data without opening the case, so it's logged like the download.
-            await Access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, _previewCaseId,
+            await Access.RecordArtifactAsync(IncidentManager.Domain.Enums.AccessType.Export, caseId,
                 $"Word template preview (shown in Administration): {fileName}", t.Id);
+            if (seq != _showSeq) return;
             (_shownBytes, _shownPending) = (bytes, true);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException) { Toasts.Error(ex.Message); }
+        catch (Exception ex) when (ex is InvalidOperationException or ForbiddenException)
+        {
+            if (seq == _showSeq) Toasts.Error(ex.Message);
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
