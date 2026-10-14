@@ -414,6 +414,8 @@ public sealed class CaseImportService
             .Where(p => p.Id == pendingId && p.Status == PendingImportStatus.Applied && p.ResolvedCaseId == null && p.DecidedAtUtc == at)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(p => p.Status, PendingImportStatus.Pending)
+                // WF-94: kept on the row, so whoever previews it next (not only this reviewer's tab) is warned.
+                .SetProperty(p => p.DecisionNote, $"{ReopenedMarker} {row.DecidedBy} at {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC")
                 .SetProperty(p => p.DecidedBy, (string?)null)
                 .SetProperty(p => p.DecidedAtUtc, (DateTimeOffset?)null), ct);
         if (reopened != 1) return false;
@@ -448,8 +450,23 @@ public sealed class CaseImportService
 
         var parsed = Parse(row.RawJson);
         if (!parsed.Ok) return null; // validated at submit, so this is defensive
-        return await BuildPreviewAsync(parsed.Document!, intoCaseId: row.TargetCaseId, ct: ct);
+        var preview = await BuildPreviewAsync(parsed.Document!, intoCaseId: row.TargetCaseId, ct: ct);
+        // WF-18/WF-94: an apply that stopped without recording anything may have written before it stopped.
+        if (row.DecisionNote is { } note && note.StartsWith(ReopenedMarker, StringComparison.Ordinal))
+        {
+            var who = note[ReopenedMarker.Length..].Trim();
+            preview.Warnings.Add(row.TargetCaseId is null
+                ? $"An earlier apply of this import (by {who}) stopped without finishing and may have created a case before it " +
+                  "did. Check the case list for it before applying, and pick it as the target if it's there, or the case is filed twice."
+                : $"An earlier apply of this import (by {who}) stopped without finishing and may already have written its summary " +
+                  "note, timeline entries and tasks into the target case. Check the case before applying: applying again writes " +
+                  "them again (entities aren't duplicated).");
+        }
+        return preview;
     }
+
+    // WF-94: DecisionNote on a stuck import put back in the queue, followed by whose claim it was and when.
+    private const string ReopenedMarker = "Reopened after a stopped apply by";
 
     // The preview's lists are get-only, so they're filled in place.
     private static readonly JsonSerializerOptions ResumeJsonOptions = new()

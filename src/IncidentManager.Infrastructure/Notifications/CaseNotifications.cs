@@ -650,11 +650,12 @@ public sealed class CaseNotifications : ICaseNotifications
                 list.Add(r);
             }
         }
+        Unreached(reminders, byRecipient.Values, r => r.CaseId.ToString());   // WF-96: nobody reachable yet: tried again
 
         foreach (var (to, list) in byRecipient)
         {
             var ordered = NotYetSentTo(list
-                .DistinctBy(r => r.CaseId)                          // IC who is also an assignee → list once
+                .DistinctBy(r => r.CaseId)                         // IC who is also an assignee → list once
                 .OrderByDescending(r => r.DaysInactive)
                 .ThenBy(r => r.CaseNumber, StringComparer.OrdinalIgnoreCase), StaleKey, to);
             if (ordered.Count == 0) continue;

@@ -476,7 +476,6 @@ else if (_pending.Count > 0)
     // PROD-33: the pending programmatic-import queue + the one currently under review.
     private Guid? _reviewingPendingId;
     private List<PendingImportSummary> _pending = new();
-    private readonly HashSet<Guid> _reopened = new();
 
     // WF-18: puts a stuck import back in the queue (audited) and opens it for review.
     private async Task ReopenStuck(Guid id)
@@ -489,7 +488,6 @@ else if (_pending.Count > 0)
                 _pending = (await Import.ListPendingAsync()).ToList();
                 return;
             }
-            _reopened.Add(id);
             Nav.NavigateTo($"cases/import?pending={id}");
         }
         catch (Exception ex) when (ex is ForbiddenException or InvalidOperationException) { Toasts.Error(ex.Message); }
@@ -514,9 +512,6 @@ else if (_pending.Count > 0)
                 }
                 _reviewingPendingId = pid;
                 _preview = preview;
-                if (_reopened.Remove(pid))   // WF-18
-                    _preview.Warnings.Add("An earlier apply of this import stopped without finishing and may have created a case " +
-                                          "before it did. Check the case list for it before applying, and pick it as the target if it's there.");
                 await RefreshGates();
                 _text = null;
                 _error = null;

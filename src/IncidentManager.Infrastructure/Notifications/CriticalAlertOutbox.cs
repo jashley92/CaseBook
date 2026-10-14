@@ -4,6 +4,7 @@ using IncidentManager.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace IncidentManager.Infrastructure.Notifications;
 
@@ -13,7 +14,7 @@ namespace IncidentManager.Infrastructure.Notifications;
 /// retry it's given up, and administrators (and, for a breach escalation, everyone on the case) see it wasn't delivered.
 /// </summary>
 public sealed class CriticalAlertOutbox(IEmailSender email, IServiceScopeFactory scopes, IClock clock,
-    ILogger<CriticalAlertOutbox> log) : ICriticalAlertOutbox, IDisposable
+    ILogger<CriticalAlertOutbox> log, IOptionsMonitor<EmailOptions>? emailOptions = null) : ICriticalAlertOutbox, IDisposable
 {
     private readonly SemaphoreSlim _retrying = new(1, 1);
 
@@ -47,6 +48,9 @@ public sealed class CriticalAlertOutbox(IEmailSender email, IServiceScopeFactory
 
     public async Task<int> RetryDueAsync(CancellationToken ct = default)
     {
+        // WF-92: while email is off the alerts are held, not tried: four failed tries would give them up (and tell everyone
+        // Legal may not have heard) within hours, and a given-up alert isn't sent when email is on again.
+        if (emailOptions?.CurrentValue.Enabled == false) return 0;
         if (!await _retrying.WaitAsync(0, ct)) return 0;
         try
         {
