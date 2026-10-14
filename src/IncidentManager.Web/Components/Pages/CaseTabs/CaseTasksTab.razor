@@ -763,6 +763,7 @@ else
     private void BeginEdit(ActionItem t)
     {
         _editingTaskId = t.Id;
+        _completeOpenedLast = false;
         _editStamp = t.RowHash ?? "";   // BUG-196
         _editTitle = t.Title;
         _editStatus = t.Status;
@@ -825,8 +826,22 @@ else
     /// <summary>Ctrl/⌘+Enter from the parent's hotkey dispatcher — add the follow-up in the composer.</summary>
     public async Task SubmitAsync()
     {
-        if (CanEdit) await AddTask();
+        if (!CanEdit) return;
+        // BUG-389: an open edit or Mark-done row takes it, as its own button would (the last one opened, if both are),
+        // rather than adding a task from the composer. Only for a task still on this case (a colleague may have deleted
+        // it, or the tab may now show another case).
+        var editing = _editingTaskId is { } e && Case.ActionItems.Any(x => x.Id == e);
+        var completing = _completingId is { } c ? Case.ActionItems.FirstOrDefault(x => x.Id == c) : null;
+        if (editing && (completing is null || !_completeOpenedLast)) { await SaveEdit(); return; }
+        if (completing is not null)
+        {
+            if (!(completing.FollowsUpQuestion && string.IsNullOrWhiteSpace(_doneResult))) await CompleteTask(completing.Id);
+            return;
+        }
+        await AddTask();
     }
+
+    private bool _completeOpenedLast;   // BUG-389: which row form Ctrl+Enter is for when both are open
 
     // Enter in the title adds the task, like any one-line form (held Enter doesn't add it twice).
     private bool _adding;
@@ -924,6 +939,7 @@ else
     private void BeginComplete(ActionItem t)
     {
         _completingId = t.Id;
+        _completeOpenedLast = true;
         // HR-10: the result is logged as what the task was (Contain → Containment); a question's answer is Analysis.
         _doneType = t.FollowsUpQuestion ? TimelineEntryType.Analysis : t.Kind.ResultType();
         _doneResult = null; _doneKnown = false; _doneKnownLine = null;
