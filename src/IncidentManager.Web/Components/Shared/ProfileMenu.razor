@@ -196,10 +196,11 @@
     }
 
     // S-24: a full-page load to the lock page tears down the circuit, exactly as the idle lock does.
-    private void LockNow()
+    // BUG-327: through the same helper, so an unsent draft's "Leave site?" prompt can't hold the lock up.
+    private async Task LockNow()
     {
         _open = false;
-        Nav.NavigateTo("session-expired?locked=1", forceLoad: true);
+        await IncidentManager.Web.Security.SessionLock.LockAsync(JS, Nav, "session-expired?locked=1");
     }
 
     private string DisplayName => string.IsNullOrWhiteSpace(CurrentUser.DisplayName)

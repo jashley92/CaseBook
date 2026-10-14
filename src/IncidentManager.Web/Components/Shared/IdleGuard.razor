@@ -103,12 +103,10 @@
         if (_countdownCts is not null) await _countdownCts.CancelAsync();   // S6966
         try { await JS.InvokeVoidAsync("imIdle.stop"); }
         catch (JSDisconnectedException) { }
-        // FR-05: this is a deliberate security teardown — suppress the unsaved-changes beforeunload prompt so
-        // the forced navigation is never trapped behind a native dialog on an unattended screen.
-        try { await JS.InvokeVoidAsync("markdownEditor.suppressUnloadGuard"); }
-        catch (JSDisconnectedException) { }
-        // Full-page navigation tears down this circuit and everything it held in memory.
-        Nav.NavigateTo("session-expired", forceLoad: true);
+        // FR-05: this is a deliberate security teardown, so the unsaved-changes beforeunload prompt is suppressed
+        // and the full-page navigation tears down this circuit and everything it held in memory (BUG-327: shared
+        // with Lock now).
+        await IncidentManager.Web.Security.SessionLock.LockAsync(JS, Nav, "session-expired");
     }
 
     public async ValueTask DisposeAsync()
