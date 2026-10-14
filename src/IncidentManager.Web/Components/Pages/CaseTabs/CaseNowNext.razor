@@ -299,7 +299,7 @@
         _doneError = null;
         try
         {
-            var logAs = _logIt && !string.IsNullOrWhiteSpace(_result) ? TimelineEntryType.Analysis : (TimelineEntryType?)null;
+            var logAs = _logIt && !string.IsNullOrWhiteSpace(_result) ? ResultType() : (TimelineEntryType?)null;
             await Cases.CompleteActionItemAsync(Case.Id, t.Id, null, _result, logAs);
             _doneFor = null;
             Toasts.Success(logAs is null ? "Task done" : "Task done; the result is on the record");
@@ -310,6 +310,16 @@
             _doneError = ex.Message;
         }
         finally { _saving = false; }
+    }
+
+    // BUG-478 sibling: Analysis unless an admin has hidden it; then the first type the Tasks tab would offer for a result.
+    private static TimelineEntryType ResultType()
+    {
+        var offered = Ui.Options<TimelineEntryType>("TimelineEntryType")
+            .Where(t => t is not (TimelineEntryType.Decision or TimelineEntryType.Notified or TimelineEntryType.ScopeConfirmed
+                or TimelineEntryType.DataConfirmed or TimelineEntryType.Remediation or TimelineEntryType.RegulatoryNotification))
+            .ToList();
+        return offered.Contains(TimelineEntryType.Analysis) || offered.Count == 0 ? TimelineEntryType.Analysis : offered[0];
     }
 
     private const int TasksShown = 6;
