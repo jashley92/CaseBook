@@ -439,6 +439,42 @@ public sealed class NotificationDeadlineScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_legacy_combined_notice_keeps_its_deadline_and_outcome(/* BUG-456 */)
+    {
+        var id = await SeedMaterialBreachAsync(hoursAgo: 10);   // material 10 h ago
+        EnableClock();                                          // 72 h default: NY due in 62 h
+        await new NotificationRuleService(NewFactory(), _user, _clock).SaveAsync(null, "CA", "California", 24);   // CA due in 14 h
+        await SetJurisdictionsAsync("SSN", "NY,CA");
+        var notifiedAt = _clock.UtcNow.AddHours(-1);
+        await using (var db = NewContext())
+        {
+            db.JurisdictionNotices.Add(new JurisdictionNotice
+            {
+                CaseId = id, Jurisdiction = "NY;CA", NotifiedAtUtc = notifiedAt, CreatedBy = "alice", CreatedAtUtc = notifiedAt
+            });
+            await db.SaveChangesAsync();
+        }
+        async Task<List<(Guid CaseId, DateTimeOffset NotifiedAtUtc, SlaState State)>> OutcomesAsync()
+        {
+            var ruleSet = await new NotificationRuleService(NewFactory(), _user, _clock).LoadRuleSetAsync(_settings.Current.DefaultWindowHours);
+            await using var q = NewContext();
+            return await NotificationDeadlineService.NoticeOutcomesAsync(q, q.Cases.Where(c => c.Id == id), _settings.Current, ruleSet, _clock.UtcNow);
+        }
+        (await OutcomesAsync()).Select(o => o.State).Should().Equal(SlaState.Met, SlaState.Met);   // one for each regulator
+
+        // The start-up freeze gives the combined notice the earlier of its codes' deadlines.
+        (await NewDeadlines().FreezeNoticeDuesAsync()).Should().Be(1);
+        await using (var check = NewContext())
+            (await check.JurisdictionNotices.AsNoTracking().SingleAsync(n => n.CaseId == id)).DueAtUtc.Should().Be(_clock.UtcNow.AddHours(14));
+        (await OutcomesAsync()).Select(o => o.State).Should().Equal(SlaState.Met, SlaState.Met);   // still one each
+
+        // The default window later shrinks to an hour: the past notice's outcome doesn't move.
+        _settings.Current = new NotificationDeadlineSettings(true, NotificationStartBasis.Determination, 1, 80);
+        (await OutcomesAsync()).Select(o => o.State).Should().Equal(SlaState.Met, SlaState.Met);
+        (await NewDeadlines().EvaluateAsync(id)).Statuses.Should().OnlyContain(s => s.State == SlaState.Met);
+    }
+
+    [Fact]
     public async Task Mark_reported_adds_no_second_notice_for_codes_a_legacy_notice_covers(/* BUG-428 */)
     {
         var id = await SeedMaterialBreachAsync(hoursAgo: 10);

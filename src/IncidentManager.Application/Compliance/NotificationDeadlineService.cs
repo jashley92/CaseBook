@@ -176,17 +176,30 @@ public sealed class NotificationDeadlineService
         if (caseId is { } one) cases = cases.Where(c => c.Id == one);
         var ruleSet = await _rules.LoadRuleSetAsync(settings.DefaultWindowHours, ct);
         var now = _clock.UtcNow;
-        var filled = 0;
+        var dues = new Dictionary<Guid, Dictionary<string, DateTimeOffset>>();
         foreach (var reported in new[] { true, false })   // a notice can be on a case not yet reported to every regulator
             foreach (var (id, statuses) in await StatusesAsync(db, cases, settings, ruleSet, now, reported, ct))
-                foreach (var s in statuses.Where(s => s.DueAtUtc is not null))
-                {
-                    var code = s.JurisdictionCode;
-                    var due = s.DueAtUtc;
-                    filled += await db.JurisdictionNotices
-                        .Where(n => n.CaseId == id && n.Jurisdiction == code && n.DueAtUtc == null)
-                        .ExecuteUpdateAsync(u => u.SetProperty(n => n.DueAtUtc, due), ct);
-                }
+                dues[id] = statuses.Where(s => s.DueAtUtc is not null)
+                    .GroupBy(s => s.JurisdictionCode, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.Min(s => s.DueAtUtc!.Value), StringComparer.OrdinalIgnoreCase);
+        if (dues.Count == 0) return 0;
+
+        var open = await cases.SelectMany(c => c.JurisdictionNotices).Where(n => n.DueAtUtc == null)
+            .Select(n => new { n.Id, n.CaseId, n.Jurisdiction })
+            .ToListAsync(ct);
+        var filled = 0;
+        foreach (var n in open)
+        {
+            // BUG-456: a legacy notice coded "NY;CA" covers each code (BUG-428), so it keeps the earliest of their deadlines.
+            if (!dues.TryGetValue(n.CaseId, out var byCode)) continue;
+            var codeDues = SplitCodes(n.Jurisdiction).Where(byCode.ContainsKey).Select(code => byCode[code]).ToList();
+            if (codeDues.Count == 0) continue;
+            DateTimeOffset? due = codeDues.Min();
+            var noticeId = n.Id;
+            filled += await db.JurisdictionNotices
+                .Where(x => x.Id == noticeId && x.DueAtUtc == null)
+                .ExecuteUpdateAsync(u => u.SetProperty(x => x.DueAtUtc, due), ct);
+        }
         return filled;
     }
 
@@ -308,9 +321,15 @@ public sealed class NotificationDeadlineService
         // Compared in memory: DateTimeOffset comparison stays off SQLite (F-08).
         var kept = await cases.SelectMany(c => c.JurisdictionNotices).Where(n => n.DueAtUtc != null)
             .Select(n => new { n.CaseId, n.Jurisdiction, n.NotifiedAtUtc, n.DueAtUtc }).ToListAsync(ct);
-        foreach (var n in kept)
-            result.Add((n.CaseId, n.NotifiedAtUtc, n.NotifiedAtUtc <= n.DueAtUtc!.Value ? SlaState.Met : SlaState.Missed));
-        var judged = kept.SelectMany(n => SplitCodes(n.Jurisdiction).Select(j => (n.CaseId, j.ToUpperInvariant()))).ToHashSet();   // BUG-428
+        // BUG-456: a legacy "NY;CA" notice now keeps a deadline too; it counts once for each code it names, as it did through
+        // today's clock before it had one, and a code's own notice wins over it (BUG-428).
+        var judged = new HashSet<(Guid, string)>();
+        foreach (var g in kept.GroupBy(n => n.CaseId))
+            foreach (var (code, (at, due)) in Case.ByNoticeCode(g.Select(n => (n.Jurisdiction, (n.NotifiedAtUtc, n.DueAtUtc!.Value)))))
+            {
+                result.Add((g.Key, at, at <= due ? SlaState.Met : SlaState.Missed));
+                judged.Add((g.Key, code.ToUpperInvariant()));
+            }
 
         foreach (var reported in new[] { true, false })
             foreach (var (id, statuses) in await StatusesAsync(db, cases, settings, ruleSet, now, reported, ct))
