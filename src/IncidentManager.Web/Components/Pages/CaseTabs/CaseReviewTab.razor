@@ -153,7 +153,7 @@
             </div>
             <div class="col-md-2">
                 <label class="form-label small mb-0" for="ia-new-target">Target date</label>
-                <input id="ia-new-target" type="date" class="form-control form-control-sm" @bind="_new.Target" />
+                <DateInput id="ia-new-target" class="form-control form-control-sm" @bind-Value="_new.Target" />
             </div>
             <div class="col-md-1">
                 <button class="btn btn-sm btn-primary w-100" title="Ctrl / ⌘ + Enter" @onclick="AddAction" disabled="@(string.IsNullOrWhiteSpace(_new.Title) || _saving)">Add</button>
@@ -232,7 +232,7 @@ else
                                 </div>
                                 <div class="col-md-2">
                                     <label class="form-label small mb-0" for="ia-edit-target">Target date</label>
-                                    <input id="ia-edit-target" type="date" class="form-control form-control-sm" @bind="_edit.Target" />
+                                    <DateInput id="ia-edit-target" class="form-control form-control-sm" @bind-Value="_edit.Target" />
                                 </div>
                                 <div class="col-md-1">
                                     <label class="form-label small mb-0" for="ia-edit-status">Status</label>

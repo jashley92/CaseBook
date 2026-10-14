@@ -1,5 +1,5 @@
-// BUG-408: a datetime-local input that keeps what the user is typing. A Blazor @bind writes element.value back after
-// every change it receives, and Chrome resets the segment being typed whenever a focused date input's value is set
+// BUG-408 / BUG-426: a date, time or datetime-local input that keeps what the user is typing. A Blazor @bind writes
+// element.value back after every change it receives, and Chrome resets the segment being typed whenever a focused date input's value is set
 // (typing "45" into the minutes gave "05"). Here the server never sets the value through the render tree: this module
 // reports the user's changes and writes a value only when it differs from what the field already shows. A partly
 // filled field (a segment cleared) reads as "" with validity.badInput; that isn't sent, so the bound value isn't

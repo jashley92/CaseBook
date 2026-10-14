@@ -1,97 +1,15 @@
 @* BUG-408: a date-and-time field that doesn't fight the person typing in it. Bound like an input (@bind-Value, with
    :after), to a DateTime or a DateTime?, as a wall-clock value to the minute. Blazor's own @bind wrote the value back
-   after every keystroke, which reset the segment being typed (minutes "45" became "05"); date-field.js reports
-   changes instead and only ever writes a value the field isn't already showing. Other attributes (id, class,
-   aria-label, title, min, max) pass through to the input. *@
+   after every keystroke, which reset the segment being typed (minutes "45" became "05"); see DateFieldBase for how
+   this avoids it. DateInput and TimeInput are the date-only and time-only fields (BUG-426). *@
 @typeparam TValue
-@implements IAsyncDisposable
-@inject IJSRuntime JS
+@inherits DateFieldBase<TValue>
 
-<input @ref="_el" type="datetime-local" value="@_firstShown" @attributes="AdditionalAttributes" />
+<input @ref="Element" type="datetime-local" value="@FirstShown" @attributes="AdditionalAttributes" />
 
 @code {
-    [Parameter] public TValue? Value { get; set; }
-    [Parameter] public EventCallback<TValue?> ValueChanged { get; set; }
-    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? AdditionalAttributes { get; set; }
-
-    private const string Format = "yyyy-MM-ddTHH:mm";
-    private static readonly bool Nullable = typeof(TValue) == typeof(DateTime?);
-
-    private ElementReference _el;
-    private DotNetObjectReference<DateTimeInput<TValue>>? _self;
-    // What the input was rendered with first. It never changes, so the render tree never writes the value again.
-    private string? _firstShown;
-    // What the field shows now (as far as the server knows): set from the browser's reports and from Value.
-    private string _shown = "";
-    private bool _attached;
-
-    protected override void OnInitialized()
-    {
-        if (typeof(TValue) != typeof(DateTime) && !Nullable)
-            throw new InvalidOperationException("DateTimeInput binds a DateTime or a DateTime?.");
-        _shown = Show(Value);
-        _firstShown = _shown;
-    }
-
-    protected override async Task OnParametersSetAsync()
-    {
-        var wanted = Show(Value);
-        if (wanted == _shown) return;
-        _shown = wanted;
-        if (_attached)
-        {
-            try { await JS.InvokeVoidAsync("imDateField.set", _el, wanted); }
-            catch (JSDisconnectedException) { }
-            catch (JSException) { }
-        }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender) return;
-        _self = DotNetObjectReference.Create(this);
-        try { await JS.InvokeVoidAsync("imDateField.attach", _el, _self, _shown); _attached = true; }
-        catch (JSDisconnectedException) { }
-        catch (JSException) { }
-    }
-
-    [JSInvokable]
-    public async Task Changed(string? text)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            if (!Nullable) { await Restore(); return; }   // a required time can't be emptied: show it again
-            _shown = "";
-            await ValueChanged.InvokeAsync(default);
-            return;
-        }
-        if (!DateTime.TryParseExact(text.Length > 16 ? text[..16] : text, Format, System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.None, out var parsed))
-            return;
-        // Seconds the bound value had (a default of now) are kept when the minute shown didn't change.
-        if (Show(Value) == parsed.ToString(Format, System.Globalization.CultureInfo.InvariantCulture)) return;
-        _shown = parsed.ToString(Format, System.Globalization.CultureInfo.InvariantCulture);
-        await ValueChanged.InvokeAsync((TValue)(object)parsed);
-    }
-
-    private async Task Restore()
-    {
-        try { await JS.InvokeVoidAsync("imDateField.set", _el, _shown); }
-        catch (JSDisconnectedException) { }
-        catch (JSException) { }
-    }
-
-    private static string Show(TValue? value) =>
-        value is DateTime d ? d.ToString(Format, System.Globalization.CultureInfo.InvariantCulture) : "";
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_attached)
-        {
-            try { await JS.InvokeVoidAsync("imDateField.detach", _el); }
-            catch (JSDisconnectedException) { }
-            catch (JSException) { }
-        }
-        _self?.Dispose();
-    }
+    protected override string Format => "yyyy-MM-ddTHH:mm";
+    protected override Type[] Supported => [typeof(DateTime)];
+    protected override TValue FromText(DateTime parsed) => (TValue)(object)parsed;
+    protected override string Show(TValue? value) => value is DateTime d ? Text(d) : "";
 }

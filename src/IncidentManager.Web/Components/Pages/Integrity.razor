@@ -103,11 +103,11 @@
             <div class="row g-2 align-items-end">
                 <div class="col-6 col-sm-4 col-md-3">
                     <label class="form-label small mb-1" for="bundleFrom">From (UTC)</label>
-                    <input id="bundleFrom" type="date" class="form-control form-control-sm" @bind="_bundleFrom" />
+                    <DateInput id="bundleFrom" class="form-control form-control-sm" @bind-Value="_bundleFrom" />
                 </div>
                 <div class="col-6 col-sm-4 col-md-3">
                     <label class="form-label small mb-1" for="bundleTo">To (UTC)</label>
-                    <input id="bundleTo" type="date" class="form-control form-control-sm" @bind="_bundleTo" />
+                    <DateInput id="bundleTo" class="form-control form-control-sm" @bind-Value="_bundleTo" />
                 </div>
                 <div class="col-12 col-sm-4 col-md-3">
                     <a class="btn btn-sm btn-primary" href="@BundleHref" download

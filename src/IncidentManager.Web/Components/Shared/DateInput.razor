@@ -1,0 +1,20 @@
+@* BUG-426: a date field that doesn't fight the person typing in it (the date-only DateTimeInput). Bound like an input
+   (@bind-Value, with :after), to a DateTime, a DateOnly or a nullable one. A DateTime keeps its time of day while the
+   day shown doesn't change; a newly picked day comes back at midnight, as @bind gave it. *@
+@typeparam TValue
+@inherits DateFieldBase<TValue>
+
+<input @ref="Element" type="date" value="@FirstShown" @attributes="AdditionalAttributes" />
+
+@code {
+    protected override string Format => "yyyy-MM-dd";
+    protected override Type[] Supported => [typeof(DateTime), typeof(DateOnly)];
+    protected override TValue FromText(DateTime parsed) =>
+        Underlying == typeof(DateOnly) ? (TValue)(object)DateOnly.FromDateTime(parsed) : (TValue)(object)parsed.Date;
+    protected override string Show(TValue? value) => value switch
+    {
+        DateTime d => Text(d),
+        DateOnly d => Text(d),
+        _ => ""
+    };
+}

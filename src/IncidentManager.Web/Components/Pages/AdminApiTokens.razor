@@ -72,7 +72,7 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label" for="tok-expires">Expires <span class="text-danger">*</span></label>
-                    <input id="tok-expires" type="date" class="form-control" @bind="_expiresDate"
+                    <DateInput id="tok-expires" class="form-control" @bind-Value="_expiresDate"
                            min="@DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-dd")"
                            max="@DateTime.UtcNow.Date.Add(ApiTokenService.MaxSystemLifetime).ToString("yyyy-MM-dd")" />
                     <div class="form-text">Up to @((int)ApiTokenService.MaxSystemLifetime.TotalDays) days. To rotate, create a new token before this one expires.</div>

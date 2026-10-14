@@ -138,11 +138,11 @@
             </div>
             <div class="col-md-2">
                 <label class="form-label small mb-0" for="task-due-date">Due date</label>
-                <input id="task-due-date" type="date" class="form-control form-control-sm" @bind="_taskDueDate" />
+                <DateInput id="task-due-date" class="form-control form-control-sm" @bind-Value="_taskDueDate" />
             </div>
             <div class="col-md-2">
                 <label class="form-label small mb-0" for="task-due-time">Time (@TimeDisp.Label)</label>
-                <input id="task-due-time" type="time" class="form-control form-control-sm" @bind="_taskDueTime"
+                <TimeInput id="task-due-time" class="form-control form-control-sm" @bind-Value="_taskDueTime"
                        title="Leave blank for end of day." />
             </div>
             <div class="col-md-1">
@@ -429,12 +429,12 @@ else
                                 </div>
                                 <div class="col-md-2">
                                     <label class="form-label small mb-0" for="task-edit-due-date">Due date</label>
-                                    <input id="task-edit-due-date" type="date" class="form-control form-control-sm" @bind="_editDueDate" />
+                                    <DateInput id="task-edit-due-date" class="form-control form-control-sm" @bind-Value="_editDueDate" />
                                 </div>
                                 <div class="col-md-1">
                                     <label class="form-label small mb-0" for="task-edit-due-time">Time</label>
-                                    <input id="task-edit-due-time" type="time" class="form-control form-control-sm" @bind="_editDueTime"
-                                           title="In @TimeDisp.Label. Leave blank for end of day." />
+                                    <TimeInput id="task-edit-due-time" class="form-control form-control-sm" @bind-Value="_editDueTime"
+                                           title="@($"In {TimeDisp.Label}. Leave blank for end of day.")" />
                                 </div>
                                 @if (_editStatus == ActionItemStatus.Cancelled && t.Status != ActionItemStatus.Cancelled)
                                 {

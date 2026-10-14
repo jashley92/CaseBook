@@ -35,7 +35,7 @@
         </div>
         <div class="col-md-3">
             <label class="form-label" for="mytok-expires">Expires <span class="text-danger">*</span></label>
-            <input id="mytok-expires" type="date" class="form-control form-control-sm" @bind="_expiresDate"
+            <DateInput id="mytok-expires" class="form-control form-control-sm" @bind-Value="_expiresDate"
                    min="@DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-dd")"
                    max="@DateTime.UtcNow.Date.Add(ApiTokenService.MaxPersonalLifetime).ToString("yyyy-MM-dd")" />
             <div class="form-text">Up to @((int)ApiTokenService.MaxPersonalLifetime.TotalDays) days. A token only works with roles you still hold.</div>

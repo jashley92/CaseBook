@@ -1529,7 +1529,7 @@ else
                 <select class="form-select form-select-sm" aria-label="Kind" @bind="task.Kind">
                     @foreach (var k in Enum.GetValues<TaskKind>()) { <option value="@k">@k</option> }
                 </select>
-                <input type="date" class="form-control form-control-sm" aria-label="Due" @bind="task.Due" />
+                <DateInput class="form-control form-control-sm" aria-label="Due" @bind-Value="task.Due" />
                 <button type="button" class="btn btn-sm btn-link p-0" aria-label="Remove this task" @onclick="() => _fuTasks.Remove(task)"><span class="bi bi-x-lg" aria-hidden="true"></span></button>
             </div>
         }
@@ -2320,13 +2320,13 @@ else
                 break;
             case TimePrecision.Day:
             case TimePrecision.OnOrBefore:
-                <input id="tl-atk-day" type="date" class="form-control form-control-sm mt-1" aria-label="Date" @bind="_tlDay" />
+                <DateInput id="tl-atk-day" class="form-control form-control-sm mt-1" aria-label="Date" @bind-Value="_tlDay" />
                 break;
             case TimePrecision.Window:
                 <div class="d-flex gap-1 align-items-center mt-1">
-                    <input id="tl-atk-from" type="date" class="form-control form-control-sm" aria-label="First date" @bind="_tlDay" />
+                    <DateInput id="tl-atk-from" class="form-control form-control-sm" aria-label="First date" @bind-Value="_tlDay" />
                     <span class="small text-muted">to</span>
-                    <input id="tl-atk-until" type="date" class="form-control form-control-sm" aria-label="Last date" @bind="_tlUntilDay" />
+                    <DateInput id="tl-atk-until" class="form-control form-control-sm" aria-label="Last date" @bind-Value="_tlUntilDay" />
                 </div>
                 break;
             case TimePrecision.NotStated when disclosure:

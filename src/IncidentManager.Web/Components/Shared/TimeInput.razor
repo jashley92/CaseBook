@@ -1,0 +1,14 @@
+@* BUG-426: a time field that doesn't fight the person typing in it (the time-only DateTimeInput). Bound like an input
+   (@bind-Value, with :after), to a TimeOnly or a TimeOnly?, to the minute. Seconds the bound value had are kept while
+   the minute shown doesn't change. *@
+@typeparam TValue
+@inherits DateFieldBase<TValue>
+
+<input @ref="Element" type="time" value="@FirstShown" @attributes="AdditionalAttributes" />
+
+@code {
+    protected override string Format => "HH:mm";
+    protected override Type[] Supported => [typeof(TimeOnly)];
+    protected override TValue FromText(DateTime parsed) => (TValue)(object)TimeOnly.FromDateTime(parsed);
+    protected override string Show(TValue? value) => value is TimeOnly t ? Text(t) : "";
+}

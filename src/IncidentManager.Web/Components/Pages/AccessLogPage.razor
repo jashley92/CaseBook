@@ -49,11 +49,11 @@
     </div>
     <div class="col-6 col-md-2">
         <label class="form-label small mb-0" for="acl-from">From (UTC)</label>
-        <input id="acl-from" type="date" class="form-control form-control-sm" @bind="_from" @bind:after="Load" />
+        <DateInput id="acl-from" class="form-control form-control-sm" @bind-Value="_from" @bind-Value:after="Load" />
     </div>
     <div class="col-6 col-md-2">
         <label class="form-label small mb-0" for="acl-to">To (UTC)</label>
-        <input id="acl-to" type="date" class="form-control form-control-sm" @bind="_to" @bind:after="Load" />
+        <DateInput id="acl-to" class="form-control form-control-sm" @bind-Value="_to" @bind-Value:after="Load" />
     </div>
     <div class="col-6 col-md-1">
         <div class="form-check mt-4">
