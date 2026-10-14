@@ -24,7 +24,8 @@
         </h1>
         @if (_renumbering)
         {
-            <div class="d-flex align-items-center gap-2 mb-2" style="max-width:32rem">
+            @* BUG-370: im-own-keys: Ctrl+Enter here isn't for the tab's composer (keymap.js leaves it alone). *@
+            <div class="d-flex align-items-center gap-2 mb-2 im-own-keys" style="max-width:32rem">
                 <input class="form-control form-control-sm font-monospace" @bind="_editNumber" @bind:event="oninput" @bind:after="CheckRenumberAvailable"
                        placeholder="Case number" aria-label="Case number" />
                 <button class="btn btn-sm btn-primary" @onclick="SaveRenumber" disabled="@(_savingNumber || _renumberAvailable == false)">Save</button>

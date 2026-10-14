@@ -82,7 +82,7 @@ else
 
     @if (_action.Name is not null && _action.IsSheet)
     {
-        <section id="ws-sheet" class="im-sheet" role="region" aria-labelledby="im-action-title" @onkeydown="OnModalEscape">
+        <section id="ws-sheet" class="im-sheet im-action-host" role="region" aria-labelledby="im-action-title" @onkeydown="OnModalEscape">
             @ActionDialog()
         </section>
     }
@@ -234,10 +234,10 @@ else
     }
 
     @* Action modal — rendered outside the tab blocks so Actions works on every tab. RD-15: a change of rung, severity
-       or phase is a sheet under the header instead (below). *@
+       or phase is a sheet under the header instead (below). im-action-host tells keymap.js Ctrl+Enter is for it (BUG-370). *@
     @if (_action.Name is not null && !_action.IsSheet)
     {
-        <div class="modal d-block im-trap" tabindex="-1" role="dialog" aria-modal="true"
+        <div class="modal d-block im-trap im-action-host" tabindex="-1" role="dialog" aria-modal="true"
              aria-labelledby="im-action-title" data-return-focus="#case-actions-btn"
              style="background:var(--im-scrim)" @onclick="CloseModal" @onkeydown="OnModalEscape">
             <div class="modal-dialog" @onclick:stopPropagation="true">

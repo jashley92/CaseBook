@@ -82,6 +82,9 @@
 
     @if (_editing)
     {
+        @* BUG-370: the editor's own Ctrl/Cmd+Enter saves the brief (keymap.js leaves .im-own-keys to it), in the pane and
+           on the Briefing tab alike, instead of submitting whatever else the tab has open. *@
+        <div class="im-own-keys" @onkeydown="EditorKey">
         <p class="small text-muted mb-2">Keep it short and factual; this is part of the case record. Saving keeps the earlier version.</p>
         @foreach (var part in Parts.Where(p => p.Editable))
         {
@@ -124,6 +127,7 @@
         <div class="d-flex gap-2 justify-content-end">
             <button class="btn btn-sm btn-outline-secondary" @onclick="() => _editing = false">Cancel</button>
             <button class="btn btn-sm btn-primary" disabled="@_saving" @onclick="Save">Save brief</button>
+        </div>
         </div>
     }
     else if (Current is not null || HasSummary)
@@ -279,6 +283,11 @@
             await OnChanged.InvokeAsync();
         }
         finally { _saving = false; }
+    }
+
+    private async Task EditorKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && (e.CtrlKey || e.MetaKey) && _editing) await Save();
     }
 
     private async Task Save()

@@ -78,6 +78,18 @@ window.imKeymap = (function () {
         return /[A-Za-z]/.test(key) ? key.toLowerCase() : key;
     }
 
+    // BUG-370: what a Ctrl/Cmd+Enter pressed here is for. The palette, the ATT&CK pickers, the Now/Next pane and the
+    // header's renumber field (.im-own-keys) handle their own keys, so the case isn't told at all (null). In the case's
+    // action dialog or sheet it applies that ("submit:action"); in any other dialog or panel nothing ("submit:dialog");
+    // elsewhere it submits the tab's composer ("submit").
+    function submitCommand(el) {
+        if (!el || !el.closest) return 'submit';
+        if (el.closest('.cmdk, .cmdk-help, .atkm-panel, .tactic-modal, .im-own-keys')) return null;
+        const box = el.closest('.im-action-host, .im-trap, .im-sheet, [aria-modal="true"]');
+        if (!box) return 'submit';
+        return box.classList.contains('im-action-host') ? 'submit:action' : 'submit:dialog';
+    }
+
     function onKeydown(e) {
         if (!globalRef && !caseRef) return;
 
@@ -91,8 +103,8 @@ window.imKeymap = (function () {
         if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); clearLeader(); sendGlobal('palette'); return; }
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             // BUG-328: inside a dialog, sheet or side panel it's that one's, never the tab composer's behind it.
-            const inDialog = !!(e.target && e.target.closest && e.target.closest('.im-trap, .im-sheet'));
-            if (caseRef) { e.preventDefault(); sendCase(inDialog ? 'submit:dialog' : 'submit'); }
+            const cmd = submitCommand(e.target);
+            if (caseRef && cmd) { e.preventDefault(); sendCase(cmd); }
             return;
         }
         if (e.key === 'Escape') { clearLeader(); sendGlobal('escape'); return; }

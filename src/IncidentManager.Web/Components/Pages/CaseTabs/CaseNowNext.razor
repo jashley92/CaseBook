@@ -17,7 +17,7 @@
     var open = CaseNext.Open(Case, now);
 }
 
-<aside class="im-nownext @(Show is "now" or "next" ? "is-phone" : "")" aria-label="@(Show switch { "now" => "Now", "next" => "Next", _ => "Now and next" })">
+<aside class="im-nownext im-own-keys @(Show is "now" or "next" ? "is-phone" : "")" aria-label="@(Show switch { "now" => "Now", "next" => "Next", _ => "Now and next" })">
     @if (Show != "next")
     {
         <CaseBriefCard @ref="_brief" Pane="true" Case="Case" TaskResults="TaskResults" CanEdit="CanEdit" OnChanged="OnChanged"
@@ -119,7 +119,7 @@
                         </div>
                         @if (_doneFor == t.Id)
                         {
-                            <div class="im-nn-doneform">
+                            <div class="im-nn-doneform" @onkeydown="e => DoneKey(e, task)">
                                 @if (t.FollowsUpQuestion)
                                 {
                                     @* REV-35 / HR-02: as on the Tasks tab, a question's task is done when the question has an answer. *@
@@ -281,6 +281,15 @@
         _result = null;
         _logIt = false;
         _doneError = null;
+    }
+
+    // BUG-370: the pane handles its own Ctrl/Cmd+Enter (keymap.js leaves .im-own-keys alone): in the Done form it marks
+    // the task done, as the button would (it stays off while a required result is blank).
+    private async Task DoneKey(KeyboardEventArgs e, ActionItem t)
+    {
+        if (e.Key != "Enter" || !(e.CtrlKey || e.MetaKey)) return;
+        if (t.FollowsUpQuestion && string.IsNullOrWhiteSpace(_result)) return;
+        await Done(t);
     }
 
     private async Task Done(ActionItem t)
