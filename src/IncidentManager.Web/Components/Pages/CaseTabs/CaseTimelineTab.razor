@@ -1308,6 +1308,15 @@ else
     {
         // U-46: seed the "Occurred" input to now in the viewer's active display zone (like Details / tasks).
         _tlWhen = UtcToWall(DateTimeOffset.UtcNow);
+        _tlType = OfferedType(_tlType);   // BUG-478
+    }
+
+    // BUG-478: the type wanted if the select offers it, else the first type it offers (not Decision, which changes the
+    // mode). Analysis hidden by an admin left the select showing nothing while the save used Analysis.
+    private TimelineEntryType OfferedType(TimelineEntryType wanted)
+    {
+        var offered = InvestigationTypeOptions();
+        return offered.Contains(wanted) ? wanted : offered.FirstOrDefault(t => t != TimelineEntryType.Decision, wanted);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1670,7 +1679,7 @@ else
                 break;
             default:
                 _tlAddKind = TimelineKind.Investigation;
-                if (_tlType == TimelineEntryType.Decision) _tlType = TimelineEntryType.Analysis;
+                if (_tlType == TimelineEntryType.Decision) _tlType = OfferedType(TimelineEntryType.Analysis);   // BUG-478
                 break;
         }
     }
@@ -2047,6 +2056,9 @@ else
             try { await JS.InvokeVoidAsync("markdownEditor.setValue", InvEditorId, ""); }
             catch (JSException) { /* best effort */ }
         }
+        // BUG-478: an edited entry's type an admin has since hidden isn't the next new entry's (the select can't show it).
+        if (_tlType != TimelineEntryType.Decision && !InvestigationTypeOptions().Contains(_tlType))
+            _tlType = OfferedType(TimelineEntryType.Analysis);
     }
 
     // BUG-35: what was being written when an edit started, put back when the edit ends (saved or cancelled).

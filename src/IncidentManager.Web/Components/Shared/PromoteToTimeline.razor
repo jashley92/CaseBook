@@ -72,6 +72,9 @@
         _text = Text;
         _when = _whenShown = ToWall(WrittenAtUtc);
         _whenRecorded = WrittenAtUtc;
+        // BUG-478: Analysis unless an admin has hidden it; then the first type offered, so the select shows what's saved.
+        var offered = PromotableTypes;
+        if (!offered.Contains(_type) && offered.Count > 0) _type = offered[0];
     }
 
     private async Task KeyDown(KeyboardEventArgs e)

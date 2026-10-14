@@ -958,6 +958,9 @@ else
         _completingId = t.Id;
         // HR-10: the result is logged as what the task was (Contain → Containment); a question's answer is Analysis.
         _doneType = t.FollowsUpQuestion ? TimelineEntryType.Analysis : t.Kind.ResultType();
+        // BUG-478: a type an admin has hidden can't show in the select, so the result goes in as the first one offered.
+        var offered = LoggableTypes;
+        if (!offered.Contains(_doneType) && offered.Count > 0) _doneType = offered[0];
         _doneResult = null; _doneKnown = false; _doneKnownLine = null;
         _doneWhen = _doneWhenDefault = ToWall(Clock.UtcNow);
         _doneLog = true;
